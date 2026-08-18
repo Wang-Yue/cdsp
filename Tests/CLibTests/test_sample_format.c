@@ -4,6 +4,8 @@
 #include "test_support.h"
 
 #if defined(ENABLE_COREAUDIO)
+#include "Backend/core_audio_capabilities.h"
+#include "Backend/core_audio_device.h"
 
 TEST(CanonicalRawValues) {
   ASSERT_STR_EQ("S16",
@@ -47,6 +49,129 @@ TEST(AllCases) {
     }
   }
   ASSERT_EQ(4, count);
+}
+
+TEST(CoreAudioFormatToBinaryFormat) {
+  ASSERT_EQ(
+      BINARY_SAMPLE_FORMAT_S16_LE,
+      coreaudio_sample_format_to_binary_format(COREAUDIO_SAMPLE_FORMAT_S16));
+  ASSERT_EQ(
+      BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
+      coreaudio_sample_format_to_binary_format(COREAUDIO_SAMPLE_FORMAT_S24));
+  ASSERT_EQ(
+      BINARY_SAMPLE_FORMAT_S32_LE,
+      coreaudio_sample_format_to_binary_format(COREAUDIO_SAMPLE_FORMAT_S32));
+  ASSERT_EQ(
+      BINARY_SAMPLE_FORMAT_F32_LE,
+      coreaudio_sample_format_to_binary_format(COREAUDIO_SAMPLE_FORMAT_F32));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_INVALID,
+            coreaudio_sample_format_to_binary_format(
+                COREAUDIO_SAMPLE_FORMAT_INVALID));
+}
+
+TEST(CoreAudioASBDForFormatAndBinaryMapping) {
+  AudioStreamBasicDescription s16_asbd =
+      core_audio_device_asbd_for_format(48000.0, 2, "S16");
+  ASSERT_EQ(kAudioFormatLinearPCM, s16_asbd.mFormatID);
+  ASSERT_EQ(16, (int)s16_asbd.mBitsPerChannel);
+  ASSERT_EQ(4, (int)s16_asbd.mBytesPerFrame);
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S16_LE,
+            core_audio_device_asbd_to_binary_format(&s16_asbd));
+
+  AudioStreamBasicDescription s24_asbd =
+      core_audio_device_asbd_for_format(48000.0, 2, "S24");
+  ASSERT_EQ(24, (int)s24_asbd.mBitsPerChannel);
+  ASSERT_EQ(8, (int)s24_asbd.mBytesPerFrame);
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
+            core_audio_device_asbd_to_binary_format(&s24_asbd));
+
+  AudioStreamBasicDescription s32_asbd =
+      core_audio_device_asbd_for_format(96000.0, 2, "S32");
+  ASSERT_EQ(32, (int)s32_asbd.mBitsPerChannel);
+  ASSERT_EQ(8, (int)s32_asbd.mBytesPerFrame);
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S32_LE,
+            core_audio_device_asbd_to_binary_format(&s32_asbd));
+
+  AudioStreamBasicDescription f32_asbd =
+      core_audio_device_asbd_for_format(44100.0, 2, "F32");
+  ASSERT_EQ(32, (int)f32_asbd.mBitsPerChannel);
+  ASSERT_EQ(8, (int)f32_asbd.mBytesPerFrame);
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_F32_LE,
+            core_audio_device_asbd_to_binary_format(&f32_asbd));
+
+  // 24-bit in 3-byte packed container
+  AudioStreamBasicDescription s24_3_asbd = {
+      .mSampleRate = 48000.0,
+      .mFormatID = kAudioFormatLinearPCM,
+      .mFormatFlags = kAudioFormatFlagIsSignedInteger,
+      .mBytesPerPacket = 6,
+      .mFramesPerPacket = 1,
+      .mBytesPerFrame = 6,
+      .mChannelsPerFrame = 2,
+      .mBitsPerChannel = 24,
+  };
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_3_LE,
+            core_audio_device_asbd_to_binary_format(&s24_3_asbd));
+
+  // 24-bit in 4-byte container (Left-justified / high bits)
+  AudioStreamBasicDescription s24_4_lj_asbd = {
+      .mSampleRate = 48000.0,
+      .mFormatID = kAudioFormatLinearPCM,
+      .mFormatFlags =
+          kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsAlignedHigh,
+      .mBytesPerPacket = 8,
+      .mFramesPerPacket = 1,
+      .mBytesPerFrame = 8,
+      .mChannelsPerFrame = 2,
+      .mBitsPerChannel = 24,
+  };
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
+            core_audio_device_asbd_to_binary_format(&s24_4_lj_asbd));
+
+  // 24-bit in 4-byte container (Right-justified / low bits)
+  AudioStreamBasicDescription s24_4_rj_asbd = {
+      .mSampleRate = 48000.0,
+      .mFormatID = kAudioFormatLinearPCM,
+      .mFormatFlags = kAudioFormatFlagIsSignedInteger,
+      .mBytesPerPacket = 8,
+      .mFramesPerPacket = 1,
+      .mBytesPerFrame = 8,
+      .mChannelsPerFrame = 2,
+      .mBitsPerChannel = 24,
+  };
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_RJ_LE,
+            core_audio_device_asbd_to_binary_format(&s24_4_rj_asbd));
+}
+
+TEST(CoreAudioCapabilitiesSharedAndExclusiveSets) {
+  device_error_t err;
+  audio_device_descriptor_t* desc =
+      core_audio_capabilities_describe("default", false, &err);
+  if (desc) {
+    ASSERT_TRUE(desc->capability_sets_count >= 1);
+    bool found_shared = false;
+    bool found_exclusive = false;
+    for (size_t i = 0; i < desc->capability_sets_count; i++) {
+      if (strcmp(desc->capability_sets[i].mode, "Shared") == 0) {
+        found_shared = true;
+        // Shared mode must only contain F32 format
+        for (size_t c = 0; c < desc->capability_sets[i].capabilities_count;
+             c++) {
+          channel_capability_t* ch = &desc->capability_sets[i].capabilities[c];
+          for (size_t r = 0; r < ch->samplerates_count; r++) {
+            samplerate_capability_t* sr = &ch->samplerates[r];
+            ASSERT_EQ(1, (int)sr->formats_count);
+            ASSERT_STR_EQ("F32", sr->formats[0]);
+          }
+        }
+      } else if (strcmp(desc->capability_sets[i].mode, "Exclusive") == 0) {
+        found_exclusive = true;
+      }
+    }
+    ASSERT_TRUE(found_shared);
+    ASSERT_TRUE(found_exclusive);
+    free_audio_device_descriptor(desc);
+  }
 }
 
 #elif defined(ENABLE_ALSA)

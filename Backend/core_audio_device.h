@@ -15,6 +15,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "Config/engine_config_types.h"
+
 /**
  * @file core_audio_device.h
  * @brief Shared CoreAudio HAL helpers.
@@ -233,6 +235,58 @@ bool core_audio_device_has_nominal_sample_rate_property(
  */
 AudioStreamBasicDescription core_audio_device_float32_stream_format(
     double sample_rate, int channels);
+
+/**
+ * @brief Build an AudioStreamBasicDescription for a given format token string
+ * ("S16", "S24", "S32", "F32").
+ *
+ * @param sample_rate Sample rate in Hz.
+ * @param channels Number of channels.
+ * @param format_str Format token string ("S16", "S24", "S32", "F32").
+ * @return The constructed ASBD.
+ */
+AudioStreamBasicDescription core_audio_device_asbd_for_format(
+    double sample_rate, int channels, const char* format_str);
+
+/**
+ * @brief Maps a CoreAudio linear PCM ASBD to the universal binary sample
+ * format enum.
+ *
+ * @param asbd Pointer to the AudioStreamBasicDescription.
+ * @return The matching binary_sample_format_t or BINARY_SAMPLE_FORMAT_INVALID.
+ */
+binary_sample_format_t core_audio_device_asbd_to_binary_format(
+    const AudioStreamBasicDescription* asbd);
+
+/**
+ * @brief Get the active virtual stream format of a device for a given scope.
+ *
+ * @param device_id The HAL Device ID.
+ * @param scope The direction scope.
+ * @param out_asbd Pointer to ASBD to receive the current virtual format.
+ * @return true on success, false otherwise.
+ */
+bool core_audio_device_get_virtual_format(
+    AudioDeviceID device_id, core_audio_scope_t scope,
+    AudioStreamBasicDescription* out_asbd);
+
+/**
+ * @brief Set virtual format of a device matching sample rate, format string,
+ * and channels.
+ *
+ * @param device_id The HAL Device ID.
+ * @param scope The direction scope.
+ * @param sample_rate Target sample rate.
+ * @param format_str Format description string (e.g. "S16", "S24", "S32",
+ * "F32").
+ * @param requested_channels Requested channel count.
+ * @param out_actual_asbd Optional pointer to receive the applied ASBD.
+ * @return true on success, false otherwise.
+ */
+bool core_audio_device_set_matching_virtual_format(
+    AudioDeviceID device_id, core_audio_scope_t scope, double sample_rate,
+    const char* format_str, int requested_channels,
+    AudioStreamBasicDescription* out_actual_asbd);
 
 /**
  * @brief Set physical format of a device matching sample rate, format string,

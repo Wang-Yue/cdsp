@@ -532,6 +532,225 @@ static const char* format_string_for_asbd_local(
   return "";
 }
 
+AudioStreamBasicDescription core_audio_device_asbd_for_format(
+    double sample_rate, int channels, const char* format_str) {
+  AudioStreamBasicDescription asbd = {0};
+  asbd.mSampleRate = sample_rate;
+  asbd.mFormatID = kAudioFormatLinearPCM;
+  asbd.mFramesPerPacket = 1;
+  asbd.mChannelsPerFrame = (uint32_t)channels;
+
+  if (format_str && strcmp(format_str, "S16") == 0) {
+    asbd.mFormatFlags =
+        kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
+    asbd.mBitsPerChannel = 16;
+    asbd.mBytesPerFrame = (uint32_t)(channels * 2);
+    asbd.mBytesPerPacket = asbd.mBytesPerFrame;
+  } else if (format_str && strcmp(format_str, "S24") == 0) {
+    asbd.mFormatFlags =
+        kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsAlignedHigh;
+    asbd.mBitsPerChannel = 24;
+    asbd.mBytesPerFrame = (uint32_t)(channels * 4);
+    asbd.mBytesPerPacket = asbd.mBytesPerFrame;
+  } else if (format_str && strcmp(format_str, "S32") == 0) {
+    asbd.mFormatFlags =
+        kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
+    asbd.mBitsPerChannel = 32;
+    asbd.mBytesPerFrame = (uint32_t)(channels * 4);
+    asbd.mBytesPerPacket = asbd.mBytesPerFrame;
+  } else {
+    // Default to Float32
+    asbd.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+    asbd.mBitsPerChannel = 32;
+    asbd.mBytesPerFrame = (uint32_t)(channels * 4);
+    asbd.mBytesPerPacket = asbd.mBytesPerFrame;
+  }
+  return asbd;
+}
+
+binary_sample_format_t core_audio_device_asbd_to_binary_format(
+    const AudioStreamBasicDescription* asbd) {
+  if (!asbd || asbd->mFormatID != kAudioFormatLinearPCM) {
+    return BINARY_SAMPLE_FORMAT_INVALID;
+  }
+  bool is_float = (asbd->mFormatFlags & kAudioFormatFlagIsFloat) != 0;
+  bool is_signed = (asbd->mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0;
+  bool is_be = (asbd->mFormatFlags & kAudioFormatFlagIsBigEndian) != 0;
+  uint32_t bits = asbd->mBitsPerChannel;
+  uint32_t bytes_per_channel =
+      (asbd->mChannelsPerFrame > 0)
+          ? (asbd->mBytesPerFrame / asbd->mChannelsPerFrame)
+          : (bits / 8);
+
+  if (is_float) {
+    if (bits == 32)
+      return is_be ? BINARY_SAMPLE_FORMAT_F32_BE : BINARY_SAMPLE_FORMAT_F32_LE;
+    if (bits == 64)
+      return is_be ? BINARY_SAMPLE_FORMAT_F64_BE : BINARY_SAMPLE_FORMAT_F64_LE;
+  } else if (is_signed) {
+    if (bits == 16) {
+      return is_be ? BINARY_SAMPLE_FORMAT_S16_BE : BINARY_SAMPLE_FORMAT_S16_LE;
+    } else if (bits == 24) {
+      if (bytes_per_channel == 3) {
+        return is_be ? BINARY_SAMPLE_FORMAT_S24_3_BE
+                     : BINARY_SAMPLE_FORMAT_S24_3_LE;
+      } else if (bytes_per_channel == 4) {
+        bool is_aligned_high =
+            (asbd->mFormatFlags & kAudioFormatFlagIsAlignedHigh) != 0;
+        if (is_aligned_high) {
+          return is_be ? BINARY_SAMPLE_FORMAT_S24_4_LJ_BE
+                       : BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
+        } else {
+          return is_be ? BINARY_SAMPLE_FORMAT_S24_4_RJ_BE
+                       : BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
+        }
+      }
+    } else if (bits == 32) {
+      return is_be ? BINARY_SAMPLE_FORMAT_S32_BE : BINARY_SAMPLE_FORMAT_S32_LE;
+    }
+  }
+  return BINARY_SAMPLE_FORMAT_INVALID;
+}
+
+bool core_audio_device_get_virtual_format(
+    AudioDeviceID device_id, core_audio_scope_t scope,
+    AudioStreamBasicDescription* out_asbd) {
+  if (!out_asbd) return false;
+  AudioStreamID streams[32];
+  int stream_count = core_audio_device_streams(device_id, scope, streams, 32);
+  if (stream_count > 0) {
+    AudioObjectPropertyAddress addr = {
+        .mSelector = kAudioStreamPropertyVirtualFormat,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain};
+    uint32_t size = sizeof(AudioStreamBasicDescription);
+    if (AudioObjectGetPropertyData(streams[0], &addr, 0, NULL, &size,
+                                   out_asbd) == noErr) {
+      return true;
+    }
+  }
+  AudioObjectPropertyAddress dev_addr = {
+      .mSelector = kAudioDevicePropertyStreamFormat,
+      .mScope = (scope == CORE_AUDIO_SCOPE_INPUT)
+                    ? kAudioDevicePropertyScopeInput
+                    : kAudioDevicePropertyScopeOutput,
+      .mElement = kAudioObjectPropertyElementMain};
+  uint32_t size = sizeof(AudioStreamBasicDescription);
+  if (AudioObjectGetPropertyData(device_id, &dev_addr, 0, NULL, &size,
+                                 out_asbd) == noErr) {
+    return true;
+  }
+  return false;
+}
+
+bool core_audio_device_set_matching_virtual_format(
+    AudioDeviceID device_id, core_audio_scope_t scope, double sample_rate,
+    const char* format_str, int requested_channels,
+    AudioStreamBasicDescription* out_actual_asbd) {
+  AudioStreamID streams[32];
+  int stream_count = core_audio_device_streams(device_id, scope, streams, 32);
+
+  AudioStreamBasicDescription best_asbd;
+  bool found_best = false;
+  AudioStreamID best_stream_id = 0;
+
+  for (int s = 0; s < stream_count; s++) {
+    AudioObjectPropertyAddress addr = {
+        .mSelector = kAudioStreamPropertyAvailableVirtualFormats,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain};
+    uint32_t size = 0;
+    if (AudioObjectGetPropertyDataSize(streams[s], &addr, 0, NULL, &size) !=
+            noErr ||
+        size == 0) {
+      continue;
+    }
+    int count = (int)(size / sizeof(AudioStreamRangedDescription));
+    AudioStreamRangedDescription* ranged =
+        (AudioStreamRangedDescription*)calloc(
+            count, sizeof(AudioStreamRangedDescription));
+    if (!ranged) continue;
+
+    if (AudioObjectGetPropertyData(streams[s], &addr, 0, NULL, &size, ranged) ==
+        noErr) {
+      for (int i = 0; i < count; i++) {
+        AudioStreamBasicDescription asbd = ranged[i].mFormat;
+        if (asbd.mFormatID != kAudioFormatLinearPCM) continue;
+
+        double lo = ranged[i].mSampleRateRange.mMinimum;
+        double hi = ranged[i].mSampleRateRange.mMaximum;
+        if (sample_rate < lo || sample_rate > hi) {
+          continue;
+        }
+
+        const char* stream_fmt_str = format_string_for_asbd_local(&asbd);
+        if (format_str && strcmp(stream_fmt_str, format_str) != 0) {
+          continue;
+        }
+
+        int virt_channels = (int)asbd.mChannelsPerFrame;
+        if (virt_channels < requested_channels) {
+          continue;
+        }
+
+        if (!found_best || virt_channels < (int)best_asbd.mChannelsPerFrame) {
+          best_asbd = asbd;
+          best_asbd.mSampleRate = sample_rate;
+          best_stream_id = streams[s];
+          found_best = true;
+        }
+      }
+    }
+    free(ranged);
+  }
+
+  if (found_best) {
+    AudioObjectPropertyAddress addr = {
+        .mSelector = kAudioStreamPropertyVirtualFormat,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain};
+    OSStatus status = AudioObjectSetPropertyData(
+        best_stream_id, &addr, 0, NULL, sizeof(AudioStreamBasicDescription),
+        &best_asbd);
+    if (status == noErr) {
+      if (out_actual_asbd) *out_actual_asbd = best_asbd;
+      return true;
+    }
+  }
+
+  // Fall back to direct ASBD assignment
+  AudioStreamBasicDescription direct_asbd = core_audio_device_asbd_for_format(
+      sample_rate, requested_channels, format_str);
+  if (direct_asbd.mFormatID == kAudioFormatLinearPCM) {
+    for (int s = 0; s < stream_count; s++) {
+      AudioObjectPropertyAddress addr = {
+          .mSelector = kAudioStreamPropertyVirtualFormat,
+          .mScope = kAudioObjectPropertyScopeGlobal,
+          .mElement = kAudioObjectPropertyElementMain};
+      if (AudioObjectSetPropertyData(streams[s], &addr, 0, NULL,
+                                     sizeof(AudioStreamBasicDescription),
+                                     &direct_asbd) == noErr) {
+        if (out_actual_asbd) *out_actual_asbd = direct_asbd;
+        return true;
+      }
+    }
+    AudioObjectPropertyAddress dev_addr = {
+        .mSelector = kAudioDevicePropertyStreamFormat,
+        .mScope = (scope == CORE_AUDIO_SCOPE_INPUT)
+                      ? kAudioDevicePropertyScopeInput
+                      : kAudioDevicePropertyScopeOutput,
+        .mElement = kAudioObjectPropertyElementMain};
+    if (AudioObjectSetPropertyData(device_id, &dev_addr, 0, NULL,
+                                   sizeof(AudioStreamBasicDescription),
+                                   &direct_asbd) == noErr) {
+      if (out_actual_asbd) *out_actual_asbd = direct_asbd;
+      return true;
+    }
+  }
+
+  return false;
+}
+
 bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
                                                     core_audio_scope_t scope,
                                                     double sample_rate,

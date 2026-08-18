@@ -6,19 +6,19 @@
 // CoreAudio. It is absolutely forbidden to take locks, allocate, or
 // otherwise call into the Swift runtime in a way that could block. To
 // honour that:
-//   - sample rings are SPSC `SPSCAudioRingBuffer<Float>` instances —
-//     producer and consumer are wait-free, no `NSLock`.
+//   - sample rings are SPSC instances —
+//     producer and consumer are wait-free, no lock.
 //   - the render callback writes directly into the AudioBufferList
-//     provided by CoreAudio, consuming from the pre-allocated SPSC rings.
+//     provided by CoreAudio HAL, consuming from the pre-allocated SPSC rings.
 
 #include "Backend/core_audio_playback.h"
 
 #if defined(ENABLE_COREAUDIO)
-#include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
 #ifdef ENABLE_ACCELERATE
 #include <Accelerate/Accelerate.h>
 #endif
+#include <math.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -45,8 +45,9 @@ struct core_audio_playback {
   bool exclusive;
   char sample_format[16];
   bool has_sample_format;
+  binary_sample_format_t binary_format;
 
-  AudioUnit audio_unit;
+  AudioDeviceIOProcID io_proc_id;
   spsc_byte_ring_buffer_t* ring_buffer;
   uint8_t* write_buf;
   size_t write_buf_cap;
@@ -99,9 +100,9 @@ static OSStatus playback_alive_listener_callback(
 }
 
 /**
- * @brief CoreAudio render callback for playback.
+ * @brief Audio HAL IO callback for playback.
  *
- * This callback is called by the CoreAudio real-time thread to pull audio data
+ * Called by the CoreAudio HAL real-time thread to pull audio data
  * from the internal ring buffers and write it to the output device's buffers.
  *
  * @note This function runs on a real-time thread. It must be wait-free and must
@@ -109,30 +110,34 @@ static OSStatus playback_alive_listener_callback(
  *       - Allocate or free memory.
  *       - Take locks (mutexes).
  *       - Call any blocking APIs.
- *       - Call into the Swift runtime.
  *
- * @param inRefCon Pointer to the core_audio_playback_t instance.
- * @param ioActionFlags Action flags for the render operation.
- * @param inTimeStamp Time stamp of the render cycle.
- * @param inBusNumber The bus number.
- * @param inNumberFrames The number of sample frames requested.
- * @param ioData The buffer list to fill with audio data.
+ * @param inDevice The AudioObjectID of the output device.
+ * @param inNow Time stamp of the current cycle.
+ * @param inInputData Input buffer list (unused for playback).
+ * @param inInputTime Time stamp of the input data.
+ * @param outOutputData The buffer list to fill with audio data.
+ * @param inOutputTime Time stamp of the output data.
+ * @param inClientData Pointer to the core_audio_playback_t instance.
  * @return OSStatus noErr on success.
  */
-static OSStatus playback_callback(void* inRefCon,
-                                  AudioUnitRenderActionFlags* ioActionFlags,
-                                  const AudioTimeStamp* inTimeStamp,
-                                  UInt32 inBusNumber, UInt32 inNumberFrames,
-                                  AudioBufferList* ioData) {
-  (void)ioActionFlags;
-  (void)inTimeStamp;
-  (void)inBusNumber;
-  core_audio_playback_t* playback = (core_audio_playback_t*)inRefCon;
+static OSStatus playback_io_proc(AudioObjectID inDevice,
+                                 const AudioTimeStamp* inNow,
+                                 const AudioBufferList* inInputData,
+                                 const AudioTimeStamp* inInputTime,
+                                 AudioBufferList* outOutputData,
+                                 const AudioTimeStamp* inOutputTime,
+                                 void* inClientData) {
+  (void)inDevice;
+  (void)inNow;
+  (void)inInputData;
+  (void)inInputTime;
+  (void)inOutputTime;
+  core_audio_playback_t* playback = (core_audio_playback_t*)inClientData;
   if (!playback) return noErr;
 
   atomic_fetch_add_explicit(&playback->active_callbacks, 1,
                             memory_order_relaxed);
-  if (!ioData || ioData->mNumberBuffers == 0 || !ioData->mBuffers[0].mData ||
+  if (!outOutputData || outOutputData->mNumberBuffers == 0 ||
       atomic_load_explicit(&playback->stopped, memory_order_relaxed)) {
     atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
                               memory_order_relaxed);
@@ -140,9 +145,11 @@ static OSStatus playback_callback(void* inRefCon,
   }
 
   if (atomic_load_explicit(&playback->is_paused, memory_order_relaxed)) {
-    for (UInt32 b = 0; b < ioData->mNumberBuffers; b++) {
-      if (ioData->mBuffers[b].mData) {
-        memset(ioData->mBuffers[b].mData, 0, ioData->mBuffers[b].mDataByteSize);
+    for (UInt32 b = 0; b < outOutputData->mNumberBuffers; b++) {
+      if (outOutputData->mBuffers[b].mData &&
+          outOutputData->mBuffers[b].mDataByteSize > 0) {
+        memset(outOutputData->mBuffers[b].mData, 0,
+               outOutputData->mBuffers[b].mDataByteSize);
       }
     }
     atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
@@ -150,14 +157,23 @@ static OSStatus playback_callback(void* inRefCon,
     return noErr;
   }
 
-  size_t frame_count = (size_t)inNumberFrames;
-  uint8_t* dst = (uint8_t*)ioData->mBuffers[0].mData;
-  if (dst) {
-    size_t bytes_needed = frame_count * playback->blockalign;
-    size_t copied =
-        spsc_byte_ring_buffer_consume(playback->ring_buffer, dst, bytes_needed);
-    if (copied < bytes_needed) {
-      memset(dst + copied, 0, bytes_needed - copied);
+  if (outOutputData->mNumberBuffers == 1) {
+    uint8_t* dst = (uint8_t*)outOutputData->mBuffers[0].mData;
+    size_t bytes_needed = (size_t)outOutputData->mBuffers[0].mDataByteSize;
+    if (dst && bytes_needed > 0) {
+      size_t copied = spsc_byte_ring_buffer_consume(playback->ring_buffer, dst,
+                                                    bytes_needed);
+      if (copied < bytes_needed) {
+        memset(dst + copied, 0, bytes_needed - copied);
+      }
+    }
+  } else {
+    for (UInt32 b = 0; b < outOutputData->mNumberBuffers; b++) {
+      if (outOutputData->mBuffers[b].mData &&
+          outOutputData->mBuffers[b].mDataByteSize > 0) {
+        memset(outOutputData->mBuffers[b].mData, 0,
+               outOutputData->mBuffers[b].mDataByteSize);
+      }
     }
   }
 
@@ -193,7 +209,7 @@ static void core_audio_playback_close(void* ctx) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return;
   atomic_store_explicit(&playback->stopped, true, memory_order_release);
-  if (!playback->audio_unit && playback->opened_device_id == 0) return;
+  if (playback->opened_device_id == 0 && playback->io_proc_id == NULL) return;
   logger_info(&g_logger, "Closing CoreAudio playback device");
   if (playback->rate_watcher) {
     rate_change_watcher_free(playback->rate_watcher);
@@ -208,20 +224,15 @@ static void core_audio_playback_close(void* ctx) {
                                       playback_alive_listener_callback,
                                       playback);
   }
-  if (playback->audio_unit) {
-    AudioOutputUnitStop(playback->audio_unit);
-    AURenderCallbackStruct null_cb = {0};
-    AudioUnitSetProperty(playback->audio_unit,
-                         kAudioUnitProperty_SetRenderCallback,
-                         kAudioUnitScope_Input, 0, &null_cb, sizeof(null_cb));
-  }
-  while (atomic_load_explicit(&playback->active_callbacks,
-                              memory_order_acquire) > 0) {
-    usleep(500);
-  }
-  if (playback->audio_unit) {
-    AudioComponentInstanceDispose(playback->audio_unit);
-    playback->audio_unit = NULL;
+  if (playback->opened_device_id != 0 && playback->io_proc_id != NULL) {
+    AudioDeviceStop(playback->opened_device_id, playback->io_proc_id);
+    while (atomic_load_explicit(&playback->active_callbacks,
+                                memory_order_acquire) > 0) {
+      usleep(500);
+    }
+    AudioDeviceDestroyIOProcID(playback->opened_device_id,
+                               playback->io_proc_id);
+    playback->io_proc_id = NULL;
   }
   if (playback->write_buf) {
     free(playback->write_buf);
@@ -240,7 +251,7 @@ static void core_audio_playback_close(void* ctx) {
   playback->opened_device_id = 0;
 }
 
-/// Open the CoreAudio playback device and initialize output AudioUnit.
+/// Open the CoreAudio playback device and initialize HAL IOProc.
 static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return false;
@@ -252,11 +263,87 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
               playback->exclusive ? 1 : 0);
   core_audio_playback_close(playback);
 
-  if (playback->ring_buffer) {
-    spsc_byte_ring_buffer_drain(playback->ring_buffer);
+  AudioDeviceID dev_id = core_audio_device_id_for_name(
+      playback->device_name[0] ? playback->device_name : NULL,
+      CORE_AUDIO_SCOPE_OUTPUT);
+  if (dev_id == 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
+                         "CoreAudio playback device not found");
+    goto cleanup;
+  }
+  playback->opened_device_id = dev_id;
+
+  // Attempt to acquire Hog Mode if exclusive access is requested.
+  // Hog mode prevents other processes from using the device.
+  if (playback->exclusive) {
+    pid_t current_hog_pid = -1;
+    uint32_t hog_size = sizeof(pid_t);
+    AudioObjectPropertyAddress hog_addr = {
+        .mSelector = kAudioDevicePropertyHogMode,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain};
+    if (AudioObjectGetPropertyData(dev_id, &hog_addr, 0, NULL, &hog_size,
+                                   &current_hog_pid) == noErr) {
+      if (current_hog_pid != -1 && current_hog_pid != getpid()) {
+        logger_warn(&g_logger, "Device is currently hogged by PID %d",
+                    (int)current_hog_pid);
+      }
+    }
+    pid_t hog_pid = getpid();
+    if (AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
+                                   &hog_pid) == noErr) {
+      playback->did_acquire_hog_mode = true;
+      logger_info(&g_logger, "Acquired exclusive hog mode on playback device");
+    } else {
+      logger_warn(&g_logger,
+                  "Failed to acquire exclusive hog mode on playback device");
+    }
   }
 
-  if (!playback->write_buf) {
+  // Set the device format.
+  bool format_set = false;
+  if (playback->has_sample_format) {
+    core_audio_device_set_matching_physical_format(
+        dev_id, CORE_AUDIO_SCOPE_OUTPUT, playback->sample_rate,
+        playback->sample_format, playback->channels);
+    AudioStreamBasicDescription actual_asbd;
+    if (core_audio_device_set_matching_virtual_format(
+            dev_id, CORE_AUDIO_SCOPE_OUTPUT, playback->sample_rate,
+            playback->sample_format, playback->channels, &actual_asbd)) {
+      format_set = true;
+    }
+  }
+  if (!format_set) {
+    core_audio_device_set_nominal_sample_rate(dev_id, playback->sample_rate);
+  }
+  core_audio_device_set_buffer_frame_size(
+      dev_id, (uint32_t)playback->chunk_size, CORE_AUDIO_SCOPE_OUTPUT);
+
+  // Query active virtual format to determine exact binary sample format
+  AudioStreamBasicDescription current_asbd;
+  if (core_audio_device_get_virtual_format(dev_id, CORE_AUDIO_SCOPE_OUTPUT,
+                                           &current_asbd)) {
+    binary_sample_format_t bin_fmt =
+        core_audio_device_asbd_to_binary_format(&current_asbd);
+    if (bin_fmt != BINARY_SAMPLE_FORMAT_INVALID) {
+      playback->binary_format = bin_fmt;
+    }
+  }
+
+  playback->bytes_per_sample =
+      sample_format_bytes_per_sample(playback->binary_format);
+  if (playback->bytes_per_sample == 0) {
+    playback->bytes_per_sample = sizeof(float);
+    playback->binary_format = BINARY_SAMPLE_FORMAT_F32_LE;
+  }
+  playback->blockalign =
+      (size_t)playback->channels * playback->bytes_per_sample;
+
+  if (!playback->write_buf ||
+      playback->write_buf_cap <
+          playback->blockalign * (size_t)playback->chunk_size * 2) {
+    if (playback->write_buf) free(playback->write_buf);
     playback->write_buf_cap =
         playback->blockalign * (size_t)playback->chunk_size * 2;
     playback->write_buf = (uint8_t*)malloc(playback->write_buf_cap);
@@ -268,201 +355,47 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
     }
   }
 
-  AudioComponentDescription desc = {
-      .componentType = kAudioUnitType_Output,
-      .componentSubType = kAudioUnitSubType_HALOutput,
-      .componentManufacturer = kAudioUnitManufacturer_Apple,
-      .componentFlags = 0,
-      .componentFlagsMask = 0};
-
-  AudioComponent comp = AudioComponentFindNext(NULL, &desc);
-  if (!comp) {
-    logger_error(&g_logger,
-                 "No HAL output component found for CoreAudio playback");
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
-                         "No HAL output component found");
-    goto cleanup;
+  if (playback->ring_buffer) {
+    spsc_byte_ring_buffer_drain(playback->ring_buffer);
   }
 
-  OSStatus status = AudioComponentInstanceNew(comp, &playback->audio_unit);
-  if (status != noErr || !playback->audio_unit) {
-    logger_error(&g_logger, "Failed to create output AudioUnit: status=%d",
-                 status);
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to create output AudioUnit");
-    goto cleanup;
-  }
+  AudioObjectPropertyAddress alive_addr = {
+      .mSelector = kAudioDevicePropertyDeviceIsAlive,
+      .mScope = kAudioObjectPropertyScopeGlobal,
+      .mElement = kAudioObjectPropertyElementMain};
+  AudioObjectAddPropertyListener(dev_id, &alive_addr,
+                                 playback_alive_listener_callback, playback);
 
-  UInt32 enable_output = 1;
-  status = AudioUnitSetProperty(
-      playback->audio_unit, kAudioOutputUnitProperty_EnableIO,
-      kAudioUnitScope_Output, 0, &enable_output, sizeof(enable_output));
+  OSStatus status = AudioDeviceCreateIOProcID(dev_id, playback_io_proc,
+                                              playback, &playback->io_proc_id);
   if (status != noErr) {
-    logger_error(&g_logger, "Failed to enable output on AudioUnit: status=%d",
-                 status);
+    logger_error(&g_logger, "Failed to create Audio HAL IOProc: status=%d",
+                 (int)status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to enable output");
-    goto cleanup;
-  }
-
-  UInt32 disable_input = 0;
-  status = AudioUnitSetProperty(
-      playback->audio_unit, kAudioOutputUnitProperty_EnableIO,
-      kAudioUnitScope_Input, 1, &disable_input, sizeof(disable_input));
-  if (status != noErr) {
-    logger_error(&g_logger, "Failed to disable input on AudioUnit: status=%d",
-                 status);
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to disable input");
-    goto cleanup;
-  }
-
-  AudioDeviceID dev_id = core_audio_device_id_for_name(
-      playback->device_name[0] ? playback->device_name : NULL,
-      CORE_AUDIO_SCOPE_OUTPUT);
-  if (dev_id == 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
-                         "CoreAudio playback device not found");
-    goto cleanup;
-  }
-  playback->opened_device_id = dev_id;
-  if (dev_id != 0) {
-    AudioUnitSetProperty(playback->audio_unit,
-                         kAudioOutputUnitProperty_CurrentDevice,
-                         kAudioUnitScope_Global, 0, &dev_id, sizeof(dev_id));
-    // Attempt to acquire Hog Mode if exclusive access is requested.
-    // Hog mode prevents other processes from using the device.
-    if (playback->exclusive) {
-      pid_t current_hog_pid = -1;
-      uint32_t hog_size = sizeof(pid_t);
-      AudioObjectPropertyAddress hog_addr = {
-          .mSelector = kAudioDevicePropertyHogMode,
-          .mScope = kAudioObjectPropertyScopeGlobal,
-          .mElement = kAudioObjectPropertyElementMain};
-      if (AudioObjectGetPropertyData(dev_id, &hog_addr, 0, NULL, &hog_size,
-                                     &current_hog_pid) == noErr) {
-        if (current_hog_pid != -1 && current_hog_pid != getpid()) {
-          logger_warn(&g_logger, "Device is currently hogged by PID %d",
-                      (int)current_hog_pid);
-        }
-      }
-      pid_t hog_pid = getpid();
-      if (AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
-                                     &hog_pid) == noErr) {
-        playback->did_acquire_hog_mode = true;
-        logger_info(&g_logger,
-                    "Acquired exclusive hog mode on playback device");
-      } else {
-        logger_warn(&g_logger,
-                    "Failed to acquire exclusive hog mode on playback device");
-      }
-    }
-    // Set the device format.
-    bool physical_format_set = false;
-    if (playback->has_sample_format) {
-      if (core_audio_device_set_matching_physical_format(
-              dev_id, CORE_AUDIO_SCOPE_OUTPUT, playback->sample_rate,
-              playback->sample_format, playback->channels)) {
-        physical_format_set = true;
-      } else {
-        logger_error(&g_logger,
-                     "Failed to set matching physical playback format: %s",
-                     playback->sample_format);
-        if (err)
-          backend_error_init(
-              err, BACKEND_ERROR_INITIALIZATION_FAILED,
-              "Failed to find matching physical playback format");
-        goto cleanup;
-      }
-    }
-    if (!physical_format_set) {
-      core_audio_device_set_nominal_sample_rate(dev_id, playback->sample_rate);
-    }
-    core_audio_device_set_buffer_frame_size(
-        dev_id, (uint32_t)playback->chunk_size, CORE_AUDIO_SCOPE_OUTPUT);
-
-    AudioObjectPropertyAddress alive_addr = {
-        .mSelector = kAudioDevicePropertyDeviceIsAlive,
-        .mScope = kAudioObjectPropertyScopeGlobal,
-        .mElement = kAudioObjectPropertyElementMain};
-    AudioObjectAddPropertyListener(dev_id, &alive_addr,
-                                   playback_alive_listener_callback, playback);
-  }
-
-  AudioStreamBasicDescription stream_format =
-      core_audio_device_float32_stream_format(playback->sample_rate,
-                                              playback->channels);
-  status = AudioUnitSetProperty(
-      playback->audio_unit, kAudioUnitProperty_StreamFormat,
-      kAudioUnitScope_Input, 0, &stream_format, sizeof(stream_format));
-  if (status != noErr) {
-    logger_error(&g_logger,
-                 "Failed to set playback stream format on AudioUnit: status=%d",
-                 status);
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to set playback stream format");
-    goto cleanup;
-  }
-
-  AURenderCallbackStruct cb = {.inputProc = playback_callback,
-                               .inputProcRefCon = playback};
-  status = AudioUnitSetProperty(playback->audio_unit,
-                                kAudioUnitProperty_SetRenderCallback,
-                                kAudioUnitScope_Input, 0, &cb, sizeof(cb));
-  if (status != noErr) {
-    logger_error(&g_logger, "Failed to set render callback: status=%d", status);
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to set render callback");
-    goto cleanup;
-  }
-
-  UInt32 max_frames = (UInt32)playback->chunk_size;
-  if (dev_id != 0) {
-    uint32_t actual_size = 0;
-    if (core_audio_device_get_buffer_frame_size(dev_id, CORE_AUDIO_SCOPE_OUTPUT,
-                                                &actual_size)) {
-      if ((int)actual_size > (int)max_frames) max_frames = actual_size;
-    }
-  }
-  AudioUnitSetProperty(
-      playback->audio_unit, kAudioUnitProperty_MaximumFramesPerSlice,
-      kAudioUnitScope_Global, 0, &max_frames, sizeof(max_frames));
-
-  status = AudioUnitInitialize(playback->audio_unit);
-  if (status != noErr) {
-    logger_error(&g_logger,
-                 "Failed to initialize playback AudioUnit: status=%d", status);
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to initialize output");
+                         "Failed to create Audio HAL IOProc");
     goto cleanup;
   }
 
   atomic_store_explicit(&playback->stopped, false, memory_order_release);
-  status = AudioOutputUnitStart(playback->audio_unit);
+  status = AudioDeviceStart(dev_id, playback->io_proc_id);
   if (status != noErr) {
-    logger_error(&g_logger, "Failed to start output AudioUnit: status=%d",
-                 status);
+    logger_error(&g_logger, "Failed to start Audio HAL device: status=%d",
+                 (int)status);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to start output");
+                         "Failed to start Audio HAL device");
     goto cleanup;
   }
 
-  if (dev_id != 0 &&
-      core_audio_device_has_nominal_sample_rate_property(dev_id)) {
+  if (core_audio_device_has_nominal_sample_rate_property(dev_id)) {
     playback->rate_watcher =
         rate_change_watcher_create(dev_id, playback->sample_rate);
   }
 
-  logger_info(&g_logger, "CoreAudio playback successfully opened and started");
+  logger_info(
+      &g_logger,
+      "CoreAudio playback successfully opened and started via Audio HAL");
   return true;
 
 cleanup:
@@ -482,7 +415,7 @@ static bool core_audio_playback_write(void* ctx, const audio_chunk_t* chunk,
   }
   return audio_backend_ring_buffer_write(
       playback->ring_buffer, playback->write_buf, playback->write_buf_cap,
-      playback->blockalign, chunk, BINARY_SAMPLE_FORMAT_F32_LE,
+      playback->blockalign, chunk, playback->binary_format,
       (size_t)playback->channels, 1, 1000, NULL, &playback->stopped,
       &playback->is_paused, NULL, err);
 }
@@ -558,8 +491,8 @@ static void core_audio_playback_stop(void* ctx) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return;
   atomic_store_explicit(&playback->stopped, true, memory_order_release);
-  if (playback->audio_unit) {
-    AudioOutputUnitStop(playback->audio_unit);
+  if (playback->opened_device_id != 0 && playback->io_proc_id != NULL) {
+    AudioDeviceStop(playback->opened_device_id, playback->io_proc_id);
   }
 }
 
@@ -627,11 +560,19 @@ static playback_backend_t* core_audio_playback_create(
     strncpy(playback->sample_format, fmt_str,
             sizeof(playback->sample_format) - 1);
     playback->has_sample_format = true;
+    playback->binary_format = coreaudio_sample_format_to_binary_format(fmt);
+  } else {
+    playback->binary_format = BINARY_SAMPLE_FORMAT_F32_LE;
   }
 
-  playback->bytes_per_sample = sizeof(float);
-  playback->blockalign = (size_t)config_channels * sizeof(float);
-  size_t ring_size = playback->blockalign * (2 * (size_t)chunk_size + 2048);
+  playback->bytes_per_sample =
+      sample_format_bytes_per_sample(playback->binary_format);
+  if (playback->bytes_per_sample == 0) {
+    playback->bytes_per_sample = sizeof(float);
+  }
+  playback->blockalign = (size_t)config_channels * playback->bytes_per_sample;
+  size_t max_align = (size_t)config_channels * sizeof(double);
+  size_t ring_size = max_align * (2 * (size_t)chunk_size + 2048);
   playback->ring_buffer = spsc_byte_ring_buffer_create(ring_size);
   if (!playback->ring_buffer) {
     if (err)
