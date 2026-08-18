@@ -100,28 +100,15 @@ void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...) {
   va_end(args);
 }
 
-double db_to_amplitude(double db) {
-  if (db <= -1000.0) return 0.0;
-  return pow(10.0, db / 20.0);
+float db_to_amplitude(float db) {
+  if (db <= -1000.0f) return 0.0f;
+  return powf(10.0f, db / 20.0f);
 }
 
-double amplitude_to_db(double amp) {
-  if (amp <= 0.0) return -1000.0;
-  double db = 20.0 * log10(amp);
-  return db < -1000.0 ? -1000.0 : db;
-}
-
-void level_history_clear(level_history_t* history) {
-  if (!history) return;
-  for (size_t i = 0; i < 300; i++) {
-    if (history->samples[i].levels) {
-      free(history->samples[i].levels);
-      history->samples[i].levels = NULL;
-    }
-  }
-  history->head = 0;
-  history->size = 0;
-  history->channels = 0;
+float amplitude_to_db(float amp) {
+  if (amp <= 0.0f) return -1000.0f;
+  float db = 20.0f * log10f(amp);
+  return db < -1000.0f ? -1000.0f : db;
 }
 
 void client_session_clear(client_session_t* session) {
@@ -146,84 +133,11 @@ void client_session_clear(client_session_t* session) {
   session->vu_cap_channels = 0;
 }
 
-static void level_history_append(level_history_t* history, const double* levels,
-                                 size_t channels, uint64_t now_ms) {
-  if (history->channels != channels) {
-    level_history_clear(history);
-    history->channels = channels;
-  }
-  if (channels == 0) return;
-  level_sample_t* sample = &history->samples[history->head];
-  if (sample->levels) {
-    free(sample->levels);
-  }
-  sample->levels = (double*)calloc(channels, sizeof(double));
-  if (sample->levels) {
-    memcpy(sample->levels, levels, channels * sizeof(double));
-    sample->timestamp_ms = now_ms;
-    history->head = (history->head + 1) % 300;
-    if (history->size < 300) {
-      history->size++;
-    }
-  }
-}
-
-void level_history_get_max_since(const level_history_t* history,
-                                 uint64_t since_ms, double* out_levels) {
-  size_t channels = history->channels;
-  for (size_t c = 0; c < channels; c++) {
-    out_levels[c] = -1000.0;
-  }
-  if (history->size == 0 || channels == 0) return;
-  size_t idx = (history->head + 300 - 1) % 300;
-  for (size_t i = 0; i < history->size; i++) {
-    const level_sample_t* sample = &history->samples[idx];
-    if (sample->timestamp_ms < since_ms) break;
-    for (size_t c = 0; c < channels; c++) {
-      if (sample->levels && sample->levels[c] > out_levels[c]) {
-        out_levels[c] = sample->levels[c];
-      }
-    }
-    idx = (idx + 300 - 1) % 300;
-  }
-}
-
-void level_history_get_rms_since(const level_history_t* history,
-                                 uint64_t since_ms, double* out_levels) {
-  size_t channels = history->channels;
-  for (size_t c = 0; c < channels; c++) {
-    out_levels[c] = -1000.0;
-  }
-  if (history->size == 0 || channels == 0) return;
-  double* sums = (double*)calloc(channels, sizeof(double));
-  size_t count = 0;
-  size_t idx = (history->head + 300 - 1) % 300;
-  for (size_t i = 0; i < history->size; i++) {
-    const level_sample_t* sample = &history->samples[idx];
-    if (sample->timestamp_ms < since_ms) break;
-    for (size_t c = 0; c < channels; c++) {
-      if (sample->levels) {
-        double amp = db_to_amplitude(sample->levels[c]);
-        sums[c] += amp * amp;
-      }
-    }
-    count++;
-    idx = (idx + 300 - 1) % 300;
-  }
-  if (count > 0) {
-    for (size_t c = 0; c < channels; c++) {
-      double mean_square = sums[c] / (double)count;
-      out_levels[c] = amplitude_to_db(sqrt(mean_square));
-    }
-  }
-  free(sums);
-}
-
-static double smoothing_alpha(double delta_ms, double time_constant_ms) {
-  if (time_constant_ms <= 0.0) return 1.0;
-  double delta_sec = delta_ms / 1000.0;
-  double time_constant_sec = time_constant_ms / 1000.0;
-  return 1.0 - exp(-delta_sec / time_constant_sec);
+static float smoothing_alpha(float delta_ms, float time_constant_ms) {
+  if (time_constant_ms <= 0.0f) return 1.0f;
+  float delta_sec = delta_ms / 1000.0f;
+  float time_constant_sec = time_constant_ms / 1000.0f;
+  return 1.0f - expf(-delta_sec / time_constant_sec);
 }
 
 websocket_server_t* websocket_server_create(uint16_t port, const char* host) {
@@ -340,36 +254,52 @@ static void* server_thread_func(void* arg) {
         state_str = ws_processing_state_to_string(status.state);
       }
 
-      double* current_cap_peak = NULL;
-      double* current_cap_rms = NULL;
-      double* current_pb_peak = NULL;
-      double* current_pb_rms = NULL;
+      float* current_cap_peak = NULL;
+      float* current_cap_rms = NULL;
+      float* current_pb_peak = NULL;
+      float* current_pb_rms = NULL;
       size_t cap_channels = 0;
       size_t pb_channels = 0;
 
-      cdsp_vu_levels_t vu = {0};
-      if (server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
-        cap_channels = vu.capture_channels;
-        pb_channels = vu.playback_channels;
-        current_cap_peak = vu.capture_peak;
-        current_cap_rms = vu.capture_rms;
-        current_pb_peak = vu.playback_peak;
-        current_pb_rms = vu.playback_rms;
+      float* cap_pk_buf = NULL;
+      float* cap_rms_buf = NULL;
+      float* pb_pk_buf = NULL;
+      float* pb_rms_buf = NULL;
+
+      cdsp_vu_levels_t vu_query = {0};
+      if (server->engine && cdsp_get_vu_levels(server->engine, &vu_query)) {
+        cap_channels = vu_query.capture_channels;
+        pb_channels = vu_query.playback_channels;
+        if (cap_channels > 0) {
+          cap_pk_buf = (float*)malloc(cap_channels * sizeof(float));
+          cap_rms_buf = (float*)malloc(cap_channels * sizeof(float));
+        }
+        if (pb_channels > 0) {
+          pb_pk_buf = (float*)malloc(pb_channels * sizeof(float));
+          pb_rms_buf = (float*)malloc(pb_channels * sizeof(float));
+        }
+        cdsp_vu_levels_t vu = {
+            .playback_rms = pb_rms_buf,
+            .playback_peak = pb_pk_buf,
+            .capture_rms = cap_rms_buf,
+            .capture_peak = cap_pk_buf,
+        };
+        if (cdsp_get_vu_levels(server->engine, &vu)) {
+          current_cap_peak = vu.capture_peak;
+          current_cap_rms = vu.capture_rms;
+          current_pb_peak = vu.playback_peak;
+          current_pb_rms = vu.playback_rms;
+        }
 
         if (cap_channels > 0 && current_cap_peak && current_cap_rms) {
-          level_history_append(&server->capture_peak_history, current_cap_peak,
-                               cap_channels, now);
-          level_history_append(&server->capture_rms_history, current_cap_rms,
-                               cap_channels, now);
-
           if (server->capture_global_peaks_count != cap_channels) {
-            double* new_peaks = (double*)realloc(server->capture_global_peaks,
-                                                 cap_channels * sizeof(double));
+            float* new_peaks = (float*)realloc(server->capture_global_peaks,
+                                               cap_channels * sizeof(float));
             if (new_peaks) {
               server->capture_global_peaks = new_peaks;
               for (size_t k = server->capture_global_peaks_count;
                    k < cap_channels; k++) {
-                server->capture_global_peaks[k] = -1000.0;
+                server->capture_global_peaks[k] = -1000.0f;
               }
               server->capture_global_peaks_count = cap_channels;
             }
@@ -386,19 +316,14 @@ static void* server_thread_func(void* arg) {
         }
 
         if (pb_channels > 0 && current_pb_peak && current_pb_rms) {
-          level_history_append(&server->playback_peak_history, current_pb_peak,
-                               pb_channels, now);
-          level_history_append(&server->playback_rms_history, current_pb_rms,
-                               pb_channels, now);
-
           if (server->playback_global_peaks_count != pb_channels) {
-            double* new_peaks = (double*)realloc(server->playback_global_peaks,
-                                                 pb_channels * sizeof(double));
+            float* new_peaks = (float*)realloc(server->playback_global_peaks,
+                                               pb_channels * sizeof(float));
             if (new_peaks) {
               server->playback_global_peaks = new_peaks;
               for (size_t k = server->playback_global_peaks_count;
                    k < pb_channels; k++) {
-                server->playback_global_peaks[k] = -1000.0;
+                server->playback_global_peaks[k] = -1000.0f;
               }
               server->playback_global_peaks_count = pb_channels;
             }
@@ -432,30 +357,31 @@ static void* server_thread_func(void* arg) {
         }
 
         if (session->vu_subscribed && pb_channels > 0) {
-          double interval =
-              session->vu_max_rate > 0.0 ? 1000.0 / session->vu_max_rate : 0.0;
+          float interval = session->vu_max_rate > 0.0f
+                               ? 1000.0f / session->vu_max_rate
+                               : 0.0f;
           if (now - session->last_vu_push_time >= interval) {
-            double dt = session->last_vu_push_time == 0
-                            ? 100.0
-                            : (double)(now - session->last_vu_push_time);
-            double attack = smoothing_alpha(dt, session->vu_attack);
-            double release = smoothing_alpha(dt, session->vu_release);
+            float dt = session->last_vu_push_time == 0
+                           ? 100.0f
+                           : (float)(now - session->last_vu_push_time);
+            float attack = smoothing_alpha(dt, session->vu_attack);
+            float release = smoothing_alpha(dt, session->vu_release);
 
             if (session->vu_pb_channels != pb_channels) {
-              double* new_rms = (double*)calloc(pb_channels, sizeof(double));
-              double* new_peak = (double*)calloc(pb_channels, sizeof(double));
+              float* new_rms = (float*)calloc(pb_channels, sizeof(float));
+              float* new_peak = (float*)calloc(pb_channels, sizeof(float));
               if (new_rms && new_peak) {
                 size_t copy_count = session->vu_pb_channels < pb_channels
                                         ? session->vu_pb_channels
                                         : pb_channels;
                 if (session->vu_pb_rms) {
                   memcpy(new_rms, session->vu_pb_rms,
-                         copy_count * sizeof(double));
+                         copy_count * sizeof(float));
                   free(session->vu_pb_rms);
                 }
                 if (session->vu_pb_peak) {
                   memcpy(new_peak, session->vu_pb_peak,
-                         copy_count * sizeof(double));
+                         copy_count * sizeof(float));
                   free(session->vu_pb_peak);
                 }
                 for (size_t k = copy_count; k < pb_channels; k++) {
@@ -471,21 +397,21 @@ static void* server_thread_func(void* arg) {
               }
             } else {
               for (size_t k = 0; k < pb_channels; k++) {
-                double prev_amp = db_to_amplitude(session->vu_pb_rms[k]);
-                double curr_amp = db_to_amplitude(current_pb_rms[k]);
-                double diff = curr_amp - prev_amp;
-                if (diff > 0.0)
+                float prev_amp = db_to_amplitude(session->vu_pb_rms[k]);
+                float curr_amp = db_to_amplitude(current_pb_rms[k]);
+                float diff = curr_amp - prev_amp;
+                if (diff > 0.0f)
                   prev_amp += attack * diff;
                 else
                   prev_amp += release * diff;
                 session->vu_pb_rms[k] = amplitude_to_db(prev_amp);
               }
               for (size_t k = 0; k < pb_channels; k++) {
-                double prev_amp = db_to_amplitude(session->vu_pb_peak[k]);
-                double curr_amp = db_to_amplitude(current_pb_peak[k]);
-                double diff = curr_amp - prev_amp;
-                if (diff > 0.0)
-                  prev_amp += 1.0 * diff;
+                float prev_amp = db_to_amplitude(session->vu_pb_peak[k]);
+                float curr_amp = db_to_amplitude(current_pb_peak[k]);
+                float diff = curr_amp - prev_amp;
+                if (diff > 0.0f)
+                  prev_amp += 1.0f * diff;
                 else
                   prev_amp += release * diff;
                 session->vu_pb_peak[k] = amplitude_to_db(prev_amp);
@@ -494,21 +420,20 @@ static void* server_thread_func(void* arg) {
 
             if (cap_channels > 0) {
               if (session->vu_cap_channels != cap_channels) {
-                double* new_rms = (double*)calloc(cap_channels, sizeof(double));
-                double* new_peak =
-                    (double*)calloc(cap_channels, sizeof(double));
+                float* new_rms = (float*)calloc(cap_channels, sizeof(float));
+                float* new_peak = (float*)calloc(cap_channels, sizeof(float));
                 if (new_rms && new_peak) {
                   size_t copy_count = session->vu_cap_channels < cap_channels
                                           ? session->vu_cap_channels
                                           : cap_channels;
                   if (session->vu_cap_rms) {
                     memcpy(new_rms, session->vu_cap_rms,
-                           copy_count * sizeof(double));
+                           copy_count * sizeof(float));
                     free(session->vu_cap_rms);
                   }
                   if (session->vu_cap_peak) {
                     memcpy(new_peak, session->vu_cap_peak,
-                           copy_count * sizeof(double));
+                           copy_count * sizeof(float));
                     free(session->vu_cap_peak);
                   }
                   for (size_t k = copy_count; k < cap_channels; k++) {
@@ -524,21 +449,21 @@ static void* server_thread_func(void* arg) {
                 }
               } else {
                 for (size_t k = 0; k < cap_channels; k++) {
-                  double prev_amp = db_to_amplitude(session->vu_cap_rms[k]);
-                  double curr_amp = db_to_amplitude(current_cap_rms[k]);
-                  double diff = curr_amp - prev_amp;
-                  if (diff > 0.0)
+                  float prev_amp = db_to_amplitude(session->vu_cap_rms[k]);
+                  float curr_amp = db_to_amplitude(current_cap_rms[k]);
+                  float diff = curr_amp - prev_amp;
+                  if (diff > 0.0f)
                     prev_amp += attack * diff;
                   else
                     prev_amp += release * diff;
                   session->vu_cap_rms[k] = amplitude_to_db(prev_amp);
                 }
                 for (size_t k = 0; k < cap_channels; k++) {
-                  double prev_amp = db_to_amplitude(session->vu_cap_peak[k]);
-                  double curr_amp = db_to_amplitude(current_cap_peak[k]);
-                  double diff = curr_amp - prev_amp;
-                  if (diff > 0.0)
-                    prev_amp += 1.0 * diff;
+                  float prev_amp = db_to_amplitude(session->vu_cap_peak[k]);
+                  float curr_amp = db_to_amplitude(current_cap_peak[k]);
+                  float diff = curr_amp - prev_amp;
+                  if (diff > 0.0f)
+                    prev_amp += 1.0f * diff;
                   else
                     prev_amp += release * diff;
                   session->vu_cap_peak[k] = amplitude_to_db(prev_amp);
@@ -553,16 +478,16 @@ static void* server_thread_func(void* arg) {
             cJSON_AddItemToObject(root, "value", val_value);
             cJSON_AddItemToObject(
                 val_value, "playback_rms",
-                cJSON_CreateDoubleArray(session->vu_pb_rms, (int)pb_channels));
+                cJSON_CreateFloatArray(session->vu_pb_rms, (int)pb_channels));
             cJSON_AddItemToObject(
                 val_value, "playback_peak",
-                cJSON_CreateDoubleArray(session->vu_pb_peak, (int)pb_channels));
-            cJSON_AddItemToObject(val_value, "capture_rms",
-                                  cJSON_CreateDoubleArray(session->vu_cap_rms,
-                                                          (int)cap_channels));
+                cJSON_CreateFloatArray(session->vu_pb_peak, (int)pb_channels));
+            cJSON_AddItemToObject(
+                val_value, "capture_rms",
+                cJSON_CreateFloatArray(session->vu_cap_rms, (int)cap_channels));
             cJSON_AddItemToObject(val_value, "capture_peak",
-                                  cJSON_CreateDoubleArray(session->vu_cap_peak,
-                                                          (int)cap_channels));
+                                  cJSON_CreateFloatArray(session->vu_cap_peak,
+                                                         (int)cap_channels));
             QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
             cJSON_Delete(root);
             session->last_vu_push_time = now;
@@ -584,10 +509,10 @@ static void* server_thread_func(void* arg) {
             cJSON_AddStringToObject(val_value, "side", "playback");
             cJSON_AddItemToObject(
                 val_value, "rms",
-                cJSON_CreateDoubleArray(current_pb_rms, (int)pb_channels));
+                cJSON_CreateFloatArray(current_pb_rms, (int)pb_channels));
             cJSON_AddItemToObject(
                 val_value, "peak",
-                cJSON_CreateDoubleArray(current_pb_peak, (int)pb_channels));
+                cJSON_CreateFloatArray(current_pb_peak, (int)pb_channels));
             QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
             cJSON_Delete(root);
           }
@@ -600,33 +525,38 @@ static void* server_thread_func(void* arg) {
             cJSON_AddStringToObject(val_value, "side", "capture");
             cJSON_AddItemToObject(
                 val_value, "rms",
-                cJSON_CreateDoubleArray(current_cap_rms, (int)cap_channels));
+                cJSON_CreateFloatArray(current_cap_rms, (int)cap_channels));
             cJSON_AddItemToObject(
                 val_value, "peak",
-                cJSON_CreateDoubleArray(current_cap_peak, (int)cap_channels));
+                cJSON_CreateFloatArray(current_cap_peak, (int)cap_channels));
             QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
             cJSON_Delete(root);
           }
         }
 
         if (session->spectrum_subscribed) {
-          double interval = session->spectrum_max_rate > 0.0
-                                ? 1000.0 / session->spectrum_max_rate
-                                : 0.0;
+          float interval = session->spectrum_max_rate > 0.0f
+                               ? 1000.0f / session->spectrum_max_rate
+                               : 0.0f;
           if (now - session->last_spectrum_push_time >= interval) {
-            cdsp_spectrum_t spec = {0};
+            size_t n_bins = session->spectrum_n_bins;
+            float* p_freqs = (float*)malloc(n_bins * sizeof(float));
+            float* p_mags = (float*)malloc(n_bins * sizeof(float));
+            cdsp_spectrum_t spec = {
+                .frequencies = p_freqs,
+                .magnitudes = p_mags,
+            };
             cdsp_spectrum_side_t side_val = session->spectrum_is_capture
                                                 ? CDSP_SPECTRUM_SIDE_CAPTURE
                                                 : CDSP_SPECTRUM_SIDE_PLAYBACK;
-            const uint32_t* chan_ptr =
-                (session->spectrum_channel == (uint32_t)-1)
-                    ? NULL
-                    : &session->spectrum_channel;
-            bool spec_ok = server && server->engine &&
-                           cdsp_get_spectrum(server->engine, side_val, chan_ptr,
-                                             session->spectrum_min_freq,
-                                             session->spectrum_max_freq,
-                                             session->spectrum_n_bins, &spec);
+            const size_t* chan_ptr = (session->spectrum_channel == (size_t)-1)
+                                         ? NULL
+                                         : &session->spectrum_channel;
+            bool spec_ok =
+                (p_freqs && p_mags && server && server->engine) &&
+                cdsp_get_spectrum(server->engine, side_val, chan_ptr,
+                                  session->spectrum_min_freq,
+                                  session->spectrum_max_freq, n_bins, &spec);
             if (spec_ok) {
               cJSON* root = cJSON_CreateObject();
               cJSON_AddStringToObject(root, "reply", "SpectrumEvent");
@@ -634,14 +564,17 @@ static void* server_thread_func(void* arg) {
               cJSON_AddItemToObject(root, "value", serialize_spectrum(&spec));
               QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
               cJSON_Delete(root);
-              cdsp_free_spectrum(&spec);
               session->last_spectrum_push_time = now;
             }
+            if (p_freqs) free(p_freqs);
+            if (p_mags) free(p_mags);
           }
         }
       }
-
-      cdsp_free_vu_levels(&vu);
+      if (cap_pk_buf) free(cap_pk_buf);
+      if (cap_rms_buf) free(cap_rms_buf);
+      if (pb_pk_buf) free(pb_pk_buf);
+      if (pb_rms_buf) free(pb_rms_buf);
     }
     pthread_mutex_unlock(&server->sessions_mutex);
 
@@ -913,11 +846,6 @@ void websocket_server_free(websocket_server_t* server) {
   if (!server) return;
   websocket_server_stop(server);
 
-  level_history_clear(&server->capture_peak_history);
-  level_history_clear(&server->capture_rms_history);
-  level_history_clear(&server->playback_peak_history);
-  level_history_clear(&server->playback_rms_history);
-
   if (server->capture_global_peaks) free(server->capture_global_peaks);
   if (server->playback_global_peaks) free(server->playback_global_peaks);
 
@@ -938,29 +866,29 @@ bool websocket_server_get_client_vu_subscribed(const websocket_server_t* server,
   return res;
 }
 
-double websocket_server_get_client_vu_max_rate(const websocket_server_t* server,
-                                               int client_idx) {
-  if (!server || client_idx < 0 || client_idx >= 32) return 0.0;
-  pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
-  double res = server->client_sessions[client_idx].vu_max_rate;
-  pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
-  return res;
-}
-
-double websocket_server_get_client_vu_attack(const websocket_server_t* server,
-                                             int client_idx) {
-  if (!server || client_idx < 0 || client_idx >= 32) return 0.0;
-  pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
-  double res = server->client_sessions[client_idx].vu_attack;
-  pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
-  return res;
-}
-
-double websocket_server_get_client_vu_release(const websocket_server_t* server,
+float websocket_server_get_client_vu_max_rate(const websocket_server_t* server,
                                               int client_idx) {
-  if (!server || client_idx < 0 || client_idx >= 32) return 0.0;
+  if (!server || client_idx < 0 || client_idx >= 32) return 0.0f;
   pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
-  double res = server->client_sessions[client_idx].vu_release;
+  float res = server->client_sessions[client_idx].vu_max_rate;
+  pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
+  return res;
+}
+
+float websocket_server_get_client_vu_attack(const websocket_server_t* server,
+                                            int client_idx) {
+  if (!server || client_idx < 0 || client_idx >= 32) return 0.0f;
+  pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
+  float res = server->client_sessions[client_idx].vu_attack;
+  pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
+  return res;
+}
+
+float websocket_server_get_client_vu_release(const websocket_server_t* server,
+                                             int client_idx) {
+  if (!server || client_idx < 0 || client_idx >= 32) return 0.0f;
+  pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
+  float res = server->client_sessions[client_idx].vu_release;
   pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
   return res;
 }

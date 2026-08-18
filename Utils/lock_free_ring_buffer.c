@@ -188,17 +188,3 @@ void spsc_byte_ring_buffer_drain(spsc_byte_ring_buffer_t* ring) {
   uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_acquire);
   atomic_store_explicit(&ring->read_index, w, memory_order_release);
 }
-
-// MARK: - AtomicDouble Implementation
-
-atomic_double_t* atomic_double_create(double value) {
-  atomic_double_t* a = (atomic_double_t*)calloc(1, sizeof(atomic_double_t));
-  if (!a) return NULL;
-  atomic_double_init(a, value);
-  return a;
-}
-
-void atomic_double_free(atomic_double_t* a) {
-  if (!a) return;
-  free(a);
-}

@@ -90,27 +90,25 @@ CDSP_API void cdsp_set_state_file_path(dsp_engine_t* engine, const char* path);
 CDSP_API bool cdsp_get_state_file_updated(const dsp_engine_t* engine);
 
 /**
- * @brief Retrieve a chunk of audio samples from the engine's internal history
- * buffers.
+ * @brief Retrieve recent audio frame samples from the engine's history buffers.
+ *
+ * The caller allocates `out_samples->channels` (array of `float*` pointers)
+ * where each channel points to a buffer of at least `n_frames` floats. If
+ * `out_samples->channels` is NULL, the engine only returns the active channel
+ * count in `out_samples->channels_count`.
  *
  * @param engine Pointer to the engine.
  * @param is_capture True to retrieve capture samples, false to retrieve
  * playback samples.
- * @param n_frames Number of frames to retrieve.
+ * @param n_frames Requested number of frames to retrieve.
+ * @param out_samples Pointer to caller-allocated audio samples structure.
  * @param out_err Pointer to retrieve error details on failure.
- * @return Pointer to a newly allocated cdsp_audio_samples_t structure, or NULL
- * on failure. Must be freed with cdsp_free_samples().
+ * @return true on success, false on failure.
  */
-CDSP_API cdsp_audio_samples_t* cdsp_get_samples(dsp_engine_t* engine,
-                                                bool is_capture,
-                                                size_t n_frames,
-                                                cdsp_backend_error_t* out_err);
-
-/**
- * @brief Free the resources allocated for audio samples.
- * @param samples Pointer to the audio samples structure.
- */
-CDSP_API void cdsp_free_samples(cdsp_audio_samples_t* samples);
+CDSP_API bool cdsp_get_samples(dsp_engine_t* engine, bool is_capture,
+                               size_t n_frames,
+                               cdsp_audio_samples_t* out_samples,
+                               cdsp_backend_error_t* out_err);
 
 #ifdef __cplusplus
 }

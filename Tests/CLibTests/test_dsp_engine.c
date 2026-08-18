@@ -44,6 +44,7 @@
 #include "Public/general.h"
 #include "Public/processing.h"
 #include "Public/signal_levels.h"
+#include "Public/spectrum.h"
 #include "Public/volume.h"
 #include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
@@ -67,9 +68,14 @@ static void run_e2e_test_config(const char* json, const char* backend_name) {
 
   cdsp_sleep_ms(100);
 
-  cdsp_vu_levels_t vu = {0};
+  float cap_pk[16], cap_rms[16], pb_pk[16], pb_rms[16];
+  cdsp_vu_levels_t vu = {
+      .playback_rms = pb_rms,
+      .playback_peak = pb_pk,
+      .capture_rms = cap_rms,
+      .capture_peak = cap_pk,
+  };
   cdsp_get_vu_levels(engine, &vu);
-  cdsp_free_vu_levels(&vu);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
@@ -3665,14 +3671,18 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   ASSERT_TRUE(success);
 
   // Fetch initial VU levels
-  cdsp_vu_levels_t vu = {0};
+  float cap_pk[16], cap_rms[16], pb_pk[16], pb_rms[16];
+  cdsp_vu_levels_t vu = {
+      .playback_rms = pb_rms,
+      .playback_peak = pb_pk,
+      .capture_rms = cap_rms,
+      .capture_peak = cap_pk,
+  };
   bool got_vu = false;
   for (int i = 0; i < 150; i++) {
     cdsp_sleep_ms(10);
-    cdsp_free_vu_levels(&vu);
-    memset(&vu, 0, sizeof(vu));
-    if (cdsp_get_vu_levels(engine, &vu) && vu.capture_peak[0] > -20.0 &&
-        vu.playback_peak[0] > -20.0) {
+    if (cdsp_get_vu_levels(engine, &vu) && vu.capture_peak[0] > -20.0f &&
+        vu.playback_peak[0] > -20.0f) {
       got_vu = true;
       break;
     }
@@ -3680,8 +3690,6 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   ASSERT_TRUE(got_vu);
   ASSERT_TRUE(vu.capture_channels == 1);
   ASSERT_TRUE(vu.playback_channels == 1);
-  cdsp_free_vu_levels(&vu);
-  memset(&vu, 0, sizeof(vu));
 
   // Mute main fader
   cdsp_set_fader_mute(engine, CDSP_FADER_MAIN, true);
@@ -3691,8 +3699,6 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   bool got_muted_vu = false;
   for (int i = 0; i < 50; i++) {
     cdsp_sleep_ms(10);
-    cdsp_free_vu_levels(&vu);
-    memset(&vu, 0, sizeof(vu));
     if (cdsp_get_vu_levels(engine, &vu) && vu.playback_peak[0] < -150.0) {
       got_muted_vu = true;
       break;
@@ -3700,8 +3706,6 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   }
   ASSERT_TRUE(got_muted_vu);
   ASSERT_TRUE(vu.capture_peak[0] > -20.0);  // Capture is pre-fader, still loud
-  cdsp_free_vu_levels(&vu);
-  memset(&vu, 0, sizeof(vu));
 
   // Unmute main fader and set fader volume
   cdsp_set_fader_mute(engine, CDSP_FADER_MAIN, false);
@@ -5094,5 +5098,105 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
   wasapi_set_both_rates(48000);
 }
 #endif
+
+TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/e2e_pub_caller_%d.raw", getpid());
+  remove(out_file);
+
+  char json[2048];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"SignalGenerator\",\n"
+           "            \"channels\": 2,\n"
+           "            \"signal\": {\n"
+           "                \"type\": \"Sine\",\n"
+           "                \"freq\": 1000.0,\n"
+           "                \"level\": -6.0\n"
+           "            }\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2,\n"
+           "            \"realtime\": true\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           out_file);
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  audio_backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  bool success = engine->set_config_json(engine->ctx, json, &berr);
+  ASSERT_TRUE(success);
+
+  // Wait until engine produces data under high parallel load
+  bool got_vu = false;
+  float pb_pk[4], pb_rms[4], cap_pk[4], cap_rms[4];
+  cdsp_vu_levels_t vu = {
+      .playback_rms = pb_rms,
+      .playback_peak = pb_pk,
+      .capture_rms = cap_rms,
+      .capture_peak = cap_pk,
+  };
+  for (int retry = 0; retry < 50; retry++) {
+    cdsp_sleep_ms(10);
+    if (cdsp_get_vu_levels(engine, &vu)) {
+      got_vu = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(got_vu);
+  ASSERT_EQ(2, vu.playback_channels);
+  ASSERT_EQ(2, vu.capture_channels);
+
+  // 2. Test Spectrum with caller stack buffers
+  float freqs[16];
+  float mags[16];
+  cdsp_spectrum_t spec = {
+      .frequencies = freqs,
+      .magnitudes = mags,
+  };
+  bool got_spec = false;
+  for (int retry = 0; retry < 50; retry++) {
+    got_spec = cdsp_get_spectrum(engine, CDSP_SPECTRUM_SIDE_CAPTURE, NULL,
+                                 20.0f, 20000.0f, 16, &spec);
+    if (got_spec) break;
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(got_spec);
+  ASSERT_EQ(16, spec.count);
+  for (size_t i = 1; i < spec.count; i++) {
+    ASSERT_TRUE(spec.frequencies[i] > spec.frequencies[i - 1]);
+  }
+
+  // 3. Test Audio Samples with caller stack buffers
+  float c0[128], c1[128];
+  float* chans[2] = {c0, c1};
+  cdsp_audio_samples_t samples = {
+      .channels = chans,
+  };
+  bool got_samples = false;
+  for (int retry = 0; retry < 50; retry++) {
+    got_samples = cdsp_get_samples(engine, true, 128, &samples, NULL);
+    if (got_samples) break;
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_TRUE(got_samples);
+  ASSERT_EQ(2, samples.channels_count);
+  ASSERT_EQ(128, samples.frames);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+  remove(out_file);
+}
 
 TEST_MAIN()

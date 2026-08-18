@@ -48,7 +48,7 @@ static void ensure_pw_init(void) { pthread_once(&g_pw_init_once, do_pw_init); }
 struct pipewire_capture {
   char device[256];
   int sample_rate;
-  int channels;
+  size_t channels;
   int chunk_size;
 
   char node_name[256];
@@ -78,7 +78,7 @@ struct pipewire_capture {
 struct pipewire_playback {
   char device[256];
   int sample_rate;
-  int channels;
+  size_t channels;
   int chunk_size;
 
   char node_name[256];

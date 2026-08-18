@@ -15,8 +15,8 @@ static bool is_close(double left, double right, double maxdiff) {
 }
 
 TEST(compressor_basic_compression) {
-  int mon_ch[] = {0};
-  int proc_ch[] = {0, 1};
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0, 1};
   compressor_config_t params = {0};
   params.channels = 2;
   params.monitor_channels = mon_ch;
@@ -59,8 +59,8 @@ TEST(compressor_basic_compression) {
 }
 
 TEST(noisegate_basic_gate) {
-  int mon_ch[] = {0};
-  int proc_ch[] = {0};
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0};
   noise_gate_config_t params = {0};
   params.channels = 1;
   params.monitor_channels = mon_ch;
@@ -210,8 +210,8 @@ TEST(race_transfer_state) {
 }
 
 TEST(lookahead_limiter_processor_basic) {
-  int mon_ch[] = {0};
-  int proc_ch[] = {0, 1};
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0, 1};
   lookahead_limiter_processor_config_t params = {0};
   params.channels = 2;
   params.monitor_channels = mon_ch;
@@ -263,8 +263,8 @@ TEST(lookahead_limiter_processor_basic) {
 }
 
 TEST(lookahead_limiter_processor_transfer_state) {
-  int mon_ch[] = {0};
-  int proc_ch[] = {0, 1};
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0, 1};
   lookahead_limiter_processor_config_t params = {0};
   params.channels = 2;
   params.monitor_channels = mon_ch;
@@ -440,7 +440,7 @@ TEST(test_lookahead_limiter_processor_uses_loudest_channel) {
 }
 
 TEST(test_lookahead_limiter_processor_monitor_subset) {
-  int mon_ch[] = {0};
+  size_t mon_ch[] = {0};
   lookahead_limiter_processor_config_t params = {
       .channels = 2,
       .monitor_channels = mon_ch,
@@ -485,8 +485,8 @@ TEST(test_lookahead_limiter_processor_monitor_subset) {
 }
 
 TEST(test_lookahead_limiter_processor_unprocessed_channel_is_delayed_only) {
-  int mon_ch[] = {0};
-  int proc_ch[] = {0};
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0};
   lookahead_limiter_processor_config_t params = {
       .channels = 2,
       .monitor_channels = mon_ch,
@@ -561,8 +561,8 @@ TEST(test_lookahead_limiter_processor_unprocessed_channel_is_delayed_only) {
 }
 
 TEST(test_lookahead_limiter_processor_delay_processed_only) {
-  int mon_ch[] = {0};
-  int proc_ch[] = {0};
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0};
   lookahead_limiter_processor_config_t params = {
       .channels = 2,
       .monitor_channels = mon_ch,
@@ -611,9 +611,9 @@ TEST(test_lookahead_limiter_processor_delay_processed_only) {
 }
 
 TEST(test_lookahead_limiter_processor_validate) {
-  int mon_ch_valid[] = {0, 1};
-  int mon_ch_invalid[] = {0, 2};
-  int proc_ch_invalid[] = {5};
+  size_t mon_ch_valid[] = {0, 1};
+  size_t mon_ch_invalid[] = {0, 2};
+  size_t proc_ch_invalid[] = {5};
 
   lookahead_limiter_processor_config_t params_valid = {
       .channels = 2,

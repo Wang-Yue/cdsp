@@ -80,10 +80,16 @@ int core_audio_capabilities_available_device_names(bool is_capture,
 /// standard rates that fit inside the AudioStreamRangedDescription range
 /// (typically a single value, but some devices report a range).
 typedef struct {
-  int channels;
+  size_t channels;
   int samplerate;
   char format[16];
 } phys_fmt_t;
+
+static int cmp_size_t(const void* a, const void* b) {
+  size_t va = *(const size_t*)a;
+  size_t vb = *(const size_t*)b;
+  return (va > vb) - (va < vb);
+}
 
 /// Map an AudioStreamBasicDescription to a DSP CoreAudio sample
 /// format token (S16, S24, S32, F32) — exactly the formats the CoreAudio
@@ -140,15 +146,15 @@ static const char* format_string_for_asbd(
 /// (rounded to `Int`).
 static bool populate_capability_set(device_capability_set_t* set,
                                     const char* mode_name,
-                                    const phys_fmt_t* fmts, int fmt_count) {
+                                    const phys_fmt_t* fmts, size_t fmt_count) {
   snprintf(set->mode, sizeof(set->mode), "%s", mode_name);
 
   // Find unique channel counts present in the collected formats.
-  int unique_ch[32];
-  int unique_ch_cnt = 0;
-  for (int i = 0; i < fmt_count; i++) {
+  size_t unique_ch[32];
+  size_t unique_ch_cnt = 0;
+  for (size_t i = 0; i < fmt_count; i++) {
     bool found = false;
-    for (int j = 0; j < unique_ch_cnt; j++) {
+    for (size_t j = 0; j < unique_ch_cnt; j++) {
       if (unique_ch[j] == fmts[i].channels) {
         found = true;
         break;
@@ -160,7 +166,7 @@ static bool populate_capability_set(device_capability_set_t* set,
   }
 
   // Sort unique channel counts ascending
-  qsort(unique_ch, unique_ch_cnt, sizeof(int), cmp_int);
+  qsort(unique_ch, unique_ch_cnt, sizeof(size_t), cmp_size_t);
 
   if (unique_ch_cnt > 0) {
     set->capabilities = (channel_capability_t*)calloc(
@@ -174,16 +180,16 @@ static bool populate_capability_set(device_capability_set_t* set,
   set->capabilities_count = unique_ch_cnt;
 
   // For each unique channel count, find all the unique sample rates.
-  for (int c = 0; c < unique_ch_cnt; c++) {
+  for (size_t c = 0; c < unique_ch_cnt; c++) {
     channel_capability_t* ch_cap = &set->capabilities[c];
     ch_cap->channels = unique_ch[c];
 
     int unique_rate[64];
-    int unique_rate_cnt = 0;
-    for (int i = 0; i < fmt_count; i++) {
+    size_t unique_rate_cnt = 0;
+    for (size_t i = 0; i < fmt_count; i++) {
       if (fmts[i].channels == ch_cap->channels) {
         bool found = false;
-        for (int j = 0; j < unique_rate_cnt; j++) {
+        for (size_t j = 0; j < unique_rate_cnt; j++) {
           if (unique_rate[j] == fmts[i].samplerate) {
             found = true;
             break;
@@ -207,17 +213,17 @@ static bool populate_capability_set(device_capability_set_t* set,
 
     // For each combination of channel count and sample rate, extract the unique
     // formats.
-    for (int r = 0; r < unique_rate_cnt; r++) {
+    for (size_t r = 0; r < unique_rate_cnt; r++) {
       samplerate_capability_t* rate_cap = &ch_cap->samplerates[r];
       rate_cap->samplerate = unique_rate[r];
 
       char unique_fmt[16][16] = {0};
-      int unique_fmt_cnt = 0;
-      for (int i = 0; i < fmt_count; i++) {
+      size_t unique_fmt_cnt = 0;
+      for (size_t i = 0; i < fmt_count; i++) {
         if (fmts[i].channels == ch_cap->channels &&
             fmts[i].samplerate == rate_cap->samplerate) {
           bool found = false;
-          for (int j = 0; j < unique_fmt_cnt; j++) {
+          for (size_t j = 0; j < unique_fmt_cnt; j++) {
             if (strcmp(unique_fmt[j], fmts[i].format) == 0) {
               found = true;
               break;
@@ -237,7 +243,7 @@ static bool populate_capability_set(device_capability_set_t* set,
         return false;
       }
       rate_cap->formats_count = unique_fmt_cnt;
-      for (int f = 0; f < unique_fmt_cnt; f++) {
+      for (size_t f = 0; f < unique_fmt_cnt; f++) {
         rate_cap->formats[f] = strdup(unique_fmt[f]);
         if (!rate_cap->formats[f]) {
           return false;
@@ -284,10 +290,10 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
 
   // Temporary flat arrays to collect formats across all streams.
   phys_fmt_t excl_fmts[256] = {0};
-  int excl_fmt_count = 0;
+  size_t excl_fmt_count = 0;
 
   phys_fmt_t shared_fmts[256] = {0};
-  int shared_fmt_count = 0;
+  size_t shared_fmt_count = 0;
 
   // Iterate through each stream to probe its physical formats.
   for (int s = 0; s < stream_count; s++) {
@@ -320,7 +326,7 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
         double hi = ranged[i].mSampleRateRange.mMaximum;
 
         int rates_to_add[32];
-        int rate_cnt = 0;
+        size_t rate_cnt = 0;
         // Resolve sample rates: if it's a fixed value (lo == hi), add that.
         // If it's a range, intersect it with our list of standard rates
         // (CORE_AUDIO_STANDARD_RATES).
@@ -338,7 +344,7 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
           int hint = (int)round(asbd.mSampleRate);
           if (hint > 0) {
             bool found = false;
-            for (int k = 0; k < rate_cnt; k++) {
+            for (size_t k = 0; k < rate_cnt; k++) {
               if (rates_to_add[k] == hint) {
                 found = true;
                 break;
@@ -351,9 +357,9 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
         }
 
         // Store combinations for Exclusive mode
-        for (int r = 0; r < rate_cnt; r++) {
+        for (size_t r = 0; r < rate_cnt; r++) {
           if (excl_fmt_count < 256) {
-            excl_fmts[excl_fmt_count].channels = (int)asbd.mChannelsPerFrame;
+            excl_fmts[excl_fmt_count].channels = (size_t)asbd.mChannelsPerFrame;
             excl_fmts[excl_fmt_count].samplerate = rates_to_add[r];
             strncpy(excl_fmts[excl_fmt_count].format, fmt_str, 15);
             excl_fmt_count++;
@@ -361,8 +367,8 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
 
           // For Shared mode: format is always "F32"
           bool shared_already = false;
-          for (int sf = 0; sf < shared_fmt_count; sf++) {
-            if (shared_fmts[sf].channels == (int)asbd.mChannelsPerFrame &&
+          for (size_t sf = 0; sf < shared_fmt_count; sf++) {
+            if (shared_fmts[sf].channels == (size_t)asbd.mChannelsPerFrame &&
                 shared_fmts[sf].samplerate == rates_to_add[r]) {
               shared_already = true;
               break;
@@ -370,7 +376,7 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
           }
           if (!shared_already && shared_fmt_count < 256) {
             shared_fmts[shared_fmt_count].channels =
-                (int)asbd.mChannelsPerFrame;
+                (size_t)asbd.mChannelsPerFrame;
             shared_fmts[shared_fmt_count].samplerate = rates_to_add[r];
             strncpy(shared_fmts[shared_fmt_count].format, "F32", 15);
             shared_fmt_count++;

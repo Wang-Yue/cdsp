@@ -588,7 +588,7 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
                   params, allowed, "Compressor processor parameters", err) != 0)
             return -1;
           compressor_config_t* cp = &p_conf->parameters.compressor;
-          parse_json_int(params, "channels", &cp->channels);
+          parse_json_size_t(params, "channels", &cp->channels);
           parse_json_double(params, "attack", &cp->attack);
           parse_json_double(params, "release", &cp->release);
           parse_json_double(params, "threshold", &cp->threshold);
@@ -646,10 +646,10 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
             return -1;
           }
 
-          cp->monitor_channels = parse_int_array(
+          cp->monitor_channels = parse_size_t_array(
               cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
               &cp->monitor_channels_count);
-          cp->process_channels = parse_int_array(
+          cp->process_channels = parse_size_t_array(
               cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
               &cp->process_channels_count);
           break;
@@ -665,7 +665,7 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
                   params, allowed, "NoiseGate processor parameters", err) != 0)
             return -1;
           noise_gate_config_t* ng = &p_conf->parameters.noise_gate;
-          parse_json_int(params, "channels", &ng->channels);
+          parse_json_size_t(params, "channels", &ng->channels);
           parse_json_double(params, "attack", &ng->attack);
           parse_json_double(params, "release", &ng->release);
           parse_json_double(params, "threshold", &ng->threshold);
@@ -718,10 +718,10 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
             return -1;
           }
 
-          ng->monitor_channels = parse_int_array(
+          ng->monitor_channels = parse_size_t_array(
               cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
               &ng->monitor_channels_count);
-          ng->process_channels = parse_int_array(
+          ng->process_channels = parse_size_t_array(
               cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
               &ng->process_channels_count);
           break;
@@ -736,12 +736,9 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
           race_config_t* rp = &p_conf->parameters.race;
           parse_json_double(params, "attenuation", &rp->attenuation);
           parse_json_double(params, "delay", &rp->delay);
-          int rch = 0;
-          if (parse_json_int(params, "channels", &rch)) rp->channels = rch;
-          int ch_a = 0;
-          if (parse_json_int(params, "channel_a", &ch_a)) rp->channel_a = ch_a;
-          int ch_b = 0;
-          if (parse_json_int(params, "channel_b", &ch_b)) rp->channel_b = ch_b;
+          parse_json_size_t(params, "channels", &rp->channels);
+          parse_json_size_t(params, "channel_a", &rp->channel_a);
+          parse_json_size_t(params, "channel_b", &rp->channel_b);
           rp->has_subsample_delay =
               parse_json_bool(params, "subsample_delay", &rp->subsample_delay);
 
@@ -785,7 +782,7 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
             return -1;
           lookahead_limiter_processor_config_t* lp =
               &p_conf->parameters.lookahead_limiter;
-          parse_json_int(params, "channels", &lp->channels);
+          parse_json_size_t(params, "channels", &lp->channels);
           parse_json_double(params, "limit",
                             &lp->limit);  // Default double is fine
           parse_json_double(params, "attack", &lp->attack);
@@ -841,10 +838,10 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
             return -1;
           }
 
-          lp->monitor_channels = parse_int_array(
+          lp->monitor_channels = parse_size_t_array(
               cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
               &lp->monitor_channels_count);
-          lp->process_channels = parse_int_array(
+          lp->process_channels = parse_size_t_array(
               cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
               &lp->process_channels_count);
           break;

@@ -38,16 +38,18 @@ TEST(AppendAndRead) {
   bool enough_data = false;
 
   // Read channel 0
+  const size_t ch0 = 0;
   audio_history_buffer_status_t status0 =
-      audio_history_buffer_read_latest(buffer, dest, 1024, 0, &enough_data);
+      audio_history_buffer_read_latest(buffer, dest, 1024, &ch0, &enough_data);
   ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status0);
   ASSERT_TRUE(enough_data);
   ASSERT_FLOAT_EQ(0.0f, dest[0]);
   ASSERT_FLOAT_EQ(1023.0f, dest[1023]);
 
   // Read channel 1
+  const size_t ch1 = 1;
   audio_history_buffer_status_t status1 =
-      audio_history_buffer_read_latest(buffer, dest, 1024, 1, &enough_data);
+      audio_history_buffer_read_latest(buffer, dest, 1024, &ch1, &enough_data);
   ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status1);
   ASSERT_TRUE(enough_data);
   ASSERT_FLOAT_EQ(0.0f, dest[0]);
@@ -75,7 +77,7 @@ TEST(ReadLatestAverageChannels) {
   bool enough_data = false;
 
   audio_history_buffer_status_t status =
-      audio_history_buffer_read_latest(buffer, dest, 1024, -1, &enough_data);
+      audio_history_buffer_read_latest(buffer, dest, 1024, NULL, &enough_data);
   ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status);
   ASSERT_TRUE(enough_data);
   ASSERT_NEAR(2.0f, dest[0], 1e-5);
@@ -92,7 +94,7 @@ TEST(ReadLatestEmpty) {
   bool enough_data = false;
 
   audio_history_buffer_status_t status =
-      audio_history_buffer_read_latest(buffer, dest, 1024, -1, &enough_data);
+      audio_history_buffer_read_latest(buffer, dest, 1024, NULL, &enough_data);
   ASSERT_EQ(AUDIO_HISTORY_BUFFER_ERROR_EMPTY, status);
 
   free(dest);
@@ -105,8 +107,9 @@ TEST(ReadLatestChannelOutOfRange) {
   float* dest = (float*)calloc(1024, sizeof(float));
   bool enough_data = false;
 
+  const size_t ch2 = 2;
   audio_history_buffer_status_t status =
-      audio_history_buffer_read_latest(buffer, dest, 1024, 2, &enough_data);
+      audio_history_buffer_read_latest(buffer, dest, 1024, &ch2, &enough_data);
   ASSERT_EQ(AUDIO_HISTORY_BUFFER_ERROR_OUT_OF_RANGE, status);
 
   free(dest);
@@ -145,7 +148,7 @@ TEST(ReadLatestAverageChannelsLargeCount) {
   bool enough_data = false;
 
   audio_history_buffer_status_t status =
-      audio_history_buffer_read_latest(buffer, dest, 4096, -1, &enough_data);
+      audio_history_buffer_read_latest(buffer, dest, 4096, NULL, &enough_data);
   ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status);
   ASSERT_TRUE(enough_data);
   ASSERT_NEAR(3.0f, dest[0], 1e-5);
@@ -200,11 +203,12 @@ TEST(AudioHistoryBuffer_ConcurrentProducerConsumer) {
 
   float* dest = (float*)calloc(read_size, sizeof(float));
   int snapshots_taken = 0;
+  const size_t ch0 = 0;
 
   while (!atomic_load_explicit(&arg.producer_done, memory_order_acquire)) {
     bool enough = false;
-    audio_history_buffer_status_t st =
-        audio_history_buffer_read_latest(buffer, dest, read_size, 0, &enough);
+    audio_history_buffer_status_t st = audio_history_buffer_read_latest(
+        buffer, dest, read_size, &ch0, &enough);
     if (st == AUDIO_HISTORY_BUFFER_OK && enough) {
       for (int i = 1; i < read_size; i++) {
         ASSERT_NEAR(dest[i - 1] + 1.0f, dest[i], 1e-3);
@@ -218,7 +222,7 @@ TEST(AudioHistoryBuffer_ConcurrentProducerConsumer) {
 
   bool enough = false;
   audio_history_buffer_status_t st =
-      audio_history_buffer_read_latest(buffer, dest, read_size, 0, &enough);
+      audio_history_buffer_read_latest(buffer, dest, read_size, &ch0, &enough);
   ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, st);
   ASSERT_TRUE(enough);
   for (int i = 1; i < read_size; i++) {

@@ -111,7 +111,7 @@ double* parse_double_array(const cJSON* arr, size_t* out_count) {
   return values;
 }
 
-int* parse_int_array(const cJSON* arr, size_t* out_count) {
+size_t* parse_size_t_array(const cJSON* arr, size_t* out_count) {
   if (!cJSON_IsArray(arr)) {
     *out_count = 0;
     return NULL;
@@ -121,15 +121,15 @@ int* parse_int_array(const cJSON* arr, size_t* out_count) {
     *out_count = 0;
     return NULL;
   }
-  int* values = (int*)calloc(size, sizeof(int));
+  size_t* values = (size_t*)calloc(size, sizeof(size_t));
   if (!values) {
     *out_count = 0;
     return NULL;
   }
   for (int i = 0; i < size; i++) {
     cJSON* el = cJSON_GetArrayItem(arr, i);
-    if (cJSON_IsNumber(el)) {
-      values[i] = el->valueint;
+    if (cJSON_IsNumber(el) && el->valueint >= 0) {
+      values[i] = (size_t)el->valueint;
     }
   }
   *out_count = (size_t)size;

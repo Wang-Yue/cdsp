@@ -89,12 +89,12 @@ void websocket_server_handle_command(websocket_server_t* server, int client_idx,
 
 bool websocket_server_get_client_vu_subscribed(const websocket_server_t* server,
                                                int client_idx);
-double websocket_server_get_client_vu_max_rate(const websocket_server_t* server,
-                                               int client_idx);
-double websocket_server_get_client_vu_attack(const websocket_server_t* server,
-                                             int client_idx);
-double websocket_server_get_client_vu_release(const websocket_server_t* server,
+float websocket_server_get_client_vu_max_rate(const websocket_server_t* server,
                                               int client_idx);
+float websocket_server_get_client_vu_attack(const websocket_server_t* server,
+                                            int client_idx);
+float websocket_server_get_client_vu_release(const websocket_server_t* server,
+                                             int client_idx);
 void websocket_server_set_client_vu_subscribed(websocket_server_t* server,
                                                int client_idx, bool subscribed);
 

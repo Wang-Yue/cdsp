@@ -318,12 +318,12 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     return -1;
   }
   if (!config->devices.capture.is_wav &&
-      capture_device_config_get_channels(&config->devices.capture) <= 0) {
+      capture_device_config_get_channels(&config->devices.capture) == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "Capture channels must be positive");
     return -1;
   }
-  if (playback_device_config_get_channels(&config->devices.playback) <= 0) {
+  if (playback_device_config_get_channels(&config->devices.playback) == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "Playback channels must be positive");
     return -1;

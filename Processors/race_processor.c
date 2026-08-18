@@ -33,9 +33,9 @@
 static const logger_t g_logger = {"race_processor"};
 
 struct race_processor {
-  char name[64];  ///< Unique name of the RACE processor instance.
-  int channel_a;  ///< Index of primary channel A (e.g., Left).
-  int channel_b;  ///< Index of primary channel B (e.g., Right).
+  char name[64];     ///< Unique name of the RACE processor instance.
+  size_t channel_a;  ///< Index of primary channel A (e.g., Left).
+  size_t channel_b;  ///< Index of primary channel B (e.g., Right).
   delay_filter_t*
       delay_a;  ///< Contralateral delay line filter for channel A path.
   delay_filter_t*
@@ -79,9 +79,9 @@ static int race_config_validate(const processor_config_t* config,
   (void)sample_rate;
   if (!config || config->type != PROCESSOR_TYPE_RACE) return -1;
   const race_config_t* p = &config->parameters.race;
-  if (p->channels <= 0) {
+  if (p->channels == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "RACE: channels must be > 0, got %d", p->channels);
+                     "RACE: channels must be > 0, got 0");
     return -1;
   }
   if (p->attenuation <= 0.0) {
@@ -96,19 +96,19 @@ static int race_config_validate(const processor_config_t* config,
   }
   if (p->channel_a == p->channel_b) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "RACE: channels A and B must be different, got both %d",
+                     "RACE: channels A and B must be different, got both %zu",
                      p->channel_a);
     return -1;
   }
-  if (p->channel_a < 0 || p->channel_a >= p->channels) {
+  if (p->channel_a >= p->channels) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "RACE: channel A %d is invalid (max: %d)", p->channel_a,
+                     "RACE: channel A %zu is invalid (max: %zu)", p->channel_a,
                      p->channels - 1);
     return -1;
   }
-  if (p->channel_b < 0 || p->channel_b >= p->channels) {
+  if (p->channel_b >= p->channels) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "RACE: channel B %d is invalid (max: %d)", p->channel_b,
+                     "RACE: channel B %zu is invalid (max: %zu)", p->channel_b,
                      p->channels - 1);
     return -1;
   }
@@ -274,7 +274,8 @@ static void race_processor_process(void* impl, audio_chunk_t* chunk) {
     if (!processor->channel_warning_logged) {
       logger_error(
           &g_logger,
-          "RACE channel indices (%d, %d) out of bounds for chunk channels (%d)",
+          "RACE channel indices (%zu, %zu) out of bounds for chunk channels "
+          "(%zu)",
           processor->channel_a, processor->channel_b,
           audio_chunk_get_channels(chunk));
       processor->channel_warning_logged = true;

@@ -64,7 +64,7 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
 
     step->has_name =
         parse_json_str(step_obj, "name", step->name, sizeof(step->name));
-    step->has_channel = parse_json_int(step_obj, "channel", &step->channel);
+    step->has_channel = parse_json_size_t(step_obj, "channel", &step->channel);
     parse_json_bool(step_obj, "bypassed", &step->bypassed);
 
     cJSON* names_arr = cJSON_GetObjectItemCaseSensitive(step_obj, "names");
@@ -73,7 +73,7 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
 
     cJSON* channels_arr =
         cJSON_GetObjectItemCaseSensitive(step_obj, "channels");
-    step->channels = parse_int_array(channels_arr, &step->channels_count);
+    step->channels = parse_size_t_array(channels_arr, &step->channels_count);
   }
   return 0;
 }

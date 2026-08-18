@@ -45,17 +45,6 @@ typedef const double* waveform_t;
 static inline double double_from_db(double db) { return pow(10.0, db / 20.0); }
 
 /**
- * @brief Convert linear gain to dB.
- *
- * @param linear Linear gain value.
- * @return Value in decibels. Returns -1000.0 for zero/negative input.
- */
-static inline double double_to_db(double linear) {
-  if (linear <= 0.0) return -1000.0;
-  return 20.0 * log10(linear);
-}
-
-/**
  * @brief Apply attack/release envelope smoothing to an input signal.
  *
  * @param input The current input value.
@@ -209,58 +198,6 @@ static inline void dsp_ops_multiply_add(waveform_t a, double scalar,
   for (size_t i = 0; i < count; i++) {
     accumulator[i] += a[i] * scalar;
   }
-#endif
-}
-
-/**
- * @brief Find peak absolute value across the first `count` samples of the
- * buffer.
- *
- * @param buffer Input vector.
- * @param count Number of elements to process.
- * @return The peak absolute value, or 0.0 if count is 0.
- */
-static inline double dsp_ops_peak_absolute(waveform_t buffer, size_t count) {
-  if (count == 0) return 0.0;
-#if defined(ENABLE_ACCELERATE)
-  double res = 0.0;
-  vDSP_maxmgvD(buffer, 1, &res, count);
-  return res;
-#elif defined(ENABLE_BLAS)
-  int idx = cblas_idamax((int)count, buffer, 1);
-  return fabs(buffer[idx]);
-#else
-  double res = 0.0;
-  for (size_t i = 0; i < count; i++) {
-    double val = fabs(buffer[i]);
-    if (val > res) res = val;
-  }
-  return res;
-#endif
-}
-
-/**
- * @brief Compute root-mean-square over the first `count` samples of the buffer.
- *
- * @param buffer Input vector.
- * @param count Number of elements to process.
- * @return The RMS value, or 0.0 if count is 0.
- */
-static inline double dsp_ops_rms(waveform_t buffer, size_t count) {
-  if (count == 0) return 0.0;
-#if defined(ENABLE_ACCELERATE)
-  double res = 0.0;
-  vDSP_rmsqvD(buffer, 1, &res, count);
-  return res;
-#elif defined(ENABLE_BLAS)
-  double norm = cblas_dnrm2((int)count, buffer, 1);
-  return norm / sqrt((double)count);
-#else
-  double sum = 0.0;
-  for (size_t i = 0; i < count; i++) {
-    sum += buffer[i] * buffer[i];
-  }
-  return sqrt(sum / count);
 #endif
 }
 

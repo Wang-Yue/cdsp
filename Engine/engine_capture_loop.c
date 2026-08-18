@@ -385,7 +385,7 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
   }
 
   // Update level meters with the peak/rms of this chunk.
-  double loudest_peak = processing_parameters_update_capture_levels(
+  float loudest_peak = processing_parameters_update_capture_levels(
       loop->processing_params, chunk);
 
   // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume

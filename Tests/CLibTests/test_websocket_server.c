@@ -30,6 +30,7 @@ typedef int socket_t;
 #include "Public/cdsp_pub_types.h"
 #include "Public/general.h"
 #include "Server/websocket_server.h"
+#include "Server/websocket_server_internal.h"
 #include "Utils/cdsp_time.h"
 
 static void test_handle_command(websocket_server_t* server, int client_idx,
@@ -100,30 +101,26 @@ static void mock_reset_clipped_samples(void* ctx) {
 static bool mock_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
   (void)ctx;
   if (!mock_params || !out_vu) return false;
-  out_vu->playback_channels =
-      processing_parameters_get_playback_channels(mock_params);
-  out_vu->capture_channels =
-      processing_parameters_get_capture_channels(mock_params);
+  size_t pb_ch = processing_parameters_get_playback_channels(mock_params);
+  size_t cap_ch = processing_parameters_get_capture_channels(mock_params);
+  out_vu->playback_channels = pb_ch;
+  out_vu->capture_channels = cap_ch;
 
-  if (out_vu->playback_channels > 0) {
-    out_vu->playback_rms =
-        (double*)calloc(out_vu->playback_channels, sizeof(double));
-    out_vu->playback_peak =
-        (double*)calloc(out_vu->playback_channels, sizeof(double));
-    processing_parameters_get_playback_signal_rms(
-        mock_params, out_vu->playback_rms, out_vu->playback_channels);
-    processing_parameters_get_playback_signal_peak(
-        mock_params, out_vu->playback_peak, out_vu->playback_channels);
+  if (out_vu->playback_rms && pb_ch > 0) {
+    processing_parameters_get_playback_signal_rms(mock_params,
+                                                  out_vu->playback_rms, pb_ch);
   }
-  if (out_vu->capture_channels > 0) {
-    out_vu->capture_rms =
-        (double*)calloc(out_vu->capture_channels, sizeof(double));
-    out_vu->capture_peak =
-        (double*)calloc(out_vu->capture_channels, sizeof(double));
-    processing_parameters_get_capture_signal_rms(
-        mock_params, out_vu->capture_rms, out_vu->capture_channels);
-    processing_parameters_get_capture_signal_peak(
-        mock_params, out_vu->capture_peak, out_vu->capture_channels);
+  if (out_vu->playback_peak && pb_ch > 0) {
+    processing_parameters_get_playback_signal_peak(
+        mock_params, out_vu->playback_peak, pb_ch);
+  }
+  if (out_vu->capture_rms && cap_ch > 0) {
+    processing_parameters_get_capture_signal_rms(mock_params,
+                                                 out_vu->capture_rms, cap_ch);
+  }
+  if (out_vu->capture_peak && cap_ch > 0) {
+    processing_parameters_get_capture_signal_peak(mock_params,
+                                                  out_vu->capture_peak, cap_ch);
   }
   return true;
 }
@@ -173,11 +170,10 @@ static void mock_set_fader_volume(void* ctx, fader_t fader, float db,
                                   bool instant) {
   (void)ctx;
   if (mock_params) {
-    processing_parameters_set_target_volume_for_fader(mock_params, (double)db,
-                                                      fader);
+    processing_parameters_set_target_volume_for_fader(mock_params, db, fader);
     if (instant) {
-      processing_parameters_set_current_volume_for_fader(mock_params,
-                                                         (double)db, fader);
+      processing_parameters_set_current_volume_for_fader(mock_params, db,
+                                                         fader);
     }
   }
 }
@@ -230,6 +226,24 @@ static bool mock_get_previous_config_json(void* ctx, char** out_json) {
   *out_json = NULL;
   return false;
 }
+static bool mock_get_signal_levels_since(void* ctx, bool is_capture,
+                                         bool is_rms, uint64_t since_ms,
+                                         float* out_levels,
+                                         size_t* out_channels) {
+  (void)ctx;
+  (void)since_ms;
+  if (out_channels) *out_channels = 2;
+  if (out_levels) {
+    if (is_capture) {
+      out_levels[0] = is_rms ? -6.0f : -3.0f;
+      out_levels[1] = is_rms ? -7.0f : -4.0f;
+    } else {
+      out_levels[0] = is_rms ? -8.0f : -5.0f;
+      out_levels[1] = is_rms ? -9.0f : -6.0f;
+    }
+  }
+  return true;
+}
 static dsp_engine_t mock_engine = {
     .ctx = NULL,
     .get_status = mock_get_status,
@@ -237,6 +251,7 @@ static dsp_engine_t mock_engine = {
     .get_processing_status = mock_get_processing_status,
     .reset_clipped_samples = mock_reset_clipped_samples,
     .get_vu_levels = mock_get_vu_levels,
+    .get_signal_levels_since = mock_get_signal_levels_since,
     .get_fader_volume = mock_get_fader_volume,
     .get_fader_mute = mock_is_fader_muted,
     .set_config_json = mock_set_config_json,
@@ -374,12 +389,12 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
 
-  double target_vol = processing_parameters_get_target_volume_for_fader(
+  float target_vol = processing_parameters_get_target_volume_for_fader(
       mock_params, FADER_MAIN);
-  double current_vol = processing_parameters_get_current_volume_for_fader(
+  float current_vol = processing_parameters_get_current_volume_for_fader(
       mock_params, FADER_MAIN);
-  ASSERT_DOUBLE_EQ(-6.0, target_vol);
-  ASSERT_DOUBLE_EQ(-6.0, current_vol);
+  ASSERT_FLOAT_EQ(-6.0f, target_vol);
+  ASSERT_FLOAT_EQ(-6.0f, current_vol);
 
   // Test GetChannelLabels
   mock_active_config = strdup(
@@ -779,6 +794,43 @@ TEST(test_websocket_format_alignments) {
   mock_params = NULL;
   free(mock_active_config);
   mock_active_config = NULL;
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_SignalLevelsSinceRPC) {
+  websocket_server_t* server = websocket_server_create(8097, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char resp[1024] = {0};
+
+  // Test GetCaptureSignalPeakSince
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetCaptureSignalPeakSince\",\"value\":1.0}",
+      resp, sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  cJSON* val = cJSON_GetObjectItemCaseSensitive(res, "value");
+  ASSERT_TRUE(cJSON_IsArray(val));
+  ASSERT_EQ(2, cJSON_GetArraySize(val));
+  ASSERT_NEAR(-3.0f, (float)cJSON_GetArrayItem(val, 0)->valuedouble, 1e-3);
+  ASSERT_NEAR(-4.0f, (float)cJSON_GetArrayItem(val, 1)->valuedouble, 1e-3);
+  cJSON_Delete(res);
+
+  // Test GetPlaybackSignalRmsSince
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetPlaybackSignalRmsSince\",\"value\":1.0}",
+      resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  val = cJSON_GetObjectItemCaseSensitive(res, "value");
+  ASSERT_TRUE(cJSON_IsArray(val));
+  ASSERT_EQ(2, cJSON_GetArraySize(val));
+  ASSERT_NEAR(-8.0f, (float)cJSON_GetArrayItem(val, 0)->valuedouble, 1e-3);
+  ASSERT_NEAR(-9.0f, (float)cJSON_GetArrayItem(val, 1)->valuedouble, 1e-3);
+  cJSON_Delete(res);
 
   websocket_server_free(server);
 }

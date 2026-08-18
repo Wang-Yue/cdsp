@@ -119,7 +119,7 @@ TEST(SumChannelsInvalidFirstChannel) {
   c1[3] = 40.0;
   audio_chunk_set_valid_frames(chunk, 4);
 
-  int channels[] = {-1, 0, 1};
+  size_t channels[] = {99, 0, 1};
   double out_sum[4] = {0};
   audio_chunk_sum_channels(chunk, channels, 3, out_sum, 4);
 

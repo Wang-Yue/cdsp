@@ -127,30 +127,30 @@ void audio_backend_error_description(const audio_backend_error_t* err,
  * @brief VU levels for playback and capture.
  */
 typedef struct {
-  double* playback_rms;     /**< Array of playback RMS levels per channel. */
-  double* playback_peak;    /**< Array of playback peak levels per channel. */
-  double* capture_rms;      /**< Array of capture RMS levels per channel. */
-  double* capture_peak;     /**< Array of capture peak levels per channel. */
-  size_t playback_channels; /**< Number of playback channels. */
-  size_t capture_channels;  /**< Number of capture channels. */
+  float* playback_rms;  /**< Caller-allocated array for playback RMS levels. */
+  float* playback_peak; /**< Caller-allocated array for playback peak levels. */
+  float* capture_rms;   /**< Caller-allocated array for capture RMS levels. */
+  float* capture_peak;  /**< Caller-allocated array for capture peak levels. */
+  size_t playback_channels; /**< Total playback channels populated. */
+  size_t capture_channels;  /**< Total capture channels populated. */
 } vu_levels_t;
 
 /**
  * @brief Frequency spectrum data.
  */
 typedef struct {
-  double* frequencies; /**< Array of frequencies. */
-  double* magnitudes;  /**< Array of magnitudes. */
-  size_t count;        /**< Number of points. */
+  float* frequencies; /**< Caller-allocated array of frequencies. */
+  float* magnitudes;  /**< Caller-allocated array of magnitudes. */
+  size_t count;       /**< Number of bins computed. */
 } spectrum_t;
 
 /**
  * @brief Audio samples buffer.
  */
 typedef struct {
-  double** channels;     /**< Array of channel buffers. */
-  size_t channels_count; /**< Number of channels. */
-  size_t frames;         /**< Number of frames per channel. */
+  float** channels;      /**< Caller-allocated array of channel pointers. */
+  size_t channels_count; /**< Number of channels populated. */
+  size_t frames;         /**< Number of frames written per channel. */
 } audio_samples_t;
 
 // MARK: - Capability data model
@@ -194,7 +194,7 @@ typedef struct {
  * @brief Channel capabilities.
  */
 typedef struct {
-  int channels; /**< Supported number of channels. */
+  size_t channels; /**< Supported number of channels. */
   samplerate_capability_t*
       samplerates; /**< Supported sample rates for this channel count. */
   size_t samplerates_count; /**< Number of sample rates. */
@@ -574,7 +574,7 @@ typedef struct {
  * @brief CoreAudio capture configuration.
  */
 typedef struct {
-  int channels;                     /**< Number of channels. */
+  size_t channels;                  /**< Number of channels. */
   char device[256];                 /**< Device name. */
   bool has_device;                  /**< True if custom device is specified. */
   coreaudio_sample_format_t format; /**< Sample format. */
@@ -585,7 +585,7 @@ typedef struct {
  * @brief CoreAudio playback configuration.
  */
 typedef struct {
-  int channels;                     /**< Number of channels. */
+  size_t channels;                  /**< Number of channels. */
   char device[256];                 /**< Device name. */
   bool has_device;                  /**< True if custom device is specified. */
   coreaudio_sample_format_t format; /**< Sample format. */
@@ -600,7 +600,7 @@ typedef struct {
  * @brief ALSA capture configuration.
  */
 typedef struct {
-  int channels;                  /**< Number of channels. */
+  size_t channels;               /**< Number of channels. */
   char device[256];              /**< Device name. */
   alsa_sample_format_t format;   /**< Sample format. */
   bool has_format;               /**< True if format is specified. */
@@ -619,7 +619,7 @@ typedef struct {
  * @brief ALSA playback configuration.
  */
 typedef struct {
-  int channels;                /**< Number of channels. */
+  size_t channels;             /**< Number of channels. */
   char device[256];            /**< Device name. */
   alsa_sample_format_t format; /**< Sample format. */
   bool has_format;             /**< True if format is specified. */
@@ -635,7 +635,7 @@ typedef struct {
  * @brief PipeWire capture configuration.
  */
 typedef struct {
-  int channels;               /**< Number of channels. */
+  size_t channels;            /**< Number of channels. */
   char device[256];           /**< Target device name. */
   bool has_device;            /**< True if device is specified. */
   char node_name[256];        /**< PipeWire node name. */
@@ -652,7 +652,7 @@ typedef struct {
  * @brief PipeWire playback configuration.
  */
 typedef struct {
-  int channels;               /**< Number of channels. */
+  size_t channels;            /**< Number of channels. */
   char device[256];           /**< Target device name. */
   bool has_device;            /**< True if device is specified. */
   char node_name[256];        /**< PipeWire node name. */
@@ -670,7 +670,7 @@ typedef struct {
  * @brief Standard input capture configuration.
  */
 typedef struct {
-  int channels;                  /**< Number of channels. */
+  size_t channels;               /**< Number of channels. */
   binary_sample_format_t format; /**< Sample format. */
   int extra_samples;             /**< Extra samples to read. */
   bool has_extra_samples;        /**< True if extra_samples is specified. */
@@ -684,7 +684,7 @@ typedef struct {
  * @brief Standard output playback configuration.
  */
 typedef struct {
-  int channels;                  /**< Number of channels. */
+  size_t channels;               /**< Number of channels. */
   binary_sample_format_t format; /**< Sample format. */
   bool wav_header;               /**< Write WAV header. */
   bool has_wav_header;           /**< True if wav_header is specified. */
@@ -695,7 +695,7 @@ typedef struct {
  * @brief WASAPI capture configuration.
  */
 typedef struct {
-  int channels;                  /**< Number of channels. */
+  size_t channels;               /**< Number of channels. */
   char device[256];              /**< Device name/ID. */
   bool has_device;               /**< True if device is specified. */
   wasapi_sample_format_t format; /**< Sample format. */
@@ -712,7 +712,7 @@ typedef struct {
  * @brief WASAPI playback configuration.
  */
 typedef struct {
-  int channels;                  /**< Number of channels. */
+  size_t channels;               /**< Number of channels. */
   char device[256];              /**< Device name/ID. */
   bool has_device;               /**< True if device is specified. */
   wasapi_sample_format_t format; /**< Sample format. */
@@ -729,7 +729,7 @@ typedef struct {
  * @brief ASIO capture configuration.
  */
 typedef struct {
-  int channels;                /**< Number of channels. */
+  size_t channels;             /**< Number of channels. */
   char device[256];            /**< Device name. */
   asio_sample_format_t format; /**< Sample format. */
   bool has_format;             /**< True if format is specified. */
@@ -739,7 +739,7 @@ typedef struct {
  * @brief ASIO playback configuration.
  */
 typedef struct {
-  int channels;                /**< Number of channels. */
+  size_t channels;             /**< Number of channels. */
   char device[256];            /**< Device name. */
   asio_sample_format_t format; /**< Sample format. */
   bool has_format;             /**< True if format is specified. */
@@ -750,7 +750,7 @@ typedef struct {
  * @brief WAV file capture configuration.
  */
 typedef struct {
-  int channels;           /**< Number of channels. */
+  size_t channels;        /**< Number of channels. */
   char filename[512];     /**< Path to WAV file. */
   bool has_filename;      /**< True if filename is specified. */
   int extra_samples;      /**< Extra samples to read. */
@@ -769,7 +769,7 @@ typedef struct {
   bool has_filename;             /**< True if filename is specified. */
   binary_sample_format_t format; /**< Sample format. */
   bool has_format;               /**< True if format is specified. */
-  int channels;                  /**< Number of channels. */
+  size_t channels;               /**< Number of channels. */
   int skip_bytes;                /**< Bytes to skip at start. */
   bool has_skip_bytes;           /**< True if skip_bytes is specified. */
   int read_bytes;                /**< Max bytes to read. */
@@ -790,7 +790,7 @@ typedef struct {
   bool has_filename;             /**< True if filename is specified. */
   binary_sample_format_t format; /**< Sample format. */
   bool has_format;               /**< True if format is specified. */
-  int channels;                  /**< Number of channels. */
+  size_t channels;               /**< Number of channels. */
   bool wav_header;               /**< Write WAV header. */
   bool has_wav_header;           /**< True if wav_header is specified. */
   bool use_rf64;                 /**< Use RF64 WAV header. */
@@ -805,7 +805,7 @@ typedef struct {
  * @brief Signal generator capture configuration.
  */
 typedef struct {
-  int channels;              /**< Number of channels. */
+  size_t channels;           /**< Number of channels. */
   generator_signal_t signal; /**< Signal parameters. */
 } generator_capture_config_t;
 
@@ -936,7 +936,8 @@ typedef struct {
  * @param config Pointer to the configuration.
  * @return Number of channels.
  */
-int capture_device_config_get_channels(const capture_device_config_t* config);
+size_t capture_device_config_get_channels(
+    const capture_device_config_t* config);
 
 /**
  * @brief Gets the device name from a capture device configuration.
@@ -1004,7 +1005,8 @@ dsd_mode_t capture_device_config_get_dsd_mode(
  * @param config Pointer to the configuration.
  * @return Number of channels.
  */
-int playback_device_config_get_channels(const playback_device_config_t* config);
+size_t playback_device_config_get_channels(
+    const playback_device_config_t* config);
 
 /**
  * @brief Gets the device name from a playback device configuration.
@@ -1073,7 +1075,7 @@ sdm_filter_t playback_device_config_get_dsd_encoder_filter(
  * @param channels Number of channels.
  */
 void capture_device_config_set_channels(capture_device_config_t* config,
-                                        int channels);
+                                        size_t channels);
 
 /**
  * @brief Recursively frees the memory allocated for an audio device descriptor.

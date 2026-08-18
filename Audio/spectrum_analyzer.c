@@ -14,8 +14,8 @@ typedef struct {
 } bin_range_t;
 
 typedef struct {
-  double min_freq;
-  double max_freq;
+  float min_freq;
+  float max_freq;
   size_t n_bins;
   size_t samplerate;
   float* frequencies;
@@ -119,9 +119,9 @@ void spectrum_analyzer_free(spectrum_analyzer_t* analyzer) {
 
 spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
                                             audio_history_buffer_t* buffer,
-                                            int channel, double min_freq,
-                                            double max_freq, size_t n_bins,
-                                            size_t samplerate,
+                                            const size_t* channel,
+                                            float min_freq, float max_freq,
+                                            size_t n_bins, size_t samplerate,
                                             spectrum_result_t* out_result) {
   if (!analyzer || !buffer || !out_result) return SPECTRUM_ERROR_INVALID_PARAM;
   if (analyzer->out_capacity == 0 || !analyzer->plan.frequencies ||
@@ -129,8 +129,8 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
     return SPECTRUM_ERROR_INVALID_PARAM;
   }
   if (samplerate == 0 || n_bins == 0 || n_bins > analyzer->out_capacity ||
-      min_freq <= 0.0 || max_freq <= min_freq ||
-      max_freq > (double)samplerate / 2.0) {
+      min_freq <= 0.0f || max_freq <= min_freq ||
+      max_freq > (float)samplerate / 2.0f) {
     return SPECTRUM_ERROR_INVALID_PARAM;
   }
 
@@ -186,29 +186,29 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
   if (analyzer->plan.min_freq != min_freq ||
       analyzer->plan.max_freq != max_freq || analyzer->plan.n_bins != n_bins ||
       analyzer->plan.samplerate != samplerate) {
-    double log_min = log10(min_freq);
-    double log_max = log10(max_freq);
-    double step = n_bins > 1 ? (log_max - log_min) / (double)(n_bins - 1) : 0.0;
+    float log_min = log10f(min_freq);
+    float log_max = log10f(max_freq);
+    float step = n_bins > 1 ? (log_max - log_min) / (float)(n_bins - 1) : 0.0f;
 
     for (size_t i = 0; i < n_bins; i++) {
-      double center_log = log_min + step * (double)i;
-      double center_f = pow(10.0, center_log);
-      analyzer->plan.frequencies[i] = (float)center_f;
+      float center_log = log_min + step * (float)i;
+      float center_f = powf(10.0f, center_log);
+      analyzer->plan.frequencies[i] = center_f;
 
       // Define frequency boundaries for this bin
-      double low_log = i > 0 ? center_log - step / 2.0 : log_min;
-      double high_log = i < n_bins - 1 ? center_log + step / 2.0 : log_max;
+      float low_log = i > 0 ? center_log - step / 2.0f : log_min;
+      float high_log = i < n_bins - 1 ? center_log + step / 2.0f : log_max;
 
-      double low_f = pow(10.0, low_log);
-      double high_f = pow(10.0, high_log);
+      float low_f = powf(10.0f, low_log);
+      float high_f = powf(10.0f, high_log);
 
       // Convert frequency boundaries to FFT bin indices
-      int low_k = (int)ceil(
-          (low_f * (double)analyzer->fft_n / (double)samplerate) - 0.5);
-      int high_k = (int)floor(
-          (high_f * (double)analyzer->fft_n / (double)samplerate) + 0.5);
+      int low_k = (int)ceilf(
+          (low_f * (float)analyzer->fft_n / (float)samplerate) - 0.5f);
+      int high_k = (int)floorf(
+          (high_f * (float)analyzer->fft_n / (float)samplerate) + 0.5f);
       int nearest_k =
-          (int)round(center_f * (double)analyzer->fft_n / (double)samplerate);
+          (int)roundf(center_f * (float)analyzer->fft_n / (float)samplerate);
 
       analyzer->plan.ranges[i].low_k = low_k;
       analyzer->plan.ranges[i].high_k = high_k;

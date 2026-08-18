@@ -39,8 +39,9 @@ TEST(SineProducesPeakAtCarrier) {
   }
 
   spectrum_result_t result = {0};
+  const size_t ch0 = 0;
   spectrum_status_t status = spectrum_analyzer_compute(
-      analyzer, buffer, 0, 20.0, 20000.0, 64, samplerate, &result);
+      analyzer, buffer, &ch0, 20.0f, 20000.0f, 64, samplerate, &result);
 
   ASSERT_EQ(SPECTRUM_OK, status);
   ASSERT_EQ(64, result.count);
@@ -78,7 +79,7 @@ TEST(EmptyBufferThrows) {
   spectrum_result_t result = {0};
 
   spectrum_status_t status = spectrum_analyzer_compute(
-      analyzer, buffer, -1, 20.0, 20000.0, 32, 48000, &result);
+      analyzer, buffer, NULL, 20.0f, 20000.0f, 32, 48000, &result);
   ASSERT_EQ(SPECTRUM_ERROR_EMPTY, status);
 
   audio_history_buffer_free(buffer);
@@ -95,8 +96,9 @@ TEST(ChannelOutOfRangeThrows) {
   audio_chunk_free(chunk);
 
   spectrum_result_t result = {0};
+  const size_t ch4 = 4;
   spectrum_status_t status = spectrum_analyzer_compute(
-      analyzer, buffer, 4, 20.0, 20000.0, 32, 48000, &result);
+      analyzer, buffer, &ch4, 20.0f, 20000.0f, 32, 48000, &result);
   ASSERT_EQ(SPECTRUM_ERROR_OUT_OF_RANGE, status);
 
   audio_history_buffer_free(buffer);
@@ -114,8 +116,9 @@ TEST(LogBinFrequenciesAreGeometric) {
   audio_chunk_free(chunk);
 
   spectrum_result_t result = {0};
+  const size_t ch0 = 0;
   spectrum_status_t status = spectrum_analyzer_compute(
-      analyzer, buffer, 0, 20.0, 20000.0, 5, 48000, &result);
+      analyzer, buffer, &ch0, 20.0f, 20000.0f, 5, 48000, &result);
   ASSERT_EQ(SPECTRUM_OK, status);
   ASSERT_EQ(5, result.count);
   ASSERT_NEAR(20.0f, result.frequencies[0], 1e-3);
@@ -133,7 +136,8 @@ TEST(HistoryBufferAppendLargeChunkExceedingCapacity) {
   audio_history_buffer_t* buffer = audio_history_buffer_create();
   audio_history_buffer_reset(buffer, 2);
 
-  size_t large_frames = 71680;
+  size_t cap = AUDIO_HISTORY_BUFFER_CAPACITY;
+  size_t large_frames = cap + 10000;
   audio_chunk_t* chunk = audio_chunk_create(large_frames, 2);
   audio_chunk_set_valid_frames(chunk, large_frames);
   for (size_t ch = 0; ch < 2; ch++) {
@@ -143,27 +147,30 @@ TEST(HistoryBufferAppendLargeChunkExceedingCapacity) {
     }
   }
 
-  // Appending chunk with 71680 frames (capacity is 16384)
+  // Appending chunk exceeding capacity
   audio_history_buffer_append(buffer, chunk);
   audio_chunk_free(chunk);
 
   ASSERT_TRUE(audio_history_buffer_has_data(buffer));
 
-  // Read latest 16384 frames
-  float dest[16384];
+  // Read latest capacity frames
+  float* dest = (float*)malloc(cap * sizeof(float));
+  ASSERT_TRUE(dest != NULL);
   bool enough = false;
+  const size_t ch0 = 0;
   audio_history_buffer_status_t status =
-      audio_history_buffer_read_latest(buffer, dest, 16384, 0, &enough);
+      audio_history_buffer_read_latest(buffer, dest, cap, &ch0, &enough);
   ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status);
   ASSERT_TRUE(enough);
 
-  // The latest 16384 frames must be the tail of the chunk: (71680 - 16384) ..
-  // 71679
-  for (size_t i = 0; i < 16384; i++) {
-    float expected = (float)(71680 - 16384 + i);
+  // The latest `cap` frames must be the tail of the chunk: (large_frames - cap)
+  // .. (large_frames - 1)
+  for (size_t i = 0; i < cap; i++) {
+    float expected = (float)(large_frames - cap + i);
     ASSERT_EQ(expected, dest[i]);
   }
 
+  free(dest);
   audio_history_buffer_free(buffer);
 }
 

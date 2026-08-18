@@ -44,15 +44,15 @@ static bool double_arrays_equal(const double* a, size_t a_count,
 }
 
 /**
- * @brief Compares two integer arrays for equality.
- * @param a First integer array.
+ * @brief Compares two size_t arrays for equality.
+ * @param a First size_t array.
  * @param a_count Number of elements in first array.
- * @param b Second integer array.
+ * @param b Second size_t array.
  * @param b_count Number of elements in second array.
  * @return true if arrays are equal in size and elements, false otherwise.
  */
-static bool int_arrays_equal(const int* a, size_t a_count, const int* b,
-                             size_t b_count) {
+static bool size_t_arrays_equal(const size_t* a, size_t a_count,
+                                const size_t* b, size_t b_count) {
   if (a_count != b_count) return false;
   if (a_count == 0) return true;
   if (!a || !b) return false;
@@ -343,15 +343,15 @@ static bool processor_config_equal(const processor_config_t* a,
       if (a->parameters.compressor.channels !=
           b->parameters.compressor.channels)
         return false;
-      if (!int_arrays_equal(a->parameters.compressor.monitor_channels,
-                            a->parameters.compressor.monitor_channels_count,
-                            b->parameters.compressor.monitor_channels,
-                            b->parameters.compressor.monitor_channels_count))
+      if (!size_t_arrays_equal(a->parameters.compressor.monitor_channels,
+                               a->parameters.compressor.monitor_channels_count,
+                               b->parameters.compressor.monitor_channels,
+                               b->parameters.compressor.monitor_channels_count))
         return false;
-      if (!int_arrays_equal(a->parameters.compressor.process_channels,
-                            a->parameters.compressor.process_channels_count,
-                            b->parameters.compressor.process_channels,
-                            b->parameters.compressor.process_channels_count))
+      if (!size_t_arrays_equal(a->parameters.compressor.process_channels,
+                               a->parameters.compressor.process_channels_count,
+                               b->parameters.compressor.process_channels,
+                               b->parameters.compressor.process_channels_count))
         return false;
       if (a->parameters.compressor.attack != b->parameters.compressor.attack ||
           a->parameters.compressor.attack_unit !=
@@ -382,15 +382,15 @@ static bool processor_config_equal(const processor_config_t* a,
       if (a->parameters.noise_gate.channels !=
           b->parameters.noise_gate.channels)
         return false;
-      if (!int_arrays_equal(a->parameters.noise_gate.monitor_channels,
-                            a->parameters.noise_gate.monitor_channels_count,
-                            b->parameters.noise_gate.monitor_channels,
-                            b->parameters.noise_gate.monitor_channels_count))
+      if (!size_t_arrays_equal(a->parameters.noise_gate.monitor_channels,
+                               a->parameters.noise_gate.monitor_channels_count,
+                               b->parameters.noise_gate.monitor_channels,
+                               b->parameters.noise_gate.monitor_channels_count))
         return false;
-      if (!int_arrays_equal(a->parameters.noise_gate.process_channels,
-                            a->parameters.noise_gate.process_channels_count,
-                            b->parameters.noise_gate.process_channels,
-                            b->parameters.noise_gate.process_channels_count))
+      if (!size_t_arrays_equal(a->parameters.noise_gate.process_channels,
+                               a->parameters.noise_gate.process_channels_count,
+                               b->parameters.noise_gate.process_channels,
+                               b->parameters.noise_gate.process_channels_count))
         return false;
       if (a->parameters.noise_gate.attack != b->parameters.noise_gate.attack ||
           a->parameters.noise_gate.attack_unit !=
@@ -426,13 +426,13 @@ static bool processor_config_equal(const processor_config_t* a,
       if (a->parameters.lookahead_limiter.channels !=
           b->parameters.lookahead_limiter.channels)
         return false;
-      if (!int_arrays_equal(
+      if (!size_t_arrays_equal(
               a->parameters.lookahead_limiter.monitor_channels,
               a->parameters.lookahead_limiter.monitor_channels_count,
               b->parameters.lookahead_limiter.monitor_channels,
               b->parameters.lookahead_limiter.monitor_channels_count))
         return false;
-      if (!int_arrays_equal(
+      if (!size_t_arrays_equal(
               a->parameters.lookahead_limiter.process_channels,
               a->parameters.lookahead_limiter.process_channels_count,
               b->parameters.lookahead_limiter.process_channels,
@@ -840,8 +840,8 @@ static bool pipeline_step_equal(const pipeline_step_config_t* a,
   if (a->type != b->type) return false;
   if (a->channel != b->channel) return false;
   if (a->has_channel != b->has_channel) return false;
-  if (!int_arrays_equal(a->channels, a->channels_count, b->channels,
-                        b->channels_count))
+  if (!size_t_arrays_equal(a->channels, a->channels_count, b->channels,
+                           b->channels_count))
     return false;
   if (a->has_name != b->has_name) return false;
   if (a->has_name && !safe_streq(a->name, b->name)) return false;

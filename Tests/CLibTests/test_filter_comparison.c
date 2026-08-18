@@ -1679,13 +1679,13 @@ TEST(LookaheadLimiterProcessor_Vs_RustReference) {
   params.delay_processed_only = true;
 
   // Monitor channels: [0, 1]
-  params.monitor_channels = (int*)malloc(2 * sizeof(int));
+  params.monitor_channels = (size_t*)malloc(2 * sizeof(size_t));
   params.monitor_channels[0] = 0;
   params.monitor_channels[1] = 1;
   params.monitor_channels_count = 2;
 
   // Process channels: [0, 1]
-  params.process_channels = (int*)malloc(2 * sizeof(int));
+  params.process_channels = (size_t*)malloc(2 * sizeof(size_t));
   params.process_channels[0] = 0;
   params.process_channels[1] = 1;
   params.process_channels_count = 2;

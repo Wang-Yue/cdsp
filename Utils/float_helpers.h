@@ -11,6 +11,8 @@
 #include <stddef.h>
 #include <stdlib.h>
 
+#include "Audio/audio_chunk.h"
+
 #if defined(ENABLE_ACCELERATE)
 #include <Accelerate/Accelerate.h>
 #elif defined(ENABLE_BLAS)
@@ -23,6 +25,69 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+
+/**
+ * @brief Convert linear gain to dB (float).
+ *
+ * @param linear Linear gain value.
+ * @return Value in decibels. Returns -1000.0f for zero/negative input.
+ */
+static inline float float_to_db(float linear) {
+  if (linear <= 0.0f) return -1000.0f;
+  return 20.0f * log10f(linear);
+}
+
+/**
+ * @brief Find peak absolute value across the first `count` samples of the
+ * buffer.
+ *
+ * @param buffer Input vector.
+ * @param count Number of elements to process.
+ * @return The peak absolute value as float, or 0.0f if count is 0.
+ */
+static inline float dsp_ops_peak_absolute(waveform_t buffer, size_t count) {
+  if (count == 0) return 0.0f;
+#if defined(ENABLE_ACCELERATE)
+  double res = 0.0;
+  vDSP_maxmgvD(buffer, 1, &res, count);
+  return (float)res;
+#elif defined(ENABLE_BLAS)
+  int idx = cblas_idamax((int)count, buffer, 1);
+  return (float)fabs(buffer[idx]);
+#else
+  float res = 0.0f;
+  for (size_t i = 0; i < count; i++) {
+    float val = (float)fabs(buffer[i]);
+    if (val > res) res = val;
+  }
+  return res;
+#endif
+}
+
+/**
+ * @brief Compute root-mean-square over the first `count` samples of the buffer.
+ *
+ * Uses vectorization pragmas to achieve fast single-pass float accumulation
+ * without intermediate buffer allocation.
+ *
+ * @param buffer Input vector.
+ * @param count Number of elements to process.
+ * @return The RMS value as float, or 0.0f if count is 0.
+ */
+static inline float dsp_ops_rms(waveform_t buffer, size_t count) {
+  if (count == 0) return 0.0f;
+  float sum = 0.0f;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+  for (size_t i = 0; i < count; i++) {
+    float f = (float)buffer[i];
+    sum += f * f;
+  }
+  return sqrtf(sum / (float)count);
+}
 
 /**
  * @brief Multiply two float vectors element-wise.
@@ -134,12 +199,7 @@ static inline void dsp_ops_float_vdbcon(const float* vector, float reference,
   vDSP_vdbcon(vector, 1, &ref, result, 1, count, 1);
 #else
   for (size_t i = 0; i < count; i++) {
-    float val = vector[i];
-    if (val <= 0.0f) {
-      result[i] = -200.0f;  // Limit minimum dB value to prevent log10(0) issues
-    } else {
-      result[i] = 20.0f * log10f(val / ref);
-    }
+    result[i] = float_to_db(vector[i] / ref);
   }
 #endif
 }

@@ -39,7 +39,7 @@ static const logger_t g_logger = {"dsp.backend.coreaudio.capture"};
 
 struct core_audio_capture {
   char device_name[256];
-  int channels;
+  size_t channels;
   double sample_rate;
   size_t chunk_size;
   char sample_format[16];

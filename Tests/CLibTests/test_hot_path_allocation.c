@@ -791,8 +791,8 @@ static void proc_iter(int i, void* ctx) {
 }
 
 TEST(Compressor_AllocationFree) {
-  int mon_ch[] = {0};
-  int proc_ch[] = {0, 1};
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0, 1};
   compressor_config_t params = {.channels = 2,
                                 .monitor_channels = mon_ch,
                                 .monitor_channels_count = 1,
@@ -827,8 +827,8 @@ TEST(Compressor_AllocationFree) {
 }
 
 TEST(NoiseGate_AllocationFree) {
-  int mon_ch[] = {0};
-  int proc_ch[] = {0, 1};
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0, 1};
   noise_gate_config_t params = {.channels = 2,
                                 .monitor_channels = mon_ch,
                                 .monitor_channels_count = 1,

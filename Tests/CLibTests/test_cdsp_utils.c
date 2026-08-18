@@ -3,6 +3,7 @@
 
 #include "Utils/cdsp_time.h"
 #include "Utils/double_helpers.h"
+#include "Utils/float_helpers.h"
 #include "test_support.h"
 
 TEST(CdspTimeMonotonicProgression) {
@@ -27,14 +28,14 @@ TEST(DoubleHelpersDecibelsAndEnvelope) {
   double gain_m6db = double_from_db(-6.0205999);
   ASSERT_NEAR(gain_m6db, 0.5, 1e-4);
 
-  double db_unity = double_to_db(1.0);
-  ASSERT_NEAR(db_unity, 0.0, 1e-6);
+  float db_unity = float_to_db(1.0f);
+  ASSERT_NEAR(db_unity, 0.0f, 1e-6);
 
-  double db_zero = double_to_db(0.0);
-  ASSERT_EQ(db_zero, -1000.0);
+  float db_zero = float_to_db(0.0f);
+  ASSERT_EQ(db_zero, -1000.0f);
 
-  double db_neg = double_to_db(-5.0);
-  ASSERT_EQ(db_neg, -1000.0);
+  float db_neg = float_to_db(-5.0f);
+  ASSERT_EQ(db_neg, -1000.0f);
 
   // Attack / Release envelope smoothing
   double smoothed_attack = double_smooth_envelope(1.0, 0.0, 0.1, 0.01);

@@ -661,7 +661,7 @@ asio_sample_format_t asio_sample_format_from_string(const char* str) {
 /// by rejecting more DSD shaping noise; higher values widen the audible
 /// passband (and let through more ultrasonic content). Default 20 kHz.
 void capture_device_config_init(capture_device_config_t* config,
-                                audio_backend_type_t type, int channels) {
+                                audio_backend_type_t type, size_t channels) {
   if (!config) return;
   memset(config, 0, sizeof(capture_device_config_t));
   config->type = type;
@@ -709,7 +709,7 @@ void capture_device_config_init(capture_device_config_t* config,
 }
 
 void playback_device_config_init(playback_device_config_t* config,
-                                 audio_backend_type_t type, int channels) {
+                                 audio_backend_type_t type, size_t channels) {
   if (!config) return;
   memset(config, 0, sizeof(playback_device_config_t));
   config->type = type;
@@ -750,7 +750,8 @@ void playback_device_config_init(playback_device_config_t* config,
   }
 }
 
-int capture_device_config_get_channels(const capture_device_config_t* config) {
+size_t capture_device_config_get_channels(
+    const capture_device_config_t* config) {
   if (!config) return 0;
   switch (config->type) {
 #if defined(ENABLE_COREAUDIO)
@@ -785,7 +786,7 @@ int capture_device_config_get_channels(const capture_device_config_t* config) {
   }
 }
 
-int playback_device_config_get_channels(
+size_t playback_device_config_get_channels(
     const playback_device_config_t* config) {
   if (!config) return 0;
   switch (config->type) {
@@ -1068,7 +1069,7 @@ sdm_filter_t playback_device_config_get_dsd_encoder_filter(
 
 /// Capture sample rate when different from playback (requires resampler)
 void capture_device_config_set_channels(capture_device_config_t* config,
-                                        int channels) {
+                                        size_t channels) {
   if (!config) return;
   switch (config->type) {
 #if defined(ENABLE_COREAUDIO)
