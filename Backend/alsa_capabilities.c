@@ -18,7 +18,8 @@
 static const unsigned int STANDARD_RATES[] = {
     5512,  8000,  11025,  16000,  22050,  32000,  44100,  48000, 64000,
     88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000};
-#define STANDARD_RATES_COUNT (sizeof(STANDARD_RATES) / sizeof(STANDARD_RATES[0]))
+#define STANDARD_RATES_COUNT \
+  (sizeof(STANDARD_RATES) / sizeof(STANDARD_RATES[0]))
 
 static const unsigned int CAPABILITY_PROBE_CHANNEL_LIMIT = 128;
 
@@ -321,12 +322,12 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
     return NULL;
   }
 
-  // 2. let channel_values = supported_channel_values(&hwp, CAPABILITY_PROBE_CHANNEL_LIMIT)
-  // (src/alsa_backend/utils.rs:194-199)
+  // 2. let channel_values = supported_channel_values(&hwp,
+  // CAPABILITY_PROBE_CHANNEL_LIMIT) (src/alsa_backend/utils.rs:194-199)
   unsigned int channel_values[CAPABILITY_PROBE_CHANNEL_LIMIT];
-  int n_channels = supported_channel_values(
-      pcm, hwp, CAPABILITY_PROBE_CHANNEL_LIMIT, channel_values,
-      CAPABILITY_PROBE_CHANNEL_LIMIT);
+  int n_channels =
+      supported_channel_values(pcm, hwp, CAPABILITY_PROBE_CHANNEL_LIMIT,
+                               channel_values, CAPABILITY_PROBE_CHANNEL_LIMIT);
   if (n_channels <= 0) {
     if (err) {
       device_error_init(err, DEVICE_ERROR_OTHER,
@@ -368,7 +369,8 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
   for (int c = 0; c < n_channels; c++) {
     unsigned int channels = channel_values[c];
 
-    // if let Ok(hwp_ch) = HwParams::any(&pcm) && hwp_ch.set_channels(channels).is_ok()
+    // if let Ok(hwp_ch) = HwParams::any(&pcm) &&
+    // hwp_ch.set_channels(channels).is_ok()
     //    && let Ok(rates_values) = list_samplerates(&hwp_ch)
     // (src/alsa_backend/utils.rs:204-206)
     if (snd_pcm_hw_params_any(pcm, hwp) < 0 ||

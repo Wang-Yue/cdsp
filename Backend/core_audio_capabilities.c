@@ -138,6 +138,116 @@ static const char* format_string_for_asbd(
 /// Devices that advertise a single discrete rate report
 /// `mMinimum == mMaximum`; in that case we return the single value
 /// (rounded to `Int`).
+static bool populate_capability_set(device_capability_set_t* set,
+                                    const char* mode_name,
+                                    const phys_fmt_t* fmts, int fmt_count) {
+  snprintf(set->mode, sizeof(set->mode), "%s", mode_name);
+
+  // Find unique channel counts present in the collected formats.
+  int unique_ch[32];
+  int unique_ch_cnt = 0;
+  for (int i = 0; i < fmt_count; i++) {
+    bool found = false;
+    for (int j = 0; j < unique_ch_cnt; j++) {
+      if (unique_ch[j] == fmts[i].channels) {
+        found = true;
+        break;
+      }
+    }
+    if (!found && unique_ch_cnt < 32) {
+      unique_ch[unique_ch_cnt++] = fmts[i].channels;
+    }
+  }
+
+  // Sort unique channel counts ascending
+  qsort(unique_ch, unique_ch_cnt, sizeof(int), cmp_int);
+
+  if (unique_ch_cnt > 0) {
+    set->capabilities = (channel_capability_t*)calloc(
+        unique_ch_cnt, sizeof(channel_capability_t));
+    if (!set->capabilities) {
+      return false;
+    }
+  } else {
+    set->capabilities = NULL;
+  }
+  set->capabilities_count = unique_ch_cnt;
+
+  // For each unique channel count, find all the unique sample rates.
+  for (int c = 0; c < unique_ch_cnt; c++) {
+    channel_capability_t* ch_cap = &set->capabilities[c];
+    ch_cap->channels = unique_ch[c];
+
+    int unique_rate[64];
+    int unique_rate_cnt = 0;
+    for (int i = 0; i < fmt_count; i++) {
+      if (fmts[i].channels == ch_cap->channels) {
+        bool found = false;
+        for (int j = 0; j < unique_rate_cnt; j++) {
+          if (unique_rate[j] == fmts[i].samplerate) {
+            found = true;
+            break;
+          }
+        }
+        if (!found && unique_rate_cnt < 64) {
+          unique_rate[unique_rate_cnt++] = fmts[i].samplerate;
+        }
+      }
+    }
+
+    // Sort unique sample rates ascending
+    qsort(unique_rate, unique_rate_cnt, sizeof(int), cmp_int);
+
+    ch_cap->samplerates = (samplerate_capability_t*)calloc(
+        unique_rate_cnt, sizeof(samplerate_capability_t));
+    if (!ch_cap->samplerates) {
+      return false;
+    }
+    ch_cap->samplerates_count = unique_rate_cnt;
+
+    // For each combination of channel count and sample rate, extract the unique
+    // formats.
+    for (int r = 0; r < unique_rate_cnt; r++) {
+      samplerate_capability_t* rate_cap = &ch_cap->samplerates[r];
+      rate_cap->samplerate = unique_rate[r];
+
+      char unique_fmt[16][16] = {0};
+      int unique_fmt_cnt = 0;
+      for (int i = 0; i < fmt_count; i++) {
+        if (fmts[i].channels == ch_cap->channels &&
+            fmts[i].samplerate == rate_cap->samplerate) {
+          bool found = false;
+          for (int j = 0; j < unique_fmt_cnt; j++) {
+            if (strcmp(unique_fmt[j], fmts[i].format) == 0) {
+              found = true;
+              break;
+            }
+          }
+          if (!found && unique_fmt_cnt < 16) {
+            strncpy(unique_fmt[unique_fmt_cnt++], fmts[i].format, 15);
+          }
+        }
+      }
+
+      // Sort unique format strings ascending
+      qsort(unique_fmt, unique_fmt_cnt, sizeof(unique_fmt[0]), cmp_str);
+
+      rate_cap->formats = (char**)calloc(unique_fmt_cnt, sizeof(char*));
+      if (!rate_cap->formats) {
+        return false;
+      }
+      rate_cap->formats_count = unique_fmt_cnt;
+      for (int f = 0; f < unique_fmt_cnt; f++) {
+        rate_cap->formats[f] = strdup(unique_fmt[f]);
+        if (!rate_cap->formats[f]) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 audio_device_descriptor_t* core_audio_capabilities_describe(
     const char* device_name, bool is_capture, device_error_t* err) {
   core_audio_scope_t scope =
@@ -172,9 +282,12 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
   AudioStreamID streams[32];
   int stream_count = core_audio_device_streams(id, scope, streams, 32);
 
-  // Temporary flat array to collect formats across all streams.
-  phys_fmt_t fmts[256] = {0};
-  int fmt_count = 0;
+  // Temporary flat arrays to collect formats across all streams.
+  phys_fmt_t excl_fmts[256] = {0};
+  int excl_fmt_count = 0;
+
+  phys_fmt_t shared_fmts[256] = {0};
+  int shared_fmt_count = 0;
 
   // Iterate through each stream to probe its physical formats.
   for (int s = 0; s < stream_count; s++) {
@@ -237,13 +350,30 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
           }
         }
 
-        // Store combinations in the flat array.
+        // Store combinations for Exclusive mode
         for (int r = 0; r < rate_cnt; r++) {
-          if (fmt_count < 256) {
-            fmts[fmt_count].channels = (int)asbd.mChannelsPerFrame;
-            fmts[fmt_count].samplerate = rates_to_add[r];
-            strncpy(fmts[fmt_count].format, fmt_str, 15);
-            fmt_count++;
+          if (excl_fmt_count < 256) {
+            excl_fmts[excl_fmt_count].channels = (int)asbd.mChannelsPerFrame;
+            excl_fmts[excl_fmt_count].samplerate = rates_to_add[r];
+            strncpy(excl_fmts[excl_fmt_count].format, fmt_str, 15);
+            excl_fmt_count++;
+          }
+
+          // For Shared mode: format is always "F32"
+          bool shared_already = false;
+          for (int sf = 0; sf < shared_fmt_count; sf++) {
+            if (shared_fmts[sf].channels == (int)asbd.mChannelsPerFrame &&
+                shared_fmts[sf].samplerate == rates_to_add[r]) {
+              shared_already = true;
+              break;
+            }
+          }
+          if (!shared_already && shared_fmt_count < 256) {
+            shared_fmts[shared_fmt_count].channels =
+                (int)asbd.mChannelsPerFrame;
+            shared_fmts[shared_fmt_count].samplerate = rates_to_add[r];
+            strncpy(shared_fmts[shared_fmt_count].format, "F32", 15);
+            shared_fmt_count++;
           }
         }
       }
@@ -251,122 +381,37 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
     free(ranged);
   }
 
-  // Aggregate the flat array into the hierarchically nested capability tree
-  // structure: Channel counts -> Sample rates -> Formats.
-  desc->capability_sets =
-      (device_capability_set_t*)calloc(1, sizeof(device_capability_set_t));
+  size_t total_sets = 0;
+  if (shared_fmt_count > 0) total_sets++;
+  if (excl_fmt_count > 0) total_sets++;
+
+  if (total_sets == 0) {
+    free_audio_device_descriptor(desc);
+    return NULL;
+  }
+
+  desc->capability_sets = (device_capability_set_t*)calloc(
+      total_sets, sizeof(device_capability_set_t));
   if (!desc->capability_sets) {
     free_audio_device_descriptor(desc);
     return NULL;
   }
-  desc->capability_sets_count = 1;
+  desc->capability_sets_count = total_sets;
 
-  // Find unique channel counts present in the collected formats.
-  int unique_ch[32];
-  int unique_ch_cnt = 0;
-  for (int i = 0; i < fmt_count; i++) {
-    bool found = false;
-    for (int j = 0; j < unique_ch_cnt; j++) {
-      if (unique_ch[j] == fmts[i].channels) {
-        found = true;
-        break;
-      }
-    }
-    if (!found && unique_ch_cnt < 32) {
-      unique_ch[unique_ch_cnt++] = fmts[i].channels;
-    }
-  }
-
-  // Sort unique channel counts ascending
-  qsort(unique_ch, unique_ch_cnt, sizeof(int), cmp_int);
-
-  device_capability_set_t* set = &desc->capability_sets[0];
-  snprintf(set->mode, sizeof(set->mode), "Unified");
-  if (unique_ch_cnt > 0) {
-    set->capabilities = (channel_capability_t*)calloc(
-        unique_ch_cnt, sizeof(channel_capability_t));
-    if (!set->capabilities) {
+  size_t current_set = 0;
+  if (shared_fmt_count > 0) {
+    if (!populate_capability_set(&desc->capability_sets[current_set++],
+                                 "Shared", shared_fmts, shared_fmt_count)) {
       free_audio_device_descriptor(desc);
       return NULL;
     }
-  } else {
-    set->capabilities = NULL;
   }
-  set->capabilities_count = unique_ch_cnt;
 
-  // For each unique channel count, find all the unique sample rates.
-  for (int c = 0; c < unique_ch_cnt; c++) {
-    channel_capability_t* ch_cap = &set->capabilities[c];
-    ch_cap->channels = unique_ch[c];
-
-    int unique_rate[64];
-    int unique_rate_cnt = 0;
-    for (int i = 0; i < fmt_count; i++) {
-      if (fmts[i].channels == ch_cap->channels) {
-        bool found = false;
-        for (int j = 0; j < unique_rate_cnt; j++) {
-          if (unique_rate[j] == fmts[i].samplerate) {
-            found = true;
-            break;
-          }
-        }
-        if (!found && unique_rate_cnt < 64) {
-          unique_rate[unique_rate_cnt++] = fmts[i].samplerate;
-        }
-      }
-    }
-
-    // Sort unique sample rates ascending
-    qsort(unique_rate, unique_rate_cnt, sizeof(int), cmp_int);
-
-    ch_cap->samplerates = (samplerate_capability_t*)calloc(
-        unique_rate_cnt, sizeof(samplerate_capability_t));
-    if (!ch_cap->samplerates) {
+  if (excl_fmt_count > 0) {
+    if (!populate_capability_set(&desc->capability_sets[current_set++],
+                                 "Exclusive", excl_fmts, excl_fmt_count)) {
       free_audio_device_descriptor(desc);
       return NULL;
-    }
-    ch_cap->samplerates_count = unique_rate_cnt;
-
-    // For each combination of channel count and sample rate, extract the unique
-    // formats.
-    for (int r = 0; r < unique_rate_cnt; r++) {
-      samplerate_capability_t* rate_cap = &ch_cap->samplerates[r];
-      rate_cap->samplerate = unique_rate[r];
-
-      char unique_fmt[16][16] = {0};
-      int unique_fmt_cnt = 0;
-      for (int i = 0; i < fmt_count; i++) {
-        if (fmts[i].channels == ch_cap->channels &&
-            fmts[i].samplerate == rate_cap->samplerate) {
-          bool found = false;
-          for (int j = 0; j < unique_fmt_cnt; j++) {
-            if (strcmp(unique_fmt[j], fmts[i].format) == 0) {
-              found = true;
-              break;
-            }
-          }
-          if (!found && unique_fmt_cnt < 16) {
-            strncpy(unique_fmt[unique_fmt_cnt++], fmts[i].format, 15);
-          }
-        }
-      }
-
-      // Sort unique format strings ascending
-      qsort(unique_fmt, unique_fmt_cnt, sizeof(unique_fmt[0]), cmp_str);
-
-      rate_cap->formats = (char**)calloc(unique_fmt_cnt, sizeof(char*));
-      if (!rate_cap->formats) {
-        free_audio_device_descriptor(desc);
-        return NULL;
-      }
-      rate_cap->formats_count = unique_fmt_cnt;
-      for (int f = 0; f < unique_fmt_cnt; f++) {
-        rate_cap->formats[f] = strdup(unique_fmt[f]);
-        if (!rate_cap->formats[f]) {
-          free_audio_device_descriptor(desc);
-          return NULL;
-        }
-      }
     }
   }
 
