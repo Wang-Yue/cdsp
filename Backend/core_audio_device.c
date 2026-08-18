@@ -18,7 +18,7 @@
 // MARK: - Enumeration
 
 /// Every HAL device on the system, regardless of stream direction.
-int core_audio_device_all_ids(AudioDeviceID* out_ids, int max_ids) {
+static int core_audio_device_all_ids(AudioDeviceID* out_ids, int max_ids) {
   AudioObjectPropertyAddress addr = {
       .mSelector = kAudioHardwarePropertyDevices,
       .mScope = kAudioObjectPropertyScopeGlobal,
@@ -64,8 +64,8 @@ bool core_audio_device_name(AudioDeviceID device_id, char* out_name,
 }
 
 /// True if the device exposes any streams in the given direction.
-bool core_audio_device_has_stream(AudioDeviceID device_id,
-                                  core_audio_scope_t scope) {
+static bool core_audio_device_has_stream(AudioDeviceID device_id,
+                                         core_audio_scope_t scope) {
   AudioObjectPropertyAddress addr = {
       .mSelector = kAudioDevicePropertyStreams,
       .mScope = (scope == CORE_AUDIO_SCOPE_INPUT)
@@ -243,31 +243,11 @@ bool core_audio_device_set_buffer_frame_size(AudioDeviceID device_id,
                                      sizeof(uint32_t), &value) == noErr);
 }
 
-/// Read the device's current buffer frame size for a given scope.
-bool core_audio_device_get_buffer_frame_size(AudioDeviceID device_id,
-                                             core_audio_scope_t scope,
-                                             uint32_t* out_frames) {
-  AudioObjectPropertyAddress addr = {
-      .mSelector = kAudioDevicePropertyBufferFrameSize,
-      .mScope = (scope == CORE_AUDIO_SCOPE_INPUT)
-                    ? kAudioDevicePropertyScopeInput
-                    : kAudioDevicePropertyScopeOutput,
-      .mElement = kAudioObjectPropertyElementMain};
-  uint32_t frames = 0;
-  uint32_t size = sizeof(uint32_t);
-  if (AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &size, &frames) ==
-      noErr) {
-    if (out_frames) *out_frames = frames;
-    return true;
-  }
-  return false;
-}
-
 // MARK: - Clock-source / pitch control (BlackHole 0.5.0+)
 
 /// Set the device's active clock source by ID. Returns `true` on success.
-bool core_audio_device_set_clock_source_id(AudioDeviceID device_id,
-                                           uint32_t source_id) {
+static bool core_audio_device_set_clock_source_id(AudioDeviceID device_id,
+                                                  uint32_t source_id) {
   AudioObjectPropertyAddress addr = {
       .mSelector = kAudioDevicePropertyClockSource,
       .mScope = kAudioObjectPropertyScopeGlobal,
@@ -371,28 +351,6 @@ bool core_audio_device_has_nominal_sample_rate_property(
       .mScope = kAudioObjectPropertyScopeGlobal,
       .mElement = kAudioObjectPropertyElementMain};
   return AudioObjectHasProperty(device_id, &addr);
-}
-
-// MARK: - Stream-format builder
-
-/// Standard 32-bit linear-PCM ASBD used by both backends. Pass
-/// `interleaved: false` for the non-interleaved layout the engine
-/// Build an interleaved Float32 AudioStreamBasicDescription matching upstream
-/// CamillaDSP (LinearPcmFlags::IS_FLOAT | LinearPcmFlags::IS_PACKED).
-AudioStreamBasicDescription core_audio_device_float32_stream_format(
-    double sample_rate, int channels) {
-  uint32_t bytes_per_frame = (uint32_t)(4 * channels);
-  AudioFormatFlags flags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
-  AudioStreamBasicDescription asbd = {.mSampleRate = sample_rate,
-                                      .mFormatID = kAudioFormatLinearPCM,
-                                      .mFormatFlags = flags,
-                                      .mBytesPerPacket = bytes_per_frame,
-                                      .mFramesPerPacket = 1,
-                                      .mBytesPerFrame = bytes_per_frame,
-                                      .mChannelsPerFrame = (uint32_t)channels,
-                                      .mBitsPerChannel = 32,
-                                      .mReserved = 0};
-  return asbd;
 }
 
 // RateChangeWatcher implementation

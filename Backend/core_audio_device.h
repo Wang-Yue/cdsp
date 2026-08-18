@@ -48,15 +48,6 @@ typedef struct {
 // MARK: - Enumeration
 
 /**
- * @brief Retrieve all HAL device IDs on the system.
- *
- * @param out_ids Array to store the retrieved Device IDs.
- * @param max_ids Maximum number of IDs to retrieve (size of out_ids).
- * @return Number of Device IDs written, or negative on error.
- */
-int core_audio_device_all_ids(AudioDeviceID* out_ids, int max_ids);
-
-/**
  * @brief Retrieve the user-facing name of a device.
  *
  * @param device_id The HAL Device ID.
@@ -66,16 +57,6 @@ int core_audio_device_all_ids(AudioDeviceID* out_ids, int max_ids);
  */
 bool core_audio_device_name(AudioDeviceID device_id, char* out_name,
                             size_t max_len);
-
-/**
- * @brief Check if the device exposes any streams in the given direction.
- *
- * @param device_id The HAL Device ID.
- * @param scope The direction scope (input/output).
- * @return true if streams exist, false otherwise.
- */
-bool core_audio_device_has_stream(AudioDeviceID device_id,
-                                  core_audio_scope_t scope);
 
 /**
  * @brief Retrieve HAL stream IDs for the given device and direction.
@@ -129,8 +110,7 @@ AudioDeviceID core_audio_device_id_for_name(const char* name,
  * @brief Set the nominal sample rate of a device and wait for it to apply.
  *
  * CoreAudio applies rate changes asynchronously. This function blocks/polls
- * until the change is committed to prevent AudioUnits from latching onto old
- * rates.
+ * until the change is committed to prevent audio glitches.
  *
  * @param device_id The HAL Device ID.
  * @param rate The target sample rate in Hz.
@@ -163,29 +143,7 @@ bool core_audio_device_set_buffer_frame_size(AudioDeviceID device_id,
                                              uint32_t frames,
                                              core_audio_scope_t scope);
 
-/**
- * @brief Read the device's current buffer frame size for a given scope.
- *
- * @param device_id The HAL Device ID.
- * @param scope The direction scope.
- * @param out_frames Pointer to uint32_t to store the retrieved buffer size.
- * @return true on success, false otherwise.
- */
-bool core_audio_device_get_buffer_frame_size(AudioDeviceID device_id,
-                                             core_audio_scope_t scope,
-                                             uint32_t* out_frames);
-
 // MARK: - Clock-source / pitch control (BlackHole 0.5.0+)
-
-/**
- * @brief Set the device's active clock source by ID.
- *
- * @param device_id The HAL Device ID.
- * @param source_id The clock source ID to set.
- * @return true on success, false otherwise.
- */
-bool core_audio_device_set_clock_source_id(AudioDeviceID device_id,
-                                           uint32_t source_id);
 
 /**
  * @brief Select the "Internal Adjustable" clock source if available.
@@ -223,17 +181,6 @@ bool core_audio_device_has_nominal_sample_rate_property(
     AudioDeviceID device_id);
 
 // MARK: - Stream-format builder
-
-/**
- * @brief Helper to build a standard 32-bit linear-PCM interleaved
- * AudioStreamBasicDescription (ASBD) matching upstream CamillaDSP.
- *
- * @param sample_rate Sample rate in Hz.
- * @param channels Number of channels.
- * @return The constructed ASBD.
- */
-AudioStreamBasicDescription core_audio_device_float32_stream_format(
-    double sample_rate, int channels);
 
 /**
  * @brief Build an AudioStreamBasicDescription for a given format token string
