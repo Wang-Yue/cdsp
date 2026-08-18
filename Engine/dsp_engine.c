@@ -424,76 +424,50 @@ static bool dsp_engine_get_previous_config_json(void* ctx, char** out_json) {
   return false;
 }
 
-static void dsp_engine_free_vu_levels(vu_levels_t* levels) {
-  if (!levels) return;
-  if (levels->playback_rms) {
-    free(levels->playback_rms);
-    levels->playback_rms = NULL;
-  }
-  if (levels->playback_peak) {
-    free(levels->playback_peak);
-    levels->playback_peak = NULL;
-  }
-  if (levels->capture_rms) {
-    free(levels->capture_rms);
-    levels->capture_rms = NULL;
-  }
-  if (levels->capture_peak) {
-    free(levels->capture_peak);
-    levels->capture_peak = NULL;
-  }
-  levels->playback_channels = 0;
-  levels->capture_channels = 0;
-}
-
-static vu_levels_t dsp_engine_get_vu_levels_locked(dsp_engine_impl_t* impl) {
-  vu_levels_t res = {0};
-  if (!impl) return res;
-  processing_parameters_t* p =
-      dsp_session_get_processing_params(impl->session.active);
-  if (!p) return res;
-  dsp_session_collect_garbage(impl->session.active);
-  res.playback_channels = processing_parameters_get_playback_channels(p);
-  res.capture_channels = processing_parameters_get_capture_channels(p);
-  if (res.playback_channels > 0) {
-    res.playback_rms = (float*)calloc(res.playback_channels, sizeof(float));
-    res.playback_peak = (float*)calloc(res.playback_channels, sizeof(float));
-    if (!res.playback_rms || !res.playback_peak) {
-      dsp_engine_free_vu_levels(&res);
-      return (vu_levels_t){0};
-    }
-    processing_parameters_get_playback_signal_rms(p, res.playback_rms,
-                                                  res.playback_channels);
-    processing_parameters_get_playback_signal_peak(p, res.playback_peak,
-                                                   res.playback_channels);
-  }
-  if (res.capture_channels > 0) {
-    res.capture_rms = (float*)calloc(res.capture_channels, sizeof(float));
-    res.capture_peak = (float*)calloc(res.capture_channels, sizeof(float));
-    if (!res.capture_rms || !res.capture_peak) {
-      dsp_engine_free_vu_levels(&res);
-      return (vu_levels_t){0};
-    }
-    processing_parameters_get_capture_signal_rms(p, res.capture_rms,
-                                                 res.capture_channels);
-    processing_parameters_get_capture_signal_peak(p, res.capture_peak,
-                                                  res.capture_channels);
-  }
-  return res;
-}
-
 static bool dsp_engine_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
   if (!ctx || !out_vu) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-  *out_vu = dsp_engine_get_vu_levels_locked(impl);
+  processing_parameters_t* p =
+      dsp_session_get_processing_params(impl->session.active);
+  if (!p) {
+    pthread_mutex_unlock(&impl->state_mutex);
+    out_vu->playback_channels = 0;
+    out_vu->capture_channels = 0;
+    return false;
+  }
+  dsp_session_collect_garbage(impl->session.active);
+
+  size_t pb_ch = processing_parameters_get_playback_channels(p);
+  size_t cap_ch = processing_parameters_get_capture_channels(p);
+  out_vu->playback_channels = pb_ch;
+  out_vu->capture_channels = cap_ch;
+
+  if (out_vu->playback_rms && pb_ch > 0) {
+    processing_parameters_get_playback_signal_rms(p, out_vu->playback_rms,
+                                                  pb_ch);
+  }
+  if (out_vu->playback_peak && pb_ch > 0) {
+    processing_parameters_get_playback_signal_peak(p, out_vu->playback_peak,
+                                                   pb_ch);
+  }
+  if (out_vu->capture_rms && cap_ch > 0) {
+    processing_parameters_get_capture_signal_rms(p, out_vu->capture_rms,
+                                                 cap_ch);
+  }
+  if (out_vu->capture_peak && cap_ch > 0) {
+    processing_parameters_get_capture_signal_peak(p, out_vu->capture_peak,
+                                                  cap_ch);
+  }
+
   pthread_mutex_unlock(&impl->state_mutex);
   return true;
 }
 
-static bool dsp_engine_get_signal_levels_since(
-    void* ctx, bool is_capture, bool is_rms, uint64_t since_ms,
-    float* out_levels, size_t* out_channels) {
+static bool dsp_engine_get_signal_levels_since(void* ctx, bool is_capture,
+                                               bool is_rms, uint64_t since_ms,
+                                               float* out_levels,
+                                               size_t* out_channels) {
   if (!ctx) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
@@ -531,8 +505,8 @@ static bool dsp_engine_get_signal_levels_since(
 }
 
 static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
-                                    uint32_t channel, double min_freq,
-                                    double max_freq, uint32_t n_bins,
+                                    uint32_t channel, float min_freq,
+                                    float max_freq, uint32_t n_bins,
                                     spectrum_t* out_spec) {
   if (!ctx || !out_spec) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
@@ -564,43 +538,17 @@ static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
 
   if (status != 0) return false;
   out_spec->count = res.count;
-  if (res.count > 0) {
-    out_spec->frequencies = (double*)calloc(res.count, sizeof(double));
-    out_spec->magnitudes = (double*)calloc(res.count, sizeof(double));
-    if (!out_spec->frequencies || !out_spec->magnitudes) {
-      if (out_spec->frequencies) free(out_spec->frequencies);
-      if (out_spec->magnitudes) free(out_spec->magnitudes);
-      out_spec->frequencies = NULL;
-      out_spec->magnitudes = NULL;
-      out_spec->count = 0;
-      return false;
-    }
-    for (size_t i = 0; i < res.count; i++) {
-      out_spec->frequencies[i] = (double)res.frequencies[i];
-      out_spec->magnitudes[i] = (double)res.magnitudes[i];
-    }
-  } else {
-    out_spec->frequencies = NULL;
-    out_spec->magnitudes = NULL;
+  if (out_spec->frequencies && out_spec->magnitudes) {
+    memcpy(out_spec->frequencies, res.frequencies, res.count * sizeof(float));
+    memcpy(out_spec->magnitudes, res.magnitudes, res.count * sizeof(float));
   }
   return true;
 }
 
-static void dsp_engine_free_samples(audio_samples_t* samples) {
-  if (!samples) return;
-  if (samples->channels) {
-    for (size_t ch = 0; ch < samples->channels_count; ch++) {
-      free(samples->channels[ch]);
-    }
-    free(samples->channels);
-  }
-  free(samples);
-}
-
-static audio_samples_t* dsp_engine_get_samples(void* ctx, bool is_capture,
-                                               size_t n_frames,
-                                               audio_backend_error_t* err) {
-  if (!ctx) return NULL;
+static bool dsp_engine_get_samples(void* ctx, bool is_capture, size_t n_frames,
+                                   audio_samples_t* out_samples,
+                                   audio_backend_error_t* err) {
+  if (!ctx || !out_samples) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
   if (!impl->session.active) {
@@ -609,7 +557,7 @@ static audio_samples_t* dsp_engine_get_samples(void* ctx, bool is_capture,
       err->type = AUDIO_BACKEND_ERR_ENGINE_NOT_RUNNING;
       snprintf(err->message, sizeof(err->message), "Engine not running");
     }
-    return NULL;
+    return false;
   }
   audio_history_buffer_t* buf =
       is_capture ? impl->buffers.capture : impl->buffers.playback;
@@ -619,78 +567,36 @@ static audio_samples_t* dsp_engine_get_samples(void* ctx, bool is_capture,
       err->type = AUDIO_BACKEND_ERR_BUFFER_EMPTY;
       snprintf(err->message, sizeof(err->message), "Buffer empty");
     }
-    return NULL;
+    return false;
   }
 
-  size_t n = n_frames;
-  if (n > AUDIO_HISTORY_BUFFER_CAPACITY) n = AUDIO_HISTORY_BUFFER_CAPACITY;
   size_t ch_count = audio_history_buffer_get_channels(buf);
+  out_samples->channels_count = ch_count;
   if (ch_count == 0) {
     pthread_mutex_unlock(&impl->state_mutex);
     if (err) {
       err->type = AUDIO_BACKEND_ERR_BUFFER_EMPTY;
       snprintf(err->message, sizeof(err->message), "No channels");
     }
-    return NULL;
+    return false;
   }
 
-  audio_samples_t* res = (audio_samples_t*)calloc(1, sizeof(audio_samples_t));
-  if (!res) {
-    pthread_mutex_unlock(&impl->state_mutex);
-    return NULL;
-  }
-  res->channels_count = ch_count;
-  res->frames = n;
-  res->channels = (double**)calloc(ch_count, sizeof(double*));
-  if (!res->channels) {
-    pthread_mutex_unlock(&impl->state_mutex);
-    free(res);
-    return NULL;
-  }
+  size_t n = n_frames;
+  if (n > AUDIO_HISTORY_BUFFER_CAPACITY) n = AUDIO_HISTORY_BUFFER_CAPACITY;
+  out_samples->frames = n;
 
-  float* tmp = (float*)calloc(n, sizeof(float));
-  if (!tmp) {
-    pthread_mutex_unlock(&impl->state_mutex);
-    dsp_engine_free_samples(res);
-    if (err) {
-      err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
-      snprintf(err->message, sizeof(err->message), "Out of memory");
-    }
-    return NULL;
-  }
-
-  for (size_t ch = 0; ch < ch_count; ch++) {
-    res->channels[ch] = (double*)calloc(n, sizeof(double));
-    if (!res->channels[ch]) {
-      pthread_mutex_unlock(&impl->state_mutex);
-      free(tmp);
-      dsp_engine_free_samples(res);
-      if (err) {
-        err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
-        snprintf(err->message, sizeof(err->message), "Out of memory");
+  if (out_samples->channels) {
+    for (size_t ch = 0; ch < ch_count; ch++) {
+      if (out_samples->channels[ch]) {
+        bool enough = false;
+        audio_history_buffer_read_latest(buf, out_samples->channels[ch], n,
+                                         (int)ch, &enough);
       }
-      return NULL;
-    }
-    bool enough = false;
-    audio_history_buffer_status_t status =
-        audio_history_buffer_read_latest(buf, tmp, n, (int)ch, &enough);
-    if (status != AUDIO_HISTORY_BUFFER_OK) {
-      pthread_mutex_unlock(&impl->state_mutex);
-      free(tmp);
-      dsp_engine_free_samples(res);
-      if (err) {
-        err->type = AUDIO_BACKEND_ERR_BUFFER_EMPTY;
-        snprintf(err->message, sizeof(err->message), "Failed to read buffer");
-      }
-      return NULL;
-    }
-    for (size_t i = 0; i < n; i++) {
-      res->channels[ch][i] = (double)tmp[i];
     }
   }
+
   pthread_mutex_unlock(&impl->state_mutex);
-  free(tmp);
-  return res;
+  return true;
 }
 
 static void dsp_engine_set_log_level(void* ctx, log_level_t level) {

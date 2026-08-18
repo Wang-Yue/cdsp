@@ -451,7 +451,8 @@ float processing_parameters_update_playback_levels(
 #define CHUNK_LEVEL_HISTORY_CAPACITY 1024
 
 /**
- * @brief Gets the capture signal peak levels since a given timestamp across all channels.
+ * @brief Gets the capture signal peak levels since a given timestamp across all
+ * channels.
  *
  * @param params Pointer to the processing parameters.
  * @param since_ms Millisecond timestamp cutoff.
@@ -463,7 +464,8 @@ void processing_parameters_get_capture_signal_peak_since(
     size_t count);
 
 /**
- * @brief Gets the capture signal RMS levels since a given timestamp across all channels.
+ * @brief Gets the capture signal RMS levels since a given timestamp across all
+ * channels.
  *
  * @param params Pointer to the processing parameters.
  * @param since_ms Millisecond timestamp cutoff.
@@ -475,7 +477,8 @@ void processing_parameters_get_capture_signal_rms_since(
     size_t count);
 
 /**
- * @brief Gets the playback signal peak levels since a given timestamp across all channels.
+ * @brief Gets the playback signal peak levels since a given timestamp across
+ * all channels.
  *
  * @param params Pointer to the processing parameters.
  * @param since_ms Millisecond timestamp cutoff.
@@ -487,7 +490,8 @@ void processing_parameters_get_playback_signal_peak_since(
     size_t count);
 
 /**
- * @brief Gets the playback signal RMS levels since a given timestamp across all channels.
+ * @brief Gets the playback signal RMS levels since a given timestamp across all
+ * channels.
  *
  * @param params Pointer to the processing parameters.
  * @param since_ms Millisecond timestamp cutoff.

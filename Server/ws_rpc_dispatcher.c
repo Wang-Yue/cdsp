@@ -413,10 +413,10 @@ cJSON* serialize_spectrum(const cdsp_spectrum_t* spec) {
   cJSON* root = cJSON_CreateObject();
   cJSON_AddItemToObject(
       root, "frequencies",
-      cJSON_CreateDoubleArray(spec->frequencies, (int)spec->count));
+      cJSON_CreateFloatArray(spec->frequencies, (int)spec->count));
   cJSON_AddItemToObject(
       root, "magnitudes",
-      cJSON_CreateDoubleArray(spec->magnitudes, (int)spec->count));
+      cJSON_CreateFloatArray(spec->magnitudes, (int)spec->count));
   return root;
 }
 
@@ -808,7 +808,8 @@ static void handle_cmd_subscribe_vu_levels(websocket_server_t* server,
     item = cJSON_GetObjectItemCaseSensitive(arg, "release");
     if (item && cJSON_IsNumber(item)) release = (float)item->valuedouble;
   }
-  if (attack < 0.0f || attack > 60000.0f || release < 0.0f || release > 60000.0f) {
+  if (attack < 0.0f || attack > 60000.0f || release < 0.0f ||
+      release > 60000.0f) {
     reply_error(cmd_name, "InvalidValueError",
                 "attack and release must be between 0 and 60000 ms", ds);
   } else {
@@ -1369,21 +1370,25 @@ static void handle_get_signal_single(websocket_server_t* server,
                                      const char* cmd_name, bool is_capture,
                                      bool is_rms, dyn_string_t* ds) {
   cdsp_vu_levels_t vu = {0};
-  if (server && server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
-    float* arr = NULL;
-    size_t count = 0;
-    if (is_capture) {
-      arr = is_rms ? vu.capture_rms : vu.capture_peak;
-      count = vu.capture_channels;
-    } else {
-      arr = is_rms ? vu.playback_rms : vu.playback_peak;
-      count = vu.playback_channels;
-    }
-    reply_ok(cmd_name, cJSON_CreateFloatArray(arr, (int)count), ds);
-    cdsp_free_vu_levels(&vu);
-  } else {
+  if (!server || !server->engine || !cdsp_get_vu_levels(server->engine, &vu)) {
     reply_ok(cmd_name, cJSON_CreateFloatArray(NULL, 0), ds);
+    return;
   }
+
+  size_t count = is_capture ? vu.capture_channels : vu.playback_channels;
+  float* buf = count > 0 ? (float*)malloc(count * sizeof(float)) : NULL;
+
+  if (buf) {
+    if (is_capture) {
+      *(is_rms ? &vu.capture_rms : &vu.capture_peak) = buf;
+    } else {
+      *(is_rms ? &vu.playback_rms : &vu.playback_peak) = buf;
+    }
+    cdsp_get_vu_levels(server->engine, &vu);
+  }
+
+  reply_ok(cmd_name, cJSON_CreateFloatArray(buf, (int)count), ds);
+  if (buf) free(buf);
 }
 
 static void handle_get_signal_since_last(websocket_server_t* server,
@@ -1412,23 +1417,16 @@ static void handle_get_signal_since_last(websocket_server_t* server,
     }
 
     size_t ch = 0;
-    float stack_vals[64];
-    float* p_vals = stack_vals;
-    float* dyn_vals = NULL;
-
     if (server->engine &&
         cdsp_get_signal_levels_since(server->engine, is_capture, is_rms, since,
                                      NULL, &ch) &&
         ch > 0) {
-      if (ch > 64) {
-        dyn_vals = (float*)malloc(ch * sizeof(float));
-        p_vals = dyn_vals;
-      }
+      float* p_vals = (float*)malloc(ch * sizeof(float));
       if (p_vals) {
         cdsp_get_signal_levels_since(server->engine, is_capture, is_rms, since,
                                      p_vals, &ch);
         reply_ok(cmd_name, cJSON_CreateFloatArray(p_vals, (int)ch), ds);
-        if (dyn_vals) free(dyn_vals);
+        free(p_vals);
         return;
       }
     }
@@ -1451,23 +1449,16 @@ static void handle_get_signal_since(websocket_server_t* server,
       uint64_t since = now - (uint64_t)(secs * 1000.0f);
 
       size_t ch = 0;
-      float stack_vals[64];
-      float* p_vals = stack_vals;
-      float* dyn_vals = NULL;
-
       if (server->engine &&
           cdsp_get_signal_levels_since(server->engine, is_capture, is_rms,
                                        since, NULL, &ch) &&
           ch > 0) {
-        if (ch > 64) {
-          dyn_vals = (float*)malloc(ch * sizeof(float));
-          p_vals = dyn_vals;
-        }
+        float* p_vals = (float*)malloc(ch * sizeof(float));
         if (p_vals) {
           cdsp_get_signal_levels_since(server->engine, is_capture, is_rms,
                                        since, p_vals, &ch);
           reply_ok(cmd_name, cJSON_CreateFloatArray(p_vals, (int)ch), ds);
-          if (dyn_vals) free(dyn_vals);
+          free(p_vals);
           return;
         }
       }
@@ -1485,31 +1476,47 @@ static void handle_cmd_get_signal_levels(websocket_server_t* server,
                                          cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  cdsp_vu_levels_t vu = {0};
-  if (server && server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
-    cJSON* root = cJSON_CreateObject();
-    cJSON_AddItemToObject(
-        root, "playback_rms",
-        cJSON_CreateFloatArray(vu.playback_rms, (int)vu.playback_channels));
-    cJSON_AddItemToObject(
-        root, "playback_peak",
-        cJSON_CreateFloatArray(vu.playback_peak, (int)vu.playback_channels));
-    cJSON_AddItemToObject(
-        root, "capture_rms",
-        cJSON_CreateFloatArray(vu.capture_rms, (int)vu.capture_channels));
-    cJSON_AddItemToObject(
-        root, "capture_peak",
-        cJSON_CreateFloatArray(vu.capture_peak, (int)vu.capture_channels));
-    reply_ok(cmd_name, root, ds);
-    cdsp_free_vu_levels(&vu);
+  cdsp_vu_levels_t vu_query = {0};
+  if (server && server->engine &&
+      cdsp_get_vu_levels(server->engine, &vu_query)) {
+    size_t pb_ch = vu_query.playback_channels;
+    size_t cap_ch = vu_query.capture_channels;
+    float* pb_pk = pb_ch > 0 ? (float*)malloc(pb_ch * sizeof(float)) : NULL;
+    float* pb_rms = pb_ch > 0 ? (float*)malloc(pb_ch * sizeof(float)) : NULL;
+    float* cap_pk = cap_ch > 0 ? (float*)malloc(cap_ch * sizeof(float)) : NULL;
+    float* cap_rms = cap_ch > 0 ? (float*)malloc(cap_ch * sizeof(float)) : NULL;
+
+    cdsp_vu_levels_t vu = {
+        .playback_rms = pb_rms,
+        .playback_peak = pb_pk,
+        .capture_rms = cap_rms,
+        .capture_peak = cap_pk,
+    };
+    if (cdsp_get_vu_levels(server->engine, &vu)) {
+      cJSON* root = cJSON_CreateObject();
+      cJSON_AddItemToObject(root, "playback_rms",
+                            cJSON_CreateFloatArray(pb_rms, (int)pb_ch));
+      cJSON_AddItemToObject(root, "playback_peak",
+                            cJSON_CreateFloatArray(pb_pk, (int)pb_ch));
+      cJSON_AddItemToObject(root, "capture_rms",
+                            cJSON_CreateFloatArray(cap_rms, (int)cap_ch));
+      cJSON_AddItemToObject(root, "capture_peak",
+                            cJSON_CreateFloatArray(cap_pk, (int)cap_ch));
+      reply_ok(cmd_name, root, ds);
+    } else {
+      reply_error(cmd_name, "DeviceError", "Failed to get signal levels", ds);
+    }
+    if (pb_pk) free(pb_pk);
+    if (pb_rms) free(pb_rms);
+    if (cap_pk) free(cap_pk);
+    if (cap_rms) free(cap_rms);
   } else {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddItemToObject(root, "playback_rms",
                           cJSON_CreateFloatArray(NULL, 0));
     cJSON_AddItemToObject(root, "playback_peak",
                           cJSON_CreateFloatArray(NULL, 0));
-    cJSON_AddItemToObject(root, "capture_rms",
-                          cJSON_CreateFloatArray(NULL, 0));
+    cJSON_AddItemToObject(root, "capture_rms", cJSON_CreateFloatArray(NULL, 0));
     cJSON_AddItemToObject(root, "capture_peak",
                           cJSON_CreateFloatArray(NULL, 0));
     reply_ok(cmd_name, root, ds);
@@ -1597,8 +1604,7 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
                           cJSON_CreateFloatArray(NULL, 0));
     cJSON_AddItemToObject(root, "playback_peak",
                           cJSON_CreateFloatArray(NULL, 0));
-    cJSON_AddItemToObject(root, "capture_rms",
-                          cJSON_CreateFloatArray(NULL, 0));
+    cJSON_AddItemToObject(root, "capture_rms", cJSON_CreateFloatArray(NULL, 0));
     cJSON_AddItemToObject(root, "capture_peak",
                           cJSON_CreateFloatArray(NULL, 0));
     reply_ok(cmd_name, root, ds);
@@ -1698,12 +1704,12 @@ static void handle_cmd_get_signal_peaks_since_start(websocket_server_t* server,
   cJSON* root = cJSON_CreateObject();
   cJSON_AddItemToObject(
       root, "capture",
-      cJSON_CreateDoubleArray(server->capture_global_peaks,
-                              (int)server->capture_global_peaks_count));
+      cJSON_CreateFloatArray(server->capture_global_peaks,
+                             (int)server->capture_global_peaks_count));
   cJSON_AddItemToObject(
       root, "playback",
-      cJSON_CreateDoubleArray(server->playback_global_peaks,
-                              (int)server->playback_global_peaks_count));
+      cJSON_CreateFloatArray(server->playback_global_peaks,
+                             (int)server->playback_global_peaks_count));
   reply_ok(cmd_name, root, ds);
 }
 
@@ -1713,10 +1719,10 @@ static void handle_cmd_reset_signal_peaks_since_start(
   (void)client_idx;
   (void)arg;
   for (size_t i = 0; i < server->capture_global_peaks_count; i++) {
-    server->capture_global_peaks[i] = -1000.0;
+    server->capture_global_peaks[i] = -1000.0f;
   }
   for (size_t i = 0; i < server->playback_global_peaks_count; i++) {
-    server->playback_global_peaks[i] = -1000.0;
+    server->playback_global_peaks[i] = -1000.0f;
   }
   reply_ok(cmd_name, NULL, ds);
 }
@@ -1778,17 +1784,27 @@ static void handle_cmd_get_signal_range(websocket_server_t* server,
                                         cJSON* arg, dyn_string_t* ds) {
   (void)client_idx;
   (void)arg;
-  cdsp_vu_levels_t vu = {0};
-  if (server && server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
-    size_t count = vu.playback_channels;
-    float max_peak = -1000.0f;
-    for (size_t i = 0; i < count; i++) {
-      float pk = vu.playback_peak[i];
-      if (pk > max_peak) max_peak = pk;
+  cdsp_vu_levels_t vu_query = {0};
+  if (server && server->engine &&
+      cdsp_get_vu_levels(server->engine, &vu_query) &&
+      vu_query.playback_channels > 0) {
+    size_t count = vu_query.playback_channels;
+    float* pb_pk_buf = (float*)malloc(count * sizeof(float));
+    cdsp_vu_levels_t vu = {
+        .playback_peak = pb_pk_buf,
+    };
+    if (pb_pk_buf && cdsp_get_vu_levels(server->engine, &vu)) {
+      float max_peak = -1000.0f;
+      for (size_t i = 0; i < count; i++) {
+        float pk = vu.playback_peak[i];
+        if (pk > max_peak) max_peak = pk;
+      }
+      float range = 2.0f * db_to_amplitude(max_peak);
+      reply_ok(cmd_name, cJSON_CreateNumber(range), ds);
+    } else {
+      reply_ok(cmd_name, cJSON_CreateNumber(0.0), ds);
     }
-    float range = 2.0f * db_to_amplitude(max_peak);
-    reply_ok(cmd_name, cJSON_CreateNumber(range), ds);
-    cdsp_free_vu_levels(&vu);
+    if (pb_pk_buf) free(pb_pk_buf);
   } else {
     reply_ok(cmd_name, cJSON_CreateNumber(0.0), ds);
   }
@@ -1888,8 +1904,13 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
       is_capture ? CDSP_SPECTRUM_SIDE_CAPTURE : CDSP_SPECTRUM_SIDE_PLAYBACK;
   const uint32_t* chan_ptr = (channel == (uint32_t)-1) ? NULL : &channel;
 
-  cdsp_spectrum_t spec = {0};
-  bool spec_ok = server && server->engine &&
+  float* p_freqs = (float*)malloc(n_bins * sizeof(float));
+  float* p_mags = (float*)malloc(n_bins * sizeof(float));
+  cdsp_spectrum_t spec = {
+      .frequencies = p_freqs,
+      .magnitudes = p_mags,
+  };
+  bool spec_ok = (p_freqs && p_mags && server && server->engine) &&
                  cdsp_get_spectrum(server->engine, side_val, chan_ptr, min_freq,
                                    max_freq, n_bins, &spec);
   if (spec_ok) {
@@ -1899,10 +1920,11 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
     } else {
       reply_error(cmd_name, "UnknownError", NULL, ds);
     }
-    cdsp_free_spectrum(&spec);
   } else {
     reply_error(cmd_name, "DeviceError", "Failed to compute spectrum", ds);
   }
+  if (p_freqs) free(p_freqs);
+  if (p_mags) free(p_mags);
 }
 
 static void handle_get_available_devices(websocket_server_t* server,

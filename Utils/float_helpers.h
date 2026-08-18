@@ -78,9 +78,9 @@ static inline float dsp_ops_rms(waveform_t buffer, size_t count) {
   if (count == 0) return 0.0f;
   float sum = 0.0f;
 #if defined(__clang__)
-  #pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(enable) interleave(enable)
 #elif defined(__GNUC__)
-  #pragma GCC ivdep
+#pragma GCC ivdep
 #endif
   for (size_t i = 0; i < count; i++) {
     float f = (float)buffer[i];

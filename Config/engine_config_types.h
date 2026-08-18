@@ -127,30 +127,30 @@ void audio_backend_error_description(const audio_backend_error_t* err,
  * @brief VU levels for playback and capture.
  */
 typedef struct {
-  float* playback_rms;     /**< Array of playback RMS levels per channel. */
-  float* playback_peak;    /**< Array of playback peak levels per channel. */
-  float* capture_rms;      /**< Array of capture RMS levels per channel. */
-  float* capture_peak;     /**< Array of capture peak levels per channel. */
-  size_t playback_channels; /**< Number of playback channels. */
-  size_t capture_channels;  /**< Number of capture channels. */
+  float* playback_rms;  /**< Caller-allocated array for playback RMS levels. */
+  float* playback_peak; /**< Caller-allocated array for playback peak levels. */
+  float* capture_rms;   /**< Caller-allocated array for capture RMS levels. */
+  float* capture_peak;  /**< Caller-allocated array for capture peak levels. */
+  size_t playback_channels; /**< Total playback channels populated. */
+  size_t capture_channels;  /**< Total capture channels populated. */
 } vu_levels_t;
 
 /**
  * @brief Frequency spectrum data.
  */
 typedef struct {
-  double* frequencies; /**< Array of frequencies. */
-  double* magnitudes;  /**< Array of magnitudes. */
-  size_t count;        /**< Number of points. */
+  float* frequencies; /**< Caller-allocated array of frequencies. */
+  float* magnitudes;  /**< Caller-allocated array of magnitudes. */
+  size_t count;       /**< Number of bins computed. */
 } spectrum_t;
 
 /**
  * @brief Audio samples buffer.
  */
 typedef struct {
-  double** channels;     /**< Array of channel buffers. */
-  size_t channels_count; /**< Number of channels. */
-  size_t frames;         /**< Number of frames per channel. */
+  float** channels;      /**< Caller-allocated array of channel pointers. */
+  size_t channels_count; /**< Number of channels populated. */
+  size_t frames;         /**< Number of frames written per channel. */
 } audio_samples_t;
 
 // MARK: - Capability data model

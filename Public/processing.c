@@ -111,15 +111,18 @@ bool cdsp_get_state_file_updated(const dsp_engine_t* engine) {
              : true;
 }
 
-cdsp_audio_samples_t* cdsp_get_samples(dsp_engine_t* engine, bool is_capture,
-                                       size_t n_frames,
-                                       cdsp_backend_error_t* out_err) {
-  if (!engine || !engine->get_samples) return NULL;
+bool cdsp_get_samples(dsp_engine_t* engine, bool is_capture, size_t n_frames,
+                      cdsp_audio_samples_t* out_samples,
+                      cdsp_backend_error_t* out_err) {
+  if (!engine || !engine->get_samples || !out_samples) return false;
 
   audio_backend_error_t raw_err = {0};
-  audio_samples_t* raw_samples =
-      engine->get_samples(engine->ctx, is_capture, n_frames, &raw_err);
-  if (!raw_samples) {
+  audio_samples_t raw_samples = {
+      .channels = out_samples->channels,
+  };
+  bool ok = engine->get_samples(engine->ctx, is_capture, n_frames, &raw_samples,
+                                &raw_err);
+  if (!ok) {
     if (out_err) {
       switch (raw_err.type) {
         case AUDIO_BACKEND_ERR_CONFIG_PARSE:
@@ -138,18 +141,9 @@ cdsp_audio_samples_t* cdsp_get_samples(dsp_engine_t* engine, bool is_capture,
       strncpy(out_err->message, raw_err.message, sizeof(out_err->message) - 1);
       out_err->message[sizeof(out_err->message) - 1] = '\0';
     }
-    return NULL;
+    return false;
   }
-  return (cdsp_audio_samples_t*)raw_samples;
-}
-
-void cdsp_free_samples(cdsp_audio_samples_t* samples) {
-  if (!samples) return;
-  if (samples->channels) {
-    for (size_t ch = 0; ch < samples->channels_count; ch++) {
-      free(samples->channels[ch]);
-    }
-    free(samples->channels);
-  }
-  free(samples);
+  out_samples->channels_count = raw_samples.channels_count;
+  out_samples->frames = raw_samples.frames;
+  return true;
 }

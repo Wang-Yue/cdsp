@@ -40,7 +40,7 @@ TEST(SineProducesPeakAtCarrier) {
 
   spectrum_result_t result = {0};
   spectrum_status_t status = spectrum_analyzer_compute(
-      analyzer, buffer, 0, 20.0, 20000.0, 64, samplerate, &result);
+      analyzer, buffer, 0, 20.0f, 20000.0f, 64, samplerate, &result);
 
   ASSERT_EQ(SPECTRUM_OK, status);
   ASSERT_EQ(64, result.count);
@@ -78,7 +78,7 @@ TEST(EmptyBufferThrows) {
   spectrum_result_t result = {0};
 
   spectrum_status_t status = spectrum_analyzer_compute(
-      analyzer, buffer, -1, 20.0, 20000.0, 32, 48000, &result);
+      analyzer, buffer, -1, 20.0f, 20000.0f, 32, 48000, &result);
   ASSERT_EQ(SPECTRUM_ERROR_EMPTY, status);
 
   audio_history_buffer_free(buffer);
@@ -96,7 +96,7 @@ TEST(ChannelOutOfRangeThrows) {
 
   spectrum_result_t result = {0};
   spectrum_status_t status = spectrum_analyzer_compute(
-      analyzer, buffer, 4, 20.0, 20000.0, 32, 48000, &result);
+      analyzer, buffer, 4, 20.0f, 20000.0f, 32, 48000, &result);
   ASSERT_EQ(SPECTRUM_ERROR_OUT_OF_RANGE, status);
 
   audio_history_buffer_free(buffer);
@@ -115,7 +115,7 @@ TEST(LogBinFrequenciesAreGeometric) {
 
   spectrum_result_t result = {0};
   spectrum_status_t status = spectrum_analyzer_compute(
-      analyzer, buffer, 0, 20.0, 20000.0, 5, 48000, &result);
+      analyzer, buffer, 0, 20.0f, 20000.0f, 5, 48000, &result);
   ASSERT_EQ(SPECTRUM_OK, status);
   ASSERT_EQ(5, result.count);
   ASSERT_NEAR(20.0f, result.frequencies[0], 1e-3);
@@ -159,7 +159,8 @@ TEST(HistoryBufferAppendLargeChunkExceedingCapacity) {
   ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status);
   ASSERT_TRUE(enough);
 
-  // The latest `cap` frames must be the tail of the chunk: (large_frames - cap) .. (large_frames - 1)
+  // The latest `cap` frames must be the tail of the chunk: (large_frames - cap)
+  // .. (large_frames - 1)
   for (size_t i = 0; i < cap; i++) {
     float expected = (float)(large_frames - cap + i);
     ASSERT_EQ(expected, dest[i]);

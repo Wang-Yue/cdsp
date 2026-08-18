@@ -103,8 +103,7 @@ static inline void read_channel_segment(const float* ch_src, float* dest,
  * @param cap Capacity of the source ring buffer.
  */
 static inline void add_channel_segment(const float* ch_src, float* dest,
-                                       size_t start, size_t count,
-                                       size_t cap) {
+                                       size_t start, size_t count, size_t cap) {
   size_t first = cap - start;
   if (first > count) first = count;
   size_t second = count - first;
@@ -258,8 +257,8 @@ void audio_history_buffer_append(audio_history_buffer_t* history,
     const double* ch_data = audio_chunk_get_channel(chunk, ch);
     if (!ch_data) continue;
     copy_double_to_float_segment(ch_data + offset_in_chunk,
-                                 history->data + (ch * cap),
-                                 start_idx, frames_to_copy, cap);
+                                 history->data + (ch * cap), start_idx,
+                                 frames_to_copy, cap);
   }
 
   atomic_store_explicit(&history->write_pos, (pos + n_frames) & mask,
@@ -301,8 +300,8 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
     size_t start = (size_t)((pos + cap - (count & mask)) & mask);
 
     if (channel >= 0) {
-      read_channel_segment(history->data + ((size_t)channel * cap), dest,
-                           start, count, cap);
+      read_channel_segment(history->data + ((size_t)channel * cap), dest, start,
+                           count, cap);
     } else {
       read_channel_segment(history->data, dest, start, count, cap);
       for (size_t ch = 1; ch < history->channels; ch++) {

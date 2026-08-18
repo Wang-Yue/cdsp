@@ -318,7 +318,8 @@ processing_parameters_t* processing_parameters_create(
     params->capture_signal_rms =
         (atomic_float_t*)calloc(capture_channels, sizeof(atomic_float_t));
     if (!params->capture_signal_peak || !params->capture_signal_rms ||
-        !params->capture_peak_history.data || !params->capture_rms_history.data) {
+        !params->capture_peak_history.data ||
+        !params->capture_rms_history.data) {
       processing_parameters_free(params);
       return NULL;
     }
@@ -616,7 +617,8 @@ static float update_levels_internal(const audio_chunk_t* chunk,
     atomic_store_explicit(&rms_hist->write_pos,
                           (rms_pos + 1) & (CHUNK_LEVEL_HISTORY_CAPACITY - 1),
                           memory_order_release);
-    atomic_fetch_add_explicit(&rms_hist->total_written, 1, memory_order_release);
+    atomic_fetch_add_explicit(&rms_hist->total_written, 1,
+                              memory_order_release);
     atomic_store_explicit(&rms_hist->write_seq, rms_seq + 2,
                           memory_order_release);
   }

@@ -14,11 +14,13 @@ extern "C" {
 /**
  * @brief Get the current VU levels for capture and playback sides.
  *
- * The arrays within out_vu are allocated dynamically. The caller must free them
- * by calling cdsp_free_vu_levels.
+ * The arrays within out_vu (`playback_rms`, `playback_peak`, `capture_rms`,
+ * `capture_peak`) are allocated by the caller to hold up to the configured
+ * playback and capture channel counts. The engine populates the levels and
+ * returns the channel counts in `playback_channels` and `capture_channels`.
  *
  * @param engine Pointer to the engine.
- * @param out_vu Pointer to write the VU levels to.
+ * @param out_vu Pointer to the caller-allocated VU levels structure.
  * @return true on success, false on failure.
  */
 CDSP_API bool cdsp_get_vu_levels(const dsp_engine_t* engine,
@@ -32,7 +34,8 @@ CDSP_API bool cdsp_get_vu_levels(const dsp_engine_t* engine,
  * @param is_capture true for capture stream, false for playback stream.
  * @param is_rms true for RMS levels, false for Peak levels.
  * @param since_ms Millisecond timestamp cutoff.
- * @param out_levels Output float array (allocated by caller, size >= out_channels).
+ * @param out_levels Output float array (allocated by caller, size >=
+ * out_channels).
  * @param out_channels Output pointer to receive channel count.
  * @return true on success, false on failure or inactive engine.
  */
@@ -40,12 +43,6 @@ CDSP_API bool cdsp_get_signal_levels_since(const dsp_engine_t* engine,
                                            bool is_capture, bool is_rms,
                                            uint64_t since_ms, float* out_levels,
                                            size_t* out_channels);
-
-/**
- * @brief Free the arrays inside the cdsp_vu_levels_t structure.
- * @param vu Pointer to the VU levels structure.
- */
-CDSP_API void cdsp_free_vu_levels(cdsp_vu_levels_t* vu);
 
 /**
  * @brief Get the optional channel labels configured for playback and capture.

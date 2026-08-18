@@ -101,30 +101,26 @@ static void mock_reset_clipped_samples(void* ctx) {
 static bool mock_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
   (void)ctx;
   if (!mock_params || !out_vu) return false;
-  out_vu->playback_channels =
-      processing_parameters_get_playback_channels(mock_params);
-  out_vu->capture_channels =
-      processing_parameters_get_capture_channels(mock_params);
+  size_t pb_ch = processing_parameters_get_playback_channels(mock_params);
+  size_t cap_ch = processing_parameters_get_capture_channels(mock_params);
+  out_vu->playback_channels = pb_ch;
+  out_vu->capture_channels = cap_ch;
 
-  if (out_vu->playback_channels > 0) {
-    out_vu->playback_rms =
-        (float*)calloc(out_vu->playback_channels, sizeof(float));
-    out_vu->playback_peak =
-        (float*)calloc(out_vu->playback_channels, sizeof(float));
-    processing_parameters_get_playback_signal_rms(
-        mock_params, out_vu->playback_rms, out_vu->playback_channels);
-    processing_parameters_get_playback_signal_peak(
-        mock_params, out_vu->playback_peak, out_vu->playback_channels);
+  if (out_vu->playback_rms && pb_ch > 0) {
+    processing_parameters_get_playback_signal_rms(mock_params,
+                                                  out_vu->playback_rms, pb_ch);
   }
-  if (out_vu->capture_channels > 0) {
-    out_vu->capture_rms =
-        (float*)calloc(out_vu->capture_channels, sizeof(float));
-    out_vu->capture_peak =
-        (float*)calloc(out_vu->capture_channels, sizeof(float));
-    processing_parameters_get_capture_signal_rms(
-        mock_params, out_vu->capture_rms, out_vu->capture_channels);
-    processing_parameters_get_capture_signal_peak(
-        mock_params, out_vu->capture_peak, out_vu->capture_channels);
+  if (out_vu->playback_peak && pb_ch > 0) {
+    processing_parameters_get_playback_signal_peak(
+        mock_params, out_vu->playback_peak, pb_ch);
+  }
+  if (out_vu->capture_rms && cap_ch > 0) {
+    processing_parameters_get_capture_signal_rms(mock_params,
+                                                 out_vu->capture_rms, cap_ch);
+  }
+  if (out_vu->capture_peak && cap_ch > 0) {
+    processing_parameters_get_capture_signal_peak(mock_params,
+                                                  out_vu->capture_peak, cap_ch);
   }
   return true;
 }

@@ -54,12 +54,12 @@ typedef struct {
  * @brief VU level snapshot for playback and capture.
  */
 typedef struct {
-  float* playback_rms;
-  float* playback_peak;
-  float* capture_rms;
-  float* capture_peak;
-  size_t playback_channels;
-  size_t capture_channels;
+  float* playback_rms;  /**< Caller-allocated array for playback RMS levels. */
+  float* playback_peak; /**< Caller-allocated array for playback peak levels. */
+  float* capture_rms;   /**< Caller-allocated array for capture RMS levels. */
+  float* capture_peak;  /**< Caller-allocated array for capture peak levels. */
+  size_t playback_channels; /**< Total playback channels populated. */
+  size_t capture_channels;  /**< Total capture channels populated. */
 } cdsp_vu_levels_t;
 
 /**
@@ -159,9 +159,9 @@ typedef enum {
  * @brief Public representation of captured or playback audio samples.
  */
 typedef struct {
-  double** channels;     /**< Array of channel buffers. */
-  size_t channels_count; /**< Number of channels. */
-  size_t frames;         /**< Number of frames per channel. */
+  float** channels;      /**< Caller-allocated array of channel pointers. */
+  size_t channels_count; /**< Number of channels populated. */
+  size_t frames;         /**< Number of frames written per channel. */
 } cdsp_audio_samples_t;
 
 #ifdef __cplusplus

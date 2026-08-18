@@ -107,7 +107,6 @@ float db_to_amplitude(float db);
 float amplitude_to_db(float amp);
 void client_session_clear(client_session_t* session);
 void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...);
-void free_vu_levels_arrays(cdsp_vu_levels_t* vu);
 cJSON* serialize_stop_reason(const cdsp_stop_reason_t* reason);
 cJSON* create_state_event_value(cdsp_processing_state_t state,
                                 const cdsp_stop_reason_t* reason);

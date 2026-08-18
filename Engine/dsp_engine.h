@@ -226,7 +226,7 @@ struct dsp_engine {
    * of bounds.
    */
   bool (*get_spectrum)(void* ctx, bool is_capture, uint32_t channel,
-                       double min_freq, double max_freq, uint32_t n_bins,
+                       float min_freq, float max_freq, uint32_t n_bins,
                        spectrum_t* out_spec);
 
   /**
@@ -234,12 +234,12 @@ struct dsp_engine {
    * @param ctx Pointer to internal engine context.
    * @param is_capture true for capture samples, false for playback samples.
    * @param n_frames Number of requested frame samples.
+   * @param out_samples Caller-allocated audio_samples_t structure.
    * @param err Output backend error descriptor on failure.
-   * @return Allocated audio_samples_t structure (must be freed by calling
-   * cdsp_free_samples).
+   * @return true on success, false on failure.
    */
-  audio_samples_t* (*get_samples)(void* ctx, bool is_capture, size_t n_frames,
-                                  audio_backend_error_t* err);
+  bool (*get_samples)(void* ctx, bool is_capture, size_t n_frames,
+                      audio_samples_t* out_samples, audio_backend_error_t* err);
 
   /**
    * @brief Fetch active RMS and peak signal level measurements (WebSocket:

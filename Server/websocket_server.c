@@ -261,14 +261,35 @@ static void* server_thread_func(void* arg) {
       size_t cap_channels = 0;
       size_t pb_channels = 0;
 
-      cdsp_vu_levels_t vu = {0};
-      if (server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
-        cap_channels = vu.capture_channels;
-        pb_channels = vu.playback_channels;
-        current_cap_peak = vu.capture_peak;
-        current_cap_rms = vu.capture_rms;
-        current_pb_peak = vu.playback_peak;
-        current_pb_rms = vu.playback_rms;
+      float* cap_pk_buf = NULL;
+      float* cap_rms_buf = NULL;
+      float* pb_pk_buf = NULL;
+      float* pb_rms_buf = NULL;
+
+      cdsp_vu_levels_t vu_query = {0};
+      if (server->engine && cdsp_get_vu_levels(server->engine, &vu_query)) {
+        cap_channels = vu_query.capture_channels;
+        pb_channels = vu_query.playback_channels;
+        if (cap_channels > 0) {
+          cap_pk_buf = (float*)malloc(cap_channels * sizeof(float));
+          cap_rms_buf = (float*)malloc(cap_channels * sizeof(float));
+        }
+        if (pb_channels > 0) {
+          pb_pk_buf = (float*)malloc(pb_channels * sizeof(float));
+          pb_rms_buf = (float*)malloc(pb_channels * sizeof(float));
+        }
+        cdsp_vu_levels_t vu = {
+            .playback_rms = pb_rms_buf,
+            .playback_peak = pb_pk_buf,
+            .capture_rms = cap_rms_buf,
+            .capture_peak = cap_pk_buf,
+        };
+        if (cdsp_get_vu_levels(server->engine, &vu)) {
+          current_cap_peak = vu.capture_peak;
+          current_cap_rms = vu.capture_rms;
+          current_pb_peak = vu.playback_peak;
+          current_pb_rms = vu.playback_rms;
+        }
 
         if (cap_channels > 0 && current_cap_peak && current_cap_rms) {
           if (server->capture_global_peaks_count != cap_channels) {
@@ -336,12 +357,13 @@ static void* server_thread_func(void* arg) {
         }
 
         if (session->vu_subscribed && pb_channels > 0) {
-          float interval =
-              session->vu_max_rate > 0.0f ? 1000.0f / session->vu_max_rate : 0.0f;
+          float interval = session->vu_max_rate > 0.0f
+                               ? 1000.0f / session->vu_max_rate
+                               : 0.0f;
           if (now - session->last_vu_push_time >= interval) {
             float dt = session->last_vu_push_time == 0
-                            ? 100.0f
-                            : (float)(now - session->last_vu_push_time);
+                           ? 100.0f
+                           : (float)(now - session->last_vu_push_time);
             float attack = smoothing_alpha(dt, session->vu_attack);
             float release = smoothing_alpha(dt, session->vu_release);
 
@@ -399,8 +421,7 @@ static void* server_thread_func(void* arg) {
             if (cap_channels > 0) {
               if (session->vu_cap_channels != cap_channels) {
                 float* new_rms = (float*)calloc(cap_channels, sizeof(float));
-                float* new_peak =
-                    (float*)calloc(cap_channels, sizeof(float));
+                float* new_peak = (float*)calloc(cap_channels, sizeof(float));
                 if (new_rms && new_peak) {
                   size_t copy_count = session->vu_cap_channels < cap_channels
                                           ? session->vu_cap_channels
@@ -461,12 +482,12 @@ static void* server_thread_func(void* arg) {
             cJSON_AddItemToObject(
                 val_value, "playback_peak",
                 cJSON_CreateFloatArray(session->vu_pb_peak, (int)pb_channels));
-            cJSON_AddItemToObject(val_value, "capture_rms",
-                                  cJSON_CreateFloatArray(session->vu_cap_rms,
-                                                          (int)cap_channels));
+            cJSON_AddItemToObject(
+                val_value, "capture_rms",
+                cJSON_CreateFloatArray(session->vu_cap_rms, (int)cap_channels));
             cJSON_AddItemToObject(val_value, "capture_peak",
                                   cJSON_CreateFloatArray(session->vu_cap_peak,
-                                                          (int)cap_channels));
+                                                         (int)cap_channels));
             QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
             cJSON_Delete(root);
             session->last_vu_push_time = now;
@@ -515,10 +536,16 @@ static void* server_thread_func(void* arg) {
 
         if (session->spectrum_subscribed) {
           float interval = session->spectrum_max_rate > 0.0f
-                                ? 1000.0f / session->spectrum_max_rate
-                                : 0.0f;
+                               ? 1000.0f / session->spectrum_max_rate
+                               : 0.0f;
           if (now - session->last_spectrum_push_time >= interval) {
-            cdsp_spectrum_t spec = {0};
+            size_t n_bins = session->spectrum_n_bins;
+            float* p_freqs = (float*)malloc(n_bins * sizeof(float));
+            float* p_mags = (float*)malloc(n_bins * sizeof(float));
+            cdsp_spectrum_t spec = {
+                .frequencies = p_freqs,
+                .magnitudes = p_mags,
+            };
             cdsp_spectrum_side_t side_val = session->spectrum_is_capture
                                                 ? CDSP_SPECTRUM_SIDE_CAPTURE
                                                 : CDSP_SPECTRUM_SIDE_PLAYBACK;
@@ -526,11 +553,11 @@ static void* server_thread_func(void* arg) {
                 (session->spectrum_channel == (uint32_t)-1)
                     ? NULL
                     : &session->spectrum_channel;
-            bool spec_ok = server && server->engine &&
-                           cdsp_get_spectrum(server->engine, side_val, chan_ptr,
-                                             session->spectrum_min_freq,
-                                             session->spectrum_max_freq,
-                                             session->spectrum_n_bins, &spec);
+            bool spec_ok =
+                (p_freqs && p_mags && server && server->engine) &&
+                cdsp_get_spectrum(server->engine, side_val, chan_ptr,
+                                  session->spectrum_min_freq,
+                                  session->spectrum_max_freq, n_bins, &spec);
             if (spec_ok) {
               cJSON* root = cJSON_CreateObject();
               cJSON_AddStringToObject(root, "reply", "SpectrumEvent");
@@ -538,14 +565,17 @@ static void* server_thread_func(void* arg) {
               cJSON_AddItemToObject(root, "value", serialize_spectrum(&spec));
               QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
               cJSON_Delete(root);
-              cdsp_free_spectrum(&spec);
               session->last_spectrum_push_time = now;
             }
+            if (p_freqs) free(p_freqs);
+            if (p_mags) free(p_mags);
           }
         }
       }
-
-      cdsp_free_vu_levels(&vu);
+      if (cap_pk_buf) free(cap_pk_buf);
+      if (cap_rms_buf) free(cap_rms_buf);
+      if (pb_pk_buf) free(pb_pk_buf);
+      if (pb_rms_buf) free(pb_rms_buf);
     }
     pthread_mutex_unlock(&server->sessions_mutex);
 
@@ -838,7 +868,7 @@ bool websocket_server_get_client_vu_subscribed(const websocket_server_t* server,
 }
 
 float websocket_server_get_client_vu_max_rate(const websocket_server_t* server,
-                                               int client_idx) {
+                                              int client_idx) {
   if (!server || client_idx < 0 || client_idx >= 32) return 0.0f;
   pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
   float res = server->client_sessions[client_idx].vu_max_rate;
@@ -847,7 +877,7 @@ float websocket_server_get_client_vu_max_rate(const websocket_server_t* server,
 }
 
 float websocket_server_get_client_vu_attack(const websocket_server_t* server,
-                                             int client_idx) {
+                                            int client_idx) {
   if (!server || client_idx < 0 || client_idx >= 32) return 0.0f;
   pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
   float res = server->client_sessions[client_idx].vu_attack;
@@ -856,7 +886,7 @@ float websocket_server_get_client_vu_attack(const websocket_server_t* server,
 }
 
 float websocket_server_get_client_vu_release(const websocket_server_t* server,
-                                              int client_idx) {
+                                             int client_idx) {
   if (!server || client_idx < 0 || client_idx >= 32) return 0.0f;
   pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
   float res = server->client_sessions[client_idx].vu_release;

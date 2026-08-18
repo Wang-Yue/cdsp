@@ -11,52 +11,18 @@
 bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
   if (!engine || !out_vu || !engine->get_vu_levels) return false;
 
-  vu_levels_t vu = {0};
-  if (!engine->get_vu_levels(engine->ctx, &vu)) return false;
-
-  out_vu->playback_channels = vu.playback_channels;
-  out_vu->capture_channels = vu.capture_channels;
-
-  if (vu.playback_channels > 0) {
-    out_vu->playback_rms =
-        (float*)malloc(vu.playback_channels * sizeof(float));
-    out_vu->playback_peak =
-        (float*)malloc(vu.playback_channels * sizeof(float));
-    if (out_vu->playback_rms && vu.playback_rms) {
-      memcpy(out_vu->playback_rms, vu.playback_rms,
-             vu.playback_channels * sizeof(float));
-    }
-    if (out_vu->playback_peak && vu.playback_peak) {
-      memcpy(out_vu->playback_peak, vu.playback_peak,
-             vu.playback_channels * sizeof(float));
-    }
-  } else {
-    out_vu->playback_rms = NULL;
-    out_vu->playback_peak = NULL;
+  vu_levels_t vu = {
+      .playback_rms = out_vu->playback_rms,
+      .playback_peak = out_vu->playback_peak,
+      .capture_rms = out_vu->capture_rms,
+      .capture_peak = out_vu->capture_peak,
+  };
+  bool ok = engine->get_vu_levels(engine->ctx, &vu);
+  if (ok) {
+    out_vu->playback_channels = vu.playback_channels;
+    out_vu->capture_channels = vu.capture_channels;
   }
-
-  if (vu.capture_channels > 0) {
-    out_vu->capture_rms = (float*)malloc(vu.capture_channels * sizeof(float));
-    out_vu->capture_peak =
-        (float*)malloc(vu.capture_channels * sizeof(float));
-    if (out_vu->capture_rms && vu.capture_rms) {
-      memcpy(out_vu->capture_rms, vu.capture_rms,
-             vu.capture_channels * sizeof(float));
-    }
-    if (out_vu->capture_peak && vu.capture_peak) {
-      memcpy(out_vu->capture_peak, vu.capture_peak,
-             vu.capture_channels * sizeof(float));
-    }
-  } else {
-    out_vu->capture_rms = NULL;
-    out_vu->capture_peak = NULL;
-  }
-
-  if (vu.playback_rms) free(vu.playback_rms);
-  if (vu.playback_peak) free(vu.playback_peak);
-  if (vu.capture_rms) free(vu.capture_rms);
-  if (vu.capture_peak) free(vu.capture_peak);
-  return true;
+  return ok;
 }
 
 bool cdsp_get_signal_levels_since(const dsp_engine_t* engine, bool is_capture,
@@ -65,18 +31,6 @@ bool cdsp_get_signal_levels_since(const dsp_engine_t* engine, bool is_capture,
   if (!engine || !engine->get_signal_levels_since) return false;
   return engine->get_signal_levels_since(engine->ctx, is_capture, is_rms,
                                          since_ms, out_levels, out_channels);
-}
-
-void cdsp_free_vu_levels(cdsp_vu_levels_t* vu) {
-  if (!vu) return;
-  if (vu->playback_rms) free(vu->playback_rms);
-  if (vu->playback_peak) free(vu->playback_peak);
-  if (vu->capture_rms) free(vu->capture_rms);
-  if (vu->capture_peak) free(vu->capture_peak);
-  vu->playback_rms = NULL;
-  vu->playback_peak = NULL;
-  vu->capture_rms = NULL;
-  vu->capture_peak = NULL;
 }
 
 static void get_labels_from_array(cJSON* labels_arr, char*** out_labels,
