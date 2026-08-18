@@ -88,15 +88,10 @@ static OSStatus capture_io_proc(AudioObjectID inDevice,
 
   atomic_fetch_add_explicit(&capture->active_callbacks, 1,
                             memory_order_relaxed);
-  if (atomic_load_explicit(&capture->stopped, memory_order_relaxed) ||
-      !inInputData || inInputData->mNumberBuffers == 0 ||
-      !inInputData->mBuffers[0].mData) {
-    atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
-                              memory_order_relaxed);
-    return noErr;
-  }
 
-  if (inInputData->mNumberBuffers == 1) {
+  if (!atomic_load_explicit(&capture->stopped, memory_order_relaxed) &&
+      inInputData && inInputData->mNumberBuffers == 1 &&
+      inInputData->mBuffers[0].mData) {
     const uint8_t* byte_ptr = (const uint8_t*)inInputData->mBuffers[0].mData;
     size_t bytes_to_write = (size_t)inInputData->mBuffers[0].mDataByteSize;
     if (byte_ptr && bytes_to_write > 0) {
