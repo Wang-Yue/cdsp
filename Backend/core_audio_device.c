@@ -883,20 +883,14 @@ bool core_audio_device_configure_stream(
     size_t* out_blockalign) {
   if (device_id == 0 || channels <= 0) return false;
 
-  bool format_set = false;
   if (has_format && format_str && format_str[0]) {
     core_audio_device_set_matching_physical_format(
         device_id, scope, sample_rate, format_str, channels);
     AudioStreamBasicDescription actual_asbd;
-    if (core_audio_device_set_matching_virtual_format(device_id, scope,
-                                                      sample_rate, format_str,
-                                                      channels, &actual_asbd)) {
-      format_set = true;
-    }
+    core_audio_device_set_matching_virtual_format(
+        device_id, scope, sample_rate, format_str, channels, &actual_asbd);
   }
-  if (!format_set) {
-    core_audio_device_set_nominal_sample_rate(device_id, sample_rate);
-  }
+  core_audio_device_set_nominal_sample_rate(device_id, sample_rate);
   core_audio_device_set_buffer_frame_size(device_id, (uint32_t)chunk_size,
                                           scope);
 
@@ -929,7 +923,9 @@ void core_audio_device_stop_and_destroy_ioproc(
   if (device_id == 0 || io_proc_id == NULL) return;
   AudioDeviceStop(device_id, io_proc_id);
   if (active_callbacks) {
-    while (atomic_load_explicit(active_callbacks, memory_order_acquire) > 0) {
+    int timeout_count = 1000;  // 500ms max (1000 * 500us)
+    while (atomic_load_explicit(active_callbacks, memory_order_acquire) > 0 &&
+           timeout_count-- > 0) {
       usleep(500);
     }
   }

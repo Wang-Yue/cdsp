@@ -475,6 +475,7 @@ static playback_backend_t* core_audio_playback_create(
 
   atomic_init(&playback->is_device_alive, true);
   atomic_init(&playback->is_paused, false);
+  atomic_init(&playback->active_callbacks, 0);
 
   playback_backend_t* backend =
       (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
