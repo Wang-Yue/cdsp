@@ -25,6 +25,23 @@ CDSP_API bool cdsp_get_vu_levels(const dsp_engine_t* engine,
                                  cdsp_vu_levels_t* out_vu);
 
 /**
+ * @brief Get signal peak or RMS levels since a given timestamp across all
+ * channels.
+ *
+ * @param engine Pointer to the engine.
+ * @param is_capture true for capture stream, false for playback stream.
+ * @param is_rms true for RMS levels, false for Peak levels.
+ * @param since_ms Millisecond timestamp cutoff.
+ * @param out_levels Output float array (allocated by caller, size >= out_channels).
+ * @param out_channels Output pointer to receive channel count.
+ * @return true on success, false on failure or inactive engine.
+ */
+CDSP_API bool cdsp_get_signal_levels_since(const dsp_engine_t* engine,
+                                           bool is_capture, bool is_rms,
+                                           uint64_t since_ms, float* out_levels,
+                                           size_t* out_channels);
+
+/**
  * @brief Free the arrays inside the cdsp_vu_levels_t structure.
  * @param vu Pointer to the VU levels structure.
  */

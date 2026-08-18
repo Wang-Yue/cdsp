@@ -123,6 +123,59 @@ TEST(ProcessingParametersUpdateLevels) {
   processing_parameters_free(params);
 }
 
+TEST(ProcessingParametersChunkLevelHistory1024) {
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  ASSERT_TRUE(params != NULL);
+
+  audio_chunk_t* chunk = audio_chunk_create(512, 2);
+  audio_chunk_set_valid_frames(chunk, 512);
+
+  // Channel 0: 0.5 amplitude (-6.0206 dB)
+  // Channel 1: 1.0 amplitude (0.0 dB)
+  mutable_waveform_t buf0 = audio_chunk_get_channel(chunk, 0);
+  mutable_waveform_t buf1 = audio_chunk_get_channel(chunk, 1);
+  for (size_t t = 0; t < 512; t++) {
+    buf0[t] = 0.5;
+    buf1[t] = 1.0;
+  }
+
+  // Push 1,500 chunks to test wrapping around the 1,024 history capacity
+  for (int i = 0; i < 1500; i++) {
+    processing_parameters_update_capture_levels(params, chunk);
+    processing_parameters_update_playback_levels(params, chunk);
+  }
+
+  float cap_peaks[2] = {0};
+  processing_parameters_get_capture_signal_peak_since(params, 0, cap_peaks, 2);
+  ASSERT_NEAR(-6.0206f, cap_peaks[0], 1e-2);
+  ASSERT_NEAR(0.0f, cap_peaks[1], 1e-2);
+
+  float cap_rms[2] = {0};
+  processing_parameters_get_capture_signal_rms_since(params, 0, cap_rms, 2);
+  ASSERT_NEAR(-6.0206f, cap_rms[0], 1e-2);
+  ASSERT_NEAR(0.0f, cap_rms[1], 1e-2);
+
+  float pb_peaks[2] = {0};
+  processing_parameters_get_playback_signal_peak_since(params, 0, pb_peaks, 2);
+  ASSERT_NEAR(-6.0206f, pb_peaks[0], 1e-2);
+  ASSERT_NEAR(0.0f, pb_peaks[1], 1e-2);
+
+  float pb_rms[2] = {0};
+  processing_parameters_get_playback_signal_rms_since(params, 0, pb_rms, 2);
+  ASSERT_NEAR(-6.0206f, pb_rms[0], 1e-2);
+  ASSERT_NEAR(0.0f, pb_rms[1], 1e-2);
+
+  // Future timestamp should return silent levels (-1000 dB)
+  float future_peaks[2] = {0};
+  processing_parameters_get_capture_signal_peak_since(
+      params, 0xFFFFFFFFFFFFFFULL, future_peaks, 2);
+  ASSERT_EQ(-1000.0f, future_peaks[0]);
+  ASSERT_EQ(-1000.0f, future_peaks[1]);
+
+  audio_chunk_free(chunk);
+  processing_parameters_free(params);
+}
+
 TEST(DSPOpsScalarMultiply) {
   double buffer[] = {1.0, 2.0, 3.0};
   dsp_ops_scalar_multiply(buffer, 2.0, 3);

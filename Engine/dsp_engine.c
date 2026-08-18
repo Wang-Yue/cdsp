@@ -491,6 +491,45 @@ static bool dsp_engine_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
   return true;
 }
 
+static bool dsp_engine_get_signal_levels_since(
+    void* ctx, bool is_capture, bool is_rms, uint64_t since_ms,
+    float* out_levels, size_t* out_channels) {
+  if (!ctx) return false;
+  dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
+  pthread_mutex_lock(&impl->state_mutex);
+  processing_parameters_t* p =
+      dsp_session_get_processing_params(impl->session.active);
+  if (!p) {
+    pthread_mutex_unlock(&impl->state_mutex);
+    if (out_channels) *out_channels = 0;
+    return false;
+  }
+  size_t ch = is_capture ? processing_parameters_get_capture_channels(p)
+                         : processing_parameters_get_playback_channels(p);
+  if (out_channels) *out_channels = ch;
+  if (out_levels && ch > 0) {
+    if (is_capture) {
+      if (is_rms) {
+        processing_parameters_get_capture_signal_rms_since(p, since_ms,
+                                                           out_levels, ch);
+      } else {
+        processing_parameters_get_capture_signal_peak_since(p, since_ms,
+                                                            out_levels, ch);
+      }
+    } else {
+      if (is_rms) {
+        processing_parameters_get_playback_signal_rms_since(p, since_ms,
+                                                            out_levels, ch);
+      } else {
+        processing_parameters_get_playback_signal_peak_since(p, since_ms,
+                                                             out_levels, ch);
+      }
+    }
+  }
+  pthread_mutex_unlock(&impl->state_mutex);
+  return true;
+}
+
 static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
                                     uint32_t channel, double min_freq,
                                     double max_freq, uint32_t n_bins,
@@ -790,6 +829,7 @@ dsp_engine_t* dsp_engine_create(void) {
   impl->iface.get_active_config_json = dsp_engine_get_active_config_json;
   impl->iface.get_previous_config_json = dsp_engine_get_previous_config_json;
   impl->iface.get_vu_levels = dsp_engine_get_vu_levels;
+  impl->iface.get_signal_levels_since = dsp_engine_get_signal_levels_since;
   impl->iface.get_available_devices = dsp_engine_get_available_devices;
   impl->iface.get_device_capabilities = dsp_engine_get_device_capabilities;
   impl->iface.get_spectrum = dsp_engine_get_spectrum;

@@ -446,4 +446,56 @@ float processing_parameters_update_capture_levels(
 float processing_parameters_update_playback_levels(
     processing_parameters_t* params, const audio_chunk_t* chunk);
 
+// MARK: - Level History Queries (Lock-free, per-chunk)
+
+#define CHUNK_LEVEL_HISTORY_CAPACITY 1024
+
+/**
+ * @brief Gets the capture signal peak levels since a given timestamp across all channels.
+ *
+ * @param params Pointer to the processing parameters.
+ * @param since_ms Millisecond timestamp cutoff.
+ * @param out_levels Array to store maximum peak levels per channel.
+ * @param count Number of channels to query.
+ */
+void processing_parameters_get_capture_signal_peak_since(
+    const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
+    size_t count);
+
+/**
+ * @brief Gets the capture signal RMS levels since a given timestamp across all channels.
+ *
+ * @param params Pointer to the processing parameters.
+ * @param since_ms Millisecond timestamp cutoff.
+ * @param out_levels Array to store energy-averaged RMS levels per channel.
+ * @param count Number of channels to query.
+ */
+void processing_parameters_get_capture_signal_rms_since(
+    const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
+    size_t count);
+
+/**
+ * @brief Gets the playback signal peak levels since a given timestamp across all channels.
+ *
+ * @param params Pointer to the processing parameters.
+ * @param since_ms Millisecond timestamp cutoff.
+ * @param out_levels Array to store maximum peak levels per channel.
+ * @param count Number of channels to query.
+ */
+void processing_parameters_get_playback_signal_peak_since(
+    const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
+    size_t count);
+
+/**
+ * @brief Gets the playback signal RMS levels since a given timestamp across all channels.
+ *
+ * @param params Pointer to the processing parameters.
+ * @param since_ms Millisecond timestamp cutoff.
+ * @param out_levels Array to store energy-averaged RMS levels per channel.
+ * @param count Number of channels to query.
+ */
+void processing_parameters_get_playback_signal_rms_since(
+    const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
+    size_t count);
+
 #endif  // CLIB_AUDIO_PROCESSING_PARAMETERS_H

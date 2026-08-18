@@ -251,6 +251,21 @@ struct dsp_engine {
   bool (*get_vu_levels)(void* ctx, vu_levels_t* out_vu);
 
   /**
+   * @brief Fetch active RMS or peak signal levels since a timestamp cutoff
+   * (WebSocket: GetCaptureSignalPeakSince, GetPlaybackSignalRmsSince, etc.).
+   * @param ctx Pointer to internal engine context.
+   * @param is_capture true for capture stream, false for playback stream.
+   * @param is_rms true for RMS, false for Peak.
+   * @param since_ms Millisecond timestamp cutoff.
+   * @param out_levels Output array allocated by caller.
+   * @param out_channels Output pointer to receive channel count.
+   * @return true on success, false if engine is inactive.
+   */
+  bool (*get_signal_levels_since)(void* ctx, bool is_capture, bool is_rms,
+                                  uint64_t since_ms, float* out_levels,
+                                  size_t* out_channels);
+
+  /**
    * @brief Stop processing core (WebSocket: Stop).
    * @param ctx Pointer to internal engine context.
    */

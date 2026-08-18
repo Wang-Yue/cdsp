@@ -111,19 +111,6 @@ float amplitude_to_db(float amp) {
   return db < -1000.0f ? -1000.0f : db;
 }
 
-void level_history_clear(level_history_t* history) {
-  if (!history) return;
-  for (size_t i = 0; i < 300; i++) {
-    if (history->samples[i].levels) {
-      free(history->samples[i].levels);
-      history->samples[i].levels = NULL;
-    }
-  }
-  history->head = 0;
-  history->size = 0;
-  history->channels = 0;
-}
-
 void client_session_clear(client_session_t* session) {
   if (!session) return;
   if (session->vu_pb_rms) {
@@ -144,79 +131,6 @@ void client_session_clear(client_session_t* session) {
   }
   session->vu_pb_channels = 0;
   session->vu_cap_channels = 0;
-}
-
-static void level_history_append(level_history_t* history, const float* levels,
-                                 size_t channels, uint64_t now_ms) {
-  if (history->channels != channels) {
-    level_history_clear(history);
-    history->channels = channels;
-  }
-  if (channels == 0) return;
-  level_sample_t* sample = &history->samples[history->head];
-  if (sample->levels) {
-    free(sample->levels);
-  }
-  sample->levels = (float*)calloc(channels, sizeof(float));
-  if (sample->levels) {
-    memcpy(sample->levels, levels, channels * sizeof(float));
-    sample->timestamp_ms = now_ms;
-    history->head = (history->head + 1) % 300;
-    if (history->size < 300) {
-      history->size++;
-    }
-  }
-}
-
-void level_history_get_max_since(const level_history_t* history,
-                                 uint64_t since_ms, float* out_levels) {
-  size_t channels = history->channels;
-  for (size_t c = 0; c < channels; c++) {
-    out_levels[c] = -1000.0f;
-  }
-  if (history->size == 0 || channels == 0) return;
-  size_t idx = (history->head + 300 - 1) % 300;
-  for (size_t i = 0; i < history->size; i++) {
-    const level_sample_t* sample = &history->samples[idx];
-    if (sample->timestamp_ms < since_ms) break;
-    for (size_t c = 0; c < channels; c++) {
-      if (sample->levels && sample->levels[c] > out_levels[c]) {
-        out_levels[c] = sample->levels[c];
-      }
-    }
-    idx = (idx + 300 - 1) % 300;
-  }
-}
-
-void level_history_get_rms_since(const level_history_t* history,
-                                 uint64_t since_ms, float* out_levels) {
-  size_t channels = history->channels;
-  for (size_t c = 0; c < channels; c++) {
-    out_levels[c] = -1000.0f;
-  }
-  if (history->size == 0 || channels == 0) return;
-  float* sums = (float*)calloc(channels, sizeof(float));
-  size_t count = 0;
-  size_t idx = (history->head + 300 - 1) % 300;
-  for (size_t i = 0; i < history->size; i++) {
-    const level_sample_t* sample = &history->samples[idx];
-    if (sample->timestamp_ms < since_ms) break;
-    for (size_t c = 0; c < channels; c++) {
-      if (sample->levels) {
-        float amp = db_to_amplitude(sample->levels[c]);
-        sums[c] += amp * amp;
-      }
-    }
-    count++;
-    idx = (idx + 300 - 1) % 300;
-  }
-  if (count > 0 && sums) {
-    for (size_t c = 0; c < channels; c++) {
-      float mean_square = sums[c] / (float)count;
-      out_levels[c] = amplitude_to_db(sqrtf(mean_square));
-    }
-  }
-  if (sums) free(sums);
 }
 
 static float smoothing_alpha(float delta_ms, float time_constant_ms) {
@@ -357,11 +271,6 @@ static void* server_thread_func(void* arg) {
         current_pb_rms = vu.playback_rms;
 
         if (cap_channels > 0 && current_cap_peak && current_cap_rms) {
-          level_history_append(&server->capture_peak_history, current_cap_peak,
-                               cap_channels, now);
-          level_history_append(&server->capture_rms_history, current_cap_rms,
-                               cap_channels, now);
-
           if (server->capture_global_peaks_count != cap_channels) {
             float* new_peaks = (float*)realloc(server->capture_global_peaks,
                                                cap_channels * sizeof(float));
@@ -386,11 +295,6 @@ static void* server_thread_func(void* arg) {
         }
 
         if (pb_channels > 0 && current_pb_peak && current_pb_rms) {
-          level_history_append(&server->playback_peak_history, current_pb_peak,
-                               pb_channels, now);
-          level_history_append(&server->playback_rms_history, current_pb_rms,
-                               pb_channels, now);
-
           if (server->playback_global_peaks_count != pb_channels) {
             float* new_peaks = (float*)realloc(server->playback_global_peaks,
                                                pb_channels * sizeof(float));
@@ -912,11 +816,6 @@ void websocket_server_stop(websocket_server_t* server) {
 void websocket_server_free(websocket_server_t* server) {
   if (!server) return;
   websocket_server_stop(server);
-
-  level_history_clear(&server->capture_peak_history);
-  level_history_clear(&server->capture_rms_history);
-  level_history_clear(&server->playback_peak_history);
-  level_history_clear(&server->playback_rms_history);
 
   if (server->capture_global_peaks) free(server->capture_global_peaks);
   if (server->playback_global_peaks) free(server->playback_global_peaks);

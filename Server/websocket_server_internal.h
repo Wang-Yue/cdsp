@@ -51,18 +51,6 @@ static inline const char* ws_processing_state_to_string(
 }
 
 typedef struct {
-  uint64_t timestamp_ms;
-  float* levels;
-} level_sample_t;
-
-typedef struct {
-  level_sample_t samples[300];
-  size_t head;
-  size_t size;
-  size_t channels;
-} level_history_t;
-
-typedef struct {
   uint64_t last_cap_peak_time;
   uint64_t last_cap_rms_time;
   uint64_t last_pb_peak_time;
@@ -105,11 +93,6 @@ struct websocket_server {
 
   uint32_t update_interval;
 
-  level_history_t capture_peak_history;
-  level_history_t capture_rms_history;
-  level_history_t playback_peak_history;
-  level_history_t playback_rms_history;
-
   float* capture_global_peaks;
   float* playback_global_peaks;
   size_t capture_global_peaks_count;
@@ -122,11 +105,6 @@ struct websocket_server {
 uint64_t get_time_ms(void);
 float db_to_amplitude(float db);
 float amplitude_to_db(float amp);
-void level_history_clear(level_history_t* history);
-void level_history_get_max_since(const level_history_t* history,
-                                 uint64_t since_ms, float* out_levels);
-void level_history_get_rms_since(const level_history_t* history,
-                                 uint64_t since_ms, float* out_levels);
 void client_session_clear(client_session_t* session);
 void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...);
 void free_vu_levels_arrays(cdsp_vu_levels_t* vu);

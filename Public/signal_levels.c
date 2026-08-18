@@ -59,6 +59,14 @@ bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
   return true;
 }
 
+bool cdsp_get_signal_levels_since(const dsp_engine_t* engine, bool is_capture,
+                                  bool is_rms, uint64_t since_ms,
+                                  float* out_levels, size_t* out_channels) {
+  if (!engine || !engine->get_signal_levels_since) return false;
+  return engine->get_signal_levels_since(engine->ctx, is_capture, is_rms,
+                                         since_ms, out_levels, out_channels);
+}
+
 void cdsp_free_vu_levels(cdsp_vu_levels_t* vu) {
   if (!vu) return;
   if (vu->playback_rms) free(vu->playback_rms);
