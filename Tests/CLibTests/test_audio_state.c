@@ -5,6 +5,7 @@
 #include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"
 #include "Utils/double_helpers.h"
+#include "Utils/float_helpers.h"
 #include "test_support.h"
 
 TEST(ProcessingParametersGettersSetters) {
@@ -20,33 +21,33 @@ TEST(ProcessingParametersGettersSetters) {
   processing_parameters_set_muted(params, true);
   ASSERT_TRUE(processing_parameters_is_muted(params));
 
-  double cap_peak[] = {-3.0, -4.0};
+  float cap_peak[] = {-3.0f, -4.0f};
   processing_parameters_set_capture_signal_peak(params, cap_peak, 2);
-  double out_cap_peak[2] = {0};
+  float out_cap_peak[2] = {0};
   processing_parameters_get_capture_signal_peak(params, out_cap_peak, 2);
-  ASSERT_DOUBLE_EQ(-3.0, out_cap_peak[0]);
-  ASSERT_DOUBLE_EQ(-4.0, out_cap_peak[1]);
+  ASSERT_NEAR(-3.0f, out_cap_peak[0], 1e-5);
+  ASSERT_NEAR(-4.0f, out_cap_peak[1], 1e-5);
 
-  double cap_rms[] = {-10.0, -11.0};
+  float cap_rms[] = {-10.0f, -11.0f};
   processing_parameters_set_capture_signal_rms(params, cap_rms, 2);
-  double out_cap_rms[2] = {0};
+  float out_cap_rms[2] = {0};
   processing_parameters_get_capture_signal_rms(params, out_cap_rms, 2);
-  ASSERT_DOUBLE_EQ(-10.0, out_cap_rms[0]);
-  ASSERT_DOUBLE_EQ(-11.0, out_cap_rms[1]);
+  ASSERT_NEAR(-10.0f, out_cap_rms[0], 1e-5);
+  ASSERT_NEAR(-11.0f, out_cap_rms[1], 1e-5);
 
-  double pb_peak[] = {-1.0, -2.0};
+  float pb_peak[] = {-1.0f, -2.0f};
   processing_parameters_set_playback_signal_peak(params, pb_peak, 2);
-  double out_pb_peak[2] = {0};
+  float out_pb_peak[2] = {0};
   processing_parameters_get_playback_signal_peak(params, out_pb_peak, 2);
-  ASSERT_DOUBLE_EQ(-1.0, out_pb_peak[0]);
-  ASSERT_DOUBLE_EQ(-2.0, out_pb_peak[1]);
+  ASSERT_NEAR(-1.0f, out_pb_peak[0], 1e-5);
+  ASSERT_NEAR(-2.0f, out_pb_peak[1], 1e-5);
 
-  double pb_rms[] = {-8.0, -9.0};
+  float pb_rms[] = {-8.0f, -9.0f};
   processing_parameters_set_playback_signal_rms(params, pb_rms, 2);
-  double out_pb_rms[2] = {0};
+  float out_pb_rms[2] = {0};
   processing_parameters_get_playback_signal_rms(params, out_pb_rms, 2);
-  ASSERT_DOUBLE_EQ(-8.0, out_pb_rms[0]);
-  ASSERT_DOUBLE_EQ(-9.0, out_pb_rms[1]);
+  ASSERT_NEAR(-8.0f, out_pb_rms[0], 1e-5);
+  ASSERT_NEAR(-9.0f, out_pb_rms[1], 1e-5);
 
   processing_parameters_free(params);
 }
@@ -55,33 +56,33 @@ TEST(ProcessingParametersMultiChannelSetters) {
   processing_parameters_t* params = processing_parameters_create(2, 2);
   ASSERT_TRUE(params != NULL);
 
-  double cap_peak[] = {-5.0, -6.0};
+  float cap_peak[] = {-5.0f, -6.0f};
   processing_parameters_set_capture_signal_peak(params, cap_peak, 2);
-  double out_cap_peak[2] = {0};
+  float out_cap_peak[2] = {0};
   processing_parameters_get_capture_signal_peak(params, out_cap_peak, 2);
-  ASSERT_DOUBLE_EQ(-5.0, out_cap_peak[0]);
-  ASSERT_DOUBLE_EQ(-6.0, out_cap_peak[1]);
+  ASSERT_NEAR(-5.0f, out_cap_peak[0], 1e-5);
+  ASSERT_NEAR(-6.0f, out_cap_peak[1], 1e-5);
 
-  double cap_rms[] = {-15.0, -16.0};
+  float cap_rms[] = {-15.0f, -16.0f};
   processing_parameters_set_capture_signal_rms(params, cap_rms, 2);
-  double out_cap_rms[2] = {0};
+  float out_cap_rms[2] = {0};
   processing_parameters_get_capture_signal_rms(params, out_cap_rms, 2);
-  ASSERT_DOUBLE_EQ(-15.0, out_cap_rms[0]);
-  ASSERT_DOUBLE_EQ(-16.0, out_cap_rms[1]);
+  ASSERT_NEAR(-15.0f, out_cap_rms[0], 1e-5);
+  ASSERT_NEAR(-16.0f, out_cap_rms[1], 1e-5);
 
-  double pb_peak[] = {-2.0, -3.0};
+  float pb_peak[] = {-2.0f, -3.0f};
   processing_parameters_set_playback_signal_peak(params, pb_peak, 2);
-  double out_pb_peak[2] = {0};
+  float out_pb_peak[2] = {0};
   processing_parameters_get_playback_signal_peak(params, out_pb_peak, 2);
-  ASSERT_DOUBLE_EQ(-2.0, out_pb_peak[0]);
-  ASSERT_DOUBLE_EQ(-3.0, out_pb_peak[1]);
+  ASSERT_NEAR(-2.0f, out_pb_peak[0], 1e-5);
+  ASSERT_NEAR(-3.0f, out_pb_peak[1], 1e-5);
 
-  double pb_rms[] = {-12.0, -13.0};
+  float pb_rms[] = {-12.0f, -13.0f};
   processing_parameters_set_playback_signal_rms(params, pb_rms, 2);
-  double out_pb_rms[2] = {0};
+  float out_pb_rms[2] = {0};
   processing_parameters_get_playback_signal_rms(params, out_pb_rms, 2);
-  ASSERT_DOUBLE_EQ(-12.0, out_pb_rms[0]);
-  ASSERT_DOUBLE_EQ(-13.0, out_pb_rms[1]);
+  ASSERT_NEAR(-12.0f, out_pb_rms[0], 1e-5);
+  ASSERT_NEAR(-13.0f, out_pb_rms[1], 1e-5);
 
   processing_parameters_free(params);
 }
@@ -98,25 +99,25 @@ TEST(ProcessingParametersUpdateLevels) {
     }
   }
 
-  double loudest_cap =
+  float loudest_cap =
       processing_parameters_update_capture_levels(params, chunk);
-  ASSERT_NEAR(0.0, loudest_cap, 1e-3);
-  double out_cap_peak[2] = {0};
+  ASSERT_NEAR(0.0f, loudest_cap, 1e-3);
+  float out_cap_peak[2] = {0};
   processing_parameters_get_capture_signal_peak(params, out_cap_peak, 2);
-  ASSERT_NEAR(0.0, out_cap_peak[0], 1e-3);
-  double out_cap_rms[2] = {0};
+  ASSERT_NEAR(0.0f, out_cap_peak[0], 1e-3);
+  float out_cap_rms[2] = {0};
   processing_parameters_get_capture_signal_rms(params, out_cap_rms, 2);
-  ASSERT_NEAR(0.0, out_cap_rms[0], 1e-3);
+  ASSERT_NEAR(0.0f, out_cap_rms[0], 1e-3);
 
-  double loudest_pb =
+  float loudest_pb =
       processing_parameters_update_playback_levels(params, chunk);
-  ASSERT_NEAR(0.0, loudest_pb, 1e-3);
-  double out_pb_peak[2] = {0};
+  ASSERT_NEAR(0.0f, loudest_pb, 1e-3);
+  float out_pb_peak[2] = {0};
   processing_parameters_get_playback_signal_peak(params, out_pb_peak, 2);
-  ASSERT_NEAR(0.0, out_pb_peak[0], 1e-3);
-  double out_pb_rms[2] = {0};
+  ASSERT_NEAR(0.0f, out_pb_peak[0], 1e-3);
+  float out_pb_rms[2] = {0};
   processing_parameters_get_playback_signal_rms(params, out_pb_rms, 2);
-  ASSERT_NEAR(0.0, out_pb_rms[0], 1e-3);
+  ASSERT_NEAR(0.0f, out_pb_rms[0], 1e-3);
 
   audio_chunk_free(chunk);
   processing_parameters_free(params);
@@ -161,8 +162,8 @@ TEST(DSPOpsMultiplyAdd) {
 
 TEST(DSPOpsPeakAndRMS) {
   double buffer[] = {1.0, -2.0, 3.0};
-  ASSERT_DOUBLE_EQ(3.0, dsp_ops_peak_absolute(buffer, 3));
-  ASSERT_NEAR(sqrt(14.0 / 3.0), dsp_ops_rms(buffer, 3), 1e-5);
+  ASSERT_NEAR(3.0f, dsp_ops_peak_absolute(buffer, 3), 1e-5);
+  ASSERT_NEAR((float)sqrt(14.0 / 3.0), dsp_ops_rms(buffer, 3), 1e-5);
 }
 
 TEST_MAIN()

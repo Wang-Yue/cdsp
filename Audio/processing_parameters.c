@@ -9,6 +9,7 @@
 
 #include "Audio/audio_chunk.h"
 #include "Utils/double_helpers.h"
+#include "Utils/float_helpers.h"
 #include "Utils/lock_free_ring_buffer.h"
 
 struct processing_parameters {
@@ -26,16 +27,16 @@ struct processing_parameters {
 
   /** Per-channel capture signal peak levels (dB). Array size: capture_channels.
    */
-  atomic_double_t* capture_signal_peak;
+  atomic_float_t* capture_signal_peak;
   /** Per-channel capture signal RMS levels (dB). Array size: capture_channels.
    */
-  atomic_double_t* capture_signal_rms;
+  atomic_float_t* capture_signal_rms;
   /** Per-channel playback signal peak levels (dB). Array size:
    * playback_channels. */
-  atomic_double_t* playback_signal_peak;
+  atomic_float_t* playback_signal_peak;
   /** Per-channel playback signal RMS levels (dB). Array size:
    * playback_channels. */
-  atomic_double_t* playback_signal_rms;
+  atomic_float_t* playback_signal_rms;
 
   // MARK: - Telemetry
   atomic_double_t rate_adjust; /**< Current rate adjustment factor. */
@@ -140,31 +141,31 @@ processing_parameters_t* processing_parameters_create(
 
   if (capture_channels > 0) {
     params->capture_signal_peak =
-        (atomic_double_t*)calloc(capture_channels, sizeof(atomic_double_t));
+        (atomic_float_t*)calloc(capture_channels, sizeof(atomic_float_t));
     params->capture_signal_rms =
-        (atomic_double_t*)calloc(capture_channels, sizeof(atomic_double_t));
+        (atomic_float_t*)calloc(capture_channels, sizeof(atomic_float_t));
     if (!params->capture_signal_peak || !params->capture_signal_rms) {
       processing_parameters_free(params);
       return NULL;
     }
     for (size_t i = 0; i < capture_channels; i++) {
-      atomic_double_init(&params->capture_signal_peak[i], -1000.0);
-      atomic_double_init(&params->capture_signal_rms[i], -1000.0);
+      atomic_float_init(&params->capture_signal_peak[i], -1000.0f);
+      atomic_float_init(&params->capture_signal_rms[i], -1000.0f);
     }
   }
 
   if (playback_channels > 0) {
     params->playback_signal_peak =
-        (atomic_double_t*)calloc(playback_channels, sizeof(atomic_double_t));
+        (atomic_float_t*)calloc(playback_channels, sizeof(atomic_float_t));
     params->playback_signal_rms =
-        (atomic_double_t*)calloc(playback_channels, sizeof(atomic_double_t));
+        (atomic_float_t*)calloc(playback_channels, sizeof(atomic_float_t));
     if (!params->playback_signal_peak || !params->playback_signal_rms) {
       processing_parameters_free(params);
       return NULL;
     }
     for (size_t i = 0; i < playback_channels; i++) {
-      atomic_double_init(&params->playback_signal_peak[i], -1000.0);
-      atomic_double_init(&params->playback_signal_rms[i], -1000.0);
+      atomic_float_init(&params->playback_signal_peak[i], -1000.0f);
+      atomic_float_init(&params->playback_signal_rms[i], -1000.0f);
     }
   }
 
@@ -249,82 +250,82 @@ void processing_parameters_set_muted_for_fader(processing_parameters_t* params,
 }
 
 void processing_parameters_get_capture_signal_peak(
-    const processing_parameters_t* params, double* out_levels, size_t count) {
+    const processing_parameters_t* params, float* out_levels, size_t count) {
   if (!params || !out_levels || !params->capture_signal_peak) return;
   size_t limit =
       count < params->capture_channels ? count : params->capture_channels;
   for (size_t i = 0; i < limit; i++) {
-    out_levels[i] = atomic_double_get(&params->capture_signal_peak[i]);
+    out_levels[i] = atomic_float_get(&params->capture_signal_peak[i]);
   }
 }
 
 void processing_parameters_set_capture_signal_peak(
-    processing_parameters_t* params, const double* levels, size_t count) {
+    processing_parameters_t* params, const float* levels, size_t count) {
   if (!params || !levels || !params->capture_signal_peak) return;
   size_t limit =
       count < params->capture_channels ? count : params->capture_channels;
   for (size_t i = 0; i < limit; i++) {
-    atomic_double_set(&params->capture_signal_peak[i], levels[i]);
+    atomic_float_set(&params->capture_signal_peak[i], levels[i]);
   }
 }
 
 void processing_parameters_get_capture_signal_rms(
-    const processing_parameters_t* params, double* out_levels, size_t count) {
+    const processing_parameters_t* params, float* out_levels, size_t count) {
   if (!params || !out_levels || !params->capture_signal_rms) return;
   size_t limit =
       count < params->capture_channels ? count : params->capture_channels;
   for (size_t i = 0; i < limit; i++) {
-    out_levels[i] = atomic_double_get(&params->capture_signal_rms[i]);
+    out_levels[i] = atomic_float_get(&params->capture_signal_rms[i]);
   }
 }
 
 void processing_parameters_set_capture_signal_rms(
-    processing_parameters_t* params, const double* levels, size_t count) {
+    processing_parameters_t* params, const float* levels, size_t count) {
   if (!params || !levels || !params->capture_signal_rms) return;
   size_t limit =
       count < params->capture_channels ? count : params->capture_channels;
   for (size_t i = 0; i < limit; i++) {
-    atomic_double_set(&params->capture_signal_rms[i], levels[i]);
+    atomic_float_set(&params->capture_signal_rms[i], levels[i]);
   }
 }
 
 void processing_parameters_get_playback_signal_peak(
-    const processing_parameters_t* params, double* out_levels, size_t count) {
+    const processing_parameters_t* params, float* out_levels, size_t count) {
   if (!params || !out_levels || !params->playback_signal_peak) return;
   size_t limit =
       count < params->playback_channels ? count : params->playback_channels;
   for (size_t i = 0; i < limit; i++) {
-    out_levels[i] = atomic_double_get(&params->playback_signal_peak[i]);
+    out_levels[i] = atomic_float_get(&params->playback_signal_peak[i]);
   }
 }
 
 void processing_parameters_set_playback_signal_peak(
-    processing_parameters_t* params, const double* levels, size_t count) {
+    processing_parameters_t* params, const float* levels, size_t count) {
   if (!params || !levels || !params->playback_signal_peak) return;
   size_t limit =
       count < params->playback_channels ? count : params->playback_channels;
   for (size_t i = 0; i < limit; i++) {
-    atomic_double_set(&params->playback_signal_peak[i], levels[i]);
+    atomic_float_set(&params->playback_signal_peak[i], levels[i]);
   }
 }
 
 void processing_parameters_get_playback_signal_rms(
-    const processing_parameters_t* params, double* out_levels, size_t count) {
+    const processing_parameters_t* params, float* out_levels, size_t count) {
   if (!params || !out_levels || !params->playback_signal_rms) return;
   size_t limit =
       count < params->playback_channels ? count : params->playback_channels;
   for (size_t i = 0; i < limit; i++) {
-    out_levels[i] = atomic_double_get(&params->playback_signal_rms[i]);
+    out_levels[i] = atomic_float_get(&params->playback_signal_rms[i]);
   }
 }
 
 void processing_parameters_set_playback_signal_rms(
-    processing_parameters_t* params, const double* levels, size_t count) {
+    processing_parameters_t* params, const float* levels, size_t count) {
   if (!params || !levels || !params->playback_signal_rms) return;
   size_t limit =
       count < params->playback_channels ? count : params->playback_channels;
   for (size_t i = 0; i < limit; i++) {
-    atomic_double_set(&params->playback_signal_rms[i], levels[i]);
+    atomic_float_set(&params->playback_signal_rms[i], levels[i]);
   }
 }
 
@@ -342,45 +343,45 @@ void processing_parameters_set_playback_signal_rms(
  * @param storage_count Capacity of the storage arrays.
  * @return The maximum peak level (dB) across all processed channels.
  */
-static double update_levels_internal(const audio_chunk_t* chunk,
-                                     atomic_double_t* peak_storage,
-                                     atomic_double_t* rms_storage,
-                                     size_t storage_count) {
-  if (!chunk || !peak_storage || !rms_storage) return -1000.0;
+static float update_levels_internal(const audio_chunk_t* chunk,
+                                    atomic_float_t* peak_storage,
+                                    atomic_float_t* rms_storage,
+                                    size_t storage_count) {
+  if (!chunk || !peak_storage || !rms_storage) return -1000.0f;
   size_t chunk_channels = audio_chunk_get_channels(chunk);
   size_t channel_count =
       chunk_channels < storage_count ? chunk_channels : storage_count;
-  if (channel_count == 0) return -1000.0;
+  if (channel_count == 0) return -1000.0f;
   size_t frame_count = audio_chunk_get_valid_frames(chunk);
-  double max_peak = -1000.0;
+  float max_peak = -1000.0f;
 
   for (size_t i = 0; i < channel_count; i++) {
     waveform_t buffer = audio_chunk_get_channel(chunk, i);
     if (!buffer) continue;
 
-    double peak_db = double_to_db(dsp_ops_peak_absolute(buffer, frame_count));
-    atomic_double_set(&peak_storage[i], peak_db);
+    float peak_db = float_to_db(dsp_ops_peak_absolute(buffer, frame_count));
+    atomic_float_set(&peak_storage[i], peak_db);
     if (peak_db > max_peak) {
       max_peak = peak_db;
     }
 
-    double rms_db = double_to_db(dsp_ops_rms(buffer, frame_count));
-    atomic_double_set(&rms_storage[i], rms_db);
+    float rms_db = float_to_db(dsp_ops_rms(buffer, frame_count));
+    atomic_float_set(&rms_storage[i], rms_db);
   }
   return max_peak;
 }
 
-double processing_parameters_update_capture_levels(
+float processing_parameters_update_capture_levels(
     processing_parameters_t* params, const audio_chunk_t* chunk) {
-  if (!params) return -1000.0;
+  if (!params) return -1000.0f;
   return update_levels_internal(chunk, params->capture_signal_peak,
                                 params->capture_signal_rms,
                                 params->capture_channels);
 }
 
-double processing_parameters_update_playback_levels(
+float processing_parameters_update_playback_levels(
     processing_parameters_t* params, const audio_chunk_t* chunk) {
-  if (!params) return -1000.0;
+  if (!params) return -1000.0f;
   return update_levels_internal(chunk, params->playback_signal_peak,
                                 params->playback_signal_rms,
                                 params->playback_channels);

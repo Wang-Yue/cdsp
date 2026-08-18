@@ -3,10 +3,12 @@
  * @brief Thread-safe shared parameters and telemetry for audio processing.
  *
  * Concurrency model:
- * Every field is backed by lock-free atomics (`atomic_double_t` or `_Atomic
- * bool`) — no mutexes or locks. Target volume, current volume, and mute states
- * are kept for 5 faders (Main, Aux 1-4) as separate inline atomic variables to
- * avoid heap allocation and conform to real-time requirements.
+ * Every field is backed by lock-free atomics (`atomic_double_t`,
+ * `atomic_float_t`, or `_Atomic bool`) — no mutexes or locks. Target volume,
+ * current volume, and mute states are kept for 5 faders (Main, Aux 1-4) as
+ * separate inline atomic variables to avoid heap allocation and conform to
+ * real-time requirements. Per-channel peak and RMS meters use `atomic_float_t`
+ * for fast single-pass vectorized level calculation on the audio thread.
  */
 
 #ifndef CLIB_AUDIO_PROCESSING_PARAMETERS_H
@@ -343,7 +345,7 @@ static inline void processing_parameters_set_muted(
  * @param count Number of channels to query. Must be <= capture_channels.
  */
 void processing_parameters_get_capture_signal_peak(
-    const processing_parameters_t* params, double* out_levels, size_t count);
+    const processing_parameters_t* params, float* out_levels, size_t count);
 
 /**
  * @brief Sets the capture signal peak levels.
@@ -353,7 +355,7 @@ void processing_parameters_get_capture_signal_peak(
  * @param count Number of channels to set. Must be <= capture_channels.
  */
 void processing_parameters_set_capture_signal_peak(
-    processing_parameters_t* params, const double* levels, size_t count);
+    processing_parameters_t* params, const float* levels, size_t count);
 
 /**
  * @brief Gets the capture signal RMS levels.
@@ -363,7 +365,7 @@ void processing_parameters_set_capture_signal_peak(
  * @param count Number of channels to query. Must be <= capture_channels.
  */
 void processing_parameters_get_capture_signal_rms(
-    const processing_parameters_t* params, double* out_levels, size_t count);
+    const processing_parameters_t* params, float* out_levels, size_t count);
 
 /**
  * @brief Sets the capture signal RMS levels.
@@ -373,7 +375,7 @@ void processing_parameters_get_capture_signal_rms(
  * @param count Number of channels to set. Must be <= capture_channels.
  */
 void processing_parameters_set_capture_signal_rms(
-    processing_parameters_t* params, const double* levels, size_t count);
+    processing_parameters_t* params, const float* levels, size_t count);
 
 /**
  * @brief Gets the playback signal peak levels.
@@ -383,7 +385,7 @@ void processing_parameters_set_capture_signal_rms(
  * @param count Number of channels to query. Must be <= playback_channels.
  */
 void processing_parameters_get_playback_signal_peak(
-    const processing_parameters_t* params, double* out_levels, size_t count);
+    const processing_parameters_t* params, float* out_levels, size_t count);
 
 /**
  * @brief Sets the playback signal peak levels.
@@ -393,7 +395,7 @@ void processing_parameters_get_playback_signal_peak(
  * @param count Number of channels to set. Must be <= playback_channels.
  */
 void processing_parameters_set_playback_signal_peak(
-    processing_parameters_t* params, const double* levels, size_t count);
+    processing_parameters_t* params, const float* levels, size_t count);
 
 /**
  * @brief Gets the playback signal RMS levels.
@@ -403,7 +405,7 @@ void processing_parameters_set_playback_signal_peak(
  * @param count Number of channels to query. Must be <= playback_channels.
  */
 void processing_parameters_get_playback_signal_rms(
-    const processing_parameters_t* params, double* out_levels, size_t count);
+    const processing_parameters_t* params, float* out_levels, size_t count);
 
 /**
  * @brief Sets the playback signal RMS levels.
@@ -413,7 +415,7 @@ void processing_parameters_get_playback_signal_rms(
  * @param count Number of channels to set. Must be <= playback_channels.
  */
 void processing_parameters_set_playback_signal_rms(
-    processing_parameters_t* params, const double* levels, size_t count);
+    processing_parameters_t* params, const float* levels, size_t count);
 
 // MARK: - Chunk-based updates (no-allocation, audio-thread safe)
 
@@ -429,7 +431,7 @@ void processing_parameters_set_playback_signal_rms(
  * @param chunk Pointer to the audio chunk.
  * @return The peak level of the chunk (max across all channels in the chunk).
  */
-double processing_parameters_update_capture_levels(
+float processing_parameters_update_capture_levels(
     processing_parameters_t* params, const audio_chunk_t* chunk);
 
 /**
@@ -444,7 +446,7 @@ double processing_parameters_update_capture_levels(
  * @param chunk Pointer to the audio chunk.
  * @return The peak level of the chunk (max across all channels in the chunk).
  */
-double processing_parameters_update_playback_levels(
+float processing_parameters_update_playback_levels(
     processing_parameters_t* params, const audio_chunk_t* chunk);
 
 #endif  // CLIB_AUDIO_PROCESSING_PARAMETERS_H

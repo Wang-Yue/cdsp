@@ -107,9 +107,9 @@ static bool mock_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
 
   if (out_vu->playback_channels > 0) {
     out_vu->playback_rms =
-        (double*)calloc(out_vu->playback_channels, sizeof(double));
+        (float*)calloc(out_vu->playback_channels, sizeof(float));
     out_vu->playback_peak =
-        (double*)calloc(out_vu->playback_channels, sizeof(double));
+        (float*)calloc(out_vu->playback_channels, sizeof(float));
     processing_parameters_get_playback_signal_rms(
         mock_params, out_vu->playback_rms, out_vu->playback_channels);
     processing_parameters_get_playback_signal_peak(
@@ -117,9 +117,9 @@ static bool mock_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
   }
   if (out_vu->capture_channels > 0) {
     out_vu->capture_rms =
-        (double*)calloc(out_vu->capture_channels, sizeof(double));
+        (float*)calloc(out_vu->capture_channels, sizeof(float));
     out_vu->capture_peak =
-        (double*)calloc(out_vu->capture_channels, sizeof(double));
+        (float*)calloc(out_vu->capture_channels, sizeof(float));
     processing_parameters_get_capture_signal_rms(
         mock_params, out_vu->capture_rms, out_vu->capture_channels);
     processing_parameters_get_capture_signal_peak(
@@ -173,11 +173,10 @@ static void mock_set_fader_volume(void* ctx, fader_t fader, float db,
                                   bool instant) {
   (void)ctx;
   if (mock_params) {
-    processing_parameters_set_target_volume_for_fader(mock_params, (double)db,
-                                                      fader);
+    processing_parameters_set_target_volume_for_fader(mock_params, db, fader);
     if (instant) {
-      processing_parameters_set_current_volume_for_fader(mock_params,
-                                                         (double)db, fader);
+      processing_parameters_set_current_volume_for_fader(mock_params, db,
+                                                         fader);
     }
   }
 }
@@ -374,12 +373,12 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
 
-  double target_vol = processing_parameters_get_target_volume_for_fader(
+  float target_vol = processing_parameters_get_target_volume_for_fader(
       mock_params, FADER_MAIN);
-  double current_vol = processing_parameters_get_current_volume_for_fader(
+  float current_vol = processing_parameters_get_current_volume_for_fader(
       mock_params, FADER_MAIN);
-  ASSERT_DOUBLE_EQ(-6.0, target_vol);
-  ASSERT_DOUBLE_EQ(-6.0, current_vol);
+  ASSERT_FLOAT_EQ(-6.0f, target_vol);
+  ASSERT_FLOAT_EQ(-6.0f, current_vol);
 
   // Test GetChannelLabels
   mock_active_config = strdup(

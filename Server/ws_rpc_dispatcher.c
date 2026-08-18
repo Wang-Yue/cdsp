@@ -119,28 +119,28 @@ static void reply_invalid(const char* error_message, dyn_string_t* ds) {
   cJSON_Delete(root);
 }
 
-static bool parse_adjust_volume_args(cJSON* root, double* out_value,
-                                     double* out_min, double* out_max) {
+static bool parse_adjust_volume_args(cJSON* root, float* out_value,
+                                     float* out_min, float* out_max) {
   if (!root || !cJSON_IsObject(root)) return false;
   cJSON* val_node = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (!val_node || !cJSON_IsNumber(val_node)) return false;
-  *out_value = val_node->valuedouble;
-  *out_min = -150.0;
-  *out_max = 50.0;
+  *out_value = (float)val_node->valuedouble;
+  *out_min = -150.0f;
+  *out_max = 50.0f;
   cJSON* min_node = cJSON_GetObjectItemCaseSensitive(root, "min");
   if (min_node && cJSON_IsNumber(min_node)) {
-    *out_min = min_node->valuedouble;
+    *out_min = (float)min_node->valuedouble;
   }
   cJSON* max_node = cJSON_GetObjectItemCaseSensitive(root, "max");
   if (max_node && cJSON_IsNumber(max_node)) {
-    *out_max = max_node->valuedouble;
+    *out_max = (float)max_node->valuedouble;
   }
   return true;
 }
 
 static bool parse_adjust_fader_volume_args(cJSON* root, int* out_fader,
-                                           double* out_value, double* out_min,
-                                           double* out_max) {
+                                           float* out_value, float* out_min,
+                                           float* out_max) {
   if (!root || !cJSON_IsObject(root)) return false;
   cJSON* fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
   if (!fader_node || !cJSON_IsNumber(fader_node)) return false;
@@ -421,8 +421,8 @@ cJSON* serialize_spectrum(const cdsp_spectrum_t* spec) {
 }
 
 static bool server_handle_adjust_volume_fader(websocket_server_t* server,
-                                              cdsp_fader_t fader, double delta,
-                                              double min_vol, double max_vol,
+                                              cdsp_fader_t fader, float delta,
+                                              float min_vol, float max_vol,
                                               dyn_string_t* ds,
                                               const char* cmd_name) {
   if (!server || !server->engine) {
@@ -437,12 +437,12 @@ static bool server_handle_adjust_volume_fader(websocket_server_t* server,
     return true;
   }
 
-  double current = cdsp_get_fader_volume(server->engine, fader);
-  double new_vol = current + delta;
+  float current = cdsp_get_fader_volume(server->engine, fader);
+  float new_vol = current + delta;
   if (new_vol < min_vol) new_vol = min_vol;
   if (new_vol > max_vol) new_vol = max_vol;
 
-  cdsp_set_fader_volume(server->engine, fader, (float)new_vol, false);
+  cdsp_set_fader_volume(server->engine, fader, new_vol, false);
 
   if (strcmp(cmd_name, "AdjustVolume") == 0) {
     reply_ok(cmd_name, cJSON_CreateNumber(new_vol), ds);
@@ -461,7 +461,7 @@ static void handle_cmd_get_volume(websocket_server_t* server, int client_idx,
   (void)client_idx;
   (void)arg;
   if (server && server->engine) {
-    double vol = cdsp_get_fader_volume(server->engine, CDSP_FADER_MAIN);
+    float vol = cdsp_get_fader_volume(server->engine, CDSP_FADER_MAIN);
     reply_ok(cmd_name, cJSON_CreateNumber(vol), ds);
   } else {
     reply_error(cmd_name, "InvalidRequestError", "Server or engine unavailable",
@@ -469,10 +469,10 @@ static void handle_cmd_get_volume(websocket_server_t* server, int client_idx,
   }
 }
 
-static inline bool validate_and_clamp_volume(double* inout_vol) {
+static inline bool validate_and_clamp_volume(float* inout_vol) {
   if (isnan(*inout_vol) || isinf(*inout_vol)) return false;
-  if (*inout_vol > 50.0) *inout_vol = 50.0;
-  if (*inout_vol < -150.0) *inout_vol = -150.0;
+  if (*inout_vol > 50.0f) *inout_vol = 50.0f;
+  if (*inout_vol < -150.0f) *inout_vol = -150.0f;
   return true;
 }
 
@@ -482,14 +482,14 @@ static void handle_cmd_set_volume(websocket_server_t* server, int client_idx,
   (void)client_idx;
   cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsNumber(arg)) {
-    double vol = arg->valuedouble;
+    float vol = (float)arg->valuedouble;
     if (!validate_and_clamp_volume(&vol)) {
       reply_error(cmd_name, "InvalidValueError",
                   "Volume must be a finite number", ds);
       return;
     }
     if (server && server->engine) {
-      cdsp_set_fader_volume(server->engine, CDSP_FADER_MAIN, (float)vol, false);
+      cdsp_set_fader_volume(server->engine, CDSP_FADER_MAIN, vol, false);
       reply_ok(cmd_name, NULL, ds);
     } else {
       reply_error(cmd_name, "InvalidRequestError",
@@ -557,7 +557,7 @@ static void handle_cmd_get_faders(websocket_server_t* server, int client_idx,
     cJSON* arr = cJSON_CreateArray();
     for (int i = 0; i < CDSP_FADER_COUNT; i++) {
       cJSON* obj = cJSON_CreateObject();
-      double vol = cdsp_get_fader_volume(server->engine, (cdsp_fader_t)i);
+      float vol = cdsp_get_fader_volume(server->engine, (cdsp_fader_t)i);
       bool mute = cdsp_get_fader_mute(server->engine, (cdsp_fader_t)i);
       cJSON_AddNumberToObject(obj, "volume", vol);
       cJSON_AddBoolToObject(obj, "mute", mute);
@@ -579,7 +579,7 @@ static void handle_cmd_get_fader_volume(websocket_server_t* server,
     int idx = fader_node->valueint;
     if (server && server->engine) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
-        double vol = cdsp_get_fader_volume(server->engine, (cdsp_fader_t)idx);
+        float vol = cdsp_get_fader_volume(server->engine, (cdsp_fader_t)idx);
         cJSON* arr = cJSON_CreateArray();
         cJSON_AddItemToArray(arr, cJSON_CreateNumber(idx));
         cJSON_AddItemToArray(arr, cJSON_CreateNumber(vol));
@@ -606,7 +606,7 @@ static void handle_cmd_set_fader_volume(websocket_server_t* server,
   if (fader_node && vol_node && cJSON_IsNumber(fader_node) &&
       cJSON_IsNumber(vol_node)) {
     int idx = fader_node->valueint;
-    double vol = vol_node->valuedouble;
+    float vol = (float)vol_node->valuedouble;
     if (!validate_and_clamp_volume(&vol)) {
       reply_error(cmd_name, "InvalidValueError",
                   "Volume must be a finite number", ds);
@@ -614,8 +614,7 @@ static void handle_cmd_set_fader_volume(websocket_server_t* server,
     }
     if (server && server->engine) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
-        cdsp_set_fader_volume(server->engine, (cdsp_fader_t)idx, (float)vol,
-                              false);
+        cdsp_set_fader_volume(server->engine, (cdsp_fader_t)idx, vol, false);
         reply_ok(cmd_name, NULL, ds);
       } else {
         reply_error(cmd_name, "InvalidFaderError", NULL, ds);
@@ -641,7 +640,7 @@ static void handle_cmd_set_fader_external_volume(websocket_server_t* server,
   if (fader_node && vol_node && cJSON_IsNumber(fader_node) &&
       cJSON_IsNumber(vol_node)) {
     int idx = fader_node->valueint;
-    double vol = vol_node->valuedouble;
+    float vol = (float)vol_node->valuedouble;
     if (!validate_and_clamp_volume(&vol)) {
       reply_error(cmd_name, "InvalidValueError",
                   "Volume must be a finite number", ds);
@@ -649,8 +648,7 @@ static void handle_cmd_set_fader_external_volume(websocket_server_t* server,
     }
     if (server && server->engine) {
       if (idx >= 0 && idx < CDSP_FADER_COUNT) {
-        cdsp_set_fader_volume(server->engine, (cdsp_fader_t)idx, (float)vol,
-                              true);
+        cdsp_set_fader_volume(server->engine, (cdsp_fader_t)idx, vol, true);
         reply_ok(cmd_name, NULL, ds);
       } else {
         reply_error(cmd_name, "InvalidFaderError", NULL, ds);
@@ -751,9 +749,9 @@ static void handle_cmd_adjust_volume(websocket_server_t* server, int client_idx,
                                      const char* cmd_name, cJSON* root,
                                      dyn_string_t* ds) {
   (void)client_idx;
-  double delta = 0.0;
-  double min_vol = -150.0;
-  double max_vol = 50.0;
+  float delta = 0.0f;
+  float min_vol = -150.0f;
+  float max_vol = 50.0f;
   if (parse_adjust_volume_args(root, &delta, &min_vol, &max_vol)) {
     server_handle_adjust_volume_fader(server, CDSP_FADER_MAIN, delta, min_vol,
                                       max_vol, ds, cmd_name);
@@ -768,9 +766,9 @@ static void handle_cmd_adjust_fader_volume(websocket_server_t* server,
                                            cJSON* root, dyn_string_t* ds) {
   (void)client_idx;
   int idx = -1;
-  double delta = 0.0;
-  double min_vol = -150.0;
-  double max_vol = 50.0;
+  float delta = 0.0f;
+  float min_vol = -150.0f;
+  float max_vol = 50.0f;
   if (parse_adjust_fader_volume_args(root, &idx, &delta, &min_vol, &max_vol)) {
     if (idx >= 0 && idx < CDSP_FADER_COUNT) {
       server_handle_adjust_volume_fader(server, (cdsp_fader_t)idx, delta,
@@ -799,20 +797,20 @@ static void handle_cmd_subscribe_state(websocket_server_t* server,
 static void handle_cmd_subscribe_vu_levels(websocket_server_t* server,
                                            int client_idx, const char* cmd_name,
                                            cJSON* root, dyn_string_t* ds) {
-  double max_rate = 0.0;
-  double attack = 0.0;
-  double release = 0.0;
+  float max_rate = 0.0f;
+  float attack = 0.0f;
+  float release = 0.0f;
   cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsObject(arg)) {
     cJSON* item;
     item = cJSON_GetObjectItemCaseSensitive(arg, "max_rate");
-    if (item && cJSON_IsNumber(item)) max_rate = item->valuedouble;
+    if (item && cJSON_IsNumber(item)) max_rate = (float)item->valuedouble;
     item = cJSON_GetObjectItemCaseSensitive(arg, "attack");
-    if (item && cJSON_IsNumber(item)) attack = item->valuedouble;
+    if (item && cJSON_IsNumber(item)) attack = (float)item->valuedouble;
     item = cJSON_GetObjectItemCaseSensitive(arg, "release");
-    if (item && cJSON_IsNumber(item)) release = item->valuedouble;
+    if (item && cJSON_IsNumber(item)) release = (float)item->valuedouble;
   }
-  if (attack < 0.0 || attack > 60000.0 || release < 0.0 || release > 60000.0) {
+  if (attack < 0.0f || attack > 60000.0f || release < 0.0f || release > 60000.0f) {
     reply_error(cmd_name, "InvalidValueError",
                 "attack and release must be between 0 and 60000 ms", ds);
   } else {
@@ -867,10 +865,10 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
 
   bool is_capture = true;
   uint32_t channel = (uint32_t)-1;
-  double min_freq = 20.0;
-  double max_freq = 20000.0;
+  float min_freq = 20.0f;
+  float max_freq = 20000.0f;
   uint32_t n_bins = 1024;
-  double max_rate = 0.0;
+  float max_rate = 0.0f;
 
   cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (!arg || !cJSON_IsObject(arg)) {
@@ -913,9 +911,9 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
 
   cJSON* item_min = cJSON_GetObjectItemCaseSensitive(arg, "min_freq");
   if (item_min && cJSON_IsNumber(item_min)) {
-    min_freq = item_min->valuedouble;
+    min_freq = (float)item_min->valuedouble;
   }
-  if (min_freq <= 0.0) {
+  if (min_freq <= 0.0f) {
     reply_error(cmd_name, "InvalidValueError",
                 "min_freq must be greater than 0", ds);
     return;
@@ -923,7 +921,7 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
 
   cJSON* item_max = cJSON_GetObjectItemCaseSensitive(arg, "max_freq");
   if (item_max && cJSON_IsNumber(item_max)) {
-    max_freq = item_max->valuedouble;
+    max_freq = (float)item_max->valuedouble;
   }
   if (max_freq <= min_freq) {
     reply_error(cmd_name, "InvalidValueError",
@@ -943,7 +941,7 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
 
   cJSON* item_rate = cJSON_GetObjectItemCaseSensitive(arg, "max_rate");
   if (item_rate && cJSON_IsNumber(item_rate)) {
-    max_rate = item_rate->valuedouble;
+    max_rate = (float)item_rate->valuedouble;
   }
 
   if (server) {
@@ -1383,7 +1381,7 @@ static void handle_get_signal_single(websocket_server_t* server,
                                      bool is_rms, dyn_string_t* ds) {
   cdsp_vu_levels_t vu = {0};
   if (server && server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
-    double* arr = NULL;
+    float* arr = NULL;
     size_t count = 0;
     if (is_capture) {
       arr = is_rms ? vu.capture_rms : vu.capture_peak;
@@ -1392,10 +1390,10 @@ static void handle_get_signal_single(websocket_server_t* server,
       arr = is_rms ? vu.playback_rms : vu.playback_peak;
       count = vu.playback_channels;
     }
-    reply_ok(cmd_name, cJSON_CreateDoubleArray(arr, (int)count), ds);
+    reply_ok(cmd_name, cJSON_CreateFloatArray(arr, (int)count), ds);
     cdsp_free_vu_levels(&vu);
   } else {
-    reply_ok(cmd_name, cJSON_CreateDoubleArray(NULL, 0), ds);
+    reply_ok(cmd_name, cJSON_CreateFloatArray(NULL, 0), ds);
   }
 }
 
@@ -1431,21 +1429,21 @@ static void handle_get_signal_since_last(websocket_server_t* server,
     }
     size_t ch = hist ? hist->channels : 0;
     if (ch > 0 && hist) {
-      double* vals = (double*)calloc(ch, sizeof(double));
+      float* vals = (float*)calloc(ch, sizeof(float));
       if (is_rms) {
         level_history_get_rms_since(hist, since, vals);
       } else {
         level_history_get_max_since(hist, since, vals);
       }
       pthread_mutex_unlock(&server->sessions_mutex);
-      reply_ok(cmd_name, cJSON_CreateDoubleArray(vals, (int)ch), ds);
+      reply_ok(cmd_name, cJSON_CreateFloatArray(vals, (int)ch), ds);
       free(vals);
     } else {
       pthread_mutex_unlock(&server->sessions_mutex);
-      reply_ok(cmd_name, cJSON_CreateDoubleArray(NULL, 0), ds);
+      reply_ok(cmd_name, cJSON_CreateFloatArray(NULL, 0), ds);
     }
   } else {
-    reply_ok(cmd_name, cJSON_CreateDoubleArray(NULL, 0), ds);
+    reply_ok(cmd_name, cJSON_CreateFloatArray(NULL, 0), ds);
   }
 }
 
@@ -1453,13 +1451,13 @@ static void handle_get_signal_since(websocket_server_t* server,
                                     const char* cmd_name, cJSON* root,
                                     bool is_capture, bool is_rms,
                                     dyn_string_t* ds) {
-  double secs = 0;
+  float secs = 0.0f;
   cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsNumber(arg)) {
-    secs = arg->valuedouble;
+    secs = (float)arg->valuedouble;
     if (server) {
       uint64_t now = get_time_ms();
-      uint64_t since = now - (uint64_t)(secs * 1000.0);
+      uint64_t since = now - (uint64_t)(secs * 1000.0f);
       level_history_t* hist = NULL;
       if (is_capture) {
         hist = is_rms ? &server->capture_rms_history
@@ -1470,19 +1468,19 @@ static void handle_get_signal_since(websocket_server_t* server,
       }
       size_t ch = hist ? hist->channels : 0;
       if (ch > 0 && hist) {
-        double* vals = (double*)calloc(ch, sizeof(double));
+        float* vals = (float*)calloc(ch, sizeof(float));
         if (is_rms) {
           level_history_get_rms_since(hist, since, vals);
         } else {
           level_history_get_max_since(hist, since, vals);
         }
-        reply_ok(cmd_name, cJSON_CreateDoubleArray(vals, (int)ch), ds);
+        reply_ok(cmd_name, cJSON_CreateFloatArray(vals, (int)ch), ds);
         free(vals);
       } else {
-        reply_ok(cmd_name, cJSON_CreateDoubleArray(NULL, 0), ds);
+        reply_ok(cmd_name, cJSON_CreateFloatArray(NULL, 0), ds);
       }
     } else {
-      reply_ok(cmd_name, cJSON_CreateDoubleArray(NULL, 0), ds);
+      reply_ok(cmd_name, cJSON_CreateFloatArray(NULL, 0), ds);
     }
   } else {
     reply_error(cmd_name, "InvalidRequestError", "Could not parse seconds", ds);
@@ -1499,28 +1497,28 @@ static void handle_cmd_get_signal_levels(websocket_server_t* server,
     cJSON* root = cJSON_CreateObject();
     cJSON_AddItemToObject(
         root, "playback_rms",
-        cJSON_CreateDoubleArray(vu.playback_rms, (int)vu.playback_channels));
+        cJSON_CreateFloatArray(vu.playback_rms, (int)vu.playback_channels));
     cJSON_AddItemToObject(
         root, "playback_peak",
-        cJSON_CreateDoubleArray(vu.playback_peak, (int)vu.playback_channels));
+        cJSON_CreateFloatArray(vu.playback_peak, (int)vu.playback_channels));
     cJSON_AddItemToObject(
         root, "capture_rms",
-        cJSON_CreateDoubleArray(vu.capture_rms, (int)vu.capture_channels));
+        cJSON_CreateFloatArray(vu.capture_rms, (int)vu.capture_channels));
     cJSON_AddItemToObject(
         root, "capture_peak",
-        cJSON_CreateDoubleArray(vu.capture_peak, (int)vu.capture_channels));
+        cJSON_CreateFloatArray(vu.capture_peak, (int)vu.capture_channels));
     reply_ok(cmd_name, root, ds);
     cdsp_free_vu_levels(&vu);
   } else {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddItemToObject(root, "playback_rms",
-                          cJSON_CreateDoubleArray(NULL, 0));
+                          cJSON_CreateFloatArray(NULL, 0));
     cJSON_AddItemToObject(root, "playback_peak",
-                          cJSON_CreateDoubleArray(NULL, 0));
+                          cJSON_CreateFloatArray(NULL, 0));
     cJSON_AddItemToObject(root, "capture_rms",
-                          cJSON_CreateDoubleArray(NULL, 0));
+                          cJSON_CreateFloatArray(NULL, 0));
     cJSON_AddItemToObject(root, "capture_peak",
-                          cJSON_CreateDoubleArray(NULL, 0));
+                          cJSON_CreateFloatArray(NULL, 0));
     reply_ok(cmd_name, root, ds);
   }
 }
@@ -1550,10 +1548,10 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
 
     size_t c_ch = server->capture_rms_history.channels;
     size_t p_ch = server->playback_rms_history.channels;
-    double* c_rms = c_ch > 0 ? (double*)calloc(c_ch, sizeof(double)) : NULL;
-    double* c_pk = c_ch > 0 ? (double*)calloc(c_ch, sizeof(double)) : NULL;
-    double* p_rms = p_ch > 0 ? (double*)calloc(p_ch, sizeof(double)) : NULL;
-    double* p_pk = p_ch > 0 ? (double*)calloc(p_ch, sizeof(double)) : NULL;
+    float* c_rms = c_ch > 0 ? (float*)calloc(c_ch, sizeof(float)) : NULL;
+    float* c_pk = c_ch > 0 ? (float*)calloc(c_ch, sizeof(float)) : NULL;
+    float* p_rms = p_ch > 0 ? (float*)calloc(p_ch, sizeof(float)) : NULL;
+    float* p_pk = p_ch > 0 ? (float*)calloc(p_ch, sizeof(float)) : NULL;
 
     if (c_ch > 0) {
       level_history_get_rms_since(&server->capture_rms_history, cap_rms_since,
@@ -1570,13 +1568,13 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
 
     cJSON* root = cJSON_CreateObject();
     cJSON_AddItemToObject(root, "playback_rms",
-                          cJSON_CreateDoubleArray(p_rms, (int)p_ch));
+                          cJSON_CreateFloatArray(p_rms, (int)p_ch));
     cJSON_AddItemToObject(root, "playback_peak",
-                          cJSON_CreateDoubleArray(p_pk, (int)p_ch));
+                          cJSON_CreateFloatArray(p_pk, (int)p_ch));
     cJSON_AddItemToObject(root, "capture_rms",
-                          cJSON_CreateDoubleArray(c_rms, (int)c_ch));
+                          cJSON_CreateFloatArray(c_rms, (int)c_ch));
     cJSON_AddItemToObject(root, "capture_peak",
-                          cJSON_CreateDoubleArray(c_pk, (int)c_ch));
+                          cJSON_CreateFloatArray(c_pk, (int)c_ch));
 
     reply_ok(cmd_name, root, ds);
 
@@ -1587,13 +1585,13 @@ static void handle_cmd_get_signal_levels_since_last(websocket_server_t* server,
   } else {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddItemToObject(root, "playback_rms",
-                          cJSON_CreateDoubleArray(NULL, 0));
+                          cJSON_CreateFloatArray(NULL, 0));
     cJSON_AddItemToObject(root, "playback_peak",
-                          cJSON_CreateDoubleArray(NULL, 0));
+                          cJSON_CreateFloatArray(NULL, 0));
     cJSON_AddItemToObject(root, "capture_rms",
-                          cJSON_CreateDoubleArray(NULL, 0));
+                          cJSON_CreateFloatArray(NULL, 0));
     cJSON_AddItemToObject(root, "capture_peak",
-                          cJSON_CreateDoubleArray(NULL, 0));
+                          cJSON_CreateFloatArray(NULL, 0));
     reply_ok(cmd_name, root, ds);
   }
 }
@@ -1603,19 +1601,19 @@ static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
                                                const char* cmd_name, cJSON* arg,
                                                dyn_string_t* ds) {
   (void)client_idx;
-  double secs = 0;
+  float secs = 0.0f;
   if (arg && cJSON_IsNumber(arg)) {
-    secs = arg->valuedouble;
+    secs = (float)arg->valuedouble;
     if (server) {
       uint64_t now = get_time_ms();
-      uint64_t since = now - (uint64_t)(secs * 1000.0);
+      uint64_t since = now - (uint64_t)(secs * 1000.0f);
 
       size_t c_ch = server->capture_rms_history.channels;
       size_t p_ch = server->playback_rms_history.channels;
-      double* c_rms = c_ch > 0 ? (double*)calloc(c_ch, sizeof(double)) : NULL;
-      double* c_pk = c_ch > 0 ? (double*)calloc(c_ch, sizeof(double)) : NULL;
-      double* p_rms = p_ch > 0 ? (double*)calloc(p_ch, sizeof(double)) : NULL;
-      double* p_pk = p_ch > 0 ? (double*)calloc(p_ch, sizeof(double)) : NULL;
+      float* c_rms = c_ch > 0 ? (float*)calloc(c_ch, sizeof(float)) : NULL;
+      float* c_pk = c_ch > 0 ? (float*)calloc(c_ch, sizeof(float)) : NULL;
+      float* p_rms = p_ch > 0 ? (float*)calloc(p_ch, sizeof(float)) : NULL;
+      float* p_pk = p_ch > 0 ? (float*)calloc(p_ch, sizeof(float)) : NULL;
 
       if (c_ch > 0) {
         level_history_get_rms_since(&server->capture_rms_history, since, c_rms);
@@ -1630,13 +1628,13 @@ static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
 
       cJSON* root = cJSON_CreateObject();
       cJSON_AddItemToObject(root, "playback_rms",
-                            cJSON_CreateDoubleArray(p_rms, (int)p_ch));
+                            cJSON_CreateFloatArray(p_rms, (int)p_ch));
       cJSON_AddItemToObject(root, "playback_peak",
-                            cJSON_CreateDoubleArray(p_pk, (int)p_ch));
+                            cJSON_CreateFloatArray(p_pk, (int)p_ch));
       cJSON_AddItemToObject(root, "capture_rms",
-                            cJSON_CreateDoubleArray(c_rms, (int)c_ch));
+                            cJSON_CreateFloatArray(c_rms, (int)c_ch));
       cJSON_AddItemToObject(root, "capture_peak",
-                            cJSON_CreateDoubleArray(c_pk, (int)c_ch));
+                            cJSON_CreateFloatArray(c_pk, (int)c_ch));
 
       reply_ok(cmd_name, root, ds);
 
@@ -1647,13 +1645,13 @@ static void handle_cmd_get_signal_levels_since(websocket_server_t* server,
     } else {
       cJSON* root = cJSON_CreateObject();
       cJSON_AddItemToObject(root, "playback_rms",
-                            cJSON_CreateDoubleArray(NULL, 0));
+                            cJSON_CreateFloatArray(NULL, 0));
       cJSON_AddItemToObject(root, "playback_peak",
-                            cJSON_CreateDoubleArray(NULL, 0));
+                            cJSON_CreateFloatArray(NULL, 0));
       cJSON_AddItemToObject(root, "capture_rms",
-                            cJSON_CreateDoubleArray(NULL, 0));
+                            cJSON_CreateFloatArray(NULL, 0));
       cJSON_AddItemToObject(root, "capture_peak",
-                            cJSON_CreateDoubleArray(NULL, 0));
+                            cJSON_CreateFloatArray(NULL, 0));
       reply_ok(cmd_name, root, ds);
     }
   } else {
@@ -1754,12 +1752,12 @@ static void handle_cmd_get_signal_range(websocket_server_t* server,
   cdsp_vu_levels_t vu = {0};
   if (server && server->engine && cdsp_get_vu_levels(server->engine, &vu)) {
     size_t count = vu.playback_channels;
-    double max_peak = -1000.0;
+    float max_peak = -1000.0f;
     for (size_t i = 0; i < count; i++) {
-      double pk = vu.playback_peak[i];
+      float pk = vu.playback_peak[i];
       if (pk > max_peak) max_peak = pk;
     }
-    double range = 2.0 * db_to_amplitude(max_peak);
+    float range = 2.0f * db_to_amplitude(max_peak);
     reply_ok(cmd_name, cJSON_CreateNumber(range), ds);
     cdsp_free_vu_levels(&vu);
   } else {
@@ -1780,8 +1778,8 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
 
   bool is_capture = true;
   uint32_t channel = (uint32_t)-1;
-  double min_freq = 20.0;
-  double max_freq = 20000.0;
+  float min_freq = 20.0f;
+  float max_freq = 20000.0f;
   uint32_t n_bins = 1024;
 
   cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
@@ -1829,9 +1827,9 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
 
   cJSON* item_min = cJSON_GetObjectItemCaseSensitive(arg, "min_freq");
   if (item_min && cJSON_IsNumber(item_min)) {
-    min_freq = item_min->valuedouble;
+    min_freq = (float)item_min->valuedouble;
   }
-  if (min_freq <= 0.0) {
+  if (min_freq <= 0.0f) {
     reply_error(cmd_name, "InvalidValueError",
                 "min_freq must be greater than 0", ds);
     return;
@@ -1839,7 +1837,7 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
 
   cJSON* item_max = cJSON_GetObjectItemCaseSensitive(arg, "max_freq");
   if (item_max && cJSON_IsNumber(item_max)) {
-    max_freq = item_max->valuedouble;
+    max_freq = (float)item_max->valuedouble;
   }
   if (max_freq <= min_freq) {
     reply_error(cmd_name, "InvalidValueError",
@@ -2154,8 +2152,8 @@ static void handle_cmd_set_update_interval(websocket_server_t* server,
   (void)client_idx;
   cJSON* arg = cJSON_GetObjectItemCaseSensitive(root, "value");
   if (arg && cJSON_IsNumber(arg)) {
-    double val = arg->valuedouble;
-    if (val >= 0.0) {
+    float val = (float)arg->valuedouble;
+    if (val >= 0.0f) {
       if (server) server->update_interval = (uint32_t)val;
       reply_ok(cmd_name, NULL, ds);
     } else {

@@ -456,8 +456,8 @@ static vu_levels_t dsp_engine_get_vu_levels_locked(dsp_engine_impl_t* impl) {
   res.playback_channels = processing_parameters_get_playback_channels(p);
   res.capture_channels = processing_parameters_get_capture_channels(p);
   if (res.playback_channels > 0) {
-    res.playback_rms = (double*)calloc(res.playback_channels, sizeof(double));
-    res.playback_peak = (double*)calloc(res.playback_channels, sizeof(double));
+    res.playback_rms = (float*)calloc(res.playback_channels, sizeof(float));
+    res.playback_peak = (float*)calloc(res.playback_channels, sizeof(float));
     if (!res.playback_rms || !res.playback_peak) {
       dsp_engine_free_vu_levels(&res);
       return (vu_levels_t){0};
@@ -468,8 +468,8 @@ static vu_levels_t dsp_engine_get_vu_levels_locked(dsp_engine_impl_t* impl) {
                                                    res.playback_channels);
   }
   if (res.capture_channels > 0) {
-    res.capture_rms = (double*)calloc(res.capture_channels, sizeof(double));
-    res.capture_peak = (double*)calloc(res.capture_channels, sizeof(double));
+    res.capture_rms = (float*)calloc(res.capture_channels, sizeof(float));
+    res.capture_peak = (float*)calloc(res.capture_channels, sizeof(float));
     if (!res.capture_rms || !res.capture_peak) {
       dsp_engine_free_vu_levels(&res);
       return (vu_levels_t){0};

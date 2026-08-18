@@ -54,10 +54,10 @@ typedef struct {
  * @brief VU level snapshot for playback and capture.
  */
 typedef struct {
-  double* playback_rms;
-  double* playback_peak;
-  double* capture_rms;
-  double* capture_peak;
+  float* playback_rms;
+  float* playback_peak;
+  float* capture_rms;
+  float* capture_peak;
   size_t playback_channels;
   size_t capture_channels;
 } cdsp_vu_levels_t;

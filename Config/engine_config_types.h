@@ -127,10 +127,10 @@ void audio_backend_error_description(const audio_backend_error_t* err,
  * @brief VU levels for playback and capture.
  */
 typedef struct {
-  double* playback_rms;     /**< Array of playback RMS levels per channel. */
-  double* playback_peak;    /**< Array of playback peak levels per channel. */
-  double* capture_rms;      /**< Array of capture RMS levels per channel. */
-  double* capture_peak;     /**< Array of capture peak levels per channel. */
+  float* playback_rms;     /**< Array of playback RMS levels per channel. */
+  float* playback_peak;    /**< Array of playback peak levels per channel. */
+  float* capture_rms;      /**< Array of capture RMS levels per channel. */
+  float* capture_peak;     /**< Array of capture peak levels per channel. */
   size_t playback_channels; /**< Number of playback channels. */
   size_t capture_channels;  /**< Number of capture channels. */
 } vu_levels_t;

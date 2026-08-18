@@ -52,7 +52,7 @@ static inline const char* ws_processing_state_to_string(
 
 typedef struct {
   uint64_t timestamp_ms;
-  double* levels;
+  float* levels;
 } level_sample_t;
 
 typedef struct {
@@ -75,21 +75,21 @@ typedef struct {
   bool spectrum_subscribed;
   bool spectrum_is_capture;
   uint32_t spectrum_channel;
-  double spectrum_min_freq;
-  double spectrum_max_freq;
+  float spectrum_min_freq;
+  float spectrum_max_freq;
   uint32_t spectrum_n_bins;
-  double spectrum_max_rate;
+  float spectrum_max_rate;
   uint64_t last_spectrum_push_time;
 
-  double vu_max_rate;
-  double vu_attack;
-  double vu_release;
+  float vu_max_rate;
+  float vu_attack;
+  float vu_release;
   uint64_t last_vu_push_time;
 
-  double* vu_pb_rms;
-  double* vu_pb_peak;
-  double* vu_cap_rms;
-  double* vu_cap_peak;
+  float* vu_pb_rms;
+  float* vu_pb_peak;
+  float* vu_cap_rms;
+  float* vu_cap_peak;
   size_t vu_pb_channels;
   size_t vu_cap_channels;
 } client_session_t;
@@ -110,8 +110,8 @@ struct websocket_server {
   level_history_t playback_peak_history;
   level_history_t playback_rms_history;
 
-  double* capture_global_peaks;
-  double* playback_global_peaks;
+  float* capture_global_peaks;
+  float* playback_global_peaks;
   size_t capture_global_peaks_count;
   size_t playback_global_peaks_count;
 
@@ -120,13 +120,13 @@ struct websocket_server {
 };
 
 uint64_t get_time_ms(void);
-double db_to_amplitude(double db);
-double amplitude_to_db(double amp);
+float db_to_amplitude(float db);
+float amplitude_to_db(float amp);
 void level_history_clear(level_history_t* history);
 void level_history_get_max_since(const level_history_t* history,
-                                 uint64_t since_ms, double* out_levels);
+                                 uint64_t since_ms, float* out_levels);
 void level_history_get_rms_since(const level_history_t* history,
-                                 uint64_t since_ms, double* out_levels);
+                                 uint64_t since_ms, float* out_levels);
 void client_session_clear(client_session_t* session);
 void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...);
 void free_vu_levels_arrays(cdsp_vu_levels_t* vu);

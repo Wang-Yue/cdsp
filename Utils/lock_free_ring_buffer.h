@@ -289,19 +289,78 @@ static inline void atomic_double_set(atomic_double_t* a, double value) {
   atomic_double_store(a, value, memory_order_release);
 }
 
-/**
- * @brief Create an atomic double.
- *
- * @param value Initial value.
- * @return Pointer to the allocated atomic double, or NULL on failure.
- */
-atomic_double_t* atomic_double_create(double value);
+// MARK: - AtomicFloat
 
 /**
- * @brief Free an atomic double.
+ * @struct atomic_float
+ * @brief Lock-free atomic `float`.
  *
- * @param a Pointer to the atomic double to free.
+ * Standard C atomic types round-trip through the IEEE-754 bit pattern via
+ * `_Atomic uint32_t`.
  */
-void atomic_double_free(atomic_double_t* a);
+typedef struct {
+  _Atomic(uint32_t) bits; /**< Atomic bits storing the float representation. */
+} atomic_float_t;
+
+/**
+ * @brief Initialize an atomic float.
+ *
+ * @param a Pointer to the atomic float.
+ * @param value Initial value.
+ */
+static inline void atomic_float_init(atomic_float_t* a, float value) {
+  uint32_t u;
+  memcpy(&u, &value, sizeof(uint32_t));
+  atomic_init(&a->bits, u);
+}
+
+/**
+ * @brief Load an atomic float with explicit memory order.
+ *
+ * @param a Pointer to the atomic float.
+ * @param order Memory order.
+ * @return Loaded value.
+ */
+static inline float atomic_float_load(const atomic_float_t* a,
+                                      memory_order order) {
+  uint32_t u = atomic_load_explicit(&a->bits, order);
+  float f;
+  memcpy(&f, &u, sizeof(float));
+  return f;
+}
+
+/**
+ * @brief Store an atomic float with explicit memory order.
+ *
+ * @param a Pointer to the atomic float.
+ * @param value Value to store.
+ * @param order Memory order.
+ */
+static inline void atomic_float_store(atomic_float_t* a, float value,
+                                      memory_order order) {
+  uint32_t u;
+  memcpy(&u, &value, sizeof(uint32_t));
+  atomic_store_explicit(&a->bits, u, order);
+}
+
+/**
+ * @brief Load an atomic float with acquire memory order.
+ *
+ * @param a Pointer to the atomic float.
+ * @return Loaded value.
+ */
+static inline float atomic_float_get(const atomic_float_t* a) {
+  return atomic_float_load(a, memory_order_acquire);
+}
+
+/**
+ * @brief Store an atomic float with release memory order.
+ *
+ * @param a Pointer to the atomic float.
+ * @param value Value to store.
+ */
+static inline void atomic_float_set(atomic_float_t* a, float value) {
+  atomic_float_store(a, value, memory_order_release);
+}
 
 #endif  // CLIB_UTILS_LOCK_FREE_RING_BUFFER_H

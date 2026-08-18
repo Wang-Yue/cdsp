@@ -3671,8 +3671,8 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
     cdsp_sleep_ms(10);
     cdsp_free_vu_levels(&vu);
     memset(&vu, 0, sizeof(vu));
-    if (cdsp_get_vu_levels(engine, &vu) && vu.capture_peak[0] > -20.0 &&
-        vu.playback_peak[0] > -20.0) {
+    if (cdsp_get_vu_levels(engine, &vu) && vu.capture_peak[0] > -20.0f &&
+        vu.playback_peak[0] > -20.0f) {
       got_vu = true;
       break;
     }

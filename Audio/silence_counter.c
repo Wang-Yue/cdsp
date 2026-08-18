@@ -10,7 +10,7 @@
 
 struct silence_counter {
   size_t limit_chunks;
-  double threshold_db;
+  float threshold_db;
   size_t silent_chunks;
 };
 
@@ -46,7 +46,7 @@ void silence_counter_init(silence_counter_t* counter, double threshold_db,
                           double timeout_seconds, size_t samplerate,
                           size_t chunksize) {
   if (!counter) return;
-  counter->threshold_db = threshold_db;
+  counter->threshold_db = (float)threshold_db;
   counter->silent_chunks = 0;
   // Convert the timeout duration from seconds to the number of audio chunks.
   if (timeout_seconds > 0.0 && chunksize > 0 && isfinite(timeout_seconds) &&
@@ -67,7 +67,7 @@ void silence_counter_init(silence_counter_t* counter, double threshold_db,
 /// Feed the next chunk's loudest channel peak (dB). Returns the
 /// engine state the capture loop should drive to.
 processing_state_t silence_counter_update(silence_counter_t* counter,
-                                          double signal_peak_db) {
+                                          float signal_peak_db) {
   if (!counter || counter->limit_chunks == 0) {
     return PROCESSING_STATE_RUNNING;
   }

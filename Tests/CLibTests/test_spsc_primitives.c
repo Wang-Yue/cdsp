@@ -232,20 +232,37 @@ TEST(SpscQueueConcurrentNoDataLoss) {
 }
 
 TEST(AtomicDoubleRoundTrip) {
-  atomic_double_t* value = atomic_double_create(1.5);
-  ASSERT_DOUBLE_EQ(1.5, atomic_double_get(value));
-  atomic_double_set(value, 2.71828);
-  ASSERT_DOUBLE_EQ(2.71828, atomic_double_get(value));
-  atomic_double_set(value, -0.0);
-  double d = atomic_double_get(value);
+  atomic_double_t value;
+  atomic_double_init(&value, 1.5);
+  ASSERT_DOUBLE_EQ(1.5, atomic_double_get(&value));
+  atomic_double_set(&value, 2.71828);
+  ASSERT_DOUBLE_EQ(2.71828, atomic_double_get(&value));
+  atomic_double_set(&value, -0.0);
+  double d = atomic_double_get(&value);
   uint64_t u1, u2;
   memcpy(&u1, &d, sizeof(uint64_t));
   double minus_zero = -0.0;
   memcpy(&u2, &minus_zero, sizeof(uint64_t));
   ASSERT_EQ(u2, u1);
-  atomic_double_set(value, INFINITY);
-  ASSERT_DOUBLE_EQ(INFINITY, atomic_double_get(value));
-  atomic_double_free(value);
+  atomic_double_set(&value, INFINITY);
+  ASSERT_DOUBLE_EQ(INFINITY, atomic_double_get(&value));
+}
+
+TEST(AtomicFloatRoundTrip) {
+  atomic_float_t value;
+  atomic_float_init(&value, 1.5f);
+  ASSERT_NEAR(1.5f, atomic_float_get(&value), 1e-6);
+  atomic_float_set(&value, 2.71828f);
+  ASSERT_NEAR(2.71828f, atomic_float_get(&value), 1e-6);
+  atomic_float_set(&value, -0.0f);
+  float f = atomic_float_get(&value);
+  uint32_t u1, u2;
+  memcpy(&u1, &f, sizeof(uint32_t));
+  float minus_zero = -0.0f;
+  memcpy(&u2, &minus_zero, sizeof(uint32_t));
+  ASSERT_EQ(u2, u1);
+  atomic_float_set(&value, INFINITY);
+  ASSERT_TRUE(isinf(atomic_float_get(&value)));
 }
 
 TEST(SpscNullCheck) {

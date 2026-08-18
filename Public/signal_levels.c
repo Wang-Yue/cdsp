@@ -19,16 +19,16 @@ bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
 
   if (vu.playback_channels > 0) {
     out_vu->playback_rms =
-        (double*)malloc(vu.playback_channels * sizeof(double));
+        (float*)malloc(vu.playback_channels * sizeof(float));
     out_vu->playback_peak =
-        (double*)malloc(vu.playback_channels * sizeof(double));
+        (float*)malloc(vu.playback_channels * sizeof(float));
     if (out_vu->playback_rms && vu.playback_rms) {
       memcpy(out_vu->playback_rms, vu.playback_rms,
-             vu.playback_channels * sizeof(double));
+             vu.playback_channels * sizeof(float));
     }
     if (out_vu->playback_peak && vu.playback_peak) {
       memcpy(out_vu->playback_peak, vu.playback_peak,
-             vu.playback_channels * sizeof(double));
+             vu.playback_channels * sizeof(float));
     }
   } else {
     out_vu->playback_rms = NULL;
@@ -36,16 +36,16 @@ bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
   }
 
   if (vu.capture_channels > 0) {
-    out_vu->capture_rms = (double*)malloc(vu.capture_channels * sizeof(double));
+    out_vu->capture_rms = (float*)malloc(vu.capture_channels * sizeof(float));
     out_vu->capture_peak =
-        (double*)malloc(vu.capture_channels * sizeof(double));
+        (float*)malloc(vu.capture_channels * sizeof(float));
     if (out_vu->capture_rms && vu.capture_rms) {
       memcpy(out_vu->capture_rms, vu.capture_rms,
-             vu.capture_channels * sizeof(double));
+             vu.capture_channels * sizeof(float));
     }
     if (out_vu->capture_peak && vu.capture_peak) {
       memcpy(out_vu->capture_peak, vu.capture_peak,
-             vu.capture_channels * sizeof(double));
+             vu.capture_channels * sizeof(float));
     }
   } else {
     out_vu->capture_rms = NULL;
