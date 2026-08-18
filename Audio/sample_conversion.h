@@ -244,7 +244,10 @@ static inline void pcm_sample_encode_s24_4_rj_bytes(double val, uint8_t* dst) {
  * @return Normalized double sample in [-1.0, 1.0].
  */
 static inline double pcm_sample_decode_s24_4_rj_bytes(const uint8_t* src) {
-  return pcm_sample_decode_s24_3bytes(src);
+  int32_t val;
+  memcpy(&val, src, sizeof(int32_t));
+  val = (int32_t)((uint32_t)val << 8) >> 8;
+  return pcm_sample_decode_s24(val);
 }
 
 /**
@@ -267,8 +270,9 @@ static inline void pcm_sample_encode_s24_4_lj_bytes(double val, uint8_t* dst) {
  * @return Normalized double sample in [-1.0, 1.0].
  */
 static inline double pcm_sample_decode_s24_4_lj_bytes(const uint8_t* src) {
-  int32_t val = (int32_t)(((uint32_t)src[1] << 8) | ((uint32_t)src[2] << 16) |
-                          ((uint32_t)src[3] << 24));
+  uint32_t u32;
+  memcpy(&u32, src, sizeof(uint32_t));
+  int32_t val = (int32_t)(u32 & (uint32_t)0xFFFFFF00);
   return pcm_sample_decode_s32(val);
 }
 
