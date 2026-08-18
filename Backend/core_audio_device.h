@@ -9,7 +9,6 @@
 
 #if defined(ENABLE_COREAUDIO)
 
-#include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
 #include <stdbool.h>
 #include <stddef.h>
