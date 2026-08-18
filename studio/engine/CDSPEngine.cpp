@@ -164,70 +164,94 @@ VuLevels CDSPEngine::getVuLevels() const {
     if (!m_engine)
         return res;
 
-    cdsp_vu_levels_t levels;
-    if (cdsp_get_vu_levels(m_engine, &levels)) {
-        if (levels.playback_rms && levels.playback_peak) {
-            for (size_t i = 0; i < levels.playback_channels; ++i) {
-                res.playback_rms.push_back(static_cast<float>(levels.playback_rms[i]));
-                res.playback_peak.push_back(static_cast<float>(levels.playback_peak[i]));
-            }
+    cdsp_vu_levels_t query = {};
+    if (cdsp_get_vu_levels(m_engine, &query)) {
+        size_t pb_ch = query.playback_channels;
+        size_t cap_ch = query.capture_channels;
+        res.playback_rms.resize(pb_ch);
+        res.playback_peak.resize(pb_ch);
+        res.capture_rms.resize(cap_ch);
+        res.capture_peak.resize(cap_ch);
+
+        cdsp_vu_levels_t levels = {pb_ch > 0 ? res.playback_rms.data() : nullptr,
+                                   pb_ch > 0 ? res.playback_peak.data() : nullptr,
+                                   cap_ch > 0 ? res.capture_rms.data() : nullptr,
+                                   cap_ch > 0 ? res.capture_peak.data() : nullptr,
+                                   0,
+                                   0};
+        if (cdsp_get_vu_levels(m_engine, &levels)) {
+            return res;
         }
-        if (levels.capture_rms && levels.capture_peak) {
-            for (size_t i = 0; i < levels.capture_channels; ++i) {
-                res.capture_rms.push_back(static_cast<float>(levels.capture_rms[i]));
-                res.capture_peak.push_back(static_cast<float>(levels.capture_peak[i]));
-            }
-        }
-        cdsp_free_vu_levels(&levels);
     }
     return res;
 }
 
 bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double maxFreq, size_t nBins,
                              SpectrumData& outSpectrum) const {
-    if (!m_engine)
+    if (!m_engine || nBins == 0)
         return false;
 
-    cdsp_spectrum_t res;
-    memset(&res, 0, sizeof(res));
     cdsp_spectrum_side_t side = isCapture ? CDSP_SPECTRUM_SIDE_CAPTURE : CDSP_SPECTRUM_SIDE_PLAYBACK;
-    uint32_t ch_val = channel >= 0 ? static_cast<uint32_t>(channel) : 0;
-    const uint32_t* ch_ptr = channel >= 0 ? &ch_val : nullptr;
-    bool success = cdsp_get_spectrum(m_engine, side, ch_ptr, minFreq, maxFreq, nBins, &res);
-    if (!success || !res.frequencies || !res.magnitudes || res.count == 0) {
-        cdsp_free_spectrum(&res);
+    size_t ch_val = channel >= 0 ? static_cast<size_t>(channel) : 0;
+    const size_t* ch_ptr = channel >= 0 ? &ch_val : nullptr;
+
+    outSpectrum.frequencies.resize(nBins);
+    outSpectrum.magnitudes.resize(nBins);
+
+    cdsp_spectrum_t res = {outSpectrum.frequencies.data(), outSpectrum.magnitudes.data(), 0};
+
+    bool success = cdsp_get_spectrum(m_engine, side, ch_ptr, static_cast<float>(minFreq), static_cast<float>(maxFreq),
+                                     nBins, &res);
+    if (!success || res.count == 0) {
+        outSpectrum.frequencies.clear();
+        outSpectrum.magnitudes.clear();
         return false;
     }
 
-    outSpectrum.frequencies.assign(res.frequencies, res.frequencies + res.count);
-    outSpectrum.magnitudes.assign(res.magnitudes, res.magnitudes + res.count);
-    cdsp_free_spectrum(&res);
+    if (res.count < nBins) {
+        outSpectrum.frequencies.resize(res.count);
+        outSpectrum.magnitudes.resize(res.count);
+    }
     return true;
 }
 
 bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& outSamples) const {
-    if (!m_engine)
+    if (!m_engine || nFrames == 0)
         return false;
 
     cdsp_backend_error_t err;
     memset(&err, 0, sizeof(err));
-    cdsp_audio_samples_t* res = cdsp_get_samples(m_engine, isCapture, nFrames, &err);
-    if (!res)
+
+    cdsp_audio_samples_t query = {};
+    if (!cdsp_get_samples(m_engine, isCapture, nFrames, &query, &err))
         return false;
 
-    outSamples.channels.clear();
-    for (size_t ch = 0; ch < res->channels_count; ++ch) {
-        std::vector<float> chSamples;
-        if (res->channels && res->channels[ch]) {
-            chSamples.reserve(res->frames);
-            for (size_t f = 0; f < res->frames; ++f) {
-                chSamples.push_back(static_cast<float>(res->channels[ch][f]));
-            }
-        }
-        outSamples.channels.push_back(chSamples);
+    size_t ch_count = query.channels_count;
+    if (ch_count == 0) {
+        outSamples.channels.clear();
+        return true;
     }
 
-    cdsp_free_samples(res);
+    outSamples.channels.resize(ch_count);
+    std::vector<float*> chan_ptrs(ch_count);
+    for (size_t ch = 0; ch < ch_count; ++ch) {
+        outSamples.channels[ch].resize(nFrames);
+        chan_ptrs[ch] = outSamples.channels[ch].data();
+    }
+
+    cdsp_audio_samples_t samples = {chan_ptrs.data(), 0, 0};
+
+    if (!cdsp_get_samples(m_engine, isCapture, nFrames, &samples, &err)) {
+        outSamples.channels.clear();
+        return false;
+    }
+
+    if (samples.frames < nFrames) {
+        for (size_t ch = 0; ch < ch_count; ++ch) {
+            outSamples.channels[ch].resize(samples.frames);
+        }
+    }
+
     return true;
 }
 
