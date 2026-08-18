@@ -36,10 +36,9 @@ option(USE_LIBDISPATCH "Enable Apple Grand Central Dispatch (libdispatch) multi-
 # Define system libraries based on platform
 if(APPLE)
     find_library(COREAUDIO_LIB CoreAudio REQUIRED)
-    find_library(AUDIOTOOLBOX_LIB AudioToolbox REQUIRED)
     find_library(ACCELERATE_LIB Accelerate REQUIRED)
     find_library(COREFOUNDATION_LIB CoreFoundation REQUIRED)
-    set(PLATFORM_LIBS ${COREAUDIO_LIB} ${AUDIOTOOLBOX_LIB} ${ACCELERATE_LIB} ${COREFOUNDATION_LIB})
+    set(PLATFORM_LIBS ${COREAUDIO_LIB} ${ACCELERATE_LIB} ${COREFOUNDATION_LIB})
     add_compile_definitions(ENABLE_COREAUDIO ENABLE_ACCELERATE)
 elseif(WIN32)
     set(PLATFORM_LIBS ws2_32 winmm ole32 uuid ksuser ksguid avrt)
