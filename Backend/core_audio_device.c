@@ -940,8 +940,8 @@ bool core_audio_device_check_rate_change(AudioDeviceID device_id,
                                          rate_change_watcher_t* watcher,
                                          double expected_rate,
                                          double* out_rate) {
-  if (watcher && rate_change_watcher_get_pending_change(watcher, out_rate)) {
-    return true;
+  if (watcher) {
+    return rate_change_watcher_get_pending_change(watcher, out_rate);
   }
   if (device_id != 0) {
     double current = 0.0;
