@@ -359,13 +359,15 @@ static float update_levels_internal(const audio_chunk_t* chunk,
     waveform_t buffer = audio_chunk_get_channel(chunk, i);
     if (!buffer) continue;
 
-    float peak_db = float_to_db(dsp_ops_peak_absolute(buffer, frame_count));
+    float peak = dsp_ops_peak_absolute(buffer, frame_count);
+    float peak_db = float_to_db(peak);
     atomic_float_set(&peak_storage[i], peak_db);
     if (peak_db > max_peak) {
       max_peak = peak_db;
     }
 
-    float rms_db = float_to_db(dsp_ops_rms(buffer, frame_count));
+    float rms = dsp_ops_rms(buffer, frame_count);
+    float rms_db = float_to_db(rms);
     atomic_float_set(&rms_storage[i], rms_db);
   }
   return max_peak;

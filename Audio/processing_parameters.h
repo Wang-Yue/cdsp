@@ -14,14 +14,11 @@
 #ifndef CLIB_AUDIO_PROCESSING_PARAMETERS_H
 #define CLIB_AUDIO_PROCESSING_PARAMETERS_H
 
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "Audio/audio_chunk.h"
-#include "Utils/double_helpers.h"
-#include "Utils/lock_free_ring_buffer.h"
 
 #ifndef FADER_T_DEFINED
 #define FADER_T_DEFINED
