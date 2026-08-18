@@ -47,7 +47,7 @@ const char* pipeline_error_description(pipeline_error_t err) {
 
 /// A filter chain applied to a single channel in parallel.
 typedef struct {
-  int channel;
+  size_t channel;
   filter_t** filters;
   size_t filters_count;
 } parallel_filter_chain_t;
@@ -259,7 +259,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
     return NULL;
   }
 
-  int* all_chs = NULL;
+  size_t* all_chs = NULL;
   parallel_filter_chain_t* new_chains = NULL;
   size_t new_chains_count = 0;
 
@@ -380,9 +380,9 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
                              "Filter step missing names");
             goto cleanup_fail;
           }
-          int* channels_to_apply = NULL;
+          size_t* channels_to_apply = NULL;
           size_t channels_count = 0;
-          int single_ch = 0;
+          size_t single_ch = 0;
 
           if (step->channels && step->channels_count > 0) {
             channels_to_apply = step->channels;
@@ -392,18 +392,18 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
             channels_to_apply = &single_ch;
             channels_count = 1;
           } else {
-            if (current_channels > SIZE_MAX / sizeof(int)) {
+            if (current_channels > SIZE_MAX / sizeof(size_t)) {
               config_error_set(err, CONFIG_ERR_PARSE,
                                "Integer overflow in channels count");
               goto cleanup_fail;
             }
-            all_chs = (int*)calloc(current_channels, sizeof(int));
+            all_chs = (size_t*)calloc(current_channels, sizeof(size_t));
             if (!all_chs) {
               config_error_set(err, CONFIG_ERR_PARSE,
                                "Memory allocation failure");
               goto cleanup_fail;
             }
-            for (size_t c = 0; c < current_channels; c++) all_chs[c] = (int)c;
+            for (size_t c = 0; c < current_channels; c++) all_chs[c] = c;
             channels_to_apply = all_chs;
             channels_count = current_channels;
           }
@@ -419,7 +419,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
           }
 
           for (size_t c = 0; c < channels_count; c++) {
-            int ch = channels_to_apply[c];
+            size_t ch = channels_to_apply[c];
             parallel_filter_chain_t* chain = &new_chains[c];
             chain->channel = ch;
             chain->filters_count = step->names_count;
@@ -815,9 +815,9 @@ size_t pipeline_get_last_error_got(const pipeline_t* pipeline) {
 int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
   if (!config) return 0;
 
-  int num_channels =
+  size_t num_channels =
       capture_device_config_get_channels(&config->devices.capture);
-  if (num_channels <= 0) {
+  if (num_channels == 0) {
     if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE &&
         config->devices.capture.is_wav) {
       config_error_set(
@@ -826,7 +826,7 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
           config->devices.capture.cfg.wav_file.filename);
     } else {
       config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                       "Invalid capture channel count: %d", num_channels);
+                       "Invalid capture channel count: %zu", num_channels);
     }
     return -1;
   }
@@ -858,19 +858,19 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
           }
         }
         if (step->has_channel) {
-          if (step->channel < 0 || step->channel >= num_channels) {
+          if (step->channel >= num_channels) {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Filter step %zu references channel %d but "
-                             "pipeline only has %d channel(s) at this point",
+                             "Filter step %zu references channel %zu but "
+                             "pipeline only has %zu channel(s) at this point",
                              i, step->channel, num_channels);
             return -1;
           }
         }
         for (size_t j = 0; j < step->channels_count; j++) {
-          if (step->channels[j] < 0 || step->channels[j] >= num_channels) {
+          if (step->channels[j] >= num_channels) {
             config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Filter step %zu references channel %d but "
-                             "pipeline only has %d channel(s) at this point",
+                             "Filter step %zu references channel %zu but "
+                             "pipeline only has %zu channel(s) at this point",
                              i, step->channels[j], num_channels);
             return -1;
           }
@@ -878,7 +878,7 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
             if (step->channels[j] == step->channels[k]) {
               config_error_set(
                   err, CONFIG_ERR_INVALID_PIPELINE,
-                  "Filter step %zu references duplicated channel %d", i,
+                  "Filter step %zu references duplicated channel %zu", i,
                   step->channels[j]);
               return -1;
             }
@@ -899,10 +899,10 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
                            step->name);
           return -1;
         }
-        if (mixer->channels_in != (size_t)num_channels) {
+        if (mixer->channels_in != num_channels) {
           config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                           "Mixer '%s' expects %d input channel(s) but "
-                           "pipeline has %d at this point",
+                           "Mixer '%s' expects %zu input channel(s) but "
+                           "pipeline has %zu at this point",
                            step->name, mixer->channels_in, num_channels);
           return -1;
         }
@@ -924,7 +924,7 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
               step->name);
           return -1;
         }
-        int expected_channels = 0;
+        size_t expected_channels = 0;
         switch (proc->type) {
           case PROCESSOR_TYPE_COMPRESSOR:
             expected_channels = proc->parameters.compressor.channels;
@@ -943,8 +943,8 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
         }
         if (expected_channels != num_channels) {
           config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                           "Processor '%s' expects %d channel(s) but pipeline "
-                           "has %d at this point",
+                           "Processor '%s' expects %zu channel(s) but pipeline "
+                           "has %zu at this point",
                            step->name, expected_channels, num_channels);
           return -1;
         }
@@ -953,12 +953,12 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
     }
   }
 
-  int playback_channels =
+  size_t playback_channels =
       playback_device_config_get_channels(&config->devices.playback);
   if (num_channels != playback_channels) {
     config_error_set(
         err, CONFIG_ERR_INVALID_PIPELINE,
-        "Pipeline outputs %d channel(s) but playback device expects %d",
+        "Pipeline outputs %zu channel(s) but playback device expects %zu",
         num_channels, playback_channels);
     return -1;
   }

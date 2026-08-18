@@ -5138,9 +5138,8 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
   bool success = engine->set_config_json(engine->ctx, json, &berr);
   ASSERT_TRUE(success);
 
-  cdsp_sleep_ms(60);
-
-  // 1. Test VU Levels with caller stack buffers
+  // Wait until engine produces data under high parallel load
+  bool got_vu = false;
   float pb_pk[4], pb_rms[4], cap_pk[4], cap_rms[4];
   cdsp_vu_levels_t vu = {
       .playback_rms = pb_rms,
@@ -5148,7 +5147,13 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
       .capture_rms = cap_rms,
       .capture_peak = cap_pk,
   };
-  bool got_vu = cdsp_get_vu_levels(engine, &vu);
+  for (int retry = 0; retry < 50; retry++) {
+    cdsp_sleep_ms(10);
+    if (cdsp_get_vu_levels(engine, &vu)) {
+      got_vu = true;
+      break;
+    }
+  }
   ASSERT_TRUE(got_vu);
   ASSERT_EQ(2, vu.playback_channels);
   ASSERT_EQ(2, vu.capture_channels);
@@ -5160,8 +5165,13 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
       .frequencies = freqs,
       .magnitudes = mags,
   };
-  bool got_spec = cdsp_get_spectrum(engine, CDSP_SPECTRUM_SIDE_CAPTURE, NULL,
-                                    20.0f, 20000.0f, 16, &spec);
+  bool got_spec = false;
+  for (int retry = 0; retry < 50; retry++) {
+    got_spec = cdsp_get_spectrum(engine, CDSP_SPECTRUM_SIDE_CAPTURE, NULL,
+                                 20.0f, 20000.0f, 16, &spec);
+    if (got_spec) break;
+    cdsp_sleep_ms(10);
+  }
   ASSERT_TRUE(got_spec);
   ASSERT_EQ(16, spec.count);
   for (size_t i = 1; i < spec.count; i++) {
@@ -5174,7 +5184,12 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
   cdsp_audio_samples_t samples = {
       .channels = chans,
   };
-  bool got_samples = cdsp_get_samples(engine, true, 128, &samples, NULL);
+  bool got_samples = false;
+  for (int retry = 0; retry < 50; retry++) {
+    got_samples = cdsp_get_samples(engine, true, 128, &samples, NULL);
+    if (got_samples) break;
+    cdsp_sleep_ms(10);
+  }
   ASSERT_TRUE(got_samples);
   ASSERT_EQ(2, samples.channels_count);
   ASSERT_EQ(128, samples.frames);

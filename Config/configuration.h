@@ -38,9 +38,10 @@ typedef enum {
  */
 typedef struct {
   pipeline_step_type_t type; /**< The type of pipeline step. */
-  int channel; /**< The channel to apply the filter to (if single channel). */
+  size_t
+      channel; /**< The channel to apply the filter to (if single channel). */
   bool has_channel;      /**< True if `channel` is valid. */
-  int* channels;         /**< Array of channels (if multi-channel). */
+  size_t* channels;      /**< Array of channels (if multi-channel). */
   size_t channels_count; /**< Number of channels in `channels`. */
   char name[128];        /**< Name of the filter, mixer, or processor. */
   bool has_name;         /**< True if `name` is valid. */

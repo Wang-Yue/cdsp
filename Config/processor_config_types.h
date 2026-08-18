@@ -48,10 +48,10 @@ processor_type_t processor_type_from_string(const char* str);
  * @brief Parameters for the Compressor processor.
  */
 typedef struct {
-  int channels;                  /**< Number of channels. */
-  int* monitor_channels;         /**< Array of monitor channels. */
+  size_t channels;               /**< Number of channels. */
+  size_t* monitor_channels;      /**< Array of monitor channels. */
   size_t monitor_channels_count; /**< Number of monitor channels. */
-  int* process_channels;         /**< Array of channels to process. */
+  size_t* process_channels;      /**< Array of channels to process. */
   size_t process_channels_count; /**< Number of process channels. */
   double attack;                 /**< Attack time. */
   time_unit_t attack_unit;       /**< Unit of attack time. */
@@ -70,10 +70,10 @@ typedef struct {
  * @brief Parameters for the Noise Gate processor.
  */
 typedef struct {
-  int channels;                  /**< Number of channels. */
-  int* monitor_channels;         /**< Array of monitor channels. */
+  size_t channels;               /**< Number of channels. */
+  size_t* monitor_channels;      /**< Array of monitor channels. */
   size_t monitor_channels_count; /**< Number of monitor channels. */
-  int* process_channels;         /**< Array of channels to process. */
+  size_t* process_channels;      /**< Array of channels to process. */
   size_t process_channels_count; /**< Number of process channels. */
   double attack;                 /**< Attack time. */
   time_unit_t attack_unit;       /**< Unit of attack time. */
@@ -87,9 +87,9 @@ typedef struct {
  * @brief Parameters for the RACE processor.
  */
 typedef struct {
-  int channels;         /**< Number of channels. */
-  int channel_a;        /**< Channel A index. */
-  int channel_b;        /**< Channel B index. */
+  size_t channels;      /**< Number of channels. */
+  size_t channel_a;     /**< Channel A index. */
+  size_t channel_b;     /**< Channel B index. */
   double delay;         /**< Delay value. */
   bool subsample_delay; /**< Flag indicating if subsample delay is enabled. */
   bool has_subsample_delay; /**< Flag indicating if subsample_delay is
@@ -103,10 +103,10 @@ typedef struct {
  * @brief Parameters for the Lookahead Limiter processor.
  */
 typedef struct {
-  int channels;                  /**< Number of channels. */
-  int* monitor_channels;         /**< Array of monitor channels. */
+  size_t channels;               /**< Number of channels. */
+  size_t* monitor_channels;      /**< Array of monitor channels. */
   size_t monitor_channels_count; /**< Number of monitor channels. */
-  int* process_channels;         /**< Array of channels to process. */
+  size_t* process_channels;      /**< Array of channels to process. */
   size_t process_channels_count; /**< Number of process channels. */
   double limit;                  /**< Limit value in dB. */
   double attack;                 /**< Attack time. */

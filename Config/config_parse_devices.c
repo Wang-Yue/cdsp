@@ -95,7 +95,7 @@ static int parse_resampler(const cJSON* res_obj, devices_config_t* devices,
 
 typedef struct {
   audio_backend_type_t type;
-  int channels;
+  size_t channels;
   char device[256];
   bool has_device;
 #if defined(ENABLE_COREAUDIO)
@@ -330,7 +330,7 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
       return -1;
   }
 
-  parse_json_int(cap_obj, "channels", &cap->channels);
+  parse_json_size_t(cap_obj, "channels", &cap->channels);
   cap->has_device =
       parse_json_str(cap_obj, "device", cap->device, sizeof(cap->device));
   cap->has_filename =
@@ -608,7 +608,7 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
                          "missing field 'filename' in RawFile capture");
         return -1;
       }
-      if (temp.channels <= 0) {
+      if (temp.channels == 0) {
         config_error_set(
             err, CONFIG_ERR_PARSE,
             "missing or non-positive field 'channels' in RawFile capture");
@@ -621,7 +621,7 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
       }
     }
   } else if (temp.type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
-    if (temp.channels <= 0) {
+    if (temp.channels == 0) {
       config_error_set(
           err, CONFIG_ERR_PARSE,
           "missing or non-positive field 'channels' in Stdin capture");
@@ -633,7 +633,7 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
       return -1;
     }
   } else if (temp.type == AUDIO_BACKEND_TYPE_GENERATOR) {
-    if (temp.channels <= 0) {
+    if (temp.channels == 0) {
       config_error_set(err, CONFIG_ERR_PARSE,
                        "missing or non-positive field 'channels' in "
                        "SignalGenerator capture");
@@ -645,7 +645,7 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
       return -1;
     }
   } else {
-    if (temp.channels <= 0) {
+    if (temp.channels == 0) {
       config_error_set(err, CONFIG_ERR_PARSE,
                        "missing or non-positive field 'channels' in %s capture",
                        type_str);
@@ -658,7 +658,7 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
 
 typedef struct {
   audio_backend_type_t type;
-  int channels;
+  size_t channels;
   char device[256];
   bool has_device;
 #if defined(ENABLE_COREAUDIO)
@@ -837,7 +837,7 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
       return -1;
   }
 
-  parse_json_int(play_obj, "channels", &play->channels);
+  parse_json_size_t(play_obj, "channels", &play->channels);
   play->has_device =
       parse_json_str(play_obj, "device", play->device, sizeof(play->device));
   play->has_filename = parse_json_str(play_obj, "filename", play->filename,
@@ -1055,7 +1055,7 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
                        "missing field 'filename' in File playback");
       return -1;
     }
-    if (play->channels <= 0) {
+    if (play->channels == 0) {
       config_error_set(
           err, CONFIG_ERR_PARSE,
           "missing or non-positive field 'channels' in File playback");
@@ -1067,7 +1067,7 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
       return -1;
     }
   } else if (play->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
-    if (play->channels <= 0) {
+    if (play->channels == 0) {
       config_error_set(
           err, CONFIG_ERR_PARSE,
           "missing or non-positive field 'channels' in Stdout playback");
@@ -1079,7 +1079,7 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
       return -1;
     }
   } else {
-    if (play->channels <= 0) {
+    if (play->channels == 0) {
       config_error_set(
           err, CONFIG_ERR_PARSE,
           "missing or non-positive field 'channels' in %s playback", type_str);

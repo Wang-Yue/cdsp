@@ -43,7 +43,7 @@ struct file_capture {
   bool is_stdin;
   FILE* f;
   int sample_rate;
-  int channels;
+  size_t channels;
   int chunk_size;
   binary_sample_format_t format;
   bool is_wav;
@@ -68,7 +68,7 @@ struct file_playback {
   bool is_stdout;
   FILE* f;
   int sample_rate;
-  int channels;
+  size_t channels;
   int chunk_size;
   binary_sample_format_t format;
   bool is_wav;
@@ -635,7 +635,7 @@ static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     }
 
     if (extra_to_generate > 0) {
-      for (int c = 0; c < capture->channels; c++) {
+      for (size_t c = 0; c < capture->channels; c++) {
         double* ch_data = audio_chunk_get_channel(chunk, c);
         if (ch_data) {
           memset(ch_data + frames_read, 0, extra_to_generate * sizeof(double));

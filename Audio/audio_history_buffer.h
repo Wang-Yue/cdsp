@@ -109,12 +109,12 @@ void audio_history_buffer_append(audio_history_buffer_t* history,
  * @param history Pointer to the history buffer.
  * @param dest Destination buffer.
  * @param count Number of samples to read.
- * @param channel Channel index, or -1 to average all channels.
+ * @param channel Optional channel index (NULL to average all channels).
  * @param enough_data Output flag indicating if enough data was available.
  * @return Status code @ref audio_history_buffer_status_t.
  */
 audio_history_buffer_status_t audio_history_buffer_read_latest(
     const audio_history_buffer_t* history, float* dest, size_t count,
-    int channel, bool* enough_data);
+    const size_t* channel, bool* enough_data);
 
 #endif  // CLIB_AUDIO_AUDIO_HISTORY_BUFFER_H

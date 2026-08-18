@@ -859,7 +859,7 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
   }
 
   bool is_capture = true;
-  uint32_t channel = (uint32_t)-1;
+  size_t channel = (size_t)-1;
   float min_freq = 20.0f;
   float max_freq = 20000.0f;
   uint32_t n_bins = 1024;
@@ -896,7 +896,7 @@ static void handle_cmd_subscribe_spectrum(websocket_server_t* server,
                     "channel must be non-negative", ds);
         return;
       }
-      channel = (uint32_t)item_chan->valueint;
+      channel = (size_t)item_chan->valueint;
     } else {
       reply_error(cmd_name, "InvalidValueError",
                   "channel must be an integer or null", ds);
@@ -1822,7 +1822,7 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
   }
 
   bool is_capture = true;
-  uint32_t channel = (uint32_t)-1;
+  size_t channel = (size_t)-1;
   float min_freq = 20.0f;
   float max_freq = 20000.0f;
   uint32_t n_bins = 1024;
@@ -1862,7 +1862,7 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
                     "channel must be non-negative", ds);
         return;
       }
-      channel = (uint32_t)item_chan->valueint;
+      channel = (size_t)item_chan->valueint;
     } else {
       reply_error(cmd_name, "InvalidValueError",
                   "channel must be an integer or null", ds);
@@ -1902,7 +1902,7 @@ static void handle_cmd_get_spectrum(websocket_server_t* server, int client_idx,
 
   cdsp_spectrum_side_t side_val =
       is_capture ? CDSP_SPECTRUM_SIDE_CAPTURE : CDSP_SPECTRUM_SIDE_PLAYBACK;
-  const uint32_t* chan_ptr = (channel == (uint32_t)-1) ? NULL : &channel;
+  const size_t* chan_ptr = (channel == (size_t)-1) ? NULL : &channel;
 
   float* p_freqs = (float*)malloc(n_bins * sizeof(float));
   float* p_mags = (float*)malloc(n_bins * sizeof(float));

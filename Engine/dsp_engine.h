@@ -225,7 +225,7 @@ struct dsp_engine {
    * @return true on success, false if insufficient signal data or channel out
    * of bounds.
    */
-  bool (*get_spectrum)(void* ctx, bool is_capture, uint32_t channel,
+  bool (*get_spectrum)(void* ctx, bool is_capture, const size_t* channel,
                        float min_freq, float max_freq, uint32_t n_bins,
                        spectrum_t* out_spec);
 

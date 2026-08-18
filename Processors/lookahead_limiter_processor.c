@@ -21,9 +21,9 @@ static const logger_t g_logger = {"lookahead_limiter_processor"};
 struct lookahead_limiter_processor {
   char name[64];
   size_t channels;
-  int* monitor_channels;
+  size_t* monitor_channels;
   size_t monitor_channels_count;
-  int* process_channels;
+  size_t* process_channels;
   size_t process_channels_count;
   bool delay_processed_only;
   int sample_rate;
@@ -79,10 +79,9 @@ static int lookahead_limiter_config_validate(const processor_config_t* config,
   const lookahead_limiter_processor_config_t* p =
       &config->parameters.lookahead_limiter;
 
-  if (p->channels <= 0) {
+  if (p->channels == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "LookaheadLimiter: channels must be > 0, got %d",
-                     p->channels);
+                     "LookaheadLimiter: channels must be > 0, got 0");
     return -1;
   }
   if (p->attack < 0.0) {
@@ -110,19 +109,19 @@ static int lookahead_limiter_config_validate(const processor_config_t* config,
   }
 
   for (size_t i = 0; i < p->monitor_channels_count; i++) {
-    if (p->monitor_channels[i] < 0 || p->monitor_channels[i] >= p->channels) {
+    if (p->monitor_channels[i] >= p->channels) {
       config_error_set(
           err, CONFIG_ERR_INVALID_PROCESSOR,
-          "LookaheadLimiter: monitor channel %d is invalid (max: %d)",
+          "LookaheadLimiter: monitor channel %zu is invalid (max: %zu)",
           p->monitor_channels[i], p->channels - 1);
       return -1;
     }
   }
   for (size_t i = 0; i < p->process_channels_count; i++) {
-    if (p->process_channels[i] < 0 || p->process_channels[i] >= p->channels) {
+    if (p->process_channels[i] >= p->channels) {
       config_error_set(
           err, CONFIG_ERR_INVALID_PROCESSOR,
-          "LookaheadLimiter: process channel %d is invalid (max: %d)",
+          "LookaheadLimiter: process channel %zu is invalid (max: %zu)",
           p->process_channels[i], p->channels - 1);
       return -1;
     }
@@ -190,18 +189,18 @@ static void* lookahead_limiter_processor_create(
   if (params->monitor_channels_count > 0 && params->monitor_channels) {
     processor->monitor_channels_count = params->monitor_channels_count;
     processor->monitor_channels =
-        (int*)calloc(processor->monitor_channels_count, sizeof(int));
+        (size_t*)calloc(processor->monitor_channels_count, sizeof(size_t));
     if (processor->monitor_channels) {
       memcpy(processor->monitor_channels, params->monitor_channels,
-             processor->monitor_channels_count * sizeof(int));
+             processor->monitor_channels_count * sizeof(size_t));
     }
   } else {
     processor->monitor_channels_count = processor->channels;
     processor->monitor_channels =
-        (int*)calloc(processor->monitor_channels_count, sizeof(int));
+        (size_t*)calloc(processor->monitor_channels_count, sizeof(size_t));
     if (processor->monitor_channels) {
       for (size_t i = 0; i < processor->monitor_channels_count; i++) {
-        processor->monitor_channels[i] = (int)i;
+        processor->monitor_channels[i] = i;
       }
     }
   }
@@ -210,18 +209,18 @@ static void* lookahead_limiter_processor_create(
   if (params->process_channels_count > 0 && params->process_channels) {
     processor->process_channels_count = params->process_channels_count;
     processor->process_channels =
-        (int*)calloc(processor->process_channels_count, sizeof(int));
+        (size_t*)calloc(processor->process_channels_count, sizeof(size_t));
     if (processor->process_channels) {
       memcpy(processor->process_channels, params->process_channels,
-             processor->process_channels_count * sizeof(int));
+             processor->process_channels_count * sizeof(size_t));
     }
   } else {
     processor->process_channels_count = processor->channels;
     processor->process_channels =
-        (int*)calloc(processor->process_channels_count, sizeof(int));
+        (size_t*)calloc(processor->process_channels_count, sizeof(size_t));
     if (processor->process_channels) {
       for (size_t i = 0; i < processor->process_channels_count; i++) {
-        processor->process_channels[i] = (int)i;
+        processor->process_channels[i] = i;
       }
     }
   }
@@ -290,16 +289,14 @@ static void lookahead_limiter_processor_process(void* impl,
   // Check channel indices sanity
   bool mismatch = false;
   for (size_t i = 0; i < processor->monitor_channels_count; i++) {
-    if (processor->monitor_channels[i] < 0 ||
-        (size_t)processor->monitor_channels[i] >= ch_count) {
+    if (processor->monitor_channels[i] >= ch_count) {
       mismatch = true;
       break;
     }
   }
   if (!mismatch) {
     for (size_t i = 0; i < processor->process_channels_count; i++) {
-      if (processor->process_channels[i] < 0 ||
-          (size_t)processor->process_channels[i] >= ch_count) {
+      if (processor->process_channels[i] >= ch_count) {
         mismatch = true;
         break;
       }
@@ -320,8 +317,8 @@ static void lookahead_limiter_processor_process(void* impl,
   // at each sample index
   memset(processor->scratch, 0, count * sizeof(double));
   for (size_t i = 0; i < processor->monitor_channels_count; i++) {
-    int ch = processor->monitor_channels[i];
-    const double* ch_buf = audio_chunk_get_channel(chunk, (size_t)ch);
+    size_t ch = processor->monitor_channels[i];
+    const double* ch_buf = audio_chunk_get_channel(chunk, ch);
     for (size_t f = 0; f < count; f++) {
       double val = fabs(ch_buf[f]);
       if (val > processor->scratch[f]) {
@@ -340,7 +337,7 @@ static void lookahead_limiter_processor_process(void* impl,
     if (processor->delay_processed_only) {
       should_delay = false;
       for (size_t p = 0; p < processor->process_channels_count; p++) {
-        if (processor->process_channels[p] == (int)ch) {
+        if (processor->process_channels[p] == ch) {
           should_delay = true;
           break;
         }

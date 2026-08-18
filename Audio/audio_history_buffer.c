@@ -270,12 +270,12 @@ void audio_history_buffer_append(audio_history_buffer_t* history,
 
 audio_history_buffer_status_t audio_history_buffer_read_latest(
     const audio_history_buffer_t* history, float* dest, size_t count,
-    int channel, bool* enough_data) {
+    const size_t* channel, bool* enough_data) {
   if (enough_data) *enough_data = false;
   if (!history || history->channels == 0 || !history->data) {
     return AUDIO_HISTORY_BUFFER_ERROR_EMPTY;
   }
-  if (channel >= 0 && (size_t)channel >= history->channels) {
+  if (channel && *channel >= history->channels) {
     return AUDIO_HISTORY_BUFFER_ERROR_OUT_OF_RANGE;
   }
   if (!dest || count == 0) return AUDIO_HISTORY_BUFFER_OK;
@@ -299,9 +299,9 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
         atomic_load_explicit(&history->write_pos, memory_order_acquire);
     size_t start = (size_t)((pos + cap - (count & mask)) & mask);
 
-    if (channel >= 0) {
-      read_channel_segment(history->data + ((size_t)channel * cap), dest, start,
-                           count, cap);
+    if (channel) {
+      read_channel_segment(history->data + (*channel * cap), dest, start, count,
+                           cap);
     } else {
       read_channel_segment(history->data, dest, start, count, cap);
       for (size_t ch = 1; ch < history->channels; ch++) {

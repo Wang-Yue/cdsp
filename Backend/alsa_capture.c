@@ -30,7 +30,7 @@ struct alsa_capture {
   char device_name[256];
   int sample_rate;          // pipeline rate
   int capture_sample_rate;  // hardware capture rate
-  int channels;
+  size_t channels;
   int chunk_size;
   snd_pcm_uframes_t bufsize;
   snd_pcm_uframes_t period;

@@ -531,7 +531,7 @@ TEST(PipelineInitFilterChannels) {
   config.filters = &filter_cfg;
   config.filters_count = 1;
 
-  int chs[2] = {0, 1};
+  size_t chs[2] = {0, 1};
   char* filter_name = strdup("mygain");
   pipeline_step_config_t step;
   memset(&step, 0, sizeof(step));

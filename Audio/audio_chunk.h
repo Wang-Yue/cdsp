@@ -142,9 +142,9 @@ void round_robin_chunk_pool_free(round_robin_chunk_pool_t* pool);
  * @param out_sum Output buffer to write the summed samples.
  * @param frames Number of frames to sum.
  */
-void audio_chunk_sum_channels(const audio_chunk_t* chunk, const int* channels,
-                              size_t channels_count, double* out_sum,
-                              size_t frames);
+void audio_chunk_sum_channels(const audio_chunk_t* chunk,
+                              const size_t* channels, size_t channels_count,
+                              double* out_sum, size_t frames);
 
 /**
  * @brief Applies sample-by-sample linear gain to multiple channels in a chunk.
@@ -158,7 +158,7 @@ void audio_chunk_sum_channels(const audio_chunk_t* chunk, const int* channels,
  * @param gain_multipliers Array of linear gain multipliers (one per frame).
  * @param frames Number of frames to process.
  */
-void audio_chunk_apply_gain(audio_chunk_t* chunk, const int* channels,
+void audio_chunk_apply_gain(audio_chunk_t* chunk, const size_t* channels,
                             size_t channels_count,
                             const double* gain_multipliers, size_t frames);
 

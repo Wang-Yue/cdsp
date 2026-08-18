@@ -492,7 +492,7 @@ static const char* format_string_for_asbd_local(
 }
 
 AudioStreamBasicDescription core_audio_device_asbd_for_format(
-    double sample_rate, int channels, const char* format_str) {
+    double sample_rate, size_t channels, const char* format_str) {
   AudioStreamBasicDescription asbd = {0};
   asbd.mSampleRate = sample_rate;
   asbd.mFormatID = kAudioFormatLinearPCM;
@@ -878,10 +878,10 @@ void core_audio_device_remove_alive_watcher(AudioDeviceID device_id,
 
 bool core_audio_device_configure_stream(
     AudioDeviceID device_id, core_audio_scope_t scope, double sample_rate,
-    const char* format_str, bool has_format, int channels, size_t chunk_size,
+    const char* format_str, bool has_format, size_t channels, size_t chunk_size,
     binary_sample_format_t* out_binary_format, size_t* out_bytes_per_sample,
     size_t* out_blockalign) {
-  if (device_id == 0 || channels <= 0) return false;
+  if (device_id == 0 || channels == 0) return false;
 
   if (has_format && format_str && format_str[0]) {
     core_audio_device_set_matching_physical_format(

@@ -42,7 +42,7 @@ struct generator_capture {
   double frequency;
   double amplitude;
   int sample_rate;
-  int channels;
+  size_t channels;
   int chunk_size;
   double phase;
   unsigned int rand_seed;
@@ -122,7 +122,7 @@ static bool generator_capture_read(void* ctx, size_t frames,
   if (freq_delta < 0.0) freq_delta += 1.0;
 
   double* dst_channels[capture->channels];
-  for (int c = 0; c < capture->channels; c++) {
+  for (size_t c = 0; c < capture->channels; c++) {
     dst_channels[c] = audio_chunk_get_channel(chunk, c);
   }
 
@@ -131,7 +131,7 @@ static bool generator_capture_read(void* ctx, size_t frames,
       double phase = capture->phase;
       for (size_t f = 0; f < frames; f++) {
         double val = sin(phase * 2.0 * M_PI) * capture->amplitude;
-        for (int c = 0; c < capture->channels; c++) {
+        for (size_t c = 0; c < capture->channels; c++) {
           dst_channels[c][f] = val;
         }
         phase += freq_delta;
@@ -148,7 +148,7 @@ static bool generator_capture_read(void* ctx, size_t frames,
       for (size_t f = 0; f < frames; f++) {
         double val =
             (sin(phase * 2.0 * M_PI) >= 0.0 ? 1.0 : -1.0) * capture->amplitude;
-        for (int c = 0; c < capture->channels; c++) {
+        for (size_t c = 0; c < capture->channels; c++) {
           dst_channels[c][f] = val;
         }
         phase += freq_delta;
@@ -162,7 +162,7 @@ static bool generator_capture_read(void* ctx, size_t frames,
 
     case SIGNAL_TYPE_WHITE_NOISE: {
       for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < capture->channels; c++) {
+        for (size_t c = 0; c < capture->channels; c++) {
           double noise_val =
               (((double)rand_r(&capture->rand_seed) / (double)RAND_MAX) * 2.0 -
                1.0) *
@@ -175,7 +175,7 @@ static bool generator_capture_read(void* ctx, size_t frames,
 
     default: {
       for (size_t f = 0; f < frames; f++) {
-        for (int c = 0; c < capture->channels; c++) {
+        for (size_t c = 0; c < capture->channels; c++) {
           dst_channels[c][f] = 0.0;
         }
       }

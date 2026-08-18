@@ -1592,7 +1592,7 @@ static bool open_asio_capture(const char* devname, size_t num_channels,
 struct asio_playback {
   char device[256];
   int sample_rate;
-  int channels;
+  size_t channels;
   int chunk_size;
   asio_sample_format_t format;
   bool has_format;
@@ -2024,7 +2024,7 @@ const playback_backend_vtable_t g_asio_playback_vtable = {
 struct asio_capture {
   char device[256];
   int sample_rate;
-  int channels;
+  size_t channels;
   int chunk_size;
   asio_sample_format_t format;
   bool has_format;

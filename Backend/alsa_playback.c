@@ -27,7 +27,7 @@ static const logger_t g_logger = {"dsp.backend.alsa"};
 struct alsa_playback {
   char device_name[256];
   int sample_rate;
-  int channels;
+  size_t channels;
   size_t chunk_size;
   size_t target_level;
   snd_pcm_uframes_t bufsize;

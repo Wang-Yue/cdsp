@@ -505,7 +505,7 @@ static bool dsp_engine_get_signal_levels_since(void* ctx, bool is_capture,
 }
 
 static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
-                                    uint32_t channel, float min_freq,
+                                    const size_t* channel, float min_freq,
                                     float max_freq, uint32_t n_bins,
                                     spectrum_t* out_spec) {
   if (!ctx || !out_spec) return false;
@@ -525,15 +525,15 @@ static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
   size_t samplerate = core_cfg->devices.samplerate;
   size_t buf_channels = audio_history_buffer_get_channels(buf);
 
-  if (channel != (uint32_t)-1 && (size_t)channel >= buf_channels) {
+  if (channel && *channel >= buf_channels) {
     pthread_mutex_unlock(&impl->state_mutex);
     return false;
   }
 
   spectrum_result_t res;
-  spectrum_status_t status = spectrum_analyzer_compute(
-      impl->buffers.spectrum, buf, (int)channel, min_freq, max_freq,
-      (size_t)n_bins, samplerate, &res);
+  spectrum_status_t status =
+      spectrum_analyzer_compute(impl->buffers.spectrum, buf, channel, min_freq,
+                                max_freq, (size_t)n_bins, samplerate, &res);
   pthread_mutex_unlock(&impl->state_mutex);
 
   if (status != 0) return false;
@@ -589,8 +589,8 @@ static bool dsp_engine_get_samples(void* ctx, bool is_capture, size_t n_frames,
     for (size_t ch = 0; ch < ch_count; ch++) {
       if (out_samples->channels[ch]) {
         bool enough = false;
-        audio_history_buffer_read_latest(buf, out_samples->channels[ch], n,
-                                         (int)ch, &enough);
+        audio_history_buffer_read_latest(buf, out_samples->channels[ch], n, &ch,
+                                         &enough);
       }
     }
   }

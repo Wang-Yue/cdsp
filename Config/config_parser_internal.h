@@ -35,13 +35,13 @@ void parse_labels_array(const cJSON* labels_arr, char*** out_labels,
 double* parse_double_array(const cJSON* arr, size_t* out_count);
 
 /**
- * @brief Parses an array of integer numbers from a cJSON array.
+ * @brief Parses an array of size_t numbers from a cJSON array.
  *
- * @param arr The cJSON array containing integer values.
+ * @param arr The cJSON array containing non-negative integer values.
  * @param out_count Output pointer storing array length.
- * @return Dynamically allocated integer array or NULL.
+ * @return Dynamically allocated size_t array or NULL.
  */
-int* parse_int_array(const cJSON* arr, size_t* out_count);
+size_t* parse_size_t_array(const cJSON* arr, size_t* out_count);
 
 static inline bool parse_json_str(const cJSON* obj, const char* key, char* dest,
                                   size_t dest_sz) {

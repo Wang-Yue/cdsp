@@ -37,7 +37,7 @@
 struct wasapi_playback {
   char device[256];
   int sample_rate;
-  int channels;
+  size_t channels;
   int chunk_size;
   wasapi_sample_format_t format;
   bool exclusive;

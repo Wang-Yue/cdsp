@@ -119,9 +119,9 @@ void spectrum_analyzer_free(spectrum_analyzer_t* analyzer) {
 
 spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
                                             audio_history_buffer_t* buffer,
-                                            int channel, float min_freq,
-                                            float max_freq, size_t n_bins,
-                                            size_t samplerate,
+                                            const size_t* channel,
+                                            float min_freq, float max_freq,
+                                            size_t n_bins, size_t samplerate,
                                             spectrum_result_t* out_result) {
   if (!analyzer || !buffer || !out_result) return SPECTRUM_ERROR_INVALID_PARAM;
   if (analyzer->out_capacity == 0 || !analyzer->plan.frequencies ||

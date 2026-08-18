@@ -34,12 +34,12 @@
 static const logger_t g_logger = {"compressor_processor"};
 
 struct compressor_processor {
-  char name[64];          ///< Unique name of the compressor instance.
-  int* monitor_channels;  ///< Array of channel indices to monitor for level
-                          ///< detection.
+  char name[64];             ///< Unique name of the compressor instance.
+  size_t* monitor_channels;  ///< Array of channel indices to monitor for level
+                             ///< detection.
   size_t monitor_channels_count;  ///< Number of monitored channels.
-  int* process_channels;  ///< Array of channel indices to apply gain reduction
-                          ///< to.
+  size_t* process_channels;       ///< Array of channel indices to apply gain
+                                  ///< reduction to.
   size_t process_channels_count;  ///< Number of processed channels.
   double attack;       ///< Exponential smoothing coefficient for attack phase.
   double release;      ///< Exponential smoothing coefficient for release phase.
@@ -87,9 +87,9 @@ static int compressor_config_validate(const processor_config_t* config,
   (void)sample_rate;
   if (!config || config->type != PROCESSOR_TYPE_COMPRESSOR) return -1;
   const compressor_config_t* p = &config->parameters.compressor;
-  if (p->channels <= 0) {
+  if (p->channels == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "Compressor: channels must be > 0, got %d", p->channels);
+                     "Compressor: channels must be > 0, got 0");
     return -1;
   }
   if (p->attack < 0.0) {
@@ -108,17 +108,17 @@ static int compressor_config_validate(const processor_config_t* config,
     return -1;
   }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {
-    if (p->monitor_channels[i] < 0 || p->monitor_channels[i] >= p->channels) {
+    if (p->monitor_channels[i] >= p->channels) {
       config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                       "Compressor: monitor channel %d is invalid (max: %d)",
+                       "Compressor: monitor channel %zu is invalid (max: %zu)",
                        p->monitor_channels[i], p->channels - 1);
       return -1;
     }
   }
   for (size_t i = 0; i < p->process_channels_count; i++) {
-    if (p->process_channels[i] < 0 || p->process_channels[i] >= p->channels) {
+    if (p->process_channels[i] >= p->channels) {
       config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                       "Compressor: process channel %d is invalid (max: %d)",
+                       "Compressor: process channel %zu is invalid (max: %zu)",
                        p->process_channels[i], p->channels - 1);
       return -1;
     }
@@ -197,30 +197,38 @@ static void* compressor_processor_create(const char* name,
   if (params->monitor_channels_count > 0 && params->monitor_channels) {
     processor->monitor_channels_count = params->monitor_channels_count;
     processor->monitor_channels =
-        (int*)calloc(processor->monitor_channels_count, sizeof(int));
-    memcpy(processor->monitor_channels, params->monitor_channels,
-           processor->monitor_channels_count * sizeof(int));
+        (size_t*)calloc(processor->monitor_channels_count, sizeof(size_t));
+    if (processor->monitor_channels) {
+      memcpy(processor->monitor_channels, params->monitor_channels,
+             processor->monitor_channels_count * sizeof(size_t));
+    }
   } else {
-    processor->monitor_channels_count = (size_t)params->channels;
+    processor->monitor_channels_count = params->channels;
     processor->monitor_channels =
-        (int*)calloc(processor->monitor_channels_count, sizeof(int));
-    for (size_t i = 0; i < processor->monitor_channels_count; i++) {
-      processor->monitor_channels[i] = (int)i;
+        (size_t*)calloc(processor->monitor_channels_count, sizeof(size_t));
+    if (processor->monitor_channels) {
+      for (size_t i = 0; i < processor->monitor_channels_count; i++) {
+        processor->monitor_channels[i] = i;
+      }
     }
   }
 
   if (params->process_channels_count > 0 && params->process_channels) {
     processor->process_channels_count = params->process_channels_count;
     processor->process_channels =
-        (int*)calloc(processor->process_channels_count, sizeof(int));
-    memcpy(processor->process_channels, params->process_channels,
-           processor->process_channels_count * sizeof(int));
+        (size_t*)calloc(processor->process_channels_count, sizeof(size_t));
+    if (processor->process_channels) {
+      memcpy(processor->process_channels, params->process_channels,
+             processor->process_channels_count * sizeof(size_t));
+    }
   } else {
-    processor->process_channels_count = (size_t)params->channels;
+    processor->process_channels_count = params->channels;
     processor->process_channels =
-        (int*)calloc(processor->process_channels_count, sizeof(int));
-    for (size_t i = 0; i < processor->process_channels_count; i++) {
-      processor->process_channels[i] = (int)i;
+        (size_t*)calloc(processor->process_channels_count, sizeof(size_t));
+    if (processor->process_channels) {
+      for (size_t i = 0; i < processor->process_channels_count; i++) {
+        processor->process_channels[i] = i;
+      }
     }
   }
 
@@ -281,16 +289,14 @@ static void compressor_processor_process(void* impl, audio_chunk_t* chunk) {
   size_t ch_count = audio_chunk_get_channels(chunk);
   bool mismatch = false;
   for (size_t i = 0; i < processor->monitor_channels_count; i++) {
-    if (processor->monitor_channels[i] < 0 ||
-        (size_t)processor->monitor_channels[i] >= ch_count) {
+    if (processor->monitor_channels[i] >= ch_count) {
       mismatch = true;
       break;
     }
   }
   if (!mismatch) {
     for (size_t i = 0; i < processor->process_channels_count; i++) {
-      if (processor->process_channels[i] < 0 ||
-          (size_t)processor->process_channels[i] >= ch_count) {
+      if (processor->process_channels[i] >= ch_count) {
         mismatch = true;
         break;
       }
@@ -300,7 +306,7 @@ static void compressor_processor_process(void* impl, audio_chunk_t* chunk) {
     if (!processor->channel_warning_logged) {
       logger_error(
           &g_logger,
-          "Compressor channel indices out of bounds for chunk channels (%d)",
+          "Compressor channel indices out of bounds for chunk channels (%zu)",
           ch_count);
       processor->channel_warning_logged = true;
     }
@@ -354,7 +360,7 @@ static void compressor_processor_process(void* impl, audio_chunk_t* chunk) {
   if (processor->limiter) {
     for (size_t ch_idx = 0; ch_idx < processor->process_channels_count;
          ch_idx++) {
-      int ch = processor->process_channels[ch_idx];
+      size_t ch = processor->process_channels[ch_idx];
       double* wave = audio_chunk_get_channel(chunk, ch);
       if (wave) {
         g_clipper_vtable.process(processor->limiter, wave, count);

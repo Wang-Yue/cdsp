@@ -62,7 +62,7 @@ typedef struct {
   char signal_levels_side[16];
   bool spectrum_subscribed;
   bool spectrum_is_capture;
-  uint32_t spectrum_channel;
+  size_t spectrum_channel;
   float spectrum_min_freq;
   float spectrum_max_freq;
   uint32_t spectrum_n_bins;

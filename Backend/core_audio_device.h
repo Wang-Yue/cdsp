@@ -192,7 +192,7 @@ bool core_audio_device_has_nominal_sample_rate_property(
  * @return The constructed ASBD.
  */
 AudioStreamBasicDescription core_audio_device_asbd_for_format(
-    double sample_rate, int channels, const char* format_str);
+    double sample_rate, size_t channels, const char* format_str);
 
 /**
  * @brief Maps a CoreAudio linear PCM ASBD to the universal binary sample
@@ -311,7 +311,7 @@ void core_audio_device_remove_alive_watcher(AudioDeviceID device_id,
  */
 bool core_audio_device_configure_stream(
     AudioDeviceID device_id, core_audio_scope_t scope, double sample_rate,
-    const char* format_str, bool has_format, int channels, size_t chunk_size,
+    const char* format_str, bool has_format, size_t channels, size_t chunk_size,
     binary_sample_format_t* out_binary_format, size_t* out_bytes_per_sample,
     size_t* out_blockalign);
 

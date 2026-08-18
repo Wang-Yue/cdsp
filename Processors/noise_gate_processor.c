@@ -28,11 +28,11 @@
 static const logger_t g_logger = {"noise_gate_processor"};
 
 struct noise_gate_processor {
-  char name[64];          ///< Unique name of the noise gate instance.
-  int* monitor_channels;  ///< Array of channel indices monitored for level
-                          ///< detection.
+  char name[64];             ///< Unique name of the noise gate instance.
+  size_t* monitor_channels;  ///< Array of channel indices monitored for level
+                             ///< detection.
   size_t monitor_channels_count;  ///< Number of monitored channels.
-  int* process_channels;  ///< Array of channel indices to apply gating to.
+  size_t* process_channels;  ///< Array of channel indices to apply gating to.
   size_t process_channels_count;  ///< Number of processed channels.
   double attack;     ///< Exponential smoothing coefficient for attack phase.
   double release;    ///< Exponential smoothing coefficient for release phase.
@@ -76,9 +76,9 @@ static int noise_gate_config_validate(const processor_config_t* config,
   (void)sample_rate;
   if (!config || config->type != PROCESSOR_TYPE_NOISE_GATE) return -1;
   const noise_gate_config_t* p = &config->parameters.noise_gate;
-  if (p->channels <= 0) {
+  if (p->channels == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "NoiseGate: channels must be > 0, got %d", p->channels);
+                     "NoiseGate: channels must be > 0, got 0");
     return -1;
   }
   if (p->attack <= 0.0) {
@@ -92,17 +92,17 @@ static int noise_gate_config_validate(const processor_config_t* config,
     return -1;
   }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {
-    if (p->monitor_channels[i] < 0 || p->monitor_channels[i] >= p->channels) {
+    if (p->monitor_channels[i] >= p->channels) {
       config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                       "NoiseGate: monitor channel %d is invalid (max: %d)",
+                       "NoiseGate: monitor channel %zu is invalid (max: %zu)",
                        p->monitor_channels[i], p->channels - 1);
       return -1;
     }
   }
   for (size_t i = 0; i < p->process_channels_count; i++) {
-    if (p->process_channels[i] < 0 || p->process_channels[i] >= p->channels) {
+    if (p->process_channels[i] >= p->channels) {
       config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                       "NoiseGate: process channel %d is invalid (max: %d)",
+                       "NoiseGate: process channel %zu is invalid (max: %zu)",
                        p->process_channels[i], p->channels - 1);
       return -1;
     }
@@ -180,30 +180,38 @@ static void* noise_gate_processor_create(const char* name,
   if (params->monitor_channels_count > 0 && params->monitor_channels) {
     processor->monitor_channels_count = params->monitor_channels_count;
     processor->monitor_channels =
-        (int*)calloc(processor->monitor_channels_count, sizeof(int));
-    memcpy(processor->monitor_channels, params->monitor_channels,
-           processor->monitor_channels_count * sizeof(int));
+        (size_t*)calloc(processor->monitor_channels_count, sizeof(size_t));
+    if (processor->monitor_channels) {
+      memcpy(processor->monitor_channels, params->monitor_channels,
+             processor->monitor_channels_count * sizeof(size_t));
+    }
   } else {
-    processor->monitor_channels_count = (size_t)params->channels;
+    processor->monitor_channels_count = params->channels;
     processor->monitor_channels =
-        (int*)calloc(processor->monitor_channels_count, sizeof(int));
-    for (size_t i = 0; i < processor->monitor_channels_count; i++) {
-      processor->monitor_channels[i] = (int)i;
+        (size_t*)calloc(processor->monitor_channels_count, sizeof(size_t));
+    if (processor->monitor_channels) {
+      for (size_t i = 0; i < processor->monitor_channels_count; i++) {
+        processor->monitor_channels[i] = i;
+      }
     }
   }
 
   if (params->process_channels_count > 0 && params->process_channels) {
     processor->process_channels_count = params->process_channels_count;
     processor->process_channels =
-        (int*)calloc(processor->process_channels_count, sizeof(int));
-    memcpy(processor->process_channels, params->process_channels,
-           processor->process_channels_count * sizeof(int));
+        (size_t*)calloc(processor->process_channels_count, sizeof(size_t));
+    if (processor->process_channels) {
+      memcpy(processor->process_channels, params->process_channels,
+             processor->process_channels_count * sizeof(size_t));
+    }
   } else {
-    processor->process_channels_count = (size_t)params->channels;
+    processor->process_channels_count = params->channels;
     processor->process_channels =
-        (int*)calloc(processor->process_channels_count, sizeof(int));
-    for (size_t i = 0; i < processor->process_channels_count; i++) {
-      processor->process_channels[i] = (int)i;
+        (size_t*)calloc(processor->process_channels_count, sizeof(size_t));
+    if (processor->process_channels) {
+      for (size_t i = 0; i < processor->process_channels_count; i++) {
+        processor->process_channels[i] = i;
+      }
     }
   }
 
@@ -248,16 +256,14 @@ static void noise_gate_processor_process(void* impl, audio_chunk_t* chunk) {
   size_t ch_count = audio_chunk_get_channels(chunk);
   bool mismatch = false;
   for (size_t i = 0; i < processor->monitor_channels_count; i++) {
-    if (processor->monitor_channels[i] < 0 ||
-        (size_t)processor->monitor_channels[i] >= ch_count) {
+    if (processor->monitor_channels[i] >= ch_count) {
       mismatch = true;
       break;
     }
   }
   if (!mismatch) {
     for (size_t i = 0; i < processor->process_channels_count; i++) {
-      if (processor->process_channels[i] < 0 ||
-          (size_t)processor->process_channels[i] >= ch_count) {
+      if (processor->process_channels[i] >= ch_count) {
         mismatch = true;
         break;
       }
@@ -267,7 +273,7 @@ static void noise_gate_processor_process(void* impl, audio_chunk_t* chunk) {
     if (!processor->channel_warning_logged) {
       logger_error(
           &g_logger,
-          "Noise Gate channel indices out of bounds for chunk channels (%d)",
+          "Noise Gate channel indices out of bounds for chunk channels (%zu)",
           ch_count);
       processor->channel_warning_logged = true;
     }
