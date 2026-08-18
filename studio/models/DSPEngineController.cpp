@@ -132,21 +132,25 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
             pb.backend = AudioBackendType::CoreAudio;
             pb.coreAudio.channels = m_devices->playbackConfig.channels;
             pb.coreAudio.device = m_devices->playbackConfig.deviceName();
+            pb.coreAudio.format = m_devices->playbackConfig.format;
             pb.coreAudio.exclusive = m_devices->exclusiveMode;
 #elif defined(ENABLE_WASAPI)
             pb.backend = AudioBackendType::WASAPI;
             pb.wasapi.channels = m_devices->playbackConfig.channels;
             pb.wasapi.device = m_devices->playbackConfig.deviceName();
+            pb.wasapi.format = m_devices->playbackConfig.format;
             if (m_devices->exclusiveMode)
                 pb.wasapi.exclusive = true;
 #elif defined(ENABLE_ALSA)
             pb.backend = AudioBackendType::ALSA;
             pb.alsa.channels = m_devices->playbackConfig.channels;
             pb.alsa.device = m_devices->playbackConfig.deviceName();
+            pb.alsa.format = m_devices->playbackConfig.format;
 #else
             pb.backend = AudioBackendType::RawFile;
             pb.rawFile.channels = m_devices->playbackConfig.channels;
             pb.rawFile.filename = m_devices->playbackConfig.filename;
+            pb.rawFile.format = m_devices->playbackConfig.fileFormat;
 #endif
             config.devices.playback = pb;
         }

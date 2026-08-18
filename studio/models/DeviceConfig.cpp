@@ -248,6 +248,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     case AudioBackendType::CoreAudio:
         cap.coreAudio.channels = channels;
         cap.coreAudio.device = deviceName();
+        cap.coreAudio.format = format;
         cap.coreAudio.bypassDoP = bypassDoP;
         cap.coreAudio.dopCutoffHz = dopCutoffHz;
         break;
@@ -331,6 +332,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
     case AudioBackendType::CoreAudio:
         pb.coreAudio.channels = channels;
         pb.coreAudio.device = deviceName();
+        pb.coreAudio.format = format;
         pb.coreAudio.exclusive = exclusive;
         pb.coreAudio.outputDoP = outputDoP;
         pb.coreAudio.dsdEncoderFilter = dsdEncoderFilter;
