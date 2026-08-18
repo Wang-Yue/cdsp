@@ -251,6 +251,82 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
                                                     const char* format_str,
                                                     int requested_channels);
 
+// MARK: - Hog Mode Control
+
+/**
+ * @brief Attempt to acquire exclusive hog mode on a device.
+ *
+ * @param device_id The HAL Device ID.
+ * @return true if hog mode was acquired, false otherwise.
+ */
+bool core_audio_device_acquire_hog_mode(AudioDeviceID device_id);
+
+/**
+ * @brief Release exclusive hog mode on a device.
+ *
+ * @param device_id The HAL Device ID.
+ */
+void core_audio_device_release_hog_mode(AudioDeviceID device_id);
+
+// MARK: - Device Liveness Watcher
+
+/**
+ * @brief Register a listener that sets an atomic boolean flag on device
+ * liveness changes.
+ *
+ * @param device_id The HAL Device ID.
+ * @param is_alive_flag Pointer to _Atomic bool to update when liveness changes.
+ * @return true if listener was installed, false otherwise.
+ */
+bool core_audio_device_add_alive_watcher(AudioDeviceID device_id,
+                                         _Atomic bool* is_alive_flag);
+
+/**
+ * @brief Remove the liveness listener installed by
+ * core_audio_device_add_alive_watcher.
+ *
+ * @param device_id The HAL Device ID.
+ * @param is_alive_flag Pointer to _Atomic bool passed when installing.
+ */
+void core_audio_device_remove_alive_watcher(AudioDeviceID device_id,
+                                            _Atomic bool* is_alive_flag);
+
+// MARK: - Stream Configuration & Lifecycle Helpers
+
+/**
+ * @brief Configure physical & virtual stream formats, buffer size, and compute
+ * binary sample format.
+ *
+ * @param device_id The HAL Device ID.
+ * @param scope Direction scope (input/output).
+ * @param sample_rate Target sample rate in Hz.
+ * @param format_str Format string (e.g. "S16", "S24", "S32", "F32").
+ * @param has_format true if a specific format was requested.
+ * @param channels Channel count.
+ * @param chunk_size Buffer frame size.
+ * @param out_binary_format Pointer to receive determined binary sample format.
+ * @param out_bytes_per_sample Pointer to receive bytes per sample.
+ * @param out_blockalign Pointer to receive block alignment in bytes.
+ * @return true on success.
+ */
+bool core_audio_device_configure_stream(
+    AudioDeviceID device_id, core_audio_scope_t scope, double sample_rate,
+    const char* format_str, bool has_format, int channels, size_t chunk_size,
+    binary_sample_format_t* out_binary_format, size_t* out_bytes_per_sample,
+    size_t* out_blockalign);
+
+/**
+ * @brief Stop an Audio HAL IOProc, wait for all active callbacks to complete,
+ * and destroy the IOProc.
+ *
+ * @param device_id The HAL Device ID.
+ * @param io_proc_id The IOProc ID to destroy.
+ * @param active_callbacks Pointer to atomic callback counter to wait on.
+ */
+void core_audio_device_stop_and_destroy_ioproc(
+    AudioDeviceID device_id, AudioDeviceIOProcID io_proc_id,
+    const _Atomic int* active_callbacks);
+
 // RateChangeWatcher
 
 /**
@@ -261,6 +337,21 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
  * threads to detect rate changes and trigger engine rebuilds.
  */
 typedef struct rate_change_watcher rate_change_watcher_t;
+
+/**
+ * @brief Check for pending sample rate change via RateChangeWatcher or HAL
+ * property query.
+ *
+ * @param device_id The HAL Device ID.
+ * @param watcher Pointer to rate change watcher (optional).
+ * @param expected_rate Expected rate.
+ * @param out_rate Pointer to double to receive new rate if changed.
+ * @return true if rate change detected, false otherwise.
+ */
+bool core_audio_device_check_rate_change(AudioDeviceID device_id,
+                                         rate_change_watcher_t* watcher,
+                                         double expected_rate,
+                                         double* out_rate);
 
 /**
  * @brief Create a rate change watcher.

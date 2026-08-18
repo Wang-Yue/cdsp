@@ -12,6 +12,7 @@
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "Utils/cdsp_time.h"
 
@@ -793,4 +794,165 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
 
   return false;
 }
+
+// MARK: - Hog Mode Control
+
+bool core_audio_device_acquire_hog_mode(AudioDeviceID device_id) {
+  if (device_id == 0) return false;
+  pid_t current_hog_pid = -1;
+  uint32_t hog_size = sizeof(pid_t);
+  AudioObjectPropertyAddress hog_addr = {
+      .mSelector = kAudioDevicePropertyHogMode,
+      .mScope = kAudioObjectPropertyScopeGlobal,
+      .mElement = kAudioObjectPropertyElementMain};
+  if (AudioObjectGetPropertyData(device_id, &hog_addr, 0, NULL, &hog_size,
+                                 &current_hog_pid) == noErr) {
+    if (current_hog_pid == getpid()) {
+      return true;
+    }
+  }
+  pid_t hog_pid = getpid();
+  return (AudioObjectSetPropertyData(device_id, &hog_addr, 0, NULL,
+                                     sizeof(pid_t), &hog_pid) == noErr);
+}
+
+void core_audio_device_release_hog_mode(AudioDeviceID device_id) {
+  if (device_id == 0) return;
+  pid_t pid = -1;
+  AudioObjectPropertyAddress addr = {
+      .mSelector = kAudioDevicePropertyHogMode,
+      .mScope = kAudioObjectPropertyScopeGlobal,
+      .mElement = kAudioObjectPropertyElementMain};
+  AudioObjectSetPropertyData(device_id, &addr, 0, NULL, sizeof(pid_t), &pid);
+}
+
+// MARK: - Device Liveness Watcher
+
+static OSStatus core_audio_alive_listener_proc(
+    AudioObjectID inObjectID, UInt32 inNumberAddresses,
+    const AudioObjectPropertyAddress* inAddresses, void* inClientData) {
+  (void)inNumberAddresses;
+  (void)inAddresses;
+  _Atomic bool* is_alive = (_Atomic bool*)inClientData;
+  if (!is_alive) return noErr;
+  uint32_t alive = 0;
+  uint32_t size = sizeof(uint32_t);
+  AudioObjectPropertyAddress addr = {
+      .mSelector = kAudioDevicePropertyDeviceIsAlive,
+      .mScope = kAudioObjectPropertyScopeGlobal,
+      .mElement = kAudioObjectPropertyElementMain};
+  if (AudioObjectGetPropertyData(inObjectID, &addr, 0, NULL, &size, &alive) ==
+      noErr) {
+    atomic_store_explicit(is_alive, (alive != 0), memory_order_release);
+  } else {
+    atomic_store_explicit(is_alive, false, memory_order_release);
+  }
+  return noErr;
+}
+
+bool core_audio_device_add_alive_watcher(AudioDeviceID device_id,
+                                         _Atomic bool* is_alive_flag) {
+  if (device_id == 0 || !is_alive_flag) return false;
+  atomic_store_explicit(is_alive_flag, true, memory_order_release);
+  AudioObjectPropertyAddress alive_addr = {
+      .mSelector = kAudioDevicePropertyDeviceIsAlive,
+      .mScope = kAudioObjectPropertyScopeGlobal,
+      .mElement = kAudioObjectPropertyElementMain};
+  return (AudioObjectAddPropertyListener(device_id, &alive_addr,
+                                         core_audio_alive_listener_proc,
+                                         is_alive_flag) == noErr);
+}
+
+void core_audio_device_remove_alive_watcher(AudioDeviceID device_id,
+                                            _Atomic bool* is_alive_flag) {
+  if (device_id == 0 || !is_alive_flag) return;
+  AudioObjectPropertyAddress alive_addr = {
+      .mSelector = kAudioDevicePropertyDeviceIsAlive,
+      .mScope = kAudioObjectPropertyScopeGlobal,
+      .mElement = kAudioObjectPropertyElementMain};
+  AudioObjectRemovePropertyListener(
+      device_id, &alive_addr, core_audio_alive_listener_proc, is_alive_flag);
+}
+
+// MARK: - Stream Configuration & Lifecycle Helpers
+
+bool core_audio_device_configure_stream(
+    AudioDeviceID device_id, core_audio_scope_t scope, double sample_rate,
+    const char* format_str, bool has_format, int channels, size_t chunk_size,
+    binary_sample_format_t* out_binary_format, size_t* out_bytes_per_sample,
+    size_t* out_blockalign) {
+  if (device_id == 0 || channels <= 0) return false;
+
+  bool format_set = false;
+  if (has_format && format_str && format_str[0]) {
+    core_audio_device_set_matching_physical_format(
+        device_id, scope, sample_rate, format_str, channels);
+    AudioStreamBasicDescription actual_asbd;
+    if (core_audio_device_set_matching_virtual_format(device_id, scope,
+                                                      sample_rate, format_str,
+                                                      channels, &actual_asbd)) {
+      format_set = true;
+    }
+  }
+  if (!format_set) {
+    core_audio_device_set_nominal_sample_rate(device_id, sample_rate);
+  }
+  core_audio_device_set_buffer_frame_size(device_id, (uint32_t)chunk_size,
+                                          scope);
+
+  binary_sample_format_t bin_fmt = BINARY_SAMPLE_FORMAT_F32_LE;
+  AudioStreamBasicDescription current_asbd;
+  if (core_audio_device_get_virtual_format(device_id, scope, &current_asbd)) {
+    binary_sample_format_t parsed_fmt =
+        core_audio_device_asbd_to_binary_format(&current_asbd);
+    if (parsed_fmt != BINARY_SAMPLE_FORMAT_INVALID) {
+      bin_fmt = parsed_fmt;
+    }
+  }
+
+  size_t bytes_per_samp = sample_format_bytes_per_sample(bin_fmt);
+  if (bytes_per_samp == 0) {
+    bytes_per_samp = sizeof(float);
+    bin_fmt = BINARY_SAMPLE_FORMAT_F32_LE;
+  }
+  size_t blkalign = (size_t)channels * bytes_per_samp;
+
+  if (out_binary_format) *out_binary_format = bin_fmt;
+  if (out_bytes_per_sample) *out_bytes_per_sample = bytes_per_samp;
+  if (out_blockalign) *out_blockalign = blkalign;
+  return true;
+}
+
+void core_audio_device_stop_and_destroy_ioproc(
+    AudioDeviceID device_id, AudioDeviceIOProcID io_proc_id,
+    const _Atomic int* active_callbacks) {
+  if (device_id == 0 || io_proc_id == NULL) return;
+  AudioDeviceStop(device_id, io_proc_id);
+  if (active_callbacks) {
+    while (atomic_load_explicit(active_callbacks, memory_order_acquire) > 0) {
+      usleep(500);
+    }
+  }
+  AudioDeviceDestroyIOProcID(device_id, io_proc_id);
+}
+
+bool core_audio_device_check_rate_change(AudioDeviceID device_id,
+                                         rate_change_watcher_t* watcher,
+                                         double expected_rate,
+                                         double* out_rate) {
+  if (watcher && rate_change_watcher_get_pending_change(watcher, out_rate)) {
+    return true;
+  }
+  if (device_id != 0) {
+    double current = 0.0;
+    if (core_audio_device_get_nominal_sample_rate(device_id, &current)) {
+      if (current > 0.0 && fabs(current - expected_rate) >= 0.5) {
+        if (out_rate) *out_rate = current;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 #endif  // ENABLE_COREAUDIO

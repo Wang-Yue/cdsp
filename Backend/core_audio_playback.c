@@ -62,43 +62,6 @@ struct core_audio_playback {
   _Atomic bool stopped;
   _Atomic int active_callbacks;
 };
-
-/**
- * @brief CoreAudio listener callback for device liveness.
- *
- * Called by CoreAudio when the alive state of the device changes (e.g.,
- * disconnection). Updates the internal atomic flag `is_device_alive`.
- *
- * @param inObjectID The AudioObjectID of the device.
- * @param inNumberAddresses The number of addresses in inAddresses.
- * @param inAddresses The addresses of the properties that changed.
- * @param inClientData Pointer to the core_audio_playback_t instance.
- * @return OSStatus noErr on success, or an error code.
- */
-static OSStatus playback_alive_listener_callback(
-    AudioObjectID inObjectID, UInt32 inNumberAddresses,
-    const AudioObjectPropertyAddress* inAddresses, void* inClientData) {
-  (void)inNumberAddresses;
-  (void)inAddresses;
-  core_audio_playback_t* playback = (core_audio_playback_t*)inClientData;
-  if (!playback) return noErr;
-  uint32_t alive = 0;
-  uint32_t size = sizeof(uint32_t);
-  AudioObjectPropertyAddress addr = {
-      .mSelector = kAudioDevicePropertyDeviceIsAlive,
-      .mScope = kAudioObjectPropertyScopeGlobal,
-      .mElement = kAudioObjectPropertyElementMain};
-  if (AudioObjectGetPropertyData(inObjectID, &addr, 0, NULL, &size, &alive) ==
-      noErr) {
-    atomic_store_explicit(&playback->is_device_alive, (alive != 0),
-                          memory_order_release);
-  } else {
-    atomic_store_explicit(&playback->is_device_alive, false,
-                          memory_order_release);
-  }
-  return noErr;
-}
-
 /**
  * @brief Audio HAL IO callback for playback.
  *
@@ -216,22 +179,13 @@ static void core_audio_playback_close(void* ctx) {
     playback->rate_watcher = NULL;
   }
   if (playback->opened_device_id != 0) {
-    AudioObjectPropertyAddress alive_addr = {
-        .mSelector = kAudioDevicePropertyDeviceIsAlive,
-        .mScope = kAudioObjectPropertyScopeGlobal,
-        .mElement = kAudioObjectPropertyElementMain};
-    AudioObjectRemovePropertyListener(playback->opened_device_id, &alive_addr,
-                                      playback_alive_listener_callback,
-                                      playback);
+    core_audio_device_remove_alive_watcher(playback->opened_device_id,
+                                           &playback->is_device_alive);
   }
   if (playback->opened_device_id != 0 && playback->io_proc_id != NULL) {
-    AudioDeviceStop(playback->opened_device_id, playback->io_proc_id);
-    while (atomic_load_explicit(&playback->active_callbacks,
-                                memory_order_acquire) > 0) {
-      usleep(500);
-    }
-    AudioDeviceDestroyIOProcID(playback->opened_device_id,
-                               playback->io_proc_id);
+    core_audio_device_stop_and_destroy_ioproc(playback->opened_device_id,
+                                              playback->io_proc_id,
+                                              &playback->active_callbacks);
     playback->io_proc_id = NULL;
   }
   if (playback->write_buf) {
@@ -239,13 +193,7 @@ static void core_audio_playback_close(void* ctx) {
     playback->write_buf = NULL;
   }
   if (playback->did_acquire_hog_mode && playback->opened_device_id != 0) {
-    pid_t pid = -1;
-    AudioObjectPropertyAddress addr = {
-        .mSelector = kAudioDevicePropertyHogMode,
-        .mScope = kAudioObjectPropertyScopeGlobal,
-        .mElement = kAudioObjectPropertyElementMain};
-    AudioObjectSetPropertyData(playback->opened_device_id, &addr, 0, NULL,
-                               sizeof(pid_t), &pid);
+    core_audio_device_release_hog_mode(playback->opened_device_id);
     playback->did_acquire_hog_mode = false;
   }
   playback->opened_device_id = 0;
@@ -275,25 +223,9 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
   playback->opened_device_id = dev_id;
 
   // Attempt to acquire Hog Mode if exclusive access is requested.
-  // Hog mode prevents other processes from using the device.
   if (playback->exclusive) {
-    pid_t current_hog_pid = -1;
-    uint32_t hog_size = sizeof(pid_t);
-    AudioObjectPropertyAddress hog_addr = {
-        .mSelector = kAudioDevicePropertyHogMode,
-        .mScope = kAudioObjectPropertyScopeGlobal,
-        .mElement = kAudioObjectPropertyElementMain};
-    if (AudioObjectGetPropertyData(dev_id, &hog_addr, 0, NULL, &hog_size,
-                                   &current_hog_pid) == noErr) {
-      if (current_hog_pid != -1 && current_hog_pid != getpid()) {
-        logger_warn(&g_logger, "Device is currently hogged by PID %d",
-                    (int)current_hog_pid);
-      }
-    }
-    pid_t hog_pid = getpid();
-    if (AudioObjectSetPropertyData(dev_id, &hog_addr, 0, NULL, sizeof(pid_t),
-                                   &hog_pid) == noErr) {
-      playback->did_acquire_hog_mode = true;
+    playback->did_acquire_hog_mode = core_audio_device_acquire_hog_mode(dev_id);
+    if (playback->did_acquire_hog_mode) {
       logger_info(&g_logger, "Acquired exclusive hog mode on playback device");
     } else {
       logger_warn(&g_logger,
@@ -301,44 +233,18 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
     }
   }
 
-  // Set the device format.
-  bool format_set = false;
-  if (playback->has_sample_format) {
-    core_audio_device_set_matching_physical_format(
-        dev_id, CORE_AUDIO_SCOPE_OUTPUT, playback->sample_rate,
-        playback->sample_format, playback->channels);
-    AudioStreamBasicDescription actual_asbd;
-    if (core_audio_device_set_matching_virtual_format(
-            dev_id, CORE_AUDIO_SCOPE_OUTPUT, playback->sample_rate,
-            playback->sample_format, playback->channels, &actual_asbd)) {
-      format_set = true;
-    }
+  // Configure physical & virtual stream formats, buffer size, and format
+  // mapping.
+  if (!core_audio_device_configure_stream(
+          dev_id, CORE_AUDIO_SCOPE_OUTPUT, playback->sample_rate,
+          playback->sample_format, playback->has_sample_format,
+          playback->channels, playback->chunk_size, &playback->binary_format,
+          &playback->bytes_per_sample, &playback->blockalign)) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to configure playback stream format");
+    goto cleanup;
   }
-  if (!format_set) {
-    core_audio_device_set_nominal_sample_rate(dev_id, playback->sample_rate);
-  }
-  core_audio_device_set_buffer_frame_size(
-      dev_id, (uint32_t)playback->chunk_size, CORE_AUDIO_SCOPE_OUTPUT);
-
-  // Query active virtual format to determine exact binary sample format
-  AudioStreamBasicDescription current_asbd;
-  if (core_audio_device_get_virtual_format(dev_id, CORE_AUDIO_SCOPE_OUTPUT,
-                                           &current_asbd)) {
-    binary_sample_format_t bin_fmt =
-        core_audio_device_asbd_to_binary_format(&current_asbd);
-    if (bin_fmt != BINARY_SAMPLE_FORMAT_INVALID) {
-      playback->binary_format = bin_fmt;
-    }
-  }
-
-  playback->bytes_per_sample =
-      sample_format_bytes_per_sample(playback->binary_format);
-  if (playback->bytes_per_sample == 0) {
-    playback->bytes_per_sample = sizeof(float);
-    playback->binary_format = BINARY_SAMPLE_FORMAT_F32_LE;
-  }
-  playback->blockalign =
-      (size_t)playback->channels * playback->bytes_per_sample;
 
   if (!playback->write_buf ||
       playback->write_buf_cap <
@@ -359,12 +265,7 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
     spsc_byte_ring_buffer_drain(playback->ring_buffer);
   }
 
-  AudioObjectPropertyAddress alive_addr = {
-      .mSelector = kAudioDevicePropertyDeviceIsAlive,
-      .mScope = kAudioObjectPropertyScopeGlobal,
-      .mElement = kAudioObjectPropertyElementMain};
-  AudioObjectAddPropertyListener(dev_id, &alive_addr,
-                                 playback_alive_listener_callback, playback);
+  core_audio_device_add_alive_watcher(dev_id, &playback->is_device_alive);
 
   OSStatus status = AudioDeviceCreateIOProcID(dev_id, playback_io_proc,
                                               playback, &playback->io_proc_id);
@@ -434,22 +335,9 @@ static bool core_audio_playback_get_pending_rate_change(void* ctx,
                                                         double* out_rate) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback) return false;
-  if (playback->rate_watcher && rate_change_watcher_get_pending_change(
-                                    playback->rate_watcher, out_rate)) {
-    return true;
-  }
-  if (playback->opened_device_id != 0) {
-    double current = 0.0;
-    if (core_audio_device_get_nominal_sample_rate(playback->opened_device_id,
-                                                  &current)) {
-      if (current > 0.0 &&
-          fabs(current - (double)playback->sample_rate) >= 0.5) {
-        if (out_rate) *out_rate = current;
-        return true;
-      }
-    }
-  }
-  return false;
+  return core_audio_device_check_rate_change(playback->opened_device_id,
+                                             playback->rate_watcher,
+                                             playback->sample_rate, out_rate);
 }
 
 /// Push zero samples into the playback ring buffer before real audio arrives.
