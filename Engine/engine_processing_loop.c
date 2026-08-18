@@ -413,17 +413,13 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
     processing_loop_record_metrics(loop, chunk, pipe_start, pipe_end, res_start,
                                    res_end);
 
-    // 7. Update level meters with output levels
-    processing_parameters_update_playback_levels(loop->processing_params,
-                                                 chunk);
-
     if (loop->on_chunk_processed) {
       loop->on_chunk_processed(loop->on_chunk_processed_ctx, chunk);
     }
 
     // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue
     // Drops), Section 1.7.2 (Rule 5), & Section 3.6 (Immediate Abort Teardown)
-    // 8. Enqueue the processed chunk to the playback queue.
+    // 7. Enqueue the processed chunk to the playback queue.
     if (!processing_loop_enqueue_output(loop, chunk)) {
       break;
     }

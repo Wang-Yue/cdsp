@@ -381,12 +381,18 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     playback_loop_update_rate_adjust(loop, rate_controller, &averager,
                                      &stopwatch, &last_speed);
 
-    // 3. Encode PCM to DSD (DoP / Native DSD) in place if enabled
+    // 3. Update level meters with output playback levels
+    if (loop->processing_params) {
+      processing_parameters_update_playback_levels(loop->processing_params,
+                                                   chunk);
+    }
+
+    // 4. Encode PCM to DSD (DoP / Native DSD) in place if enabled
     if (loop->dsd_encoder) {
       dsd_encoder_encode(loop->dsd_encoder, chunk);
     }
 
-    // 4. Write chunk to physical audio output backend
+    // 5. Write chunk to physical audio output backend
     backend_error_t err;
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
     bool ok = playback_backend_write(loop->playback, chunk, &err);
