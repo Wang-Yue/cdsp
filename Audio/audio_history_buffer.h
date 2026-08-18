@@ -13,10 +13,9 @@
 
 /**
  * @def AUDIO_HISTORY_BUFFER_CAPACITY
- * @brief Maximum number of frames retained per channel, matching upstream
- * CamillaDSP RING_BUFFER_CAPACITY.
+ * @brief Maximum number of frames retained per channel (262,144 frames).
  */
-#define AUDIO_HISTORY_BUFFER_CAPACITY 16384
+#define AUDIO_HISTORY_BUFFER_CAPACITY 262144
 
 /**
  * @enum audio_history_buffer_status
@@ -38,7 +37,7 @@ typedef enum {
 
 /**
  * @struct audio_history_buffer
- * @brief Circular planar float ring buffer storing the last 16384 frames per
+ * @brief Circular planar float ring buffer storing the last 262144 frames per
  * channel (matching upstream spectrum::AudioRingBuffer).
  */
 typedef struct audio_history_buffer audio_history_buffer_t;

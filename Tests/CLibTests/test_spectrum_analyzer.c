@@ -133,7 +133,8 @@ TEST(HistoryBufferAppendLargeChunkExceedingCapacity) {
   audio_history_buffer_t* buffer = audio_history_buffer_create();
   audio_history_buffer_reset(buffer, 2);
 
-  size_t large_frames = 71680;
+  size_t cap = AUDIO_HISTORY_BUFFER_CAPACITY;
+  size_t large_frames = cap + 10000;
   audio_chunk_t* chunk = audio_chunk_create(large_frames, 2);
   audio_chunk_set_valid_frames(chunk, large_frames);
   for (size_t ch = 0; ch < 2; ch++) {
@@ -143,27 +144,28 @@ TEST(HistoryBufferAppendLargeChunkExceedingCapacity) {
     }
   }
 
-  // Appending chunk with 71680 frames (capacity is 16384)
+  // Appending chunk exceeding capacity
   audio_history_buffer_append(buffer, chunk);
   audio_chunk_free(chunk);
 
   ASSERT_TRUE(audio_history_buffer_has_data(buffer));
 
-  // Read latest 16384 frames
-  float dest[16384];
+  // Read latest capacity frames
+  float* dest = (float*)malloc(cap * sizeof(float));
+  ASSERT_TRUE(dest != NULL);
   bool enough = false;
   audio_history_buffer_status_t status =
-      audio_history_buffer_read_latest(buffer, dest, 16384, 0, &enough);
+      audio_history_buffer_read_latest(buffer, dest, cap, 0, &enough);
   ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status);
   ASSERT_TRUE(enough);
 
-  // The latest 16384 frames must be the tail of the chunk: (71680 - 16384) ..
-  // 71679
-  for (size_t i = 0; i < 16384; i++) {
-    float expected = (float)(71680 - 16384 + i);
+  // The latest `cap` frames must be the tail of the chunk: (large_frames - cap) .. (large_frames - 1)
+  for (size_t i = 0; i < cap; i++) {
+    float expected = (float)(large_frames - cap + i);
     ASSERT_EQ(expected, dest[i]);
   }
 
+  free(dest);
   audio_history_buffer_free(buffer);
 }
 
