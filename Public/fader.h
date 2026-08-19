@@ -1,5 +1,5 @@
-#ifndef CDSP_PUBLIC_VOLUME_H
-#define CDSP_PUBLIC_VOLUME_H
+#ifndef CDSP_PUBLIC_FADER_H
+#define CDSP_PUBLIC_FADER_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -81,4 +81,4 @@ CDSP_API void cdsp_set_fader_mute(dsp_engine_t* engine, cdsp_fader_t fader,
 }
 #endif
 
-#endif  // CDSP_PUBLIC_VOLUME_H
+#endif  // CDSP_PUBLIC_FADER_H

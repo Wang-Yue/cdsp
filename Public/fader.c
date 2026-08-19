@@ -1,4 +1,4 @@
-#include "Public/volume.h"
+#include "Public/fader.h"
 
 #include "Config/filter_config_types.h"
 #include "Engine/dsp_engine.h"

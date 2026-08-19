@@ -2,8 +2,8 @@
 #include <string.h>
 
 #include "Public/cdsp_pub_types.h"
+#include "Public/fader.h"
 #include "Public/general.h"
-#include "Public/volume.h"
 #include "test_support.h"
 
 TEST(PublicGeneralAndDeviceTypes) {

@@ -12,11 +12,11 @@
 #include "Public/cdsp_pub_types.h"
 #include "Public/config.h"
 #include "Public/devices.h"
+#include "Public/fader.h"
 #include "Public/general.h"
 #include "Public/processing.h"
 #include "Public/signal_levels.h"
 #include "Public/spectrum.h"
-#include "Public/volume.h"
 #include "Server/websocket_server_internal.h"
 
 static inline bool ws_engine_get_status(dsp_engine_t* engine,

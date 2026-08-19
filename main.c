@@ -12,10 +12,10 @@
 #include "Logging/app_logger.h"
 #include "Public/cdsp_pub_types.h"
 #include "Public/config.h"
+#include "Public/fader.h"
 #include "Public/general.h"
 #include "Public/processing.h"
 #include "Public/state.h"
-#include "Public/volume.h"
 #ifdef ENABLE_WEBSOCKET
 #include "Server/websocket_server.h"
 #endif
