@@ -517,6 +517,7 @@ void PipelineOverviewWidget::rebuildOverview() {
         auto card = new QFrame(m_canvasWidget);
         card->setFrameShape(QFrame::StyledPanel);
         card->setFixedWidth(220);
+        card->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
 
         auto cardLayout = new QVBoxLayout(card);
 
@@ -568,7 +569,7 @@ void PipelineOverviewWidget::rebuildOverview() {
     capLayout->addLayout(capForm);
     capLayout->addWidget(createScrollableChannelPills(captureCh, capCard));
 
-    m_canvasLayout->addWidget(capCard);
+    m_canvasLayout->addWidget(capCard, 0, Qt::AlignVCenter);
 
     // Connector 1
     addConnector(captureCh, captureCh);
@@ -583,7 +584,7 @@ void PipelineOverviewWidget::rebuildOverview() {
         resampForm->addRow(tr("Target Rate:"), new QLabel(formatSampleRate(captureRate), resampCard));
         resampLayout->addLayout(resampForm);
 
-        m_canvasLayout->addWidget(resampCard);
+        m_canvasLayout->addWidget(resampCard, 0, Qt::AlignVCenter);
         addConnector(captureCh, captureCh);
     }
 
@@ -829,7 +830,7 @@ void PipelineOverviewWidget::rebuildOverview() {
                     menu.exec(senderWidget->mapToGlobal(pos));
                 });
 
-            m_canvasLayout->addWidget(stCard);
+            m_canvasLayout->addWidget(stCard, 0, Qt::AlignVCenter);
             addConnector(outCh, nextInCh, isMismatched);
         }
     }
@@ -848,7 +849,7 @@ void PipelineOverviewWidget::rebuildOverview() {
     playLayout->addLayout(playForm);
     playLayout->addWidget(createScrollableChannelPills(playbackCh, playCard));
 
-    m_canvasLayout->addWidget(playCard);
+    m_canvasLayout->addWidget(playCard, 0, Qt::AlignVCenter);
 
     updateScrollHeight();
     QTimer::singleShot(0, this, &PipelineOverviewWidget::updateScrollHeight);
