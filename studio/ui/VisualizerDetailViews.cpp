@@ -430,6 +430,26 @@ void SpectrogramDetailView::setupUi() {
     });
     displayForm->addRow(tr("Display Mode:"), m_modeTabBar);
 
+    m_paletteCombo = new QComboBox(displayGroup);
+    m_paletteCombo->addItem(tr("Classic"), static_cast<int>(ColorPalette::Classic));
+    m_paletteCombo->addItem(tr("Viridis"), static_cast<int>(ColorPalette::Viridis));
+    m_paletteCombo->addItem(tr("Magma"), static_cast<int>(ColorPalette::Magma));
+    m_paletteCombo->addItem(tr("Plasma"), static_cast<int>(ColorPalette::Plasma));
+    m_paletteCombo->addItem(tr("Inferno"), static_cast<int>(ColorPalette::Inferno));
+    m_paletteCombo->addItem(tr("Jet"), static_cast<int>(ColorPalette::Jet));
+
+    int palIdx = m_paletteCombo->findData(static_cast<int>(m_engine->colorPalette));
+    if (palIdx >= 0) {
+        m_paletteCombo->setCurrentIndex(palIdx);
+    }
+    connect(m_paletteCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        if (idx >= 0) {
+            m_engine->colorPalette = static_cast<ColorPalette>(m_paletteCombo->currentData().toInt());
+            m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
+        }
+    });
+    displayForm->addRow(tr("Color Palette:"), m_paletteCombo);
+
     groupsLayout->addWidget(displayGroup);
     mainLayout->addLayout(groupsLayout);
 
@@ -444,6 +464,9 @@ void SpectrogramDetailView::setupUi() {
         updateChannelCombo();
         m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
         m_modeTabBar->setCurrentIndex(m_engine->show3D ? 1 : 0);
+        int palIdx = m_paletteCombo->findData(static_cast<int>(m_engine->colorPalette));
+        if (palIdx >= 0)
+            m_paletteCombo->setCurrentIndex(palIdx);
         m_spectrogramView->update();
     });
     btnLayout->addWidget(resetBtn);

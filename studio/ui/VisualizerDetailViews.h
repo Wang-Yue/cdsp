@@ -97,6 +97,7 @@ private:
     QComboBox* m_channelCombo;
     QSpinBox* m_binsSpin;
     QTabBar* m_modeTabBar;
+    QComboBox* m_paletteCombo;
 
     void setupUi();
 };
