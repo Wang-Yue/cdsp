@@ -217,7 +217,11 @@ void MonitoringController::poll() {
     if (m_currentStatus != ProcessingState::Inactive && m_currentStatus != ProcessingState::Paused &&
         m_vectorScopeEngine && m_vectorScopeEngine->visibilityCount > 0) {
         AudioSamplesData samples;
-        if (m_engine->getSamples(m_vectorScopeEngine->isCapture, m_vectorScopeEngine->nFrames, samples)) {
+        double sr = m_vectorScopeEngine->isCapture
+                        ? (m_devices ? static_cast<double>(m_devices->captureConfig.sampleRate) : 48000.0)
+                        : (m_devices ? static_cast<double>(m_devices->playbackConfig.sampleRate) : 48000.0);
+        size_t nFrames = m_vectorScopeEngine->framesToFetch(sr);
+        if (m_engine->getSamples(m_vectorScopeEngine->isCapture, nFrames, samples)) {
             m_vectorScopeEngine->update(samples);
         } else {
             m_vectorScopeEngine->reset();

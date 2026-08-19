@@ -483,15 +483,16 @@ void VectorScopeDetailView::setupUi() {
     });
     sourceForm->addRow(tr("Source:"), m_sourceTabBar);
 
-    m_framesSpin = new QSpinBox(sourceGroup);
-    m_framesSpin->setRange(128, 4096);
-    m_framesSpin->setSingleStep(128);
-    m_framesSpin->setValue(static_cast<int>(m_engine->nFrames));
-    connect(m_framesSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
-        m_engine->nFrames = static_cast<size_t>(val);
+    m_windowCombo = new QComboBox(sourceGroup);
+    m_windowCombo->addItem(tr("Fast / Snappy (Δt = 25 ms)"), static_cast<int>(VectorScopeWindow::Fast));
+    m_windowCombo->addItem(tr("Smooth Persistence (Δt = 50 ms)"), static_cast<int>(VectorScopeWindow::Smooth));
+    m_windowCombo->addItem(tr("Long Glow / Trace (Δt = 100 ms)"), static_cast<int>(VectorScopeWindow::Long));
+    m_windowCombo->setCurrentIndex(static_cast<int>(m_engine->window));
+    connect(m_windowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        m_engine->window = static_cast<VectorScopeWindow>(idx);
         m_vectorView->update();
     });
-    sourceForm->addRow(tr("Frames:"), m_framesSpin);
+    sourceForm->addRow(tr("Window / Duration:"), m_windowCombo);
 
     groupsLayout->addWidget(sourceGroup);
 
@@ -529,7 +530,7 @@ void VectorScopeDetailView::setupUi() {
     connect(resetBtn, &QPushButton::clicked, [this]() {
         m_engine->resetToDefaults();
         m_sourceTabBar->setCurrentIndex(m_engine->isCapture ? 0 : 1);
-        m_framesSpin->setValue(static_cast<int>(m_engine->nFrames));
+        m_windowCombo->setCurrentIndex(static_cast<int>(m_engine->window));
         m_modeTabBar->setCurrentIndex(m_engine->showParticles ? 1 : 0);
         m_autoScaleCheck->setChecked(m_engine->autoScale);
         m_vectorView->update();

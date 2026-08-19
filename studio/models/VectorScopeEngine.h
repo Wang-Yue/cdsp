@@ -4,7 +4,15 @@
 #include "config/DSPConfigTypes.h"
 
 #include <QObject>
+#include <algorithm>
+#include <cmath>
 #include <vector>
+
+enum class VectorScopeWindow {
+    Fast = 0,   // 25 ms
+    Smooth = 1, // 50 ms
+    Long = 2    // 100 ms
+};
 
 class VectorScopeEngine : public QObject {
     Q_OBJECT
@@ -14,7 +22,7 @@ public:
 
     int visibilityCount = 0;
     bool isCapture = true;
-    size_t nFrames = 512;
+    VectorScopeWindow window = VectorScopeWindow::Fast;
     bool showParticles = true;
     bool autoScale = true;
     int channelL = 0;
@@ -22,6 +30,24 @@ public:
     float traceDecayRate = 0.85f;
 
     AudioSamplesData samples;
+
+    static double windowSeconds(VectorScopeWindow w) {
+        switch (w) {
+        case VectorScopeWindow::Fast:
+            return 0.025;
+        case VectorScopeWindow::Smooth:
+            return 0.050;
+        case VectorScopeWindow::Long:
+            return 0.100;
+        }
+        return 0.025;
+    }
+
+    size_t framesToFetch(double sampleRate) const {
+        double sr = sampleRate > 0.0 ? sampleRate : 48000.0;
+        double frames = std::round(sr * windowSeconds(window));
+        return static_cast<size_t>(std::clamp(static_cast<int>(frames), 128, 262144));
+    }
 
     void update(const AudioSamplesData& newSamples) {
         samples = newSamples;
@@ -38,7 +64,7 @@ public:
 
     void resetToDefaults() {
         isCapture = true;
-        nFrames = 512;
+        window = VectorScopeWindow::Fast;
         showParticles = true;
         autoScale = true;
         channelL = 0;

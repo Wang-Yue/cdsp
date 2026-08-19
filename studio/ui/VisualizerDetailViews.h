@@ -116,7 +116,7 @@ private:
     VectorScopeView* m_vectorView;
 
     QTabBar* m_sourceTabBar;
-    QSpinBox* m_framesSpin;
+    QComboBox* m_windowCombo;
     QTabBar* m_modeTabBar;
     QCheckBox* m_autoScaleCheck;
 
