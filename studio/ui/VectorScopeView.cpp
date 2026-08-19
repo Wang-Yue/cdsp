@@ -2,7 +2,10 @@
 
 #include <QEvent>
 #include <QPainterPath>
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <vector>
 
 VectorScopeView::VectorScopeView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
@@ -136,7 +139,10 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         QPainter bufPainter(&m_persistenceBuffer);
         bufPainter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
         int decayAlpha = static_cast<int>(std::max(0.0f, std::min(255.0f, 255.0f * m_traceDecayRate)));
-        bufPainter.fillRect(m_persistenceBuffer.rect(), QColor(0, 0, 0, decayAlpha));
+        QRect decayRect = QRect(centerPt.x() - centerRadius - 8, centerPt.y() - centerRadius - 8,
+                                (centerRadius + 8) * 2, (centerRadius + 8) * 2)
+                              .intersected(m_persistenceBuffer.rect());
+        bufPainter.fillRect(decayRect, QColor(0, 0, 0, decayAlpha));
         bufPainter.setCompositionMode(QPainter::CompositionMode_SourceOver);
         bufPainter.setRenderHint(QPainter::Antialiasing);
 
@@ -201,8 +207,13 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             else
                 m_autoScaleFactor = m_autoScaleFactor * 0.95f + targetAutoScaleFactor * 0.05f;
 
+            float scale = centerRadius * m_autoScaleFactor;
+
             if (!m_showParticles) {
-                QPainterPath path;
+                // Optimized Line Mode: Fast polyline drawing of all points
+                std::vector<QPointF> pts;
+                pts.reserve(count);
+
                 for (size_t i = 0; i < count; ++i) {
                     float l = left[i];
                     float r = right[i];
@@ -214,19 +225,34 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                     float m = (l + r) * 0.7071f;
                     float s = (l - r) * 0.7071f;
 
-                    float px = centerPt.x() + s * (centerRadius * m_autoScaleFactor);
-                    float py = centerPt.y() - m * (centerRadius * m_autoScaleFactor);
-
-                    if (i == 0)
-                        path.moveTo(px, py);
-                    else
-                        path.lineTo(px, py);
+                    float px = centerPt.x() + s * scale;
+                    float py = centerPt.y() - m * scale;
+                    pts.emplace_back(px, py);
                 }
-                double lineWidth = std::max(1.0, static_cast<double>(centerRadius) / 75.0);
-                bufPainter.setPen(QPen(QColor(0, 122, 255, 178), lineWidth));
-                bufPainter.drawPath(path);
+
+                if (pts.size() > 1) {
+                    double lineWidth = std::max(1.0, static_cast<double>(centerRadius) / 100.0);
+                    bufPainter.setPen(
+                        QPen(QColor(0, 122, 255, 180), lineWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+                    bufPainter.drawPolyline(pts.data(), static_cast<int>(pts.size()));
+                }
             } else {
-                bufPainter.setPen(Qt::NoPen);
+                // Optimized Particle Mode: Pre-computed 32-bin palette & batched draw of all points
+                constexpr int NUM_BINS = 32;
+                static const auto binColors = []() {
+                    std::array<QColor, NUM_BINS> cols;
+                    for (int b = 0; b < NUM_BINS; ++b) {
+                        float t = static_cast<float>(b) / static_cast<float>(NUM_BINS - 1);
+                        float alpha = 0.05f + 0.80f * t;
+                        float hue = 0.65f - 0.15f * t;
+                        cols[b] = QColor::fromHsvF(hue, 0.85f, 0.95f, alpha);
+                    }
+                    return cols;
+                }();
+
+                std::array<std::vector<QPointF>, NUM_BINS> binPoints;
+                std::vector<QPointF> glowPoints;
+
                 for (size_t i = 0; i < count; ++i) {
                     float l = left[i];
                     float r = right[i];
@@ -234,30 +260,45 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                         l = 0.0f;
                     if (std::isnan(r))
                         r = 0.0f;
+
+                    float m = (l + r) * 0.7071f;
+                    float s = (l - r) * 0.7071f;
+
+                    float px = centerPt.x() + s * scale;
+                    float py = centerPt.y() - m * scale;
 
                     float t = (count > 1) ? static_cast<float>(i) / static_cast<float>(count - 1) : 1.0f;
-
-                    float m = (l + r) * 0.7071f;
-                    float s = (l - r) * 0.7071f;
-
-                    float px = centerPt.x() + s * (centerRadius * m_autoScaleFactor);
-                    float py = centerPt.y() - m * (centerRadius * m_autoScaleFactor);
-
-                    float particleSize = 1.0f + 3.5f * t;
-                    float alpha = 0.03f + 0.82f * t;
-
-                    float hue = 0.65f - 0.15f * t;
-                    QColor particleColor = QColor::fromHsvF(hue, 0.85f, 0.95f, alpha);
+                    int binIdx = std::clamp(static_cast<int>(t * NUM_BINS), 0, NUM_BINS - 1);
+                    binPoints[binIdx].emplace_back(px, py);
 
                     if (t > 0.9f) {
-                        float glowSize = particleSize * 2.0f;
-                        QColor haloColor = particleColor;
-                        bufPainter.setBrush(haloColor);
-                        bufPainter.drawEllipse(QPointF(px, py), glowSize / 2.0f, glowSize / 2.0f);
+                        glowPoints.emplace_back(px, py);
                     }
+                }
 
-                    bufPainter.setBrush(particleColor);
-                    bufPainter.drawEllipse(QPointF(px, py), particleSize / 2.0f, particleSize / 2.0f);
+                bufPainter.setPen(Qt::NoPen);
+
+                // Draw main particles by bin
+                for (int b = 0; b < NUM_BINS; ++b) {
+                    if (binPoints[b].empty())
+                        continue;
+                    float t = static_cast<float>(b) / static_cast<float>(NUM_BINS - 1);
+                    float particleSize = 1.2f + 3.0f * t;
+                    float halfSize = particleSize / 2.0f;
+
+                    bufPainter.setBrush(binColors[b]);
+                    for (const auto& pt : binPoints[b]) {
+                        bufPainter.drawEllipse(pt, halfSize, halfSize);
+                    }
+                }
+
+                // Draw glow halos for head of stream
+                if (!glowPoints.empty()) {
+                    bufPainter.setBrush(QColor(binColors[NUM_BINS - 1].red(), binColors[NUM_BINS - 1].green(),
+                                               binColors[NUM_BINS - 1].blue(), 60));
+                    for (const auto& pt : glowPoints) {
+                        bufPainter.drawEllipse(pt, 4.0f, 4.0f);
+                    }
                 }
             }
         }
