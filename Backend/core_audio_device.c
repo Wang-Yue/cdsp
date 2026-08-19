@@ -244,6 +244,25 @@ bool core_audio_device_set_buffer_frame_size(AudioDeviceID device_id,
                                      sizeof(uint32_t), &value) == noErr);
 }
 
+bool core_audio_device_get_buffer_frame_size(AudioDeviceID device_id,
+                                             core_audio_scope_t scope,
+                                             uint32_t* out_frames) {
+  AudioObjectPropertyAddress addr = {
+      .mSelector = kAudioDevicePropertyBufferFrameSize,
+      .mScope = (scope == CORE_AUDIO_SCOPE_INPUT)
+                    ? kAudioDevicePropertyScopeInput
+                    : kAudioDevicePropertyScopeOutput,
+      .mElement = kAudioObjectPropertyElementMain};
+  uint32_t frames = 0;
+  uint32_t size = sizeof(uint32_t);
+  if (AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &size, &frames) ==
+      noErr) {
+    if (out_frames) *out_frames = frames;
+    return true;
+  }
+  return false;
+}
+
 // MARK: - Clock-source / pitch control (BlackHole 0.5.0+)
 
 /// Set the device's active clock source by ID. Returns `true` on success.
@@ -489,6 +508,22 @@ static const char* format_string_for_asbd_local(
     }
   }
   return "";
+}
+
+AudioStreamBasicDescription core_audio_device_float32_stream_format(
+    double sample_rate, int channels) {
+  uint32_t bytes_per_frame = (uint32_t)(4 * channels);
+  AudioFormatFlags flags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+  AudioStreamBasicDescription asbd = {.mSampleRate = sample_rate,
+                                      .mFormatID = kAudioFormatLinearPCM,
+                                      .mFormatFlags = flags,
+                                      .mBytesPerPacket = bytes_per_frame,
+                                      .mFramesPerPacket = 1,
+                                      .mBytesPerFrame = bytes_per_frame,
+                                      .mChannelsPerFrame = (uint32_t)channels,
+                                      .mBitsPerChannel = 32,
+                                      .mReserved = 0};
+  return asbd;
 }
 
 AudioStreamBasicDescription core_audio_device_asbd_for_format(

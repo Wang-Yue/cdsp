@@ -40,6 +40,7 @@ let package = Package(
       ],
       linkerSettings: [
         .linkedFramework("Accelerate"),
+        .linkedFramework("AudioToolbox"),
         .linkedFramework("CoreAudio"),
         .linkedFramework("CoreFoundation"),
       ]

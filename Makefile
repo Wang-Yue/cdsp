@@ -173,7 +173,7 @@ ifeq ($(IS_WINDOWS),1)
     LDFLAGS += -lws2_32 -lwinmm -lole32 -luuid -lksuser -lksguid -lavrt
 else ifeq ($(IS_DARWIN),1)
     ifeq ($(ENABLE_COREAUDIO),1)
-        LDFLAGS += -framework CoreAudio
+        LDFLAGS += -framework CoreAudio -framework AudioToolbox
     endif
     ifeq ($(ENABLE_ACCELERATE),1)
         LDFLAGS += -framework Accelerate

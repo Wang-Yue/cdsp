@@ -143,33 +143,13 @@ TEST(CoreAudioASBDForFormatAndBinaryMapping) {
             core_audio_device_asbd_to_binary_format(&s24_4_rj_asbd));
 }
 
-TEST(CoreAudioCapabilitiesSharedAndExclusiveSets) {
+TEST(CoreAudioCapabilitiesUnified) {
   device_error_t err;
   audio_device_descriptor_t* desc =
       core_audio_capabilities_describe("default", false, &err);
   if (desc) {
-    ASSERT_TRUE(desc->capability_sets_count >= 1);
-    bool found_shared = false;
-    bool found_exclusive = false;
-    for (size_t i = 0; i < desc->capability_sets_count; i++) {
-      if (strcmp(desc->capability_sets[i].mode, "Shared") == 0) {
-        found_shared = true;
-        // Shared mode must only contain F32 format
-        for (size_t c = 0; c < desc->capability_sets[i].capabilities_count;
-             c++) {
-          channel_capability_t* ch = &desc->capability_sets[i].capabilities[c];
-          for (size_t r = 0; r < ch->samplerates_count; r++) {
-            samplerate_capability_t* sr = &ch->samplerates[r];
-            ASSERT_EQ(1, (int)sr->formats_count);
-            ASSERT_STR_EQ("F32", sr->formats[0]);
-          }
-        }
-      } else if (strcmp(desc->capability_sets[i].mode, "Exclusive") == 0) {
-        found_exclusive = true;
-      }
-    }
-    ASSERT_TRUE(found_shared);
-    ASSERT_TRUE(found_exclusive);
+    ASSERT_EQ(1, (int)desc->capability_sets_count);
+    ASSERT_STR_EQ("Unified", desc->capability_sets[0].mode);
     free_audio_device_descriptor(desc);
   }
 }

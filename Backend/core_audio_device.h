@@ -9,6 +9,7 @@
 
 #if defined(ENABLE_COREAUDIO)
 
+#include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -143,6 +144,18 @@ bool core_audio_device_set_buffer_frame_size(AudioDeviceID device_id,
                                              uint32_t frames,
                                              core_audio_scope_t scope);
 
+/**
+ * @brief Read the device's current buffer frame size for a given scope.
+ *
+ * @param device_id The HAL Device ID.
+ * @param scope The direction scope.
+ * @param out_frames Pointer to uint32_t to store the retrieved buffer size.
+ * @return true on success, false otherwise.
+ */
+bool core_audio_device_get_buffer_frame_size(AudioDeviceID device_id,
+                                             core_audio_scope_t scope,
+                                             uint32_t* out_frames);
+
 // MARK: - Clock-source / pitch control (BlackHole 0.5.0+)
 
 /**
@@ -181,6 +194,17 @@ bool core_audio_device_has_nominal_sample_rate_property(
     AudioDeviceID device_id);
 
 // MARK: - Stream-format builder
+
+/**
+ * @brief Helper to build a standard 32-bit linear-PCM interleaved
+ * AudioStreamBasicDescription (ASBD) matching upstream CamillaDSP.
+ *
+ * @param sample_rate Sample rate in Hz.
+ * @param channels Number of channels.
+ * @return The constructed ASBD.
+ */
+AudioStreamBasicDescription core_audio_device_float32_stream_format(
+    double sample_rate, int channels);
 
 /**
  * @brief Build an AudioStreamBasicDescription for a given format token string
