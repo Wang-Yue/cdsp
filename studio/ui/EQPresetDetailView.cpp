@@ -686,23 +686,46 @@ void EQPresetDetailView::updateBandChipsBar() {
         bool isEnabled = b.isEnabled;
 
         auto chip = new QFrame(m_bandChipsWidget);
-        chip->setFrameShape(isSelected ? QFrame::Panel : QFrame::StyledPanel);
-        chip->setFrameShadow(isSelected ? QFrame::Sunken : QFrame::Raised);
+        chip->setFrameShape(isSelected ? QFrame::Box : QFrame::StyledPanel);
+        chip->setFrameShadow(isSelected ? QFrame::Plain : QFrame::Raised);
+        chip->setLineWidth(isSelected ? 2 : 1);
+        chip->setMidLineWidth(0);
         chip->setContextMenuPolicy(Qt::CustomContextMenu);
 
+        QPalette pal = chip->palette();
+        if (isSelected) {
+            pal.setColor(QPalette::Window, palette().color(QPalette::Highlight));
+            pal.setColor(QPalette::WindowText, palette().color(QPalette::HighlightedText));
+            pal.setColor(QPalette::Text, palette().color(QPalette::HighlightedText));
+            chip->setPalette(pal);
+            chip->setAutoFillBackground(true);
+        } else {
+            chip->setAutoFillBackground(false);
+        }
+
         auto chipHBox = new QHBoxLayout(chip);
+        chipHBox->setContentsMargins(6, 4, 6, 4);
+        chipHBox->setSpacing(6);
 
         // Text Content
         auto textVBox = new QVBoxLayout();
+        textVBox->setContentsMargins(0, 0, 0, 0);
+        textVBox->setSpacing(1);
 
         // Line 1: #Index Type
-        auto titleLbl = new QLabel(
-            QString("#%1 %2").arg(bandIdx + 1).arg(QString::fromStdString(eqBandTypeToString(b.type))), chip);
+        QString typeStr = QString::fromStdString(eqBandTypeToString(b.type));
+        QString titleText = isEnabled ? QString("#%1 %2").arg(bandIdx + 1).arg(typeStr)
+                                      : QString("#%1 %2 (Disabled)").arg(bandIdx + 1).arg(typeStr);
+        auto titleLbl = new QLabel(titleText, chip);
         QFont titleF = font();
         titleF.setPointSize(10);
         titleF.setBold(isSelected);
         titleLbl->setFont(titleF);
         titleLbl->setEnabled(isEnabled);
+        titleLbl->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        if (isSelected) {
+            titleLbl->setPalette(pal);
+        }
         textVBox->addWidget(titleLbl);
 
         // Line 2: Freq & Gain / Q
@@ -733,6 +756,10 @@ void EQPresetDetailView::updateBandChipsBar() {
             auto valLbl = new QLabel(valText, chip);
             valLbl->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
             valLbl->setEnabled(isEnabled);
+            valLbl->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+            if (isSelected) {
+                valLbl->setPalette(pal);
+            }
             textVBox->addWidget(valLbl);
         }
 
