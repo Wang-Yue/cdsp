@@ -7,12 +7,14 @@
 #include <cmath>
 
 SpectrumView::SpectrumView(QWidget* parent) : QWidget(parent) {
-    setMinimumHeight(180);
+    setMinimumSize(40, 24);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMouseTracking(true);
 }
 
 SpectrumView::SpectrumView(std::shared_ptr<SpectrumEngine> engine, QWidget* parent) : QWidget(parent) {
-    setMinimumHeight(180);
+    setMinimumSize(40, 24);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMouseTracking(true);
     setEngine(engine);
 }
@@ -162,26 +164,43 @@ void SpectrumView::leaveEvent(QEvent* event) {
     update();
 }
 
+static bool isWidgetInMiniPlayer(const QWidget* w) {
+    if (!w)
+        return false;
+    const QWidget* top = w->window();
+    if (top && (top->objectName() == "MiniPlayerViewWindow" || top->inherits("MiniPlayerView")))
+        return true;
+    while (w) {
+        if (w->objectName() == "MiniPlayerViewWindow" || w->objectName() == "MiniPlayerViewStack" ||
+            w->inherits("MiniPlayerView"))
+            return true;
+        w = w->parentWidget();
+    }
+    return false;
+}
+
 void SpectrumView::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    if (!parentWidget() || !parentWidget()->inherits("QStackedWidget")) {
+    bool inMiniPlayer = isWidgetInMiniPlayer(this);
+    if (!inMiniPlayer) {
         p.fillRect(rect(), palette().color(QPalette::Base));
     }
 
     int w = width();
     int h = height();
-    int marginL = 45;
-    int marginR = 16;
-    int marginB = 24;
-    int marginT = 12;
+
+    int marginL = inMiniPlayer ? (w > 260 && h > 70 ? 28 : 0) : 45;
+    int marginR = inMiniPlayer ? 2 : 16;
+    int marginT = inMiniPlayer ? 2 : 12;
+    int marginB = inMiniPlayer ? (h > 80 ? 14 : 0) : 24;
 
     int plotW = w - marginL - marginR;
     int plotH = h - marginB - marginT;
 
-    if (plotW < 20 || plotH < 20)
+    if (plotW < 10 || plotH < 10)
         return;
 
     float minDB = m_engine ? static_cast<float>(m_engine->minDB) : -120.0f;
@@ -191,7 +210,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
 
     // 1. dB Grid lines & labels
     QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    monoFont.setPointSize(8);
+    monoFont.setPointSize(7);
     p.setFont(monoFont);
 
     QColor gridPenCol = palette().color(QPalette::Mid);
@@ -204,9 +223,11 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
         p.drawLine(marginL, y, marginL + plotW, y);
 
-        p.setPen(palette().color(QPalette::PlaceholderText));
-        p.drawText(QRectF(2, y - 6, marginL - 6, 12), Qt::AlignRight | Qt::AlignVCenter,
-                   QString("%1").arg(static_cast<int>(std::round(db))));
+        if (marginL >= 24) {
+            p.setPen(palette().color(QPalette::PlaceholderText));
+            p.drawText(QRectF(2, y - 6, marginL - 4, 12), Qt::AlignRight | Qt::AlignVCenter,
+                       QString("%1").arg(static_cast<int>(std::round(db))));
+        }
     }
 
     // 2. Freq Grid lines & log-frequency ticks (20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k)
@@ -230,15 +251,17 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
         p.drawLine(x, marginT, x, marginT + plotH);
 
-        // Tick mark
-        p.setPen(QPen(palette().color(QPalette::PlaceholderText), 1));
-        p.drawLine(x, marginT + plotH, x, marginT + plotH + 4);
+        if (marginB >= 12) {
+            // Tick mark
+            p.setPen(QPen(palette().color(QPalette::PlaceholderText), 1));
+            p.drawLine(x, marginT + plotH, x, marginT + plotH + 2);
 
-        // Label
-        p.setFont(freqFont);
-        p.setPen(palette().color(QPalette::PlaceholderText));
-        QString label = f >= 1000.0 ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
-        p.drawText(QRectF(x - 15, marginT + plotH + 4, 30, 14), Qt::AlignCenter, label);
+            // Label
+            p.setFont(freqFont);
+            p.setPen(palette().color(QPalette::PlaceholderText));
+            QString label = f >= 1000.0 ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
+            p.drawText(QRectF(x - 15, marginT + plotH + 2, 30, 12), Qt::AlignCenter, label);
+        }
     }
 
     size_t count = std::min(m_data.frequencies.size(), m_data.magnitudes.size());

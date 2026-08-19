@@ -8,11 +8,13 @@
 #include <cmath>
 
 SpectrogramView::SpectrogramView(QWidget* parent) : QOpenGLWidget(parent) {
-    setMinimumHeight(180);
+    setMinimumSize(40, 24);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 }
 
 SpectrogramView::SpectrogramView(std::shared_ptr<SpectrogramEngine> engine, QWidget* parent) : QOpenGLWidget(parent) {
-    setMinimumHeight(180);
+    setMinimumSize(40, 24);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setEngine(engine);
 }
 
@@ -183,8 +185,14 @@ QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
 }
 
 static bool isWidgetInMiniPlayer(const QWidget* w) {
+    if (!w)
+        return false;
+    const QWidget* top = w->window();
+    if (top && (top->objectName() == "MiniPlayerViewWindow" || top->inherits("MiniPlayerView")))
+        return true;
     while (w) {
-        if (w->inherits("QStackedWidget") || w->inherits("MiniPlayerView"))
+        if (w->objectName() == "MiniPlayerViewWindow" || w->objectName() == "MiniPlayerViewStack" ||
+            w->inherits("MiniPlayerView"))
             return true;
         w = w->parentWidget();
     }
