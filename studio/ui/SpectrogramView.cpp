@@ -3,6 +3,8 @@
 #include <QEvent>
 #include <QFontDatabase>
 #include <QPainterPath>
+#include <algorithm>
+#include <array>
 #include <cmath>
 
 SpectrogramView::SpectrogramView(QWidget* parent) : QOpenGLWidget(parent) {
@@ -88,59 +90,96 @@ static QColor interpColors(float t, const std::vector<QColor>& stops) {
     return QColor(r, g, b, a);
 }
 
-QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
-    if (std::isnan(db))
-        db = -120.0f;
-    float norm = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
-
-    QColor color;
+static QColor computeColorForNorm(float norm, ColorPalette palette) {
+    norm = std::clamp(norm, 0.0f, 1.0f);
     switch (palette) {
     case ColorPalette::Viridis: {
         static const std::vector<QColor> viridisStops = {QColor(68, 1, 84), QColor(59, 82, 139), QColor(33, 145, 140),
                                                          QColor(94, 201, 98), QColor(253, 231, 37)};
-        color = interpColors(norm, viridisStops);
-        break;
+        return interpColors(norm, viridisStops);
     }
     case ColorPalette::Magma: {
         static const std::vector<QColor> magmaStops = {QColor(0, 0, 4), QColor(81, 18, 124), QColor(182, 54, 121),
                                                        QColor(251, 136, 97), QColor(252, 253, 191)};
-        color = interpColors(norm, magmaStops);
-        break;
+        return interpColors(norm, magmaStops);
     }
     case ColorPalette::Plasma: {
         static const std::vector<QColor> plasmaStops = {QColor(13, 8, 135), QColor(126, 3, 168), QColor(204, 71, 120),
                                                         QColor(248, 149, 64), QColor(240, 249, 33)};
-        color = interpColors(norm, plasmaStops);
-        break;
+        return interpColors(norm, plasmaStops);
     }
     case ColorPalette::Inferno: {
         static const std::vector<QColor> infernoStops = {QColor(0, 0, 4), QColor(87, 16, 110), QColor(187, 55, 84),
                                                          QColor(249, 142, 9), QColor(252, 255, 164)};
-        color = interpColors(norm, infernoStops);
-        break;
+        return interpColors(norm, infernoStops);
     }
     case ColorPalette::Jet: {
         static const std::vector<QColor> jetStops = {QColor(0, 0, 143), QColor(0, 222, 255), QColor(163, 255, 87),
                                                      QColor(255, 153, 0), QColor(128, 0, 0)};
-        color = interpColors(norm, jetStops);
-        break;
+        return interpColors(norm, jetStops);
     }
     case ColorPalette::Classic:
     default: {
         static const std::vector<QColor> classicStops = {
-            QColor(0, 0, 0),     // silence (-60 dB)
+            QColor(0, 0, 0, 0),  // silence (-60 dB, transparent)
             QColor(0, 100, 0),   // dark green (-45 dB)
             QColor(52, 199, 89), // green (-30 dB)
             QColor(255, 204, 0), // yellow (-18 dB)
             QColor(255, 149, 0), // orange (-6 dB)
             QColor(255, 59, 48)  // red (0 dB)
         };
-        color = interpColors(norm, classicStops);
+        return interpColors(norm, classicStops);
+    }
+    }
+}
+
+static const std::array<QRgb, 256>& getPaletteLUT(ColorPalette palette) {
+    static const auto luts = []() {
+        std::array<std::array<QRgb, 256>, 6> allLuts;
+        const std::vector<ColorPalette> palettes = {ColorPalette::Classic, ColorPalette::Viridis, ColorPalette::Magma,
+                                                    ColorPalette::Plasma,  ColorPalette::Inferno, ColorPalette::Jet};
+
+        for (size_t p = 0; p < palettes.size(); ++p) {
+            for (int i = 0; i < 256; ++i) {
+                float norm = static_cast<float>(i) / 255.0f;
+                allLuts[p][i] = computeColorForNorm(norm, palettes[p]).rgba();
+            }
+        }
+        return allLuts;
+    }();
+
+    size_t idx = 0;
+    switch (palette) {
+    case ColorPalette::Classic:
+        idx = 0;
+        break;
+    case ColorPalette::Viridis:
+        idx = 1;
+        break;
+    case ColorPalette::Magma:
+        idx = 2;
+        break;
+    case ColorPalette::Plasma:
+        idx = 3;
+        break;
+    case ColorPalette::Inferno:
+        idx = 4;
+        break;
+    case ColorPalette::Jet:
+        idx = 5;
+        break;
+    default:
+        idx = 0;
         break;
     }
-    }
+    return luts[idx];
+}
 
-    return color;
+QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
+    if (std::isnan(db))
+        db = -120.0f;
+    float norm = std::clamp((db + 60.0f) / 60.0f, 0.0f, 1.0f);
+    return computeColorForNorm(norm, palette);
 }
 
 void SpectrogramView::paintGL() {
@@ -180,51 +219,41 @@ void SpectrogramView::paint2D(QPainter& p, int w, int h) {
     double logMin = std::log10(minF), logMax = std::log10(maxF);
 
     size_t count = m_history.size();
-    if (count > 0) {
-        QDateTime now = QDateTime::currentDateTime();
+    if (count > 1) {
         size_t nBins = m_engine ? m_engine->nBins : 200;
-        double barHeight = static_cast<double>(plotH) / static_cast<double>(std::max<size_t>(1, nBins));
+        int texW = static_cast<int>(count);
+        int texH = static_cast<int>(nBins);
 
-        for (size_t i = 0; i < count; ++i) {
-            const auto& frame = m_history[i];
-            QDateTime frameTime = frame.timestamp.isValid()
-                                      ? frame.timestamp
-                                      : now.addMSecs(-static_cast<qint64>((count - 1 - i) * 1000 / 30));
-            double timeAgo = frameTime.msecsTo(now) / 1000.0;
-            if (timeAgo > 10.0 || timeAgo < 0.0)
-                continue;
+        if (m_textureImage.size() != QSize(texW, texH)) {
+            m_textureImage = QImage(texW, texH, QImage::Format_ARGB32_Premultiplied);
+        }
 
-            double x = marginL + plotW * (1.0 - timeAgo / 10.0);
+        const auto& lut = getPaletteLUT(m_palette);
 
-            double nextX;
-            if (i < count - 1) {
-                const auto& nextFrame = m_history[i + 1];
-                QDateTime nextFrameTime = nextFrame.timestamp.isValid()
-                                              ? nextFrame.timestamp
-                                              : now.addMSecs(-static_cast<qint64>((count - 2 - i) * 1000 / 30));
-                double nextTimeAgo = nextFrameTime.msecsTo(now) / 1000.0;
-                nextX = marginL + plotW * (1.0 - nextTimeAgo / 10.0);
-            } else {
-                nextX = marginL + plotW;
-            }
+        // Contiguous linear pixel write: ~20 microseconds
+        for (int row = 0; row < texH; ++row) {
+            QRgb* scanline = reinterpret_cast<QRgb*>(m_textureImage.scanLine(row));
+            size_t j = texH - 1 - row; // Higher frequencies at top
 
-            double stripWidth = std::max(1.0, nextX - x);
-            size_t binCount = std::min(nBins, frame.magnitudes.size());
-
-            for (size_t j = 0; j < binCount; ++j) {
-                float db = frame.magnitudes[j];
+            for (int col = 0; col < texW; ++col) {
+                const auto& frame = m_history[col];
+                float db = (j < frame.magnitudes.size()) ? frame.magnitudes[j] : -120.0f;
                 if (std::isnan(db))
-                    continue;
-                float normalized = std::max(0.0f, std::min(1.0f, (db + 60.0f) / 60.0f));
-                if (normalized <= 0.05f)
-                    continue;
+                    db = -120.0f;
 
-                QColor color = colorForDB(db, m_palette);
-                double y0 = plotH - (j + 1) * barHeight;
-                double y1 = plotH - j * barHeight;
-                p.fillRect(QRectF(x, y0, stripWidth, y1 - y0 + 0.5), color);
+                int idx = std::clamp(static_cast<int>((db + 60.0f) * (255.0f / 60.0f)), 0, 255);
+                scanline[col] = lut[idx];
             }
         }
+
+        // Draw hardware-accelerated textured quad across the full plot area
+        size_t maxFrames = m_engine ? m_engine->maxHistory : 300;
+        double fillFraction =
+            std::min(1.0, static_cast<double>(count) / static_cast<double>(std::max<size_t>(1, maxFrames)));
+        double drawWidth = plotW * fillFraction;
+        double x0 = marginL + plotW - drawWidth;
+
+        p.drawImage(QRectF(x0, 0, drawWidth, plotH), m_textureImage);
     }
 
     // Draw Frequency Y-axis labels & grid lines

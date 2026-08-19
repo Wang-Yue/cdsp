@@ -38,6 +38,7 @@ private:
     std::deque<SpectrumData> m_history;
     bool m_show3D = false;
     ColorPalette m_palette = ColorPalette::Classic;
+    QImage m_textureImage;
 };
 
 #endif // SPECTROGRAM_VIEW_H
