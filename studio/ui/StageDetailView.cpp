@@ -166,7 +166,7 @@ void addWidgetRow(QFormLayout* form, const QString& labelText, QWidget* fieldWid
 
 QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest, int src, QTableWidget* table) {
     auto cellWidget = new QWidget(table);
-    cellWidget->setFixedSize(90, 80);
+    cellWidget->setFixedSize(120, 95);
 
     auto mapIt = std::find_if(stage.mixerMappings.begin(), stage.mixerMappings.end(),
                               [dest](const MixerMapping& m) { return m.dest == dest; });
@@ -183,13 +183,18 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
 
     if (isConnected) {
         auto vBox = new QVBoxLayout(cellWidget);
-        vBox->setContentsMargins(0, 0, 0, 0);
-        vBox->setSpacing(0);
+        vBox->setContentsMargins(4, 4, 4, 4);
+        vBox->setSpacing(4);
+        vBox->setAlignment(Qt::AlignCenter);
 
         // Top Checkmark button
         auto checkBtn = new QPushButton("☑", cellWidget);
-        checkBtn->setFixedSize(90, 24);
+        checkBtn->setFixedSize(30, 22);
+        QFont f = checkBtn->font();
+        f.setPointSize(13);
+        checkBtn->setFont(f);
         checkBtn->setFlat(true);
+        checkBtn->setCursor(Qt::PointingHandCursor);
         checkBtn->setToolTip("Disconnect Source");
         connect(checkBtn, &QPushButton::clicked, [this, dest, src, table]() {
             auto st = currentStage();
@@ -207,13 +212,10 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         });
         vBox->addWidget(checkBtn, 0, Qt::AlignCenter);
 
-        auto innerVBox = new QVBoxLayout();
-        innerVBox->setContentsMargins(0, 0, 0, 0);
-        innerVBox->setSpacing(3);
-
         // Middle Gain line edit
         auto gainEdit = new QLineEdit(cellWidget);
-        gainEdit->setFixedWidth(60);
+        gainEdit->setFixedWidth(70);
+        gainEdit->setFixedHeight(22);
         gainEdit->setAlignment(Qt::AlignCenter);
         gainEdit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
         gainEdit->setText(QString::number(srcPtr->gainValue(), 'f', 1));
@@ -237,16 +239,17 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
                 }
             }
         });
-        innerVBox->addWidget(gainEdit, 0, Qt::AlignCenter);
+        vBox->addWidget(gainEdit, 0, Qt::AlignCenter);
 
         // Bottom 3 Action Buttons (Phase, Mute, Scale)
         auto btnHBox = new QHBoxLayout();
-        btnHBox->setSpacing(8);
+        btnHBox->setSpacing(6);
         btnHBox->setContentsMargins(0, 0, 0, 0);
+        btnHBox->setAlignment(Qt::AlignCenter);
 
         bool inv = srcPtr->inverted.value_or(false);
-        auto invBtn = new QPushButton("Ø", cellWidget);
-        invBtn->setFixedSize(20, 18);
+        auto invBtn = new QPushButton(inv ? "Ø" : "+", cellWidget);
+        invBtn->setFixedSize(30, 24);
         invBtn->setFlat(true);
         invBtn->setToolTip("Invert Phase");
         connect(invBtn, &QPushButton::clicked, [this, dest, src, table]() {
@@ -271,7 +274,7 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         bool muted = srcPtr->mute.value_or(false);
         auto muteBtn = new QPushButton(cellWidget);
         muteBtn->setIcon(style()->standardIcon(muted ? QStyle::SP_MediaVolumeMuted : QStyle::SP_MediaVolume));
-        muteBtn->setFixedSize(20, 18);
+        muteBtn->setFixedSize(30, 24);
         muteBtn->setFlat(true);
         muteBtn->setToolTip("Mute Source");
         connect(muteBtn, &QPushButton::clicked, [this, dest, src, table]() {
@@ -295,7 +298,7 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
 
         GainScale sc = srcPtr->scale.value_or(GainScale::dB);
         auto scaleBtn = new QPushButton(sc == GainScale::dB ? "dB" : "lin", cellWidget);
-        scaleBtn->setFixedSize(24, 18);
+        scaleBtn->setFixedSize(30, 24);
         scaleBtn->setFlat(true);
         scaleBtn->setToolTip("Toggle Gain Scale (dB / Linear)");
         connect(scaleBtn, &QPushButton::clicked, [this, dest, src, table]() {
@@ -318,16 +321,19 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
         });
         btnHBox->addWidget(scaleBtn);
 
-        innerVBox->addLayout(btnHBox);
-        vBox->addLayout(innerVBox);
+        vBox->addLayout(btnHBox);
     } else {
         auto vBox = new QVBoxLayout(cellWidget);
-        vBox->setContentsMargins(0, 0, 0, 0);
+        vBox->setContentsMargins(6, 6, 6, 6);
 
         auto checkBtn = new QPushButton("☐", cellWidget);
-        checkBtn->setFixedSize(90, 80);
+        QFont f = checkBtn->font();
+        f.setPointSize(16);
+        checkBtn->setFont(f);
         checkBtn->setFlat(true);
-        checkBtn->setToolTip("Connect Source");
+        checkBtn->setCursor(Qt::PointingHandCursor);
+        checkBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        checkBtn->setToolTip("Click to connect source");
         connect(checkBtn, &QPushButton::clicked, [this, dest, src, table]() {
             auto st = currentStage();
             if (!st)
@@ -345,7 +351,7 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
             applyConfig();
             table->setCellWidget(dest, src, createMatrixCellWidget(*st, dest, src, table));
         });
-        vBox->addWidget(checkBtn, 0, Qt::AlignCenter);
+        vBox->addWidget(checkBtn);
     }
 
     return cellWidget;
@@ -1578,11 +1584,11 @@ void StageDetailView::buildStageOptionsUi() {
         int cols = incomingChannels;
 
         auto table = new QTableWidget(rows, cols, matrixGroup);
-        table->horizontalHeader()->setDefaultSectionSize(90);
+        table->horizontalHeader()->setDefaultSectionSize(120);
         table->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-        table->verticalHeader()->setDefaultSectionSize(80);
+        table->verticalHeader()->setDefaultSectionSize(95);
         table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-        table->setMinimumHeight(std::min(480, rows * 80 + 35));
+        table->setMinimumHeight(std::min(520, rows * 95 + 40));
 
         QStringList headers;
         for (int c = 0; c < cols; ++c)
