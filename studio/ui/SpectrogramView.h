@@ -4,12 +4,12 @@
 #include "models/SpectrogramEngine.h"
 
 #include <QDateTime>
-#include <QImage>
+#include <QOpenGLWidget>
 #include <QPainter>
-#include <QWidget>
+#include <deque>
 #include <memory>
 
-class SpectrogramView : public QWidget {
+class SpectrogramView : public QOpenGLWidget {
     Q_OBJECT
 
 public:
@@ -22,31 +22,22 @@ public:
                     ColorPalette palette = ColorPalette::Classic);
 
 protected:
+    void paintGL() override;
+
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
-    void resizeEvent(QResizeEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
+    void paint2D(QPainter& p, int w, int h);
+    void paint3D(QPainter& p, int w, int h);
+
+    static QColor colorForDB(float db, ColorPalette palette = ColorPalette::Classic);
+
     std::shared_ptr<SpectrogramEngine> m_engine;
     std::deque<SpectrumData> m_history;
     bool m_show3D = false;
     ColorPalette m_palette = ColorPalette::Classic;
-
-    QImage m_bufferImage;
-    QImage m_3dImage;
-    double m_currentX = 0.0;
-    QDateTime m_lastUpdateTime;
-
-    void recreateBuffer(const QSize& size, const std::deque<SpectrumData>& history);
-    void redrawAllHistory(QImage& bufferImage, const std::deque<SpectrumData>& history, const QSize& size,
-                          int drawWidth, int drawHeight);
-    void updateBuffer(const std::deque<SpectrumData>& history, const QSize& size, double elapsedSeconds);
-    void updateBuffer3D(const std::deque<SpectrumData>& history, const QSize& size);
-    void drawFrame(QPainter& painter, const SpectrumData& frame, double x, double width, double drawHeight,
-                   size_t nBins);
-
-    static QColor colorForDB(float db, ColorPalette palette = ColorPalette::Classic);
 };
 
 #endif // SPECTROGRAM_VIEW_H
