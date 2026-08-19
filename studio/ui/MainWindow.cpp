@@ -32,9 +32,11 @@
 #include <QCursor>
 #include <QDesktopServices>
 #include <QDoubleSpinBox>
+#include <QFileDialog>
 #include <QFontDatabase>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QJsonDocument>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
@@ -389,6 +391,67 @@ void MainWindow::setupMenuBar() {
         dlg.exec();
     });
     fileMenu->addAction(m_actRoomCorrection);
+
+    fileMenu->addSeparator();
+
+    auto importPipelineAct = new QAction("Import Pipeline Configuration...", this);
+    importPipelineAct->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
+    connect(importPipelineAct, &QAction::triggered, [this]() {
+        QString path = QFileDialog::getOpenFileName(this, "Import Pipeline Configuration", QString(),
+                                                    "JSON Files (*.json);;All Files (*)");
+        if (path.isEmpty())
+            return;
+
+        if (m_pipeline->importFromJsonFile(path)) {
+            m_dspController->applyConfig();
+            onPipelineChanged();
+            QMessageBox::information(this, "Pipeline Imported",
+                                     "Successfully imported pipeline configuration and presets.");
+        } else {
+            QMessageBox::critical(
+                this, "Import Failed",
+                "Failed to import pipeline configuration. Please ensure the file is a valid JSON configuration.");
+        }
+    });
+    fileMenu->addAction(importPipelineAct);
+
+    auto exportPipelineAct = new QAction("Export Pipeline Configuration...", this);
+    exportPipelineAct->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
+    connect(exportPipelineAct, &QAction::triggered, [this]() {
+        QString path = QFileDialog::getSaveFileName(this, "Export Pipeline Configuration", "pipeline_config.json",
+                                                    "JSON Files (*.json);;All Files (*)");
+        if (path.isEmpty())
+            return;
+
+        if (m_pipeline->exportToJsonFile(path)) {
+            QMessageBox::information(this, "Pipeline Exported",
+                                     QString("Successfully exported pipeline configuration to:\n%1").arg(path));
+        } else {
+            QMessageBox::critical(this, "Export Failed", "Failed to write pipeline configuration to file.");
+        }
+    });
+    fileMenu->addAction(exportPipelineAct);
+
+    auto exportCdspConfigAct = new QAction("Export CamillaDSP Engine Config...", this);
+    connect(exportCdspConfigAct, &QAction::triggered, [this]() {
+        QString path = QFileDialog::getSaveFileName(this, "Export CamillaDSP Engine Config", "camilladsp_config.json",
+                                                    "JSON Files (*.json);;YAML Files (*.yml *.yaml);;All Files (*)");
+        if (path.isEmpty())
+            return;
+
+        auto config = m_dspController->buildConfiguration();
+        std::string configStr = config.toJsonString();
+        QFile file(path);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            file.write(configStr.data(), configStr.size());
+            file.close();
+            QMessageBox::information(this, "Config Exported",
+                                     QString("Successfully exported CamillaDSP configuration to:\n%1").arg(path));
+        } else {
+            QMessageBox::critical(this, "Export Failed", "Failed to write CamillaDSP configuration to file.");
+        }
+    });
+    fileMenu->addAction(exportCdspConfigAct);
 
     fileMenu->addSeparator();
 
