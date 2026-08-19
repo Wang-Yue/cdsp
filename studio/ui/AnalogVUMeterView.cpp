@@ -15,8 +15,18 @@
 
 // MARK: - Single AnalogVUMeter Implementation
 
+static bool isWidgetInMiniPlayer(const QWidget* w) {
+    while (w) {
+        if (w->inherits("QStackedWidget") || w->inherits("MiniPlayerView"))
+            return true;
+        w = w->parentWidget();
+    }
+    return false;
+}
+
 AnalogVUMeter::AnalogVUMeter(int channelIndex, const VUSettings& settings, QWidget* parent)
     : QWidget(parent), m_channelIndex(channelIndex), m_settings(settings) {
+    setAttribute(Qt::WA_TranslucentBackground);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMinimumSize(80, 80);
 }
@@ -128,7 +138,12 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     QPainterPath clipPath;
     clipPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
     p.setClipPath(clipPath);
-    p.fillRect(dialRect, palette().color(QPalette::Base));
+
+    QColor baseColor = palette().color(QPalette::Base);
+    if (isWidgetInMiniPlayer(this)) {
+        baseColor.setAlpha(50);
+    }
+    p.fillRect(dialRect, baseColor);
 
     // 1. BOTTOM AMBER GLOW
     if (m_settings.ambientGlow > 0) {
@@ -352,17 +367,23 @@ void AnalogVUMeter::paintEvent(QPaintEvent* event) {
 // MARK: - AnalogVUMeterView Implementation
 
 AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
+    setAttribute(Qt::WA_TranslucentBackground);
     auto rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
 
     m_scrollArea = new QScrollArea(this);
+    m_scrollArea->setAttribute(Qt::WA_TranslucentBackground);
+    m_scrollArea->viewport()->setAttribute(Qt::WA_TranslucentBackground);
+    m_scrollArea->setStyleSheet(
+        "QScrollArea { background: transparent; border: none; } QWidget { background: transparent; }");
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     m_canvasWidget = new QWidget(m_scrollArea);
+    m_canvasWidget->setAttribute(Qt::WA_TranslucentBackground);
     m_canvasLayout = new QHBoxLayout(m_canvasWidget);
     m_canvasLayout->setContentsMargins(0, 0, 0, 0);
     m_canvasLayout->setSpacing(16);
