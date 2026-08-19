@@ -75,6 +75,15 @@ void VectorScopeView::changeEvent(QEvent* event) {
     }
 }
 
+static bool isWidgetInMiniPlayer(const QWidget* w) {
+    while (w) {
+        if (w->inherits("QStackedWidget") || w->inherits("MiniPlayerView"))
+            return true;
+        w = w->parentWidget();
+    }
+    return false;
+}
+
 void VectorScopeView::paintGL() {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
@@ -85,8 +94,9 @@ void VectorScopeView::paintGL() {
     if (w < 20 || h < 20)
         return;
 
-    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
-    if (!inMiniPlayer) {
+    if (isWidgetInMiniPlayer(this)) {
+        p.fillRect(rect(), QColor(0, 0, 0, 115));
+    } else {
         p.fillRect(rect(), palette().color(QPalette::Base));
     }
 

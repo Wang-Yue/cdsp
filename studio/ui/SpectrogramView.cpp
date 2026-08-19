@@ -182,11 +182,22 @@ QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
     return computeColorForNorm(norm, palette);
 }
 
+static bool isWidgetInMiniPlayer(const QWidget* w) {
+    while (w) {
+        if (w->inherits("QStackedWidget") || w->inherits("MiniPlayerView"))
+            return true;
+        w = w->parentWidget();
+    }
+    return false;
+}
+
 void SpectrogramView::paintGL() {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    if (!parentWidget() || !parentWidget()->inherits("QStackedWidget")) {
+    if (isWidgetInMiniPlayer(this)) {
+        p.fillRect(rect(), QColor(0, 0, 0, 115));
+    } else {
         p.fillRect(rect(), palette().color(QPalette::Base));
     }
 
@@ -367,7 +378,8 @@ void SpectrogramView::paint3D(QPainter& p, int w, int h) {
         fillPoly.reserve(static_cast<int>(drawBins + 3));
         edgePoly.reserve(static_cast<int>(drawBins));
 
-        QBrush fillBrush(palette().color(QPalette::Base));
+        QColor fillCol = isWidgetInMiniPlayer(this) ? QColor(0, 0, 0, 115) : palette().color(QPalette::Base);
+        QBrush fillBrush(fillCol);
 
         for (size_t s = 0; s < targetSlices; ++s) {
             size_t i = (targetSlices > 1) ? ((s * (count - 1)) / (targetSlices - 1)) : 0;
