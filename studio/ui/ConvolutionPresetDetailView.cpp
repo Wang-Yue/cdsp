@@ -18,6 +18,18 @@ ConvolutionPresetDetailView::ConvolutionPresetDetailView(ConvolutionPreset prese
     : QWidget(parent), m_preset(preset), m_pipeline(pipeline), m_devices(devices) {
     setupUi();
     refreshUi();
+
+    if (m_pipeline) {
+        connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, [this]() {
+            for (const auto& p : m_pipeline->convPresets) {
+                if (p.id == m_preset.id) {
+                    m_preset = p;
+                    refreshUi();
+                    break;
+                }
+            }
+        });
+    }
 }
 
 void ConvolutionPresetDetailView::setupUi() {

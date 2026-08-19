@@ -31,6 +31,15 @@ EQPresetDetailView::EQPresetDetailView(EQPreset preset, std::shared_ptr<Pipeline
 
     if (m_pipeline) {
         connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, [this]() {
+            if (m_isRefreshing)
+                return;
+            for (const auto& p : m_pipeline->eqPresets) {
+                if (p.id == m_preset.id) {
+                    m_preset = p;
+                    refreshUi();
+                    break;
+                }
+            }
             if (m_diagramWidget)
                 m_diagramWidget->update();
         });

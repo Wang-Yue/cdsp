@@ -1224,9 +1224,9 @@ void MainWindow::handleNavigationTag(const QString& tag) {
         w = new ConsoleLogsView(this);
     } else if (tag.startsWith("stage_")) {
         QUuid stageId = QUuid::fromString(tag.mid(6));
-        for (size_t idx = 0; idx < m_pipeline->stages.size(); ++idx) {
-            if (m_pipeline->stages[idx].id == stageId) {
-                w = new StageDetailView(idx, m_pipeline, m_dspController, this);
+        for (const auto& stage : m_pipeline->stages) {
+            if (stage.id == stageId) {
+                w = new StageDetailView(stageId, m_pipeline, m_dspController, this);
                 break;
             }
         }

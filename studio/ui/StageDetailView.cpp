@@ -357,9 +357,9 @@ QWidget* StageDetailView::createMatrixCellWidget(PipelineStage& stage, int dest,
     return cellWidget;
 }
 
-StageDetailView::StageDetailView(size_t stageIndex, std::shared_ptr<PipelineStore> pipeline,
+StageDetailView::StageDetailView(const QUuid& stageId, std::shared_ptr<PipelineStore> pipeline,
                                  std::shared_ptr<DSPEngineController> dspController, QWidget* parent)
-    : QWidget(parent), m_stageIndex(stageIndex), m_pipeline(pipeline), m_dspController(dspController) {
+    : QWidget(parent), m_stageId(stageId), m_pipeline(pipeline), m_dspController(dspController) {
     setupUi();
     if (m_pipeline) {
         connect(m_pipeline.get(), &PipelineStore::pipelineChanged, this, &StageDetailView::refreshUi);
@@ -385,8 +385,9 @@ void StageDetailView::setupUi() {
     nameFont.setBold(true);
     m_nameEdit->setFont(nameFont);
     connect(m_nameEdit, &QLineEdit::editingFinished, [this]() {
-        if (m_pipeline && m_stageIndex < m_pipeline->stages.size()) {
-            m_pipeline->stages[m_stageIndex].name = m_nameEdit->text().toStdString();
+        auto st = currentStage();
+        if (st) {
+            st->name = m_nameEdit->text().toStdString();
             applyConfig();
         }
     });
@@ -396,8 +397,9 @@ void StageDetailView::setupUi() {
 
     m_enabledCheck = new QCheckBox("Enabled", container);
     connect(m_enabledCheck, &QCheckBox::toggled, [this](bool checked) {
-        if (m_pipeline && m_stageIndex < m_pipeline->stages.size()) {
-            m_pipeline->stages[m_stageIndex].isEnabled = checked;
+        auto st = currentStage();
+        if (st) {
+            st->isEnabled = checked;
             if (m_optionsContainer) {
                 m_optionsContainer->setEnabled(checked);
             }
@@ -433,8 +435,12 @@ void StageDetailView::applyConfig() {
 }
 
 PipelineStage* StageDetailView::currentStage() const {
-    if (m_pipeline && m_stageIndex < m_pipeline->stages.size()) {
-        return &m_pipeline->stages[m_stageIndex];
+    if (m_pipeline) {
+        for (auto& stage : m_pipeline->stages) {
+            if (stage.id == m_stageId) {
+                return &stage;
+            }
+        }
     }
     return nullptr;
 }
@@ -442,21 +448,23 @@ PipelineStage* StageDetailView::currentStage() const {
 void StageDetailView::refreshUi() {
     if (m_isLocalEditing || !m_pipeline)
         return;
+    auto stagePtr = currentStage();
+    if (!stagePtr)
+        return;
+
     m_isBuildingUi = true;
-    if (m_stageIndex < m_pipeline->stages.size()) {
-        const auto& stage = m_pipeline->stages[m_stageIndex];
+    const auto& stage = *stagePtr;
 
-        m_nameEdit->blockSignals(true);
-        m_enabledCheck->blockSignals(true);
+    m_nameEdit->blockSignals(true);
+    m_enabledCheck->blockSignals(true);
 
-        m_nameEdit->setText(QString::fromStdString(stage.name));
-        m_enabledCheck->setChecked(stage.isEnabled);
+    m_nameEdit->setText(QString::fromStdString(stage.name));
+    m_enabledCheck->setChecked(stage.isEnabled);
 
-        m_nameEdit->blockSignals(false);
-        m_enabledCheck->blockSignals(false);
+    m_nameEdit->blockSignals(false);
+    m_enabledCheck->blockSignals(false);
 
-        buildStageOptionsUi();
-    }
+    buildStageOptionsUi();
     m_isBuildingUi = false;
 }
 
@@ -530,15 +538,16 @@ void StageDetailView::buildStageOptionsUi() {
         delete item;
     }
 
-    if (m_stageIndex >= m_pipeline->stages.size())
+    auto stagePtr = currentStage();
+    if (!stagePtr)
         return;
-    auto& stage = m_pipeline->stages[m_stageIndex];
+    auto& stage = *stagePtr;
 
     m_optionsContainer->setEnabled(stage.isEnabled);
 
     int hwChannels =
         (m_dspController && m_dspController->devices()) ? m_dspController->devices()->captureConfig.channels : 8;
-    int incomingChannels = m_pipeline ? m_pipeline->channelCountBeforeStage(m_stageIndex, hwChannels) : hwChannels;
+    int incomingChannels = m_pipeline ? m_pipeline->incomingChannels(m_stageId, hwChannels) : hwChannels;
     if (incomingChannels < 1)
         incomingChannels = 2;
 

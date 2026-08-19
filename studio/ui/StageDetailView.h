@@ -61,7 +61,7 @@ class StageDetailView : public QWidget {
     Q_OBJECT
 
 public:
-    StageDetailView(size_t stageIndex, std::shared_ptr<PipelineStore> pipeline,
+    StageDetailView(const QUuid& stageId, std::shared_ptr<PipelineStore> pipeline,
                     std::shared_ptr<DSPEngineController> dspController, QWidget* parent = nullptr);
 
 private slots:
@@ -69,7 +69,7 @@ private slots:
     void applyConfig();
 
 private:
-    size_t m_stageIndex;
+    QUuid m_stageId;
     std::shared_ptr<PipelineStore> m_pipeline;
     std::shared_ptr<DSPEngineController> m_dspController;
 

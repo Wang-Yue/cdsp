@@ -231,6 +231,7 @@ QUuid PipelineStore::addConvPreset(const ConvolutionPreset& preset) {
     pushUndoSnapshot();
     convPresets.push_back(preset);
     saveConvPresets();
+    emit pipelineChanged();
     return preset.id;
 }
 
