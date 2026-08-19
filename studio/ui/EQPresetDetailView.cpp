@@ -683,6 +683,7 @@ void EQPresetDetailView::updateBandChipsBar() {
         auto& b = m_preset.bands[i];
         int bandIdx = static_cast<int>(i);
         bool isSelected = (bandIdx == activeIdx);
+        bool isEnabled = b.isEnabled;
 
         auto chip = new QFrame(m_bandChipsWidget);
         chip->setFrameShape(isSelected ? QFrame::Panel : QFrame::StyledPanel);
@@ -701,6 +702,7 @@ void EQPresetDetailView::updateBandChipsBar() {
         titleF.setPointSize(10);
         titleF.setBold(isSelected);
         titleLbl->setFont(titleF);
+        titleLbl->setEnabled(isEnabled);
         textVBox->addWidget(titleLbl);
 
         // Line 2: Freq & Gain / Q
@@ -730,6 +732,7 @@ void EQPresetDetailView::updateBandChipsBar() {
 
             auto valLbl = new QLabel(valText, chip);
             valLbl->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+            valLbl->setEnabled(isEnabled);
             textVBox->addWidget(valLbl);
         }
 
