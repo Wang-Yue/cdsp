@@ -1691,7 +1691,7 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
       if (err) {
         char msg[256];
         snprintf(msg, sizeof(msg),
-                 "Requested %d output channels but device only has %ld",
+                 "Requested %zu output channels but device only has %ld",
                  playback->channels, outputs);
         backend_error_init(err, BACKEND_ERROR_INVALID_CHANNELS, msg);
       }
@@ -2126,7 +2126,7 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
       if (err) {
         char msg[256];
         snprintf(msg, sizeof(msg),
-                 "Requested %d input channels but device only has %ld",
+                 "Requested %zu input channels but device only has %ld",
                  capture->channels, inputs);
         backend_error_init(err, BACKEND_ERROR_INVALID_CHANNELS, msg);
       }
