@@ -162,7 +162,7 @@ void VectorScopeView::paintGL() {
         float scale = centerRadius * m_autoScaleFactor;
 
         if (!m_showParticles) {
-            // Line Mode: Direct GPU polyline drawing
+            // Line Mode: 1 single drawPolyline call on GPU
             std::vector<QPointF> pts;
             pts.reserve(count);
 
@@ -188,21 +188,9 @@ void VectorScopeView::paintGL() {
                 p.drawPolyline(pts.data(), static_cast<int>(pts.size()));
             }
         } else {
-            // Particle Mode: Direct GPU batched drawing with palette
-            constexpr int NUM_BINS = 32;
-            static const auto binColors = []() {
-                std::array<QColor, NUM_BINS> cols;
-                for (int b = 0; b < NUM_BINS; ++b) {
-                    float t = static_cast<float>(b) / static_cast<float>(NUM_BINS - 1);
-                    float alpha = 0.15f + 0.80f * t;
-                    float hue = 0.65f - 0.15f * t;
-                    cols[b] = QColor::fromHsvF(hue, 0.85f, 0.95f, alpha);
-                }
-                return cols;
-            }();
-
-            std::array<std::vector<QPointF>, NUM_BINS> binPoints;
-            std::vector<QPointF> glowPoints;
+            // Particle Mode: GPU hardware line primitive rendering (no point capping, 100% GPU)
+            std::vector<QLineF> lines;
+            lines.reserve(count);
 
             for (size_t i = 0; i < count; ++i) {
                 float l = left[i];
@@ -217,38 +205,23 @@ void VectorScopeView::paintGL() {
 
                 float px = centerPt.x() + s * scale;
                 float py = centerPt.y() - m * scale;
-
-                float t = (count > 1) ? static_cast<float>(i) / static_cast<float>(count - 1) : 1.0f;
-                int binIdx = std::clamp(static_cast<int>(t * NUM_BINS), 0, NUM_BINS - 1);
-                binPoints[binIdx].emplace_back(px, py);
-
-                if (t > 0.9f) {
-                    glowPoints.emplace_back(px, py);
-                }
+                lines.emplace_back(px, py, px + 0.5, py);
             }
 
-            p.setPen(Qt::NoPen);
+            if (!lines.empty()) {
+                double baseSize = std::max(1.5, static_cast<double>(centerRadius) / 90.0);
 
-            // Draw main particles by bin
-            for (int b = 0; b < NUM_BINS; ++b) {
-                if (binPoints[b].empty())
-                    continue;
-                float t = static_cast<float>(b) / static_cast<float>(NUM_BINS - 1);
-                float particleSize = 1.2f + 3.0f * t;
-                float halfSize = particleSize / 2.0f;
+                // Pass 1: Base particle cloud (all samples directly on GPU via drawLines)
+                p.setPen(QPen(QColor(0, 180, 255, 150), baseSize, Qt::SolidLine, Qt::RoundCap));
+                p.drawLines(lines.data(), static_cast<int>(lines.size()));
 
-                p.setBrush(binColors[b]);
-                for (const auto& pt : binPoints[b]) {
-                    p.drawEllipse(pt, halfSize, halfSize);
-                }
-            }
-
-            // Draw glow halos for head of stream
-            if (!glowPoints.empty()) {
-                p.setBrush(QColor(binColors[NUM_BINS - 1].red(), binColors[NUM_BINS - 1].green(),
-                                  binColors[NUM_BINS - 1].blue(), 70));
-                for (const auto& pt : glowPoints) {
-                    p.drawEllipse(pt, 4.0f, 4.0f);
+                // Pass 2: Head particle burst (latest 15% of samples)
+                size_t headStart = static_cast<size_t>(lines.size() * 0.85);
+                if (headStart < lines.size()) {
+                    int headCount = static_cast<int>(lines.size() - headStart);
+                    double headSize = baseSize * 1.8;
+                    p.setPen(QPen(QColor(80, 255, 210, 230), headSize, Qt::SolidLine, Qt::RoundCap));
+                    p.drawLines(lines.data() + headStart, headCount);
                 }
             }
         }
