@@ -126,22 +126,27 @@ void DashboardView::setupUi() {
     auto scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     auto container = new QWidget(scroll);
+    container->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     auto mainLayout = new QVBoxLayout(container);
     mainLayout->setContentsMargins(16, 16, 16, 16);
     mainLayout->setSpacing(16);
 
     // 1. Signal Chain Overview Card
     m_pipelineOverviewWidget = new PipelineOverviewWidget(m_dspController, container);
+    m_pipelineOverviewWidget->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     mainLayout->addWidget(m_pipelineOverviewWidget);
 
     // 2. Detailed DSP Signal Graph Card
     m_signalGraphCard = new DSPDetailedSignalGraphCard(m_dspController, container);
+    m_signalGraphCard->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     mainLayout->addWidget(m_signalGraphCard);
 
     // 3. Level Meters Card
     m_levelMetersGroup = new QGroupBox("Level Meters", container);
+    m_levelMetersGroup->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     auto levelCardLayout = new QVBoxLayout(m_levelMetersGroup);
     levelCardLayout->setContentsMargins(12, 12, 12, 12);
     levelCardLayout->setSpacing(10);
@@ -178,6 +183,7 @@ void DashboardView::setupUi() {
 
     // 4. Volume Faders Card
     m_faderGroup = new QGroupBox("Volume Faders", container);
+    m_faderGroup->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     auto faderGridLayout = new QGridLayout(m_faderGroup);
     faderGridLayout->setContentsMargins(12, 12, 12, 12);
     faderGridLayout->setHorizontalSpacing(12);
@@ -248,6 +254,7 @@ void DashboardView::setupUi() {
 
     // 5. Analog VU Card
     m_analogVUGroup = new QGroupBox("Analog VU", container);
+    m_analogVUGroup->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     auto vuLayout = new QVBoxLayout(m_analogVUGroup);
     vuLayout->setContentsMargins(12, 12, 12, 12);
     vuLayout->setSpacing(10);
@@ -261,6 +268,7 @@ void DashboardView::setupUi() {
 
     // 6. Spectrum Card
     m_spectrumGroup = new QGroupBox("Spectrum", container);
+    m_spectrumGroup->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     auto specLayout = new QVBoxLayout(m_spectrumGroup);
     specLayout->setContentsMargins(12, 12, 12, 12);
     specLayout->setSpacing(8);
@@ -271,6 +279,7 @@ void DashboardView::setupUi() {
 
     // 7. Spectrogram Card
     m_spectrogramGroup = new QGroupBox("Spectrogram", container);
+    m_spectrogramGroup->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     auto spectroLayout = new QVBoxLayout(m_spectrogramGroup);
     spectroLayout->setContentsMargins(12, 12, 12, 12);
     spectroLayout->setSpacing(8);
@@ -281,6 +290,7 @@ void DashboardView::setupUi() {
 
     // 8. Vector Scope Card
     m_vectorScopeGroup = new QGroupBox("Vector Scope", container);
+    m_vectorScopeGroup->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     auto vecLayout = new QVBoxLayout(m_vectorScopeGroup);
     vecLayout->setContentsMargins(12, 12, 12, 12);
     vecLayout->setSpacing(8);

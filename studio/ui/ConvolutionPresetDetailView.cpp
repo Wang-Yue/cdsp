@@ -68,12 +68,15 @@ void ConvolutionPresetDetailView::setupUi() {
     auto scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     auto container = new QWidget(scroll);
+    container->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     auto mainLayout = new QVBoxLayout(container);
 
     // Preset Properties Group (QFormLayout)
     auto detailsGroup = new QGroupBox("Preset Properties", container);
+    detailsGroup->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     auto detailsForm = new QFormLayout(detailsGroup);
     detailsForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
@@ -100,6 +103,7 @@ void ConvolutionPresetDetailView::setupUi() {
 
     // Impulse Response Group
     auto irGroup = new QGroupBox("Impulse Response", container);
+    irGroup->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     auto irLayout = new QVBoxLayout(irGroup);
 
     m_rateBoxWidget = new QWidget(irGroup);
@@ -140,6 +144,7 @@ void ConvolutionPresetDetailView::setupUi() {
 
     // Sample Rate Files Group (QFormLayout)
     m_filesGroup = new QGroupBox("Sample Rate Files", container);
+    m_filesGroup->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_filesForm = new QFormLayout(m_filesGroup);
     m_filesForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
@@ -226,6 +231,8 @@ void ConvolutionPresetDetailView::refreshUi() {
                 auto pathLbl = new QLabel(p, fileRowWidget);
                 pathLbl->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
                 pathLbl->setToolTip(p);
+                pathLbl->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+                pathLbl->setMinimumWidth(0);
                 fileRowLayout->addWidget(pathLbl, 1);
 
                 auto openBtn = new QPushButton("Show in Folder", fileRowWidget);
