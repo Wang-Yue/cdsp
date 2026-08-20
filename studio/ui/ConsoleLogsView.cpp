@@ -115,6 +115,8 @@ void ConsoleLogsView::setupUi() {
     m_table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_table->setShowGrid(false);
     m_table->setWordWrap(true);
+    m_table->setTextElideMode(Qt::ElideNone);
+    m_table->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContentsOnFirstShow);
     m_table->setAlternatingRowColors(true);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -208,6 +210,7 @@ void ConsoleLogsView::refreshLogs() {
         m_table->setItem(row, 0, timeItem);
         m_table->setItem(row, 1, levelItem);
         m_table->setItem(row, 2, msgItem);
+        m_table->resizeRowToContents(row);
         ++matchCount;
     }
 
@@ -262,6 +265,7 @@ void ConsoleLogsView::onLogAppended(const LogEntry& entry) {
     m_table->setItem(row, 0, timeItem);
     m_table->setItem(row, 1, levelItem);
     m_table->setItem(row, 2, msgItem);
+    m_table->resizeRowToContents(row);
 
     constexpr int kMaxTableRows = 2000;
     while (m_table->rowCount() > kMaxTableRows) {
