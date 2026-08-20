@@ -21,19 +21,6 @@
  * their names, default devices, channel counts, and detailed capabilities.
  */
 
-/**
- * @brief Array of standard sample rates reported when a device exposes a range.
- *
- * CoreAudio devices commonly advertise a range (e.g., 44.1 kHz - 192 kHz).
- * This array contains standard rates within that range to avoid cluttering the
- * UI. Public so room-correction tooling can pre-render FIR filters per rate.
- */
-extern const int CORE_AUDIO_STANDARD_RATES[17];
-
-/**
- * @brief Number of elements in CORE_AUDIO_STANDARD_RATES.
- */
-extern const size_t CORE_AUDIO_STANDARD_RATES_COUNT;
 
 /**
  * @brief Get the name of the default CoreAudio device for capture or playback.

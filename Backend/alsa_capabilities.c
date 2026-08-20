@@ -13,13 +13,6 @@
 
 #include "Backend/alsa_device.h"
 
-// Standard sample rates matching STANDARD_RATES in upstream CamillaDSP
-// (src/lib.rs:721-724)
-static const unsigned int STANDARD_RATES[] = {
-    5512,  8000,  11025,  16000,  22050,  32000,  44100,  48000, 64000,
-    88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000};
-#define STANDARD_RATES_COUNT \
-  (sizeof(STANDARD_RATES) / sizeof(STANDARD_RATES[0]))
 
 static const unsigned int CAPABILITY_PROBE_CHANNEL_LIMIT = 128;
 

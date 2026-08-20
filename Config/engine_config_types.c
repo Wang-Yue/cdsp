@@ -8,6 +8,11 @@
 
 // Standalone Engine Configuration and API Types
 
+const uint32_t STANDARD_RATES[STANDARD_RATES_COUNT] = {
+    5512,  8000,   11025,  16000,  22050,  32000,  44100,  48000, 64000,
+    88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000,
+};
+
 /// Engine processing state.
 uint8_t processing_state_to_raw_byte(processing_state_t state) {
   switch (state) {

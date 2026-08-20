@@ -17,16 +17,6 @@
 
 /// Sample rates we report when a device exposes a *range* rather than a
 /// discrete list. CoreAudio devices commonly advertise something like
-/// 44.1 kHz – 192 kHz; we report only the standard rates that fall
-/// inside the range so the UI doesn't need to render thousands of
-/// values.
-///
-/// Public so room-correction tooling can pre-render an FIR per
-/// rate, then pick the matching one at engine-config time.
-const int CORE_AUDIO_STANDARD_RATES[17] = {
-    5512,  8000,  11025,  16000,  22050,  32000,  44100,  48000, 64000,
-    88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000};
-const size_t CORE_AUDIO_STANDARD_RATES_COUNT = 17;
 
 static int cmp_int(const void* a, const void* b) {
   int ia = *(const int*)a;
@@ -216,14 +206,14 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
         size_t rate_cnt = 0;
         // Resolve sample rates: if it's a fixed value (lo == hi), add that.
         // If it's a range, intersect it with our list of standard rates
-        // (CORE_AUDIO_STANDARD_RATES).
+        // (STANDARD_RATES).
         if (lo == hi) {
           rates_to_add[rate_cnt++] = (int)round(lo);
         } else {
-          for (size_t r = 0; r < CORE_AUDIO_STANDARD_RATES_COUNT; r++) {
-            if ((double)CORE_AUDIO_STANDARD_RATES[r] >= lo &&
-                (double)CORE_AUDIO_STANDARD_RATES[r] <= hi) {
-              rates_to_add[rate_cnt++] = CORE_AUDIO_STANDARD_RATES[r];
+          for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
+            if ((double)STANDARD_RATES[r] >= lo &&
+                (double)STANDARD_RATES[r] <= hi) {
+              rates_to_add[rate_cnt++] = (int)STANDARD_RATES[r];
             }
           }
           // Also check if the current nominal format sample rate is inside

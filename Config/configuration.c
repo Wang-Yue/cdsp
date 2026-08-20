@@ -369,15 +369,17 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
 #if defined(ENABLE_ASIO)
   if (config->devices.capture.type == AUDIO_BACKEND_TYPE_ASIO &&
       config->devices.playback.type == AUDIO_BACKEND_TYPE_ASIO) {
+    // Capture and playback on the same device share a single driver instance,
+    // and therefore a single clock and sample rate, so there is nothing to
+    // resample between. Different devices are independent and resample like any
+    // other pair.
     if (strcmp(config->devices.capture.cfg.asio.device,
-               config->devices.playback.cfg.asio.device) != 0) {
+               config->devices.playback.cfg.asio.device) == 0 &&
+        config->devices.has_resampler) {
       config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "ASIO capture and playback must use the same device");
-      return -1;
-    }
-    if (config->devices.has_resampler) {
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "Full duplex ASIO does not support resampling");
+                       "Resampling is not supported in full-duplex ASIO mode. "
+                       "Both capture and playback share the same driver and "
+                       "sample rate");
       return -1;
     }
   }
