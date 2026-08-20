@@ -4,11 +4,11 @@
 #include "config/DSPConfigTypes.h"
 #include "models/VectorScopeEngine.h"
 
-#include <QOpenGLWidget>
 #include <QPainter>
+#include <QWidget>
 #include <memory>
 
-class VectorScopeView : public QOpenGLWidget {
+class VectorScopeView : public QWidget {
     Q_OBJECT
 
 public:
@@ -21,7 +21,7 @@ public:
                     int channelL = 0, int channelR = 1, float traceDecayRate = 0.85f);
 
 protected:
-    void paintGL() override;
+    void paintEvent(QPaintEvent* event) override;
 
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;

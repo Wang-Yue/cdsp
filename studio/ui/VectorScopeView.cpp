@@ -6,11 +6,11 @@
 #include <cmath>
 #include <vector>
 
-VectorScopeView::VectorScopeView(QWidget* parent) : QOpenGLWidget(parent) {
+VectorScopeView::VectorScopeView(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
 }
 
-VectorScopeView::VectorScopeView(std::shared_ptr<VectorScopeEngine> engine, QWidget* parent) : QOpenGLWidget(parent) {
+VectorScopeView::VectorScopeView(std::shared_ptr<VectorScopeEngine> engine, QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
     setEngine(engine);
 }
@@ -42,13 +42,13 @@ void VectorScopeView::setEngine(std::shared_ptr<VectorScopeEngine> engine) {
 }
 
 void VectorScopeView::showEvent(QShowEvent* event) {
-    QOpenGLWidget::showEvent(event);
+    QWidget::showEvent(event);
     if (m_engine)
         m_engine->visibilityCount++;
 }
 
 void VectorScopeView::hideEvent(QHideEvent* event) {
-    QOpenGLWidget::hideEvent(event);
+    QWidget::hideEvent(event);
     if (m_engine && m_engine->visibilityCount > 0)
         m_engine->visibilityCount--;
 }
@@ -69,28 +69,14 @@ void VectorScopeView::setSamples(const AudioSamplesData& samples, bool showParti
 }
 
 void VectorScopeView::changeEvent(QEvent* event) {
-    QOpenGLWidget::changeEvent(event);
+    QWidget::changeEvent(event);
     if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange) {
         update();
     }
 }
 
-static bool isWidgetInMiniPlayer(const QWidget* w) {
-    if (!w)
-        return false;
-    const QWidget* top = w->window();
-    if (top && (top->objectName() == "MiniPlayerViewWindow" || top->inherits("MiniPlayerView")))
-        return true;
-    while (w) {
-        if (w->objectName() == "MiniPlayerViewWindow" || w->objectName() == "MiniPlayerViewStack" ||
-            w->inherits("MiniPlayerView"))
-            return true;
-        w = w->parentWidget();
-    }
-    return false;
-}
-
-void VectorScopeView::paintGL() {
+void VectorScopeView::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::TextAntialiasing);
@@ -100,12 +86,10 @@ void VectorScopeView::paintGL() {
     if (w < 20 || h < 20)
         return;
 
-    if (isWidgetInMiniPlayer(this)) {
-        p.fillRect(rect(), QColor(0, 0, 0, 115));
-    } else {
+    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    if (!inMiniPlayer) {
         p.fillRect(rect(), palette().color(QPalette::Base));
     }
-
     int margin = 16;
     int drawH = h - 2 * margin;
     int centerRadius = std::max(10, std::min(w - 2 * margin, drawH) / 2);
@@ -177,67 +161,47 @@ void VectorScopeView::paintGL() {
 
         float scale = centerRadius * m_autoScaleFactor;
 
-        if (!m_showParticles) {
-            // Line Mode: 1 single drawPolyline call on GPU
-            std::vector<QPointF> pts;
-            pts.reserve(count);
+        std::vector<QPointF> pts;
+        pts.reserve(count);
 
-            for (size_t i = 0; i < count; ++i) {
-                float l = left[i];
-                float r = right[i];
-                if (std::isnan(l))
-                    l = 0.0f;
-                if (std::isnan(r))
-                    r = 0.0f;
+        for (size_t i = 0; i < count; ++i) {
+            float l = left[i];
+            float r = right[i];
+            if (std::isnan(l))
+                l = 0.0f;
+            if (std::isnan(r))
+                r = 0.0f;
 
-                float m = (l + r) * 0.7071f;
-                float s = (l - r) * 0.7071f;
+            float m = (l + r) * 0.7071f;
+            float s = (l - r) * 0.7071f;
 
-                float px = centerPt.x() + s * scale;
-                float py = centerPt.y() - m * scale;
-                pts.emplace_back(px, py);
-            }
+            float px = centerPt.x() + s * scale;
+            float py = centerPt.y() - m * scale;
+            pts.emplace_back(px, py);
+        }
 
-            if (pts.size() > 1) {
-                double lineWidth = std::max(1.0, static_cast<double>(centerRadius) / 100.0);
-                p.setPen(QPen(QColor(0, 160, 255, 210), lineWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-                p.drawPolyline(pts.data(), static_cast<int>(pts.size()));
-            }
-        } else {
-            // Particle Mode: GPU hardware line primitive rendering (no point capping, 100% GPU)
-            std::vector<QLineF> lines;
-            lines.reserve(count);
+        if (!pts.empty()) {
+            if (!m_showParticles) {
+                if (pts.size() > 1) {
+                    double lineWidth = std::max(1.0, static_cast<double>(centerRadius) / 100.0);
+                    p.setPen(QPen(QColor(0, 160, 255, 210), lineWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+                    p.drawPolyline(pts.data(), static_cast<int>(pts.size()));
+                }
+            } else {
+                // Particle Mode
+                double baseSize = std::max(2.0, static_cast<double>(centerRadius) / 80.0);
 
-            for (size_t i = 0; i < count; ++i) {
-                float l = left[i];
-                float r = right[i];
-                if (std::isnan(l))
-                    l = 0.0f;
-                if (std::isnan(r))
-                    r = 0.0f;
-
-                float m = (l + r) * 0.7071f;
-                float s = (l - r) * 0.7071f;
-
-                float px = centerPt.x() + s * scale;
-                float py = centerPt.y() - m * scale;
-                lines.emplace_back(px, py, px + 0.5, py);
-            }
-
-            if (!lines.empty()) {
-                double baseSize = std::max(1.5, static_cast<double>(centerRadius) / 90.0);
-
-                // Pass 1: Base particle cloud (all samples directly on GPU via drawLines)
-                p.setPen(QPen(QColor(0, 180, 255, 150), baseSize, Qt::SolidLine, Qt::RoundCap));
-                p.drawLines(lines.data(), static_cast<int>(lines.size()));
+                // Pass 1: Base particle cloud
+                p.setPen(QPen(QColor(0, 180, 255, 160), baseSize, Qt::SolidLine, Qt::RoundCap));
+                p.drawPoints(pts.data(), static_cast<int>(pts.size()));
 
                 // Pass 2: Head particle burst (latest 15% of samples)
-                size_t headStart = static_cast<size_t>(lines.size() * 0.85);
-                if (headStart < lines.size()) {
-                    int headCount = static_cast<int>(lines.size() - headStart);
-                    double headSize = baseSize * 1.8;
+                size_t headStart = static_cast<size_t>(pts.size() * 0.85);
+                if (headStart < pts.size()) {
+                    int headCount = static_cast<int>(pts.size() - headStart);
+                    double headSize = baseSize * 1.5;
                     p.setPen(QPen(QColor(80, 255, 210, 230), headSize, Qt::SolidLine, Qt::RoundCap));
-                    p.drawLines(lines.data() + headStart, headCount);
+                    p.drawPoints(pts.data() + headStart, headCount);
                 }
             }
         }
