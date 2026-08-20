@@ -483,13 +483,9 @@ QWidget* StageDetailView::createChannelSelectorWidget(int incomingChannels,
                           "QWidget#ChannelPillsViewport { background: transparent; border: none; }\n"
                           "QWidget#ChannelPillsContainer { background: transparent; border: none; }");
     scroll->viewport()->setObjectName("ChannelPillsViewport");
-    scroll->viewport()->setAutoFillBackground(false);
-    scroll->viewport()->setAttribute(Qt::WA_TranslucentBackground, true);
 
     auto container = new QWidget(scroll);
     container->setObjectName("ChannelPillsContainer");
-    container->setAutoFillBackground(false);
-    container->setAttribute(Qt::WA_TranslucentBackground, true);
     auto layout = new QHBoxLayout(container);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(4);

@@ -95,13 +95,9 @@ void PipelineOverviewWidget::setupUi() {
                                 "QWidget#LegendViewport { background: transparent; border: none; }\n"
                                 "QWidget#LegendContainer { background: transparent; border: none; }");
     legendScroll->viewport()->setObjectName("LegendViewport");
-    legendScroll->viewport()->setAutoFillBackground(false);
-    legendScroll->viewport()->setAttribute(Qt::WA_TranslucentBackground, true);
 
     m_legendContainerWidget = new QWidget(legendScroll);
     m_legendContainerWidget->setObjectName("LegendContainer");
-    m_legendContainerWidget->setAutoFillBackground(false);
-    m_legendContainerWidget->setAttribute(Qt::WA_TranslucentBackground, true);
     m_legendBarLayout = new QHBoxLayout(m_legendContainerWidget);
     m_legendBarLayout->setContentsMargins(0, 0, 0, 0);
     m_legendBarLayout->setSpacing(6);

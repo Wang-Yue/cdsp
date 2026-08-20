@@ -15,7 +15,6 @@
 
 AnalogVUMeter::AnalogVUMeter(int channelIndex, const VUSettings& settings, QWidget* parent)
     : QWidget(parent), m_channelIndex(channelIndex), m_settings(settings) {
-    setAttribute(Qt::WA_TranslucentBackground);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMinimumSize(80, 80);
 }
@@ -357,14 +356,11 @@ void AnalogVUMeter::paintEvent(QPaintEvent* event) {
 // MARK: - AnalogVUMeterView Implementation
 
 AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
-    setAttribute(Qt::WA_TranslucentBackground);
     auto rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
 
     m_scrollArea = new QScrollArea(this);
-    m_scrollArea->setAttribute(Qt::WA_TranslucentBackground);
-    m_scrollArea->viewport()->setAttribute(Qt::WA_TranslucentBackground);
     m_scrollArea->setStyleSheet(
         "QScrollArea { background: transparent; border: none; } QWidget { background: transparent; }");
     m_scrollArea->setWidgetResizable(true);
@@ -373,7 +369,6 @@ AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     m_canvasWidget = new QWidget(m_scrollArea);
-    m_canvasWidget->setAttribute(Qt::WA_TranslucentBackground);
     m_canvasLayout = new QHBoxLayout(m_canvasWidget);
     m_canvasLayout->setContentsMargins(0, 0, 0, 0);
     m_canvasLayout->setSpacing(16);
