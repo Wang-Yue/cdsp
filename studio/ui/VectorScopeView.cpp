@@ -132,16 +132,27 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     }
 
     // 2. Direct GPU Audio Trace Drawing
-    const auto& left = (m_channelL >= 0 && static_cast<size_t>(m_channelL) < m_samples.channels.size())
-                           ? m_samples.channels[m_channelL]
+    int chL = m_engine ? m_engine->channelL : m_channelL;
+    int chR = m_engine ? m_engine->channelR : m_channelR;
+    bool showParticles = m_engine ? m_engine->showParticles : m_showParticles;
+    bool enableAutoScale = m_engine ? m_engine->autoScale : m_autoScale;
+
+    const auto& left = (chL >= 0 && static_cast<size_t>(chL) < m_samples.channels.size())
+                           ? m_samples.channels[chL]
                            : m_samples.left();
-    const auto& right = (m_channelR >= 0 && static_cast<size_t>(m_channelR) < m_samples.channels.size())
-                            ? m_samples.channels[m_channelR]
+    const auto& right = (chR >= 0 && static_cast<size_t>(chR) < m_samples.channels.size())
+                            ? m_samples.channels[chR]
                             : m_samples.right();
     size_t count = std::min(left.size(), right.size());
 
     if (count > 0) {
-        float maxVal = 0.0f;
+        // Standard Mid/Side rotation:
+        // m = (L + R) / 2
+        // s = (L - R) / 2
+        // For pure Left (1, 0) => s = 0.5, m = 0.5 => vector length = sqrt(0.5^2 + 0.5^2) = 0.7071
+        // For pure Mono (1, 1) => s = 0, m = 1.0 => vector length = 1.0 (touches boundary of unit circle at North)
+        // For pure Out-of-Phase (1, -1) => s = 1.0, m = 0 => vector length = 1.0 (touches boundary of unit circle at East)
+        float maxVectorNorm = 0.0f;
         for (size_t i = 0; i < count; ++i) {
             float l = left[i];
             float r = right[i];
@@ -150,24 +161,30 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             if (std::isnan(r))
                 r = 0.0f;
 
-            float m = (l + r) * 0.7071f;
-            float s = (l - r) * 0.7071f;
-            maxVal = std::max(maxVal, std::max(std::abs(m), std::abs(s)));
+            float m = (l + r) * 0.5f;
+            float s = (l - r) * 0.5f;
+            float norm = std::sqrt(m * m + s * s);
+            maxVectorNorm = std::max(maxVectorNorm, norm);
         }
 
-        bool enableAutoScale = m_engine ? m_engine->autoScale : m_autoScale;
-        float targetAutoScaleFactor = 1.0f;
-        if (enableAutoScale && maxVal > 1e-6f && std::isfinite(maxVal)) {
-            targetAutoScaleFactor = std::min(0.90f / maxVal, 32.0f);
+        if (enableAutoScale) {
+            float targetAutoScaleFactor = 1.0f;
+            // Only auto-scale signals above noise floor (-60 dBFS / 0.001)
+            if (maxVectorNorm > 0.001f && std::isfinite(maxVectorNorm)) {
+                targetAutoScaleFactor = std::clamp(0.90f / maxVectorNorm, 1.0f, 16.0f);
+            }
+            if (std::isnan(m_autoScaleFactor))
+                m_autoScaleFactor = targetAutoScaleFactor;
+            else
+                m_autoScaleFactor = m_autoScaleFactor * 0.90f + targetAutoScaleFactor * 0.10f;
+        } else {
+            // Immediate reset when auto-scale is disabled
+            m_autoScaleFactor = 1.0f;
         }
-        if (std::isnan(m_autoScaleFactor))
-            m_autoScaleFactor = targetAutoScaleFactor;
-        else
-            m_autoScaleFactor = m_autoScaleFactor * 0.95f + targetAutoScaleFactor * 0.05f;
 
         float scale = centerRadius * m_autoScaleFactor;
 
-        if (!m_showParticles) {
+        if (!showParticles) {
             // Option 2: Disjoint drawLines with pixel-bucketing / downsampling
             std::vector<QLine> lines;
             lines.reserve(count);
@@ -184,8 +201,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                 if (std::isnan(r))
                     r = 0.0f;
 
-                float m = (l + r) * 0.7071f;
-                float s = (l - r) * 0.7071f;
+                float m = (l + r) * 0.5f;
+                float s = (l - r) * 0.5f;
 
                 int px = static_cast<int>(centerPt.x() + s * scale);
                 int py = static_cast<int>(centerPt.y() - m * scale);
@@ -227,8 +244,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                 if (std::isnan(r))
                     r = 0.0f;
 
-                float m = (l + r) * 0.7071f;
-                float s = (l - r) * 0.7071f;
+                float m = (l + r) * 0.5f;
+                float s = (l - r) * 0.5f;
 
                 int px = static_cast<int>(centerPt.x() + s * scale);
                 int py = static_cast<int>(centerPt.y() - m * scale);
@@ -258,5 +275,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                 }
             }
         }
+    } else {
+        // When there are no samples or audio is stopped, decay back to 1.0f
+        m_autoScaleFactor = 1.0f;
     }
 }
