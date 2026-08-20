@@ -584,8 +584,8 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
         capture->ring_buffer, capture->interleaved_buf,
         capture->interleaved_buf_size, blockalign, frames,
         alsa_pcm_format_to_binary_format(capture->format),
-        (size_t)capture->channels, 2000, &capture->inner_running,
-        &capture->stopped, &capture->has_pending_rate_change, chunk, err);
+        (size_t)capture->channels, &capture->inner_running, &capture->stopped,
+        &capture->has_pending_rate_change, chunk, err);
   }
 
   // Update avail_min and start_threshold if requested input frames changed

@@ -490,22 +490,23 @@ void playback_backend_free(playback_backend_t* backend);
  * @param frames_requested Number of frames requested to read.
  * @param fmt Binary sample format of raw bytes in the ring buffer.
  * @param channels Number of audio channels.
- * @param timeout_ms Max milliseconds to wait for data (0 to return false
- * immediately if not ready).
  * @param thread_running Optional pointer to atomic thread_running flag.
  * @param stopped Optional pointer to atomic stopped flag.
  * @param has_pending_rate_change Optional pointer to atomic
  * has_pending_rate_change flag.
  * @param chunk Destination audio chunk.
  * @param err Pointer to backend_error_t to record errors.
- * @return True on success, false on error, stream stop, or format change.
+ * @return True on success, false on error, stream stop, format change, or
+ * insufficient data.
  */
-bool audio_backend_ring_buffer_read(
-    spsc_byte_ring_buffer_t* ring_buffer, void* scratch_buf, size_t scratch_cap,
-    size_t blockalign, size_t frames_requested, binary_sample_format_t fmt,
-    size_t channels, uint32_t timeout_ms, _Atomic bool* thread_running,
-    _Atomic bool* stopped, _Atomic bool* has_pending_rate_change,
-    audio_chunk_t* chunk, backend_error_t* err);
+bool audio_backend_ring_buffer_read(spsc_byte_ring_buffer_t* ring_buffer,
+                                    void* scratch_buf, size_t scratch_cap,
+                                    size_t blockalign, size_t frames_requested,
+                                    binary_sample_format_t fmt, size_t channels,
+                                    _Atomic bool* thread_running,
+                                    _Atomic bool* stopped,
+                                    _Atomic bool* has_pending_rate_change,
+                                    audio_chunk_t* chunk, backend_error_t* err);
 
 /**
  * @brief Encodes an audio chunk and writes it into an SPSC byte ring buffer

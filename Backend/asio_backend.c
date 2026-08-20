@@ -2305,7 +2305,7 @@ static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       blockalign, frames,
       asio_sample_format_to_binary_format(capture->resolved_format,
                                           capture->is_lsb),
-      capture->channels, 250, &capture->is_running, &capture->stopped,
+      capture->channels, &capture->is_running, &capture->stopped,
       &ASIO_CAPTURE_RATE_CHANGED, chunk, err);
 }
 

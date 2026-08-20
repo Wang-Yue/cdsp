@@ -442,8 +442,8 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   return audio_backend_ring_buffer_read(
       capture->ring_buffer, capture->decode_buf, capture->decode_buf_cap,
       capture->blockalign, frames, (binary_sample_format_t)capture->bin_fmt,
-      (size_t)capture->channels, 3000, &capture->thread_running,
-      &capture->stopped, &capture->has_pending_rate_change, chunk, err);
+      (size_t)capture->channels, &capture->thread_running, &capture->stopped,
+      &capture->has_pending_rate_change, chunk, err);
 }
 
 static void wasapi_capture_close(void* ctx) {

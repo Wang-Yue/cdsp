@@ -462,7 +462,7 @@ static bool core_audio_capture_read(void* ctx, size_t frames,
   return audio_backend_ring_buffer_read(
       capture->ring_buffer, capture->read_scratch, capture->read_scratch_cap,
       capture->blockalign, frames_to_read, BINARY_SAMPLE_FORMAT_F32_LE,
-      capture->channels, 0, NULL, &capture->stopped, NULL, chunk, err);
+      capture->channels, NULL, &capture->stopped, NULL, chunk, err);
 }
 
 /// Get any pending sample rate change detected on the capture device.

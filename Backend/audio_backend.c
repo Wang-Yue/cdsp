@@ -303,9 +303,9 @@ void playback_backend_free(playback_backend_t* backend) {
 bool audio_backend_ring_buffer_read(
     spsc_byte_ring_buffer_t* ring_buffer, void* scratch_buf, size_t scratch_cap,
     size_t blockalign, size_t frames_requested, binary_sample_format_t fmt,
-    size_t channels, uint32_t timeout_ms, _Atomic bool* thread_running,
-    _Atomic bool* stopped, _Atomic bool* has_pending_rate_change,
-    audio_chunk_t* chunk, backend_error_t* err) {
+    size_t channels, _Atomic bool* thread_running, _Atomic bool* stopped,
+    _Atomic bool* has_pending_rate_change, audio_chunk_t* chunk,
+    backend_error_t* err) {
   if (!ring_buffer || !scratch_buf || !chunk || channels == 0 ||
       blockalign == 0) {
     return false;
@@ -343,35 +343,9 @@ bool audio_backend_ring_buffer_read(
     return false;
   }
 
-  if (timeout_ms > 0) {
-    uint32_t elapsed_ms = 0;
-    while (spsc_byte_ring_buffer_get_available_to_read(ring_buffer) <
-           bytes_requested) {
-      if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
-          (thread_running &&
-           !atomic_load_explicit(thread_running, memory_order_acquire))) {
-        if (err)
-          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                             "Capture stream stopped");
-        return false;
-      }
-      if (has_pending_rate_change &&
-          atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
-        if (err)
-          backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
-        return false;
-      }
-      if (elapsed_ms >= timeout_ms) {
-        break;
-      }
-      cdsp_sleep_ms(1);
-      elapsed_ms++;
-    }
-  } else {
-    if (spsc_byte_ring_buffer_get_available_to_read(ring_buffer) <
-        bytes_requested) {
-      return false;
-    }
+  if (spsc_byte_ring_buffer_get_available_to_read(ring_buffer) <
+      bytes_requested) {
+    return false;
   }
 
   size_t consumed_bytes = spsc_byte_ring_buffer_consume(
