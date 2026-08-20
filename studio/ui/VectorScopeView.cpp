@@ -167,38 +167,85 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
 
         float scale = centerRadius * m_autoScaleFactor;
 
-        std::vector<QPointF> pts;
-        pts.reserve(count);
+        if (!m_showParticles) {
+            // Option 2: Disjoint drawLines with pixel-bucketing / downsampling
+            std::vector<QLine> lines;
+            lines.reserve(count);
 
-        for (size_t i = 0; i < count; ++i) {
-            float l = left[i];
-            float r = right[i];
-            if (std::isnan(l))
-                l = 0.0f;
-            if (std::isnan(r))
-                r = 0.0f;
+            int prevX = -999999;
+            int prevY = -999999;
+            bool hasPrev = false;
 
-            float m = (l + r) * 0.7071f;
-            float s = (l - r) * 0.7071f;
+            for (size_t i = 0; i < count; ++i) {
+                float l = left[i];
+                float r = right[i];
+                if (std::isnan(l))
+                    l = 0.0f;
+                if (std::isnan(r))
+                    r = 0.0f;
 
-            float px = centerPt.x() + s * scale;
-            float py = centerPt.y() - m * scale;
-            pts.emplace_back(px, py);
-        }
+                float m = (l + r) * 0.7071f;
+                float s = (l - r) * 0.7071f;
 
-        if (!pts.empty()) {
-            if (!m_showParticles) {
-                if (pts.size() > 1) {
-                    double lineWidth = std::max(1.0, static_cast<double>(centerRadius) / 100.0);
-                    p.setPen(QPen(QColor(0, 160, 255, 210), lineWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-                    p.drawPolyline(pts.data(), static_cast<int>(pts.size()));
+                int px = static_cast<int>(centerPt.x() + s * scale);
+                int py = static_cast<int>(centerPt.y() - m * scale);
+
+                if (!hasPrev) {
+                    prevX = px;
+                    prevY = py;
+                    hasPrev = true;
+                    continue;
                 }
-            } else {
-                // Particle Mode
+
+                // Skip zero-length or sub-pixel micro jitter
+                if (px == prevX && py == prevY)
+                    continue;
+
+                lines.emplace_back(prevX, prevY, px, py);
+                prevX = px;
+                prevY = py;
+            }
+
+            if (!lines.empty()) {
+                double lineWidth = std::max(1.0, static_cast<double>(centerRadius) / 100.0);
+                p.setPen(QPen(QColor(0, 160, 255, 210), lineWidth, Qt::SolidLine, Qt::FlatCap));
+                p.drawLines(lines.data(), static_cast<int>(lines.size()));
+            }
+        } else {
+            // Particle Mode with pixel deduplication
+            std::vector<QPoint> pts;
+            pts.reserve(count);
+
+            int lastX = -999999;
+            int lastY = -999999;
+
+            for (size_t i = 0; i < count; ++i) {
+                float l = left[i];
+                float r = right[i];
+                if (std::isnan(l))
+                    l = 0.0f;
+                if (std::isnan(r))
+                    r = 0.0f;
+
+                float m = (l + r) * 0.7071f;
+                float s = (l - r) * 0.7071f;
+
+                int px = static_cast<int>(centerPt.x() + s * scale);
+                int py = static_cast<int>(centerPt.y() - m * scale);
+
+                if (px == lastX && py == lastY)
+                    continue;
+
+                lastX = px;
+                lastY = py;
+                pts.emplace_back(px, py);
+            }
+
+            if (!pts.empty()) {
                 double baseSize = std::max(2.0, static_cast<double>(centerRadius) / 80.0);
 
                 // Pass 1: Base particle cloud
-                p.setPen(QPen(QColor(0, 180, 255, 160), baseSize, Qt::SolidLine, Qt::RoundCap));
+                p.setPen(QPen(QColor(0, 180, 255, 160), baseSize, Qt::SolidLine, Qt::SquareCap));
                 p.drawPoints(pts.data(), static_cast<int>(pts.size()));
 
                 // Pass 2: Head particle burst (latest 15% of samples)
@@ -206,7 +253,7 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                 if (headStart < pts.size()) {
                     int headCount = static_cast<int>(pts.size() - headStart);
                     double headSize = baseSize * 1.5;
-                    p.setPen(QPen(QColor(80, 255, 210, 230), headSize, Qt::SolidLine, Qt::RoundCap));
+                    p.setPen(QPen(QColor(80, 255, 210, 230), headSize, Qt::SolidLine, Qt::SquareCap));
                     p.drawPoints(pts.data() + headStart, headCount);
                 }
             }
