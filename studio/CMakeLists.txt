@@ -211,12 +211,11 @@ target_link_libraries(MonitorQt PRIVATE
 if(APPLE)
     target_link_options(MonitorQt PRIVATE -Wl,-dead_strip)
 elseif(WIN32)
-    target_link_options(MonitorQt PRIVATE -static -static-libgcc -static-libstdc++)
     find_program(WINDEPLOYQT_BIN NAMES windeployqt.exe HINTS "${Qt6_DIR}/../../../bin")
     if(WINDEPLOYQT_BIN)
         add_custom_target(
             deploy-win
-            COMMAND ${WINDEPLOYQT_BIN} $<TARGET_FILE:MonitorQt> --no-compiler-runtime
+            COMMAND ${WINDEPLOYQT_BIN} $<TARGET_FILE:MonitorQt>
             DEPENDS MonitorQt
             COMMENT "Deploying Qt Windows DLLs alongside MonitorQt.exe..."
         )
