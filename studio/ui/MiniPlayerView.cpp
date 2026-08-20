@@ -39,8 +39,8 @@ MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::sh
                   "border: none; }");
     setObjectName("MiniPlayerViewWindow");
     setMinimumSize(200, 80);
-    setMaximumSize(1000, 300);
-    resize(320, 90);
+    setMaximumSize(1000, 1000);
+    resize(320, 140);
     setFocusPolicy(Qt::StrongFocus);
 
     setupUi();

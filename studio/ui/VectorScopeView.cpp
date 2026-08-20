@@ -7,11 +7,13 @@
 #include <vector>
 
 VectorScopeView::VectorScopeView(QWidget* parent) : QWidget(parent) {
-    setMinimumHeight(180);
+    setMinimumSize(40, 24);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 }
 
 VectorScopeView::VectorScopeView(std::shared_ptr<VectorScopeEngine> engine, QWidget* parent) : QWidget(parent) {
-    setMinimumHeight(180);
+    setMinimumSize(40, 24);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setEngine(engine);
 }
 
@@ -90,9 +92,11 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     if (!inMiniPlayer) {
         p.fillRect(rect(), palette().color(QPalette::Base));
     }
-    int margin = 16;
+
+    int margin = inMiniPlayer ? 4 : 16;
+    int drawW = w - 2 * margin;
     int drawH = h - 2 * margin;
-    int centerRadius = std::max(10, std::min(w - 2 * margin, drawH) / 2);
+    int centerRadius = std::max(6, std::min(drawW, drawH) / 2);
     QPoint centerPt(w / 2, h / 2);
 
     // 1. Draw Reticle axes (+M, -M, +S, -S, L, R)
@@ -110,20 +114,22 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     p.drawLine(centerPt.x() - offset, centerPt.y() + offset, centerPt.x() + offset, centerPt.y() - offset);
     p.drawEllipse(centerPt, centerRadius * 3 / 4, centerRadius * 3 / 4);
 
-    // Scope polar axis labels
-    QFont axisFont = font();
-    axisFont.setPointSize(7);
-    axisFont.setBold(true);
-    p.setFont(axisFont);
-    p.setPen(labelCol);
+    // Scope polar axis labels (only when enough space is available)
+    if (centerRadius >= 28) {
+        QFont axisFont = font();
+        axisFont.setPointSize(7);
+        axisFont.setBold(true);
+        p.setFont(axisFont);
+        p.setPen(labelCol);
 
-    p.drawText(QRect(centerPt.x() - 15, centerPt.y() - centerRadius - 14, 30, 12), Qt::AlignCenter, "+M");
-    p.drawText(QRect(centerPt.x() - 15, centerPt.y() + centerRadius + 2, 30, 12), Qt::AlignCenter, "-M");
-    p.drawText(QRect(centerPt.x() - centerRadius - 20, centerPt.y() - 6, 18, 12), Qt::AlignCenter, "-S");
-    p.drawText(QRect(centerPt.x() + centerRadius + 2, centerPt.y() - 6, 18, 12), Qt::AlignCenter, "+S");
+        p.drawText(QRect(centerPt.x() - 15, centerPt.y() - centerRadius - 14, 30, 12), Qt::AlignCenter, "+M");
+        p.drawText(QRect(centerPt.x() - 15, centerPt.y() + centerRadius + 2, 30, 12), Qt::AlignCenter, "-M");
+        p.drawText(QRect(centerPt.x() - centerRadius - 20, centerPt.y() - 6, 18, 12), Qt::AlignCenter, "-S");
+        p.drawText(QRect(centerPt.x() + centerRadius + 2, centerPt.y() - 6, 18, 12), Qt::AlignCenter, "+S");
 
-    p.drawText(QRect(centerPt.x() - offset - 14, centerPt.y() - offset - 12, 14, 12), Qt::AlignCenter, "L");
-    p.drawText(QRect(centerPt.x() + offset, centerPt.y() - offset - 12, 14, 12), Qt::AlignCenter, "R");
+        p.drawText(QRect(centerPt.x() - offset - 14, centerPt.y() - offset - 12, 14, 12), Qt::AlignCenter, "L");
+        p.drawText(QRect(centerPt.x() + offset, centerPt.y() - offset - 12, 14, 12), Qt::AlignCenter, "R");
+    }
 
     // 2. Direct GPU Audio Trace Drawing
     const auto& left = (m_channelL >= 0 && static_cast<size_t>(m_channelL) < m_samples.channels.size())
