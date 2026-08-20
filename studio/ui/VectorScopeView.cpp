@@ -96,7 +96,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     int margin = inMiniPlayer ? 4 : 16;
     int drawW = w - 2 * margin;
     int drawH = h - 2 * margin;
-    int centerRadius = std::max(6, std::min(drawW, drawH) / 2);
+    int scaleX = std::max(6, drawW / 2);
+    int scaleY = std::max(6, drawH / 2);
     QPoint centerPt(w / 2, h / 2);
 
     // 1. Draw Reticle axes (+M, -M, +S, -S, L, R)
@@ -105,30 +106,31 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     QColor labelCol = palette().color(QPalette::PlaceholderText);
 
     p.setPen(QPen(mainAxisCol, 1, Qt::SolidLine));
-    p.drawLine(centerPt.x() - centerRadius, centerPt.y(), centerPt.x() + centerRadius, centerPt.y());
-    p.drawLine(centerPt.x(), centerPt.y() - centerRadius, centerPt.x(), centerPt.y() + centerRadius);
+    p.drawLine(centerPt.x() - scaleX, centerPt.y(), centerPt.x() + scaleX, centerPt.y());
+    p.drawLine(centerPt.x(), centerPt.y() - scaleY, centerPt.x(), centerPt.y() + scaleY);
 
-    int offset = static_cast<int>(centerRadius * 0.7071);
+    int offsetX = static_cast<int>(scaleX * 0.7071);
+    int offsetY = static_cast<int>(scaleY * 0.7071);
     p.setPen(QPen(diagAxisCol, 0.5, Qt::SolidLine));
-    p.drawLine(centerPt.x() - offset, centerPt.y() - offset, centerPt.x() + offset, centerPt.y() + offset);
-    p.drawLine(centerPt.x() - offset, centerPt.y() + offset, centerPt.x() + offset, centerPt.y() - offset);
-    p.drawEllipse(centerPt, centerRadius * 3 / 4, centerRadius * 3 / 4);
+    p.drawLine(centerPt.x() - offsetX, centerPt.y() - offsetY, centerPt.x() + offsetX, centerPt.y() + offsetY);
+    p.drawLine(centerPt.x() - offsetX, centerPt.y() + offsetY, centerPt.x() + offsetX, centerPt.y() - offsetY);
+    p.drawEllipse(centerPt, scaleX * 3 / 4, scaleY * 3 / 4);
 
-    // Scope polar axis labels (only when enough space is available)
-    if (centerRadius >= 28) {
+    // Scope polar axis labels (only when enough vertical & horizontal space is available)
+    if (scaleY >= 28 && scaleX >= 28) {
         QFont axisFont = font();
         axisFont.setPointSize(7);
         axisFont.setBold(true);
         p.setFont(axisFont);
         p.setPen(labelCol);
 
-        p.drawText(QRect(centerPt.x() - 15, centerPt.y() - centerRadius - 14, 30, 12), Qt::AlignCenter, "+M");
-        p.drawText(QRect(centerPt.x() - 15, centerPt.y() + centerRadius + 2, 30, 12), Qt::AlignCenter, "-M");
-        p.drawText(QRect(centerPt.x() - centerRadius - 20, centerPt.y() - 6, 18, 12), Qt::AlignCenter, "-S");
-        p.drawText(QRect(centerPt.x() + centerRadius + 2, centerPt.y() - 6, 18, 12), Qt::AlignCenter, "+S");
+        p.drawText(QRect(centerPt.x() - 15, centerPt.y() - scaleY - 14, 30, 12), Qt::AlignCenter, "+M");
+        p.drawText(QRect(centerPt.x() - 15, centerPt.y() + scaleY + 2, 30, 12), Qt::AlignCenter, "-M");
+        p.drawText(QRect(centerPt.x() - scaleX - 20, centerPt.y() - 6, 18, 12), Qt::AlignCenter, "-S");
+        p.drawText(QRect(centerPt.x() + scaleX + 2, centerPt.y() - 6, 18, 12), Qt::AlignCenter, "+S");
 
-        p.drawText(QRect(centerPt.x() - offset - 14, centerPt.y() - offset - 12, 14, 12), Qt::AlignCenter, "L");
-        p.drawText(QRect(centerPt.x() + offset, centerPt.y() - offset - 12, 14, 12), Qt::AlignCenter, "R");
+        p.drawText(QRect(centerPt.x() - offsetX - 14, centerPt.y() - offsetY - 12, 14, 12), Qt::AlignCenter, "L");
+        p.drawText(QRect(centerPt.x() + offsetX, centerPt.y() - offsetY - 12, 14, 12), Qt::AlignCenter, "R");
     }
 
     // 2. Direct GPU Audio Trace Drawing
@@ -149,9 +151,6 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         // Standard Mid/Side rotation:
         // m = (L + R) / 2
         // s = (L - R) / 2
-        // For pure Left (1, 0) => s = 0.5, m = 0.5 => vector length = sqrt(0.5^2 + 0.5^2) = 0.7071
-        // For pure Mono (1, 1) => s = 0, m = 1.0 => vector length = 1.0 (touches boundary of unit circle at North)
-        // For pure Out-of-Phase (1, -1) => s = 1.0, m = 0 => vector length = 1.0 (touches boundary of unit circle at East)
         float maxVectorNorm = 0.0f;
         for (size_t i = 0; i < count; ++i) {
             float l = left[i];
@@ -182,7 +181,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             m_autoScaleFactor = 1.0f;
         }
 
-        float scale = centerRadius * m_autoScaleFactor;
+        float activeScaleX = scaleX * m_autoScaleFactor;
+        float activeScaleY = scaleY * m_autoScaleFactor;
 
         if (!showParticles) {
             // Option 2: Disjoint drawLines with pixel-bucketing / downsampling
@@ -204,8 +204,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                 float m = (l + r) * 0.5f;
                 float s = (l - r) * 0.5f;
 
-                int px = static_cast<int>(centerPt.x() + s * scale);
-                int py = static_cast<int>(centerPt.y() - m * scale);
+                int px = static_cast<int>(centerPt.x() + s * activeScaleX);
+                int py = static_cast<int>(centerPt.y() - m * activeScaleY);
 
                 if (!hasPrev) {
                     prevX = px;
@@ -224,7 +224,7 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             }
 
             if (!lines.empty()) {
-                double lineWidth = std::max(1.0, static_cast<double>(centerRadius) / 100.0);
+                double lineWidth = std::max(1.0, std::min(scaleX, scaleY) / 100.0);
                 p.setPen(QPen(QColor(0, 160, 255, 210), lineWidth, Qt::SolidLine, Qt::FlatCap));
                 p.drawLines(lines.data(), static_cast<int>(lines.size()));
             }
@@ -247,8 +247,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                 float m = (l + r) * 0.5f;
                 float s = (l - r) * 0.5f;
 
-                int px = static_cast<int>(centerPt.x() + s * scale);
-                int py = static_cast<int>(centerPt.y() - m * scale);
+                int px = static_cast<int>(centerPt.x() + s * activeScaleX);
+                int py = static_cast<int>(centerPt.y() - m * activeScaleY);
 
                 if (px == lastX && py == lastY)
                     continue;
@@ -259,7 +259,7 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
             }
 
             if (!pts.empty()) {
-                double baseSize = std::max(2.0, static_cast<double>(centerRadius) / 80.0);
+                double baseSize = std::max(2.0, std::min(scaleX, scaleY) / 80.0);
 
                 // Pass 1: Base particle cloud
                 p.setPen(QPen(QColor(0, 180, 255, 160), baseSize, Qt::SolidLine, Qt::SquareCap));
