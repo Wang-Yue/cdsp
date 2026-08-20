@@ -262,6 +262,7 @@ void SpectrumDetailView::setupUi() {
 
     connect(m_sourceTabBar, &QTabBar::currentChanged, [this, updateChannelCombo](int idx) {
         m_engine->isCapture = (idx == 0);
+        m_engine->saveSettings();
         updateChannelCombo();
         m_spectrumView->update();
     });
@@ -271,6 +272,7 @@ void SpectrumDetailView::setupUi() {
             m_engine->channel.reset();
         else
             m_engine->channel = idx - 1;
+        m_engine->saveSettings();
         m_spectrumView->update();
     });
 
@@ -286,6 +288,7 @@ void SpectrumDetailView::setupUi() {
     m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
     connect(m_binsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
         m_engine->nBins = static_cast<size_t>(val);
+        m_engine->saveSettings();
         m_spectrumView->update();
     });
     displayForm->addRow(tr("FFT Bins:"), m_binsSpin);
@@ -304,6 +307,7 @@ void SpectrumDetailView::setupUi() {
     connect(m_rangeSlider, &LogRangeSlider::rangeChanged, [this](double minF, double maxF) {
         m_engine->minFreq = minF;
         m_engine->maxFreq = maxF;
+        m_engine->saveSettings();
         m_rangeLbl->setText(tr("Range: %1 - %2 Hz").arg(static_cast<int>(minF)).arg(static_cast<int>(maxF)));
         m_spectrumView->update();
     });
@@ -390,6 +394,7 @@ void SpectrogramDetailView::setupUi() {
 
     connect(m_sourceTabBar, &QTabBar::currentChanged, [this, updateChannelCombo](int idx) {
         m_engine->isCapture = (idx == 0);
+        m_engine->saveSettings();
         updateChannelCombo();
         m_spectrogramView->update();
     });
@@ -399,6 +404,7 @@ void SpectrogramDetailView::setupUi() {
             m_engine->channel.reset();
         else
             m_engine->channel = idx - 1;
+        m_engine->saveSettings();
         m_spectrogramView->update();
     });
 
@@ -415,6 +421,7 @@ void SpectrogramDetailView::setupUi() {
     m_binsSpin->setValue(static_cast<int>(m_engine->nBins));
     connect(m_binsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
         m_engine->nBins = static_cast<size_t>(val);
+        m_engine->saveSettings();
         m_spectrogramView->update();
     });
     displayForm->addRow(tr("FFT Bins:"), m_binsSpin);
@@ -426,6 +433,7 @@ void SpectrogramDetailView::setupUi() {
     m_modeTabBar->setCurrentIndex(m_engine->show3D ? 1 : 0);
     connect(m_modeTabBar, &QTabBar::currentChanged, [this](int idx) {
         m_engine->show3D = (idx == 1);
+        m_engine->saveSettings();
         m_spectrogramView->update();
     });
     displayForm->addRow(tr("Display Mode:"), m_modeTabBar);
@@ -445,6 +453,7 @@ void SpectrogramDetailView::setupUi() {
     connect(m_paletteCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         if (idx >= 0) {
             m_engine->colorPalette = static_cast<ColorPalette>(m_paletteCombo->currentData().toInt());
+            m_engine->saveSettings();
             m_spectrogramView->setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
         }
     });
@@ -502,6 +511,7 @@ void VectorScopeDetailView::setupUi() {
     m_sourceTabBar->setCurrentIndex(m_engine->isCapture ? 0 : 1);
     connect(m_sourceTabBar, &QTabBar::currentChanged, [this](int idx) {
         m_engine->isCapture = (idx == 0);
+        m_engine->saveSettings();
         m_vectorView->update();
     });
     sourceForm->addRow(tr("Source:"), m_sourceTabBar);
@@ -513,6 +523,7 @@ void VectorScopeDetailView::setupUi() {
     m_windowCombo->setCurrentIndex(static_cast<int>(m_engine->window));
     connect(m_windowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         m_engine->window = static_cast<VectorScopeWindow>(idx);
+        m_engine->saveSettings();
         m_vectorView->update();
     });
     sourceForm->addRow(tr("Window / Duration:"), m_windowCombo);
@@ -530,6 +541,7 @@ void VectorScopeDetailView::setupUi() {
     m_modeTabBar->setCurrentIndex(m_engine->showParticles ? 1 : 0);
     connect(m_modeTabBar, &QTabBar::currentChanged, [this](int idx) {
         m_engine->showParticles = (idx == 1);
+        m_engine->saveSettings();
         m_vectorView->update();
     });
     displayForm->addRow(tr("Display Mode:"), m_modeTabBar);
@@ -538,6 +550,7 @@ void VectorScopeDetailView::setupUi() {
     m_autoScaleCheck->setChecked(m_engine->autoScale);
     connect(m_autoScaleCheck, &QCheckBox::toggled, [this](bool chk) {
         m_engine->autoScale = chk;
+        m_engine->saveSettings();
         m_vectorView->update();
     });
     displayForm->addRow(tr("Scaling:"), m_autoScaleCheck);

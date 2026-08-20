@@ -4,6 +4,7 @@
 #include "config/DSPConfigTypes.h"
 
 #include <QObject>
+#include <QSettings>
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -18,7 +19,9 @@ class VectorScopeEngine : public QObject {
     Q_OBJECT
 
 public:
-    explicit VectorScopeEngine(QObject* parent = nullptr) : QObject(parent) {}
+    explicit VectorScopeEngine(QObject* parent = nullptr) : QObject(parent) {
+        loadSettings();
+    }
 
     int visibilityCount = 0;
     bool isCapture = true;
@@ -30,6 +33,29 @@ public:
     float traceDecayRate = 0.85f;
 
     AudioSamplesData samples;
+
+    void loadSettings() {
+        QSettings s("DSPMonitor", "MonitorQt");
+        isCapture = s.value("vectorscope_is_capture", true).toBool();
+        window = static_cast<VectorScopeWindow>(
+            s.value("vectorscope_window", static_cast<int>(VectorScopeWindow::Fast)).toInt());
+        showParticles = s.value("vectorscope_show_particles", true).toBool();
+        autoScale = s.value("vectorscope_auto_scale", true).toBool();
+        channelL = s.value("vectorscope_channel_l", 0).toInt();
+        channelR = s.value("vectorscope_channel_r", 1).toInt();
+        traceDecayRate = s.value("vectorscope_trace_decay_rate", 0.85f).toFloat();
+    }
+
+    void saveSettings() const {
+        QSettings s("DSPMonitor", "MonitorQt");
+        s.setValue("vectorscope_is_capture", isCapture);
+        s.setValue("vectorscope_window", static_cast<int>(window));
+        s.setValue("vectorscope_show_particles", showParticles);
+        s.setValue("vectorscope_auto_scale", autoScale);
+        s.setValue("vectorscope_channel_l", channelL);
+        s.setValue("vectorscope_channel_r", channelR);
+        s.setValue("vectorscope_trace_decay_rate", traceDecayRate);
+    }
 
     static double windowSeconds(VectorScopeWindow w) {
         switch (w) {
@@ -71,6 +97,7 @@ public:
         channelR = 1;
         traceDecayRate = 0.85f;
         samples = AudioSamplesData();
+        saveSettings();
         emit updated();
     }
 
