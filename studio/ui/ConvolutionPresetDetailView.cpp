@@ -211,7 +211,7 @@ void ConvolutionPresetDetailView::refreshUi() {
     // Populate files list using QFormLayout
     while (QLayoutItem* item = m_filesForm->takeAt(0)) {
         if (item->widget()) {
-            delete item->widget();
+            item->widget()->deleteLater();
         }
         delete item;
     }

@@ -477,7 +477,7 @@ void AnalogVUMeterView::updateChannelMeters() {
         auto* meter = m_meters.back();
         m_meters.pop_back();
         m_canvasLayout->removeWidget(meter);
-        delete meter;
+        meter->deleteLater();
         countChanged = true;
     }
 

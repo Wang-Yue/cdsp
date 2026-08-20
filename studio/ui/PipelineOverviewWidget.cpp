@@ -177,7 +177,7 @@ void PipelineOverviewWidget::rebuildLegendBar(int maxChannels) {
     QLayoutItem* item;
     while ((item = m_legendBarLayout->takeAt(0)) != nullptr) {
         if (item->widget())
-            delete item->widget();
+            item->widget()->deleteLater();
         delete item;
     }
 
@@ -412,7 +412,7 @@ void PipelineOverviewWidget::rebuildOverview() {
     QLayoutItem* item;
     while ((item = m_canvasLayout->takeAt(0)) != nullptr) {
         if (item->widget())
-            delete item->widget();
+            item->widget()->deleteLater();
         delete item;
     }
 

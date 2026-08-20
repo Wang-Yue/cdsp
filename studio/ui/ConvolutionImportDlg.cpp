@@ -212,7 +212,7 @@ void ConvolutionImportDlg::updateItemsList() {
     QLayoutItem* child;
     while ((child = m_itemListLayout->takeAt(0)) != nullptr) {
         if (child->widget()) {
-            delete child->widget();
+            child->widget()->deleteLater();
         }
         delete child;
     }
