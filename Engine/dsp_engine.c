@@ -522,7 +522,9 @@ static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
   }
   audio_history_buffer_t* buf =
       is_capture ? impl->buffers.capture : impl->buffers.playback;
-  size_t samplerate = core_cfg->devices.samplerate;
+  size_t samplerate = (is_capture && core_cfg->devices.has_capture_samplerate)
+                          ? core_cfg->devices.capture_samplerate
+                          : core_cfg->devices.samplerate;
   size_t buf_channels = audio_history_buffer_get_channels(buf);
 
   if (channel && *channel >= buf_channels) {

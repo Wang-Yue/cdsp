@@ -372,16 +372,17 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
       continue;
     }
 
-    // 1. Resample if configured
+    // 1. Pre-processing tap for visualisation (Raw captured samples before
+    // resample).
+    if (loop->on_chunk_captured) {
+      loop->on_chunk_captured(loop->on_chunk_captured_ctx, chunk);
+    }
+
+    // 2. Resample if configured
     bool resamp_err = false;
     chunk = processing_loop_resample(loop, chunk, &res_start, &res_end,
                                      &resamp_err);
     if (resamp_err) break;
-
-    // 2. Pre-processing tap for visualisation.
-    if (loop->on_chunk_captured) {
-      loop->on_chunk_captured(loop->on_chunk_captured_ctx, chunk);
-    }
 
     // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
     // 4. Retrieve a pre-allocated scratch chunk from the round-robin pool,
