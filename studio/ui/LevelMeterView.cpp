@@ -440,8 +440,6 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setFixedHeight(18);
-    scroll->setStyleSheet("QScrollArea { background: transparent; border: none; }\n"
-                          "QScrollArea > QWidget > QWidget { background: transparent; border: none; }");
 
     auto container = new QWidget(scroll);
     auto containerLayout = new QHBoxLayout(container);

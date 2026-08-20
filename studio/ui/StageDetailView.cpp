@@ -478,10 +478,6 @@ QWidget* StageDetailView::createChannelSelectorWidget(int incomingChannels,
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setFixedHeight(32);
-    scroll->setStyleSheet("QScrollArea { background: transparent; border: none; }\n"
-                          "QScrollArea > QWidget > QWidget { background: transparent; border: none; }\n"
-                          "QWidget#ChannelPillsViewport { background: transparent; border: none; }\n"
-                          "QWidget#ChannelPillsContainer { background: transparent; border: none; }");
     scroll->viewport()->setObjectName("ChannelPillsViewport");
 
     auto container = new QWidget(scroll);

@@ -90,10 +90,6 @@ void PipelineOverviewWidget::setupUi() {
     legendScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     legendScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     legendScroll->setFixedHeight(32);
-    legendScroll->setStyleSheet("QScrollArea { background: transparent; border: none; }\n"
-                                "QScrollArea > QWidget > QWidget { background: transparent; border: none; }\n"
-                                "QWidget#LegendViewport { background: transparent; border: none; }\n"
-                                "QWidget#LegendContainer { background: transparent; border: none; }");
     legendScroll->viewport()->setObjectName("LegendViewport");
 
     m_legendContainerWidget = new QWidget(legendScroll);

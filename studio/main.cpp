@@ -17,6 +17,17 @@ int main(int argc, char* argv[]) {
     format.setSamples(4);
     QSurfaceFormat::setDefaultFormat(format);
 
+    // Make all scroll areas globally transparent
+    app.setStyleSheet(
+        "QScrollArea, QScrollArea > QWidget > QWidget { "
+        "    background: transparent; "
+        "    border: none; "
+        "} "
+        "QScrollArea > .QWidget { "
+        "    background: transparent; "
+        "}"
+    );
+
     MainWindow window;
     window.setWindowIcon(AppIcon::getAppIcon());
     window.show();

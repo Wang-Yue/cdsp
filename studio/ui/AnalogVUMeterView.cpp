@@ -361,8 +361,6 @@ AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
     rootLayout->setSpacing(0);
 
     m_scrollArea = new QScrollArea(this);
-    m_scrollArea->setStyleSheet(
-        "QScrollArea { background: transparent; border: none; } QWidget { background: transparent; }");
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
