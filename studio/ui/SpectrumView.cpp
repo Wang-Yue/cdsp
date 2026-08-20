@@ -164,27 +164,12 @@ void SpectrumView::leaveEvent(QEvent* event) {
     update();
 }
 
-static bool isWidgetInMiniPlayer(const QWidget* w) {
-    if (!w)
-        return false;
-    const QWidget* top = w->window();
-    if (top && (top->objectName() == "MiniPlayerViewWindow" || top->inherits("MiniPlayerView")))
-        return true;
-    while (w) {
-        if (w->objectName() == "MiniPlayerViewWindow" || w->objectName() == "MiniPlayerViewStack" ||
-            w->inherits("MiniPlayerView"))
-            return true;
-        w = w->parentWidget();
-    }
-    return false;
-}
-
 void SpectrumView::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    bool inMiniPlayer = isWidgetInMiniPlayer(this);
+    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
     if (!inMiniPlayer) {
         p.fillRect(rect(), palette().color(QPalette::Base));
     }

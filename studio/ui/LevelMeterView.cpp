@@ -106,6 +106,11 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
+    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    if (!inMiniPlayer) {
+        p.fillRect(rect(), palette().color(QPalette::Base));
+    }
+
     int w = width();
     int h = height();
 

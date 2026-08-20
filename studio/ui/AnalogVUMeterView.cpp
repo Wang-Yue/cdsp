@@ -13,23 +13,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-// MARK: - Single AnalogVUMeter Implementation
-
-static bool isWidgetInMiniPlayer(const QWidget* w) {
-    if (!w)
-        return false;
-    const QWidget* top = w->window();
-    if (top && (top->objectName() == "MiniPlayerViewWindow" || top->inherits("MiniPlayerView")))
-        return true;
-    while (w) {
-        if (w->objectName() == "MiniPlayerViewWindow" || w->objectName() == "MiniPlayerViewStack" ||
-            w->inherits("MiniPlayerView"))
-            return true;
-        w = w->parentWidget();
-    }
-    return false;
-}
-
 AnalogVUMeter::AnalogVUMeter(int channelIndex, const VUSettings& settings, QWidget* parent)
     : QWidget(parent), m_channelIndex(channelIndex), m_settings(settings) {
     setAttribute(Qt::WA_TranslucentBackground);
@@ -145,11 +128,12 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     clipPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
     p.setClipPath(clipPath);
 
-    QColor baseColor = palette().color(QPalette::Base);
-    if (isWidgetInMiniPlayer(this)) {
-        baseColor.setAlpha(50);
+    bool inMiniPlayer = (parentWidget() && (parentWidget()->inherits("QStackedWidget") ||
+                                           (parentWidget()->parentWidget() &&
+                                            parentWidget()->parentWidget()->inherits("QStackedWidget"))));
+    if (!inMiniPlayer) {
+        p.fillRect(dialRect, palette().color(QPalette::Base));
     }
-    p.fillRect(dialRect, baseColor);
 
     // 1. BOTTOM AMBER GLOW
     if (m_settings.ambientGlow > 0) {
