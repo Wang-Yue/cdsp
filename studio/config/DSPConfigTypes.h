@@ -14,6 +14,8 @@
 
 enum class Fader { Main = 0, Aux1 = 1, Aux2 = 2, Aux3 = 3, Aux4 = 4 };
 
+extern const std::vector<int> MONITOR_STANDARD_RATES;
+
 std::string faderToString(Fader fader);
 Fader stringToFader(const std::string& str);
 

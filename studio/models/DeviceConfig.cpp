@@ -38,11 +38,11 @@ std::vector<int> DeviceConfig::supportedChannels() const {
 std::vector<int> DeviceConfig::supportedRates() const {
 #if defined(ENABLE_PIPEWIRE)
     if (backend == AudioBackendType::PipeWire) {
-        return {44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000};
+        return MONITOR_STANDARD_RATES;
     }
 #endif
     if (backend == AudioBackendType::SignalGenerator) {
-        return {44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000};
+        return MONITOR_STANDARD_RATES;
     }
 
     const auto* set = findActiveCapabilitySet(capabilities, exclusive);
@@ -224,7 +224,7 @@ int DeviceConfig::bestRate(const std::vector<int>& rates, int currentRate) {
         return 48000;
     if (std::find(rates.begin(), rates.end(), currentRate) != rates.end())
         return currentRate;
-    for (int preferred : {48000, 44100, 96000, 192000}) {
+    for (int preferred : MONITOR_STANDARD_RATES) {
         if (std::find(rates.begin(), rates.end(), preferred) != rates.end())
             return preferred;
     }

@@ -4,6 +4,11 @@
 #include <set>
 #include <stdexcept>
 
+const std::vector<int> MONITOR_STANDARD_RATES = {
+    5512, 8000, 11025, 16000, 22050, 32000, 44100, 48000, 64000, 88200, 96000, 176400, 192000,
+    352800, 384000, 705600, 768000
+};
+
 std::string faderToString(Fader fader) {
     switch (fader) {
     case Fader::Main:

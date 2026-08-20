@@ -1,5 +1,6 @@
 #include "ui/ConvolutionImportDlg.h"
 
+#include "config/DSPConfigTypes.h"
 #include "models/ConvCoefficientLoader.h"
 
 #include <QCheckBox>
@@ -221,8 +222,7 @@ void ConvolutionImportDlg::updateItemsList() {
     } else {
         m_emptyStateWidget->setVisible(false);
 
-        static const std::vector<int> standardRates = {32000,  44100,  48000,  88200,  96000, 176400,
-                                                       192000, 352800, 384000, 705600, 768000};
+        std::vector<int> standardRates = MONITOR_STANDARD_RATES;
         static const QStringList formats = {"WAV", "FLOAT64", "FLOAT32", "S16_LE", "S32_LE", "TEXT"};
 
         for (size_t i = 0; i < m_items.size(); ++i) {
@@ -328,8 +328,8 @@ void ConvolutionImportDlg::updateImportButtonState() {
 }
 
 void ConvolutionImportDlg::addImportFiles(const QStringList& files) {
-    static const std::vector<int> allRates = {768000, 705600, 384000, 352800, 192000, 176400, 96000, 88200,
-                                              48000,  44100,  32000,  22050,  16000,  11025,  8000};
+    std::vector<int> allRates = MONITOR_STANDARD_RATES;
+    std::sort(allRates.begin(), allRates.end(), std::greater<int>());
 
     for (const auto& file : files) {
         ImportItem item;

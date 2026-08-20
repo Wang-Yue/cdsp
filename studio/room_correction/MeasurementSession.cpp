@@ -1,5 +1,6 @@
 #include "room_correction/MeasurementSession.h"
 
+#include "config/DSPConfigTypes.h"
 #include "models/ConvCoefficientLoader.h"
 #include "room_correction/SweepDeconvolver.h"
 #include "room_correction/SweepGenerator.h"
@@ -618,7 +619,7 @@ std::optional<ConvolutionPreset> MeasurementSession::generateFIR(const std::vect
     std::map<int, std::string> irPaths;
     QUuid presetId = QUuid::createUuid();
 
-    std::vector<int> rates = {32000, 44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000};
+    std::vector<int> rates = MONITOR_STANDARD_RATES;
     for (int rate : rates) {
         std::vector<double> irSamples;
 
