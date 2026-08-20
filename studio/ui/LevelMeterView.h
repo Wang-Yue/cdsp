@@ -63,4 +63,28 @@ private:
     MeterGroupWidget* m_playbackGroup = nullptr;
 };
 
+class LevelMetersCard : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit LevelMetersCard(std::shared_ptr<MonitoringController> monitoring, QWidget* parent = nullptr);
+    ~LevelMetersCard() override;
+
+protected:
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
+
+private:
+    std::shared_ptr<MonitoringController> m_monitoring;
+    LevelMeterView* m_captureMeters = nullptr;
+    LevelMeterView* m_playbackMeters = nullptr;
+};
+
+class LevelMetersDetailView : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit LevelMetersDetailView(std::shared_ptr<MonitoringController> monitoring, QWidget* parent = nullptr);
+};
+
 #endif // LEVEL_METER_VIEW_H

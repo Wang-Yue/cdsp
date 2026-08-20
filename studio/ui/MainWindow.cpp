@@ -1254,23 +1254,7 @@ void MainWindow::handleNavigationTag(const QString& tag) {
     } else if (tag == "devices") {
         w = new DevicePickerView(m_devices, m_settings, this);
     } else if (tag == "levels") {
-        auto container = new QWidget(this);
-        auto layout = new QVBoxLayout(container);
-        layout->setContentsMargins(16, 16, 16, 16);
-        auto cap = new LevelMeterView(container);
-        cap->setLevelState(&m_monitoring->levelState);
-        cap->setIsCapture(true);
-        auto pb = new LevelMeterView(container);
-        pb->setLevelState(&m_monitoring->levelState);
-        pb->setIsCapture(false);
-        layout->addWidget(cap);
-        layout->addWidget(pb);
-        connect(m_monitoring.get(), &MonitoringController::levelsUpdated, container, [this, cap, pb]() {
-            const auto& st = m_monitoring->levelState;
-            cap->setLevels(st.captureRms, st.capturePeak, "Capture Levels");
-            pb->setLevels(st.playbackRms, st.playbackPeak, "Playback Levels");
-        });
-        w = container;
+        w = new LevelMetersDetailView(m_monitoring, this);
     } else if (tag == "spectrum") {
         w = new SpectrumDetailView(m_spectrumEngine, m_devices, this);
     } else if (tag == "spectroscope") {

@@ -147,38 +147,13 @@ void DashboardView::setupUi() {
     // 3. Level Meters Card
     m_levelMetersGroup = new QGroupBox("Level Meters", container);
     m_levelMetersGroup->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    auto levelCardLayout = new QVBoxLayout(m_levelMetersGroup);
-    levelCardLayout->setContentsMargins(12, 12, 12, 12);
-    levelCardLayout->setSpacing(10);
+    auto levelGroupLayout = new QVBoxLayout(m_levelMetersGroup);
+    levelGroupLayout->setContentsMargins(12, 12, 12, 12);
+    levelGroupLayout->setSpacing(8);
 
-    auto levelColumnsGrid = new QGridLayout();
-    levelColumnsGrid->setHorizontalSpacing(16);
-    levelColumnsGrid->setVerticalSpacing(8);
-
-    auto capLbl = new QLabel("Capture", m_levelMetersGroup);
-    QFont subHeaderFont = capLbl->font();
-    subHeaderFont.setBold(true);
-    capLbl->setFont(subHeaderFont);
-
-    auto pbLbl = new QLabel("Playback", m_levelMetersGroup);
-    pbLbl->setFont(subHeaderFont);
-
-    m_captureMeters = new LevelMeterView(m_levelMetersGroup);
-    m_captureMeters->setLevelState(&m_monitoring->levelState);
-    m_captureMeters->setIsCapture(true);
-
-    m_playbackMeters = new LevelMeterView(m_levelMetersGroup);
-    m_playbackMeters->setLevelState(&m_monitoring->levelState);
-    m_playbackMeters->setIsCapture(false);
-
-    levelColumnsGrid->addWidget(capLbl, 0, 0);
-    levelColumnsGrid->addWidget(pbLbl, 0, 1);
-    levelColumnsGrid->addWidget(m_captureMeters, 1, 0);
-    levelColumnsGrid->addWidget(m_playbackMeters, 1, 1);
-    levelColumnsGrid->setColumnStretch(0, 1);
-    levelColumnsGrid->setColumnStretch(1, 1);
-
-    levelCardLayout->addLayout(levelColumnsGrid);
+    m_levelMetersCard = new LevelMetersCard(m_monitoring, m_levelMetersGroup);
+    m_levelMetersCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    levelGroupLayout->addWidget(m_levelMetersCard);
     mainLayout->addWidget(m_levelMetersGroup);
 
     // 4. Volume Faders Card
@@ -308,10 +283,8 @@ void DashboardView::setupUi() {
 
 void DashboardView::refreshMeters() {
     const auto& st = m_monitoring->levelState;
-    if (m_captureMeters)
-        m_captureMeters->setLevels(st.captureRms, st.capturePeak, "");
-    if (m_playbackMeters)
-        m_playbackMeters->setLevels(st.playbackRms, st.playbackPeak, "");
+    if (m_levelMetersCard)
+        m_levelMetersCard->update();
 
     if (m_analogVUView)
         m_analogVUView->setLevels(st.playbackRms);

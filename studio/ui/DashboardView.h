@@ -48,14 +48,13 @@ private:
     DSPDetailedSignalGraphCard* m_signalGraphCard = nullptr;
 
     QGroupBox* m_levelMetersGroup = nullptr;
+    LevelMetersCard* m_levelMetersCard = nullptr;
     QGroupBox* m_analogVUGroup = nullptr;
     QGroupBox* m_spectrumGroup = nullptr;
     QGroupBox* m_spectrogramGroup = nullptr;
     QGroupBox* m_vectorScopeGroup = nullptr;
     QGroupBox* m_faderGroup = nullptr;
 
-    LevelMeterView* m_captureMeters = nullptr;
-    LevelMeterView* m_playbackMeters = nullptr;
     SpectrumView* m_spectrumView = nullptr;
     SpectrogramView* m_spectrogramView = nullptr;
     VectorScopeView* m_vectorScopeView = nullptr;

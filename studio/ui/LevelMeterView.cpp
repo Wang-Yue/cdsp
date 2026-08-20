@@ -39,16 +39,22 @@ QSize LevelMeterView::sizeHint() const {
     }
     if (chCount == 0)
         chCount = 2;    // Default to 2 channels
+
+    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
     int barHeight = 18; // Match SwiftUI height: 18px per channel
-    int spacing = 8;
-    int basePadding = m_title.isEmpty() ? 8 : 50;
+    int spacing = inMiniPlayer ? 6 : 8;
+    int basePadding = m_title.isEmpty() ? (inMiniPlayer ? 0 : 8) : 50;
     int totalH = static_cast<int>(chCount) * barHeight + static_cast<int>(chCount - 1) * spacing + basePadding;
-    return QSize(300, totalH);
+    return QSize(inMiniPlayer ? 140 : 300, totalH);
 }
 
 QSize LevelMeterView::minimumSizeHint() const {
+    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    if (inMiniPlayer) {
+        return QSize(80, 24);
+    }
     QSize sh = sizeHint();
-    return QSize(180, sh.height());
+    return QSize(140, sh.height());
 }
 
 void LevelMeterView::showEvent(QShowEvent* event) {
@@ -141,49 +147,59 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     if (chCount == 0)
         chCount = 2; // Default 2 channels
 
-    int barAreaTop = m_title.isEmpty() ? 4 : 36;
-    int barAreaHeight = h - (m_title.isEmpty() ? 8 : 50);
-    int barHeight = (barAreaHeight - static_cast<int>(chCount - 1) * 8) / static_cast<int>(chCount);
-    barHeight = std::clamp(barHeight, 16, 24);
+    int labelW = inMiniPlayer ? 12 : 14;
+    int rightMargin = inMiniPlayer ? 38 : 44;
+    int spacing = inMiniPlayer ? 6 : 8;
+    int barHeight = 18;
+
+    int barAreaTop = m_title.isEmpty() ? 0 : 36;
+    if (inMiniPlayer) {
+        barAreaTop = std::max(0, (h - (static_cast<int>(chCount) * barHeight + static_cast<int>(chCount - 1) * spacing)) / 2);
+    }
 
     for (size_t i = 0; i < chCount; ++i) {
-        int y = barAreaTop + static_cast<int>(i) * (barHeight + 8);
-        int labelW = 14;
-        int rightMargin = 44;
-        int xStart = 28;
-        int barW = w - xStart - rightMargin - 12;
+        int y = barAreaTop + static_cast<int>(i) * (barHeight + spacing);
+        int xStart = labelW + spacing;
+        int barW = w - xStart - rightMargin - spacing;
         if (barW < 10)
             continue;
 
         // 1. Channel Label ("1", "2", "3"...)
         QString chLabel = QString::number(i + 1);
 
-        QFont chFont("monospace", 10, QFont::Medium);
+        QFont chFont("monospace", inMiniPlayer ? 9 : 10, QFont::Medium);
         chFont.setStyleHint(QFont::Monospace);
         p.setFont(chFont);
-        p.setPen(subtextColor);
-        p.drawText(0, y, labelW + 10, barHeight, Qt::AlignCenter, chLabel);
+        p.setPen(inMiniPlayer ? QColor(255, 255, 255, 130) : subtextColor);
+        p.drawText(0, y, labelW, barHeight, Qt::AlignCenter, chLabel);
 
-        // 2. Track Background with Corner Radius = 3px
-        QPainterPath trackPath;
-        trackPath.addRoundedRect(QRectF(xStart, y, barW, barHeight), 3, 3);
-        QColor trackBg = palette().color(QPalette::Dark);
-        p.fillPath(trackPath, trackBg);
-
-        // 3. Horizontal Center Divider
+        // 2. Track Background Box
         int halfH = barHeight / 2;
-        QColor dividerColor = palette().color(QPalette::Mid);
-        p.setPen(QPen(dividerColor, 0.5));
-        p.drawLine(xStart, y + halfH, xStart + barW, y + halfH);
+        if (inMiniPlayer) {
+            QPainterPath trackPath;
+            trackPath.addRoundedRect(QRectF(xStart, y, barW, barHeight), 2, 2);
+            p.fillPath(trackPath, QColor(255, 255, 255, 20));
 
-        // 4. Tick Marks (-48 to 0 dB)
-        QColor tickColor = palette().color(QPalette::Midlight);
-        p.setPen(QPen(tickColor, 1));
-        for (int dbMark : {-48, -36, -24, -12, -6, -3, 0}) {
-            int pos = xStart + static_cast<int>(barW * normDB(static_cast<float>(dbMark)));
-            int markH = (dbMark == 0) ? barHeight : (barHeight / 2);
-            int markY = (dbMark == 0) ? y : (y + (barHeight - markH) / 2);
-            p.drawLine(pos, markY, pos, markY + markH);
+            // Horizontal Center Divider
+            p.setPen(QPen(QColor(255, 255, 255, 26), 0.5));
+            p.drawLine(xStart, y + halfH, xStart + barW, y + halfH);
+        } else {
+            QPainterPath trackPath;
+            trackPath.addRoundedRect(QRectF(xStart, y, barW, barHeight), 3, 3);
+            p.fillPath(trackPath, palette().color(QPalette::Dark));
+
+            // Horizontal Center Divider
+            p.setPen(QPen(palette().color(QPalette::Mid), 0.5));
+            p.drawLine(xStart, y + halfH, xStart + barW, y + halfH);
+
+            // Tick Marks (-48 to 0 dB)
+            p.setPen(QPen(palette().color(QPalette::Midlight), 1));
+            for (int dbMark : {-48, -36, -24, -12, -6, -3, 0}) {
+                int pos = xStart + static_cast<int>(barW * normDB(static_cast<float>(dbMark)));
+                int markH = (dbMark == 0) ? barHeight : (barHeight / 2);
+                int markY = (dbMark == 0) ? y : (y + (barHeight - markH) / 2);
+                p.drawLine(pos, markY, pos, markY + markH);
+            }
         }
 
         float rmsVal = (i < rmsVec.size()) ? rmsVec[i] : -100.0f;
@@ -208,17 +224,19 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         grad.setColorAt(0.95, QColor(255, 0, 0, 230));
         grad.setColorAt(1.00, QColor(255, 0, 0, 230));
 
-        // 5. RMS Bar (Top Half, Corner Radius = 2px)
+        qreal cornerRadius = inMiniPlayer ? 1.5 : 2.0;
+
+        // 5. RMS Bar (Top Half)
         if (rmsW > 0) {
             QPainterPath rmsPath;
-            rmsPath.addRoundedRect(QRectF(xStart, y + 0.5, rmsW, halfH - 1), 2, 2);
+            rmsPath.addRoundedRect(QRectF(xStart, y + 0.5, rmsW, halfH - 1), cornerRadius, cornerRadius);
             p.fillPath(rmsPath, grad);
         }
 
-        // 6. Peak Bar (Bottom Half, Corner Radius = 2px)
+        // 6. Peak Bar (Bottom Half)
         if (peakW > 0) {
             QPainterPath peakPath;
-            peakPath.addRoundedRect(QRectF(xStart, y + halfH + 0.5, peakW, halfH - 1), 2, 2);
+            peakPath.addRoundedRect(QRectF(xStart, y + halfH + 0.5, peakW, halfH - 1), cornerRadius, cornerRadius);
             p.fillPath(peakPath, grad);
         }
 
@@ -229,11 +247,20 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         QString rmsStr = QString::asprintf("%5.1f", rmsVal);
         QString peakStr = QString::asprintf("%5.1f", peakVal);
 
-        p.setPen(palette().color(QPalette::Text));
-        p.drawText(xStart + barW + 4, y, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, rmsStr);
+        int textX = xStart + barW + spacing;
+        if (inMiniPlayer) {
+            p.setPen(QColor(255, 255, 255, 180));
+            p.drawText(textX, y, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, rmsStr);
 
-        p.setPen(subtextColor);
-        p.drawText(xStart + barW + 4, y + halfH, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, peakStr);
+            p.setPen(QColor(255, 255, 255, 100));
+            p.drawText(textX, y + halfH, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, peakStr);
+        } else {
+            p.setPen(palette().color(QPalette::Text));
+            p.drawText(textX, y, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, rmsStr);
+
+            p.setPen(subtextColor);
+            p.drawText(textX, y + halfH, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, peakStr);
+        }
     }
 }
 
@@ -503,4 +530,124 @@ void CompactLevelMeterBar::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
     if (m_monitoring && m_monitoring->levelState.visibilityCount > 0)
         m_monitoring->levelState.visibilityCount--;
+}
+
+// MARK: - LevelMetersCard Implementation
+
+LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
+    : QWidget(parent), m_monitoring(monitoring) {
+    auto cardLayout = new QVBoxLayout(this);
+    cardLayout->setContentsMargins(16, 16, 16, 16);
+    cardLayout->setSpacing(12);
+
+    // Header: "Levels" (headline) ... "RMS / Peak" (caption/tertiary)
+    auto headerLayout = new QHBoxLayout();
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto titleLbl = new QLabel("Levels", this);
+    QFont titleFont = titleLbl->font();
+    titleFont.setPointSize(12);
+    titleFont.setBold(true);
+    titleLbl->setFont(titleFont);
+
+    auto subLbl = new QLabel("RMS / Peak", this);
+    QFont subFont = subLbl->font();
+    subFont.setPointSize(9);
+    subLbl->setFont(subFont);
+    QColor subColor = palette().color(QPalette::PlaceholderText);
+    subLbl->setStyleSheet(QString("color: %1;").arg(subColor.name()));
+
+    headerLayout->addWidget(titleLbl);
+    headerLayout->addStretch();
+    headerLayout->addWidget(subLbl);
+    cardLayout->addLayout(headerLayout);
+
+    // Columns: Capture & Playback side-by-side
+    auto columnsLayout = new QHBoxLayout();
+    columnsLayout->setContentsMargins(0, 0, 0, 0);
+    columnsLayout->setSpacing(24);
+
+    // Left Column: Capture
+    auto capCol = new QVBoxLayout();
+    capCol->setContentsMargins(0, 0, 0, 0);
+    capCol->setSpacing(8);
+    auto capTitle = new QLabel("Capture", this);
+    QFont colFont = capTitle->font();
+    colFont.setPointSize(10);
+    colFont.setBold(true);
+    capTitle->setFont(colFont);
+    capTitle->setStyleSheet(QString("color: %1;").arg(subColor.name()));
+    capCol->addWidget(capTitle);
+
+    m_captureMeters = new LevelMeterView(this);
+    m_captureMeters->setIsCapture(true);
+    if (m_monitoring)
+        m_captureMeters->setLevelState(&m_monitoring->levelState);
+    capCol->addWidget(m_captureMeters);
+    columnsLayout->addLayout(capCol, 1);
+
+    // Right Column: Playback
+    auto pbCol = new QVBoxLayout();
+    pbCol->setContentsMargins(0, 0, 0, 0);
+    pbCol->setSpacing(8);
+    auto pbTitle = new QLabel("Playback", this);
+    pbTitle->setFont(colFont);
+    pbTitle->setStyleSheet(QString("color: %1;").arg(subColor.name()));
+    pbCol->addWidget(pbTitle);
+
+    m_playbackMeters = new LevelMeterView(this);
+    m_playbackMeters->setIsCapture(false);
+    if (m_monitoring)
+        m_playbackMeters->setLevelState(&m_monitoring->levelState);
+    pbCol->addWidget(m_playbackMeters);
+    columnsLayout->addLayout(pbCol, 1);
+
+    cardLayout->addLayout(columnsLayout);
+
+    // Card background styling (similar to SwiftUI: background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12)))
+    setAutoFillBackground(true);
+    QPalette pal = palette();
+    pal.setColor(QPalette::Window, pal.color(QPalette::Base));
+    setPalette(pal);
+
+    if (m_monitoring) {
+        connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
+            if (m_captureMeters)
+                m_captureMeters->update();
+            if (m_playbackMeters)
+                m_playbackMeters->update();
+        });
+    }
+}
+
+LevelMetersCard::~LevelMetersCard() {
+    if (isVisible() && m_monitoring && m_monitoring->levelState.visibilityCount > 0) {
+        m_monitoring->levelState.visibilityCount--;
+    }
+}
+
+void LevelMetersCard::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (m_monitoring)
+        m_monitoring->levelState.visibilityCount++;
+}
+
+void LevelMetersCard::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    if (m_monitoring && m_monitoring->levelState.visibilityCount > 0)
+        m_monitoring->levelState.visibilityCount--;
+}
+
+// MARK: - LevelMetersDetailView Implementation
+
+LevelMetersDetailView::LevelMetersDetailView(std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
+    : QWidget(parent) {
+    auto mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(16, 16, 16, 16);
+    mainLayout->setSpacing(12);
+
+    auto card = new LevelMetersCard(monitoring, this);
+    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    mainLayout->addWidget(card);
+    mainLayout->addStretch(1);
 }
