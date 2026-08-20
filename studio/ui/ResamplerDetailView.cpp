@@ -77,14 +77,6 @@ void ResamplerDetailView::setupUi() {
     profileLbl->setBuddy(m_profileCombo);
     m_settingsForm->addRow(profileLbl, m_profileCombo);
 
-    m_threadsSpin = new QSpinBox(m_settingsGroup);
-    m_threadsSpin->setRange(0, 32);
-    m_threadsSpin->setSpecialValueText("Auto");
-    connect(m_threadsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this]() { applySettings(); });
-    auto threadsLbl = new QLabel("Threa&ds:", m_settingsGroup);
-    threadsLbl->setBuddy(m_threadsSpin);
-    m_settingsForm->addRow(threadsLbl, m_threadsSpin);
-
     m_sincLenSpin = new QSpinBox(m_settingsGroup);
     m_sincLenSpin->setRange(16, 4096);
     connect(m_sincLenSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this]() { applySettings(); });
@@ -235,11 +227,6 @@ void ResamplerDetailView::refreshUi() {
     updateVisibility();
     m_useProfileCheck->setChecked(m_settings->resamplerUseProfile);
     m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));
-    if (m_threadsSpin) {
-        m_threadsSpin->blockSignals(true);
-        m_threadsSpin->setValue(m_settings->workerThreads);
-        m_threadsSpin->blockSignals(false);
-    }
     m_sincLenSpin->setValue(m_settings->resamplerSincLen);
     m_oversamplingSpin->setValue(m_settings->resamplerOversamplingFactor);
 
@@ -284,9 +271,6 @@ void ResamplerDetailView::applySettings() {
     m_settings->resamplerType = stringToResamplerType(m_typeCombo->currentText().toStdString());
     m_settings->resamplerUseProfile = m_useProfileCheck->isChecked();
     m_settings->resamplerProfile = stringToResamplerProfile(m_profileCombo->currentText().toStdString());
-    if (m_threadsSpin) {
-        m_settings->workerThreads = m_threadsSpin->value();
-    }
     m_settings->resamplerSincLen = m_sincLenSpin->value();
     m_settings->resamplerOversamplingFactor = m_oversamplingSpin->value();
     m_settings->resamplerWindow = m_windowCombo->currentData().toString().toStdString();

@@ -40,7 +40,6 @@ private:
     QComboBox* m_typeCombo = nullptr;
     QCheckBox* m_useProfileCheck = nullptr;
     QComboBox* m_profileCombo = nullptr;
-    QSpinBox* m_threadsSpin = nullptr;
     QSpinBox* m_sincLenSpin = nullptr;
     QSpinBox* m_oversamplingSpin = nullptr;
     QComboBox* m_windowCombo = nullptr;
