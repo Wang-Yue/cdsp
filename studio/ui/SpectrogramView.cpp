@@ -7,12 +7,12 @@
 #include <array>
 #include <cmath>
 
-SpectrogramView::SpectrogramView(QWidget* parent) : QOpenGLWidget(parent) {
+SpectrogramView::SpectrogramView(QWidget* parent) : QWidget(parent) {
     setMinimumSize(40, 24);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 }
 
-SpectrogramView::SpectrogramView(std::shared_ptr<SpectrogramEngine> engine, QWidget* parent) : QOpenGLWidget(parent) {
+SpectrogramView::SpectrogramView(std::shared_ptr<SpectrogramEngine> engine, QWidget* parent) : QWidget(parent) {
     setMinimumSize(40, 24);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setEngine(engine);
@@ -43,19 +43,19 @@ void SpectrogramView::setEngine(std::shared_ptr<SpectrogramEngine> engine) {
 }
 
 void SpectrogramView::showEvent(QShowEvent* event) {
-    QOpenGLWidget::showEvent(event);
+    QWidget::showEvent(event);
     if (m_engine)
         m_engine->visibilityCount++;
 }
 
 void SpectrogramView::hideEvent(QHideEvent* event) {
-    QOpenGLWidget::hideEvent(event);
+    QWidget::hideEvent(event);
     if (m_engine && m_engine->visibilityCount > 0)
         m_engine->visibilityCount--;
 }
 
 void SpectrogramView::changeEvent(QEvent* event) {
-    QOpenGLWidget::changeEvent(event);
+    QWidget::changeEvent(event);
     if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange) {
         update();
     }
@@ -184,28 +184,13 @@ QColor SpectrogramView::colorForDB(float db, ColorPalette palette) {
     return computeColorForNorm(norm, palette);
 }
 
-static bool isWidgetInMiniPlayer(const QWidget* w) {
-    if (!w)
-        return false;
-    const QWidget* top = w->window();
-    if (top && (top->objectName() == "MiniPlayerViewWindow" || top->inherits("MiniPlayerView")))
-        return true;
-    while (w) {
-        if (w->objectName() == "MiniPlayerViewWindow" || w->objectName() == "MiniPlayerViewStack" ||
-            w->inherits("MiniPlayerView"))
-            return true;
-        w = w->parentWidget();
-    }
-    return false;
-}
-
-void SpectrogramView::paintGL() {
+void SpectrogramView::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    if (isWidgetInMiniPlayer(this)) {
-        p.fillRect(rect(), QColor(0, 0, 0, 115));
-    } else {
+    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    if (!inMiniPlayer) {
         p.fillRect(rect(), palette().color(QPalette::Base));
     }
 
@@ -386,8 +371,7 @@ void SpectrogramView::paint3D(QPainter& p, int w, int h) {
         fillPoly.reserve(static_cast<int>(drawBins + 3));
         edgePoly.reserve(static_cast<int>(drawBins));
 
-        QColor fillCol = isWidgetInMiniPlayer(this) ? QColor(0, 0, 0, 115) : palette().color(QPalette::Base);
-        QBrush fillBrush(fillCol);
+        QBrush fillBrush(palette().color(QPalette::Base));
 
         for (size_t s = 0; s < targetSlices; ++s) {
             size_t i = (targetSlices > 1) ? ((s * (count - 1)) / (targetSlices - 1)) : 0;

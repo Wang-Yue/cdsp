@@ -4,12 +4,12 @@
 #include "models/SpectrogramEngine.h"
 
 #include <QDateTime>
-#include <QOpenGLWidget>
 #include <QPainter>
+#include <QWidget>
 #include <deque>
 #include <memory>
 
-class SpectrogramView : public QOpenGLWidget {
+class SpectrogramView : public QWidget {
     Q_OBJECT
 
 public:
@@ -22,7 +22,7 @@ public:
                     ColorPalette palette = ColorPalette::Classic);
 
 protected:
-    void paintGL() override;
+    void paintEvent(QPaintEvent* event) override;
 
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
