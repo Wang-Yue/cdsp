@@ -26,7 +26,7 @@ set(CMAKE_AUTOMOC_PARALLEL 0)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent Multimedia OpenGL OpenGLWidgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent Multimedia)
 find_package(Threads REQUIRED)
 
 # Platform audio and acceleration options (aligned with cdsp)
@@ -202,8 +202,6 @@ target_link_libraries(MonitorQt PRIVATE
     Qt6::Network
     Qt6::Concurrent
     Qt6::Multimedia
-    Qt6::OpenGL
-    Qt6::OpenGLWidgets
     Threads::Threads
     ${CDSP_LIB}
     ${PLATFORM_LIBS}
