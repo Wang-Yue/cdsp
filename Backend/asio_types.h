@@ -10,6 +10,8 @@
 #include <unknwn.h>
 #include <windows.h>
 
+#include "Config/engine_config_types.h"
+
 // COM Release helper
 #define SAFE_RELEASE(punk)         \
   if ((punk) != NULL) {            \
@@ -58,13 +60,6 @@ typedef long ASIOError;
 #define K_ASIO_SUPPORTS_TIME_INFO 7
 #define K_ASIO_SUPPORTS_TIME_CODE 8
 
-// Curated list of standard audio sample rates matching CamillaDSP
-// STANDARD_RATES
-#define STANDARD_RATES_COUNT 17
-static const uint32_t STANDARD_RATES[STANDARD_RATES_COUNT] = {
-    5512,  8000,  11025,  16000,  22050,  32000,  44100,  48000,  64000,
-    88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000,
-};
 
 // ASIO DSD Future Selectors (Steinberg ASIO SDK 2.3 / azo-sys FutureSelector)
 #define kAsioSetIoFormat 0x23111961L

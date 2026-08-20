@@ -218,6 +218,12 @@ typedef struct {
   size_t capability_sets_count;             /**< Number of capability sets. */
 } audio_device_descriptor_t;
 
+/**
+ * @brief Curated list of standard audio sample rates matching CamillaDSP STANDARD_RATES (src/lib.rs).
+ */
+#define STANDARD_RATES_COUNT 17
+extern const uint32_t STANDARD_RATES[STANDARD_RATES_COUNT];
+
 // MARK: - Device Config Models
 
 /**
