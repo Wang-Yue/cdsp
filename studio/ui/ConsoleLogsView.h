@@ -1,14 +1,14 @@
 #ifndef CONSOLE_LOGS_VIEW_H
 #define CONSOLE_LOGS_VIEW_H
 
-#include "models/LogManager.h"
+#include "models/LogTableModel.h"
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QTableWidget>
+#include <QTableView>
 #include <QWidget>
 
 class ConsoleLogsView : public QWidget {
@@ -22,8 +22,6 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
 
 private slots:
-    void refreshLogs();
-    void onLogAppended(const LogEntry& entry);
     void copyAllLogs();
 
 private:
@@ -33,9 +31,11 @@ private:
     QCheckBox* m_autoScrollCheck = nullptr;
     QPushButton* m_copyBtn = nullptr;
     QPushButton* m_clearBtn = nullptr;
-    QTableWidget* m_table = nullptr;
+    QTableView* m_table = nullptr;
+    LogTableModel* m_model = nullptr;
 
     void setupUi();
+    void updateCountLabel();
 };
 
 #endif // CONSOLE_LOGS_VIEW_H

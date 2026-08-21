@@ -1,6 +1,5 @@
 #include "ui/ConsoleLogsView.h"
 
-#include <QAbstractTextDocumentLayout>
 #include <QApplication>
 #include <QClipboard>
 #include <QFontDatabase>
@@ -12,12 +11,15 @@
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QStyledItemDelegate>
-#include <QTextDocument>
+#include <QTableView>
+#include <QTextLayout>
 #include <QTextOption>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <cmath>
 
 namespace {
+
 class LogMessageDelegate : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
@@ -34,27 +36,19 @@ public:
         if (opt.state & QStyle::State_Selected) {
             painter->setPen(opt.palette.color(QPalette::HighlightedText));
         } else {
-            painter->setPen(opt.palette.color(QPalette::Text));
+            QVariant fg = index.data(Qt::ForegroundRole);
+            if (fg.isValid()) {
+                painter->setPen(fg.value<QColor>());
+            } else {
+                painter->setPen(opt.palette.color(QPalette::Text));
+            }
         }
 
-        QRect textRect = opt.rect.adjusted(4, 3, -4, -3);
-        QTextDocument doc;
-        doc.setDocumentMargin(0);
-        doc.setDefaultFont(opt.font);
+        QRectF textRect = opt.rect.adjusted(6, 4, -6, -4);
         QTextOption to;
         to.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-        doc.setDefaultTextOption(to);
-        doc.setTextWidth(textRect.width());
-        doc.setPlainText(opt.text);
-
-        painter->translate(textRect.topLeft());
-        painter->setClipRect(0, 0, textRect.width(), textRect.height());
-        QAbstractTextDocumentLayout::PaintContext ctx;
-        ctx.palette = opt.palette;
-        if (opt.state & QStyle::State_Selected) {
-            ctx.palette.setColor(QPalette::Text, opt.palette.color(QPalette::HighlightedText));
-        }
-        doc.documentLayout()->draw(painter, ctx);
+        to.setAlignment(Qt::AlignTop | Qt::AlignLeft);
+        painter->drawText(textRect, opt.text, to);
         painter->restore();
     }
 
@@ -64,40 +58,50 @@ public:
 
         int colWidth = 300;
         if (const auto* view = qobject_cast<const QTableView*>(opt.widget)) {
-            colWidth = view->columnWidth(index.column());
+            int w = view->columnWidth(index.column());
+            if (w > 40) {
+                colWidth = w;
+            } else if (view->viewport()) {
+                int vpW = view->viewport()->width();
+                int otherCols = view->columnWidth(0) + view->columnWidth(1);
+                if (vpW > otherCols + 40) {
+                    colWidth = vpW - otherCols;
+                }
+            }
         }
-        int availableWidth = std::max(40, colWidth - 8);
+        int availableWidth = std::max(40, colWidth - 14);
 
-        QTextDocument doc;
-        doc.setDocumentMargin(0);
-        doc.setDefaultFont(opt.font);
+        QTextLayout textLayout(opt.text, opt.font);
         QTextOption to;
         to.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-        doc.setDefaultTextOption(to);
-        doc.setTextWidth(availableWidth);
-        doc.setPlainText(opt.text);
+        textLayout.setTextOption(to);
+        textLayout.beginLayout();
+        qreal height = 0;
+        while (true) {
+            QTextLine line = textLayout.createLine();
+            if (!line.isValid())
+                break;
+            line.setLineWidth(availableWidth);
+            height += line.height();
+        }
+        textLayout.endLayout();
 
-        int h = static_cast<int>(std::ceil(doc.size().height())) + 6;
+        int h = std::max(24, static_cast<int>(std::ceil(height)) + 8);
         return QSize(colWidth, h);
     }
 };
+
 } // namespace
 
 ConsoleLogsView::ConsoleLogsView(QWidget* parent) : QWidget(parent) {
     setupUi();
-
-    if (LogManager::instance()) {
-        connect(LogManager::instance(), &LogManager::logAppended, this, &ConsoleLogsView::onLogAppended);
-        connect(LogManager::instance(), &LogManager::logsCleared, this, &ConsoleLogsView::refreshLogs);
-    }
-    refreshLogs();
 }
 
 void ConsoleLogsView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
     if (m_table) {
         m_table->resizeRowsToContents();
-        if (m_autoScrollCheck && m_autoScrollCheck->isChecked()) {
+        if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model && m_model->rowCount() > 0) {
             m_table->scrollToBottom();
         }
     }
@@ -141,7 +145,12 @@ void ConsoleLogsView::setupUi() {
     m_searchEdit->setClearButtonEnabled(true);
     m_searchEdit->setMinimumWidth(100);
     m_searchEdit->setMaximumWidth(220);
-    connect(m_searchEdit, &QLineEdit::textChanged, this, &ConsoleLogsView::refreshLogs);
+    connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
+        if (m_model) {
+            m_model->setFilterText(text.trimmed());
+            updateCountLabel();
+        }
+    });
     toolbarLayout->addWidget(m_searchEdit);
 
     // Filter Combo (Log Level)
@@ -169,7 +178,10 @@ void ConsoleLogsView::setupUi() {
         if (LogManager::instance()) {
             LogManager::instance()->setLogLevel(level);
         }
-        refreshLogs();
+        if (m_model) {
+            m_model->refresh();
+            updateCountLabel();
+        }
     });
     toolbarLayout->addWidget(m_levelFilterCombo);
 
@@ -196,45 +208,66 @@ void ConsoleLogsView::setupUi() {
 
     mainLayout->addLayout(toolbarLayout);
 
-    // 2. Log Table View
-    m_table = new QTableWidget(this);
+    // 2. Virtual Table View
+    m_model = new LogTableModel(this);
+    m_table = new QTableView(this);
+    m_table->setModel(m_model);
     m_table->setItemDelegateForColumn(2, new LogMessageDelegate(m_table));
-    m_table->setColumnCount(3);
-    m_table->setHorizontalHeaderLabels({"Timestamp", "Level", "Message"});
+    m_table->setWordWrap(true);
+    m_table->setTextElideMode(Qt::ElideNone);
+    m_table->verticalHeader()->setVisible(false);
+    m_table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setVisible(true);
     m_table->horizontalHeader()->setStretchLastSection(true);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    m_table->verticalHeader()->setVisible(false);
-    m_table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_table->setShowGrid(false);
-    m_table->setWordWrap(true);
-    m_table->setTextElideMode(Qt::ElideNone);
     m_table->setAlternatingRowColors(true);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_table->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_table->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_table->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
 
-    connect(m_table, &QTableWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+    connect(m_table->horizontalHeader(), &QHeaderView::sectionResized, this, [this](int logicalIndex, int, int) {
+        if (logicalIndex == 2 && m_table) {
+            m_table->resizeRowsToContents();
+        }
+    });
+
+    connect(m_model, &QAbstractItemModel::rowsInserted, this, [this]() {
+        updateCountLabel();
+        if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model->rowCount() > 0) {
+            m_table->scrollToBottom();
+        }
+    });
+    connect(m_model, &QAbstractItemModel::modelReset, this, [this]() {
+        updateCountLabel();
+        if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model->rowCount() > 0) {
+            m_table->scrollToBottom();
+        }
+    });
+
+    connect(m_table, &QTableView::customContextMenuRequested, this, [this](const QPoint& pos) {
         Q_UNUSED(pos);
         QMenu menu(this);
         auto copySel = menu.addAction("Copy Selected");
         connect(copySel, &QAction::triggered, this, [this]() {
-            auto ranges = m_table->selectedRanges();
-            if (ranges.isEmpty())
+            if (!m_model || !m_table->selectionModel())
                 return;
-            QStringList lines;
-            for (const auto& range : ranges) {
-                for (int r = range.topRow(); r <= range.bottomRow(); ++r) {
-                    QString t = m_table->item(r, 0) ? m_table->item(r, 0)->text() : "";
-                    QString l = m_table->item(r, 1) ? m_table->item(r, 1)->text() : "";
-                    QString m = m_table->item(r, 2) ? m_table->item(r, 2)->text() : "";
-                    lines.append(QString("[%1] [%2] %3").arg(t, l, m));
-                }
+            auto selectedIndexes = m_table->selectionModel()->selectedRows();
+            if (selectedIndexes.isEmpty())
+                return;
+
+            std::vector<int> rows;
+            rows.reserve(selectedIndexes.size());
+            for (const auto& idx : selectedIndexes) {
+                rows.push_back(idx.row());
             }
-            QGuiApplication::clipboard()->setText(lines.join("\n"));
+            std::sort(rows.begin(), rows.end());
+            QGuiApplication::clipboard()->setText(m_model->copySelectedFormatted(rows));
         });
 
         auto copyAll = menu.addAction("Copy All Logs");
@@ -252,140 +285,19 @@ void ConsoleLogsView::setupUi() {
     });
 
     mainLayout->addWidget(m_table);
+    updateCountLabel();
 }
 
-void ConsoleLogsView::refreshLogs() {
-    m_table->setRowCount(0);
-    if (!LogManager::instance())
-        return;
-
-    auto captionMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    captionMono.setPointSize(11);
-
-    auto bodyMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    bodyMono.setPointSize(13);
-
-    QString filterText = m_searchEdit ? m_searchEdit->text().trimmed() : QString();
-
-    auto entries = LogManager::instance()->logs();
-    int matchCount = 0;
-    m_table->setUpdatesEnabled(false);
-    for (const auto& entry : entries) {
-        if (!filterText.isEmpty() && !entry.message.contains(filterText, Qt::CaseInsensitive)) {
-            continue;
-        }
-
-        int row = m_table->rowCount();
-        m_table->insertRow(row);
-
-        auto timeItem = new QTableWidgetItem(entry.timestamp.toString("HH:mm:ss.zzz"));
-        timeItem->setFont(captionMono);
-        timeItem->setForeground(palette().color(QPalette::PlaceholderText));
-        timeItem->setTextAlignment(Qt::AlignTop | Qt::AlignLeft);
-
-        auto levelItem = new QTableWidgetItem(logLevelToString(entry.level));
-        levelItem->setFont(captionMono);
-        levelItem->setTextAlignment(Qt::AlignTop | Qt::AlignLeft);
-        if (entry.level == LogLevel::Error) {
-            levelItem->setForeground(QColor(230, 50, 50));
-        } else if (entry.level == LogLevel::Warn) {
-            levelItem->setForeground(QColor(230, 140, 20));
-        } else if (entry.level == LogLevel::Info) {
-            levelItem->setForeground(QColor(40, 160, 80));
-        } else if (entry.level == LogLevel::Debug) {
-            levelItem->setForeground(QColor(80, 140, 220));
-        } else {
-            levelItem->setForeground(palette().color(QPalette::PlaceholderText));
-        }
-
-        auto msgItem = new QTableWidgetItem(entry.message);
-        msgItem->setFont(bodyMono);
-        msgItem->setTextAlignment(Qt::AlignTop | Qt::AlignLeft);
-
-        m_table->setItem(row, 0, timeItem);
-        m_table->setItem(row, 1, levelItem);
-        m_table->setItem(row, 2, msgItem);
-        ++matchCount;
-    }
-    m_table->setUpdatesEnabled(true);
-    m_table->resizeRowsToContents();
-
-    if (m_logCountLabel) {
-        m_logCountLabel->setText(QString("%1 logs").arg(matchCount));
-    }
-
-    if (m_autoScrollCheck && m_autoScrollCheck->isChecked()) {
-        m_table->scrollToBottom();
-    }
-}
-
-void ConsoleLogsView::onLogAppended(const LogEntry& entry) {
-    QString filterText = m_searchEdit ? m_searchEdit->text().trimmed() : QString();
-    if (!filterText.isEmpty() && !entry.message.contains(filterText, Qt::CaseInsensitive)) {
-        return;
-    }
-
-    auto captionMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    captionMono.setPointSize(11);
-
-    auto bodyMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    bodyMono.setPointSize(13);
-
-    int row = m_table->rowCount();
-    m_table->insertRow(row);
-
-    auto timeItem = new QTableWidgetItem(entry.timestamp.toString("HH:mm:ss.zzz"));
-    timeItem->setFont(captionMono);
-    timeItem->setForeground(palette().color(QPalette::PlaceholderText));
-    timeItem->setTextAlignment(Qt::AlignTop | Qt::AlignLeft);
-
-    auto levelItem = new QTableWidgetItem(logLevelToString(entry.level));
-    levelItem->setFont(captionMono);
-    levelItem->setTextAlignment(Qt::AlignTop | Qt::AlignLeft);
-    if (entry.level == LogLevel::Error) {
-        levelItem->setForeground(QColor(230, 50, 50));
-    } else if (entry.level == LogLevel::Warn) {
-        levelItem->setForeground(QColor(230, 140, 20));
-    } else if (entry.level == LogLevel::Info) {
-        levelItem->setForeground(QColor(40, 160, 80));
-    } else if (entry.level == LogLevel::Debug) {
-        levelItem->setForeground(QColor(80, 140, 220));
-    } else {
-        levelItem->setForeground(palette().color(QPalette::PlaceholderText));
-    }
-
-    auto msgItem = new QTableWidgetItem(entry.message);
-    msgItem->setFont(bodyMono);
-    msgItem->setTextAlignment(Qt::AlignTop | Qt::AlignLeft);
-
-    m_table->setItem(row, 0, timeItem);
-    m_table->setItem(row, 1, levelItem);
-    m_table->setItem(row, 2, msgItem);
-    m_table->resizeRowToContents(row);
-
-    constexpr int kMaxTableRows = 2000;
-    while (m_table->rowCount() > kMaxTableRows) {
-        m_table->removeRow(0);
-    }
-
-    if (m_logCountLabel) {
-        m_logCountLabel->setText(QString("%1 logs").arg(m_table->rowCount()));
-    }
-
-    if (m_autoScrollCheck && m_autoScrollCheck->isChecked()) {
-        m_table->scrollToBottom();
+void ConsoleLogsView::updateCountLabel() {
+    if (m_logCountLabel && m_model) {
+        m_logCountLabel->setText(QString("%1 logs").arg(m_model->rowCount()));
     }
 }
 
 void ConsoleLogsView::copyAllLogs() {
-    if (!LogManager::instance())
+    if (!m_model)
         return;
-    auto entries = LogManager::instance()->logs();
-    QStringList textRows;
-    for (const auto& entry : entries) {
-        textRows.append(
-            QString("[%1] [%2] %3")
-                .arg(entry.timestamp.toString(Qt::ISODateWithMs), logLevelToString(entry.level), entry.message));
-    }
-    QGuiApplication::clipboard()->setText(textRows.join("\n"));
+    QGuiApplication::clipboard()->setText(m_model->copyAllFormatted());
 }
+
+
