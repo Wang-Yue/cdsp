@@ -29,6 +29,8 @@ The application is powered directly by [**cdsp**](https://github.com/Wang-Yue/cd
 
 ![Monitor-Qt audio device settings (Linux)](DeviceSetting.png)
 
+![Monitor-Qt dashboard (Linux)](Dashboard.png)
+
 ---
 
 ## Key Features
