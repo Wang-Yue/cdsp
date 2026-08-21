@@ -616,12 +616,13 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
           if (result.max_supported_channels > channel_limit) {
             channel_limit = result.max_supported_channels;
           }
-          logger_debug(
-              &g_wasapi_logger,
-              "WASAPI capability probe: %s rate %d Hz succeeded with max %d "
-              "channels; channel limit changed from %d to %d.",
-              FAMILY_NAMES[f], rate, result.max_supported_channels, old_limit,
-              channel_limit);
+          char probe_summary[256];
+          snprintf(probe_summary, sizeof(probe_summary),
+                   "WASAPI capability probe: %s rate %d Hz succeeded with max "
+                   "%d channels; channel limit changed from %d to %d.",
+                   FAMILY_NAMES[f], rate, result.max_supported_channels,
+                   old_limit, channel_limit);
+          logger_debug(&g_wasapi_logger, "%s", probe_summary);
           if (learned_formats_count == 0) {
             char lf_str[128];
             format_labels_to_str(result.supported_formats,
