@@ -304,13 +304,52 @@ void MainWindow::setupUi() {
         }
     });
 
+    // Detail container on the right side of splitter (matching CamillaDSP-Monitor)
+    auto detailContainer = new QWidget(m_splitter);
+    detailContainer->setObjectName("DetailContainer");
+    auto detailLayout = new QVBoxLayout(detailContainer);
+    detailLayout->setContentsMargins(0, 0, 0, 0);
+    detailLayout->setSpacing(0);
+
+    // Top Header: Compact Level Meters + Stop Banner + Status Indicator
+    auto headerWidget = new QWidget(detailContainer);
+    headerWidget->setObjectName("DetailHeaderWidget");
+    auto headerLayout = new QHBoxLayout(headerWidget);
+    headerLayout->setContentsMargins(16, 8, 16, 8);
+    headerLayout->setSpacing(12);
+
+    m_compactMeterBar = new CompactLevelMeterBar(m_monitoring, m_dspController, headerWidget);
+    m_compactMeterBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    headerLayout->addWidget(m_compactMeterBar, 1);
+
+    m_stopReasonBanner = new QLabel(headerWidget);
+    m_stopReasonBanner->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    m_stopReasonBanner->setStyleSheet("color: #ff3b30; font-weight: bold; padding: 0 4px;");
+    m_stopReasonBanner->hide();
+    headerLayout->addWidget(m_stopReasonBanner);
+
+    m_statusStateLabel = new QLabel("🔴 Inactive", headerWidget);
+    m_statusStateLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    headerLayout->addWidget(m_statusStateLabel);
+
+    detailLayout->addWidget(headerWidget);
+
+    // Subtle horizontal divider line below header bar
+    auto divider = new QFrame(detailContainer);
+    divider->setFrameShape(QFrame::HLine);
+    divider->setFrameShadow(QFrame::Plain);
+    divider->setStyleSheet("color: rgba(128, 128, 128, 0.25);");
+    divider->setFixedHeight(1);
+    detailLayout->addWidget(divider);
+
     // Central detail stack
-    m_centralStack = new QStackedWidget(m_splitter);
+    m_centralStack = new QStackedWidget(detailContainer);
     m_centralStack->setObjectName("CentralStack");
     m_centralStack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    detailLayout->addWidget(m_centralStack, 1);
 
     m_splitter->addWidget(m_sidebarTree);
-    m_splitter->addWidget(m_centralStack);
+    m_splitter->addWidget(detailContainer);
     m_splitter->setSizes({260, 840});
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
@@ -321,26 +360,7 @@ void MainWindow::setupUi() {
 }
 
 void MainWindow::setupStatusBar() {
-    auto bar = statusBar();
-    bar->setSizeGripEnabled(true);
-
-    // Left-aligned level meters
-    m_compactMeterBar = new CompactLevelMeterBar(m_monitoring, m_dspController, this);
-    m_compactMeterBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    bar->addWidget(m_compactMeterBar, 1);
-
-    m_stopReasonBanner = new QLabel(this);
-    m_stopReasonBanner->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    m_stopReasonBanner->setStyleSheet("color: #ff3b30; font-weight: bold; padding: 0 4px;");
-    m_stopReasonBanner->hide();
-    bar->addWidget(m_stopReasonBanner);
-
-    // Right-aligned status indicator with emoji
-    m_statusStateLabel = new QLabel("🔴 Inactive", this);
-    m_statusStateLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    m_statusStateLabel->setContentsMargins(6, 0, 6, 0);
-    bar->addPermanentWidget(m_statusStateLabel);
-
+    statusBar()->hide();
     updateStatusBar();
 }
 
@@ -802,6 +822,11 @@ void MainWindow::updateVolumeDisplay() {
     }
 
     m_gainValueLabel->setText(QString::asprintf("%+.1f dB", gain));
+    if (gain > 0.0f) {
+        m_gainValueLabel->setStyleSheet("color: #ff3b30; font-weight: bold;");
+    } else {
+        m_gainValueLabel->setStyleSheet("");
+    }
 }
 
 void MainWindow::updateStatusBar() {
@@ -824,7 +849,9 @@ void MainWindow::updateStatusBar() {
         stateStr = "🔴 Inactive";
         break;
     }
-    m_statusStateLabel->setText(stateStr);
+    if (m_statusStateLabel) {
+        m_statusStateLabel->setText(stateStr);
+    }
     updateMuteDisplay();
 }
 
@@ -904,7 +931,8 @@ void MainWindow::setupToolbar() {
     m_headerVolumeSlider->setPageStep(2);
     m_headerVolumeSlider->setValue(static_cast<int>(m_settings->getVolume(Fader::Main) * 2.0f));
     m_headerVolumeSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_headerVolumeSlider->setMinimumWidth(180);
+    m_headerVolumeSlider->setMinimumWidth(200);
+    m_headerVolumeSlider->setMaximumWidth(450);
     m_headerVolumeSlider->setToolTip("Master Output Volume (-60 dB to +20 dB)");
     connect(m_headerVolumeSlider, &QSlider::valueChanged, [this](int val) {
         float db = val / 2.0f;
@@ -915,8 +943,9 @@ void MainWindow::setupToolbar() {
 
     m_gainValueLabel = new QLabel("  0.0 dB", this);
     m_gainValueLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    m_gainValueLabel->setFixedWidth(55);
+    m_gainValueLabel->setMinimumWidth(75);
     m_gainValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_gainValueLabel->setContentsMargins(0, 0, 10, 0);
     m_gainValueLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     updateVolumeDisplay();
     toolBar->addWidget(m_gainValueLabel);

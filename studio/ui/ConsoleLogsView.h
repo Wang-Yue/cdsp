@@ -17,6 +17,10 @@ class ConsoleLogsView : public QWidget {
 public:
     explicit ConsoleLogsView(QWidget* parent = nullptr);
 
+protected:
+    void showEvent(QShowEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+
 private slots:
     void refreshLogs();
     void onLogAppended(const LogEntry& entry);

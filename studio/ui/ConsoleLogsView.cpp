@@ -1,12 +1,87 @@
 #include "ui/ConsoleLogsView.h"
 
+#include <QAbstractTextDocumentLayout>
+#include <QApplication>
 #include <QClipboard>
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QMenu>
+#include <QPainter>
+#include <QResizeEvent>
+#include <QShowEvent>
+#include <QStyledItemDelegate>
+#include <QTextDocument>
+#include <QTextOption>
 #include <QVBoxLayout>
+#include <cmath>
+
+namespace {
+class LogMessageDelegate : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+
+        QStyle* style = opt.widget ? opt.widget->style() : QApplication::style();
+        style->drawPrimitive(QStyle::PE_PanelItemViewItem, &opt, painter, opt.widget);
+
+        painter->save();
+        painter->setFont(opt.font);
+        if (opt.state & QStyle::State_Selected) {
+            painter->setPen(opt.palette.color(QPalette::HighlightedText));
+        } else {
+            painter->setPen(opt.palette.color(QPalette::Text));
+        }
+
+        QRect textRect = opt.rect.adjusted(4, 3, -4, -3);
+        QTextDocument doc;
+        doc.setDocumentMargin(0);
+        doc.setDefaultFont(opt.font);
+        QTextOption to;
+        to.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+        doc.setDefaultTextOption(to);
+        doc.setTextWidth(textRect.width());
+        doc.setPlainText(opt.text);
+
+        painter->translate(textRect.topLeft());
+        painter->setClipRect(0, 0, textRect.width(), textRect.height());
+        QAbstractTextDocumentLayout::PaintContext ctx;
+        ctx.palette = opt.palette;
+        if (opt.state & QStyle::State_Selected) {
+            ctx.palette.setColor(QPalette::Text, opt.palette.color(QPalette::HighlightedText));
+        }
+        doc.documentLayout()->draw(painter, ctx);
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+
+        int colWidth = 300;
+        if (const auto* view = qobject_cast<const QTableView*>(opt.widget)) {
+            colWidth = view->columnWidth(index.column());
+        }
+        int availableWidth = std::max(40, colWidth - 8);
+
+        QTextDocument doc;
+        doc.setDocumentMargin(0);
+        doc.setDefaultFont(opt.font);
+        QTextOption to;
+        to.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+        doc.setDefaultTextOption(to);
+        doc.setTextWidth(availableWidth);
+        doc.setPlainText(opt.text);
+
+        int h = static_cast<int>(std::ceil(doc.size().height())) + 6;
+        return QSize(colWidth, h);
+    }
+};
+} // namespace
 
 ConsoleLogsView::ConsoleLogsView(QWidget* parent) : QWidget(parent) {
     setupUi();
@@ -16,6 +91,23 @@ ConsoleLogsView::ConsoleLogsView(QWidget* parent) : QWidget(parent) {
         connect(LogManager::instance(), &LogManager::logsCleared, this, &ConsoleLogsView::refreshLogs);
     }
     refreshLogs();
+}
+
+void ConsoleLogsView::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (m_table) {
+        m_table->resizeRowsToContents();
+        if (m_autoScrollCheck && m_autoScrollCheck->isChecked()) {
+            m_table->scrollToBottom();
+        }
+    }
+}
+
+void ConsoleLogsView::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    if (m_table) {
+        m_table->resizeRowsToContents();
+    }
 }
 
 void ConsoleLogsView::setupUi() {
@@ -47,7 +139,8 @@ void ConsoleLogsView::setupUi() {
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText("Search logs...");
     m_searchEdit->setClearButtonEnabled(true);
-    m_searchEdit->setMinimumWidth(180);
+    m_searchEdit->setMinimumWidth(100);
+    m_searchEdit->setMaximumWidth(220);
     connect(m_searchEdit, &QLineEdit::textChanged, this, &ConsoleLogsView::refreshLogs);
     toolbarLayout->addWidget(m_searchEdit);
 
@@ -62,7 +155,7 @@ void ConsoleLogsView::setupUi() {
     m_levelFilterCombo->addItem("Info", static_cast<int>(LogLevel::Info));
     m_levelFilterCombo->addItem("Debug", static_cast<int>(LogLevel::Debug));
     m_levelFilterCombo->addItem("Trace", static_cast<int>(LogLevel::Trace));
-    m_levelFilterCombo->setMinimumWidth(100);
+    m_levelFilterCombo->setMinimumWidth(80);
 
     if (LogManager::instance()) {
         int initialIdx = m_levelFilterCombo->findData(static_cast<int>(LogManager::instance()->logLevel()));
@@ -105,9 +198,11 @@ void ConsoleLogsView::setupUi() {
 
     // 2. Log Table View
     m_table = new QTableWidget(this);
+    m_table->setItemDelegateForColumn(2, new LogMessageDelegate(m_table));
     m_table->setColumnCount(3);
     m_table->setHorizontalHeaderLabels({"Timestamp", "Level", "Message"});
     m_table->horizontalHeader()->setVisible(true);
+    m_table->horizontalHeader()->setStretchLastSection(true);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
@@ -116,7 +211,6 @@ void ConsoleLogsView::setupUi() {
     m_table->setShowGrid(false);
     m_table->setWordWrap(true);
     m_table->setTextElideMode(Qt::ElideNone);
-    m_table->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContentsOnFirstShow);
     m_table->setAlternatingRowColors(true);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -175,6 +269,7 @@ void ConsoleLogsView::refreshLogs() {
 
     auto entries = LogManager::instance()->logs();
     int matchCount = 0;
+    m_table->setUpdatesEnabled(false);
     for (const auto& entry : entries) {
         if (!filterText.isEmpty() && !entry.message.contains(filterText, Qt::CaseInsensitive)) {
             continue;
@@ -210,9 +305,10 @@ void ConsoleLogsView::refreshLogs() {
         m_table->setItem(row, 0, timeItem);
         m_table->setItem(row, 1, levelItem);
         m_table->setItem(row, 2, msgItem);
-        m_table->resizeRowToContents(row);
         ++matchCount;
     }
+    m_table->setUpdatesEnabled(true);
+    m_table->resizeRowsToContents();
 
     if (m_logCountLabel) {
         m_logCountLabel->setText(QString("%1 logs").arg(matchCount));
