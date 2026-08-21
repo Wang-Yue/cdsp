@@ -61,9 +61,9 @@ binary_sample_format_t alsa_pcm_format_to_binary_format(snd_pcm_format_t fmt) {
     case SND_PCM_FORMAT_S24_3BE:
       return BINARY_SAMPLE_FORMAT_S24_3_BE;
     case SND_PCM_FORMAT_S24_LE:
-      return BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
+      return BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
     case SND_PCM_FORMAT_S24_BE:
-      return BINARY_SAMPLE_FORMAT_S24_4_LJ_BE;
+      return BINARY_SAMPLE_FORMAT_S24_4_RJ_BE;
     case SND_PCM_FORMAT_S32_LE:
       return BINARY_SAMPLE_FORMAT_S32_LE;
     case SND_PCM_FORMAT_S32_BE:

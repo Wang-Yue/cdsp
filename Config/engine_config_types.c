@@ -460,7 +460,7 @@ binary_sample_format_t alsa_sample_format_to_binary_format(
     case ALSA_SAMPLE_FORMAT_S24_3_LE:
       return BINARY_SAMPLE_FORMAT_S24_3_LE;
     case ALSA_SAMPLE_FORMAT_S24_4_LE:
-      return BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
+      return BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
     case ALSA_SAMPLE_FORMAT_S32_LE:
       return BINARY_SAMPLE_FORMAT_S32_LE;
     case ALSA_SAMPLE_FORMAT_F32_LE:

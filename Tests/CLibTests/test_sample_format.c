@@ -155,6 +155,31 @@ TEST(CoreAudioCapabilitiesUnified) {
 }
 
 #elif defined(ENABLE_ALSA)
+#include "Backend/alsa_device.h"
+
+TEST(ALSABinaryFormatConversions) {
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S16_LE,
+            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_S16_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_3_LE,
+            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_S24_3_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_RJ_LE,
+            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_S24_4_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S32_LE,
+            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_S32_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_F32_LE,
+            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_F32_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_F64_LE,
+            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_F64_LE));
+
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_RJ_LE,
+            alsa_pcm_format_to_binary_format(SND_PCM_FORMAT_S24_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_RJ_BE,
+            alsa_pcm_format_to_binary_format(SND_PCM_FORMAT_S24_BE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_3_LE,
+            alsa_pcm_format_to_binary_format(SND_PCM_FORMAT_S24_3LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_3_BE,
+            alsa_pcm_format_to_binary_format(SND_PCM_FORMAT_S24_3BE));
+}
 
 TEST(CanonicalRawValues) {
   ASSERT_STR_EQ("S16_LE",
