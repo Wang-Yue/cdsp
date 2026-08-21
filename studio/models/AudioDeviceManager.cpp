@@ -391,73 +391,59 @@ void AudioDeviceManager::fetchDevices() {
     }));
 }
 
-void AudioDeviceManager::handleFormatChange(bool isCapture, int newRate) {
-    if (!m_engine)
-        return;
-
+std::optional<AudioDeviceDescriptor> AudioDeviceManager::queryDeviceCapabilities(const DeviceConfig& cfg,
+                                                                                 bool isCapture) const {
+    if (!m_engine || !backendHasDeviceCapabilities(cfg.backend))
+        return std::nullopt;
     auto toLowerStr = [](std::string str) {
         std::transform(str.begin(), str.end(), str.begin(), ::tolower);
         return str;
     };
+    std::string backendLower = toLowerStr(audioBackendTypeToString(cfg.backend));
+    std::string devName = cfg.deviceName().value_or("");
+    return m_engine->getDeviceCapabilities(backendLower, devName, isCapture);
+}
 
-    if (isCapture) {
-        std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
-        std::string capName = captureConfig.deviceName().value_or("");
-        if (backendHasDeviceCapabilities(captureConfig.backend)) {
-            auto capDesc = m_engine->getDeviceCapabilities(capBackendLower, capName, true);
-            if (capDesc.has_value() && !capDesc->capability_sets.empty()) {
-                captureConfig.capabilities = capDesc.value();
-                if (!capName.empty()) {
-                    m_captureDeviceConfigs[capName] = captureConfig;
-                }
-            }
-        }
-        captureConfig.sampleRate = newRate;
-        captureConfig = captureConfig.enforced();
-        if (m_settings && !m_settings->resamplerEnabled) {
-            std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
-            std::string pbName = playbackConfig.deviceName().value_or("");
-            if (backendHasDeviceCapabilities(playbackConfig.backend)) {
-                auto pbDesc = m_engine->getDeviceCapabilities(pbBackendLower, pbName, false);
-                if (pbDesc.has_value() && !pbDesc->capability_sets.empty()) {
-                    playbackConfig.capabilities = pbDesc.value();
-                    if (!pbName.empty()) {
-                        m_playbackDeviceConfigs[pbName] = playbackConfig;
-                    }
-                }
-            }
-            playbackConfig.sampleRate = captureConfig.sampleRate;
-            playbackConfig = playbackConfig.enforced();
-        }
+void AudioDeviceManager::updateCapabilitiesFromDescriptor(DeviceConfig& cfg, bool isCapture,
+                                                          const std::optional<AudioDeviceDescriptor>& desc) {
+    if (!backendHasDeviceCapabilities(cfg.backend)) {
+        cfg.capabilities = AudioDeviceDescriptor();
+        return;
+    }
+    std::string name = cfg.deviceName().value_or("");
+    std::string origId = cfg.capabilities.name;
+    if (desc.has_value() && !desc->capability_sets.empty()) {
+        cfg.capabilities = desc.value();
     } else {
-        std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
-        std::string pbName = playbackConfig.deviceName().value_or("");
-        if (backendHasDeviceCapabilities(playbackConfig.backend)) {
-            auto pbDesc = m_engine->getDeviceCapabilities(pbBackendLower, pbName, false);
-            if (pbDesc.has_value() && !pbDesc->capability_sets.empty()) {
-                playbackConfig.capabilities = pbDesc.value();
-                if (!pbName.empty()) {
-                    m_playbackDeviceConfigs[pbName] = playbackConfig;
-                }
-            }
+        auto& dict = isCapture ? m_captureDeviceConfigs : m_playbackDeviceConfigs;
+        auto it = dict.find(name);
+        if (it != dict.end() && !it->second.capabilities.capability_sets.empty()) {
+            cfg.capabilities = it->second.capabilities;
         }
-        playbackConfig.sampleRate = newRate;
-        playbackConfig = playbackConfig.enforced();
-        if (m_settings && !m_settings->resamplerEnabled) {
-            std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
-            std::string capName = captureConfig.deviceName().value_or("");
-            if (backendHasDeviceCapabilities(captureConfig.backend)) {
-                auto capDesc = m_engine->getDeviceCapabilities(capBackendLower, capName, true);
-                if (capDesc.has_value() && !capDesc->capability_sets.empty()) {
-                    captureConfig.capabilities = capDesc.value();
-                    if (!capName.empty()) {
-                        m_captureDeviceConfigs[capName] = captureConfig;
-                    }
-                }
-            }
-            captureConfig.sampleRate = playbackConfig.sampleRate;
-            captureConfig = captureConfig.enforced();
-        }
+    }
+    if (!origId.empty() && cfg.capabilities.name.empty()) {
+        cfg.capabilities.name = origId;
+    }
+    if (!name.empty() && !cfg.capabilities.capability_sets.empty()) {
+        if (isCapture)
+            m_captureDeviceConfigs[name] = cfg;
+        else
+            m_playbackDeviceConfigs[name] = cfg;
+    }
+}
+
+void AudioDeviceManager::handleFormatChange(bool isCapture, int newRate) {
+    DeviceConfig& primary = isCapture ? captureConfig : playbackConfig;
+    DeviceConfig& secondary = isCapture ? playbackConfig : captureConfig;
+
+    updateCapabilitiesFromDescriptor(primary, isCapture, queryDeviceCapabilities(primary, isCapture));
+    primary.sampleRate = newRate;
+    primary = primary.enforced();
+
+    if (m_settings && !m_settings->resamplerEnabled) {
+        updateCapabilitiesFromDescriptor(secondary, !isCapture, queryDeviceCapabilities(secondary, !isCapture));
+        secondary.sampleRate = primary.sampleRate;
+        secondary = secondary.enforced();
     }
 
     validateSampleRates();
@@ -468,97 +454,36 @@ void AudioDeviceManager::handleFormatChange(bool isCapture, int newRate) {
 }
 
 void AudioDeviceManager::refreshDeviceCapabilities() {
-    auto engine = m_engine;
-    if (!engine)
+    if (!m_engine)
         return;
 
     uint64_t version = ++m_capabilityRequestVersion;
+    DeviceConfig capCfg = captureConfig;
+    DeviceConfig pbCfg = playbackConfig;
 
-    std::string capName = captureConfig.deviceName().value_or("");
-    std::string pbName = playbackConfig.deviceName().value_or("");
-    auto toLowerStr = [](std::string str) {
-        std::transform(str.begin(), str.end(), str.begin(), ::tolower);
-        return str;
-    };
-    std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
-    std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
+    m_capabilitiesWatcher.setFuture(QtConcurrent::run([this, version, capCfg, pbCfg]() {
+        auto capDesc = queryDeviceCapabilities(capCfg, true);
+        auto pbDesc = queryDeviceCapabilities(pbCfg, false);
 
-    bool isCapHw = backendHasDeviceCapabilities(captureConfig.backend);
-    bool isPbHw = backendHasDeviceCapabilities(playbackConfig.backend);
+        QMetaObject::invokeMethod(this, [this, version, capDesc, pbDesc]() {
+            if (version != m_capabilityRequestVersion)
+                return;
 
-    m_capabilitiesWatcher.setFuture(
-        QtConcurrent::run([this, engine, version, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {
-            std::optional<AudioDeviceDescriptor> capDesc;
-            std::optional<AudioDeviceDescriptor> pbDesc;
+            updateCapabilitiesFromDescriptor(captureConfig, true, capDesc);
+            updateCapabilitiesFromDescriptor(playbackConfig, false, pbDesc);
 
-            if (isCapHw) {
-                capDesc = engine->getDeviceCapabilities(capBackendLower, capName, true);
+            captureConfig = captureConfig.enforced();
+            playbackConfig = playbackConfig.enforced();
+
+            bool rateChanged = validateSampleRates();
+            if (!rateChanged) {
+                saveConfigs();
+                emit configChanged();
+                if (onConfigChanged)
+                    onConfigChanged();
             }
-            if (isPbHw) {
-                pbDesc = engine->getDeviceCapabilities(pbBackendLower, pbName, false);
-            }
-
-            QMetaObject::invokeMethod(this, [this, version, capDesc, pbDesc, isCapHw, isPbHw]() {
-                if (version != m_capabilityRequestVersion)
-                    return;
-
-                DeviceConfig newCapture = captureConfig;
-                DeviceConfig newPlayback = playbackConfig;
-
-                if (isCapHw) {
-                    std::string name = newCapture.deviceName().value_or("");
-                    std::string origId = newCapture.capabilities.name;
-                    if (capDesc.has_value() && !capDesc->capability_sets.empty()) {
-                        newCapture.capabilities = capDesc.value();
-                    } else {
-                        auto it = m_captureDeviceConfigs.find(name);
-                        if (it != m_captureDeviceConfigs.end() && !it->second.capabilities.capability_sets.empty()) {
-                            newCapture.capabilities = it->second.capabilities;
-                        }
-                    }
-                    if (!origId.empty() && newCapture.capabilities.name.empty()) {
-                        newCapture.capabilities.name = origId;
-                    }
-                    if (!name.empty() && !newCapture.capabilities.capability_sets.empty()) {
-                        m_captureDeviceConfigs[name] = newCapture;
-                    }
-                } else {
-                    newCapture.capabilities = AudioDeviceDescriptor();
-                }
-
-                if (isPbHw) {
-                    std::string name = newPlayback.deviceName().value_or("");
-                    std::string origId = newPlayback.capabilities.name;
-                    if (pbDesc.has_value() && !pbDesc->capability_sets.empty()) {
-                        newPlayback.capabilities = pbDesc.value();
-                    } else {
-                        auto it = m_playbackDeviceConfigs.find(name);
-                        if (it != m_playbackDeviceConfigs.end() && !it->second.capabilities.capability_sets.empty()) {
-                            newPlayback.capabilities = it->second.capabilities;
-                        }
-                    }
-                    if (!origId.empty() && newPlayback.capabilities.name.empty()) {
-                        newPlayback.capabilities.name = origId;
-                    }
-                    if (!name.empty() && !newPlayback.capabilities.capability_sets.empty()) {
-                        m_playbackDeviceConfigs[name] = newPlayback;
-                    }
-                } else {
-                    newPlayback.capabilities = AudioDeviceDescriptor();
-                }
-
-                captureConfig = newCapture.enforced();
-                playbackConfig = newPlayback.enforced();
-
-                bool rateChanged = validateSampleRates();
-                if (!rateChanged) {
-                    saveConfigs();
-                    emit configChanged();
-                    if (onConfigChanged)
-                        onConfigChanged();
-                }
-            });
-        }));
+        });
+    }));
 }
 
 bool AudioDeviceManager::validateSampleRates() {
