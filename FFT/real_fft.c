@@ -1,28 +1,31 @@
 #include "FFT/real_fft.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "Config/config_error.h"
+#include "FFT/real_fft_backend.h"
 #include "Logging/app_logger.h"
 #include "Utils/double_helpers.h"
 #include "Utils/msan_compat.h"
 
 __attribute__((unused)) static const logger_t g_logger = {"dsp.fft"};
 
-// Double-precision (double) FFTW context and implementation
+// MARK: - Core RealFFT Context Structures
+
 struct real_fft {
-  size_t length;          /**< Time-domain length (must be even). */
-  size_t spectrum_length; /**< Number of unique complex bins in the spectrum (=
-                             length/2 + 1). */
-  real_fft_backend_t* backend; /**< The dispatched backend implementation. */
+  size_t length;          /**< Time-domain length (must be positive and even). */
+  size_t spectrum_length; /**< Number of unique complex bins (= length / 2 + 1). */
+  real_fft_backend_t* backend; /**< Dispatched backend implementation. */
 };
 
-// Single-precision (float) FFTW context and implementation
 struct real_fftf {
-  size_t length;
-  size_t spectrum_length;
-  real_fftf_backend_t* backend;
+  size_t length;          /**< Time-domain length (must be positive and even). */
+  size_t spectrum_length; /**< Number of unique complex bins (= length / 2 + 1). */
+  real_fftf_backend_t* backend; /**< Dispatched backend implementation. */
 };
+
+// MARK: - Public API Dispatch (Double-Precision)
 
 size_t real_fft_get_length(const real_fft_t* fft) {
   return fft ? fft->length : 0;
@@ -32,6 +35,31 @@ size_t real_fft_get_spectrum_length(const real_fft_t* fft) {
   return fft ? fft->spectrum_length : 0;
 }
 
+void real_fft_forward(real_fft_t* fft, waveform_t real_in,
+                      mutable_waveform_t spec_re, mutable_waveform_t spec_im) {
+  if (fft && fft->backend && fft->backend->forward) {
+    fft->backend->forward(fft->backend->ctx, real_in, spec_re, spec_im);
+  }
+}
+
+void real_fft_inverse(real_fft_t* fft, waveform_t spec_re, waveform_t spec_im,
+                      mutable_waveform_t real_out) {
+  if (fft && fft->backend && fft->backend->inverse) {
+    fft->backend->inverse(fft->backend->ctx, spec_re, spec_im, real_out);
+  }
+}
+
+void real_fft_free(real_fft_t* fft) {
+  if (fft) {
+    if (fft->backend && fft->backend->free) {
+      fft->backend->free(fft->backend->ctx);
+    }
+    free(fft);
+  }
+}
+
+// MARK: - Public API Dispatch (Single-Precision Float)
+
 size_t real_fftf_get_length(const real_fftf_t* fft) {
   return fft ? fft->length : 0;
 }
@@ -40,10 +68,35 @@ size_t real_fftf_get_spectrum_length(const real_fftf_t* fft) {
   return fft ? fft->spectrum_length : 0;
 }
 
+void real_fftf_forward(real_fftf_t* fft, const float* real_in, float* spec_re,
+                       float* spec_im) {
+  if (fft && fft->backend && fft->backend->forward) {
+    fft->backend->forward(fft->backend->ctx, real_in, spec_re, spec_im);
+  }
+}
+
+void real_fftf_inverse(real_fftf_t* fft, const float* spec_re,
+                       const float* spec_im, float* real_out) {
+  if (fft && fft->backend && fft->backend->inverse) {
+    fft->backend->inverse(fft->backend->ctx, spec_re, spec_im, real_out);
+  }
+}
+
+void real_fftf_free(real_fftf_t* fft) {
+  if (fft) {
+    if (fft->backend && fft->backend->free) {
+      fft->backend->free(fft->backend->ctx);
+    }
+    free(fft);
+  }
+}
+
+// MARK: - Backend Implementations & Factories
+
 #if defined(ENABLE_ACCELERATE)
 
-// Real-input FFT of arbitrary even length. `RealFFT.init` is
-// the **single dispatch point** for the resampler's FFT subsystem — it
+// Real-input FFT of arbitrary even length. `real_fft_create` is
+// the single dispatch point for the resampler's FFT subsystem — it
 // inspects the requested length once and picks the fastest available
 // backend, so callers (and the per-backend classes) never repeat that
 // decision.
@@ -51,25 +104,18 @@ size_t real_fftf_get_spectrum_length(const real_fftf_t* fft) {
 // Decision tree (top-to-bottom, first match wins)
 // ------------------------------------------------
 //   1. `length` is a power of two `≥ 8`
-//      → `VDSPRealFFT` (`VDSPRealFFT.swift`), wrapping Apple's
-//      `vDSP_fft_zrip` / `vDSP_fft_zripD` (radix-2 split-complex real FFT,
-//      hand-tuned NEON on Apple Silicon).
+//      → `VDSPRealFFT`, wrapping Apple's `vDSP_fft_zrip` / `vDSP_fft_zripD`
+//      (radix-2 split-complex real FFT, hand-tuned NEON on Apple Silicon).
 //   2. Otherwise (arbitrary even length): a 2N-point real FFT is built
 //      from one N-point complex FFT plus an O(N) untwiddle pass —
-//      `ComplexInnerRealFFT` (`ComplexInnerRealFFT.swift`). The inner
-//      complex FFT is itself routed here, in priority order:
-//      a. `VDSPComplexDFT` (`VDSPComplexDFT.swift`) — `vDSP_DFT_zopD`
-//         for sizes `f·2ᵐ`, `f ∈ {1, 3, 5, 15}`, `m ≥ 3`.
-//      b. `MixedRadixFFT` (`MixedRadixFFT.swift`) — native mixed-radix
-//         for prime factorisations in `{2, 3, 5, 7}`. Its radix-2/4/8
-//         stages are NOT redundant with branch (1): they handle the
-//         *power-of-two portion* of a mixed factorisation (e.g.
-//         `1120 = 2⁵·5·7` factored as `[8, 4, 5, 7]`). Without them
-//         MixedRadix could only support odd-only sizes like
-//         `105 = 3·5·7`.
-//      c. `BluesteinFFT` (`BluesteinFFT.swift`) — universal fallback
-//         for anything with a prime factor `> 7` (e.g. our `11→13k`
-//         rate pair, halfN = 1034 has primes 11 and 47).
+//      `ComplexInnerRealFFT`. The inner complex FFT is itself routed here,
+//      in priority order:
+//      a. `VDSPComplexDFT` — `vDSP_DFT_zopD` for sizes `f·2ᵐ`, `f ∈ {1, 3, 5, 15}`, `m ≥ 3`.
+//      b. `MixedRadixFFT` — native mixed-radix for prime factorisations in `{2, 3, 5, 7}`.
+//         Its radix-2/4/8 stages are NOT redundant with branch (1): they handle the
+//         power-of-two portion of a mixed factorisation (e.g. `1120 = 2⁵·5·7` factored as `[8, 4, 5, 7]`).
+//      c. `BluesteinFFT` — universal fallback for anything with a prime factor `> 7`
+//         (e.g. 11→13k rate pair, halfN = 1034 has primes 11 and 47).
 //
 // Every backend exposes the same external semantics — forward =
 // unscaled DFT, inverse = `length · signal` — so the resampler is
@@ -126,6 +172,7 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   size_t half_n = length / 2;
   arbitrary_complex_fft_t* inner = NULL;
   const char* backend_name = "unknown";
+
   vdsp_complex_dft_t* dft = vdsp_complex_dft_create(half_n);
   if (dft) {
     inner = vdsp_complex_dft_as_arbitrary(dft);
@@ -170,7 +217,6 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   return fft;
 }
 
-// Single-precision (float) Accelerate context
 real_fftf_t* real_fftf_create(size_t length) {
   if (length == 0 || length % 2 != 0) return NULL;
   real_fftf_t* fft = (real_fftf_t*)calloc(1, sizeof(real_fftf_t));
@@ -189,6 +235,10 @@ real_fftf_t* real_fftf_create(size_t length) {
 }
 
 #elif defined(ENABLE_FFTW)
+
+// ============================================================================
+// FFTW3 Backend
+// ============================================================================
 
 #include <complex.h>  // IWYU pragma: keep
 #include <fftw3.h>
@@ -269,6 +319,7 @@ static void fftw_real_fft_free(void* ctx) {
   if (fft->out_complex) fftw_free(fft->out_complex);
   free(fft);
 }
+
 real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   if (length == 0) {
     config_error_set(err, CONFIG_ERR_PARSE, "RealFFT: length must be positive");
@@ -411,6 +462,10 @@ real_fftf_t* real_fftf_create(size_t length) {
 }
 
 #else
+
+// ============================================================================
+// Pure-C Software Fallback Backend
+// ============================================================================
 
 #include <math.h>
 
@@ -717,7 +772,6 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   return fft;
 }
 
-// Single precision float fallback
 typedef struct {
   real_fftf_backend_t base;
   size_t length;
@@ -823,50 +877,3 @@ real_fftf_t* real_fftf_create(size_t length) {
 }
 
 #endif
-
-// Public API implementation (shared across Apple and non-Apple backends)
-void real_fft_forward(real_fft_t* fft, waveform_t real_in,
-                      mutable_waveform_t spec_re, mutable_waveform_t spec_im) {
-  if (fft && fft->backend && fft->backend->forward) {
-    fft->backend->forward(fft->backend->ctx, real_in, spec_re, spec_im);
-  }
-}
-
-void real_fft_inverse(real_fft_t* fft, waveform_t spec_re, waveform_t spec_im,
-                      mutable_waveform_t real_out) {
-  if (fft && fft->backend && fft->backend->inverse) {
-    fft->backend->inverse(fft->backend->ctx, spec_re, spec_im, real_out);
-  }
-}
-
-void real_fft_free(real_fft_t* fft) {
-  if (fft) {
-    if (fft->backend && fft->backend->free) {
-      fft->backend->free(fft->backend->ctx);
-    }
-    free(fft);
-  }
-}
-
-void real_fftf_forward(real_fftf_t* fft, const float* real_in, float* spec_re,
-                       float* spec_im) {
-  if (fft && fft->backend && fft->backend->forward) {
-    fft->backend->forward(fft->backend->ctx, real_in, spec_re, spec_im);
-  }
-}
-
-void real_fftf_inverse(real_fftf_t* fft, const float* spec_re,
-                       const float* spec_im, float* real_out) {
-  if (fft && fft->backend && fft->backend->inverse) {
-    fft->backend->inverse(fft->backend->ctx, spec_re, spec_im, real_out);
-  }
-}
-
-void real_fftf_free(real_fftf_t* fft) {
-  if (fft) {
-    if (fft->backend && fft->backend->free) {
-      fft->backend->free(fft->backend->ctx);
-    }
-    free(fft);
-  }
-}

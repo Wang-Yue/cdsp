@@ -47,59 +47,10 @@
 #include "Config/config_error.h"
 #include "Utils/double_helpers.h"
 
-/**
- * @brief Function pointer type for the backend forward FFT execution.
- *
- * @param ctx Pointer to the backend's internal context structure.
- * @param real_in Input buffer of real samples.
- * @param spec_re Output buffer for the real parts of the spectrum.
- * @param spec_im Output buffer for the imaginary parts of the spectrum.
- */
-typedef void (*real_fft_backend_forward_fn)(void* ctx, waveform_t real_in,
-                                            mutable_waveform_t spec_re,
-                                            mutable_waveform_t spec_im);
+// MARK: - Double-Precision Real FFT (real_fft_t)
 
 /**
- * @brief Function pointer type for the backend inverse FFT execution.
- *
- * @param ctx Pointer to the backend's internal context structure.
- * @param spec_re Input buffer for the real parts of the spectrum.
- * @param spec_im Input buffer for the imaginary parts of the spectrum.
- * @param real_out Output buffer for the reconstructed real samples.
- */
-typedef void (*real_fft_backend_inverse_fn)(void* ctx, waveform_t spec_re,
-                                            waveform_t spec_im,
-                                            mutable_waveform_t real_out);
-
-/**
- * @brief Function pointer type for freeing the backend context.
- *
- * @param ctx Pointer to the backend's internal context structure.
- */
-typedef void (*real_fft_backend_free_fn)(void* ctx);
-
-/**
- * @struct real_fft_backend
- * @brief Structure defining the interface for a real FFT backend.
- *
- * Module-internal protocol implemented by every real-FFT backend
- * `RealFFT` can dispatch to. Forward = unscaled DFT, inverse
- * = `length · signal` (round-trip with `forward` multiplies by
- * `length`). The protocol-witness call is paid once per `forward` /
- * `inverse` (twice per resampler chunk per channel) and is invisible
- * against the actual FFT cost.
- */
-typedef struct {
-  void* ctx; /**< Opaque pointer to the backend's internal context. */
-  real_fft_backend_forward_fn
-      forward; /**< Function to execute the forward FFT. */
-  real_fft_backend_inverse_fn
-      inverse;                   /**< Function to execute the inverse FFT. */
-  real_fft_backend_free_fn free; /**< Function to free the backend context. */
-} real_fft_backend_t;
-
-/**
- * @struct real_fft_t
+ * @struct real_fft
  * @brief Main real FFT structure.
  */
 typedef struct real_fft real_fft_t;
@@ -169,30 +120,59 @@ void real_fft_inverse(real_fft_t* fft, waveform_t spec_re, waveform_t spec_im,
  */
 void real_fft_free(real_fft_t* fft);
 
-// Single-precision (float) Real FFT declarations
+// MARK: - Single-Precision Real FFT (real_fftf_t)
+
+/**
+ * @struct real_fftf
+ * @brief Single-precision (float) Real FFT context.
+ */
 typedef struct real_fftf real_fftf_t;
 
-typedef void (*real_fftf_backend_forward_fn)(void* ctx, const float* real_in,
-                                             float* spec_re, float* spec_im);
-typedef void (*real_fftf_backend_inverse_fn)(void* ctx, const float* spec_re,
-                                             const float* spec_im,
-                                             float* real_out);
-typedef void (*real_fftf_backend_free_fn)(void* ctx);
-
-typedef struct {
-  void* ctx;
-  real_fftf_backend_forward_fn forward;
-  real_fftf_backend_inverse_fn inverse;
-  real_fftf_backend_free_fn free;
-} real_fftf_backend_t;
-
+/**
+ * @brief Get the time-domain length of the single-precision real FFT.
+ * @param fft Pointer to the float real FFT context.
+ * @return The length.
+ */
 size_t real_fftf_get_length(const real_fftf_t* fft);
+
+/**
+ * @brief Get the spectrum length of the single-precision real FFT.
+ * @param fft Pointer to the float real FFT context.
+ * @return The spectrum length.
+ */
 size_t real_fftf_get_spectrum_length(const real_fftf_t* fft);
+
+/**
+ * @brief Creates a single-precision real FFT context for the specified length.
+ * @param length The time-domain length (must be even).
+ * @return A pointer to the created real_fftf_t context, or NULL on failure.
+ */
 real_fftf_t* real_fftf_create(size_t length);
+
+/**
+ * @brief Computes the forward single-precision real FFT.
+ * @param fft The float real FFT context.
+ * @param real_in Input buffer of float real samples.
+ * @param spec_re Output buffer for the real parts of the spectrum.
+ * @param spec_im Output buffer for the imaginary parts of the spectrum.
+ */
 void real_fftf_forward(real_fftf_t* fft, const float* real_in, float* spec_re,
                        float* spec_im);
+
+/**
+ * @brief Computes the inverse single-precision real FFT.
+ * @param fft The float real FFT context.
+ * @param spec_re Input buffer for the real parts of the spectrum.
+ * @param spec_im Input buffer for the imaginary parts of the spectrum.
+ * @param real_out Output buffer for reconstructed real float samples. Output is scaled by length.
+ */
 void real_fftf_inverse(real_fftf_t* fft, const float* spec_re,
                        const float* spec_im, float* real_out);
+
+/**
+ * @brief Frees the single-precision real FFT context and its backend.
+ * @param fft The context to destroy.
+ */
 void real_fftf_free(real_fftf_t* fft);
 
 #endif  // CLIB_FFT_REALFFT_H

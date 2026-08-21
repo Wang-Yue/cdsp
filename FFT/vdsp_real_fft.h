@@ -15,6 +15,7 @@
 #include <stddef.h>
 
 #include "FFT/real_fft.h"
+#include "FFT/real_fft_backend.h"
 #include "Utils/double_helpers.h"
 
 #if defined(ENABLE_ACCELERATE)
