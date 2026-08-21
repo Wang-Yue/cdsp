@@ -27,6 +27,7 @@ struct GraphBlock {
     qreal width = 85;
     qreal height = 28;
     bool isChannelPort = false;
+    int stepIndex = 0;
 };
 
 struct ContainerBox {
@@ -38,6 +39,7 @@ struct ContainerBox {
     qreal height = 40;
     int activeChannelsCount = 0;
     std::vector<QString> containedBlockIds;
+    int stepIndex = 0;
 };
 
 struct GraphArrow {
@@ -95,6 +97,7 @@ private:
 
     QPointF getBlockPos(const GraphBlock& b, qreal originY) const;
     void calculateGraphLayout();
+    static QSizeF calculateBlockSize(const QString& label, bool isChannelPort);
     QString readableFilterStepName(const std::string& rawName, const PipelineStage& stage) const;
     QString readableMixerTitle(const std::string& rawName, int inCh, int outCh) const;
 };

@@ -69,6 +69,23 @@ QString DSPGraphCanvas::readableMixerTitle(const std::string& rawName, int inCh,
     return QString("%1to%2").arg(inCh).arg(outCh);
 }
 
+QSizeF DSPGraphCanvas::calculateBlockSize(const QString& label, bool isChannelPort) {
+    QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    if (isChannelPort) {
+        font.setBold(true);
+    }
+    QFontMetricsF fm(font);
+    QRectF textRect = fm.boundingRect(QRectF(0, 0, 10000, 10000), Qt::AlignCenter, label);
+    qreal textWidth = std::max(fm.horizontalAdvance(label), textRect.width());
+    qreal textHeight = fm.height();
+
+    qreal minWidth = isChannelPort ? 48.0 : 85.0;
+    qreal paddingH = isChannelPort ? 16.0 : 24.0;
+    qreal width = std::max(minWidth, textWidth + paddingH);
+    qreal height = std::max(28.0, textHeight + 8.0);
+    return QSizeF(width, height);
+}
+
 void DSPGraphCanvas::calculateGraphLayout() {
     m_blocks.clear();
     m_boxes.clear();
@@ -113,29 +130,36 @@ void DSPGraphCanvas::calculateGraphLayout() {
         return y;
     };
 
-    auto xPos = [&](int step) -> qreal { return static_cast<qreal>(step) * m_xStep; };
-
-    auto makeContainerBox = [&](const QString& id, const QString& label, qreal centerX,
+    auto makeContainerBox = [&](const QString& id, const QString& label, int stepIndex,
                                 const std::vector<GraphBlock>& blocksInBox) -> ContainerBox {
         qreal minBlockY = 0;
         qreal maxBlockY = 0;
+        qreal maxBlockW = 48.0;
         if (!blocksInBox.empty()) {
             minBlockY = blocksInBox[0].y;
             maxBlockY = blocksInBox[0].y;
+            maxBlockW = blocksInBox[0].width;
             for (const auto& b : blocksInBox) {
                 minBlockY = std::min(minBlockY, b.y);
                 maxBlockY = std::max(maxBlockY, b.y);
+                maxBlockW = std::max(maxBlockW, b.width);
             }
         }
         qreal centerY = (minBlockY + maxBlockY) / 2.0;
         qreal height = (maxBlockY - minBlockY) + m_blockHeight + 20;
 
+        QFont headerFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        headerFont.setBold(true);
+        QFontMetricsF fmHeader(headerFont);
+        qreal titleWidth = fmHeader.horizontalAdvance(label);
+        qreal width = std::max({76.0, maxBlockW + 28.0, titleWidth + 24.0});
+
         std::vector<QString> containedIds;
         for (const auto& b : blocksInBox) {
             containedIds.push_back(b.id);
         }
-        return ContainerBox{id,          label, centerX, centerY, 76, height, static_cast<int>(blocksInBox.size()),
-                            containedIds};
+        return ContainerBox{id,           label,    0, centerY, width, height, static_cast<int>(blocksInBox.size()),
+                            containedIds, stepIndex};
     };
 
     // 1. INPUT STAGE
@@ -143,15 +167,16 @@ void DSPGraphCanvas::calculateGraphLayout() {
     std::vector<GraphBlock> captureInputBlocks;
     for (int n = 0; n < activeChannels; ++n) {
         qreal y = yPos(n, activeChannels, false);
-        qreal x = xPos(0);
-        GraphBlock b{QString("input_ch%1").arg(n), QString::number(n + 1), x, y, 48, m_blockHeight, true};
+        QString label = QString::number(n + 1);
+        QSizeF sz = calculateBlockSize(label, true);
+        GraphBlock b{QString("input_ch%1").arg(n), label, 0, y, sz.width(), sz.height(), true, 0};
         m_blocks.push_back(b);
         captureInputBlocks.push_back(b);
         captureStageChannels.push_back({b});
     }
 
     QString captureName = QString::fromStdString(settings->deviceConfig.capture.deviceName().value_or("Capture Input"));
-    m_boxes.push_back(makeContainerBox("box_input", captureName, xPos(0), captureInputBlocks));
+    m_boxes.push_back(makeContainerBox("box_input", captureName, 0, captureInputBlocks));
     stages.push_back(captureStageChannels);
 
     // Build presets lookup maps
@@ -199,14 +224,16 @@ void DSPGraphCanvas::calculateGraphLayout() {
 
                 for (int n = 0; n < outChannels; ++n) {
                     qreal y = yPos(n, outChannels, false);
-                    qreal x = xPos(totalLength);
+                    QString label = QString::number(n + 1);
+                    QSizeF sz = calculateBlockSize(label, true);
                     GraphBlock b{QString("mixer_%1_ch%2").arg(totalLength).arg(n),
-                                 QString::number(n + 1),
-                                 x,
+                                 label,
+                                 0,
                                  y,
-                                 48,
-                                 m_blockHeight,
-                                 true};
+                                 sz.width(),
+                                 sz.height(),
+                                 true,
+                                 totalLength};
                     m_blocks.push_back(b);
                     mixerBoxBlocks.push_back(b);
                     mixerStageChannels.push_back({b});
@@ -241,8 +268,7 @@ void DSPGraphCanvas::calculateGraphLayout() {
 
                             m_arrows.push_back(GraphArrow{
                                 QString("arrow_mix_%1_%2_%3").arg(totalLength).arg(srcCh).arg(destCh), srcBlock.id,
-                                destBlock.id, QPointF(srcBlock.x + srcBlock.width / 2, srcBlock.y),
-                                QPointF(destBlock.x - destBlock.width / 2, destBlock.y), labelStr});
+                                destBlock.id, QPointF(0, srcBlock.y), QPointF(0, destBlock.y), labelStr});
                         }
                     }
                 } else {
@@ -253,10 +279,9 @@ void DSPGraphCanvas::calculateGraphLayout() {
                             GraphBlock srcBlock = stages.back()[srcCh].back();
                             mappedSourcesInBox.insert(srcCh);
                             GraphBlock destBlock = mixerStageChannels[n][0];
-                            m_arrows.push_back(
-                                GraphArrow{QString("arrow_mix_fb_%1_%2").arg(totalLength).arg(n), srcBlock.id,
-                                           destBlock.id, QPointF(srcBlock.x + srcBlock.width / 2, srcBlock.y),
-                                           QPointF(destBlock.x - destBlock.width / 2, destBlock.y), "0 dB"});
+                            m_arrows.push_back(GraphArrow{QString("arrow_mix_fb_%1_%2").arg(totalLength).arg(n),
+                                                          srcBlock.id, destBlock.id, QPointF(0, srcBlock.y),
+                                                          QPointF(0, destBlock.y), "0 dB"});
                         }
                     }
                 }
@@ -273,8 +298,8 @@ void DSPGraphCanvas::calculateGraphLayout() {
 
                 int mixInCh = mixconf ? mixconf->channelsIn : currentStageInputChannels;
                 m_boxes.push_back(makeContainerBox(QString("box_mixer_%1").arg(totalLength),
-                                                   readableMixerTitle(rawNameStr, mixInCh, outChannels),
-                                                   xPos(totalLength), mixerBoxBlocks));
+                                                   readableMixerTitle(rawNameStr, mixInCh, outChannels), totalLength,
+                                                   mixerBoxBlocks));
                 stageStart = totalLength;
 
             } else if (step.type == PipelineStepType::Filter) {
@@ -309,16 +334,17 @@ void DSPGraphCanvas::calculateGraphLayout() {
                         stageFilterBlockCounts[chNbr] = countInStage + 1;
 
                         qreal y = yPos(chNbr, activeChannels, false);
-                        qreal x = xPos(chStep);
+                        QSizeF sz = calculateBlockSize(name, false);
 
                         GraphBlock b{
                             QString("filter_%1_%2_%3").arg(chStep).arg(chNbr).arg(QString::fromStdString(rawName)),
                             name,
-                            x,
+                            0,
                             y,
-                            m_blockWidth,
-                            m_blockHeight,
-                            false};
+                            sz.width(),
+                            sz.height(),
+                            false,
+                            chStep};
                         m_blocks.push_back(b);
 
                         if (!stages.back()[chNbr].empty()) {
@@ -327,9 +353,8 @@ void DSPGraphCanvas::calculateGraphLayout() {
                                                               .arg(chStep)
                                                               .arg(chNbr)
                                                               .arg(QString::fromStdString(rawName)),
-                                                          srcBlock.id, b.id,
-                                                          QPointF(srcBlock.x + srcBlock.width / 2, srcBlock.y),
-                                                          QPointF(b.x - b.width / 2, b.y), ""});
+                                                          srcBlock.id, b.id, QPointF(0, srcBlock.y), QPointF(0, b.y),
+                                                          ""});
                         }
                         stages.back()[chNbr].push_back(b);
                     }
@@ -344,14 +369,16 @@ void DSPGraphCanvas::calculateGraphLayout() {
 
                 for (int n = 0; n < activeChannels; ++n) {
                     qreal y = yPos(n, activeChannels, false);
-                    qreal x = xPos(totalLength);
+                    QString label = QString::number(n + 1);
+                    QSizeF sz = calculateBlockSize(label, true);
                     GraphBlock b{QString("proc_%1_ch%2").arg(totalLength).arg(n),
-                                 QString::number(n + 1),
-                                 x,
+                                 label,
+                                 0,
                                  y,
-                                 48,
-                                 m_blockHeight,
-                                 true};
+                                 sz.width(),
+                                 sz.height(),
+                                 true,
+                                 totalLength};
                     m_blocks.push_back(b);
                     procBoxBlocks.push_back(b);
                     procStageChannels.push_back({b});
@@ -360,8 +387,7 @@ void DSPGraphCanvas::calculateGraphLayout() {
                         !stages.back()[n].empty()) {
                         GraphBlock srcBlock = stages.back()[n].back();
                         m_arrows.push_back(GraphArrow{QString("arrow_proc_%1_%2").arg(totalLength).arg(n), srcBlock.id,
-                                                      b.id, QPointF(srcBlock.x + srcBlock.width / 2, srcBlock.y),
-                                                      QPointF(b.x - b.width / 2, b.y), ""});
+                                                      b.id, QPointF(0, srcBlock.y), QPointF(0, b.y), ""});
                     }
                 }
 
@@ -374,7 +400,7 @@ void DSPGraphCanvas::calculateGraphLayout() {
                 stages.push_back(nextStage);
 
                 m_boxes.push_back(
-                    makeContainerBox(QString("box_proc_%1").arg(totalLength), name, xPos(totalLength), procBoxBlocks));
+                    makeContainerBox(QString("box_proc_%1").arg(totalLength), name, totalLength, procBoxBlocks));
                 stageStart = totalLength;
             }
         }
@@ -386,27 +412,77 @@ void DSPGraphCanvas::calculateGraphLayout() {
     std::vector<GraphBlock> playBoxBlocks;
     for (int n = 0; n < activeChannels; ++n) {
         qreal y = yPos(n, activeChannels, false);
-        qreal x = xPos(totalLength);
-        GraphBlock b{QString("output_ch%1").arg(n), QString::number(n + 1), x, y, 48, m_blockHeight, true};
+        QString label = QString::number(n + 1);
+        QSizeF sz = calculateBlockSize(label, true);
+        GraphBlock b{QString("output_ch%1").arg(n), label, 0, y, sz.width(), sz.height(), true, totalLength};
         m_blocks.push_back(b);
         playBoxBlocks.push_back(b);
 
         if (!stages.empty() && n < static_cast<int>(stages.back().size()) && !stages.back()[n].empty()) {
             GraphBlock srcBlock = stages.back()[n].back();
-            m_arrows.push_back(GraphArrow{QString("arrow_play_%1").arg(n), srcBlock.id, b.id,
-                                          QPointF(srcBlock.x + srcBlock.width / 2, srcBlock.y),
-                                          QPointF(b.x - b.width / 2, b.y), ""});
+            m_arrows.push_back(GraphArrow{QString("arrow_play_%1").arg(n), srcBlock.id, b.id, QPointF(0, srcBlock.y),
+                                          QPointF(0, b.y), ""});
         }
     }
 
     QString playName = QString::fromStdString(settings->deviceConfig.playback.deviceName().value_or("Playback Output"));
-    m_boxes.push_back(makeContainerBox("box_output", playName, xPos(totalLength), playBoxBlocks));
+    m_boxes.push_back(makeContainerBox("box_output", playName, totalLength, playBoxBlocks));
+
+    // Layout resolution: calculate column widths and X positions
+    std::vector<qreal> columnWidths(totalLength + 1, 0.0);
+    for (const auto& b : m_blocks) {
+        if (b.stepIndex >= 0 && b.stepIndex <= totalLength) {
+            columnWidths[b.stepIndex] = std::max(columnWidths[b.stepIndex], b.width);
+        }
+    }
+    for (const auto& box : m_boxes) {
+        if (box.stepIndex >= 0 && box.stepIndex <= totalLength) {
+            columnWidths[box.stepIndex] = std::max(columnWidths[box.stepIndex], box.width);
+        }
+    }
+
+    std::vector<qreal> xPositions(totalLength + 1, 0.0);
+    xPositions[0] = 0.0;
+    for (int s = 1; s <= totalLength; ++s) {
+        qreal prevHalf = columnWidths[s - 1] / 2.0;
+        qreal currHalf = columnWidths[s] / 2.0;
+        qreal minSpacing = m_xStep;
+        qreal neededSpacing = prevHalf + 48.0 + currHalf;
+        xPositions[s] = xPositions[s - 1] + std::max(minSpacing, neededSpacing);
+    }
+
+    for (auto& b : m_blocks) {
+        if (b.stepIndex >= 0 && b.stepIndex <= totalLength) {
+            b.x = xPositions[b.stepIndex];
+        }
+    }
+
+    for (auto& box : m_boxes) {
+        if (box.stepIndex >= 0 && box.stepIndex <= totalLength) {
+            box.centerX = xPositions[box.stepIndex];
+        }
+    }
 
     for (const auto& b : m_blocks) {
         m_blocksMap[b.id] = b;
     }
 
-    qreal totalWidth = xPos(totalLength) + m_canvasPadding * 2 + 60;
+    for (auto& arrow : m_arrows) {
+        auto srcIt = m_blocksMap.find(arrow.fromBlockId);
+        auto destIt = m_blocksMap.find(arrow.toBlockId);
+        if (srcIt != m_blocksMap.end()) {
+            arrow.fromFallback = QPointF(srcIt->second.x + srcIt->second.width / 2.0, srcIt->second.y);
+        }
+        if (destIt != m_blocksMap.end()) {
+            arrow.toFallback = QPointF(destIt->second.x - destIt->second.width / 2.0, destIt->second.y);
+        }
+    }
+
+    qreal lastX =
+        (totalLength >= 0 && totalLength < static_cast<int>(xPositions.size())) ? xPositions[totalLength] : 0.0;
+    qreal lastColW =
+        (totalLength >= 0 && totalLength < static_cast<int>(columnWidths.size())) ? columnWidths[totalLength] : 76.0;
+    qreal totalWidth = lastX + lastColW / 2.0 + m_canvasPadding * 2 + 40;
     qreal totalHeight = (maxY - minY) + m_canvasPadding * 2 + m_titleHeaderHeight + 40;
 
     // Check custom position overrides to adjust canvas bounds (matching SwiftUI dynamicCanvasSize)
@@ -457,15 +533,15 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
             qreal minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
             for (const auto& b : childBlocks) {
                 QPointF p = getBlockPos(b, originY);
-                minX = std::min(minX, p.x());
-                maxX = std::max(maxX, p.x());
-                minY = std::min(minY, p.y());
-                maxY = std::max(maxY, p.y());
+                minX = std::min(minX, p.x() - b.width / 2.0);
+                maxX = std::max(maxX, p.x() + b.width / 2.0);
+                minY = std::min(minY, p.y() - b.height / 2.0);
+                maxY = std::max(maxY, p.y() + b.height / 2.0);
             }
-            minX -= 38.0;
-            maxX += 38.0;
-            minY -= 18.0;
-            maxY += 18.0;
+            minX -= 14.0;
+            maxX += 14.0;
+            minY -= 12.0;
+            maxY += 12.0;
 
             boxCenterX = (minX + maxX) / 2.0;
             boxCenterY = (minY + maxY) / 2.0;
