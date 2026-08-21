@@ -2111,6 +2111,7 @@ static void asio_capture_close(void* ctx) {
   }
 
   if (capture->semaphore) {
+    cdsp_sem_signal(capture->semaphore);
     cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
   }
@@ -2221,13 +2222,24 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
 
   capture->context =
       (asio_capture_context_t*)calloc(1, sizeof(asio_capture_context_t));
-  capture->context->ring_buffer = capture->ring_buffer;
-  capture->context->semaphore = capture->semaphore;
-  capture->context->num_channels = capture->channels;
-  capture->context->buffer_size = (size_t)asio_buffer_size;
-  capture->context->bytes_per_sample = capture->bytes_per_sample;
-  capture->context->transfer_buf = (uint8_t*)malloc(
-      (size_t)asio_buffer_size * capture->bytes_per_sample * capture->channels);
+  if (capture->context) {
+    capture->context->ring_buffer = capture->ring_buffer;
+    capture->context->semaphore = capture->semaphore;
+    capture->context->num_channels = capture->channels;
+    capture->context->buffer_size = (size_t)asio_buffer_size;
+    capture->context->bytes_per_sample = capture->bytes_per_sample;
+    capture->context->transfer_buf =
+        (uint8_t*)malloc((size_t)asio_buffer_size * capture->bytes_per_sample *
+                         capture->channels);
+  }
+
+  if (!capture->ring_buffer || !capture->semaphore || !capture->decode_buf ||
+      !capture->context || !capture->context->transfer_buf) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to allocate capture buffers or semaphore");
+    goto error_cleanup;
+  }
 
   if (capture->full_duplex) {
     atomic_store_explicit(&CAPTURE_CONTEXT, capture->context,
@@ -2312,6 +2324,8 @@ static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
 static bool asio_capture_wait_for_data(void* ctx, uint32_t timeout_ms) {
   asio_capture_t* capture = (asio_capture_t*)ctx;
   if (!capture || !capture->semaphore) return false;
+  if (atomic_load_explicit(&capture->stopped, memory_order_acquire))
+    return false;
   return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 

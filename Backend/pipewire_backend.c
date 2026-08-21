@@ -299,6 +299,7 @@ static void pipewire_capture_close(void* ctx) {
   }
 
   if (capture->semaphore) {
+    cdsp_sem_signal(capture->semaphore);
     cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
   }
@@ -439,11 +440,11 @@ static bool pipewire_capture_open(void* ctx, backend_error_t* err) {
   capture->decode_buf = (uint8_t*)calloc(capture->decode_buf_size, 1);
   capture->semaphore = cdsp_sem_create();
 
-  if (!capture->ring || !capture->decode_buf) {
+  if (!capture->ring || !capture->decode_buf || !capture->semaphore) {
     pipewire_capture_close(capture);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to allocate capture buffers");
+                         "Failed to allocate capture buffers or semaphore");
     return false;
   }
 
