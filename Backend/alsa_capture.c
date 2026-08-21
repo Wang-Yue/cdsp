@@ -19,6 +19,7 @@
 #include "Backend/alsa_device.h"
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
+#include "Engine/cdsp_sem.h"
 #include "Engine/thread_priority.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
@@ -78,6 +79,7 @@ struct alsa_capture {
   // (src/alsa_backend/threaded_device.rs vs src/alsa_backend/device.rs)
   bool threaded;
   spsc_byte_ring_buffer_t* ring_buffer;
+  cdsp_sem_t semaphore;
   pthread_t inner_thread;
   _Atomic bool inner_running;
 };
@@ -123,6 +125,9 @@ static void* alsa_capture_inner_thread_func(void* arg) {
         size_t bytes_read = (size_t)frames_read * bytes_per_frame;
         spsc_byte_ring_buffer_write(capture->ring_buffer, local_buf,
                                     bytes_read);
+        if (capture->semaphore) {
+          cdsp_sem_signal(capture->semaphore);
+        }
       } else if (frames_read == -EPIPE) {
         logger_warn(&g_logger, "Capture buffer underrun/overrun");
         snd_pcm_prepare(capture->pcm);
@@ -509,6 +514,15 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
       }
       goto error_cleanup;
     }
+    capture->semaphore = cdsp_sem_create();
+    if (!capture->semaphore) {
+      if (err) {
+        backend_error_init(
+            err, BACKEND_ERROR_INITIALIZATION_FAILED,
+            "Failed to allocate semaphore for threaded ALSA capture");
+      }
+      goto error_cleanup;
+    }
     atomic_store_explicit(&capture->inner_running, true, memory_order_release);
     if (pthread_create(&capture->inner_thread, NULL,
                        alsa_capture_inner_thread_func, capture) != 0) {
@@ -526,6 +540,14 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
   return true;
 
 error_cleanup:
+  if (capture->ring_buffer) {
+    spsc_byte_ring_buffer_free(capture->ring_buffer);
+    capture->ring_buffer = NULL;
+  }
+  if (capture->semaphore) {
+    cdsp_sem_destroy(capture->semaphore);
+    capture->semaphore = NULL;
+  }
   if (capture->pcm) {
     snd_pcm_close(capture->pcm);
     capture->pcm = NULL;
@@ -888,13 +910,22 @@ static void alsa_capture_close(void* ctx) {
   if (!capture) return;
   atomic_store_explicit(&capture->stopped, true, memory_order_release);
 
-  if (capture->threaded &&
-      atomic_load_explicit(&capture->inner_running, memory_order_acquire)) {
-    pthread_join(capture->inner_thread, NULL);
-    atomic_store_explicit(&capture->inner_running, false, memory_order_release);
+  if (capture->threaded) {
+    if (capture->semaphore) {
+      cdsp_sem_signal(capture->semaphore);
+    }
+    if (atomic_load_explicit(&capture->inner_running, memory_order_acquire)) {
+      pthread_join(capture->inner_thread, NULL);
+      atomic_store_explicit(&capture->inner_running, false,
+                            memory_order_release);
+    }
     if (capture->ring_buffer) {
       spsc_byte_ring_buffer_free(capture->ring_buffer);
       capture->ring_buffer = NULL;
+    }
+    if (capture->semaphore) {
+      cdsp_sem_destroy(capture->semaphore);
+      capture->semaphore = NULL;
     }
   }
 
@@ -936,7 +967,7 @@ static bool alsa_capture_get_pending_rate_change(void* ctx, double* out_rate) {
   if (!capture) return false;
   alsa_capture_process_events(capture);
   if (atomic_load_explicit(&capture->has_pending_rate_change,
-                           memory_order_acquire)) {
+                            memory_order_acquire)) {
     if (out_rate) {
       *out_rate =
           atomic_load_explicit(&capture->pending_rate, memory_order_acquire);
@@ -974,10 +1005,15 @@ static void alsa_capture_set_pitch(void* ctx, double multiplier) {
 
 static bool alsa_capture_wait(void* ctx, uint32_t timeout_ms) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
-  if (!capture || !capture->pcm) return false;
+  if (!capture) return false;
   if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
     return false;
   }
+  if (capture->threaded) {
+    if (!capture->semaphore) return false;
+    return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
+  }
+  if (!capture->pcm) return false;
   int err = snd_pcm_wait(capture->pcm, (int)timeout_ms);
   return err > 0;
 }
@@ -986,6 +1022,9 @@ static void alsa_capture_stop(void* ctx) {
   alsa_capture_t* capture = (alsa_capture_t*)ctx;
   if (!capture) return;
   atomic_store_explicit(&capture->stopped, true, memory_order_release);
+  if (capture->semaphore) {
+    cdsp_sem_signal(capture->semaphore);
+  }
   pthread_mutex_lock(&g_alsa_mutex);
   if (capture->pcm) {
     snd_pcm_drop(capture->pcm);
