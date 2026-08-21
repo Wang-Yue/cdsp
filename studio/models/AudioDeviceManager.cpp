@@ -391,98 +391,99 @@ void AudioDeviceManager::fetchDevices() {
     }));
 }
 
-void AudioDeviceManager::refreshDeviceCapabilities() {
-    auto engine = m_engine;
-    if (!engine)
-        return;
-
-    uint64_t version = ++m_capabilityRequestVersion;
-
-    std::string capName = captureConfig.deviceName().value_or("");
-    std::string pbName = playbackConfig.deviceName().value_or("");
+std::optional<AudioDeviceDescriptor> AudioDeviceManager::queryDeviceCapabilities(const DeviceConfig& cfg,
+                                                                                 bool isCapture) const {
+    if (!m_engine || !backendHasDeviceCapabilities(cfg.backend))
+        return std::nullopt;
     auto toLowerStr = [](std::string str) {
         std::transform(str.begin(), str.end(), str.begin(), ::tolower);
         return str;
     };
-    std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
-    std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
+    std::string backendLower = toLowerStr(audioBackendTypeToString(cfg.backend));
+    std::string devName = cfg.deviceName().value_or("");
+    return m_engine->getDeviceCapabilities(backendLower, devName, isCapture);
+}
 
-    bool isCapHw = backendHasDeviceCapabilities(captureConfig.backend);
-    bool isPbHw = backendHasDeviceCapabilities(playbackConfig.backend);
+void AudioDeviceManager::updateCapabilitiesFromDescriptor(DeviceConfig& cfg, bool isCapture,
+                                                          const std::optional<AudioDeviceDescriptor>& desc) {
+    if (!backendHasDeviceCapabilities(cfg.backend)) {
+        cfg.capabilities = AudioDeviceDescriptor();
+        return;
+    }
+    std::string name = cfg.deviceName().value_or("");
+    std::string origId = cfg.capabilities.name;
+    if (desc.has_value() && !desc->capability_sets.empty()) {
+        cfg.capabilities = desc.value();
+    } else {
+        auto& dict = isCapture ? m_captureDeviceConfigs : m_playbackDeviceConfigs;
+        auto it = dict.find(name);
+        if (it != dict.end() && !it->second.capabilities.capability_sets.empty()) {
+            cfg.capabilities = it->second.capabilities;
+        }
+    }
+    if (!origId.empty() && cfg.capabilities.name.empty()) {
+        cfg.capabilities.name = origId;
+    }
+    if (!name.empty() && !cfg.capabilities.capability_sets.empty()) {
+        if (isCapture)
+            m_captureDeviceConfigs[name] = cfg;
+        else
+            m_playbackDeviceConfigs[name] = cfg;
+    }
+}
 
-    m_capabilitiesWatcher.setFuture(
-        QtConcurrent::run([this, engine, version, capName, pbName, capBackendLower, pbBackendLower, isCapHw, isPbHw]() {
-            std::optional<AudioDeviceDescriptor> capDesc;
-            std::optional<AudioDeviceDescriptor> pbDesc;
+void AudioDeviceManager::handleFormatChange(bool isCapture, int newRate) {
+    DeviceConfig& primary = isCapture ? captureConfig : playbackConfig;
+    DeviceConfig& secondary = isCapture ? playbackConfig : captureConfig;
 
-            if (isCapHw) {
-                capDesc = engine->getDeviceCapabilities(capBackendLower, capName, true);
+    updateCapabilitiesFromDescriptor(primary, isCapture, queryDeviceCapabilities(primary, isCapture));
+    primary.sampleRate = newRate;
+    primary = primary.enforced();
+
+    if (m_settings && !m_settings->resamplerEnabled) {
+        updateCapabilitiesFromDescriptor(secondary, !isCapture, queryDeviceCapabilities(secondary, !isCapture));
+        secondary.sampleRate = primary.sampleRate;
+        secondary = secondary.enforced();
+    }
+
+    validateSampleRates();
+    saveConfigs();
+    emit configChanged();
+    if (onConfigChanged)
+        onConfigChanged();
+}
+
+void AudioDeviceManager::refreshDeviceCapabilities() {
+    if (!m_engine)
+        return;
+
+    uint64_t version = ++m_capabilityRequestVersion;
+    DeviceConfig capCfg = captureConfig;
+    DeviceConfig pbCfg = playbackConfig;
+
+    m_capabilitiesWatcher.setFuture(QtConcurrent::run([this, version, capCfg, pbCfg]() {
+        auto capDesc = queryDeviceCapabilities(capCfg, true);
+        auto pbDesc = queryDeviceCapabilities(pbCfg, false);
+
+        QMetaObject::invokeMethod(this, [this, version, capDesc, pbDesc]() {
+            if (version != m_capabilityRequestVersion)
+                return;
+
+            updateCapabilitiesFromDescriptor(captureConfig, true, capDesc);
+            updateCapabilitiesFromDescriptor(playbackConfig, false, pbDesc);
+
+            captureConfig = captureConfig.enforced();
+            playbackConfig = playbackConfig.enforced();
+
+            bool rateChanged = validateSampleRates();
+            if (!rateChanged) {
+                saveConfigs();
+                emit configChanged();
+                if (onConfigChanged)
+                    onConfigChanged();
             }
-            if (isPbHw) {
-                pbDesc = engine->getDeviceCapabilities(pbBackendLower, pbName, false);
-            }
-
-            QMetaObject::invokeMethod(this, [this, version, capDesc, pbDesc, isCapHw, isPbHw]() {
-                if (version != m_capabilityRequestVersion)
-                    return;
-
-                DeviceConfig newCapture = captureConfig;
-                DeviceConfig newPlayback = playbackConfig;
-
-                if (isCapHw) {
-                    std::string name = newCapture.deviceName().value_or("");
-                    std::string origId = newCapture.capabilities.name;
-                    if (capDesc.has_value() && !capDesc->capability_sets.empty()) {
-                        newCapture.capabilities = capDesc.value();
-                    } else {
-                        auto it = m_captureDeviceConfigs.find(name);
-                        if (it != m_captureDeviceConfigs.end() && !it->second.capabilities.capability_sets.empty()) {
-                            newCapture.capabilities = it->second.capabilities;
-                        }
-                    }
-                    if (!origId.empty() && newCapture.capabilities.name.empty()) {
-                        newCapture.capabilities.name = origId;
-                    }
-                    if (!name.empty() && !newCapture.capabilities.capability_sets.empty()) {
-                        m_captureDeviceConfigs[name] = newCapture;
-                    }
-                } else {
-                    newCapture.capabilities = AudioDeviceDescriptor();
-                }
-
-                if (isPbHw) {
-                    std::string name = newPlayback.deviceName().value_or("");
-                    std::string origId = newPlayback.capabilities.name;
-                    if (pbDesc.has_value() && !pbDesc->capability_sets.empty()) {
-                        newPlayback.capabilities = pbDesc.value();
-                    } else {
-                        auto it = m_playbackDeviceConfigs.find(name);
-                        if (it != m_playbackDeviceConfigs.end() && !it->second.capabilities.capability_sets.empty()) {
-                            newPlayback.capabilities = it->second.capabilities;
-                        }
-                    }
-                    if (!origId.empty() && newPlayback.capabilities.name.empty()) {
-                        newPlayback.capabilities.name = origId;
-                    }
-                    if (!name.empty() && !newPlayback.capabilities.capability_sets.empty()) {
-                        m_playbackDeviceConfigs[name] = newPlayback;
-                    }
-                } else {
-                    newPlayback.capabilities = AudioDeviceDescriptor();
-                }
-
-                captureConfig = newCapture.enforced();
-                playbackConfig = newPlayback.enforced();
-
-                bool rateChanged = validateSampleRates();
-                if (!rateChanged) {
-                    saveConfigs();
-                    emit configChanged();
-                    if (onConfigChanged)
-                        onConfigChanged();
-                }
-            });
-        }));
+        });
+    }));
 }
 
 bool AudioDeviceManager::validateSampleRates() {

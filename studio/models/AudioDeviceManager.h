@@ -32,6 +32,7 @@ public:
     void fetchDevices();
     void refreshDevices();
     void refreshDeviceCapabilities();
+    void handleFormatChange(bool isCapture, int newRate);
     bool validateSampleRates();
     void startDeviceChangeListener();
     void stopDeviceChangeListener();
@@ -78,6 +79,9 @@ private:
     uint64_t m_fetchDevicesVersion = 0;
     uint64_t m_capabilityRequestVersion = 0;
 
+    std::optional<AudioDeviceDescriptor> queryDeviceCapabilities(const DeviceConfig& cfg, bool isCapture) const;
+    void updateCapabilitiesFromDescriptor(DeviceConfig& cfg, bool isCapture,
+                                          const std::optional<AudioDeviceDescriptor>& desc);
     void loadSavedConfigs();
 };
 
