@@ -39,7 +39,8 @@ if(APPLE)
     find_library(AUDIOTOOLBOX_LIB AudioToolbox REQUIRED)
     find_library(ACCELERATE_LIB Accelerate REQUIRED)
     find_library(COREFOUNDATION_LIB CoreFoundation REQUIRED)
-    set(PLATFORM_LIBS ${COREAUDIO_LIB} ${AUDIOTOOLBOX_LIB} ${ACCELERATE_LIB} ${COREFOUNDATION_LIB})
+    find_library(COCOA_LIB Cocoa REQUIRED)
+    set(PLATFORM_LIBS ${COREAUDIO_LIB} ${AUDIOTOOLBOX_LIB} ${ACCELERATE_LIB} ${COREFOUNDATION_LIB} ${COCOA_LIB})
     add_compile_definitions(ENABLE_COREAUDIO ENABLE_ACCELERATE)
 elseif(WIN32)
     set(PLATFORM_LIBS ws2_32 winmm ole32 uuid ksuser ksguid avrt)
@@ -178,11 +179,12 @@ include_directories(
 file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.h" "src/*.qrc")
 
 if(APPLE)
+    enable_language(OBJCXX)
     set(APP_ICON_MACOS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app.icns")
     set_source_files_properties(${APP_ICON_MACOS} PROPERTIES
         MACOSX_PACKAGE_LOCATION "Resources"
     )
-    list(APPEND SOURCES ${APP_ICON_MACOS})
+    list(APPEND SOURCES ${APP_ICON_MACOS} "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/MacUtils.mm")
 endif()
 
 add_executable(MonitorQt WIN32 ${SOURCES})

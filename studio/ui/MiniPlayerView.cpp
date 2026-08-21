@@ -1,5 +1,7 @@
 #include "ui/MiniPlayerView.h"
 
+#include "utils/MacUtils.h"
+
 #include <QAbstractButton>
 #include <QAbstractSlider>
 #include <QFontDatabase>
@@ -31,8 +33,8 @@ static void enableMouseTrackingRecursively(QWidget* w, QObject* filter) {
 
 MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::shared_ptr<AudioSettings> settings,
                                std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
-    : QWidget(parent, Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint), m_dsp(dsp),
-      m_settings(settings), m_monitoring(monitoring) {
+    : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint), m_dsp(dsp), m_settings(settings),
+      m_monitoring(monitoring) {
 
     setAttribute(Qt::WA_TranslucentBackground);
     setStyleSheet("QWidget#MiniPlayerViewWindow { background-color: rgba(0, 0, 0, 0.45); border-radius: 12px; "
@@ -42,6 +44,8 @@ MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::sh
     setMaximumSize(1000, 1000);
     resize(320, 140);
     setFocusPolicy(Qt::StrongFocus);
+
+    MacUtils::setupAlwaysOnTopAboveFullScreen(this);
 
     setupUi();
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &MiniPlayerView::refreshMeters);
@@ -58,6 +62,7 @@ MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::sh
 
 void MiniPlayerView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
+    MacUtils::setupAlwaysOnTopAboveFullScreen(this);
     QSettings settings;
     if (settings.contains("MiniPlayer/geometry")) {
         restoreGeometry(settings.value("MiniPlayer/geometry").toByteArray());
