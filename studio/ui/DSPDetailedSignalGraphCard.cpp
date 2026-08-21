@@ -632,7 +632,7 @@ void DSPGraphCanvas::paintEvent(QPaintEvent* /*event*/) {
             painter.drawText(bRect, Qt::AlignCenter, b.label);
         } else if (!b.label.isEmpty()) {
             painter.setBrush(palette().color(QPalette::Base));
-            painter.setPen(QPen(palette().color(QPalette::Mid), 1));
+            painter.setPen(QPen(palette().color(QPalette::Highlight), 1));
             painter.drawRoundedRect(bRect, 6, 6);
 
             QFont demiMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
