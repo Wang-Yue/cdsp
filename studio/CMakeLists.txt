@@ -190,9 +190,17 @@ add_executable(MonitorQt WIN32 ${SOURCES})
 if(APPLE)
     set_target_properties(MonitorQt PROPERTIES
         MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in"
         MACOSX_BUNDLE_BUNDLE_NAME "MonitorQt"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1.0.0"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.0"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.wangyue.monitorqt"
         MACOSX_BUNDLE_ICON_FILE "app.icns"
+        MACOSX_BUNDLE_COPYRIGHT "Copyright © 2026 Wang Yue. All rights reserved."
+    )
+    add_custom_command(TARGET MonitorQt POST_BUILD
+        COMMAND codesign --force --deep --sign - $<TARGET_BUNDLE_DIR:MonitorQt>
+        COMMENT "Ad-hoc signing MonitorQt.app bundle..."
     )
 endif()
 
@@ -243,6 +251,7 @@ if(APPLE)
             deploy
             COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -always-overwrite
             COMMAND strip -x $<TARGET_BUNDLE_DIR:MonitorQt>/Contents/MacOS/MonitorQt
+            COMMAND codesign --force --deep --sign - $<TARGET_BUNDLE_DIR:MonitorQt>
             DEPENDS MonitorQt
             COMMENT "Deploying Qt libraries into macOS .app bundle..."
         )
@@ -250,6 +259,7 @@ if(APPLE)
             dmg
             COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -always-overwrite
             COMMAND strip -x $<TARGET_BUNDLE_DIR:MonitorQt>/Contents/MacOS/MonitorQt
+            COMMAND codesign --force --deep --sign - $<TARGET_BUNDLE_DIR:MonitorQt>
             COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -dmg
             DEPENDS MonitorQt
             COMMENT "Deploying Qt libraries and creating DMG installer..."
