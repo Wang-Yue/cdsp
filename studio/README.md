@@ -21,6 +21,16 @@ The application is powered directly by [**cdsp**](https://github.com/Wang-Yue/cd
 
 ---
 
+## Screenshots
+
+![Monitor-Qt visualization dashboard](Visualization.png)
+
+![Monitor-Qt parametric equalizer diagram](EQDiagram.png)
+
+![Monitor-Qt audio device settings (Linux)](DeviceSetting.png)
+
+---
+
 ## Key Features
 
 ### 🎛 Real-Time DSP Signal Chain & Pipeline Control
