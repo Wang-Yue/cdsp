@@ -32,6 +32,7 @@ public:
     void fetchDevices();
     void refreshDevices();
     void refreshDeviceCapabilities();
+    void handleFormatChange(bool isCapture, int newRate);
     bool validateSampleRates();
     void startDeviceChangeListener();
     void stopDeviceChangeListener();

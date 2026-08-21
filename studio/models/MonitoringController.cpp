@@ -283,18 +283,8 @@ void MonitoringController::handleStateUpdate(ProcessingState state, const Proces
             int newRate = stopReason.formatChangeRate;
             AppLogger::info("MonitoringController",
                             QString("Capture format change detected, switching to %1 Hz").arg(newRate));
-            if (m_settings && m_settings->resamplerEnabled) {
-                if (m_devices) {
-                    DeviceConfig newCfg = m_devices->captureConfig;
-                    newCfg.sampleRate = newRate;
-                    m_devices->setCaptureConfig(newCfg);
-                }
-            } else {
-                if (m_devices) {
-                    DeviceConfig newCfg = m_devices->playbackConfig;
-                    newCfg.sampleRate = newRate;
-                    m_devices->setPlaybackConfig(newCfg);
-                }
+            if (m_devices) {
+                m_devices->handleFormatChange(true, newRate);
             }
             if (onRestartEngine) {
                 onRestartEngine();
@@ -307,9 +297,7 @@ void MonitoringController::handleStateUpdate(ProcessingState state, const Proces
             AppLogger::info("MonitoringController",
                             QString("Playback format change detected, switching to %1 Hz").arg(newRate));
             if (m_devices) {
-                DeviceConfig newCfg = m_devices->playbackConfig;
-                newCfg.sampleRate = newRate;
-                m_devices->setPlaybackConfig(newCfg);
+                m_devices->handleFormatChange(false, newRate);
             }
             if (onRestartEngine) {
                 onRestartEngine();

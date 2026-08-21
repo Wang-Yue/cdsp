@@ -391,6 +391,82 @@ void AudioDeviceManager::fetchDevices() {
     }));
 }
 
+void AudioDeviceManager::handleFormatChange(bool isCapture, int newRate) {
+    if (!m_engine)
+        return;
+
+    auto toLowerStr = [](std::string str) {
+        std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+        return str;
+    };
+
+    if (isCapture) {
+        std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
+        std::string capName = captureConfig.deviceName().value_or("");
+        if (backendHasDeviceCapabilities(captureConfig.backend)) {
+            auto capDesc = m_engine->getDeviceCapabilities(capBackendLower, capName, true);
+            if (capDesc.has_value() && !capDesc->capability_sets.empty()) {
+                captureConfig.capabilities = capDesc.value();
+                if (!capName.empty()) {
+                    m_captureDeviceConfigs[capName] = captureConfig;
+                }
+            }
+        }
+        captureConfig.sampleRate = newRate;
+        captureConfig = captureConfig.enforced();
+        if (m_settings && !m_settings->resamplerEnabled) {
+            std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
+            std::string pbName = playbackConfig.deviceName().value_or("");
+            if (backendHasDeviceCapabilities(playbackConfig.backend)) {
+                auto pbDesc = m_engine->getDeviceCapabilities(pbBackendLower, pbName, false);
+                if (pbDesc.has_value() && !pbDesc->capability_sets.empty()) {
+                    playbackConfig.capabilities = pbDesc.value();
+                    if (!pbName.empty()) {
+                        m_playbackDeviceConfigs[pbName] = playbackConfig;
+                    }
+                }
+            }
+            playbackConfig.sampleRate = captureConfig.sampleRate;
+            playbackConfig = playbackConfig.enforced();
+        }
+    } else {
+        std::string pbBackendLower = toLowerStr(audioBackendTypeToString(playbackConfig.backend));
+        std::string pbName = playbackConfig.deviceName().value_or("");
+        if (backendHasDeviceCapabilities(playbackConfig.backend)) {
+            auto pbDesc = m_engine->getDeviceCapabilities(pbBackendLower, pbName, false);
+            if (pbDesc.has_value() && !pbDesc->capability_sets.empty()) {
+                playbackConfig.capabilities = pbDesc.value();
+                if (!pbName.empty()) {
+                    m_playbackDeviceConfigs[pbName] = playbackConfig;
+                }
+            }
+        }
+        playbackConfig.sampleRate = newRate;
+        playbackConfig = playbackConfig.enforced();
+        if (m_settings && !m_settings->resamplerEnabled) {
+            std::string capBackendLower = toLowerStr(audioBackendTypeToString(captureConfig.backend));
+            std::string capName = captureConfig.deviceName().value_or("");
+            if (backendHasDeviceCapabilities(captureConfig.backend)) {
+                auto capDesc = m_engine->getDeviceCapabilities(capBackendLower, capName, true);
+                if (capDesc.has_value() && !capDesc->capability_sets.empty()) {
+                    captureConfig.capabilities = capDesc.value();
+                    if (!capName.empty()) {
+                        m_captureDeviceConfigs[capName] = captureConfig;
+                    }
+                }
+            }
+            captureConfig.sampleRate = playbackConfig.sampleRate;
+            captureConfig = captureConfig.enforced();
+        }
+    }
+
+    validateSampleRates();
+    saveConfigs();
+    emit configChanged();
+    if (onConfigChanged)
+        onConfigChanged();
+}
+
 void AudioDeviceManager::refreshDeviceCapabilities() {
     auto engine = m_engine;
     if (!engine)
