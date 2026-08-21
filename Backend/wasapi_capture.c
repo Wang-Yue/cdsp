@@ -58,6 +58,7 @@ struct wasapi_capture {
   UINT32 buffer_frame_count;
   REFERENCE_TIME def_period;
   HANDLE event_handle;
+  cdsp_sem_t semaphore;
 
   spsc_byte_ring_buffer_t* ring_buffer;
   uint8_t* decode_buf;
@@ -288,6 +289,9 @@ static void* wasapi_capture_loop(void* arg) {
         }
 
         spsc_byte_ring_buffer_write(capture->ring_buffer, data, nbr_bytes_loop);
+        if (capture->semaphore) {
+          cdsp_sem_signal(capture->semaphore);
+        }
 
         if (capture->exclusive && capture->event_handle) {
           break;
@@ -399,6 +403,14 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
       (size_t)capture->channels * 4 * (2 * (size_t)capture->chunk_size + 2048);
   capture->ring_buffer = spsc_byte_ring_buffer_create(ring_size);
 
+  capture->semaphore = cdsp_sem_create();
+  if (!capture->semaphore) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to create semaphore");
+    goto error_cleanup;
+  }
+
   capture->decode_buf_cap =
       (size_t)capture->chunk_size * capture->blockalign * 2;
   capture->decode_buf = (uint8_t*)malloc(capture->decode_buf_cap);
@@ -424,6 +436,10 @@ error_cleanup:
   if (capture->ring_buffer) {
     spsc_byte_ring_buffer_free(capture->ring_buffer);
     capture->ring_buffer = NULL;
+  }
+  if (capture->semaphore) {
+    cdsp_sem_destroy(capture->semaphore);
+    capture->semaphore = NULL;
   }
   wasapi_cleanup_device_resources(
       &capture->client, (IUnknown**)&capture->capture_client,
@@ -455,6 +471,7 @@ static void wasapi_capture_close(void* ctx) {
                           memory_order_release);
     atomic_store_explicit(&capture->stopped, true, memory_order_release);
     if (capture->event_handle) SetEvent(capture->event_handle);
+    if (capture->semaphore) cdsp_sem_signal(capture->semaphore);
     pthread_join(capture->inner_thread, NULL);
   }
 
@@ -465,6 +482,10 @@ static void wasapi_capture_close(void* ctx) {
   if (capture->ring_buffer) {
     spsc_byte_ring_buffer_free(capture->ring_buffer);
     capture->ring_buffer = NULL;
+  }
+  if (capture->semaphore) {
+    cdsp_sem_destroy(capture->semaphore);
+    capture->semaphore = NULL;
   }
   wasapi_cleanup_device_resources(
       &capture->client, (IUnknown**)&capture->capture_client,
@@ -494,14 +515,10 @@ static void wasapi_capture_set_pitch(void* ctx, double multiplier) {
 
 static bool wasapi_capture_wait(void* ctx, uint32_t timeout_ms) {
   wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
-  if (!capture) return false;
-  if (capture->polling) {
-    cdsp_sleep_ms(1);
-    return true;
-  }
-  if (!capture->event_handle) return false;
-  DWORD res = WaitForSingleObject(capture->event_handle, timeout_ms);
-  return (res == WAIT_OBJECT_0);
+  if (!capture || !capture->semaphore) return false;
+  if (atomic_load_explicit(&capture->stopped, memory_order_acquire))
+    return false;
+  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 
 static void wasapi_capture_set_is_paused(void* ctx, bool paused) {
@@ -516,6 +533,9 @@ static void wasapi_capture_stop(void* ctx) {
   atomic_store_explicit(&capture->stopped, true, memory_order_release);
   if (capture->event_handle) {
     SetEvent(capture->event_handle);
+  }
+  if (capture->semaphore) {
+    cdsp_sem_signal(capture->semaphore);
   }
 }
 
