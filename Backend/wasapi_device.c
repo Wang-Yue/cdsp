@@ -163,8 +163,7 @@ session_OnStateChanged(IAudioSessionEvents* This, AudioSessionState NewState) {
 static HRESULT STDMETHODCALLTYPE session_OnSessionDisconnected(
     IAudioSessionEvents* This, AudioSessionDisconnectReason DisconnectReason) {
   CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
-  logger_debug(&g_wasapi_logger,
-               "session_OnSessionDisconnected called, reason=%d",
+  logger_debug(&g_wasapi_logger, "Disconnected, reason: %d.",
                (int)DisconnectReason);
   if (self->callback) {
     self->callback(
@@ -236,9 +235,9 @@ bool wasapi_check_and_resolve_pending_rate(
     _Atomic bool* has_pending_rate_change, double* out_rate) {
   if (!has_pending_rate_change) return false;
   if (atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
-    logger_info(&g_wasapi_logger,
-                "get_pending_rate_change detected flag: pending_rate=%f",
-                pending_rate);
+    logger_debug(&g_wasapi_logger,
+                 "get_pending_rate_change detected flag: pending_rate=%f",
+                 pending_rate);
     double rate = pending_rate;
     if (rate <= 0.0) {
       for (int i = 0; i < 100; i++) {
@@ -248,14 +247,14 @@ bool wasapi_check_and_resolve_pending_rate(
       }
     }
     atomic_store_explicit(has_pending_rate_change, false, memory_order_release);
-    logger_info(&g_wasapi_logger,
-                "get_pending_rate_change evaluated final rate=%f", rate);
+    logger_debug(&g_wasapi_logger,
+                 "get_pending_rate_change evaluated final rate=%f", rate);
     if (rate > 0.0) {
       if (out_rate) {
         *out_rate = rate;
       }
-      logger_info(&g_wasapi_logger,
-                  "get_pending_rate_change returning true with rate=%f", rate);
+      logger_debug(&g_wasapi_logger,
+                   "get_pending_rate_change returning true with rate=%f", rate);
       return true;
     }
   }

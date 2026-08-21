@@ -324,6 +324,7 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
               dev_id, CORE_AUDIO_SCOPE_INPUT, capture->sample_rate,
               capture->sample_format, (int)capture->channels)) {
         physical_format_set = true;
+        logger_debug(&g_logger, "Set phys capture stream format.");
       } else {
         if (err)
           backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -355,6 +356,7 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
                          "Failed to set stream format");
     goto cleanup;
   }
+  logger_debug(&g_logger, "Set capture stream format.");
 
   // Set the maximum frames per slice on the AudioUnit.
   UInt32 max_frames = (UInt32)capture->chunk_size;
@@ -435,6 +437,8 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
         rate_change_watcher_create(dev_id, capture->sample_rate);
   }
 
+  logger_debug(&g_logger, "Opened CoreAudio capture device \"%s\".",
+               capture->device_name[0] ? capture->device_name : "default");
   return true;
 
 cleanup:

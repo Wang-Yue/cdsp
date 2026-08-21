@@ -228,6 +228,8 @@ static bool generator_capture_pitch_control_supported(void* ctx) {
 static void generator_capture_set_pitch(void* ctx, double multiplier) {
   (void)ctx;
   (void)multiplier;
+  logger_warn(&g_logger,
+              "Signal generator does not support rate adjust. Ignoring request.");
 }
 
 /**

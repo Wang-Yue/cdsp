@@ -491,6 +491,8 @@ static bool file_capture_open(void* ctx, backend_error_t* err) {
     fseek_64(capture->f, info.data_start_offset, SEEK_SET);
   } else {
     if (capture->skip_bytes > 0 && !capture->is_stdin) {
+      logger_debug(&g_logger, "skipping the first %llu bytes",
+                   (unsigned long long)capture->skip_bytes);
       fseek_64(capture->f, capture->skip_bytes, SEEK_SET);
     }
   }
@@ -964,8 +966,8 @@ static bool file_playback_open(void* ctx, backend_error_t* err) {
   if (playback->is_wav) {
     if (!playback->is_seekable && playback->use_rf64) {
       logger_warn(&g_logger,
-                  "RF64 WAV output requires a seekable file, writing a "
-                  "streaming WAV header instead");
+                  "RF64 output requires a seekable file, writing a "
+                  "streaming wav header instead");
       write_wav_header_to_file(playback->f, playback->channels,
                                playback->format, playback->sample_rate,
                                0xFFFFFFFF, false);
@@ -978,6 +980,11 @@ static bool file_playback_open(void* ctx, backend_error_t* err) {
                                  playback->format, playback->sample_rate,
                                  0xFFFFFFFF, playback->is_seekable);
       }
+    }
+  } else {
+    if (playback->use_rf64) {
+      logger_warn(&g_logger,
+                  "RF64 output requires a wav header, ignoring `use_rf64`");
     }
   }
 
@@ -1023,7 +1030,7 @@ static bool file_playback_write(void* ctx, const audio_chunk_t* chunk,
         required_bytes > (max_bytes - playback->total_bytes_written)) {
       logger_warn(&g_logger,
                   "Wav file reached the maximum size of a plain wav file. "
-                  "Stopping write to avoid writing an invalid file.");
+                  "Stopping playback to avoid writing an invalid file.");
       if (err) {
         backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                            "Plain WAV 4 GB limit reached");

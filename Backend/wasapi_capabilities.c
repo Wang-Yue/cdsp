@@ -161,6 +161,29 @@ static const char* wasapi_format_to_str(wasapi_sample_format_t fmt) {
   }
 }
 
+static void format_labels_to_str(const wasapi_sample_format_t* formats,
+                                 size_t count, char* buf, size_t buf_len) {
+  size_t offset = 0;
+  offset += snprintf(buf + offset, buf_len - offset, "[");
+  for (size_t i = 0; i < count; i++) {
+    offset += snprintf(buf + offset, buf_len - offset,
+                       (i > 0 ? ", \"%s\"" : "\"%s\""),
+                       wasapi_format_to_str(formats[i]));
+  }
+  snprintf(buf + offset, buf_len - offset, "]");
+}
+
+static void int_list_to_str(const int* values, size_t count, char* buf,
+                            size_t buf_len) {
+  size_t offset = 0;
+  offset += snprintf(buf + offset, buf_len - offset, "[");
+  for (size_t i = 0; i < count; i++) {
+    offset += snprintf(buf + offset, buf_len - offset,
+                       (i > 0 ? ", %d" : "%d"), values[i]);
+  }
+  snprintf(buf + offset, buf_len - offset, "]");
+}
+
 #define MAX_CAP_CHANNELS 33
 #define MAX_CAP_RATES 32
 #define MAX_CAP_FORMATS 4
@@ -257,6 +280,14 @@ static rate_probe_result_t probe_and_store_rate_with_candidates(
     const wasapi_sample_format_t* candidate_formats,
     size_t candidate_formats_count, uint32_t* cached_masks,
     bool* has_cached_masks) {
+  char cand_str[128];
+  format_labels_to_str(candidate_formats, candidate_formats_count, cand_str,
+                       sizeof(cand_str));
+  logger_trace(&g_wasapi_logger,
+               "WASAPI capability probe: probing %d Hz using sample formats "
+               "%s.",
+               samplerate, cand_str);
+
   rate_probe_result_t res;
   memset(&res, 0, sizeof(res));
   wasapi_sample_format_t narrowed_formats[4];
@@ -277,27 +308,69 @@ static rate_probe_result_t probe_and_store_rate_with_candidates(
 
     uint32_t pref_mask = cached_masks[channels];
     bool has_pref = has_cached_masks[channels];
+    if (has_pref) {
+      logger_trace(&g_wasapi_logger,
+                   "WASAPI capability probe: probing %d Hz, %d ch using "
+                   "cached channel mask 0x%08x.",
+                   samplerate, channels, (unsigned int)pref_mask);
+    }
+
+    logger_trace(&g_wasapi_logger,
+                 "WASAPI capability probe: probing %d Hz, %d channels.",
+                 samplerate, channels);
 
     for (size_t f = 0; f < active_formats_count; f++) {
       wasapi_sample_format_t fmt = active_formats[f];
+      logger_trace(&g_wasapi_logger,
+                   "WASAPI capability probe: testing %d Hz, %d ch, format %s.",
+                   samplerate, channels, wasapi_format_to_str(fmt));
       WAVEFORMATEXTENSIBLE out_wfx;
       bool out_is_std = false;
       if (wasapi_get_supported_wave_format_with_channel_mask(
               client, fmt, samplerate, channels, true, pref_mask, has_pref,
               &out_wfx, &out_is_std, NULL)) {
+        logger_trace(
+            &g_wasapi_logger,
+            "WASAPI capability probe: supported %d Hz, %d ch, format %s.",
+            samplerate, channels, wasapi_format_to_str(fmt));
         if (!out_is_std) {
+          uint32_t prev_mask = pref_mask;
+          bool prev_has = has_pref;
           cached_masks[channels] = out_wfx.dwChannelMask;
           has_cached_masks[channels] = true;
           pref_mask = out_wfx.dwChannelMask;
           has_pref = true;
+          if (!prev_has || prev_mask != out_wfx.dwChannelMask) {
+            logger_trace(&g_wasapi_logger,
+                         "WASAPI capability probe: channel count %d will use "
+                         "channel mask 0x%08x for subsequent probes.",
+                         channels, (unsigned int)out_wfx.dwChannelMask);
+          }
         }
         supported_for_channel[supported_for_channel_count++] = fmt;
+      } else {
+        logger_trace(
+            &g_wasapi_logger,
+            "WASAPI capability probe: unsupported %d Hz, %d ch, format %s.",
+            samplerate, channels, wasapi_format_to_str(fmt));
       }
     }
 
     if (supported_for_channel_count > 0) {
+      char supp_str[128];
+      format_labels_to_str(supported_for_channel, supported_for_channel_count,
+                           supp_str, sizeof(supp_str));
+      logger_trace(&g_wasapi_logger,
+                   "WASAPI capability probe: found support at %d Hz, %d ch "
+                   "with formats %s.",
+                   samplerate, channels, supp_str);
+
       if (narrowed_formats_count == 0 &&
           supported_for_channel_count < candidate_formats_count) {
+        logger_debug(&g_wasapi_logger,
+                     "WASAPI capability probe: narrowing sample formats for "
+                     "the rest of the %d Hz sweep to %s.",
+                     samplerate, supp_str);
         for (size_t i = 0; i < supported_for_channel_count; i++) {
           narrowed_formats[i] = supported_for_channel[i];
         }
@@ -321,7 +394,23 @@ static rate_probe_result_t probe_and_store_rate_with_candidates(
 
       capabilities_map_insert(map, channels, samplerate, supported_for_channel,
                               supported_for_channel_count);
+    } else {
+      logger_trace(&g_wasapi_logger,
+                   "WASAPI capability probe: no supported formats at %d Hz, "
+                   "%d ch.",
+                   samplerate, channels);
     }
+  }
+
+  if (res.max_supported_channels > 0) {
+    logger_trace(&g_wasapi_logger,
+                 "WASAPI capability probe: highest supported channel count at "
+                 "%d Hz is %d.",
+                 samplerate, res.max_supported_channels);
+  } else {
+    logger_trace(&g_wasapi_logger,
+                 "WASAPI capability probe: no support found at %d Hz.",
+                 samplerate);
   }
 
   return res;
@@ -422,12 +511,23 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
     }
   }
 
+  logger_debug(&g_wasapi_logger,
+               "WASAPI capability probe: starting capability scan for device "
+               "\"%s\", input=%s.",
+               device_name ? device_name : "default",
+               is_capture ? "true" : "false");
+
   // --- Shared mode: GetMixFormat provides authoritative mixer configuration
   // ---
   WAVEFORMATEX* mix_wfx = NULL;
   bool has_shared = false;
   if (SUCCEEDED(IAudioClient_GetMixFormat(client, &mix_wfx)) && mix_wfx) {
     has_shared = true;
+    logger_debug(
+        &g_wasapi_logger,
+        "WASAPI capability probe: shared mode mix format is %d Hz, %d ch, "
+        "format F32.",
+        (int)mix_wfx->nSamplesPerSec, (int)mix_wfx->nChannels);
   }
 
   // --- Exclusive mode: staged search matching CamillaDSP capabilities.rs ---
@@ -438,6 +538,8 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
   const int FAMILY_44_RATES[] = {44100, 88200, 176400, 352800, 705600};
   const size_t FAMILY_44_COUNT =
       sizeof(FAMILY_44_RATES) / sizeof(FAMILY_44_RATES[0]);
+
+  static const char* FAMILY_NAMES[2] = {"48-kHz family", "44.1-kHz family"};
 
   const int REMAINING_RATES[] = {24000, 12000, 6000, 22050, 11025,
                                  5512,  16000, 8000, 32000, 64000};
@@ -451,6 +553,11 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
       sizeof(EXCLUSIVE_SAMPLE_FORMATS) / sizeof(EXCLUSIVE_SAMPLE_FORMATS[0]);
 
   const size_t MAX_EXCLUSIVE_CHANNELS = 32;
+  logger_debug(
+      &g_wasapi_logger,
+      "WASAPI capability probe: starting exclusive-mode scan with channel "
+      "ceiling %zu.",
+      MAX_EXCLUSIVE_CHANNELS);
 
   const int* families[2] = {FAMILY_48_RATES, FAMILY_44_RATES};
   const size_t family_counts[2] = {FAMILY_48_COUNT, FAMILY_44_COUNT};
@@ -470,6 +577,9 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
   // Interleaved upward scan
   for (size_t i = 0; i < max_family_len; i++) {
     if (!active[0] && !active[1]) {
+      logger_debug(&g_wasapi_logger,
+                   "WASAPI capability probe: stopping upward family scan early "
+                   "because all families are inactive.");
       break;
     }
     for (size_t f = 0; f < 2; f++) {
@@ -478,6 +588,11 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
         int rate = families[f][i];
         int limit =
             channel_limit > 0 ? channel_limit : (int)MAX_EXCLUSIVE_CHANNELS;
+
+        logger_trace(&g_wasapi_logger,
+                     "WASAPI capability probe: probing %s rate %d Hz with "
+                     "channel limit %d.",
+                     FAMILY_NAMES[f], rate, limit);
 
         int channels_to_probe[32];
         for (int ch = 1; ch <= limit; ch++) {
@@ -497,10 +612,27 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
 
         if (result.max_supported_channels > 0) {
           hit[f] = true;
+          int old_limit = channel_limit;
           if (result.max_supported_channels > channel_limit) {
             channel_limit = result.max_supported_channels;
           }
+          logger_debug(
+              &g_wasapi_logger,
+              "WASAPI capability probe: %s rate %d Hz succeeded with max %d "
+              "channels; channel limit changed from %d to %d.",
+              FAMILY_NAMES[f], rate, result.max_supported_channels, old_limit,
+              channel_limit);
           if (learned_formats_count == 0) {
+            char lf_str[128];
+            format_labels_to_str(result.supported_formats,
+                                 result.supported_formats_count, lf_str,
+                                 sizeof(lf_str));
+            logger_debug(
+                &g_wasapi_logger,
+                "WASAPI capability probe: learned supported sample formats %s "
+                "from the first successful rate %d; reusing them for "
+                "subsequent probes.",
+                lf_str, rate);
             for (size_t lf = 0; lf < result.supported_formats_count; lf++) {
               learned_formats[lf] = result.supported_formats[lf];
             }
@@ -508,6 +640,16 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
           }
         } else if (hit[f]) {
           active[f] = false;
+          logger_debug(&g_wasapi_logger,
+                       "WASAPI capability probe: stopping %s after miss at %d "
+                       "Hz following earlier hits.",
+                       FAMILY_NAMES[f], rate);
+        } else {
+          logger_trace(&g_wasapi_logger,
+                       "WASAPI capability probe: %s rate %d Hz had no hits; "
+                       "keeping family active until the first success is "
+                       "found.",
+                       FAMILY_NAMES[f], rate);
         }
       }
     }
@@ -524,14 +666,31 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
         compare_int);
 
   if (remaining_channel_counts_len == 0) {
+    logger_debug(
+        &g_wasapi_logger,
+        "WASAPI capability probe: probing remaining low-rate set with full "
+        "channel range because no channel counts were discovered in the "
+        "upward scan.");
     for (int ch = 1; ch <= (int)MAX_EXCLUSIVE_CHANNELS; ch++) {
       remaining_channel_counts[ch - 1] = ch;
     }
     remaining_channel_counts_len = MAX_EXCLUSIVE_CHANNELS;
+  } else {
+    char ch_str[256];
+    int_list_to_str(remaining_channel_counts, remaining_channel_counts_len,
+                    ch_str, sizeof(ch_str));
+    logger_debug(
+        &g_wasapi_logger,
+        "WASAPI capability probe: probing remaining low-rate set using "
+        "previously discovered channel counts %s.",
+        ch_str);
   }
 
   for (size_t r = 0; r < REMAINING_RATES_COUNT; r++) {
     int rate = REMAINING_RATES[r];
+    logger_trace(&g_wasapi_logger,
+                 "WASAPI capability probe: probing remaining rate %d Hz.",
+                 rate);
     const wasapi_sample_format_t* candidate_formats =
         learned_formats_count > 0 ? learned_formats : EXCLUSIVE_SAMPLE_FORMATS;
     size_t candidate_count = learned_formats_count > 0
@@ -544,12 +703,38 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
         cached_masks, has_cached_masks);
 
     if (learned_formats_count == 0 && result.max_supported_channels > 0) {
+      char lf_str[128];
+      format_labels_to_str(result.supported_formats,
+                           result.supported_formats_count, lf_str,
+                           sizeof(lf_str));
+      logger_debug(
+          &g_wasapi_logger,
+          "WASAPI capability probe: learned supported sample formats %s "
+          "from the first successful rate %d; reusing them for subsequent "
+          "probes.",
+          lf_str, rate);
       for (size_t lf = 0; lf < result.supported_formats_count; lf++) {
         learned_formats[lf] = result.supported_formats[lf];
       }
       learned_formats_count = result.supported_formats_count;
     }
   }
+
+  if (exclusive_map.channels_count > 0) {
+    logger_debug(
+        &g_wasapi_logger,
+        "WASAPI capability probe: exclusive-mode scan found %zu channel "
+        "capability entries.",
+        exclusive_map.channels_count);
+  } else {
+    logger_debug(&g_wasapi_logger,
+                 "WASAPI capability probe: exclusive-mode scan found no "
+                 "supported combinations.");
+  }
+  logger_debug(
+      &g_wasapi_logger,
+      "WASAPI capability probe: completed capability scan for device \"%s\".",
+      desc->name);
 
   // Build capability sets
   size_t total_sets = 0;

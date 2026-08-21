@@ -14,7 +14,10 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
+
+static const logger_t g_coreaudio_dev_logger = {"dsp.backend.coreaudio"};
 
 // MARK: - Enumeration
 
@@ -293,9 +296,17 @@ bool core_audio_device_select_adjustable_clock_source(AudioDeviceID device_id) {
       .mElement = kAudioObjectPropertyElementMain};
   uint32_t size = 0;
   // Fetch the size of the clock sources array.
-  if (AudioObjectGetPropertyDataSize(device_id, &addr, 0, NULL, &size) !=
-          noErr ||
-      size == 0) {
+  OSStatus sz_status =
+      AudioObjectGetPropertyDataSize(device_id, &addr, 0, NULL, &size);
+  if (sz_status != noErr) {
+    logger_warn(&g_coreaudio_dev_logger,
+                "Unable to read number of clock sources, error code: %d.",
+                (int)sz_status);
+    return false;
+  }
+  if (size == 0) {
+    logger_info(&g_coreaudio_dev_logger,
+                "The capture device has no clock source control.");
     return false;
   }
   int count = (int)(size / sizeof(uint32_t));
@@ -303,10 +314,16 @@ bool core_audio_device_select_adjustable_clock_source(AudioDeviceID device_id) {
   uint32_t ids[32];
   size = (uint32_t)(count * sizeof(uint32_t));
   // Retrieve the clock source IDs.
-  if (AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &size, ids) !=
-      noErr) {
+  OSStatus get_status =
+      AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &size, ids);
+  if (get_status != noErr) {
+    logger_warn(&g_coreaudio_dev_logger,
+                "Unable to list clock sources, error code: %d.",
+                (int)get_status);
     return false;
   }
+  logger_debug(&g_coreaudio_dev_logger, "Capture device has %d clock sources.",
+               count);
   // Iterate through the clock source IDs and fetch their CFString names using
   // AudioValueTranslation.
   for (int i = 0; i < count; i++) {
@@ -331,12 +348,26 @@ bool core_audio_device_select_adjustable_clock_source(AudioDeviceID device_id) {
         // virtual drivers like BlackHole 0.5.0+ to allow pitch-shifting).
         if (strcmp(name_buf, "Internal Adjustable") == 0) {
           CFRelease(cf_name);
-          return core_audio_device_set_clock_source_id(device_id, source_id);
+          logger_debug(
+              &g_coreaudio_dev_logger,
+              "Changing capture device clock source to item with index %d.", i);
+          bool ok =
+              core_audio_device_set_clock_source_id(device_id, source_id);
+          if (ok) {
+            logger_info(&g_coreaudio_dev_logger,
+                        "The capture device supports pitch control.");
+          } else {
+            logger_warn(&g_coreaudio_dev_logger,
+                        "Unable to set clock source, error code: -1.");
+          }
+          return ok;
         }
       }
       CFRelease(cf_name);
     }
   }
+  logger_info(&g_coreaudio_dev_logger,
+              "The capture device does not support pitch control.");
   return false;
 }
 
@@ -357,7 +388,16 @@ void core_audio_device_set_pitch(AudioDeviceID device_id, double pitch) {
   float pan = (float)((pitch - 1.0) * 50.0 + 0.5);
   if (pan < 0.0f) pan = 0.0f;
   if (pan > 1.0f) pan = 1.0f;
-  AudioObjectSetPropertyData(device_id, &addr, 0, NULL, sizeof(float), &pan);
+  logger_debug(
+      &g_coreaudio_dev_logger,
+      "Setting capture pitch to: %f, corresponding pan value: %f.",
+      pitch, (double)pan);
+  OSStatus status =
+      AudioObjectSetPropertyData(device_id, &addr, 0, NULL, sizeof(float), &pan);
+  if (status != noErr) {
+    logger_warn(&g_coreaudio_dev_logger,
+                "Unable to set pitch, error code: %d.", (int)status);
+  }
 }
 
 /// Returns true if the device exposes the nominal-sample-rate
@@ -834,6 +874,7 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
 
 bool core_audio_device_acquire_hog_mode(AudioDeviceID device_id) {
   if (device_id == 0) return false;
+  pid_t camilla_pid = getpid();
   pid_t current_hog_pid = -1;
   uint32_t hog_size = sizeof(pid_t);
   AudioObjectPropertyAddress hog_addr = {
@@ -842,23 +883,69 @@ bool core_audio_device_acquire_hog_mode(AudioDeviceID device_id) {
       .mElement = kAudioObjectPropertyElementMain};
   if (AudioObjectGetPropertyData(device_id, &hog_addr, 0, NULL, &hog_size,
                                  &current_hog_pid) == noErr) {
-    if (current_hog_pid == getpid()) {
+    if (current_hog_pid == camilla_pid) {
+      logger_debug(&g_coreaudio_dev_logger, "We already have exclusive access.");
       return true;
+    } else if (current_hog_pid != -1) {
+      logger_warn(&g_coreaudio_dev_logger,
+                  "Device is owned by another process with pid %d!",
+                  (int)current_hog_pid);
+    } else {
+      logger_debug(&g_coreaudio_dev_logger,
+                   "Device is free, trying to get exclusive access.");
     }
   }
-  pid_t hog_pid = getpid();
-  return (AudioObjectSetPropertyData(device_id, &hog_addr, 0, NULL,
-                                     sizeof(pid_t), &hog_pid) == noErr);
+  pid_t hog_pid = camilla_pid;
+  if (AudioObjectSetPropertyData(device_id, &hog_addr, 0, NULL, sizeof(pid_t),
+                                 &hog_pid) == noErr) {
+    pid_t new_device_pid = -1;
+    if (AudioObjectGetPropertyData(device_id, &hog_addr, 0, NULL, &hog_size,
+                                   &new_device_pid) == noErr &&
+        new_device_pid == camilla_pid) {
+      logger_debug(&g_coreaudio_dev_logger, "We have exclusive access.");
+      return true;
+    } else {
+      logger_warn(
+          &g_coreaudio_dev_logger,
+          "Could not get exclusive access. CamillaDSP pid: %d, device owner "
+          "pid: %d.",
+          (int)camilla_pid, (int)current_hog_pid);
+    }
+  }
+  return false;
 }
 
 void core_audio_device_release_hog_mode(AudioDeviceID device_id) {
   if (device_id == 0) return;
-  pid_t pid = -1;
+  pid_t camilla_pid = getpid();
+  logger_trace(&g_coreaudio_dev_logger,
+               "Releasing any device ownership for device id %u.",
+               (unsigned int)device_id);
+  pid_t current_hog_pid = -1;
+  uint32_t hog_size = sizeof(pid_t);
   AudioObjectPropertyAddress addr = {
       .mSelector = kAudioDevicePropertyHogMode,
       .mScope = kAudioObjectPropertyScopeGlobal,
       .mElement = kAudioObjectPropertyElementMain};
-  AudioObjectSetPropertyData(device_id, &addr, 0, NULL, sizeof(pid_t), &pid);
+  if (AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &hog_size,
+                                 &current_hog_pid) == noErr) {
+    if (current_hog_pid == camilla_pid) {
+      logger_debug(&g_coreaudio_dev_logger, "Releasing exclusive access.");
+      pid_t pid = -1;
+      AudioObjectSetPropertyData(device_id, &addr, 0, NULL, sizeof(pid_t), &pid);
+      pid_t new_device_pid = -1;
+      if (AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &hog_size,
+                                     &new_device_pid) == noErr &&
+          new_device_pid == -1) {
+        logger_debug(&g_coreaudio_dev_logger, "Exclusive access released.");
+      } else {
+        logger_warn(&g_coreaudio_dev_logger,
+                    "Could not release exclusive access. CamillaDSP pid: %d, "
+                    "device owner pid: %d.",
+                    (int)camilla_pid, (int)new_device_pid);
+      }
+    }
+  }
 }
 
 // MARK: - Device Liveness Watcher

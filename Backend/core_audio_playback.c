@@ -244,6 +244,7 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
                          "Failed to create output AudioUnit");
     goto cleanup;
   }
+  logger_trace(&g_logger, "Created playback audio unit.");
 
   UInt32 enable_output = 1;
   status = AudioUnitSetProperty(
@@ -289,12 +290,6 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
   // Attempt to acquire Hog Mode if exclusive access is requested.
   if (playback->exclusive) {
     playback->did_acquire_hog_mode = core_audio_device_acquire_hog_mode(dev_id);
-    if (playback->did_acquire_hog_mode) {
-      logger_info(&g_logger, "Acquired exclusive hog mode on playback device");
-    } else {
-      logger_warn(&g_logger,
-                  "Failed to acquire exclusive hog mode on playback device");
-    }
   }
 
   // Set the device format.
@@ -304,6 +299,7 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
             dev_id, CORE_AUDIO_SCOPE_OUTPUT, playback->sample_rate,
             playback->sample_format, (int)playback->channels)) {
       physical_format_set = true;
+      logger_debug(&g_logger, "Set phys playback stream format.");
     } else {
       logger_error(&g_logger,
                    "Failed to set matching physical playback format: %s",
@@ -316,6 +312,7 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
   }
   if (!physical_format_set) {
     core_audio_device_set_nominal_sample_rate(dev_id, playback->sample_rate);
+    logger_trace(&g_logger, "Set playback device sample rate.");
   }
   core_audio_device_set_buffer_frame_size(
       dev_id, (uint32_t)playback->chunk_size, CORE_AUDIO_SCOPE_OUTPUT);
@@ -389,7 +386,8 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
         rate_change_watcher_create(dev_id, playback->sample_rate);
   }
 
-  logger_info(&g_logger, "CoreAudio playback successfully opened and started");
+  logger_debug(&g_logger, "Opened CoreAudio playback device \"%s\".",
+               playback->device_name[0] ? playback->device_name : "default");
   return true;
 
 cleanup:

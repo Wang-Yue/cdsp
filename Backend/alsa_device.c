@@ -415,6 +415,11 @@ int alsa_device_open_and_configure_hw(
     snprintf(clean_dev, sizeof(clean_dev), "default");
   }
 
+  const char* direction =
+      (stream == SND_PCM_STREAM_PLAYBACK) ? "Playback" : "Capture";
+  logger_debug(&g_alsa_dev_logger, "%s: opening ALSA device '%s'", direction,
+               clean_dev);
+
   int rc = snd_pcm_open(pcm, clean_dev, stream, SND_PCM_NONBLOCK);
   if (rc < 0) {
     if (out_error_msg && error_msg_len > 0) {
@@ -436,6 +441,8 @@ int alsa_device_open_and_configure_hw(
   }
 
   // Set channels
+  logger_debug(&g_alsa_dev_logger, "%s: setting channels to %d", direction,
+               channels);
   rc = snd_pcm_hw_params_set_channels(*pcm, params, channels);
   if (rc < 0) {
     if (out_error_msg && error_msg_len > 0) {
@@ -447,6 +454,8 @@ int alsa_device_open_and_configure_hw(
   }
 
   // Set sample rate
+  logger_debug(&g_alsa_dev_logger, "%s: setting rate to %u", direction,
+               sample_rate);
   unsigned int val = sample_rate;
   int dir = 0;
   rc = snd_pcm_hw_params_set_rate_near(*pcm, params, &val, &dir);
@@ -470,6 +479,10 @@ int alsa_device_open_and_configure_hw(
     snd_pcm_close(*pcm);
     *pcm = NULL;
     return rc;
+  }
+  if (out_format) {
+    logger_debug(&g_alsa_dev_logger, "%s: setting format to %s", direction,
+                 snd_pcm_format_name(*out_format));
   }
 
   // Set access mode
@@ -518,6 +531,9 @@ int alsa_device_open_and_configure_hw(
   if (out_can_pause) {
     *out_can_pause = (snd_pcm_hw_params_can_pause(params) != 0);
   }
+
+  logger_debug(&g_alsa_dev_logger, "%s device \"%s\" successfully opened",
+               direction, clean_dev);
 
   return 0;
 }

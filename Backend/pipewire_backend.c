@@ -144,10 +144,10 @@ static void on_capture_stream_state_changed(void* data,
                                             enum pw_stream_state state,
                                             const char* error) {
   (void)data;
-  logger_info(&g_logger,
-              "Capture stream state changed from %s to %s (error: %s)",
-              pw_stream_state_as_string(old), pw_stream_state_as_string(state),
-              error ? error : "none");
+  logger_debug(&g_logger,
+               "Capture stream state changed from %s to %s (error: %s)",
+               pw_stream_state_as_string(old), pw_stream_state_as_string(state),
+               error ? error : "none");
 }
 
 static void on_capture_param_changed(void* data, uint32_t id,
@@ -235,10 +235,10 @@ static void on_playback_stream_state_changed(void* data,
                                              enum pw_stream_state state,
                                              const char* error) {
   (void)data;
-  logger_info(&g_logger,
-              "Playback stream state changed from %s to %s (error: %s)",
-              pw_stream_state_as_string(old), pw_stream_state_as_string(state),
-              error ? error : "none");
+  logger_debug(&g_logger,
+               "Playback stream state changed from %s to %s (error: %s)",
+               pw_stream_state_as_string(old), pw_stream_state_as_string(state),
+               error ? error : "none");
 }
 
 static void on_playback_param_changed(void* data, uint32_t id,
@@ -546,6 +546,8 @@ static bool pipewire_capture_pitch_control_supported(void* ctx) {
 static void pipewire_capture_set_pitch(void* ctx, double multiplier) {
   (void)ctx;
   (void)multiplier;
+  logger_warn(&g_logger,
+              "Requested rate adjust of synchronous resampler. Ignoring request.");
 }
 
 /**

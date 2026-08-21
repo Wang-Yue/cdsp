@@ -133,7 +133,34 @@ static bool engine_session_build_resampler(dsp_session_t* core,
                                            double capture_rate,
                                            size_t pipeline_rate,
                                            audio_backend_error_t* err) {
+  if (config->devices.has_capture_samplerate &&
+      config->devices.capture_samplerate != config->devices.samplerate &&
+      !config->devices.has_resampler) {
+    logger_warn(&g_logger,
+                "Resampling is disabled and capture_samplerate is different "
+                "than samplerate, ignoring capture_samplerate.");
+  }
   if (config->devices.has_resampler) {
+    bool rate_adjust = config->devices.has_enable_rate_adjust &&
+                       config->devices.enable_rate_adjust;
+    bool diff_rates = ((size_t)capture_rate != pipeline_rate);
+    if (!diff_rates && !rate_adjust) {
+      logger_warn(&g_logger,
+                  "Needless 1:1 sample rate conversion active. Not needed "
+                  "since enable_rate_adjust=False");
+    } else if (diff_rates && !rate_adjust &&
+               config->devices.resampler.type == RESAMPLER_TYPE_ASYNC_SINC) {
+      logger_info(&g_logger,
+                  "Using AsyncSinc resampler for synchronous resampling. "
+                  "Consider switching to \"Synchronous\" to save CPU time.");
+    } else if (diff_rates && !rate_adjust &&
+               config->devices.resampler.type == RESAMPLER_TYPE_ASYNC_POLY) {
+      logger_info(
+          &g_logger,
+          "Using AsyncPoly resampler for synchronous resampling. Consider "
+          "switching to \"Synchronous\" to increase resampling quality.");
+    }
+
     config_error_t cerr;
     config_error_init(&cerr);
     core->resampler = resampler_create_from_config(
