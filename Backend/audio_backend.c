@@ -308,9 +308,14 @@ bool audio_backend_ring_buffer_read(
     backend_error_t* err) {
   if (!ring_buffer || !scratch_buf || !chunk || channels == 0 ||
       blockalign == 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Invalid parameters");
     return false;
   }
 
+  // Hardware sample rate or format changes must be handled immediately without
+  // decoding further frames under obsolete parameters to prevent filter
+  // corruption.
   if (has_pending_rate_change &&
       atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
     if (err)
@@ -318,13 +323,9 @@ bool audio_backend_ring_buffer_read(
     return false;
   }
 
-  if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
-      (thread_running &&
-       !atomic_load_explicit(thread_running, memory_order_acquire))) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                         "Capture stream stopped");
-    return false;
+  if (frames_requested == 0) {
+    audio_chunk_set_valid_frames(chunk, 0);
+    return true;
   }
 
   if (audio_chunk_get_channels(chunk) < channels) {
@@ -332,6 +333,20 @@ bool audio_backend_ring_buffer_read(
       backend_error_init(
           err, BACKEND_ERROR_INVALID_CHANNELS,
           "Chunk channels count does not match capture channels");
+    return false;
+  }
+
+  if (audio_chunk_get_frames(chunk) < frames_requested) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         "Chunk frame capacity too small for requested frames");
+    return false;
+  }
+
+  if (frames_requested > SIZE_MAX / blockalign) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         "Requested frame count exceeds maximum size");
     return false;
   }
 
@@ -343,8 +358,22 @@ bool audio_backend_ring_buffer_read(
     return false;
   }
 
+  // Draining semantics: Only check `stopped` / `thread_running` flags after
+  // confirming that the ring buffer lacks sufficient bytes. If the capture
+  // worker thread wrote its final batch of samples and stopped, those remaining
+  // frames must still be consumed to avoid dropping audio at EOF / stream
+  // shutdown.
   if (spsc_byte_ring_buffer_get_available_to_read(ring_buffer) <
       bytes_requested) {
+    if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
+        (thread_running &&
+         !atomic_load_explicit(thread_running, memory_order_acquire))) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                           "Capture stream stopped");
+      return false;
+    }
+    if (err) backend_error_init(err, BACKEND_ERROR_NONE, "");
     return false;
   }
 
@@ -352,8 +381,15 @@ bool audio_backend_ring_buffer_read(
       ring_buffer, (uint8_t*)scratch_buf, bytes_requested);
   size_t valid_frames = (blockalign > 0) ? (consumed_bytes / blockalign) : 0;
 
-  return audio_chunk_decode_interleaved(scratch_buf, fmt, channels,
-                                        valid_frames, chunk);
+  if (!audio_chunk_decode_interleaved(scratch_buf, fmt, channels, valid_frames,
+                                      chunk)) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         "Failed to decode captured audio data");
+    return false;
+  }
+
+  return true;
 }
 
 bool audio_backend_ring_buffer_write(
@@ -365,6 +401,8 @@ bool audio_backend_ring_buffer_write(
     backend_error_t* err) {
   if (!ring_buffer || !scratch_buf || !chunk || channels == 0 ||
       blockalign == 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, "Invalid parameters");
     return false;
   }
 
@@ -398,6 +436,13 @@ bool audio_backend_ring_buffer_write(
 
   size_t frames = audio_chunk_get_valid_frames(chunk);
   if (frames == 0) return true;
+
+  if (frames > SIZE_MAX / blockalign) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Frame count exceeds maximum size");
+    return false;
+  }
 
   size_t bytes_to_write = frames * blockalign;
   if (bytes_to_write > scratch_cap) {
