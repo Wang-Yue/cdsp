@@ -219,6 +219,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         updateVolumeDisplay();
         updateStatusBar();
     });
+    connect(m_settings.get(), &AudioSettings::fadersChanged, this, [this]() {
+        updateMuteDisplay();
+        updateVolumeDisplay();
+    });
 
     m_monitoring->start();
 

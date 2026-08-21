@@ -77,12 +77,14 @@ public:
 
     void loadPreferences();
     void savePreferences();
+    void saveFaderPreferences();
 
     std::function<void()> onChanged;
 
 signals:
     void changed();
     void settingsChanged();
+    void fadersChanged();
 
 private:
     void notifyChange();

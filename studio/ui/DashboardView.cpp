@@ -35,8 +35,8 @@ DashboardView::DashboardView(std::shared_ptr<MonitoringController> monitoring,
                     &DashboardView::updateVisibility);
             connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this,
                     &DashboardView::updateFaderUi);
-            connect(m_dspController->settings().get(), &AudioSettings::settingsChanged, this,
-                    &DashboardView::updateSignalChain);
+            connect(m_dspController->settings().get(), &AudioSettings::fadersChanged, this,
+                    &DashboardView::updateFaderUi);
         }
         if (m_dspController->pipelineStore()) {
             connect(m_dspController->pipelineStore().get(), &PipelineStore::pipelineChanged, this,

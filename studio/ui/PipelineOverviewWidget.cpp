@@ -39,6 +39,10 @@ PipelineOverviewWidget::PipelineOverviewWidget(std::shared_ptr<DSPEngineControll
             connect(m_dspController->pipelineStore().get(), &PipelineStore::pipelineChanged, this,
                     &PipelineOverviewWidget::rebuildOverview);
         }
+        if (m_dspController->devices()) {
+            connect(m_dspController->devices().get(), &AudioDeviceManager::configChanged, this,
+                    &PipelineOverviewWidget::rebuildOverview);
+        }
         connect(m_dspController.get(), &DSPEngineController::statusChanged, this,
                 &PipelineOverviewWidget::rebuildOverview);
     }

@@ -38,7 +38,8 @@ void AudioSettings::setVolume(float db, Fader fader) {
         fader4Volume = db;
         break;
     }
-    savePreferences();
+    saveFaderPreferences();
+    emit fadersChanged();
 }
 
 bool AudioSettings::getMuted(Fader fader) const {
@@ -75,7 +76,8 @@ void AudioSettings::setMuted(bool muted, Fader fader) {
         fader4Muted = muted;
         break;
     }
-    savePreferences();
+    saveFaderPreferences();
+    emit fadersChanged();
 }
 
 void AudioSettings::setSilenceThreshold(int val) {
@@ -242,4 +244,18 @@ void AudioSettings::savePreferences() {
     s.setValue("show_signal_graph_in_dashboard", showSignalGraphInDashboard);
     s.sync();
     emit settingsChanged();
+}
+
+void AudioSettings::saveFaderPreferences() {
+    QSettings s("DSPMonitor", "MonitorQt");
+    s.setValue("volume", volume);
+    s.setValue("isMuted", isMuted);
+    s.setValue("fader1Volume", fader1Volume);
+    s.setValue("fader2Volume", fader2Volume);
+    s.setValue("fader3Volume", fader3Volume);
+    s.setValue("fader4Volume", fader4Volume);
+    s.setValue("fader1Muted", fader1Muted);
+    s.setValue("fader2Muted", fader2Muted);
+    s.setValue("fader3Muted", fader3Muted);
+    s.setValue("fader4Muted", fader4Muted);
 }
