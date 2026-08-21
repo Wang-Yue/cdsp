@@ -44,7 +44,7 @@ static void sig_handler(int sig) {
  */
 static void print_usage(void) {
   printf(
-      "Usage: dsp-cli [CONFIGFILE] [OPTIONS]\n"
+      "Usage: cdsp [CONFIGFILE] [OPTIONS]\n"
       "  CONFIGFILE        Path to JSON/YAML configuration file.\n\n"
       "Options:\n"
       "  -h, --help        Print this help message.\n"
@@ -344,7 +344,7 @@ int main(int argc, char** argv) {
 
   cdsp_set_log_level(log_level_str);
 
-  logger_info(&g_logger, "Starting dsp-cli application");
+  logger_info(&g_logger, "Starting cdsp application");
 
   if (check_only) {
     if (!config_path) {

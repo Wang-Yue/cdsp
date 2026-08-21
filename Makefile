@@ -269,7 +269,7 @@ else
 SERVER_SRCS :=
 endif
 CLI_SRC := $(SRC_ROOT)/main.c
-CLI_BIN := $(SRC_ROOT)/bin/dsp-cli$(CLI_BIN_EXT)
+CLI_BIN := $(SRC_ROOT)/bin/cdsp$(CLI_BIN_EXT)
 
 TEST_SRCS := $(wildcard $(ROOT_DIR)/Tests/CLibTests/test_*.c)
 TEST_BINS := $(patsubst $(ROOT_DIR)/Tests/CLibTests/test_%.c, $(ROOT_DIR)/Tests/CLibTests/bin/test_%, $(TEST_SRCS))

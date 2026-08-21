@@ -20,4 +20,4 @@ make CC="$CC" \
      LDFLAGS="--sysroot=$SYSROOT -B$SYSROOT/usr/lib/aarch64-linux-gnu -L$SYSROOT/usr/lib/aarch64-linux-gnu -L$SYSROOT/lib/aarch64-linux-gnu -L$SYSROOT/usr/libexec/swift/lib/swift/linux -Wl,-rpath-link,$SYSROOT/usr/lib/aarch64-linux-gnu -Wl,-rpath-link,$SYSROOT/lib/aarch64-linux-gnu -Wl,-rpath-link,$SYSROOT/usr/libexec/swift/lib/swift/linux -Wl,-rpath,/usr/libexec/swift/lib/swift/linux -lm -lpthread -ldbus-1 -lasound -lpipewire-0.3 -lfftw3 -lfftw3f -ldispatch -lBlocksRuntime -lrt" \
      -j8 "$@"
 
-echo "✅ Cross-compilation complete: bin/dsp-cli"
+echo "✅ Cross-compilation complete: bin/cdsp"

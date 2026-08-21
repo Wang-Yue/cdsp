@@ -25,4 +25,4 @@ make IS_WINDOWS=1 \
      -j$(sysctl -n hw.ncpu 2>/dev/null || echo 4) \
      "$@"
 
-echo "✅ Windows cross-compilation complete: bin/dsp-cli.exe and libdsp.a"
+echo "✅ Windows cross-compilation complete: bin/cdsp.exe and libdsp.a"

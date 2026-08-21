@@ -229,7 +229,7 @@ In addition to runtime execution speed, a critical goal of our clean-sheet rewri
 
 | Engine / Target | User Time | System Time | Total Wall Time | Build Speed Ratio |
 | :--- | :---: | :---: | :---: | :---: |
-| **C Target (`dsp-cli`)** | 15.32s | 3.93s | **22.65s** | 🟢 **4.31x faster build** |
+| **C Target (`cdsp`)** | 15.32s | 3.93s | **22.65s** | 🟢 **4.31x faster build** |
 | **Rust Engine (`camilladsp`)** | 80.49s | 6.79s | **97.58s** | |
 
 The C engine builds in ~22 seconds, representing a **4.3x faster compilation cycle** than the upstream Rust engine.
@@ -239,8 +239,8 @@ The C engine builds in ~22 seconds, representing a **4.3x faster compilation cyc
 
 | Engine / Target | Unstripped Executable | Stripped Executable | Size Ratio (Stripped) |
 | :--- | :---: | :---: | :---: |
-| **C Target (`dsp-cli`, Default -O3)** | 366 KB (375,568 B) | **331 KB** (339,080 B) | 🟢 **16.7x smaller** |
-| **C Target (`dsp-cli`, Size-Optimized)** | 252 KB (257,648 B) | **220 KB** (225,048 B) | 🟢 **25.2x smaller** |
+| **C Target (`cdsp`, Default -O3)** | 366 KB (375,568 B) | **331 KB** (339,080 B) | 🟢 **16.7x smaller** |
+| **C Target (`cdsp`, Size-Optimized)** | 252 KB (257,648 B) | **220 KB** (225,048 B) | 🟢 **25.2x smaller** |
 | **Rust Engine (`camilladsp`)** | 6.46 MB (6,458,816 B) | **5.54 MB** (5,535,448 B) | |
 
 *\*Note: The C Target Size-Optimized build is compiled with `MODE=small` (using `-Oz -flto -ffunction-sections -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -Wl,-dead_strip`).*
