@@ -11,6 +11,7 @@ int main(int argc, char* argv[]) {
     app.setApplicationName("CDSP Monitor - Qt");
     app.setOrganizationName("DSPMonitor");
     app.setOrganizationDomain("dspmonitor.io");
+    app.setDesktopFileName("com.wangyue.monitorqt");
     app.setQuitOnLastWindowClosed(false);
     app.setWindowIcon(AppIcon::getAppIcon());
 

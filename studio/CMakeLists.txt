@@ -185,6 +185,9 @@ if(APPLE)
         MACOSX_PACKAGE_LOCATION "Resources"
     )
     list(APPEND SOURCES ${APP_ICON_MACOS} "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/MacUtils.mm")
+elseif(WIN32)
+    set(APP_ICON_WIN "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/app.rc")
+    list(APPEND SOURCES ${APP_ICON_WIN})
 endif()
 
 add_executable(MonitorQt WIN32 ${SOURCES})
@@ -284,6 +287,25 @@ if(CLANG_FORMAT_BIN)
         COMMAND ${CLANG_FORMAT_BIN} --dry-run -Werror -style=file ${ALL_PROJECT_SOURCES}
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         COMMENT "Checking code formatting with clang-format..."
+    )
+endif()
+
+# Installation rules for Linux / Unix
+if(UNIX AND NOT APPLE)
+    include(GNUInstallDirs)
+    install(TARGETS MonitorQt
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/cmake/com.wangyue.monitorqt.desktop"
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
+    )
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app.png"
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
+        RENAME com.wangyue.monitorqt.png
+    )
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app.png"
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/pixmaps
+        RENAME com.wangyue.monitorqt.png
     )
 endif()
 
