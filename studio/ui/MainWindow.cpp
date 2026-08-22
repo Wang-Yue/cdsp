@@ -464,9 +464,9 @@ void MainWindow::setupMenuBar() {
     });
     fileMenu->addAction(exportPipelineAct);
 
-    auto exportCdspConfigAct = new QAction("Export CamillaDSP Engine Config...", this);
+    auto exportCdspConfigAct = new QAction("Export CDSP Engine Config...", this);
     connect(exportCdspConfigAct, &QAction::triggered, [this]() {
-        QString path = QFileDialog::getSaveFileName(this, "Export CamillaDSP Engine Config", "camilladsp_config.json",
+        QString path = QFileDialog::getSaveFileName(this, "Export CDSP Engine Config", "cdsp_config.json",
                                                     "JSON Files (*.json);;YAML Files (*.yml *.yaml);;All Files (*)");
         if (path.isEmpty())
             return;
@@ -478,9 +478,9 @@ void MainWindow::setupMenuBar() {
             file.write(configStr.data(), configStr.size());
             file.close();
             QMessageBox::information(this, "Config Exported",
-                                     QString("Successfully exported CamillaDSP configuration to:\n%1").arg(path));
+                                     QString("Successfully exported CDSP configuration to:\n%1").arg(path));
         } else {
-            QMessageBox::critical(this, "Export Failed", "Failed to write CamillaDSP configuration to file.");
+            QMessageBox::critical(this, "Export Failed", "Failed to write CDSP configuration to file.");
         }
     });
     fileMenu->addAction(exportCdspConfigAct);
