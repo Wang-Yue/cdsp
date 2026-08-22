@@ -119,6 +119,7 @@ bool cdsp_get_samples(dsp_engine_t* engine, bool is_capture, size_t n_frames,
   audio_backend_error_t raw_err = {0};
   audio_samples_t raw_samples = {
       .channels = out_samples->channels,
+      .channels_count = out_samples->channels_count,
   };
   bool ok = engine->get_samples(engine->ctx, is_capture, n_frames, &raw_samples,
                                 &raw_err);

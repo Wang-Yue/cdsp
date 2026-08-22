@@ -12,11 +12,9 @@ TEST(Reset) {
   audio_history_buffer_t* buffer = audio_history_buffer_create();
   ASSERT_TRUE(buffer != NULL);
   ASSERT_EQ(0, audio_history_buffer_get_channels(buffer));
-  ASSERT_FALSE(audio_history_buffer_has_data(buffer));
 
   audio_history_buffer_reset(buffer, 2);
   ASSERT_EQ(2, audio_history_buffer_get_channels(buffer));
-  ASSERT_FALSE(audio_history_buffer_has_data(buffer));
   audio_history_buffer_free(buffer);
 }
 
@@ -32,7 +30,6 @@ TEST(AppendAndRead) {
   audio_chunk_set_valid_frames(chunk, 1024);
 
   audio_history_buffer_append(buffer, chunk);
-  ASSERT_TRUE(audio_history_buffer_has_data(buffer));
 
   float* dest = (float*)calloc(1024, sizeof(float));
   bool enough_data = false;
@@ -124,7 +121,6 @@ TEST(AppendMismatchedChannels) {
   audio_chunk_t* chunk = audio_chunk_create(1024, 1);
   audio_chunk_set_valid_frames(chunk, 1024);
   audio_history_buffer_append(buffer, chunk);
-  ASSERT_TRUE(audio_history_buffer_has_data(buffer));
   ASSERT_EQ(1, audio_history_buffer_get_channels(buffer));
 
   audio_chunk_free(chunk);
@@ -232,6 +228,48 @@ TEST(AudioHistoryBuffer_ConcurrentProducerConsumer) {
   free(dest);
   audio_history_buffer_free(buffer);
   ASSERT_TRUE(snapshots_taken > 0);
+}
+
+TEST(ReadLatestCountExceedsCapacity) {
+  audio_history_buffer_t* buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 2);
+
+  audio_chunk_t* chunk = audio_chunk_create(512, 2);
+  audio_chunk_set_valid_frames(chunk, 512);
+  audio_history_buffer_append(buffer, chunk);
+
+  float* dest = (float*)calloc(1024, sizeof(float));
+  bool enough = true;
+  const size_t ch0 = 0;
+  audio_history_buffer_status_t status = audio_history_buffer_read_latest(
+      buffer, dest, AUDIO_HISTORY_BUFFER_CAPACITY + 1, &ch0, &enough);
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_ERROR_OUT_OF_RANGE, status);
+  ASSERT_FALSE(enough);
+
+  free(dest);
+  audio_chunk_free(chunk);
+  audio_history_buffer_free(buffer);
+}
+
+TEST(ReadLatestNotEnoughDataYet) {
+  audio_history_buffer_t* buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 2);
+
+  audio_chunk_t* chunk = audio_chunk_create(256, 2);
+  audio_chunk_set_valid_frames(chunk, 256);
+  audio_history_buffer_append(buffer, chunk);
+
+  float* dest = (float*)calloc(512, sizeof(float));
+  bool enough = true;
+  const size_t ch0 = 0;
+  audio_history_buffer_status_t status =
+      audio_history_buffer_read_latest(buffer, dest, 512, &ch0, &enough);
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status);
+  ASSERT_FALSE(enough);
+
+  free(dest);
+  audio_chunk_free(chunk);
+  audio_history_buffer_free(buffer);
 }
 
 TEST_MAIN()

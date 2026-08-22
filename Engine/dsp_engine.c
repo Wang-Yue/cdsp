@@ -563,7 +563,7 @@ static bool dsp_engine_get_samples(void* ctx, bool is_capture, size_t n_frames,
   }
   audio_history_buffer_t* buf =
       is_capture ? impl->buffers.capture : impl->buffers.playback;
-  if (!audio_history_buffer_has_data(buf)) {
+  if (!buf) {
     pthread_mutex_unlock(&impl->state_mutex);
     if (err) {
       err->type = AUDIO_BACKEND_ERR_BUFFER_EMPTY;
@@ -573,7 +573,6 @@ static bool dsp_engine_get_samples(void* ctx, bool is_capture, size_t n_frames,
   }
 
   size_t ch_count = audio_history_buffer_get_channels(buf);
-  out_samples->channels_count = ch_count;
   if (ch_count == 0) {
     pthread_mutex_unlock(&impl->state_mutex);
     if (err) {
@@ -585,17 +584,27 @@ static bool dsp_engine_get_samples(void* ctx, bool is_capture, size_t n_frames,
 
   size_t n = n_frames;
   if (n > AUDIO_HISTORY_BUFFER_CAPACITY) n = AUDIO_HISTORY_BUFFER_CAPACITY;
-  out_samples->frames = n;
 
-  if (out_samples->channels) {
+  if (out_samples->channels && n > 0) {
     for (size_t ch = 0; ch < ch_count; ch++) {
       if (out_samples->channels[ch]) {
         bool enough = false;
-        audio_history_buffer_read_latest(buf, out_samples->channels[ch], n, &ch,
-                                         &enough);
+        audio_history_buffer_status_t status = audio_history_buffer_read_latest(
+            buf, out_samples->channels[ch], n, &ch, &enough);
+        if (status != AUDIO_HISTORY_BUFFER_OK || !enough) {
+          pthread_mutex_unlock(&impl->state_mutex);
+          if (err) {
+            err->type = AUDIO_BACKEND_ERR_BUFFER_EMPTY;
+            snprintf(err->message, sizeof(err->message), "Buffer empty");
+          }
+          return false;
+        }
       }
     }
   }
+
+  out_samples->channels_count = ch_count;
+  out_samples->frames = n;
 
   pthread_mutex_unlock(&impl->state_mutex);
   return true;

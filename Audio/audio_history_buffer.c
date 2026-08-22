@@ -216,12 +216,6 @@ void audio_history_buffer_free(audio_history_buffer_t* history) {
   cdsp_aligned_free(history);
 }
 
-bool audio_history_buffer_has_data(const audio_history_buffer_t* history) {
-  if (!history) return false;
-  return atomic_load_explicit(&history->total_written, memory_order_acquire) >
-         0;
-}
-
 void audio_history_buffer_append(audio_history_buffer_t* history,
                                  const audio_chunk_t* chunk) {
   if (!history || !chunk) return;
@@ -280,7 +274,7 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
   if (!dest || count == 0) return AUDIO_HISTORY_BUFFER_OK;
 
   size_t cap = history->capacity;
-  if (count > cap) return AUDIO_HISTORY_BUFFER_OK;
+  if (count > cap) return AUDIO_HISTORY_BUFFER_ERROR_OUT_OF_RANGE;
   size_t mask = cap - 1;
 
   for (int retry = 0; retry < 10; retry++) {

@@ -4,8 +4,8 @@
 #endif
 #endif
 #include <math.h>
-#include <stdlib.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include "Audio/audio_chunk.h"
 #include "Audio/audio_history_buffer.h"
@@ -151,8 +151,6 @@ TEST(HistoryBufferAppendLargeChunkExceedingCapacity) {
   // Appending chunk exceeding capacity
   audio_history_buffer_append(buffer, chunk);
   audio_chunk_free(chunk);
-
-  ASSERT_TRUE(audio_history_buffer_has_data(buffer));
 
   // Read latest capacity frames
   float* dest = (float*)malloc(cap * sizeof(float));

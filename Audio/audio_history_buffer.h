@@ -77,14 +77,6 @@ void audio_history_buffer_free(audio_history_buffer_t* history);
 size_t audio_history_buffer_get_channels(const audio_history_buffer_t* history);
 
 /**
- * @brief Check if any sample has been written on this side yet.
- *
- * @param history Pointer to the history buffer.
- * @return true if data has been written, false otherwise.
- */
-bool audio_history_buffer_has_data(const audio_history_buffer_t* history);
-
-/**
  * @brief Append audio chunk to the history buffer.
  *
  * **Producer-only.** Forward each channel's waveform into the matching
@@ -100,7 +92,7 @@ void audio_history_buffer_append(audio_history_buffer_t* history,
  * @brief Copy the most recent samples.
  *
  * **Consumer.** Copy the most recent `count` samples for the given
- * channel into `dest`. When `channel` is negative (`-1`), all channels are
+ * channel into `dest`. When `channel` is NULL, all channels are
  * averaged into `dest`. Returns status code and sets `*enough_data` to `false`
  * if there isn't enough data yet.
  *
