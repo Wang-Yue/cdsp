@@ -7,26 +7,12 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Compiler optimization flags matching cdsp/Makefile
-if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-    if(MSVC)
-        add_compile_options(/O2 /fp:fast)
-    else()
-        add_compile_options(-O3 -ffp-contract=fast -fno-math-errno -funroll-loops)
-        if(APPLE)
-            add_compile_options(-mcpu=native)
-        elseif(NOT CMAKE_CROSSCOMPILING)
-            add_compile_options(-march=native)
-        endif()
-    endif()
-endif()
-
 set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTOMOC_PARALLEL 0)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTOGEN_PARALLEL "AUTO")
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent Multimedia Svg)
 find_package(Threads REQUIRED)
 
 # Platform audio and acceleration options (aligned with cdsp)
@@ -149,6 +135,19 @@ target_include_directories(cdsp_static PUBLIC
     ${CDSP_DIR}/Public
     ${CDSP_DIR}/Utils
 )
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    if(MSVC)
+        target_compile_options(cdsp_static PRIVATE /O2 /fp:fast)
+    else()
+        target_compile_options(cdsp_static PRIVATE -O3 -ffp-contract=fast -fno-math-errno -funroll-loops)
+        if(APPLE)
+            target_compile_options(cdsp_static PRIVATE -mcpu=native)
+        elseif(NOT CMAKE_CROSSCOMPILING)
+            target_compile_options(cdsp_static PRIVATE -march=native)
+        endif()
+    endif()
+endif()
+
 if(fftw3_SOURCE_DIR)
     target_include_directories(cdsp_static PUBLIC ${fftw3_SOURCE_DIR}/api)
 endif()
@@ -204,8 +203,8 @@ if(APPLE)
         MACOSX_BUNDLE_COPYRIGHT "Copyright © 2026 Wang Yue. All rights reserved."
     )
     add_custom_command(TARGET MonitorQt POST_BUILD
-        COMMAND codesign --force --deep --sign - $<TARGET_BUNDLE_DIR:MonitorQt>
-        COMMENT "Ad-hoc signing MonitorQt.app bundle..."
+        COMMAND codesign --force --sign - $<TARGET_FILE:MonitorQt>
+        COMMENT "Ad-hoc signing MonitorQt executable..."
     )
 endif()
 
@@ -215,6 +214,7 @@ target_link_libraries(MonitorQt PRIVATE
     Qt6::Network
     Qt6::Concurrent
     Qt6::Multimedia
+    Qt6::Svg
     Threads::Threads
     ${CDSP_LIB}
     ${PLATFORM_LIBS}
@@ -252,18 +252,40 @@ endif()
 if(APPLE)
     find_program(MACDEPLOYQT_BIN NAMES macdeployqt HINTS /opt/homebrew/bin)
     if(MACDEPLOYQT_BIN)
+        set(MACDEPLOYQT_LIBPATH_ARGS "")
+        foreach(_qt_comp Core Widgets Network Concurrent Multimedia Svg)
+            if(Qt6${_qt_comp}_DIR)
+                cmake_path(GET Qt6${_qt_comp}_DIR PARENT_PATH _parent1)
+                cmake_path(GET _parent1 PARENT_PATH _parent2)
+                list(APPEND MACDEPLOYQT_LIBPATH_ARGS "-libpath=${_parent2}")
+                if(EXISTS "${_parent2}/lib")
+                    list(APPEND MACDEPLOYQT_LIBPATH_ARGS "-libpath=${_parent2}/lib")
+                endif()
+            endif()
+        endforeach()
+        if(EXISTS "/opt/homebrew/lib")
+            list(APPEND MACDEPLOYQT_LIBPATH_ARGS "-libpath=/opt/homebrew/lib")
+        endif()
+        if(EXISTS "/usr/local/lib")
+            list(APPEND MACDEPLOYQT_LIBPATH_ARGS "-libpath=/usr/local/lib")
+        endif()
+        list(REMOVE_DUPLICATES MACDEPLOYQT_LIBPATH_ARGS)
+        message(STATUS "macdeployqt lib paths: ${MACDEPLOYQT_LIBPATH_ARGS}")
+
         add_custom_target(
             deploy
-            COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -always-overwrite
-            COMMAND strip -x $<TARGET_BUNDLE_DIR:MonitorQt>/Contents/MacOS/MonitorQt
+            COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE:MonitorQt>
+            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target MonitorQt
+            COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -always-overwrite -no-codesign ${MACDEPLOYQT_LIBPATH_ARGS}
             COMMAND codesign --force --deep --sign - $<TARGET_BUNDLE_DIR:MonitorQt>
             DEPENDS MonitorQt
             COMMENT "Deploying Qt libraries into macOS .app bundle..."
         )
         add_custom_target(
             dmg
-            COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -always-overwrite
-            COMMAND strip -x $<TARGET_BUNDLE_DIR:MonitorQt>/Contents/MacOS/MonitorQt
+            COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE:MonitorQt>
+            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target MonitorQt
+            COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -always-overwrite -no-codesign ${MACDEPLOYQT_LIBPATH_ARGS}
             COMMAND codesign --force --deep --sign - $<TARGET_BUNDLE_DIR:MonitorQt>
             COMMAND ${MACDEPLOYQT_BIN} $<TARGET_BUNDLE_DIR:MonitorQt> -dmg
             DEPENDS MonitorQt
