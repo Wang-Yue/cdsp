@@ -89,8 +89,21 @@ void disableFullScreen(QWidget* widget) {
     [nsWindow setCollectionBehavior:behavior];
 }
 
+void showDockIcon() {
+    if ([NSApp activationPolicy] != NSApplicationActivationPolicyRegular) {
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+    }
+    if (@available(macOS 14.0, *)) {
+        [NSApp activate];
+    } else {
+        [NSApp activateIgnoringOtherApps:YES];
+    }
+}
+
 void hideDockIcon() {
-    [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+    if ([NSApp activationPolicy] != NSApplicationActivationPolicyAccessory) {
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+    }
 }
 
 void setupMinimizeToTray(QWidget* widget) {

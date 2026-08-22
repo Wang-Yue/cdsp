@@ -15,8 +15,6 @@ int main(int argc, char* argv[]) {
     app.setQuitOnLastWindowClosed(false);
     app.setWindowIcon(AppIcon::getAppIcon());
 
-    MacUtils::hideDockIcon();
-
     // Enable high DPI scaling
     QSurfaceFormat format;
     format.setSamples(4);

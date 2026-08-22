@@ -38,12 +38,14 @@
 #include <QFontDatabase>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QJsonDocument>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QShowEvent>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTextEdit>
@@ -378,10 +380,6 @@ void MainWindow::setupStatusBar() {
 
 void MainWindow::setupMenuBar() {
     auto bar = menuBar();
-#ifdef Q_OS_MAC
-    bar->setNativeMenuBar(false);
-#endif
-
     // 1. File Menu
     auto fileMenu = bar->addMenu("&File");
 
@@ -687,8 +685,14 @@ void MainWindow::setupShortcuts() {
 
 void MainWindow::showEvent(QShowEvent* event) {
     QMainWindow::showEvent(event);
+    MacUtils::showDockIcon();
     MacUtils::disableFullScreen(this);
     MacUtils::setupMinimizeToTray(this);
+}
+
+void MainWindow::hideEvent(QHideEvent* event) {
+    QMainWindow::hideEvent(event);
+    MacUtils::hideDockIcon();
 }
 
 void MainWindow::changeEvent(QEvent* event) {
@@ -1339,6 +1343,7 @@ void MainWindow::onPipelineChanged() {
 }
 
 void MainWindow::showAndActivate() {
+    MacUtils::showDockIcon();
     showNormal();
     raise();
     activateWindow();
