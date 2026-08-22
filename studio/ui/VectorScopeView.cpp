@@ -101,9 +101,9 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     QPoint centerPt(w / 2, h / 2);
 
     // 1. Draw Reticle axes (+M, -M, +S, -S, L, R)
-    QColor mainAxisCol = palette().color(QPalette::Mid);
-    QColor diagAxisCol = palette().color(QPalette::Mid);
-    QColor labelCol = palette().color(QPalette::PlaceholderText);
+    QColor mainAxisCol = inMiniPlayer ? QColor(255, 255, 255, 35) : palette().color(QPalette::Mid);
+    QColor diagAxisCol = inMiniPlayer ? QColor(255, 255, 255, 25) : palette().color(QPalette::Mid);
+    QColor labelCol = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
 
     p.setPen(QPen(mainAxisCol, 1, Qt::SolidLine));
     p.drawLine(centerPt.x() - scaleX, centerPt.y(), centerPt.x() + scaleX, centerPt.y());

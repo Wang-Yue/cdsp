@@ -198,7 +198,8 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     monoFont.setPointSize(7);
     p.setFont(monoFont);
 
-    QColor gridPenCol = palette().color(QPalette::Mid);
+    QColor gridPenCol = inMiniPlayer ? QColor(255, 255, 255, 25) : palette().color(QPalette::Mid);
+    QColor labelCol = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
 
     double dbStep = (maxDB - minDB) > 60.0f ? 20.0 : 12.0;
     for (double db = maxDB; db >= minDB - 0.01; db -= dbStep) {
@@ -209,7 +210,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
         p.drawLine(marginL, y, marginL + plotW, y);
 
         if (marginL >= 24) {
-            p.setPen(palette().color(QPalette::PlaceholderText));
+            p.setPen(labelCol);
             p.drawText(QRectF(2, y - 6, marginL - 4, 12), Qt::AlignRight | Qt::AlignVCenter,
                        QString("%1").arg(static_cast<int>(std::round(db))));
         }
@@ -238,12 +239,12 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
 
         if (marginB >= 12) {
             // Tick mark
-            p.setPen(QPen(palette().color(QPalette::PlaceholderText), 1));
+            p.setPen(QPen(labelCol, 1));
             p.drawLine(x, marginT + plotH, x, marginT + plotH + 2);
 
             // Label
             p.setFont(freqFont);
-            p.setPen(palette().color(QPalette::PlaceholderText));
+            p.setPen(labelCol);
             QString label = f >= 1000.0 ? QString("%1k").arg(f / 1000.0) : QString("%1").arg(f);
             p.drawText(QRectF(x - 15, marginT + plotH + 2, 30, 12), Qt::AlignCenter, label);
         }

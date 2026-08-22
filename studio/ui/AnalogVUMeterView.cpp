@@ -94,9 +94,14 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     double w = dialRect.width();
     double h = dialRect.height();
 
+    bool inMiniPlayer =
+        (parentWidget() &&
+         (parentWidget()->inherits("QStackedWidget") ||
+          (parentWidget()->parentWidget() && parentWidget()->parentWidget()->inherits("QStackedWidget"))));
+
     QColor bulbAmberColor, bulbHotSpotColor, arcColor, percentageMarksColor, redZoneColor;
-    QColor textCol = palette().color(QPalette::Text);
-    QColor subtextCol = palette().color(QPalette::PlaceholderText);
+    QColor textCol = inMiniPlayer ? QColor(255, 255, 255, 180) : palette().color(QPalette::Text);
+    QColor subtextCol = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
 
     if (m_settings.theme == VUTheme::VintageAmber) {
         bulbAmberColor = QColor(255, 209, 102);
@@ -127,10 +132,6 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     clipPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
     p.setClipPath(clipPath);
 
-    bool inMiniPlayer =
-        (parentWidget() &&
-         (parentWidget()->inherits("QStackedWidget") ||
-          (parentWidget()->parentWidget() && parentWidget()->parentWidget()->inherits("QStackedWidget"))));
     if (!inMiniPlayer) {
         p.fillRect(dialRect, palette().color(QPalette::Window));
     }
@@ -349,7 +350,11 @@ void AnalogVUMeter::paintEvent(QPaintEvent* event) {
 
     // 4. Channel Label
     p.setFont(labelFont);
-    QColor lblColor = palette().color(QPalette::PlaceholderText);
+    bool inMiniPlayer =
+        (parentWidget() &&
+         (parentWidget()->inherits("QStackedWidget") ||
+          (parentWidget()->parentWidget() && parentWidget()->parentWidget()->inherits("QStackedWidget"))));
+    QColor lblColor = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
     p.setPen(lblColor);
     p.drawText(labelRect, Qt::AlignCenter, QString::number(m_channelIndex + 1));
 }

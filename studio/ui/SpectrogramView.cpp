@@ -265,7 +265,9 @@ void SpectrogramView::paint2D(QPainter& p, int w, int h) {
     monoFont.setPointSize(8);
     p.setFont(monoFont);
 
-    QColor gridPenCol = palette().color(QPalette::Mid);
+    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    QColor gridPenCol = inMiniPlayer ? QColor(255, 255, 255, 25) : palette().color(QPalette::Mid);
+    QColor labelCol = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
 
     for (double target : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
         if (target < minF || target > maxF)
@@ -276,7 +278,7 @@ void SpectrogramView::paint2D(QPainter& p, int w, int h) {
         p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
         p.drawLine(marginL, y, w, y);
 
-        p.setPen(palette().color(QPalette::PlaceholderText));
+        p.setPen(labelCol);
         QString label = target >= 1000.0 ? QString("%1k").arg(target / 1000.0) : QString("%1").arg(target);
         p.drawText(2, y + 4, label);
     }
@@ -287,7 +289,7 @@ void SpectrogramView::paint2D(QPainter& p, int w, int h) {
         p.setPen(QPen(gridPenCol, 0.5, Qt::SolidLine));
         p.drawLine(x, 0, x, plotH);
 
-        p.setPen(palette().color(QPalette::PlaceholderText));
+        p.setPen(labelCol);
         p.drawText(x - 8, h - 4, QString("%1s").arg(sec));
     }
 }
@@ -427,7 +429,9 @@ void SpectrogramView::paint3D(QPainter& p, int w, int h) {
     QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     monoFont.setPointSize(8);
     p.setFont(monoFont);
-    p.setPen(palette().color(QPalette::PlaceholderText));
+    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    QColor labelCol = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
+    p.setPen(labelCol);
     for (double target : {20.0, 100.0, 1000.0, 10000.0, 20000.0}) {
         if (target < minF || target > maxF)
             continue;
