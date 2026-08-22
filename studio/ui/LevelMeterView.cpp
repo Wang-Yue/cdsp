@@ -554,9 +554,7 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     QFont subFont = subLbl->font();
     subFont.setPointSize(9);
     subLbl->setFont(subFont);
-    QPalette subPal = subLbl->palette();
-    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
-    subLbl->setPalette(subPal);
+    subLbl->setObjectName("secondaryLabel");
 
     headerLayout->addWidget(titleLbl);
     headerLayout->addStretch();
@@ -577,7 +575,7 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     colFont.setPointSize(10);
     colFont.setBold(true);
     capTitle->setFont(colFont);
-    capTitle->setPalette(subPal);
+    capTitle->setObjectName("secondaryLabel");
     capCol->addWidget(capTitle);
 
     m_captureMeters = new LevelMeterView(this);
@@ -593,7 +591,7 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     pbCol->setSpacing(8);
     auto pbTitle = new QLabel("Playback", this);
     pbTitle->setFont(colFont);
-    pbTitle->setPalette(subPal);
+    pbTitle->setObjectName("secondaryLabel");
     pbCol->addWidget(pbTitle);
 
     m_playbackMeters = new LevelMeterView(this);
@@ -688,9 +686,7 @@ void LevelMetersDetailView::setupUi() {
     QFont subFont = subLbl->font();
     subFont.setPointSize(9);
     subLbl->setFont(subFont);
-    QPalette subPal = subLbl->palette();
-    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
-    subLbl->setPalette(subPal);
+    subLbl->setObjectName("secondaryLabel");
 
     headerLayout->addWidget(titleLbl);
     headerLayout->addStretch();
@@ -709,7 +705,7 @@ void LevelMetersDetailView::setupUi() {
     colFont.setPointSize(10);
     colFont.setBold(true);
     capTitle->setFont(colFont);
-    capTitle->setPalette(subPal);
+    capTitle->setObjectName("secondaryLabel");
     capCol->addWidget(capTitle);
 
     m_captureMeters = new LevelMeterView(displayCanvas);
@@ -725,7 +721,7 @@ void LevelMetersDetailView::setupUi() {
     pbCol->setSpacing(8);
     auto pbTitle = new QLabel(tr("Playback (Output)"), displayCanvas);
     pbTitle->setFont(colFont);
-    pbTitle->setPalette(subPal);
+    pbTitle->setObjectName("secondaryLabel");
     pbCol->addWidget(pbTitle);
 
     m_playbackMeters = new LevelMeterView(displayCanvas);

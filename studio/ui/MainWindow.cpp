@@ -240,16 +240,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(ThemeManager::instance(), &ThemeManager::themeChanged, this, [this](AppTheme theme, bool isDark) {
         Q_UNUSED(theme);
         Q_UNUSED(isDark);
-        QList<QString> keys = m_pageCache.keys();
-        for (const auto& k : keys) {
-            QWidget* w = m_pageCache.take(k);
-            if (w) {
-                m_centralStack->removeWidget(w);
-                w->deleteLater();
-            }
-        }
         refreshSidebarItems();
-        handleNavigationTag(m_lastActiveTag);
     });
 }
 
@@ -1278,6 +1269,7 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
 }
 
 void MainWindow::handleNavigationTag(const QString& tag) {
+    m_lastActiveTag = tag;
     m_sidebarTree->blockSignals(true);
     for (int i = 0; i < m_sidebarTree->topLevelItemCount(); ++i) {
         auto topItem = m_sidebarTree->topLevelItem(i);

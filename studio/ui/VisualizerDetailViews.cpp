@@ -47,9 +47,7 @@ void AnalogVUDetailView::setupUi() {
     QFont subFont = subLbl->font();
     subFont.setPointSize(9);
     subLbl->setFont(subFont);
-    QPalette subPal = subLbl->palette();
-    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
-    subLbl->setPalette(subPal);
+    subLbl->setObjectName("secondaryLabel");
 
     headerLayout->addWidget(titleLbl);
     headerLayout->addStretch();
@@ -57,7 +55,7 @@ void AnalogVUDetailView::setupUi() {
 
     auto vuThemeLbl = new QLabel(tr("Theme:"), displayCanvas);
     vuThemeLbl->setFont(subFont);
-    vuThemeLbl->setPalette(subPal);
+    vuThemeLbl->setObjectName("secondaryLabel");
     m_vuThemeCombo = new QComboBox(displayCanvas);
     m_vuThemeCombo->addItem("Vintage Amber", static_cast<int>(VUTheme::VintageAmber));
     m_vuThemeCombo->addItem("Dark Stealth", static_cast<int>(VUTheme::DarkStealth));
@@ -263,9 +261,7 @@ void SpectrumDetailView::setupUi() {
     QFont subFont = subLbl->font();
     subFont.setPointSize(9);
     subLbl->setFont(subFont);
-    QPalette subPal = subLbl->palette();
-    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
-    subLbl->setPalette(subPal);
+    subLbl->setObjectName("secondaryLabel");
 
     headerLayout->addWidget(titleLbl);
     headerLayout->addStretch();
@@ -424,9 +420,7 @@ void SpectrogramDetailView::setupUi() {
     QFont subFont = subLbl->font();
     subFont.setPointSize(9);
     subLbl->setFont(subFont);
-    QPalette subPal = subLbl->palette();
-    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
-    subLbl->setPalette(subPal);
+    subLbl->setObjectName("secondaryLabel");
 
     headerLayout->addWidget(titleLbl);
     headerLayout->addStretch();
@@ -597,9 +591,7 @@ void VectorScopeDetailView::setupUi() {
     QFont subFont = subLbl->font();
     subFont.setPointSize(9);
     subLbl->setFont(subFont);
-    QPalette subPal = subLbl->palette();
-    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
-    subLbl->setPalette(subPal);
+    subLbl->setObjectName("secondaryLabel");
 
     headerLayout->addWidget(titleLbl);
     headerLayout->addStretch();

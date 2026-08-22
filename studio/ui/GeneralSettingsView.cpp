@@ -53,9 +53,7 @@ void GeneralSettingsView::setupUi() {
         QFont font = themeSubLbl->font();
         font.setPointSize(11);
         themeSubLbl->setFont(font);
-        QPalette pal = themeSubLbl->palette();
-        pal.setColor(QPalette::WindowText, pal.color(QPalette::PlaceholderText));
-        themeSubLbl->setPalette(pal);
+        themeSubLbl->setObjectName("secondaryLabel");
     }
     themeForm->addRow(themeSubLbl);
 
@@ -94,9 +92,7 @@ void GeneralSettingsView::setupUi() {
         QFont font = pollSubLbl->font();
         font.setPointSize(11);
         pollSubLbl->setFont(font);
-        QPalette pal = pollSubLbl->palette();
-        pal.setColor(QPalette::WindowText, pal.color(QPalette::PlaceholderText));
-        pollSubLbl->setPalette(pal);
+        pollSubLbl->setObjectName("secondaryLabel");
     }
     pollForm->addRow(pollSubLbl);
 
@@ -168,9 +164,7 @@ void GeneralSettingsView::setupUi() {
         QFont font = silenceSubLbl->font();
         font.setPointSize(11);
         silenceSubLbl->setFont(font);
-        QPalette pal = silenceSubLbl->palette();
-        pal.setColor(QPalette::WindowText, pal.color(QPalette::PlaceholderText));
-        silenceSubLbl->setPalette(pal);
+        silenceSubLbl->setObjectName("secondaryLabel");
     }
     silenceForm->addRow(silenceSubLbl);
 

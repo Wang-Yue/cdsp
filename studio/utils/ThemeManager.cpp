@@ -25,8 +25,10 @@ void ThemeManager::init() {
     // Set consistent cross-platform widget style
     QApplication::setStyle(QStyleFactory::create("Fusion"));
     if (qApp) {
-        qApp->setStyleSheet("QScrollArea { background: transparent; } "
-                            "QScrollArea > QWidget > QWidget { background: transparent; }");
+        QString secondaryColor = s_isDarkActive ? "#a0a0a5" : "#6c6c70";
+        qApp->setStyleSheet(QString("QScrollArea { background: transparent; } "
+                                    "QScrollArea > QWidget > QWidget { background: transparent; } "
+                                    "QLabel#secondaryLabel { color: %1; }").arg(secondaryColor));
     }
 
     QSettings s("DSPMonitor", "MonitorQt");
@@ -106,17 +108,13 @@ void ThemeManager::applyTheme(bool dark) {
         QApplication::setStyle(style);
     }
     if (qApp) {
-        qApp->setStyleSheet("QScrollArea { background: transparent; } "
-                            "QScrollArea > QWidget > QWidget { background: transparent; }");
+        QString secondaryColor = dark ? "#a0a0a5" : "#6c6c70";
+        qApp->setStyleSheet(QString("QScrollArea { background: transparent; } "
+                                    "QScrollArea > QWidget > QWidget { background: transparent; } "
+                                    "QLabel#secondaryLabel { color: %1; }").arg(secondaryColor));
     }
     for (QWidget* top : QApplication::topLevelWidgets()) {
         top->setPalette(pal);
-        top->style()->unpolish(top);
-        top->style()->polish(top);
-        for (QWidget* child : top->findChildren<QWidget*>()) {
-            child->style()->unpolish(child);
-            child->style()->polish(child);
-        }
         top->update();
     }
     emit instance()->themeChanged(s_currentTheme, dark);
