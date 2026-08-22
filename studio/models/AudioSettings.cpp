@@ -183,8 +183,6 @@ void AudioSettings::loadPreferences() {
         workerThreads = 0;
     autoStartEngine = s.value("autoStartEngine", false).toBool();
     logLevel = s.value("logLevel", 2).toInt();
-    closeToTray = s.value("closeToTray", true).toBool();
-    minimizeToTray = s.value("minimizeToTray", false).toBool();
     appTheme = static_cast<AppTheme>(s.value("appTheme", static_cast<int>(AppTheme::System)).toInt());
 
     showLevelMetersInDashboard = s.value("show_levels_in_dashboard", true).toBool();
@@ -234,8 +232,6 @@ void AudioSettings::savePreferences() {
     s.setValue("workerThreads", workerThreads);
     s.setValue("autoStartEngine", autoStartEngine);
     s.setValue("logLevel", logLevel);
-    s.setValue("closeToTray", closeToTray);
-    s.setValue("minimizeToTray", minimizeToTray);
     s.setValue("appTheme", static_cast<int>(appTheme));
 
     s.setValue("show_levels_in_dashboard", showLevelMetersInDashboard);

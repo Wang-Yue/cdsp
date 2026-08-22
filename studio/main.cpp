@@ -1,5 +1,6 @@
 #include "ui/MainWindow.h"
 #include "utils/AppIcon.h"
+#include "utils/MacUtils.h"
 #include "utils/ThemeManager.h"
 
 #include <QApplication>
@@ -12,6 +13,8 @@ int main(int argc, char* argv[]) {
     app.setOrganizationDomain("dspmonitor.io");
     app.setQuitOnLastWindowClosed(false);
     app.setWindowIcon(AppIcon::getAppIcon());
+
+    MacUtils::hideDockIcon();
 
     // Enable high DPI scaling
     QSurfaceFormat format;

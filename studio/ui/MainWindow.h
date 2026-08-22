@@ -38,8 +38,6 @@ protected:
     void changeEvent(QEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void showEvent(QShowEvent* event) override;
-    bool event(QEvent* event) override;
-    bool eventFilter(QObject* obj, QEvent* event) override;
 
 private slots:
     void onSidebarItemClicked(QTreeWidgetItem* item, int column);

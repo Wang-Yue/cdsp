@@ -68,8 +68,6 @@ public:
     bool showSignalGraphInDashboard = true;
     bool autoStartEngine = false;
     int logLevel = 2; // Default to Info level
-    bool closeToTray = true;
-    bool minimizeToTray = false;
     AppTheme appTheme = AppTheme::System;
 
     float getVolume(Fader fader) const;

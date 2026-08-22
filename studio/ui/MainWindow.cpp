@@ -158,10 +158,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowIcon(AppIcon::getAppIcon());
     setWindowFlag(Qt::WindowFullscreenButtonHint, false);
     MacUtils::disableFullScreen(this);
-    MacUtils::setupMinimizeToTray(
-        this, [this]() { return m_settings && m_settings->minimizeToTray && m_trayIcon && m_trayIcon->isVisible(); });
-    MacUtils::setupDockClickHandler(this);
-    qApp->installEventFilter(this);
+    MacUtils::setupMinimizeToTray(this);
 
     setupUi();
     setupMenuBar();
@@ -638,16 +635,6 @@ void MainWindow::setupTrayIcon() {
     connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
 
     m_trayIcon->setContextMenu(m_trayMenu);
-
-    connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
-        if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
-            if (m_miniPlayer && m_miniPlayer->isVisible()) {
-                m_miniPlayer->hide();
-            }
-            MacUtils::showAndActivate(this);
-        }
-    });
-
     m_trayIcon->show();
 
     updateTrayMenu();
@@ -781,11 +768,8 @@ void MainWindow::setupShortcuts() {
 
 void MainWindow::showEvent(QShowEvent* event) {
     QMainWindow::showEvent(event);
-    MacUtils::setDockIconVisible(true);
     MacUtils::disableFullScreen(this);
-    MacUtils::setupMinimizeToTray(
-        this, [this]() { return m_settings && m_settings->minimizeToTray && m_trayIcon && m_trayIcon->isVisible(); });
-    MacUtils::setupDockClickHandler(this);
+    MacUtils::setupMinimizeToTray(this);
 }
 
 void MainWindow::changeEvent(QEvent* event) {
@@ -794,11 +778,10 @@ void MainWindow::changeEvent(QEvent* event) {
             showNormal();
             return;
         }
-        if (isMinimized() && m_settings && m_settings->minimizeToTray && m_trayIcon && m_trayIcon->isVisible()) {
+        if (isMinimized()) {
             QTimer::singleShot(0, this, [this]() {
                 if (isMinimized()) {
                     hide();
-                    MacUtils::setDockIconVisible(false);
                 }
             });
         }
@@ -807,31 +790,8 @@ void MainWindow::changeEvent(QEvent* event) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
-    if (m_settings && m_settings->closeToTray && m_trayIcon && m_trayIcon->isVisible()) {
-        hide();
-        MacUtils::setDockIconVisible(false);
-        event->ignore();
-    } else {
-        event->accept();
-    }
-}
-
-bool MainWindow::event(QEvent* event) {
-    if (event->type() == QEvent::ApplicationActivate) {
-        if (isHidden() && (!m_miniPlayer || !m_miniPlayer->isVisible())) {
-            MacUtils::showAndActivate(this);
-        }
-    }
-    return QMainWindow::event(event);
-}
-
-bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
-    if (obj == qApp && event->type() == QEvent::ApplicationActivate) {
-        if (isHidden() && (!m_miniPlayer || !m_miniPlayer->isVisible())) {
-            MacUtils::showAndActivate(this);
-        }
-    }
-    return QMainWindow::eventFilter(obj, event);
+    hide();
+    event->ignore();
 }
 
 void MainWindow::toggleMute() {
