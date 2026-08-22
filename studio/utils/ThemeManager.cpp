@@ -23,6 +23,10 @@ ThemeManager* ThemeManager::instance() {
 void ThemeManager::init() {
     // Set consistent cross-platform widget style
     QApplication::setStyle(QStyleFactory::create("Fusion"));
+    if (qApp) {
+        qApp->setStyleSheet("QScrollArea { background: transparent; } "
+                            "QScrollArea > QWidget > QWidget { background: transparent; }");
+    }
 
     QSettings s("DSPMonitor", "MonitorQt");
     s_currentTheme = static_cast<AppTheme>(s.value("appTheme", static_cast<int>(AppTheme::System)).toInt());
