@@ -1,6 +1,7 @@
 #include "ui/LevelMeterView.h"
 
 #include "models/MonitoringController.h"
+#include "utils/ThemeManager.h"
 
 #include <QFontDatabase>
 #include <QFormLayout>
@@ -43,7 +44,7 @@ QSize LevelMeterView::sizeHint() const {
     if (chCount == 0)
         chCount = 2; // Default to 2 channels
 
-    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    bool inMiniPlayer = ThemeManager::isMiniPlayer(this);
     int barHeight = 18; // Match SwiftUI height: 18px per channel
     int spacing = inMiniPlayer ? 6 : 8;
     int basePadding = m_title.isEmpty() ? (inMiniPlayer ? 0 : 8) : 50;
@@ -52,8 +53,7 @@ QSize LevelMeterView::sizeHint() const {
 }
 
 QSize LevelMeterView::minimumSizeHint() const {
-    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
-    if (inMiniPlayer) {
+    if (ThemeManager::isMiniPlayer(this)) {
         return QSize(80, 24);
     }
     QSize sh = sizeHint();
@@ -115,12 +115,12 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    bool inMiniPlayer = ThemeManager::isMiniPlayer(this);
 
     int w = width();
     int h = height();
 
-    QColor subtextColor = palette().color(QPalette::PlaceholderText);
+    QColor subtextColor = ThemeManager::subtextColor(this);
     QColor midColor = palette().color(QPalette::Mid);
 
     if (!m_title.isEmpty()) {
@@ -128,7 +128,7 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         titleF.setPointSize(11);
         titleF.setBold(true);
         p.setFont(titleF);
-        p.setPen(palette().color(QPalette::Text));
+        p.setPen(ThemeManager::textColor(this));
         p.drawText(16, 24, m_title);
     }
 
@@ -171,7 +171,7 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         QFont chFont("monospace", inMiniPlayer ? 9 : 10, QFont::Medium);
         chFont.setStyleHint(QFont::Monospace);
         p.setFont(chFont);
-        p.setPen(inMiniPlayer ? QColor(255, 255, 255, 130) : subtextColor);
+        p.setPen(subtextColor);
         p.drawText(0, y, labelW, barHeight, Qt::AlignCenter, chLabel);
 
         // 2. Track Background Box
@@ -179,7 +179,7 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         if (inMiniPlayer) {
             QPainterPath trackPath;
             trackPath.addRoundedRect(QRectF(xStart, y, barW, barHeight), 2, 2);
-            p.fillPath(trackPath, QColor(255, 255, 255, 20));
+            p.fillPath(trackPath, ThemeManager::miniPlayerTrackColor());
 
             // Horizontal Center Divider
             p.setPen(QPen(QColor(255, 255, 255, 26), 0.5));
@@ -250,10 +250,10 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
 
         int textX = xStart + barW + spacing;
         if (inMiniPlayer) {
-            p.setPen(QColor(255, 255, 255, 180));
+            p.setPen(ThemeManager::miniPlayerPrimaryTextColor());
             p.drawText(textX, y, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, rmsStr);
 
-            p.setPen(QColor(255, 255, 255, 100));
+            p.setPen(ThemeManager::miniPlayerSecondaryTextColor());
             p.drawText(textX, y + halfH, rightMargin, halfH, Qt::AlignRight | Qt::AlignVCenter, peakStr);
         } else {
             p.setPen(palette().color(QPalette::Text));

@@ -1,5 +1,7 @@
 #include "ui/VectorScopeView.h"
 
+#include "utils/ThemeManager.h"
+
 #include <QEvent>
 #include <algorithm>
 #include <array>
@@ -88,7 +90,7 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     if (w < 20 || h < 20)
         return;
 
-    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    bool inMiniPlayer = ThemeManager::isMiniPlayer(this);
     if (!inMiniPlayer) {
         p.fillRect(rect(), palette().color(QPalette::Window));
     }
@@ -102,8 +104,8 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
 
     // 1. Draw Reticle axes (+M, -M, +S, -S, L, R)
     QColor mainAxisCol = inMiniPlayer ? QColor(255, 255, 255, 35) : palette().color(QPalette::Mid);
-    QColor diagAxisCol = inMiniPlayer ? QColor(255, 255, 255, 25) : palette().color(QPalette::Mid);
-    QColor labelCol = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
+    QColor diagAxisCol = ThemeManager::gridColor(this);
+    QColor labelCol = ThemeManager::subtextColor(this);
 
     p.setPen(QPen(mainAxisCol, 1, Qt::SolidLine));
     p.drawLine(centerPt.x() - scaleX, centerPt.y(), centerPt.x() + scaleX, centerPt.y());

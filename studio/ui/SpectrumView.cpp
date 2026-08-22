@@ -1,5 +1,7 @@
 #include "ui/SpectrumView.h"
 
+#include "utils/ThemeManager.h"
+
 #include <QFontDatabase>
 #include <QMouseEvent>
 #include <QPainterPath>
@@ -169,7 +171,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    bool inMiniPlayer = ThemeManager::isMiniPlayer(this);
     if (!inMiniPlayer) {
         p.fillRect(rect(), palette().color(QPalette::Window));
     }
@@ -198,8 +200,8 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
     monoFont.setPointSize(7);
     p.setFont(monoFont);
 
-    QColor gridPenCol = inMiniPlayer ? QColor(255, 255, 255, 25) : palette().color(QPalette::Mid);
-    QColor labelCol = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
+    QColor gridPenCol = ThemeManager::gridColor(this);
+    QColor labelCol = ThemeManager::subtextColor(this);
 
     double dbStep = (maxDB - minDB) > 60.0f ? 20.0 : 12.0;
     for (double db = maxDB; db >= minDB - 0.01; db -= dbStep) {

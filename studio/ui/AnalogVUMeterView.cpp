@@ -1,5 +1,7 @@
 #include "ui/AnalogVUMeterView.h"
 
+#include "utils/ThemeManager.h"
+
 #include <QEvent>
 #include <QFont>
 #include <QFontMetrics>
@@ -94,14 +96,12 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     double w = dialRect.width();
     double h = dialRect.height();
 
-    bool inMiniPlayer =
-        (parentWidget() &&
-         (parentWidget()->inherits("QStackedWidget") ||
-          (parentWidget()->parentWidget() && parentWidget()->parentWidget()->inherits("QStackedWidget"))));
+    bool inMiniPlayer = ThemeManager::isMiniPlayer(this);
 
     QColor bulbAmberColor, bulbHotSpotColor, arcColor, percentageMarksColor, redZoneColor;
-    QColor textCol = inMiniPlayer ? QColor(255, 255, 255, 180) : palette().color(QPalette::Text);
-    QColor subtextCol = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
+    QColor textCol = inMiniPlayer ? ThemeManager::miniPlayerPrimaryTextColor() : palette().color(QPalette::Text);
+    QColor subtextCol =
+        inMiniPlayer ? ThemeManager::miniPlayerSubtextColor() : palette().color(QPalette::PlaceholderText);
 
     if (m_settings.theme == VUTheme::VintageAmber) {
         bulbAmberColor = QColor(255, 209, 102);
@@ -350,12 +350,7 @@ void AnalogVUMeter::paintEvent(QPaintEvent* event) {
 
     // 4. Channel Label
     p.setFont(labelFont);
-    bool inMiniPlayer =
-        (parentWidget() &&
-         (parentWidget()->inherits("QStackedWidget") ||
-          (parentWidget()->parentWidget() && parentWidget()->parentWidget()->inherits("QStackedWidget"))));
-    QColor lblColor = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
-    p.setPen(lblColor);
+    p.setPen(ThemeManager::subtextColor(this));
     p.drawText(labelRect, Qt::AlignCenter, QString::number(m_channelIndex + 1));
 }
 

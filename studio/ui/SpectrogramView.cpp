@@ -1,5 +1,7 @@
 #include "ui/SpectrogramView.h"
 
+#include "utils/ThemeManager.h"
+
 #include <QEvent>
 #include <QFontDatabase>
 #include <QPainterPath>
@@ -189,7 +191,7 @@ void SpectrogramView::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
+    bool inMiniPlayer = ThemeManager::isMiniPlayer(this);
     if (!inMiniPlayer) {
         p.fillRect(rect(), palette().color(QPalette::Window));
     }
@@ -265,9 +267,8 @@ void SpectrogramView::paint2D(QPainter& p, int w, int h) {
     monoFont.setPointSize(8);
     p.setFont(monoFont);
 
-    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
-    QColor gridPenCol = inMiniPlayer ? QColor(255, 255, 255, 25) : palette().color(QPalette::Mid);
-    QColor labelCol = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
+    QColor gridPenCol = ThemeManager::gridColor(this);
+    QColor labelCol = ThemeManager::subtextColor(this);
 
     for (double target : {20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
         if (target < minF || target > maxF)
@@ -429,9 +430,7 @@ void SpectrogramView::paint3D(QPainter& p, int w, int h) {
     QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     monoFont.setPointSize(8);
     p.setFont(monoFont);
-    bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
-    QColor labelCol = inMiniPlayer ? QColor(255, 255, 255, 130) : palette().color(QPalette::PlaceholderText);
-    p.setPen(labelCol);
+    p.setPen(ThemeManager::subtextColor(this));
     for (double target : {20.0, 100.0, 1000.0, 10000.0, 20000.0}) {
         if (target < minF || target > maxF)
             continue;
