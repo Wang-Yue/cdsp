@@ -85,6 +85,18 @@ class LevelMetersDetailView : public QWidget {
 
 public:
     explicit LevelMetersDetailView(std::shared_ptr<MonitoringController> monitoring, QWidget* parent = nullptr);
+    ~LevelMetersDetailView() override;
+
+protected:
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
+
+private:
+    std::shared_ptr<MonitoringController> m_monitoring;
+    LevelMeterView* m_captureMeters = nullptr;
+    LevelMeterView* m_playbackMeters = nullptr;
+
+    void setupUi();
 };
 
 #endif // LEVEL_METER_VIEW_H

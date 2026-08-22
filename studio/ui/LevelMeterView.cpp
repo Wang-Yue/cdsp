@@ -2,6 +2,9 @@
 
 #include "models/MonitoringController.h"
 
+#include <QFontDatabase>
+#include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QPainterPath>
 #include <QScrollArea>
@@ -113,7 +116,8 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     p.setRenderHint(QPainter::Antialiasing);
 
     bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
-    if (!inMiniPlayer) {
+    bool inCard = (parentWidget() && qobject_cast<LevelMetersCard*>(parentWidget()));
+    if (!inMiniPlayer && !inCard) {
         p.fillRect(rect(), palette().color(QPalette::Base));
     }
 
@@ -554,8 +558,9 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     QFont subFont = subLbl->font();
     subFont.setPointSize(9);
     subLbl->setFont(subFont);
-    QColor subColor = palette().color(QPalette::PlaceholderText);
-    subLbl->setStyleSheet(QString("color: %1;").arg(subColor.name()));
+    QPalette subPal = subLbl->palette();
+    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
+    subLbl->setPalette(subPal);
 
     headerLayout->addWidget(titleLbl);
     headerLayout->addStretch();
@@ -576,7 +581,7 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     colFont.setPointSize(10);
     colFont.setBold(true);
     capTitle->setFont(colFont);
-    capTitle->setStyleSheet(QString("color: %1;").arg(subColor.name()));
+    capTitle->setPalette(subPal);
     capCol->addWidget(capTitle);
 
     m_captureMeters = new LevelMeterView(this);
@@ -592,7 +597,7 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     pbCol->setSpacing(8);
     auto pbTitle = new QLabel("Playback", this);
     pbTitle->setFont(colFont);
-    pbTitle->setStyleSheet(QString("color: %1;").arg(subColor.name()));
+    pbTitle->setPalette(subPal);
     pbCol->addWidget(pbTitle);
 
     m_playbackMeters = new LevelMeterView(this);
@@ -603,12 +608,6 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     columnsLayout->addLayout(pbCol, 1);
 
     cardLayout->addLayout(columnsLayout);
-
-    // Card background styling (similar to SwiftUI: background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12)))
-    setAutoFillBackground(true);
-    QPalette pal = palette();
-    pal.setColor(QPalette::Window, pal.color(QPalette::Base));
-    setPalette(pal);
 
     if (m_monitoring) {
         connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
@@ -641,13 +640,123 @@ void LevelMetersCard::hideEvent(QHideEvent* event) {
 // MARK: - LevelMetersDetailView Implementation
 
 LevelMetersDetailView::LevelMetersDetailView(std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
-    : QWidget(parent) {
-    auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(12);
+    : QWidget(parent), m_monitoring(monitoring) {
+    setupUi();
+    if (m_monitoring) {
+        connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
+            if (m_captureMeters)
+                m_captureMeters->update();
+            if (m_playbackMeters)
+                m_playbackMeters->update();
+        });
+    }
+}
 
-    auto card = new LevelMetersCard(monitoring, this);
-    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    mainLayout->addWidget(card);
-    mainLayout->addStretch(1);
+LevelMetersDetailView::~LevelMetersDetailView() {
+    if (isVisible() && m_monitoring && m_monitoring->levelState.visibilityCount > 0) {
+        m_monitoring->levelState.visibilityCount--;
+    }
+}
+
+void LevelMetersDetailView::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (m_monitoring)
+        m_monitoring->levelState.visibilityCount++;
+}
+
+void LevelMetersDetailView::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    if (m_monitoring && m_monitoring->levelState.visibilityCount > 0)
+        m_monitoring->levelState.visibilityCount--;
+}
+
+void LevelMetersDetailView::setupUi() {
+    auto mainLayout = new QVBoxLayout(this);
+
+    // 1. Level Meters Display (fills top section with Base background, aligning with Spectrum, Spectrogram & VectorScope)
+    auto displayCanvas = new QWidget(this);
+    displayCanvas->setAutoFillBackground(true);
+    QPalette canPal = displayCanvas->palette();
+    canPal.setColor(QPalette::Window, canPal.color(QPalette::Base));
+    displayCanvas->setPalette(canPal);
+
+    auto canvasLayout = new QVBoxLayout(displayCanvas);
+    canvasLayout->setContentsMargins(20, 20, 20, 20);
+    canvasLayout->setSpacing(16);
+
+    // Header inside display canvas: "Signal Levels" and "RMS / Peak"
+    auto headerLayout = new QHBoxLayout();
+    auto titleLbl = new QLabel(tr("Signal Levels"), displayCanvas);
+    QFont titleFont = titleLbl->font();
+    titleFont.setPointSize(12);
+    titleFont.setBold(true);
+    titleLbl->setFont(titleFont);
+
+    auto subLbl = new QLabel(tr("RMS (Solid) / Peak (Bar)"), displayCanvas);
+    QFont subFont = subLbl->font();
+    subFont.setPointSize(9);
+    subLbl->setFont(subFont);
+    QPalette subPal = subLbl->palette();
+    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
+    subLbl->setPalette(subPal);
+
+    headerLayout->addWidget(titleLbl);
+    headerLayout->addStretch();
+    headerLayout->addWidget(subLbl);
+    canvasLayout->addLayout(headerLayout);
+
+    // Columns: Capture & Playback side-by-side
+    auto columnsLayout = new QHBoxLayout();
+    columnsLayout->setSpacing(28);
+
+    // Left Column: Capture
+    auto capCol = new QVBoxLayout();
+    capCol->setSpacing(8);
+    auto capTitle = new QLabel(tr("Capture (Input)"), displayCanvas);
+    QFont colFont = capTitle->font();
+    colFont.setPointSize(10);
+    colFont.setBold(true);
+    capTitle->setFont(colFont);
+    capTitle->setPalette(subPal);
+    capCol->addWidget(capTitle);
+
+    m_captureMeters = new LevelMeterView(displayCanvas);
+    m_captureMeters->setIsCapture(true);
+    if (m_monitoring)
+        m_captureMeters->setLevelState(&m_monitoring->levelState);
+    capCol->addWidget(m_captureMeters);
+    capCol->addStretch();
+    columnsLayout->addLayout(capCol, 1);
+
+    // Right Column: Playback
+    auto pbCol = new QVBoxLayout();
+    pbCol->setSpacing(8);
+    auto pbTitle = new QLabel(tr("Playback (Output)"), displayCanvas);
+    pbTitle->setFont(colFont);
+    pbTitle->setPalette(subPal);
+    pbCol->addWidget(pbTitle);
+
+    m_playbackMeters = new LevelMeterView(displayCanvas);
+    m_playbackMeters->setIsCapture(false);
+    if (m_monitoring)
+        m_playbackMeters->setLevelState(&m_monitoring->levelState);
+    pbCol->addWidget(m_playbackMeters);
+    pbCol->addStretch();
+    columnsLayout->addLayout(pbCol, 1);
+
+    canvasLayout->addLayout(columnsLayout, 1);
+    mainLayout->addWidget(displayCanvas, 1);
+
+    // 2. Monitoring Information Group at bottom (matching other visualizer views)
+    auto statsGroup = new QGroupBox(tr("Monitoring Information"), this);
+    auto statsForm = new QFormLayout(statsGroup);
+
+    auto meterRangeLbl = new QLabel(tr("-100 dBFS to 0 dBFS (True Peak)"), statsGroup);
+    meterRangeLbl->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    statsForm->addRow(tr("Dynamic Range:"), meterRangeLbl);
+
+    auto meterTypeLbl = new QLabel(tr("Combined RMS Energy (Center Line) and Peak (Full Bar)"), statsGroup);
+    statsForm->addRow(tr("Ballistics:"), meterTypeLbl);
+
+    mainLayout->addWidget(statsGroup);
 }

@@ -2,6 +2,7 @@
 #define AUDIO_SETTINGS_H
 
 #include "config/DSPConfigTypes.h"
+#include "utils/ThemeManager.h"
 
 #include <QObject>
 #include <QSettings>
@@ -69,6 +70,7 @@ public:
     int logLevel = 2; // Default to Info level
     bool closeToTray = true;
     bool minimizeToTray = false;
+    AppTheme appTheme = AppTheme::System;
 
     float getVolume(Fader fader) const;
     void setVolume(float db, Fader fader);

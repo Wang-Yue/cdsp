@@ -2352,6 +2352,7 @@ void StageDetailView::buildStageOptionsUi() {
         // Scrollable Slider Bank
         auto scrollBank = new QScrollArea(geqGroup);
         scrollBank->setWidgetResizable(true);
+        scrollBank->setFrameShape(QFrame::NoFrame);
         scrollBank->setFixedHeight(240);
 
         auto bankContainer = new QWidget(scrollBank);

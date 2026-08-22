@@ -11,6 +11,7 @@
 #include <memory>
 
 class QCheckBox;
+class QComboBox;
 
 class GeneralSettingsView : public QWidget {
     Q_OBJECT
@@ -28,6 +29,8 @@ private slots:
 private:
     std::shared_ptr<AudioSettings> m_settings;
     std::shared_ptr<MonitoringController> m_monitoring;
+
+    QComboBox* m_themeCombo = nullptr;
 
     QSlider* m_pollingRateSlider = nullptr;
     QLabel* m_pollingRateLabel = nullptr;

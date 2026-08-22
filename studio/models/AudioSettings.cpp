@@ -185,6 +185,7 @@ void AudioSettings::loadPreferences() {
     logLevel = s.value("logLevel", 2).toInt();
     closeToTray = s.value("closeToTray", true).toBool();
     minimizeToTray = s.value("minimizeToTray", false).toBool();
+    appTheme = static_cast<AppTheme>(s.value("appTheme", static_cast<int>(AppTheme::System)).toInt());
 
     showLevelMetersInDashboard = s.value("show_levels_in_dashboard", true).toBool();
     showSpectrumInDashboard = s.value("show_spectrum_in_dashboard", true).toBool();
@@ -235,6 +236,7 @@ void AudioSettings::savePreferences() {
     s.setValue("logLevel", logLevel);
     s.setValue("closeToTray", closeToTray);
     s.setValue("minimizeToTray", minimizeToTray);
+    s.setValue("appTheme", static_cast<int>(appTheme));
 
     s.setValue("show_levels_in_dashboard", showLevelMetersInDashboard);
     s.setValue("show_spectrum_in_dashboard", showSpectrumInDashboard);

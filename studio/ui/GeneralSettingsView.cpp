@@ -1,11 +1,13 @@
 #include "ui/GeneralSettingsView.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include "utils/ThemeManager.h"
 
 GeneralSettingsView::GeneralSettingsView(std::shared_ptr<AudioSettings> settings,
                                          std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
@@ -30,6 +32,43 @@ void GeneralSettingsView::setupUi() {
     mainLayout->setSpacing(16);
 
     const QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+
+    // Appearance Group
+    auto themeGroup = new QGroupBox("Appearance", this);
+    auto themeForm = new QFormLayout(themeGroup);
+    themeForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    m_themeCombo = new QComboBox(themeGroup);
+    m_themeCombo->addItem("System Default", static_cast<int>(AppTheme::System));
+    m_themeCombo->addItem("Light", static_cast<int>(AppTheme::Light));
+    m_themeCombo->addItem("Dark", static_cast<int>(AppTheme::Dark));
+    m_themeCombo->setMinimumWidth(160);
+
+    themeForm->addRow("Theme:", m_themeCombo);
+
+    auto themeSubLbl =
+        new QLabel("Select whether the app follows the system color scheme or uses a fixed light/dark theme.", themeGroup);
+    themeSubLbl->setWordWrap(true);
+    {
+        QFont font = themeSubLbl->font();
+        font.setPointSize(11);
+        themeSubLbl->setFont(font);
+        QPalette pal = themeSubLbl->palette();
+        pal.setColor(QPalette::WindowText, pal.color(QPalette::PlaceholderText));
+        themeSubLbl->setPalette(pal);
+    }
+    themeForm->addRow(themeSubLbl);
+
+    connect(m_themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+        if (m_settings) {
+            auto newTheme = static_cast<AppTheme>(m_themeCombo->itemData(idx).toInt());
+            m_settings->appTheme = newTheme;
+            m_settings->savePreferences();
+            ThemeManager::setTheme(newTheme);
+        }
+    });
+
+    mainLayout->addWidget(themeGroup);
 
     // Polling Rate Group
     auto pollGroup = new QGroupBox("Polling Rate", this);
@@ -168,6 +207,15 @@ void GeneralSettingsView::setupUi() {
 
 void GeneralSettingsView::refreshUi() {
     if (m_settings) {
+        if (m_themeCombo) {
+            m_themeCombo->blockSignals(true);
+            int idx = m_themeCombo->findData(static_cast<int>(m_settings->appTheme));
+            if (idx >= 0) {
+                m_themeCombo->setCurrentIndex(idx);
+            }
+            m_themeCombo->blockSignals(false);
+        }
+
         if (m_closeToTrayCheck) {
             m_closeToTrayCheck->blockSignals(true);
             m_closeToTrayCheck->setChecked(m_settings->closeToTray);

@@ -1,5 +1,6 @@
 #include "ui/MainWindow.h"
 #include "utils/AppIcon.h"
+#include "utils/ThemeManager.h"
 
 #include <QApplication>
 #include <QSurfaceFormat>
@@ -17,16 +18,8 @@ int main(int argc, char* argv[]) {
     format.setSamples(4);
     QSurfaceFormat::setDefaultFormat(format);
 
-    // Make all scroll areas globally transparent
-    app.setStyleSheet(
-        "QScrollArea, QScrollArea > QWidget > QWidget { "
-        "    background: transparent; "
-        "    border: none; "
-        "} "
-        "QScrollArea > .QWidget { "
-        "    background: transparent; "
-        "}"
-    );
+    // Initialize ThemeManager to respect system dark/light theme setting
+    ThemeManager::init();
 
     MainWindow window;
     window.setWindowIcon(AppIcon::getAppIcon());
