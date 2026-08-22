@@ -580,7 +580,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     m_capCoreAudioForm->addRow(tr("Link Mute:"), m_capAlsaLinkMuteEdit);
 
     m_capPwNodeNameEdit = new QLineEdit(w);
-    m_capPwNodeNameEdit->setPlaceholderText("e.g. CDSP");
+    m_capPwNodeNameEdit->setPlaceholderText("e.g. cdsp-capture");
     connect(m_capPwNodeNameEdit, &QLineEdit::textChanged, [this](const QString&) {
         if (!m_isRefreshing)
             applySettings();
@@ -596,6 +596,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     m_capCoreAudioForm->addRow(tr("Node Description:"), m_capPwNodeDescEdit);
 
     m_capPwNodeGroupEdit = new QLineEdit(w);
+    m_capPwNodeGroupEdit->setPlaceholderText("e.g. cdsp");
     connect(m_capPwNodeGroupEdit, &QLineEdit::textChanged, [this](const QString&) {
         if (!m_isRefreshing)
             applySettings();
@@ -977,7 +978,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_pbCoreAudioForm->addRow(m_pbAlsaThreadedCheck);
 
     m_pbPwNodeNameEdit = new QLineEdit(w);
-    m_pbPwNodeNameEdit->setPlaceholderText("e.g. CDSP");
+    m_pbPwNodeNameEdit->setPlaceholderText("e.g. cdsp-playback");
     connect(m_pbPwNodeNameEdit, &QLineEdit::textChanged, [this](const QString&) {
         if (!m_isRefreshing)
             applySettings();
@@ -993,6 +994,7 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_pbCoreAudioForm->addRow(tr("Node Description:"), m_pbPwNodeDescEdit);
 
     m_pbPwNodeGroupEdit = new QLineEdit(w);
+    m_pbPwNodeGroupEdit->setPlaceholderText("e.g. cdsp");
     connect(m_pbPwNodeGroupEdit, &QLineEdit::textChanged, [this](const QString&) {
         if (!m_isRefreshing)
             applySettings();
