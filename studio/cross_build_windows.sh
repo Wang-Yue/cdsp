@@ -200,7 +200,35 @@ rm -f "$ZIP_OUT"
 
 ZIP_SIZE=$(du -h "$ZIP_OUT" | awk '{print $1}')
 echo "=============================================================================="
-echo "🎉 Windows Release Package Ready!"
+echo "🎉 Windows Release ZIP Package Ready!"
 echo "📦 Zip Archive: $ZIP_OUT ($ZIP_SIZE)"
-echo "🚀 Extract and run 'MonitorQt/MonitorQt.exe' on any 64-bit Windows machine."
 echo "=============================================================================="
+
+# ==============================================================================
+# Build Windows NSIS Setup Installer (.exe)
+# ==============================================================================
+INSTALLER_NSI="$PROJECT_DIR/cmake/installer.nsi"
+INSTALLER_OUT="${INSTALLER_OUT:-$BUILD_DIR/MonitorQt-Setup-1.0.0.exe}"
+
+if command -v makensis >/dev/null 2>&1; then
+    echo "=== Building Windows Setup Installer with NSIS ==="
+    makensis -DAPP_NAME="CDSP Monitor" \
+             -DAPP_VERSION="1.0.0" \
+             -DAPP_PUBLISHER="DSPMonitor" \
+             -DAPP_EXE="MonitorQt.exe" \
+             -DSOURCE_DIR="$PROJECT_DIR" \
+             -DSTAGE_DIR="$STAGE_DIR" \
+             -DOUTPUT_EXE="$INSTALLER_OUT" \
+             "$INSTALLER_NSI"
+    
+    INSTALLER_SIZE=$(du -h "$INSTALLER_OUT" | awk '{print $1}')
+    echo "=============================================================================="
+    echo "🎉 Windows Setup Installer Ready!"
+    echo "💿 Installer:   $INSTALLER_OUT ($INSTALLER_SIZE)"
+    echo "🚀 Run 'MonitorQt-Setup-1.0.0.exe' on any 64-bit Windows machine to install."
+    echo "=============================================================================="
+else
+    echo "ℹ️  NSIS (makensis) not found. To build a Windows setup installer (.exe), run:"
+    echo "   brew install makensis"
+fi
+
