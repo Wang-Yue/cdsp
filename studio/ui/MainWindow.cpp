@@ -19,6 +19,7 @@
 #include "ui/VectorScopeView.h"
 #include "ui/VisualizerDetailViews.h"
 #include "utils/AppIcon.h"
+#include "utils/ThemeManager.h"
 
 #include <QAbstractButton>
 #include <QAbstractSpinBox>
@@ -234,6 +235,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         if (m_settings) {
             m_settings->savePreferences();
         }
+    });
+
+    connect(ThemeManager::instance(), &ThemeManager::themeChanged, this, [this](AppTheme theme, bool isDark) {
+        Q_UNUSED(theme);
+        Q_UNUSED(isDark);
+        QList<QString> keys = m_pageCache.keys();
+        for (const auto& k : keys) {
+            QWidget* w = m_pageCache.take(k);
+            if (w) {
+                m_centralStack->removeWidget(w);
+                w->deleteLater();
+            }
+        }
+        refreshSidebarItems();
+        handleNavigationTag(m_lastActiveTag);
     });
 }
 

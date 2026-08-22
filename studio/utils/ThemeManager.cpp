@@ -8,6 +8,7 @@
 #include <QStyle>
 #include <QStyleFactory>
 #include <QStyleHints>
+#include <QWidget>
 #include <memory>
 
 AppTheme ThemeManager::s_currentTheme = AppTheme::System;
@@ -99,10 +100,24 @@ bool ThemeManager::detectSystemDark() {
 
 void ThemeManager::applyTheme(bool dark) {
     s_isDarkActive = dark;
-    if (dark) {
-        QApplication::setPalette(createDarkPalette());
-    } else {
-        QApplication::setPalette(createLightPalette());
+    QPalette pal = dark ? createDarkPalette() : createLightPalette();
+    QApplication::setPalette(pal);
+    if (QStyle* style = QStyleFactory::create("Fusion")) {
+        QApplication::setStyle(style);
+    }
+    if (qApp) {
+        qApp->setStyleSheet("QScrollArea { background: transparent; } "
+                            "QScrollArea > QWidget > QWidget { background: transparent; }");
+    }
+    for (QWidget* top : QApplication::topLevelWidgets()) {
+        top->setPalette(pal);
+        top->style()->unpolish(top);
+        top->style()->polish(top);
+        for (QWidget* child : top->findChildren<QWidget*>()) {
+            child->style()->unpolish(child);
+            child->style()->polish(child);
+        }
+        top->update();
     }
     emit instance()->themeChanged(s_currentTheme, dark);
 }
