@@ -29,18 +29,44 @@ AnalogVUDetailView::AnalogVUDetailView(std::shared_ptr<MonitoringController> mon
 void AnalogVUDetailView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
 
-    auto vuHeaderLayout = new QHBoxLayout();
-    vuHeaderLayout->setSpacing(8);
-    vuHeaderLayout->addStretch();
+    // 1. Analog VU Display Canvas
+    auto displayCanvas = new QWidget(this);
 
-    auto vuThemeLbl = new QLabel(tr("Theme:"), this);
-    m_vuThemeCombo = new QComboBox(this);
+    auto canvasLayout = new QVBoxLayout(displayCanvas);
+    canvasLayout->setContentsMargins(20, 20, 20, 20);
+    canvasLayout->setSpacing(16);
+
+    auto headerLayout = new QHBoxLayout();
+    auto titleLbl = new QLabel(tr("Analog VU Meters"), displayCanvas);
+    QFont titleFont = titleLbl->font();
+    titleFont.setPointSize(12);
+    titleFont.setBold(true);
+    titleLbl->setFont(titleFont);
+
+    auto subLbl = new QLabel(tr("Vintage Ballistics & Dynamics"), displayCanvas);
+    QFont subFont = subLbl->font();
+    subFont.setPointSize(9);
+    subLbl->setFont(subFont);
+    QPalette subPal = subLbl->palette();
+    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
+    subLbl->setPalette(subPal);
+
+    headerLayout->addWidget(titleLbl);
+    headerLayout->addStretch();
+    headerLayout->addWidget(subLbl);
+
+    auto vuThemeLbl = new QLabel(tr("Theme:"), displayCanvas);
+    vuThemeLbl->setFont(subFont);
+    vuThemeLbl->setPalette(subPal);
+    m_vuThemeCombo = new QComboBox(displayCanvas);
     m_vuThemeCombo->addItem("Vintage Amber", static_cast<int>(VUTheme::VintageAmber));
     m_vuThemeCombo->addItem("Dark Stealth", static_cast<int>(VUTheme::DarkStealth));
     m_vuThemeCombo->addItem("Warm Tube", static_cast<int>(VUTheme::WarmTube));
-    vuHeaderLayout->addWidget(vuThemeLbl);
-    vuHeaderLayout->addWidget(m_vuThemeCombo);
-    mainLayout->addLayout(vuHeaderLayout);
+    headerLayout->addSpacing(16);
+    headerLayout->addWidget(vuThemeLbl);
+    headerLayout->addWidget(m_vuThemeCombo);
+
+    canvasLayout->addLayout(headerLayout);
 
     int curThemeIdx = m_vuThemeCombo->findData(static_cast<int>(m_settings.theme));
     if (curThemeIdx >= 0) {
@@ -56,11 +82,13 @@ void AnalogVUDetailView::setupUi() {
     });
 
     // VU Meter Display
-    m_vuMeter = new AnalogVUMeterView(this);
+    m_vuMeter = new AnalogVUMeterView(displayCanvas);
     if (m_monitoring)
         m_vuMeter->setLevelState(&m_monitoring->levelState);
     m_vuMeter->setVUSettings(m_settings);
-    mainLayout->addWidget(m_vuMeter, 1);
+    canvasLayout->addWidget(m_vuMeter, 1);
+
+    mainLayout->addWidget(displayCanvas, 1);
 
     // Parameter Controls using standard QGroupBox and QFormLayout
     auto groupsLayout = new QHBoxLayout();
@@ -217,9 +245,38 @@ SpectrumDetailView::SpectrumDetailView(std::shared_ptr<SpectrumEngine> engine,
 void SpectrumDetailView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
 
+    // 1. Spectrum Display Canvas
+    auto displayCanvas = new QWidget(this);
+
+    auto canvasLayout = new QVBoxLayout(displayCanvas);
+    canvasLayout->setContentsMargins(20, 20, 20, 20);
+    canvasLayout->setSpacing(16);
+
+    auto headerLayout = new QHBoxLayout();
+    auto titleLbl = new QLabel(tr("Spectrum Analyzer"), displayCanvas);
+    QFont titleFont = titleLbl->font();
+    titleFont.setPointSize(12);
+    titleFont.setBold(true);
+    titleLbl->setFont(titleFont);
+
+    auto subLbl = new QLabel(tr("Real-Time FFT Magnitude (Log Frequency)"), displayCanvas);
+    QFont subFont = subLbl->font();
+    subFont.setPointSize(9);
+    subLbl->setFont(subFont);
+    QPalette subPal = subLbl->palette();
+    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
+    subLbl->setPalette(subPal);
+
+    headerLayout->addWidget(titleLbl);
+    headerLayout->addStretch();
+    headerLayout->addWidget(subLbl);
+    canvasLayout->addLayout(headerLayout);
+
     // Spectrum Display
-    m_spectrumView = new SpectrumView(m_engine, this);
-    mainLayout->addWidget(m_spectrumView, 1);
+    m_spectrumView = new SpectrumView(m_engine, displayCanvas);
+    canvasLayout->addWidget(m_spectrumView, 1);
+
+    mainLayout->addWidget(displayCanvas, 1);
 
     // Controls using standard QGroupBox and QFormLayout
     auto groupsLayout = new QHBoxLayout();
@@ -349,9 +406,38 @@ SpectrogramDetailView::SpectrogramDetailView(std::shared_ptr<SpectrogramEngine> 
 void SpectrogramDetailView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
 
+    // 1. Spectrogram Display Canvas
+    auto displayCanvas = new QWidget(this);
+
+    auto canvasLayout = new QVBoxLayout(displayCanvas);
+    canvasLayout->setContentsMargins(20, 20, 20, 20);
+    canvasLayout->setSpacing(16);
+
+    auto headerLayout = new QHBoxLayout();
+    auto titleLbl = new QLabel(tr("Spectrogram Waterfall"), displayCanvas);
+    QFont titleFont = titleLbl->font();
+    titleFont.setPointSize(12);
+    titleFont.setBold(true);
+    titleLbl->setFont(titleFont);
+
+    auto subLbl = new QLabel(tr("Time-Frequency-Energy Distribution"), displayCanvas);
+    QFont subFont = subLbl->font();
+    subFont.setPointSize(9);
+    subLbl->setFont(subFont);
+    QPalette subPal = subLbl->palette();
+    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
+    subLbl->setPalette(subPal);
+
+    headerLayout->addWidget(titleLbl);
+    headerLayout->addStretch();
+    headerLayout->addWidget(subLbl);
+    canvasLayout->addLayout(headerLayout);
+
     // Spectrogram Display
-    m_spectrogramView = new SpectrogramView(m_engine, this);
-    mainLayout->addWidget(m_spectrogramView, 1);
+    m_spectrogramView = new SpectrogramView(m_engine, displayCanvas);
+    canvasLayout->addWidget(m_spectrogramView, 1);
+
+    mainLayout->addWidget(displayCanvas, 1);
 
     // Controls using standard QGroupBox and QFormLayout
     auto groupsLayout = new QHBoxLayout();
@@ -493,9 +579,38 @@ VectorScopeDetailView::VectorScopeDetailView(std::shared_ptr<VectorScopeEngine> 
 void VectorScopeDetailView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
 
+    // 1. VectorScope Display Canvas
+    auto displayCanvas = new QWidget(this);
+
+    auto canvasLayout = new QVBoxLayout(displayCanvas);
+    canvasLayout->setContentsMargins(20, 20, 20, 20);
+    canvasLayout->setSpacing(16);
+
+    auto headerLayout = new QHBoxLayout();
+    auto titleLbl = new QLabel(tr("Vector Scope"), displayCanvas);
+    QFont titleFont = titleLbl->font();
+    titleFont.setPointSize(12);
+    titleFont.setBold(true);
+    titleLbl->setFont(titleFont);
+
+    auto subLbl = new QLabel(tr("Lissajous Stereo Phase & Balance"), displayCanvas);
+    QFont subFont = subLbl->font();
+    subFont.setPointSize(9);
+    subLbl->setFont(subFont);
+    QPalette subPal = subLbl->palette();
+    subPal.setColor(QPalette::WindowText, subPal.color(QPalette::PlaceholderText));
+    subLbl->setPalette(subPal);
+
+    headerLayout->addWidget(titleLbl);
+    headerLayout->addStretch();
+    headerLayout->addWidget(subLbl);
+    canvasLayout->addLayout(headerLayout);
+
     // VectorScope Display
-    m_vectorView = new VectorScopeView(m_engine, this);
-    mainLayout->addWidget(m_vectorView, 1);
+    m_vectorView = new VectorScopeView(m_engine, displayCanvas);
+    canvasLayout->addWidget(m_vectorView, 1);
+
+    mainLayout->addWidget(displayCanvas, 1);
 
     // Controls using standard QGroupBox and QFormLayout
     auto groupsLayout = new QHBoxLayout();

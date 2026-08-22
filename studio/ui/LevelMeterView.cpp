@@ -116,10 +116,6 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     p.setRenderHint(QPainter::Antialiasing);
 
     bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
-    bool inCard = (parentWidget() && qobject_cast<LevelMetersCard*>(parentWidget()));
-    if (!inMiniPlayer && !inCard) {
-        p.fillRect(rect(), palette().color(QPalette::Base));
-    }
 
     int w = width();
     int h = height();
@@ -673,12 +669,8 @@ void LevelMetersDetailView::hideEvent(QHideEvent* event) {
 void LevelMetersDetailView::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
 
-    // 1. Level Meters Display (fills top section with Base background, aligning with Spectrum, Spectrogram & VectorScope)
+    // 1. Level Meters Display Canvas
     auto displayCanvas = new QWidget(this);
-    displayCanvas->setAutoFillBackground(true);
-    QPalette canPal = displayCanvas->palette();
-    canPal.setColor(QPalette::Window, canPal.color(QPalette::Base));
-    displayCanvas->setPalette(canPal);
 
     auto canvasLayout = new QVBoxLayout(displayCanvas);
     canvasLayout->setContentsMargins(20, 20, 20, 20);

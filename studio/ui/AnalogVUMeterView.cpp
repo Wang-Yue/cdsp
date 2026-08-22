@@ -131,7 +131,7 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
                                            (parentWidget()->parentWidget() &&
                                             parentWidget()->parentWidget()->inherits("QStackedWidget"))));
     if (!inMiniPlayer) {
-        p.fillRect(dialRect, palette().color(QPalette::Base));
+        p.fillRect(dialRect, palette().color(QPalette::Window));
     }
 
     // 1. BOTTOM AMBER GLOW

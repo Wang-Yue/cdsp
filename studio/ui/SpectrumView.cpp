@@ -171,7 +171,7 @@ void SpectrumView::paintEvent(QPaintEvent* event) {
 
     bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
     if (!inMiniPlayer) {
-        p.fillRect(rect(), palette().color(QPalette::Base));
+        p.fillRect(rect(), palette().color(QPalette::Window));
     }
 
     int w = width();
