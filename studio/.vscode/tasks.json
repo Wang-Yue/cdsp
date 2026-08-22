@@ -1,0 +1,24 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build MonitorQt",
+            "type": "shell",
+            "command": "cmake -S ${workspaceFolder} -B ${workspaceFolder}/build -DCMAKE_BUILD_TYPE=Debug && cmake --build ${workspaceFolder}/build --target MonitorQt --parallel",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "clear": true
+            }
+        }
+    ]
+}
