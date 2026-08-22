@@ -1229,6 +1229,8 @@ TEST(ALSA_and_ASIO_NativeDSD_HardwareBuffer_RoundTrip) {
 
 #if defined(ENABLE_ALSA)
 #include "Backend/audio_backend.h"
+#include "Backend/backend_error.h"
+
 TEST(ALSAPlayback_NativeDSD_FormatSupportAndSilencePrefill) {
   alsa_sample_format_t dsd_fmts[] = {
       ALSA_SAMPLE_FORMAT_DSD_U8, ALSA_SAMPLE_FORMAT_DSD_U16_LE,

@@ -15,14 +15,12 @@
 
 #include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"
-#include "Audio/sample_conversion.h"
 #include "Backend/alsa_device.h"
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
 #include "Engine/cdsp_sem.h"
 #include "Engine/thread_priority.h"
 #include "Logging/app_logger.h"
-#include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.alsa"};

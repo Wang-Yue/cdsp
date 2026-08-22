@@ -1,11 +1,12 @@
 #include <string.h>
-#include <stdbool.h>
 
 #include "Config/engine_config_types.h"
 #include "test_support.h"
-#include "Backend/backend_error.h"
 
 #if defined(ENABLE_COREAUDIO)
+#include <stdbool.h>
+
+#include "Backend/backend_error.h"
 #include "Backend/core_audio_capabilities.h"
 #include "Backend/core_audio_device.h"
 
@@ -157,6 +158,8 @@ TEST(CoreAudioCapabilitiesUnified) {
 }
 
 #elif defined(ENABLE_ALSA)
+#include <alsa/asoundlib.h>
+
 #include "Backend/alsa_device.h"
 
 TEST(ALSABinaryFormatConversions) {

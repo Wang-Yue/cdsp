@@ -4,6 +4,9 @@
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
