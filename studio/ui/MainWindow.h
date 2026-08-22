@@ -107,6 +107,7 @@ private:
     void refreshSidebarItems();
     void showCentralWidget(QWidget* widget);
     void handleNavigationTag(const QString& tag);
+    void showAndActivate();
 };
 
 #endif // MAIN_WINDOW_H

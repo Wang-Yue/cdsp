@@ -41,7 +41,7 @@ QSize LevelMeterView::sizeHint() const {
         chCount = m_isCapture ? m_levelState->captureRms.size() : m_levelState->playbackRms.size();
     }
     if (chCount == 0)
-        chCount = 2;    // Default to 2 channels
+        chCount = 2; // Default to 2 channels
 
     bool inMiniPlayer = (parentWidget() && parentWidget()->inherits("QStackedWidget"));
     int barHeight = 18; // Match SwiftUI height: 18px per channel
@@ -154,7 +154,8 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
 
     int barAreaTop = m_title.isEmpty() ? 0 : 36;
     if (inMiniPlayer) {
-        barAreaTop = std::max(0, (h - (static_cast<int>(chCount) * barHeight + static_cast<int>(chCount - 1) * spacing)) / 2);
+        barAreaTop =
+            std::max(0, (h - (static_cast<int>(chCount) * barHeight + static_cast<int>(chCount - 1) * spacing)) / 2);
     }
 
     for (size_t i = 0; i < chCount; ++i) {

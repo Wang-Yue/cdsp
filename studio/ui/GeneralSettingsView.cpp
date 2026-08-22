@@ -1,5 +1,7 @@
 #include "ui/GeneralSettingsView.h"
 
+#include "utils/ThemeManager.h"
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFontDatabase>
@@ -7,7 +9,6 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
-#include "utils/ThemeManager.h"
 
 GeneralSettingsView::GeneralSettingsView(std::shared_ptr<AudioSettings> settings,
                                          std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
@@ -46,8 +47,8 @@ void GeneralSettingsView::setupUi() {
 
     themeForm->addRow("Theme:", m_themeCombo);
 
-    auto themeSubLbl =
-        new QLabel("Select whether the app follows the system color scheme or uses a fixed light/dark theme.", themeGroup);
+    auto themeSubLbl = new QLabel(
+        "Select whether the app follows the system color scheme or uses a fixed light/dark theme.", themeGroup);
     themeSubLbl->setWordWrap(true);
     {
         QFont font = themeSubLbl->font();

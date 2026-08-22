@@ -4,11 +4,7 @@
 #include <QObject>
 #include <QPalette>
 
-enum class AppTheme {
-    System = 0,
-    Light = 1,
-    Dark = 2
-};
+enum class AppTheme { System = 0, Light = 1, Dark = 2 };
 
 class ThemeManager : public QObject {
     Q_OBJECT

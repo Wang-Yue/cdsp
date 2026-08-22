@@ -139,12 +139,10 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
     bool showParticles = m_engine ? m_engine->showParticles : m_showParticles;
     bool enableAutoScale = m_engine ? m_engine->autoScale : m_autoScale;
 
-    const auto& left = (chL >= 0 && static_cast<size_t>(chL) < m_samples.channels.size())
-                           ? m_samples.channels[chL]
-                           : m_samples.left();
-    const auto& right = (chR >= 0 && static_cast<size_t>(chR) < m_samples.channels.size())
-                            ? m_samples.channels[chR]
-                            : m_samples.right();
+    const auto& left =
+        (chL >= 0 && static_cast<size_t>(chL) < m_samples.channels.size()) ? m_samples.channels[chL] : m_samples.left();
+    const auto& right = (chR >= 0 && static_cast<size_t>(chR) < m_samples.channels.size()) ? m_samples.channels[chR]
+                                                                                           : m_samples.right();
     size_t count = std::min(left.size(), right.size());
 
     if (count > 0) {

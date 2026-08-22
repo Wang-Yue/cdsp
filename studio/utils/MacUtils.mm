@@ -93,17 +93,6 @@ void hideDockIcon() {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 }
 
-void showAndActivate(QWidget* widget) {
-    if (!widget)
-        return;
-
-    hideDockIcon();
-    [NSApp activateIgnoringOtherApps:YES];
-    widget->showNormal();
-    widget->raise();
-    widget->activateWindow();
-}
-
 void setupMinimizeToTray(QWidget* widget) {
     if (!widget)
         return;

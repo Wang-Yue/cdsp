@@ -28,7 +28,8 @@ void ThemeManager::init() {
         QString secondaryColor = s_isDarkActive ? "#a0a0a5" : "#6c6c70";
         qApp->setStyleSheet(QString("QScrollArea { background: transparent; } "
                                     "QScrollArea > QWidget > QWidget { background: transparent; } "
-                                    "QLabel#secondaryLabel { color: %1; }").arg(secondaryColor));
+                                    "QLabel#secondaryLabel { color: %1; }")
+                                .arg(secondaryColor));
     }
 
     QSettings s("DSPMonitor", "MonitorQt");
@@ -79,8 +80,7 @@ bool ThemeManager::isDarkMode() {
 }
 
 bool ThemeManager::detectSystemDark() {
-    if (QGuiApplication::styleHints() &&
-        QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark) {
+    if (QGuiApplication::styleHints() && QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark) {
         return true;
     }
 
@@ -111,13 +111,14 @@ void ThemeManager::applyTheme(bool dark) {
         QString secondaryColor = dark ? "#a0a0a5" : "#6c6c70";
         qApp->setStyleSheet(QString("QScrollArea { background: transparent; } "
                                     "QScrollArea > QWidget > QWidget { background: transparent; } "
-                                    "QLabel#secondaryLabel { color: %1; }").arg(secondaryColor));
+                                    "QLabel#secondaryLabel { color: %1; }")
+                                .arg(secondaryColor));
     }
     for (QWidget* top : QApplication::topLevelWidgets()) {
         top->setPalette(pal);
         top->update();
     }
-    emit instance()->themeChanged(s_currentTheme, dark);
+    emit instance() -> themeChanged(s_currentTheme, dark);
 }
 
 QPalette ThemeManager::createDarkPalette() {

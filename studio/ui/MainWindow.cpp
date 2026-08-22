@@ -149,8 +149,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         std::make_shared<DSPEngineController>(m_engine, m_devices, m_settings, m_pipeline, m_monitoring, levelStatePtr);
 
     m_miniPlayer = std::make_unique<MiniPlayerView>(m_dspController, m_settings, m_monitoring);
-    connect(m_miniPlayer.get(), &MiniPlayerView::requestRestoreMainWindow, this,
-            [this]() { MacUtils::showAndActivate(this); });
+    connect(m_miniPlayer.get(), &MiniPlayerView::requestRestoreMainWindow, this, &MainWindow::showAndActivate);
 
     resize(1100, 780);
     setMinimumSize(960, 680);
@@ -588,7 +587,7 @@ void MainWindow::setupMenuBar() {
     windowMenu->addSeparator();
 
     auto bringAllAct = new QAction("Bring All to Front", this);
-    connect(bringAllAct, &QAction::triggered, [this]() { MacUtils::showAndActivate(this); });
+    connect(bringAllAct, &QAction::triggered, this, &MainWindow::showAndActivate);
     windowMenu->addAction(bringAllAct);
 
     // 5. Help Menu
@@ -615,7 +614,7 @@ void MainWindow::setupTrayIcon() {
         if (m_miniPlayer && m_miniPlayer->isVisible()) {
             m_miniPlayer->hide();
         }
-        MacUtils::showAndActivate(this);
+        showAndActivate();
     });
 
     auto miniPlayerAct = m_trayMenu->addAction("Toggle MiniPlayer");
@@ -753,7 +752,7 @@ void MainWindow::setupShortcuts() {
     connect(actEsc, &QAction::triggered, [this]() {
         if (m_miniPlayer && m_miniPlayer->isVisible()) {
             m_miniPlayer->hide();
-            MacUtils::showAndActivate(this);
+            showAndActivate();
         } else {
             auto focusW = QApplication::focusWidget();
             if (focusW && !qobject_cast<QMainWindow*>(focusW)) {
@@ -952,7 +951,7 @@ void MainWindow::setupToolbar() {
 void MainWindow::toggleMiniPlayer() {
     if (m_miniPlayer->isVisible()) {
         m_miniPlayer->hide();
-        MacUtils::showAndActivate(this);
+        showAndActivate();
     } else {
         hide();
         m_miniPlayer->show();
@@ -1416,4 +1415,10 @@ void MainWindow::onPipelineChanged() {
         layout->addStretch();
         showCentralWidget(m_unavailableWidget);
     }
+}
+
+void MainWindow::showAndActivate() {
+    showNormal();
+    raise();
+    activateWindow();
 }

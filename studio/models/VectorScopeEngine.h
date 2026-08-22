@@ -19,9 +19,7 @@ class VectorScopeEngine : public QObject {
     Q_OBJECT
 
 public:
-    explicit VectorScopeEngine(QObject* parent = nullptr) : QObject(parent) {
-        loadSettings();
-    }
+    explicit VectorScopeEngine(QObject* parent = nullptr) : QObject(parent) { loadSettings(); }
 
     int visibilityCount = 0;
     bool isCapture = true;

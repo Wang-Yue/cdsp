@@ -299,5 +299,3 @@ void ConsoleLogsView::copyAllLogs() {
         return;
     QGuiApplication::clipboard()->setText(m_model->copyAllFormatted());
 }
-
-

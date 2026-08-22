@@ -127,9 +127,10 @@ void AnalogVUMeter::renderDialBackground(QPixmap& pixmap, const QSize& size, flo
     clipPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
     p.setClipPath(clipPath);
 
-    bool inMiniPlayer = (parentWidget() && (parentWidget()->inherits("QStackedWidget") ||
-                                           (parentWidget()->parentWidget() &&
-                                            parentWidget()->parentWidget()->inherits("QStackedWidget"))));
+    bool inMiniPlayer =
+        (parentWidget() &&
+         (parentWidget()->inherits("QStackedWidget") ||
+          (parentWidget()->parentWidget() && parentWidget()->parentWidget()->inherits("QStackedWidget"))));
     if (!inMiniPlayer) {
         p.fillRect(dialRect, palette().color(QPalette::Window));
     }

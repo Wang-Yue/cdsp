@@ -15,9 +15,7 @@ class SpectrogramEngine : public QObject {
     Q_OBJECT
 
 public:
-    explicit SpectrogramEngine(QObject* parent = nullptr) : QObject(parent) {
-        loadSettings();
-    }
+    explicit SpectrogramEngine(QObject* parent = nullptr) : QObject(parent) { loadSettings(); }
 
     int visibilityCount = 0;
     bool isCapture = true;

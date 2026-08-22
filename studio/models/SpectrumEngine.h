@@ -15,9 +15,7 @@ class SpectrumEngine : public QObject {
     Q_OBJECT
 
 public:
-    explicit SpectrumEngine(QObject* parent = nullptr) : QObject(parent) {
-        loadSettings();
-    }
+    explicit SpectrumEngine(QObject* parent = nullptr) : QObject(parent) { loadSettings(); }
 
     int visibilityCount = 0;
     bool isCapture = true;
@@ -48,8 +46,8 @@ public:
         maxDB = s.value("spectrum_max_db", 0.0).toDouble();
         windowFunction = static_cast<FFTWindowFunction>(
             s.value("spectrum_window_fn", static_cast<int>(FFTWindowFunction::Hann)).toInt());
-        smoothing =
-            static_cast<OctaveSmoothing>(s.value("spectrum_smoothing", static_cast<int>(OctaveSmoothing::None)).toInt());
+        smoothing = static_cast<OctaveSmoothing>(
+            s.value("spectrum_smoothing", static_cast<int>(OctaveSmoothing::None)).toInt());
         peakHoldDecayRate = s.value("spectrum_peak_hold_decay", 0.95f).toFloat();
     }
 
