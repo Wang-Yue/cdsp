@@ -19,6 +19,7 @@
 #include "ui/VectorScopeView.h"
 #include "ui/VisualizerDetailViews.h"
 #include "utils/AppIcon.h"
+#include "utils/MacUtils.h"
 #include "utils/ThemeManager.h"
 
 #include <QAbstractButton>
@@ -46,6 +47,7 @@
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTextEdit>
+#include <QTimer>
 #include <QToolBar>
 #include <QTreeWidgetItem>
 #include <QUrl>
@@ -147,16 +149,19 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         std::make_shared<DSPEngineController>(m_engine, m_devices, m_settings, m_pipeline, m_monitoring, levelStatePtr);
 
     m_miniPlayer = std::make_unique<MiniPlayerView>(m_dspController, m_settings, m_monitoring);
-    connect(m_miniPlayer.get(), &MiniPlayerView::requestRestoreMainWindow, this, [this]() {
-        showNormal();
-        raise();
-        activateWindow();
-    });
+    connect(m_miniPlayer.get(), &MiniPlayerView::requestRestoreMainWindow, this,
+            [this]() { MacUtils::showAndActivate(this); });
 
     resize(1100, 780);
     setMinimumSize(960, 680);
     setWindowTitle("DSP Monitor");
     setWindowIcon(AppIcon::getAppIcon());
+    setWindowFlag(Qt::WindowFullscreenButtonHint, false);
+    MacUtils::disableFullScreen(this);
+    MacUtils::setupMinimizeToTray(
+        this, [this]() { return m_settings && m_settings->minimizeToTray && m_trayIcon && m_trayIcon->isVisible(); });
+    MacUtils::setupDockClickHandler(this);
+    qApp->installEventFilter(this);
 
     setupUi();
     setupMenuBar();
@@ -570,7 +575,7 @@ void MainWindow::setupMenuBar() {
     auto windowMenu = bar->addMenu("&Window");
     auto minAct = new QAction("Minimize", this);
     minAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_M));
-    connect(minAct, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
+    connect(minAct, &QAction::triggered, this, &MainWindow::showMinimized);
     windowMenu->addAction(minAct);
 
     auto zoomAct = new QAction("Zoom", this);
@@ -586,11 +591,7 @@ void MainWindow::setupMenuBar() {
     windowMenu->addSeparator();
 
     auto bringAllAct = new QAction("Bring All to Front", this);
-    connect(bringAllAct, &QAction::triggered, [this]() {
-        showNormal();
-        raise();
-        activateWindow();
-    });
+    connect(bringAllAct, &QAction::triggered, [this]() { MacUtils::showAndActivate(this); });
     windowMenu->addAction(bringAllAct);
 
     // 5. Help Menu
@@ -617,9 +618,7 @@ void MainWindow::setupTrayIcon() {
         if (m_miniPlayer && m_miniPlayer->isVisible()) {
             m_miniPlayer->hide();
         }
-        showNormal();
-        raise();
-        activateWindow();
+        MacUtils::showAndActivate(this);
     });
 
     auto miniPlayerAct = m_trayMenu->addAction("Toggle MiniPlayer");
@@ -642,17 +641,10 @@ void MainWindow::setupTrayIcon() {
 
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
-            if (isHidden() || isMinimized()) {
-                if (m_miniPlayer && m_miniPlayer->isVisible()) {
-                    m_miniPlayer->hide();
-                }
-                showNormal();
-                raise();
-                activateWindow();
-            } else {
-                raise();
-                activateWindow();
+            if (m_miniPlayer && m_miniPlayer->isVisible()) {
+                m_miniPlayer->hide();
             }
+            MacUtils::showAndActivate(this);
         }
     });
 
@@ -774,9 +766,7 @@ void MainWindow::setupShortcuts() {
     connect(actEsc, &QAction::triggered, [this]() {
         if (m_miniPlayer && m_miniPlayer->isVisible()) {
             m_miniPlayer->hide();
-            showNormal();
-            raise();
-            activateWindow();
+            MacUtils::showAndActivate(this);
         } else {
             auto focusW = QApplication::focusWidget();
             if (focusW && !qobject_cast<QMainWindow*>(focusW)) {
@@ -789,10 +779,28 @@ void MainWindow::setupShortcuts() {
     addAction(actEsc);
 }
 
+void MainWindow::showEvent(QShowEvent* event) {
+    QMainWindow::showEvent(event);
+    MacUtils::setDockIconVisible(true);
+    MacUtils::disableFullScreen(this);
+    MacUtils::setupMinimizeToTray(
+        this, [this]() { return m_settings && m_settings->minimizeToTray && m_trayIcon && m_trayIcon->isVisible(); });
+    MacUtils::setupDockClickHandler(this);
+}
+
 void MainWindow::changeEvent(QEvent* event) {
     if (event->type() == QEvent::WindowStateChange) {
+        if (isFullScreen()) {
+            showNormal();
+            return;
+        }
         if (isMinimized() && m_settings && m_settings->minimizeToTray && m_trayIcon && m_trayIcon->isVisible()) {
-            hide();
+            QTimer::singleShot(0, this, [this]() {
+                if (isMinimized()) {
+                    hide();
+                    MacUtils::setDockIconVisible(false);
+                }
+            });
         }
     }
     QMainWindow::changeEvent(event);
@@ -801,10 +809,29 @@ void MainWindow::changeEvent(QEvent* event) {
 void MainWindow::closeEvent(QCloseEvent* event) {
     if (m_settings && m_settings->closeToTray && m_trayIcon && m_trayIcon->isVisible()) {
         hide();
+        MacUtils::setDockIconVisible(false);
         event->ignore();
     } else {
         event->accept();
     }
+}
+
+bool MainWindow::event(QEvent* event) {
+    if (event->type() == QEvent::ApplicationActivate) {
+        if (isHidden() && (!m_miniPlayer || !m_miniPlayer->isVisible())) {
+            MacUtils::showAndActivate(this);
+        }
+    }
+    return QMainWindow::event(event);
+}
+
+bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
+    if (obj == qApp && event->type() == QEvent::ApplicationActivate) {
+        if (isHidden() && (!m_miniPlayer || !m_miniPlayer->isVisible())) {
+            MacUtils::showAndActivate(this);
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
 }
 
 void MainWindow::toggleMute() {
@@ -965,9 +992,7 @@ void MainWindow::setupToolbar() {
 void MainWindow::toggleMiniPlayer() {
     if (m_miniPlayer->isVisible()) {
         m_miniPlayer->hide();
-        showNormal();
-        raise();
-        activateWindow();
+        MacUtils::showAndActivate(this);
     } else {
         hide();
         m_miniPlayer->show();
