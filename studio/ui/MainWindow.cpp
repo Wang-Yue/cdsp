@@ -622,11 +622,19 @@ void MainWindow::setupTrayIcon() {
 
     m_trayMenu->addSeparator();
 
+    m_trayStartStopAction = m_trayMenu->addAction("▶ Start Engine");
+    connect(m_trayStartStopAction, &QAction::triggered, this, [this]() {
+        if (m_dspController->status == ProcessingState::Running || m_dspController->status == ProcessingState::Paused ||
+            m_dspController->status == ProcessingState::Stalled) {
+            m_dspController->stopEngine();
+        } else {
+            m_dspController->startEngine();
+        }
+    });
+
     m_trayMuteAction = m_trayMenu->addAction("🔇 Mute");
     m_trayMuteAction->setCheckable(true);
     connect(m_trayMuteAction, &QAction::triggered, this, &MainWindow::toggleMute);
-
-    m_trayPresetSubMenu = m_trayMenu->addMenu("Active EQ Preset");
 
     m_trayMenu->addSeparator();
 
@@ -640,64 +648,18 @@ void MainWindow::setupTrayIcon() {
 }
 
 void MainWindow::updateTrayMenu() {
-    if (!m_trayMuteAction || !m_trayPresetSubMenu)
-        return;
-
-    bool muted = m_settings->getMuted(Fader::Main);
-    m_trayMuteAction->setChecked(muted);
-    m_trayMuteAction->setText(muted ? "🔊 Unmute" : "🔇 Mute");
-
-    m_trayPresetSubMenu->clear();
-
-    QUuid activeId;
-    for (const auto& stage : m_pipeline->stages) {
-        if (stage.type == StageType::EQ && stage.eqPresetId.has_value()) {
-            activeId = stage.eqPresetId.value();
-            break;
-        }
-    }
-    if (activeId.isNull() && !m_pipeline->eqPresets.empty()) {
-        activeId = m_pipeline->eqPresets.front().id;
+    if (m_trayStartStopAction) {
+        bool isRunning =
+            (m_dspController->status == ProcessingState::Running ||
+             m_dspController->status == ProcessingState::Paused || m_dspController->status == ProcessingState::Stalled);
+        m_trayStartStopAction->setText(isRunning ? "⏹ Stop Engine" : "▶ Start Engine");
     }
 
-    if (m_pipeline->eqPresets.empty()) {
-        auto emptyAct = m_trayPresetSubMenu->addAction("No EQ Presets Available");
-        emptyAct->setEnabled(false);
-    } else {
-        for (const auto& preset : m_pipeline->eqPresets) {
-            auto act = m_trayPresetSubMenu->addAction(QString::fromStdString(preset.name));
-            act->setCheckable(true);
-            bool isActive = (preset.id == activeId);
-            act->setChecked(isActive);
-
-            QUuid id = preset.id;
-            connect(act, &QAction::triggered, [this, id]() { selectActiveEQPreset(id); });
-        }
+    if (m_trayMuteAction) {
+        bool muted = m_settings->getMuted(Fader::Main);
+        m_trayMuteAction->setChecked(muted);
+        m_trayMuteAction->setText(muted ? "🔊 Unmute" : "🔇 Mute");
     }
-}
-
-void MainWindow::selectActiveEQPreset(const QUuid& presetId) {
-    bool foundEqStage = false;
-    for (auto& stage : m_pipeline->stages) {
-        if (stage.type == StageType::EQ) {
-            stage.eqPresetId = presetId;
-            foundEqStage = true;
-        }
-    }
-    if (!foundEqStage) {
-        PipelineStage newStage;
-        newStage.id = QUuid::createUuid();
-        newStage.name = "Equalizer";
-        newStage.type = StageType::EQ;
-        newStage.isEnabled = true;
-        newStage.eqPresetId = presetId;
-        m_pipeline->stages.push_back(newStage);
-    }
-    m_pipeline->save();
-    emit m_pipeline->pipelineChanged();
-    m_dspController->applyConfig();
-    updateStatusBar();
-    updateTrayMenu();
 }
 
 void MainWindow::setupShortcuts() {
@@ -877,6 +839,7 @@ void MainWindow::onEngineStatusChanged(ProcessingState state) {
         m_sampleRateBadge->setText(QString("%1 Hz").arg(m_devices->captureConfig.sampleRate));
     }
     updateStatusBar();
+    updateTrayMenu();
 }
 
 void MainWindow::setupToolbar() {

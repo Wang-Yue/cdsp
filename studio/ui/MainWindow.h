@@ -79,9 +79,9 @@ private:
     QLabel* m_stopReasonBanner;
 
     // Tray Icon & Menu Bar Actions
-    QSystemTrayIcon* m_trayIcon;
-    QMenu* m_trayMenu;
-    QMenu* m_trayPresetSubMenu = nullptr;
+    QSystemTrayIcon* m_trayIcon = nullptr;
+    QMenu* m_trayMenu = nullptr;
+    QAction* m_trayStartStopAction = nullptr;
     QAction* m_trayMuteAction = nullptr;
     QAction* m_actImportConv = nullptr;
     QAction* m_actAddEqPreset = nullptr;
@@ -103,7 +103,6 @@ private:
     void setupTrayIcon();
     void setupShortcuts();
     void updateTrayMenu();
-    void selectActiveEQPreset(const QUuid& presetId);
     void refreshSidebarItems();
     void showCentralWidget(QWidget* widget);
     void handleNavigationTag(const QString& tag);
