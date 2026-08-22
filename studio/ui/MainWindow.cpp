@@ -378,6 +378,9 @@ void MainWindow::setupStatusBar() {
 
 void MainWindow::setupMenuBar() {
     auto bar = menuBar();
+#ifdef Q_OS_MAC
+    bar->setNativeMenuBar(false);
+#endif
 
     // 1. File Menu
     auto fileMenu = bar->addMenu("&File");
@@ -663,52 +666,7 @@ void MainWindow::updateTrayMenu() {
 }
 
 void MainWindow::setupShortcuts() {
-    auto setupNavAction = [this](const QKeySequence& seq, const QString& tag) {
-        auto act = new QAction(this);
-        act->setShortcut(seq);
-        connect(act, &QAction::triggered, [this, tag]() { handleNavigationTag(tag); });
-        addAction(act);
-    };
-
-    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_1), "devices");
-    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_2), "dashboard");
-    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_3), "levels");
-    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_4), "spectrum");
-    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_5), "spectroscope");
-    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_6), "vectorscope");
-    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_7), "analogVU");
-    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_8), "logs");
-    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_9), "general_settings");
-    setupNavAction(QKeySequence(Qt::CTRL | Qt::Key_Comma), "general_settings");
-
-    // MiniPlayer Toggle
-    auto actMini = new QAction(this);
-    actMini->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_M));
-    connect(actMini, &QAction::triggered, this, &MainWindow::toggleMiniPlayer);
-    addAction(actMini);
-
-    // Close / Hide Window
-    auto actClose = new QAction(this);
-    actClose->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_W));
-    connect(actClose, &QAction::triggered, this, &QMainWindow::close);
-    addAction(actClose);
-
-    if (m_actImportConv)
-        addAction(m_actImportConv);
-    if (m_actAddEqPreset)
-        addAction(m_actAddEqPreset);
-    if (m_actRoomCorrection)
-        addAction(m_actRoomCorrection);
-    if (m_actOratoryPreset)
-        addAction(m_actOratoryPreset);
-    if (m_actAutoEqPreset)
-        addAction(m_actAutoEqPreset);
-    if (m_actStartStop)
-        addAction(m_actStartStop);
-    if (m_actMute)
-        addAction(m_actMute);
-
-    // Esc Key
+    // Esc Key to exit miniplayer or reset focus / return to dashboard
     auto actEsc = new QAction(this);
     actEsc->setShortcut(QKeySequence("Esc"));
     connect(actEsc, &QAction::triggered, [this]() {
