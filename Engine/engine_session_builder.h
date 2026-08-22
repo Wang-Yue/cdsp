@@ -5,6 +5,7 @@
 #include "Config/configuration.h"
 #include "Config/engine_config_types.h"
 #include "Engine/dsp_session.h"
+#include "Engine/engine_state_manager.h"
 
 /**
  * @brief Constructs, pre-allocates scratch buffers and pipelines, opens

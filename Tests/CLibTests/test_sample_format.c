@@ -1,7 +1,9 @@
 #include <string.h>
+#include <stdbool.h>
 
 #include "Config/engine_config_types.h"
 #include "test_support.h"
+#include "Backend/backend_error.h"
 
 #if defined(ENABLE_COREAUDIO)
 #include "Backend/core_audio_capabilities.h"

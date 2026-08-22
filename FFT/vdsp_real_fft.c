@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "Utils/double_helpers.h"
+#include "real_fft_backend.h"
 
 struct vdsp_real_fft {
   real_fft_backend_t base;

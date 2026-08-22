@@ -6,7 +6,12 @@
 #ifndef CLIB_BACKEND_FILE_BACKEND_H
 #define CLIB_BACKEND_FILE_BACKEND_H
 
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
 #include "Backend/audio_backend.h"
+#include "Config/engine_config_types.h"
 
 /**
  * @brief Opaque structure representing the file capture backend.

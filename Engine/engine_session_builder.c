@@ -29,6 +29,7 @@
 #include "Pipeline/pipeline.h"
 #include "Resampler/audio_resampler.h"
 #include "Utils/lock_free_ring_buffer.h"
+#include "Config/resampler_config_types.h"
 
 static const logger_t g_logger = {"dsp.session.builder"};
 

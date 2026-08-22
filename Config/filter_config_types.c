@@ -1,7 +1,6 @@
 #include "Config/filter_config_types.h"
 
 #include <string.h>
-#include <strings.h>
 
 // Standalone filter configuration types.
 

@@ -1,6 +1,4 @@
-#include <stdbool.h>
 #include <string.h>
-#include <time.h>
 
 #include "Config/log_level.h"
 #include "Logging/app_logger.h"

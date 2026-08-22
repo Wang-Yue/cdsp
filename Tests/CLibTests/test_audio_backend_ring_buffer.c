@@ -1,14 +1,13 @@
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "Audio/audio_chunk.h"
 #include "Backend/audio_backend.h"
 #include "Backend/backend_error.h"
 #include "Utils/lock_free_ring_buffer.h"
 #include "test_support.h"
+#include "Config/engine_config_types.h"
 
 TEST(AudioBackendRingBufferRead_BasicRoundTrip) {
   size_t channels = 2;

@@ -12,7 +12,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include <strings.h>
 
 #include "Audio/audio_buffers.h"
 #include "Audio/audio_chunk.h"

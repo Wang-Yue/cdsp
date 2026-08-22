@@ -17,7 +17,6 @@
 #if defined(ENABLE_COREAUDIO)
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
-#include <math.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -25,9 +24,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
 
 #include "Audio/audio_chunk.h"
 #include "Backend/backend_error.h"

@@ -5,7 +5,6 @@
 
 #include <stdatomic.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 
 #if defined(ENABLE_ACCELERATE)

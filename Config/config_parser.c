@@ -4,14 +4,11 @@
  * sub-parsers.
  */
 
-#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
-#include "Backend/file_backend.h"
 #include "Config/cJSON.h"
 #include "Config/config_error.h"
 #include "Config/config_parse_devices.h"
@@ -21,6 +18,7 @@
 #include "Config/config_parser_internal.h"
 #include "Config/configuration.h"
 #include "Logging/app_logger.h"
+#include "Config/engine_config_types.h"
 
 static const logger_t g_logger = {"dsp.config.parser"};
 

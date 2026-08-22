@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "Backend/audio_backend_registry.h"
 #include "Backend/backend_error.h"

@@ -1,6 +1,6 @@
 #include "Public/spectrum.h"
 
-#include <stdlib.h>
+#include <stdint.h>
 
 #include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"

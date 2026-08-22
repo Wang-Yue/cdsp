@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "cdsp_export.h"
 #include "cdsp_pub_types.h"

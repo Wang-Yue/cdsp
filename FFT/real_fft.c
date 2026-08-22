@@ -1,7 +1,6 @@
 #include "FFT/real_fft.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 #include "Config/config_error.h"
 #include "FFT/real_fft_backend.h"

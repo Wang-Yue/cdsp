@@ -17,16 +17,11 @@
 #if defined(ENABLE_COREAUDIO)
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
-#include <math.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include "Audio/audio_chunk.h"
@@ -34,7 +29,6 @@
 #include "Backend/core_audio_device.h"
 #include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
-#include "Utils/cdsp_time.h"
 #include "Utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};

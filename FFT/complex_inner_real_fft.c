@@ -21,6 +21,7 @@
 #include <stdlib.h>
 
 #include "Utils/double_helpers.h"
+#include "real_fft_backend.h"
 
 #ifdef ENABLE_ACCELERATE
 #include <Accelerate/Accelerate.h>

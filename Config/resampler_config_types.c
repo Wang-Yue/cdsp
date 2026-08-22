@@ -2,7 +2,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <strings.h>
 
 // Standalone resampler configuration types.
 

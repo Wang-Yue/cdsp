@@ -1,6 +1,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #include "Config/cJSON.h"
 #include "Config/cdsp_yaml.h"

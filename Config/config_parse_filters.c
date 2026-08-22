@@ -3,7 +3,6 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
 #include "Config/cJSON.h"
 #include "Config/config_parser_internal.h"

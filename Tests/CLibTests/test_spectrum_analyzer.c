@@ -5,6 +5,7 @@
 #endif
 #include <math.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "Audio/audio_chunk.h"
 #include "Audio/audio_history_buffer.h"

@@ -6,6 +6,8 @@
 
 #include "Backend/core_audio_device.h"
 
+#include <sys/types.h>
+
 #if defined(ENABLE_COREAUDIO)
 #include <CoreFoundation/CoreFoundation.h>
 #include <math.h>
