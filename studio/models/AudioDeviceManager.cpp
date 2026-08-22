@@ -278,7 +278,12 @@ bool AudioDeviceManager::devicesAvailable() const {
         if (auto name = captureConfig.deviceName()) {
             if (!name.value().empty()) {
                 bool found = false;
-                for (const auto& d : captureDevices) {
+                bool isWasapiLoopback = false;
+#if defined(ENABLE_WASAPI)
+                isWasapiLoopback = (captureConfig.backend == AudioBackendType::WASAPI && captureConfig.loopback);
+#endif
+                const auto& devList = isWasapiLoopback ? playbackDevices : captureDevices;
+                for (const auto& d : devList) {
                     if (d.id == name.value() || d.name == name.value()) {
                         found = true;
                         break;
@@ -347,7 +352,13 @@ void AudioDeviceManager::fetchDevices() {
                 if (auto name = captureConfig.deviceName()) {
                     if (!name.value().empty()) {
                         bool found = false;
-                        for (const auto& d : cap) {
+                        bool isWasapiLoopback = false;
+#if defined(ENABLE_WASAPI)
+                        isWasapiLoopback =
+                            (captureConfig.backend == AudioBackendType::WASAPI && captureConfig.loopback);
+#endif
+                        const auto& devList = isWasapiLoopback ? pb : cap;
+                        for (const auto& d : devList) {
                             if (d.id == name.value() || d.name == name.value()) {
                                 found = true;
                                 break;
@@ -401,7 +412,13 @@ std::optional<AudioDeviceDescriptor> AudioDeviceManager::queryDeviceCapabilities
     };
     std::string backendLower = toLowerStr(audioBackendTypeToString(cfg.backend));
     std::string devName = cfg.deviceName().value_or("");
-    return m_engine->getDeviceCapabilities(backendLower, devName, isCapture);
+    bool isQueryCapture = isCapture;
+#if defined(ENABLE_WASAPI)
+    if (cfg.backend == AudioBackendType::WASAPI && cfg.loopback) {
+        isQueryCapture = false;
+    }
+#endif
+    return m_engine->getDeviceCapabilities(backendLower, devName, isQueryCapture);
 }
 
 void AudioDeviceManager::updateCapabilitiesFromDescriptor(DeviceConfig& cfg, bool isCapture,

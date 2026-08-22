@@ -134,6 +134,11 @@ DeviceConfig DeviceConfig::enforced() const {
     }
 #endif
     if (isHardwareBackend(res.backend)) {
+#if defined(ENABLE_WASAPI)
+        if (res.backend == AudioBackendType::WASAPI && res.loopback) {
+            res.exclusive = false;
+        }
+#endif
         auto chs = res.supportedChannels();
         if (!chs.empty()) {
             bool devChValid = (std::find(chs.begin(), chs.end(), res.deviceChannels) != chs.end()) &&

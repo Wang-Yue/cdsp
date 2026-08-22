@@ -533,10 +533,12 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
     m_capCoreAudioForm->addRow(m_capWasapiExclusiveCheck);
 
-    m_capWasapiLoopbackCheck = new QCheckBox(tr("WASAPI Loopback (Record Output Stream)"), w);
+    m_capWasapiLoopbackCheck = new QCheckBox(tr("WASAPI Loopback (Capture from Playback Device)"), w);
     connect(m_capWasapiLoopbackCheck, &QCheckBox::toggled, [this](bool) {
-        if (!m_isRefreshing)
+        if (!m_isRefreshing) {
             applySettings();
+            refreshUi();
+        }
     });
     m_capCoreAudioForm->addRow(m_capWasapiLoopbackCheck);
 
@@ -1225,14 +1227,38 @@ void DevicePickerView::refreshUi() {
 
     bool isCapPw = false;
 #if defined(ENABLE_PIPEWIRE)
-    if (m_devices->captureConfig.backend == AudioBackendType::PipeWire)
-        isCapPw = true;
+    isCapPw = m_devices->captureConfig.backend == AudioBackendType::PipeWire;
+#endif
+    bool isCapWasapi = false;
+#if defined(ENABLE_WASAPI)
+    isCapWasapi = m_devices->captureConfig.backend == AudioBackendType::WASAPI;
+#endif
+    bool isCapAlsa = false;
+#if defined(ENABLE_ALSA)
+    isCapAlsa = m_devices->captureConfig.backend == AudioBackendType::ALSA;
+#endif
+    bool isPbPw = false;
+#if defined(ENABLE_PIPEWIRE)
+    isPbPw = m_devices->playbackConfig.backend == AudioBackendType::PipeWire;
+#endif
+    bool isPbWasapi = false;
+#if defined(ENABLE_WASAPI)
+    isPbWasapi = m_devices->playbackConfig.backend == AudioBackendType::WASAPI;
+#endif
+    bool isPbCoreAudio = false;
+#if defined(ENABLE_COREAUDIO)
+    isPbCoreAudio = m_devices->playbackConfig.backend == AudioBackendType::CoreAudio;
+#endif
+    bool isPbAlsa = false;
+#if defined(ENABLE_ALSA)
+    isPbAlsa = m_devices->playbackConfig.backend == AudioBackendType::ALSA;
 #endif
 
     // 1. Refresh Capture Devices List & CoreAudio controls
     if (!isCapPw) {
-        populateDeviceList(m_capDeviceList, m_capWarningLabel, m_devices->captureDevices,
-                           m_devices->captureConfig.deviceName(), true);
+        bool isLoopback = (isCapWasapi && m_devices->captureConfig.loopback);
+        const auto& capDevs = isLoopback ? m_devices->playbackDevices : m_devices->captureDevices;
+        populateDeviceList(m_capDeviceList, m_capWarningLabel, capDevs, m_devices->captureConfig.deviceName(), true);
     } else {
         m_capWarningLabel->hide();
         m_capDeviceList->hide();
@@ -1346,18 +1372,9 @@ void DevicePickerView::refreshUi() {
     if (cutoffIdx >= 0)
         m_dopCutoffCombo->setCurrentIndex(cutoffIdx);
 
-    bool isCapWasapi = false;
-#if defined(ENABLE_WASAPI)
-    isCapWasapi = (m_devices->captureConfig.backend == AudioBackendType::WASAPI);
-#endif
-    bool isCapAlsa = false;
-#if defined(ENABLE_ALSA)
-    if (m_devices->captureConfig.backend == AudioBackendType::ALSA)
-        isCapAlsa = true;
-#endif
-
-    m_capWasapiExclusiveCheck->setChecked(m_devices->captureConfig.exclusive);
     m_capWasapiLoopbackCheck->setChecked(m_devices->captureConfig.loopback);
+    m_capWasapiExclusiveCheck->setChecked(m_devices->captureConfig.exclusive && !m_devices->captureConfig.loopback);
+    m_capWasapiExclusiveCheck->setEnabled(!m_devices->captureConfig.loopback);
     m_capWasapiPollingCheck->setChecked(m_devices->captureConfig.polling);
     m_capAlsaStopInactiveCheck->setChecked(m_devices->captureConfig.stopOnInactive);
     m_capAlsaThreadedCheck->setChecked(m_devices->captureConfig.threaded);
@@ -1440,12 +1457,6 @@ void DevicePickerView::refreshUi() {
     m_genFreqSlider->setEnabled(!isNoise);
 
     // 3. Refresh Playback Devices List & CoreAudio controls
-    bool isPbPw = false;
-#if defined(ENABLE_PIPEWIRE)
-    if (m_devices->playbackConfig.backend == AudioBackendType::PipeWire)
-        isPbPw = true;
-#endif
-
     if (!isPbPw) {
         populateDeviceList(m_pbDeviceList, m_pbWarningLabel, m_devices->playbackDevices,
                            m_devices->playbackConfig.deviceName(), false);
@@ -1535,25 +1546,11 @@ void DevicePickerView::refreshUi() {
         }
     }
 
-    bool isPbWasapi = false;
-#if defined(ENABLE_WASAPI)
-    isPbWasapi = (m_devices->playbackConfig.backend == AudioBackendType::WASAPI);
-#endif
-    bool isPbCoreAudio = false;
-#if defined(ENABLE_COREAUDIO)
-    isPbCoreAudio = (m_devices->playbackConfig.backend == AudioBackendType::CoreAudio);
-#endif
-
     bool pbExclusiveVisible = isPbWasapi || isPbCoreAudio;
     m_exclusiveModeCheck->setChecked(m_devices->playbackConfig.exclusive);
 
     m_pbWasapiPollingCheck->setChecked(m_devices->playbackConfig.polling);
 
-    bool isPbAlsa = false;
-#if defined(ENABLE_ALSA)
-    if (m_devices->playbackConfig.backend == AudioBackendType::ALSA)
-        isPbAlsa = true;
-#endif
     m_pbAlsaThreadedCheck->setChecked(m_devices->playbackConfig.threaded);
 
     bool pbDopVisible = !m_devices->isRustEngine() && !isPbPw && isHardwareBackend(m_devices->playbackConfig.backend);
@@ -1802,8 +1799,8 @@ void DevicePickerView::applySettings() {
         if (m_dopCutoffCombo->currentIndex() >= 0) {
             capCfg.dopCutoffHz = m_dopCutoffCombo->currentData().toDouble();
         }
-        capCfg.exclusive = m_capWasapiExclusiveCheck->isChecked();
         capCfg.loopback = m_capWasapiLoopbackCheck->isChecked();
+        capCfg.exclusive = capCfg.loopback ? false : m_capWasapiExclusiveCheck->isChecked();
         capCfg.polling = m_capWasapiPollingCheck->isChecked();
         capCfg.stopOnInactive = m_capAlsaStopInactiveCheck->isChecked();
         capCfg.threaded = m_capAlsaThreadedCheck->isChecked();
