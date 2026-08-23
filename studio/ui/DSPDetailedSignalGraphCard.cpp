@@ -29,7 +29,7 @@ QPointF DSPGraphCanvas::getBlockPos(const GraphBlock& b, qreal originY) const {
     return QPointF(b.x + m_canvasPadding + 40, originY + b.y);
 }
 
-QString DSPGraphCanvas::readableFilterStepName(const std::string& rawName, const PipelineStage& stage) const {
+QString DSPGraphCanvas::readableFilterStepName(const std::string& rawName) const {
     if (rawName.find("cx5_hi") != std::string::npos)
         return "cx5_hi";
     if (rawName.find("cx5_lo_gain") != std::string::npos)
@@ -102,7 +102,6 @@ void DSPGraphCanvas::calculateGraphLayout() {
     auto pipe = m_dspController->pipelineStore();
 
     int captureChannels = devMgr ? std::max(1, devMgr->captureConfig.channels) : 2;
-    int playbackChannels = devMgr ? std::max(1, devMgr->playbackConfig.channels) : 2;
     int sampleRate = devMgr ? devMgr->captureConfig.sampleRate : 48000;
 
     std::vector<std::vector<std::vector<GraphBlock>>> stages;
@@ -327,7 +326,7 @@ void DSPGraphCanvas::calculateGraphLayout() {
                         continue;
 
                     for (const auto& rawName : namesToUnroll) {
-                        QString name = readableFilterStepName(rawName, stage);
+                        QString name = readableFilterStepName(rawName);
                         int countInStage = stageFilterBlockCounts[chNbr];
                         int chStep = stageStart + 1 + countInStage;
                         totalLength = std::max(totalLength, chStep);

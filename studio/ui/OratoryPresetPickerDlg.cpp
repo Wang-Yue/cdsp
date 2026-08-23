@@ -44,12 +44,12 @@ void OratoryPresetPickerDlg::setupUi() {
     // 1. List view
     m_listWidget = new QListWidget(m_stackedWidget);
     m_listWidget->setAlternatingRowColors(false);
-    connect(m_listWidget, &QListWidget::itemClicked, this, [this](QListWidgetItem*) {
+    connect(m_listWidget, &QListWidget::itemClicked, this, [this]() {
         if (!m_isImporting) {
             onImportClicked();
         }
     });
-    connect(m_listWidget, &QListWidget::itemActivated, this, [this](QListWidgetItem*) {
+    connect(m_listWidget, &QListWidget::itemActivated, this, [this]() {
         if (!m_isImporting) {
             onImportClicked();
         }

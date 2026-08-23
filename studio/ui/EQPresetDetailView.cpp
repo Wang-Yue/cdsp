@@ -181,7 +181,7 @@ void EQPresetDetailView::setupUi() {
         applyConfig();
         refreshUi();
     };
-    m_diagramWidget->onBandAdded = [this](double freq, double gain) {
+    m_diagramWidget->onBandAdded = [this]() {
         applyConfig();
         refreshUi();
     };
@@ -439,8 +439,7 @@ void EQPresetDetailView::refreshUi() {
             auto freeWidget = new QWidget(m_bandsTable);
             auto freeBox = new QHBoxLayout(freeWidget);
             freeBox->setContentsMargins(0, 0, 0, 0);
-            auto makeCoeff = [this, i, freeWidget](const QString& label, double val,
-                                                   std::function<void(double)> setter) {
+            auto makeCoeff = [this, freeWidget](const QString& label, double val, std::function<void(double)> setter) {
                 auto container = new QWidget(freeWidget);
                 auto l = new QHBoxLayout(container);
                 l->setContentsMargins(0, 0, 0, 0);

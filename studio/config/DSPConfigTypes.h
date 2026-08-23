@@ -1038,6 +1038,12 @@ struct MixerSource {
     std::optional<bool> inverted;
     std::optional<bool> mute;
     std::optional<GainScale> scale;
+
+    MixerSource() = default;
+    MixerSource(int ch, std::optional<double> g = std::nullopt, std::optional<bool> inv = std::nullopt,
+                std::optional<bool> m = std::nullopt, std::optional<GainScale> sc = std::nullopt)
+        : channel(ch), gain(g), inverted(inv), mute(m), scale(sc) {}
+
     double gainValue() const { return gain.value_or(0.0); }
     QJsonObject toJson() const;
     static MixerSource fromJson(const QJsonObject& json);
@@ -1052,6 +1058,11 @@ struct MixerMapping {
     int dest = 0;
     std::vector<MixerSource> sources;
     std::optional<bool> mute;
+
+    MixerMapping() = default;
+    MixerMapping(int d, std::vector<MixerSource> src = {}, std::optional<bool> m = std::nullopt)
+        : dest(d), sources(std::move(src)), mute(m) {}
+
     QJsonObject toJson() const;
     static MixerMapping fromJson(const QJsonObject& json);
 

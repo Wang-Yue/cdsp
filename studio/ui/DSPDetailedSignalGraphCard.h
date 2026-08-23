@@ -98,7 +98,7 @@ private:
     QPointF getBlockPos(const GraphBlock& b, qreal originY) const;
     void calculateGraphLayout();
     static QSizeF calculateBlockSize(const QString& label, bool isChannelPort);
-    QString readableFilterStepName(const std::string& rawName, const PipelineStage& stage) const;
+    QString readableFilterStepName(const std::string& rawName) const;
     QString readableMixerTitle(const std::string& rawName, int inCh, int outCh) const;
 };
 

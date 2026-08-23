@@ -423,7 +423,6 @@ void PipelineOverviewWidget::rebuildOverview() {
     auto devMgr = m_dspController ? m_dspController->devices() : nullptr;
     auto settings = m_dspController ? m_dspController->settings() : nullptr;
     auto pipe = m_dspController ? m_dspController->pipelineStore() : nullptr;
-    bool isRunning = (m_dspController && m_dspController->status == ProcessingState::Running);
 
     int captureCh = devMgr ? std::max(1, devMgr->captureConfig.channels) : 2;
     int captureRate = devMgr ? devMgr->captureConfig.sampleRate : 48000;

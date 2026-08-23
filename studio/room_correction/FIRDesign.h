@@ -33,10 +33,10 @@ public:
     static std::vector<double> linearPhase(const std::vector<BiquadParameters>& bands, int sampleRate,
                                            const FIRDesignOptions& options = FIRDesignOptions());
 
-    static std::vector<double> minimumPhaseFromMagDB(const std::vector<double>& magDB, int sampleRate,
+    static std::vector<double> minimumPhaseFromMagDB(const std::vector<double>& magDB,
                                                      const FIRDesignOptions& options = FIRDesignOptions());
 
-    static std::vector<double> linearPhaseFromMagDB(const std::vector<double>& magDB, int sampleRate,
+    static std::vector<double> linearPhaseFromMagDB(const std::vector<double>& magDB,
                                                     const FIRDesignOptions& options = FIRDesignOptions());
 
     static std::vector<double>

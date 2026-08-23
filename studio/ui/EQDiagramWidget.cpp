@@ -613,7 +613,7 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
             m_preset.bands.push_back(newBand);
             m_selectedIndex = static_cast<int>(m_preset.bands.size()) - 1;
             if (onBandAdded)
-                onBandAdded(f, db);
+                onBandAdded();
             if (onPresetChanged)
                 onPresetChanged();
             update();

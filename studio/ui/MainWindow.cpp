@@ -589,7 +589,7 @@ void MainWindow::setupMenuBar() {
     auto helpMenu = bar->addMenu("&Help");
     auto helpAct = new QAction("CDSP Monitor Help", this);
     connect(helpAct, &QAction::triggered,
-            [this]() { QDesktopServices::openUrl(QUrl("https://github.com/Wang-Yue/Monitor-Qt")); });
+            []() { QDesktopServices::openUrl(QUrl("https://github.com/Wang-Yue/Monitor-Qt")); });
     helpMenu->addAction(helpAct);
 }
 

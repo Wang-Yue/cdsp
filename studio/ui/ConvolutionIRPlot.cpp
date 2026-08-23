@@ -30,7 +30,7 @@ void ConvolutionIRPlot::loadIR() {
         m_errorMsg = "No file path provided.";
         return;
     }
-    m_samples = ConvCoefficientLoader::loadCoefficients(m_path, "AUTO", 0, 48000);
+    m_samples = ConvCoefficientLoader::loadCoefficients(m_path, "AUTO", 0);
     if (m_samples.empty()) {
         m_errorMsg = "Could not load IR file: " + QString::fromStdString(m_path).toStdString();
     } else {

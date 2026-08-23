@@ -199,7 +199,7 @@ void ConsoleLogsView::setupUi() {
 
     // Clear button
     m_clearBtn = new QPushButton("Clear", this);
-    connect(m_clearBtn, &QPushButton::clicked, [this]() {
+    connect(m_clearBtn, &QPushButton::clicked, []() {
         if (LogManager::instance()) {
             LogManager::instance()->clear();
         }
@@ -275,7 +275,7 @@ void ConsoleLogsView::setupUi() {
 
         menu.addSeparator();
         auto clearAct = menu.addAction("Clear Logs");
-        connect(clearAct, &QAction::triggered, this, [this]() {
+        connect(clearAct, &QAction::triggered, this, []() {
             if (LogManager::instance()) {
                 LogManager::instance()->clear();
             }

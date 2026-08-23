@@ -1,10 +1,5 @@
 #include "models/ConvCoefficientLoader.h"
 
-#include <QAudioBuffer>
-#include <QAudioDecoder>
-#include <QAudioFormat>
-#include <QEventLoop>
-#include <QUrl>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -213,45 +208,6 @@ std::vector<double> ConvCoefficientLoader::loadRaw(const std::string& path, cons
     return coeffs;
 }
 
-std::vector<double> ConvCoefficientLoader::loadFLAC(const std::string& path, int channel) {
-    std::vector<double> coeffs;
-    QEventLoop loop;
-    QAudioDecoder decoder;
-    decoder.setSource(QUrl::fromLocalFile(QString::fromStdString(path)));
-
-    QObject::connect(&decoder, &QAudioDecoder::bufferReady, [&]() {
-        QAudioBuffer buffer = decoder.read();
-        int channelCount = buffer.format().channelCount();
-        int selCh = std::min(channelCount - 1, std::max(0, channel));
-        int sampleCount = buffer.sampleCount();
-
-        if (buffer.format().sampleFormat() == QAudioFormat::Float) {
-            const float* data = buffer.constData<float>();
-            for (int i = 0; i < sampleCount; ++i) {
-                coeffs.push_back(static_cast<double>(data[i * channelCount + selCh]));
-            }
-        } else if (buffer.format().sampleFormat() == QAudioFormat::Int16) {
-            const int16_t* data = buffer.constData<int16_t>();
-            for (int i = 0; i < sampleCount; ++i) {
-                coeffs.push_back(static_cast<double>(data[i * channelCount + selCh]) / 32767.0);
-            }
-        } else if (buffer.format().sampleFormat() == QAudioFormat::Int32) {
-            const int32_t* data = buffer.constData<int32_t>();
-            for (int i = 0; i < sampleCount; ++i) {
-                coeffs.push_back(static_cast<double>(data[i * channelCount + selCh]) / 2147483647.0);
-            }
-        }
-    });
-
-    QObject::connect(&decoder, &QAudioDecoder::finished, &loop, &QEventLoop::quit);
-    QObject::connect(&decoder, QOverload<QAudioDecoder::Error>::of(&QAudioDecoder::error),
-                     [&](QAudioDecoder::Error) { loop.quit(); });
-
-    decoder.start();
-    loop.exec();
-    return coeffs;
-}
-
 void ConvCoefficientLoader::normalizeGain(std::vector<double>& coeffs, double targetDb) {
     if (coeffs.empty())
         return;
@@ -270,17 +226,12 @@ void ConvCoefficientLoader::normalizeGain(std::vector<double>& coeffs, double ta
 }
 
 std::vector<double> ConvCoefficientLoader::loadCoefficients(const std::string& path, const std::string& fmt,
-                                                            int targetChannel, int userSampleRate, int skipBytesLines,
-                                                            int readBytesLines) {
+                                                            int targetChannel, int skipBytesLines, int readBytesLines) {
     std::string upperFmt = fmt;
     std::transform(upperFmt.begin(), upperFmt.end(), upperFmt.begin(), ::toupper);
 
     if (upperFmt == "WAV" || parseWavHeader(path).has_value()) {
         return loadWAV(path, targetChannel);
-    }
-    if (upperFmt == "FLAC" || (path.length() >= 5 && path.substr(path.length() - 5) == ".flac") ||
-        (path.length() >= 5 && path.substr(path.length() - 5) == ".FLAC")) {
-        return loadFLAC(path, targetChannel);
     }
     return loadRaw(path, upperFmt == "AUTO" ? "FLOAT64" : upperFmt, skipBytesLines, readBytesLines);
 }

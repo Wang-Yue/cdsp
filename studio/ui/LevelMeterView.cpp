@@ -121,7 +121,6 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
     int h = height();
 
     QColor subtextColor = ThemeManager::subtextColor(this);
-    QColor midColor = palette().color(QPalette::Mid);
 
     if (!m_title.isEmpty()) {
         QFont titleF = font();

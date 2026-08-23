@@ -26,7 +26,7 @@ void ThemeManager::init() {
     // Listen to system color scheme changes dynamically
     if (QGuiApplication::styleHints()) {
         QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
-                         [](Qt::ColorScheme scheme) { QApplication::setStyle(QStyleFactory::create("Fusion")); });
+                         []() { QApplication::setStyle(QStyleFactory::create("Fusion")); });
     }
 }
 

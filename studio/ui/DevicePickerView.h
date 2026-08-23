@@ -188,7 +188,7 @@ private:
     void updateDoPCapability();
     void updateLatencyText();
     void populateDeviceList(QListWidget* listWidget, QWidget* warningWidget, const std::vector<AudioDevice>& devices,
-                            const std::optional<std::string>& selectedDeviceName, bool isCapture);
+                            const std::optional<std::string>& selectedDeviceName);
 };
 
 #endif // DEVICE_PICKER_VIEW_H

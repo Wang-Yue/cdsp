@@ -123,11 +123,10 @@ std::vector<double> FIRDesign::minimumPhase(const std::vector<BiquadParameters>&
 
     FIRDesignOptions opt = options;
     opt.preampDB = options.preampDB;
-    return minimumPhaseFromMagDB(magDB, sampleRate, opt);
+    return minimumPhaseFromMagDB(magDB, opt);
 }
 
-std::vector<double> FIRDesign::linearPhaseFromMagDB(const std::vector<double>& magDB, int sampleRate,
-                                                    const FIRDesignOptions& options) {
+std::vector<double> FIRDesign::linearPhaseFromMagDB(const std::vector<double>& magDB, const FIRDesignOptions& options) {
     int nFft = options.fftSize;
     size_t bins = nFft / 2 + 1;
 
@@ -164,7 +163,7 @@ std::vector<double> FIRDesign::linearPhaseFromMagDB(const std::vector<double>& m
     return rawIR;
 }
 
-std::vector<double> FIRDesign::minimumPhaseFromMagDB(const std::vector<double>& magDB, int sampleRate,
+std::vector<double> FIRDesign::minimumPhaseFromMagDB(const std::vector<double>& magDB,
                                                      const FIRDesignOptions& options) {
     int nFft = options.fftSize;
     size_t bins = nFft / 2 + 1;

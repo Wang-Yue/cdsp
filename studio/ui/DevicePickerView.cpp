@@ -341,7 +341,7 @@ QString DevicePickerView::formatSampleRate(int rate) {
 
 void DevicePickerView::populateDeviceList(QListWidget* listWidget, QWidget* warningWidget,
                                           const std::vector<AudioDevice>& devices,
-                                          const std::optional<std::string>& selectedDeviceName, bool isCapture) {
+                                          const std::optional<std::string>& selectedDeviceName) {
     if (!listWidget || !warningWidget)
         return;
 
@@ -399,17 +399,16 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     m_capDeviceList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_capDeviceList->setMaximumHeight(130);
 
-    connect(m_capDeviceList, &QListWidget::currentItemChanged,
-            [this](QListWidgetItem* current, QListWidgetItem* /*previous*/) {
-                if (m_isRefreshing || !current)
-                    return;
-                std::string devId = current->data(Qt::UserRole).toString().toStdString();
-                m_devices->captureConfig.setDeviceName(devId);
-                m_devices->refreshDeviceCapabilities();
-                m_devices->validateSampleRates();
-                applySettings();
-                refreshUi();
-            });
+    connect(m_capDeviceList, &QListWidget::currentItemChanged, [this](QListWidgetItem* current) {
+        if (m_isRefreshing || !current)
+            return;
+        std::string devId = current->data(Qt::UserRole).toString().toStdString();
+        m_devices->captureConfig.setDeviceName(devId);
+        m_devices->refreshDeviceCapabilities();
+        m_devices->validateSampleRates();
+        applySettings();
+        refreshUi();
+    });
 
     m_capDeviceContainer = new QWidget(w);
     auto devBox = new QVBoxLayout(m_capDeviceContainer);
@@ -857,17 +856,16 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_pbDeviceList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_pbDeviceList->setMaximumHeight(130);
 
-    connect(m_pbDeviceList, &QListWidget::currentItemChanged,
-            [this](QListWidgetItem* current, QListWidgetItem* /*previous*/) {
-                if (m_isRefreshing || !current)
-                    return;
-                std::string devId = current->data(Qt::UserRole).toString().toStdString();
-                m_devices->playbackConfig.setDeviceName(devId);
-                m_devices->refreshDeviceCapabilities();
-                m_devices->validateSampleRates();
-                applySettings();
-                refreshUi();
-            });
+    connect(m_pbDeviceList, &QListWidget::currentItemChanged, [this](QListWidgetItem* current) {
+        if (m_isRefreshing || !current)
+            return;
+        std::string devId = current->data(Qt::UserRole).toString().toStdString();
+        m_devices->playbackConfig.setDeviceName(devId);
+        m_devices->refreshDeviceCapabilities();
+        m_devices->validateSampleRates();
+        applySettings();
+        refreshUi();
+    });
 
     m_pbDeviceContainer = new QWidget(w);
     auto devBox = new QVBoxLayout(m_pbDeviceContainer);
@@ -1260,7 +1258,7 @@ void DevicePickerView::refreshUi() {
     if (!isCapPw) {
         bool isLoopback = (isCapWasapi && m_devices->captureConfig.loopback);
         const auto& capDevs = isLoopback ? m_devices->playbackDevices : m_devices->captureDevices;
-        populateDeviceList(m_capDeviceList, m_capWarningLabel, capDevs, m_devices->captureConfig.deviceName(), true);
+        populateDeviceList(m_capDeviceList, m_capWarningLabel, capDevs, m_devices->captureConfig.deviceName());
     } else {
         m_capWarningLabel->hide();
         m_capDeviceList->hide();
@@ -1461,7 +1459,7 @@ void DevicePickerView::refreshUi() {
     // 3. Refresh Playback Devices List & CoreAudio controls
     if (!isPbPw) {
         populateDeviceList(m_pbDeviceList, m_pbWarningLabel, m_devices->playbackDevices,
-                           m_devices->playbackConfig.deviceName(), false);
+                           m_devices->playbackConfig.deviceName());
     } else {
         m_pbWarningLabel->hide();
         m_pbDeviceList->hide();

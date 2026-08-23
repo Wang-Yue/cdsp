@@ -69,7 +69,7 @@ void ConvolutionImportDlg::dropEvent(QDropEvent* event) {
             if (fi.isFile()) {
                 QString ext = fi.suffix().toLower();
                 if (ext == "wav" || ext == "f64" || ext == "f32" || ext == "pcm" || ext == "txt" || ext == "data" ||
-                    ext == "flac" || ext == "s16" || ext == "s32") {
+                    ext == "s16" || ext == "s32") {
                     files.append(path);
                 }
             }
@@ -381,7 +381,7 @@ void ConvolutionImportDlg::addImportFiles(const QStringList& files) {
 
 void ConvolutionImportDlg::onAddFilesClicked() {
     QStringList files = QFileDialog::getOpenFileNames(
-        this, "Select IR File(s)", "", "Audio Files (*.wav *.f64 *.f32 *.pcm *.txt *.data *.flac);;All Files (*)");
+        this, "Select IR File(s)", "", "Audio Files (*.wav *.f64 *.f32 *.pcm *.txt *.data);;All Files (*)");
     if (!files.isEmpty()) {
         addImportFiles(files);
     }
@@ -413,8 +413,8 @@ void ConvolutionImportDlg::onImportClicked() {
 
         for (const auto& item : items) {
             try {
-                auto coeffs = ConvCoefficientLoader::loadCoefficients(
-                    item.filePath.toStdString(), item.format.toStdString(), item.channel, item.sampleRate);
+                auto coeffs = ConvCoefficientLoader::loadCoefficients(item.filePath.toStdString(),
+                                                                      item.format.toStdString(), item.channel);
 
                 if (coeffs.empty()) {
                     res.success = false;
