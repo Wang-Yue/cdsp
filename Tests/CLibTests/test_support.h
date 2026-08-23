@@ -10,6 +10,7 @@
 #include <string.h>
 
 #ifdef _WIN32
+#include <io.h>
 #include <process.h>
 #define getpid _getpid
 #else
