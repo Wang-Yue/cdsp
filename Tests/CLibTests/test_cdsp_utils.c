@@ -54,7 +54,10 @@ TEST(PathTildeExpansion) {
   cdsp_expand_path("~/music.wav", buf, sizeof(buf));
 
   const char* home = getenv("HOME");
-  if (home) {
+#if defined(_WIN32)
+  if (!home) home = getenv("USERPROFILE");
+#endif
+  if (home && home[0] != '\0') {
     char expected[512];
     snprintf(expected, sizeof(expected), "%s/music.wav", home);
     ASSERT_STR_EQ(expected, buf);

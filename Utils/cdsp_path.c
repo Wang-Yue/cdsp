@@ -7,7 +7,8 @@
 void cdsp_expand_path(const char* path, char* out_buf, size_t buf_len) {
   if (!path || !out_buf || buf_len == 0) return;
 
-  if (path[0] == '~' && (path[1] == '/' || path[1] == '\0')) {
+  if (path[0] == '~' &&
+      (path[1] == '/' || path[1] == '\\' || path[1] == '\0')) {
     const char* home = getenv("HOME");
 #if defined(_WIN32)
     if (!home) home = getenv("USERPROFILE");
