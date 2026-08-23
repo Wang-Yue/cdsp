@@ -1,0 +1,35 @@
+{
+  "cmake.buildDirectory": "${workspaceFolder}/build",
+  "cmake.configureOnOpen": true,
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/build",
+    "--background-index",
+    "--clang-tidy",
+    "--header-insertion=iwyu"
+  ],
+  "swift.buildPath": "/tmp/cdsp-spm-build",
+  "swift.backgroundIndexing": false,
+  "swift.packageDiscovery": false,
+  "swift.autoGenerateTasks": false,
+  "swift.disableAutoResolve": true,
+  "sourcekit-lsp.backgroundIndexing": false,
+  "sourcekit-lsp.serverArguments": [
+    "--default-workspace-type",
+    "compilationDatabase",
+    "--compilation-db-search-path",
+    "build",
+    "--compilation-db-search-path",
+    ".",
+    "--scratch-path",
+    "/tmp/cdsp-sourcekit-build",
+    "--generated-files-path",
+    "/tmp/cdsp-sourcekit-generated"
+  ],
+  "files.exclude": {
+    "**/.git": true,
+    "**/.build": true,
+    "**/.DS_Store": true
+  }
+}

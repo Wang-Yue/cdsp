@@ -1,13 +1,5 @@
-.build/
-.build-make/
-bin/
-*.o
-*.a
-*.dSYM
+build*/
 .DS_Store
 target/
 win_deps/
 compile_commands.json
-
-
-

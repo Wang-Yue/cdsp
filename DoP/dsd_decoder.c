@@ -30,12 +30,12 @@
 
 #include "Audio/audio_chunk.h"
 
-#if defined(__APPLE__) || defined(USE_LIBDISPATCH)
+#if defined(ENABLE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
+#endif
 
-#define HAS_DISPATCH 1
-#else
-#define HAS_DISPATCH 0
+#if defined(ENABLE_OPENMP)
+#include <omp.h>
 #endif
 
 #include <math.h>
@@ -45,11 +45,6 @@
 #include "Audio/sample_conversion.h"
 #include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
-
-#if defined(_OPENMP)
-#include <omp.h>
-#define USE_OPENMP 1
-#endif
 
 static const logger_t g_logger = {"dsp.dsd.decoder"};
 
@@ -255,7 +250,7 @@ dsd_decoder_t* dsd_decoder_create(int channels, double sample_rate,
   dec->mode = mode;
   dec->dsd_bit_depth = carrier_bits;
   dec->use_multithreading = false;
-#if HAS_DISPATCH || defined(USE_OPENMP)
+#if defined(ENABLE_LIBDISPATCH) || defined(ENABLE_OPENMP)
   if (multithreaded && channels > 2) {
     dec->use_multithreading = true;
   }
@@ -498,7 +493,7 @@ static void process_channel(dsd_decoder_channel_state_t* state,
   state->fifo_pos = pos;
 }
 
-#if HAS_DISPATCH
+#if defined(ENABLE_LIBDISPATCH)
 typedef struct {
   dsd_decoder_t* decoder;
   audio_chunk_t* chunk;
@@ -527,12 +522,12 @@ bool dsd_decoder_process(dsd_decoder_t* decoder, audio_chunk_t* chunk) {
     return false;
 
   if (decoder->use_multithreading) {
-#if HAS_DISPATCH
+#if defined(ENABLE_LIBDISPATCH)
     dsd_decoder_dispatch_ctx_t dctx = {decoder, chunk, valid_frames};
     dispatch_queue_t queue =
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
     dispatch_apply_f(decoder->channels, queue, &dctx, dsd_decoder_worker);
-#elif defined(USE_OPENMP)
+#elif defined(ENABLE_OPENMP)
 #pragma omp parallel num_threads(decoder->channels)
     {
 #pragma omp for

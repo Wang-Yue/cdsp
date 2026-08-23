@@ -37,12 +37,12 @@ const char* pipeline_error_description(pipeline_error_t err) {
 #include "Mixer/mixer.h"
 #include "Processors/processor.h"
 
-#if defined(__APPLE__) || defined(USE_LIBDISPATCH)
+#if defined(ENABLE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
+#endif
 
-#define HAS_DISPATCH 1
-#else
-#define HAS_DISPATCH 0
+#if defined(ENABLE_OPENMP)
+#include <omp.h>
 #endif
 
 /// A filter chain applied to a single channel in parallel.
@@ -611,7 +611,7 @@ cleanup_fail:
   return NULL;
 }
 
-#if HAS_DISPATCH
+#if defined(ENABLE_LIBDISPATCH)
 typedef struct {
   audio_chunk_t* current_chunk;
   size_t valid_frames;
@@ -706,21 +706,21 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
     switch (step->type) {
       case EXEC_STEP_PARALLEL_FILTERS: {
         bool use_multithreading = false;
-#if HAS_DISPATCH || defined(USE_OPENMP)
+#if defined(ENABLE_LIBDISPATCH) || defined(ENABLE_OPENMP)
         if (pipeline->multithreaded && step->chains_count > 1) {
           use_multithreading = true;
         }
 #endif
 
         if (use_multithreading) {
-#if HAS_DISPATCH
+#if defined(ENABLE_LIBDISPATCH)
           dispatch_ctx_t dctx = {current_chunk, valid_frames, step->chains,
                                  pipeline->rate};
           dispatch_queue_t queue =
               dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
           dispatch_apply_f(step->chains_count, queue, &dctx,
                            parallel_filter_worker);
-#elif defined(USE_OPENMP)
+#elif defined(ENABLE_OPENMP)
 #pragma omp parallel num_threads(step->chains_count)
           {
 #pragma omp for

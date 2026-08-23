@@ -1,0 +1,10 @@
+{
+  "defaultWorkspaceType": "compilationDatabase",
+  "compilationDatabase": {
+    "searchPaths": [
+      "build",
+      "."
+    ]
+  },
+  "backgroundIndexing": false
+}

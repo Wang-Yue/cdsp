@@ -26,12 +26,12 @@
 #include "Audio/audio_chunk.h"
 #include "Config/engine_config_types.h"
 
-#if defined(__APPLE__) || defined(USE_LIBDISPATCH)
+#if defined(ENABLE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
+#endif
 
-#define HAS_DISPATCH 1
-#else
-#define HAS_DISPATCH 0
+#if defined(ENABLE_OPENMP)
+#include <omp.h>
 #endif
 
 #include "Audio/sample_conversion.h"
@@ -223,7 +223,7 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
   enc->dsd_bit_depth = dsd_bit_depth;
   enc->sample_rate = sample_rate;
   enc->use_multithreading = false;
-#if HAS_DISPATCH || defined(USE_OPENMP)
+#if defined(ENABLE_LIBDISPATCH) || defined(ENABLE_OPENMP)
   if (multithreaded && channels >= 2) {
     enc->use_multithreading = true;
   }
@@ -430,7 +430,7 @@ static void encode_dual_channels(dsd_encoder_channel_state_t* state0,
   state1->marker = marker1;
 }
 
-#if HAS_DISPATCH
+#if defined(ENABLE_LIBDISPATCH)
 typedef struct {
   dsd_encoder_t* encoder;
   audio_chunk_t* chunk;
@@ -453,14 +453,14 @@ void dsd_encoder_encode(dsd_encoder_t* encoder, audio_chunk_t* chunk) {
   if (n == 0 || (int)audio_chunk_get_channels(chunk) != chs) return;
 
   if (encoder->use_multithreading) {
-#if HAS_DISPATCH
+#if defined(ENABLE_LIBDISPATCH)
     int total_tasks = chs;
     dsd_encoder_dispatch_ctx_t dctx = {encoder, chunk, n};
     dispatch_queue_t queue =
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
     dispatch_apply_f(total_tasks, queue, &dctx, dsd_encoder_worker);
     return;
-#elif defined(USE_OPENMP)
+#elif defined(ENABLE_OPENMP)
     int total_tasks = chs;
 #pragma omp parallel num_threads(total_tasks)
 

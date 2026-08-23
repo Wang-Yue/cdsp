@@ -1,33 +1,9 @@
 {
   "configurations": [
     {
-      "name": "Mac",
-      "includePath": [
-        "${workspaceFolder}/**",
-        "${workspaceFolder}/Filters",
-        "${workspaceFolder}/Audio",
-        "${workspaceFolder}/Config",
-        "${workspaceFolder}/FFT",
-        "${workspaceFolder}/Mixer",
-        "${workspaceFolder}/Resampler",
-        "${workspaceFolder}/Processors",
-        "${workspaceFolder}/DoP",
-        "${workspaceFolder}/Pipeline",
-        "${workspaceFolder}/Engine",
-        "${workspaceFolder}/Server",
-        "${workspaceFolder}/Backend",
-        "${workspaceFolder}/Logging",
-        "${workspaceFolder}/Utils"
-      ],
-      "defines": [
-        "ENABLE_COREAUDIO",
-        "ENABLE_ACCELERATE"
-      ],
-      "macFrameworkPath": [
-        "/System/Library/Frameworks",
-        "/Library/Frameworks"
-      ],
-      "compilerPath": "/usr/bin/clang",
+      "name": "CMake",
+      "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+      "configurationProvider": "ms-vscode.cmake-tools",
       "cStandard": "c11",
       "cppStandard": "c++17"
     }
