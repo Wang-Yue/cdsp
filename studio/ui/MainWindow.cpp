@@ -240,8 +240,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         }
     });
 
-    connect(ThemeManager::instance(), &ThemeManager::themeChanged, this, [this](AppTheme theme, bool isDark) {
-        Q_UNUSED(theme);
+    connect(ThemeManager::instance(), &ThemeManager::themeChanged, this, [this](bool isDark) {
         Q_UNUSED(isDark);
         refreshSidebarItems();
     });

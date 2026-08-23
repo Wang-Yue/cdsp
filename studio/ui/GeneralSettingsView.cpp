@@ -1,7 +1,5 @@
 #include "ui/GeneralSettingsView.h"
 
-#include "utils/ThemeManager.h"
-
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFontDatabase>
@@ -33,41 +31,6 @@ void GeneralSettingsView::setupUi() {
     mainLayout->setSpacing(16);
 
     const QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-
-    // Appearance Group
-    auto themeGroup = new QGroupBox("Appearance", this);
-    auto themeForm = new QFormLayout(themeGroup);
-    themeForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-
-    m_themeCombo = new QComboBox(themeGroup);
-    m_themeCombo->addItem("System Default", static_cast<int>(AppTheme::System));
-    m_themeCombo->addItem("Light", static_cast<int>(AppTheme::Light));
-    m_themeCombo->addItem("Dark", static_cast<int>(AppTheme::Dark));
-    m_themeCombo->setMinimumWidth(160);
-
-    themeForm->addRow("Theme:", m_themeCombo);
-
-    auto themeSubLbl = new QLabel(
-        "Select whether the app follows the system color scheme or uses a fixed light/dark theme.", themeGroup);
-    themeSubLbl->setWordWrap(true);
-    {
-        QFont font = themeSubLbl->font();
-        font.setPointSize(11);
-        themeSubLbl->setFont(font);
-        themeSubLbl->setObjectName("secondaryLabel");
-    }
-    themeForm->addRow(themeSubLbl);
-
-    connect(m_themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        if (m_settings) {
-            auto newTheme = static_cast<AppTheme>(m_themeCombo->itemData(idx).toInt());
-            m_settings->appTheme = newTheme;
-            m_settings->savePreferences();
-            ThemeManager::setTheme(newTheme);
-        }
-    });
-
-    mainLayout->addWidget(themeGroup);
 
     // Polling Rate Group
     auto pollGroup = new QGroupBox("Polling Rate", this);
@@ -175,15 +138,6 @@ void GeneralSettingsView::setupUi() {
 
 void GeneralSettingsView::refreshUi() {
     if (m_settings) {
-        if (m_themeCombo) {
-            m_themeCombo->blockSignals(true);
-            int idx = m_themeCombo->findData(static_cast<int>(m_settings->appTheme));
-            if (idx >= 0) {
-                m_themeCombo->setCurrentIndex(idx);
-            }
-            m_themeCombo->blockSignals(false);
-        }
-
         if (!m_silenceThresholdSlider->isSliderDown()) {
             m_silenceThresholdSlider->blockSignals(true);
             m_silenceThresholdSlider->setValue(m_settings->silenceThreshold);

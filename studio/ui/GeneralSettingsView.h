@@ -30,8 +30,6 @@ private:
     std::shared_ptr<AudioSettings> m_settings;
     std::shared_ptr<MonitoringController> m_monitoring;
 
-    QComboBox* m_themeCombo = nullptr;
-
     QSlider* m_pollingRateSlider = nullptr;
     QLabel* m_pollingRateLabel = nullptr;
 

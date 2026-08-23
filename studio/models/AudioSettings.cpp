@@ -183,7 +183,6 @@ void AudioSettings::loadPreferences() {
         workerThreads = 0;
     autoStartEngine = s.value("autoStartEngine", false).toBool();
     logLevel = s.value("logLevel", 2).toInt();
-    appTheme = static_cast<AppTheme>(s.value("appTheme", static_cast<int>(AppTheme::System)).toInt());
 
     showLevelMetersInDashboard = s.value("show_levels_in_dashboard", true).toBool();
     showSpectrumInDashboard = s.value("show_spectrum_in_dashboard", true).toBool();
@@ -232,7 +231,6 @@ void AudioSettings::savePreferences() {
     s.setValue("workerThreads", workerThreads);
     s.setValue("autoStartEngine", autoStartEngine);
     s.setValue("logLevel", logLevel);
-    s.setValue("appTheme", static_cast<int>(appTheme));
 
     s.setValue("show_levels_in_dashboard", showLevelMetersInDashboard);
     s.setValue("show_spectrum_in_dashboard", showSpectrumInDashboard);
