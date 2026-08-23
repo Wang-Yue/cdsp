@@ -430,6 +430,7 @@ if(BUILD_TESTING)
         ${CDSP_C_DEFINITIONS}
         CDSP_TEST
         CDSP_COMBINED_TEST_SUITE
+        CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
     )
     target_compile_options(test_runner PRIVATE ${CDSP_C_FLAGS})
     target_link_libraries(test_runner PRIVATE dsp_test)
@@ -492,7 +493,10 @@ if(BUILD_BENCHMARKS)
             ${CDSP_INCLUDE_DIRS}
             ${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests
         )
-        target_compile_definitions(${bench_name} PRIVATE ${CDSP_C_DEFINITIONS})
+        target_compile_definitions(${bench_name} PRIVATE
+            ${CDSP_C_DEFINITIONS}
+            CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
+        )
         target_compile_options(${bench_name} PRIVATE ${CDSP_C_FLAGS})
         target_link_libraries(${bench_name} PRIVATE dsp)
         set_target_properties(${bench_name} PROPERTIES

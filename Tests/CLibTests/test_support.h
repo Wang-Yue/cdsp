@@ -72,6 +72,57 @@ static inline int custom_snprintf(char* str, size_t size, const char* format,
 #define snprintf(buf, size, fmt, ...) \
   custom_snprintf(buf, size, fmt, ##__VA_ARGS__)
 
+static inline const char* test_find_harness_binary(const char* base_name) {
+  static char found_path[1024];
+  const char* ext = "";
+#ifdef _WIN32
+  if (!strstr(base_name, ".exe")) ext = ".exe";
+#endif
+
+  const char* dirs[] = {
+#ifdef CDSP_SOURCE_ROOT
+      CDSP_SOURCE_ROOT "/Tests/RustHarnesses/target/release/",
+#endif
+      "./Tests/RustHarnesses/target/release/",
+      "../Tests/RustHarnesses/target/release/",
+      "../../Tests/RustHarnesses/target/release/", NULL};
+
+  for (int i = 0; dirs[i]; i++) {
+    char test_path[1024];
+    custom_snprintf(test_path, sizeof(test_path), "%s%s%s", dirs[i], base_name,
+                    ext);
+#ifdef _WIN32
+    if (access(test_path, 0) == 0) {
+#else
+    if (access(test_path, X_OK) == 0) {
+#endif
+      strncpy(found_path, test_path, sizeof(found_path) - 1);
+      found_path[sizeof(found_path) - 1] = '\0';
+      return found_path;
+    }
+  }
+  return NULL;
+}
+
+static inline double test_run_rust_harness_bench(const char* base_name,
+                                                 const char* args) {
+  const char* bin = test_find_harness_binary(base_name);
+  if (!bin) return NAN;
+
+  char cmd[1024];
+  custom_snprintf(cmd, sizeof(cmd), "%s %s 2>/dev/null", bin, args);
+  FILE* fp = popen(cmd, "r");
+  if (!fp) return NAN;
+
+  char line[256];
+  double val = NAN;
+  if (fgets(line, sizeof(line), fp)) {
+    val = strtod(line, NULL);
+  }
+  pclose(fp);
+  return val;
+}
+
 typedef void (*test_func_t)(void);
 typedef struct test_entry {
   const char* name;

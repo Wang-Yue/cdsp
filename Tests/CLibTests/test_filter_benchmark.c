@@ -29,47 +29,16 @@
 #define SAMPLE_RATE 48000
 #define NBR_FRAMES (16 * CHUNK_SIZE)
 
-static double fetch_rust_filter_benchmark(const char* rust_name) {
-  const char* home = getenv("HOME");
-  if (!home) return NAN;
-  char cmd[1024];
-  snprintf(cmd, sizeof(cmd),
-           "cd %s/camilladsp && RAYON_NUM_THREADS=1 cargo bench --bench "
-           "filters -- %s --sample-size "
-           "10 --warm-up-time 0.1 --measurement-time 0.2 2>&1",
-           home, rust_name);
-  FILE* fp = popen(cmd, "r");
-  if (!fp) return NAN;
-  char line[1024];
-  double val_ns_per_frame = NAN;
-  while (fgets(line, sizeof(line), fp)) {
-    if (strstr(line, "time:")) {
-      for (char* p = line; *p; p++) {
-        if (*p == '[' || *p == ']') *p = ' ';
-      }
-      char name[128] = {0};
-      char time_lbl[32] = {0};
-      double val1 = 0, val2 = 0, val3 = 0;
-      char unit[32] = {0};
-      int count = sscanf(line, "%127s %31s %lf %31s %lf %31s %lf %31s", name,
-                         time_lbl, &val1, unit, &val2, unit, &val3, unit);
-      if (count >= 8 && strcmp(time_lbl, "time:") == 0) {
-        double val_ns = val2;
-        if (strcmp(unit, "µs") == 0 || strstr(unit, "u")) {
-          val_ns = val2 * 1000.0;
-        } else if (strcmp(unit, "ms") == 0) {
-          val_ns = val2 * 1000000.0;
-        }
-        val_ns_per_frame = val_ns / 1024.0;
-      }
-    }
-  }
-  pclose(fp);
-  return val_ns_per_frame;
+static double fetch_rust_filter_benchmark(const char* filter_type, size_t param,
+                                          size_t chunk_size, size_t iters) {
+  char args[256];
+  snprintf(args, sizeof(args), "bench %s %zu %zu %zu", filter_type, param,
+           chunk_size, iters);
+  return test_run_rust_harness_bench("cdsp_filter_compare", args);
 }
 
-static void run_filter_benchmark(const char* label, const char* rust_name,
-                                 void* filter,
+static void run_filter_benchmark(const char* label, const char* rust_type,
+                                 size_t rust_param, void* filter,
                                  void (*process_fn)(void*, double*, size_t)) {
   printf("Running %s_Benchmark...\n", label);
   fflush(stdout);
@@ -93,7 +62,8 @@ static void run_filter_benchmark(const char* label, const char* rust_name,
                       (double)(end_time.tv_nsec - start.tv_nsec);
   double c_ns_per_frame = elapsed_ns / (double)(CHUNK_SIZE * iters);
 
-  double cdsp_ns_per_frame = fetch_rust_filter_benchmark(rust_name);
+  double cdsp_ns_per_frame =
+      fetch_rust_filter_benchmark(rust_type, rust_param, CHUNK_SIZE, iters);
 
   printf("\n==================================================\n");
   printf("Filter Benchmark: %s\n", label);
@@ -136,7 +106,7 @@ TEST(Convolution_1024_Benchmark) {
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void* f =
       g_convolution_vtable.create("conv-1024", &cfg, 0, CHUNK_SIZE, NULL, NULL);
-  run_filter_benchmark("FftConv_1024", "Conv/FftConv/1024", f, process_conv);
+  run_filter_benchmark("FftConv_1024", "conv", 1024, f, process_conv);
   g_convolution_vtable.free(f);
   free(coeffs);
 }
@@ -148,7 +118,7 @@ TEST(Convolution_4096_Benchmark) {
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void* f =
       g_convolution_vtable.create("conv-4096", &cfg, 0, CHUNK_SIZE, NULL, NULL);
-  run_filter_benchmark("FftConv_4096", "Conv/FftConv/4096", f, process_conv);
+  run_filter_benchmark("FftConv_4096", "conv", 4096, f, process_conv);
   g_convolution_vtable.free(f);
   free(coeffs);
 }
@@ -160,7 +130,7 @@ TEST(Convolution_16384_Benchmark) {
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void* f = g_convolution_vtable.create("conv-16384", &cfg, 0, CHUNK_SIZE, NULL,
                                         NULL);
-  run_filter_benchmark("FftConv_16384", "Conv/FftConv/16384", f, process_conv);
+  run_filter_benchmark("FftConv_16384", "conv", 16384, f, process_conv);
   g_convolution_vtable.free(f);
   free(coeffs);
 }
@@ -175,7 +145,7 @@ TEST(Biquad_Benchmark) {
   filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
                          .parameters.biquad = params};
   void* f = g_biquad_vtable.create("biquad", &cfg, 44100, 0, NULL, NULL);
-  run_filter_benchmark("Biquad", "Biquad", f, process_biquad);
+  run_filter_benchmark("Biquad", "biquad", 44100, f, process_biquad);
   g_biquad_vtable.free(f);
 }
 
@@ -186,7 +156,7 @@ TEST(DiffEq_Benchmark) {
   filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
                          .parameters.diff_eq = params};
   void* f = g_diffeq_vtable.create("diffeq", &cfg, 0, 0, NULL, NULL);
-  run_filter_benchmark("DiffEq", "DiffEq", f, process_diffeq);
+  run_filter_benchmark("DiffEq", "diffeq", 44100, f, process_diffeq);
   g_diffeq_vtable.free(f);
 }
 

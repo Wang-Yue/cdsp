@@ -63,67 +63,12 @@ static double* build_conv_filter_coefficients(int length) {
   return values;
 }
 
-typedef struct {
-  double single_ms;
-  double multi_ms;
-} pipeline_rust_results_t;
-
-static pipeline_rust_results_t run_upstream_pipeline_benchmark(
-    const char* variant_single, const char* variant_multi) {
-  pipeline_rust_results_t results = {.single_ms = NAN, .multi_ms = NAN};
-  const char* home = getenv("HOME");
-  if (!home) return results;
-
-  char cmd[1024];
-  snprintf(cmd, sizeof(cmd),
-           "cd %s/camilladsp && cargo bench --bench pipeline -- --sample-size "
-           "10 --warm-up-time 0.1 --measurement-time 0.2 2>&1",
-           home);
-  FILE* fp = popen(cmd, "r");
-  if (!fp) return results;
-
-  char line[1024];
-  char last_variant[128] = {0};
-  while (fgets(line, sizeof(line), fp)) {
-    if (strstr(line, "complete_pipeline_chunk/variant/")) {
-      char* p = strrchr(line, '/');
-      if (p) {
-        char* end = p + 1;
-        while (*end && *end != '\n' && *end != '\r' && *end != ' ') end++;
-        size_t len = end - (p + 1);
-        if (len < sizeof(last_variant)) {
-          strncpy(last_variant, p + 1, len);
-          last_variant[len] = '\0';
-        }
-      }
-    } else if (strstr(line, "time:") && last_variant[0] != '\0') {
-      for (char* p = line; *p; p++) {
-        if (*p == '[' || *p == ']') *p = ' ';
-      }
-      char* time_ptr = strstr(line, "time:");
-      double val1 = 0, val2 = 0, val3 = 0;
-      char unit[32] = {0};
-      int count = sscanf(time_ptr, "time: %lf %31s %lf %31s %lf %31s", &val1,
-                         unit, &val2, unit, &val3, unit);
-      if (count >= 4) {
-        double val_ms = val2;
-        if (strcmp(unit, "µs") == 0 || strstr(unit, "u")) {
-          val_ms = val2 / 1000.0;
-        } else if (strcmp(unit, "ns") == 0) {
-          val_ms = val2 / 1000000.0;
-        }
-
-        if (strcmp(last_variant, variant_single) == 0) {
-          results.single_ms = val_ms;
-        } else if (strcmp(last_variant, variant_multi) == 0) {
-          results.multi_ms = val_ms;
-        }
-      }
-      last_variant[0] = '\0';
-    }
-  }
-  pclose(fp);
-  return results;
+static double fetch_rust_pipeline_benchmark(const char* variant, bool is_multi,
+                                            size_t chunk_size, size_t iters) {
+  char args[256];
+  snprintf(args, sizeof(args), "bench %s %s %zu %zu", variant,
+           is_multi ? "multi" : "single", chunk_size, iters);
+  return test_run_rust_harness_bench("cdsp_filter_compare", args);
 }
 
 static void print_comparison_table(const char* label, double rust_single,
@@ -298,10 +243,10 @@ TEST(Pipeline_Biquads_Benchmark) {
   double c_multi_ms = multi_ns / (double)ITERS / 1e6;
 
   // Load Rust results
-  pipeline_rust_results_t rust =
-      run_upstream_pipeline_benchmark("biquad_single", "biquad_multi");
-  double rust_single = rust.single_ms;
-  double rust_multi = rust.multi_ms;
+  double rust_single = fetch_rust_pipeline_benchmark("pipeline_biquad", false,
+                                                     CHUNK_SIZE, ITERS);
+  double rust_multi =
+      fetch_rust_pipeline_benchmark("pipeline_biquad", true, CHUNK_SIZE, ITERS);
 
   print_comparison_table(
       "Upstream Match: 4-in 2-out Biquad Pipeline (96 EQ evaluations)",
@@ -474,10 +419,10 @@ TEST(Pipeline_Biquads_Conv_Benchmark) {
   double c_multi_ms = multi_ns / 10.0 / 1e6;
 
   // Load Rust results
-  pipeline_rust_results_t rust = run_upstream_pipeline_benchmark(
-      "biquad_conv_single", "biquad_conv_multi");
-  double rust_single = rust.single_ms;
-  double rust_multi = rust.multi_ms;
+  double rust_single = fetch_rust_pipeline_benchmark("pipeline_biquad_conv",
+                                                     false, CHUNK_SIZE, 10);
+  double rust_multi = fetch_rust_pipeline_benchmark("pipeline_biquad_conv",
+                                                    true, CHUNK_SIZE, 10);
 
   print_comparison_table(
       "Upstream Match: 4-in 2-out Biquad + Convolution Pipeline (96 EQ + 12 "

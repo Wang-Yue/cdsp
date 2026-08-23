@@ -415,8 +415,6 @@ TEST(SlipResampler_Basic) {
   resampler_free(res);
 }
 
-#define RUBATO_HARNESS_NAME "cdsp_resampler_compare"
-
 static char g_rubato_bin_path[1024] = {0};
 static bool g_rubato_checked = false;
 static bool g_rubato_available = false;
@@ -425,41 +423,11 @@ static bool check_rubato_available(void) {
   if (g_rubato_checked) return g_rubato_available;
   g_rubato_checked = true;
 
-  const char* env_path = getenv("RUBATO_BIN");
-  if (env_path && strlen(env_path) > 0) {
-    FILE* f = fopen(env_path, "r");
-    if (f) {
-      fclose(f);
-      strncpy(g_rubato_bin_path, env_path, sizeof(g_rubato_bin_path) - 1);
-      g_rubato_available = true;
-      return true;
-    }
-  }
-
-  static char home_path[1024] = {0};
-  const char* home = getenv("HOME");
-  if (home) {
-    snprintf(home_path, sizeof(home_path),
-             "%s/cdsp/Tests/RustHarnesses/target/"
-             "release/" RUBATO_HARNESS_NAME,
-             home);
-  }
-
-  const char* candidates[] = {
-      "Tests/RustHarnesses/target/release/" RUBATO_HARNESS_NAME,
-      "./Tests/RustHarnesses/target/release/" RUBATO_HARNESS_NAME,
-      "../Tests/RustHarnesses/target/release/" RUBATO_HARNESS_NAME,
-      "../../Tests/RustHarnesses/target/release/" RUBATO_HARNESS_NAME,
-      home_path[0] ? home_path : NULL};
-  for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
-    if (!candidates[i]) continue;
-    FILE* f = fopen(candidates[i], "r");
-    if (f) {
-      fclose(f);
-      strncpy(g_rubato_bin_path, candidates[i], sizeof(g_rubato_bin_path) - 1);
-      g_rubato_available = true;
-      return true;
-    }
+  const char* found = test_find_harness_binary("cdsp_resampler_compare");
+  if (found) {
+    strncpy(g_rubato_bin_path, found, sizeof(g_rubato_bin_path) - 1);
+    g_rubato_available = true;
+    return true;
   }
   return false;
 }

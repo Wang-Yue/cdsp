@@ -79,61 +79,19 @@ static double* read_raw(const char* path, size_t* out_count) {
   return data;
 }
 
-#ifdef _WIN32
-#define HARNESS_NAME "cdsp_filter_compare.exe"
-#else
-#define HARNESS_NAME "cdsp_filter_compare"
-#endif
-
-static const char* get_harness_binary(void) {
-  const char* env = getenv("CDSP_FILTER_BIN");
-  if (env && access(env, X_OK) == 0) {
-    return env;
-  }
-  static char home_path[1024] = {0};
-  const char* home = getenv("HOME");
-  if (home) {
-    snprintf(home_path, sizeof(home_path),
-             "%s/CamillaDSP-Monitor/Tests/RustHarnesses/target/"
-             "release/" HARNESS_NAME,
-             home);
-  }
-  const char* paths[] = {
-      "../Tests/RustHarnesses/target/release/" HARNESS_NAME,
-      "Tests/RustHarnesses/target/release/" HARNESS_NAME,
-      "../../Tests/RustHarnesses/target/release/" HARNESS_NAME,
-      home_path[0] ? home_path : NULL};
-  for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
-    if (paths[i] && access(paths[i], X_OK) == 0) {
-      return paths[i];
-    }
-  }
-  return NULL;
-}
-
 static bool run_harness_arr(const char* argv[], size_t argc) {
-  const char* bin = get_harness_binary();
+  const char* bin = test_find_harness_binary("cdsp_filter_compare");
   if (!bin) {
     printf(
-        "⚠️ skipping: harness not found — build with `cd ~/cdsp_filter_compare "
-        "&& cargo build --release`\n");
+        "⚠️ skipping: harness not found — build with `cargo build --release "
+        "--manifest-path Tests/RustHarnesses/Cargo.toml`\n");
     return false;
   }
-  char bin_normalized[4096];
-  strncpy(bin_normalized, bin, sizeof(bin_normalized) - 1);
-  bin_normalized[sizeof(bin_normalized) - 1] = '\0';
-#ifdef _WIN32
-  for (int i = 0; bin_normalized[i]; i++) {
-    if (bin_normalized[i] == '/') {
-      bin_normalized[i] = '\\';
-    }
-  }
-#endif
   char cmd[4096];
 #ifdef _WIN32
-  snprintf(cmd, sizeof(cmd), "\"\"%s\"", bin_normalized);
+  snprintf(cmd, sizeof(cmd), "\"\"%s\"", bin);
 #else
-  snprintf(cmd, sizeof(cmd), "\"%s\"", bin_normalized);
+  snprintf(cmd, sizeof(cmd), "\"%s\"", bin);
 #endif
   for (size_t i = 0; i < argc; i++) {
     strncat(cmd, " \"", sizeof(cmd) - strlen(cmd) - 1);
