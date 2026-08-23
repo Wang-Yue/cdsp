@@ -239,11 +239,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             m_settings->savePreferences();
         }
     });
-
-    connect(ThemeManager::instance(), &ThemeManager::themeChanged, this, [this](bool isDark) {
-        Q_UNUSED(isDark);
-        refreshSidebarItems();
-    });
 }
 
 void MainWindow::setupUi() {

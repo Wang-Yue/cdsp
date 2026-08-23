@@ -25,20 +25,9 @@ void ThemeManager::init() {
 
     // Listen to system color scheme changes dynamically
     if (QGuiApplication::styleHints()) {
-        QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, [](Qt::ColorScheme scheme) {
-            emit instance() -> themeChanged(scheme == Qt::ColorScheme::Dark);
-        });
+        QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
+                         [](Qt::ColorScheme scheme) { QApplication::setStyle(QStyleFactory::create("Fusion")); });
     }
-}
-
-bool ThemeManager::isDarkMode() {
-    if (QGuiApplication::styleHints()) {
-        return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
-    }
-    if (qApp) {
-        return qApp->palette().color(QPalette::Window).lightness() < 128;
-    }
-    return false;
 }
 
 bool ThemeManager::isMiniPlayer(const QWidget* widget) {

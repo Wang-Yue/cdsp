@@ -13,7 +13,6 @@ public:
     static ThemeManager* instance();
 
     static void init();
-    static bool isDarkMode();
 
     // MiniPlayer helper & colors
     static bool isMiniPlayer(const QWidget* widget);
@@ -27,9 +26,6 @@ public:
     static QColor textColor(const QWidget* widget);
     static QColor subtextColor(const QWidget* widget);
     static QColor gridColor(const QWidget* widget);
-
-signals:
-    void themeChanged(bool isDark);
 
 private:
     explicit ThemeManager(QObject* parent = nullptr);
