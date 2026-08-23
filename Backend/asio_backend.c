@@ -12,6 +12,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 
+#include <ctype.h>
 #include <initguid.h>
 #include <math.h>
 #include <stdatomic.h>
@@ -53,10 +54,98 @@ static struct {
 /**
  * @brief Initialise COM on the calling thread as a Single-Threaded Apartment.
  * Matches driver.rs:com_init_this_thread.
+ *
+ * ASIO drivers are COM objects that expect an STA. Every thread that calls into
+ * a driver calls this first, and nothing ever calls CoUninitialize, so COM
+ * stays initialised for as long as the process runs.
+ *
+ * Safe to call more than once per thread; COM keeps a per-thread reference
+ * count.
  */
 void asio_com_init_this_thread(void) {
   HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   logger_trace(&g_logger, "CoInitializeEx returned 0x%08lX", (unsigned long)hr);
+}
+
+/**
+ * Drivers that ignore `setSampleRate` unless the instance is recreated.
+ *
+ * The Steinberg built-in (generic) driver returns success and then reports the
+ * new rate from `getSampleRate`, while the hardware keeps clocking at the old
+ * one. Recreating the instance is the only thing that makes it switch, see the
+ * workaround in `open_asio_device`.
+ *
+ * This is deliberately an allow list rather than something applied to every
+ * driver. The quirk appears to be rare: PortAudio's ASIO backend has no
+ * handling for it at all, and it has been exercised against far more drivers
+ * than we have. Recreating an instance is also not free of risk, ASIO4ALL
+ * deadlocks when asked to do it, so the reload is only done for drivers known
+ * to need it.
+ */
+static const char* const NEEDS_RATE_RELOAD[] = {"steinberg built-in"};
+static const size_t NEEDS_RATE_RELOAD_COUNT =
+    sizeof(NEEDS_RATE_RELOAD) / sizeof(NEEDS_RATE_RELOAD[0]);
+
+/**
+ * Drivers that tolerate only one instance per process.
+ *
+ * ASIO4ALL keeps the audio device open until `ASIOStop` is called or its DLL is
+ * unloaded, which its author has confirmed on the ASIO4ALL forum. Releasing an
+ * instance that was only initialised, never started, therefore leaves the
+ * device held, and creating the next instance either deadlocks in `ASIOInit` or
+ * takes the process down. `ASIOStop` before the release does not reliably help,
+ * it worked once in three attempts.
+ */
+static const char* const SINGLE_INSTANCE_DRIVERS[] = {"asio4all"};
+static const size_t SINGLE_INSTANCE_DRIVERS_COUNT =
+    sizeof(SINGLE_INSTANCE_DRIVERS) / sizeof(SINGLE_INSTANCE_DRIVERS[0]);
+
+/**
+ * Case-insensitive substring match of a device name against a list of driver
+ * names.
+ *
+ * Substring rather than equality because the same driver is named
+ * inconsistently: ASIO4ALL appears as `ASIO4ALL v2` in the registry key and
+ * from `getDriverName`, but as `Asio4all v2` in the description that device
+ * names are taken from.
+ */
+static bool matches_driver(const char* devname, const char* const* names,
+                           size_t count) {
+  if (!devname || !names || count == 0) return false;
+  size_t len = strlen(devname);
+  char* lower_devname = (char*)malloc(len + 1);
+  if (!lower_devname) return false;
+  for (size_t i = 0; i < len; i++) {
+    lower_devname[i] = (char)tolower((unsigned char)devname[i]);
+  }
+  lower_devname[len] = '\0';
+
+  bool matched = false;
+  for (size_t i = 0; i < count; i++) {
+    if (strstr(lower_devname, names[i]) != NULL) {
+      matched = true;
+      break;
+    }
+  }
+  free(lower_devname);
+  return matched;
+}
+
+/**
+ * @brief Whether this driver needs to be recreated for a sample rate change to
+ * take effect. Matches CamillaDSP driver.rs:needs_rate_reload.
+ */
+bool asio_needs_rate_reload(const char* devname) {
+  return matches_driver(devname, NEEDS_RATE_RELOAD, NEEDS_RATE_RELOAD_COUNT);
+}
+
+/**
+ * @brief Whether only one instance of this driver may be created per process.
+ * Matches CamillaDSP driver.rs:is_single_instance_driver.
+ */
+bool asio_is_single_instance_driver(const char* devname) {
+  return matches_driver(devname, SINGLE_INSTANCE_DRIVERS,
+                        SINGLE_INSTANCE_DRIVERS_COUNT);
 }
 
 /**
@@ -250,7 +339,6 @@ void asio_driver_teardown(const char* devname) {
                  "asio_driver_teardown: releasing the instance for '%s'",
                  devname);
     SAFE_RELEASE(to_release);
-    CoUninitialize();
   } else {
     logger_trace(
         &g_logger,
@@ -297,7 +385,6 @@ bool asio_driver_load_by_name(const char* name, IASIO** out_iasio,
     char err_msg[128] = {0};
     iasio->lpVtbl->getErrorMessage(iasio, err_msg);
     SAFE_RELEASE(iasio);
-    CoUninitialize();
     if (err) {
       char msg[256];
       snprintf(msg, sizeof(msg), "Failed to initialise ASIO driver '%s': %s",
@@ -1530,11 +1617,42 @@ static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
       return false;
     }
 
-    // Recreating the driver instance is what makes the new rate take effect.
-    // Matches CamillaDSP device.rs lines 866-880.
-    asio_driver_teardown(devname);
-    if (!asio_driver_load_by_name(devname, &iasio, err)) {
-      return false;
+    // Workaround for drivers that accept a new rate but do not act on it. The
+    // only one we have seen do this is the Steinberg built-in (generic) driver,
+    // version 1.0.9, the latest as of August 2026. It returns success from
+    // setSampleRate and then reports the new rate from getSampleRate, while the
+    // hardware keeps clocking at the old one. Only measuring the callback rate
+    // exposes it, the driver's own report does not. Asking it to go from 48 to
+    // 96 kHz gave a measured rate of 48 kHz, and 44.1 to 48 kHz stayed at 44.1
+    // kHz, while moving down from 96 kHz worked without any of this. It behaved
+    // the same with two different WASAPI devices under it, so this looks like
+    // the driver itself rather than the endpoint it wraps. A MOTU M series
+    // switches in both directions on its own, so this is not the norm.
+    //
+    // Recreating the instance is the only thing found that makes the rate
+    // stick, the requested value does survive into the next instance. Setting
+    // the rate twice, waiting a second, re-running ASIOInit and a start/stop
+    // cycle were all tried on the same instance and changed nothing. Disposing
+    // and recreating the buffers is not an option here, the rate is set right
+    // after ASIOInit and no buffers exist yet.
+    //
+    // Keep the teardown a real drop: releasing the COM object is what resets
+    // the driver, so leaking the handle instead would silently break this.
+    //
+    // Only done for drivers known to need it. The quirk looks rare, PortAudio
+    // has no handling for it at all, and recreating an instance carries its own
+    // risk.
+    if (asio_needs_rate_reload(devname)) {
+      asio_driver_teardown(devname);
+      if (!asio_driver_load_by_name(devname, &iasio, err)) {
+        return false;
+      }
+    } else {
+      logger_debug(
+          &g_logger,
+          "Not reinitialising '%s' to apply the sample rate, this driver is "
+          "not known to need it.",
+          devname);
     }
 
     if (is_dsd) {
@@ -1543,25 +1661,22 @@ static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
       iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &dsd_format);
     }
 
-    double after_reload = 0.0;
-    if (iasio->lpVtbl->getSampleRate(iasio, &after_reload) != 0 ||
-        fabs(after_reload - rate) > 0.5) {
+    double after_set = 0.0;
+    if (iasio->lpVtbl->getSampleRate(iasio, &after_set) != 0 ||
+        fabs(after_set - rate) > 0.5) {
       asio_driver_teardown(devname);
       if (err) {
         char msg[384];
         snprintf(msg, sizeof(msg),
-                 "ASIO device still reports %.1f Hz after being asked for %.0f "
-                 "Hz and reinitialised. The driver may require the rate to be "
-                 "set from its own control panel.",
-                 after_reload, rate);
+                 "ASIO device still reports %.1f Hz after being asked for %d "
+                 "Hz. The driver may require the rate to be set from its own "
+                 "control panel.",
+                 after_set, samplerate);
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
       }
       return false;
     }
-    logger_debug(&g_logger,
-                 "ASIO sample rate %.0f Hz applied after reinitialising the "
-                 "driver.",
-                 rate);
+    logger_debug(&g_logger, "ASIO sample rate %d Hz applied.", samplerate);
   }
 
   // Query channels AFTER the sample rate has been set
@@ -1731,11 +1846,6 @@ static void asio_playback_close(void* ctx) {
     free(playback->encode_buf);
     playback->encode_buf = NULL;
     playback->encode_buf_size = 0;
-  }
-
-  if (playback->com_initialized) {
-    CoUninitialize();
-    playback->com_initialized = false;
   }
 }
 
@@ -2123,11 +2233,6 @@ static void asio_capture_close(void* ctx) {
     free(capture->decode_buf);
     capture->decode_buf = NULL;
     capture->decode_buf_size = 0;
-  }
-
-  if (capture->com_initialized) {
-    CoUninitialize();
-    capture->com_initialized = false;
   }
 }
 

@@ -47,6 +47,25 @@ audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
     }
   }
 
+  // Refuse to probe drivers that tolerate only one instance per process.
+  // Probing loads an instance and releases it again, which leaves such a driver
+  // holding the device. Every later instance in this process then deadlocks or
+  // takes the process down, so a probe would break the device for the rest of
+  // the session. Probing ASIO4ALL twice was enough to kill the process
+  // outright.
+  if (asio_is_single_instance_driver(target_dev_name)) {
+    if (err) {
+      char msg[512];
+      snprintf(
+          msg, sizeof(msg),
+          "ASIO driver '%s' cannot be probed, it tolerates only one instance "
+          "per process.",
+          target_dev_name);
+      device_error_init(err, DEVICE_ERROR_OTHER, msg);
+    }
+    return NULL;
+  }
+
   // Refuse to probe if an in-process ASIO driver is already loaded for this
   // device (live stream). Matches CamillaDSP device.rs lines 990-997.
   if (asio_driver_is_loaded(target_dev_name)) {

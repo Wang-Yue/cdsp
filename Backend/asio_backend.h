@@ -70,6 +70,18 @@ bool asio_driver_is_loaded(const char* devname);
 IASIO* asio_driver_lookup(const char* devname);
 
 /**
+ * @brief Whether this driver needs to be recreated for a sample rate change to
+ * take effect. Matches CamillaDSP driver.rs:needs_rate_reload.
+ */
+bool asio_needs_rate_reload(const char* devname);
+
+/**
+ * @brief Whether only one instance of this driver may be created per process.
+ * Matches CamillaDSP driver.rs:is_single_instance_driver.
+ */
+bool asio_is_single_instance_driver(const char* devname);
+
+/**
  * @brief Returns the human-readable sample type name for an ASIO sample type
  * ID. Matches CamillaDSP utils.rs:asio_sample_type_name.
  */
