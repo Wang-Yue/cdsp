@@ -28,6 +28,7 @@ void ThemeManager::init() {
         QString secondaryColor = s_isDarkActive ? "#a0a0a5" : "#6c6c70";
         qApp->setStyleSheet(QString("QScrollArea { background: transparent; } "
                                     "QScrollArea > QWidget > QWidget { background: transparent; } "
+                                    "QTreeWidget#SidebarTree { background-color: palette(window); border: none; }"
                                     "QLabel#secondaryLabel { color: %1; }")
                                 .arg(secondaryColor));
     }
@@ -111,6 +112,7 @@ void ThemeManager::applyTheme(bool dark) {
         QString secondaryColor = dark ? "#a0a0a5" : "#6c6c70";
         qApp->setStyleSheet(QString("QScrollArea { background: transparent; } "
                                     "QScrollArea > QWidget > QWidget { background: transparent; } "
+                                    "QTreeWidget#SidebarTree { background-color: palette(window); border: none; }"
                                     "QLabel#secondaryLabel { color: %1; }")
                                 .arg(secondaryColor));
     }
@@ -123,7 +125,7 @@ void ThemeManager::applyTheme(bool dark) {
 
 QPalette ThemeManager::createDarkPalette() {
     QPalette p;
-    const QColor windowColor(32, 32, 34);
+    const QColor windowColor(35, 35, 45);
     const QColor baseColor(24, 24, 26);
     const QColor altBaseColor(38, 38, 40);
     const QColor textColor(240, 240, 240);
