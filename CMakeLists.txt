@@ -6,10 +6,11 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Symlink compile_commands.json to source root for seamless LSP support (clangd / VS Code)
-if(CMAKE_EXPORT_COMPILE_COMMANDS)
+if(CMAKE_EXPORT_COMPILE_COMMANDS AND NOT CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     file(CREATE_LINK
         "${CMAKE_BINARY_DIR}/compile_commands.json"
         "${CMAKE_CURRENT_SOURCE_DIR}/compile_commands.json"
+        RESULT _compile_commands_link_result
         SYMBOLIC
         COPY_ON_ERROR
     )
