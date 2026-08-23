@@ -58,7 +58,7 @@ foreach(TEST_NAME IN LISTS TEST_LIST)
     endif()
 
     string(APPEND CTEST_CONTENT "add_test(\"${TEST_NAME}\" \"${TEST_EXECUTABLE}\" \"--run\" \"${TEST_NAME}\")\n")
-    string(APPEND CTEST_CONTENT "set_tests_properties(\"${TEST_NAME}\" PROPERTIES LABELS \"${TEST_LABEL}\" TIMEOUT 30 ENVIRONMENT \"TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/Tools/tsan_suppressions.txt:second_deadlock_stack=1;LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/Tools/lsan_suppressions.txt\")\n\n")
+    string(APPEND CTEST_CONTENT "set_tests_properties(\"${TEST_NAME}\" PROPERTIES LABELS \"${TEST_LABEL}\" TIMEOUT 30 ENVIRONMENT \"TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_LIST_DIR}/tsan_suppressions.txt:second_deadlock_stack=1;LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_LIST_DIR}/lsan_suppressions.txt\")\n\n")
 endforeach()
 
 # Write atomically to CTest file

@@ -97,7 +97,13 @@ static void* bootstrap_malloc(size_t size) {
   bootstrap_offset += aligned_size;
   return ptr;
 }
-__attribute__((no_sanitize("cfi"))) static void init_real_allocators(void) {
+#if defined(__clang__)
+#define CDSP_NO_SANITIZE_CFI __attribute__((no_sanitize("cfi")))
+#else
+#define CDSP_NO_SANITIZE_CFI
+#endif
+
+CDSP_NO_SANITIZE_CFI static void init_real_allocators(void) {
   if (real_malloc) return;
   if (in_bootstrap) return;
   in_bootstrap = true;
@@ -113,7 +119,7 @@ __attribute__((no_sanitize("cfi"))) static void init_real_allocators(void) {
   }
 }
 
-__attribute__((no_sanitize("cfi"))) void* malloc(size_t size) {
+CDSP_NO_SANITIZE_CFI void* malloc(size_t size) {
   if (!real_malloc) {
     init_real_allocators();
     if (!real_malloc) return bootstrap_malloc(size);
@@ -127,7 +133,7 @@ __attribute__((no_sanitize("cfi"))) void* malloc(size_t size) {
   return ptr;
 }
 
-__attribute__((no_sanitize("cfi"))) void* calloc(size_t num, size_t size) {
+CDSP_NO_SANITIZE_CFI void* calloc(size_t num, size_t size) {
   size_t total = num * size;
   if (!real_calloc) {
     init_real_allocators();
@@ -146,7 +152,7 @@ __attribute__((no_sanitize("cfi"))) void* calloc(size_t num, size_t size) {
   return ptr;
 }
 
-__attribute__((no_sanitize("cfi"))) void* realloc(void* ptr, size_t size) {
+CDSP_NO_SANITIZE_CFI void* realloc(void* ptr, size_t size) {
   if (ptr >= (void*)bootstrap_buffer &&
       ptr < (void*)(bootstrap_buffer + sizeof(bootstrap_buffer))) {
     void* new_ptr = bootstrap_malloc(size);
@@ -167,7 +173,7 @@ __attribute__((no_sanitize("cfi"))) void* realloc(void* ptr, size_t size) {
   return new_ptr;
 }
 
-__attribute__((no_sanitize("cfi"))) void free(void* ptr) {
+CDSP_NO_SANITIZE_CFI void free(void* ptr) {
   if (!ptr) return;
   if (ptr >= (void*)bootstrap_buffer &&
       ptr < (void*)(bootstrap_buffer + sizeof(bootstrap_buffer))) {

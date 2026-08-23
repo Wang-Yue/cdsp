@@ -20,6 +20,7 @@ let package = Package(
         "Tools",
         "LICENSE",
         "README.md",
+        "run_sanitizers.sh",
         "cross_build.sh",
         "cross_build_windows.sh",
       ],
