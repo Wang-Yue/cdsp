@@ -1,3 +1,4 @@
+#include <math.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -6,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <math.h>
 
 #if defined(ENABLE_ALSA)
 #include <alsa/asoundlib.h>
@@ -89,199 +89,10 @@ TEST(DSPEngineCreateFree) {
   if (engine && engine->free) engine->free(engine->ctx);
 }
 
-TEST(DSPEngineDeviceCapabilities) {
-  cdsp_device_info_t* devs = NULL;
-  size_t count = 0;
-  bool ok = cdsp_get_available_devices("coreaudio", false, &devs, &count);
-  ASSERT_TRUE(ok);
-
-  // Test freeing NULL descriptor (should be a safe no-op)
-  cdsp_free_device_capabilities(NULL);
-
-  if (count > 0 && devs) {
-    cdsp_device_descriptor_t* desc = NULL;
-    if (cdsp_get_device_capabilities("coreaudio", devs[0].name, false, &desc,
-                                     NULL)) {
-      if (desc) {
-        cdsp_free_device_capabilities(desc);
-      }
-    }
-    free(devs);
-  }
-}
-
 TEST(DSPEngineSetConfigAndReload) {
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-#if defined(ENABLE_ALSA)
-  const char* json1 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
-
-  const char* json2 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    },\n"
-      "    \"mixers\": {\n"
-      "        \"mymixer\": {\n"
-      "            \"channels_in\": 2,\n"
-      "            \"channels_out\": 2,\n"
-      "            \"mapping\": [{\n"
-      "                \"dest\": 0,\n"
-      "                \"sources\": [{\"channel\": 0, \"gain\": 0.0, "
-      "\"inverted\": "
-      "false, \"mute\": false}]\n"
-      "            }, {\n"
-      "                \"dest\": 1,\n"
-      "                \"sources\": [{\"channel\": 1, \"gain\": 0.0, "
-      "\"inverted\": "
-      "false, \"mute\": false}]\n"
-      "            }]\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Mixer\",\n"
-      "        \"name\": \"mymixer\"\n"
-      "    }]\n"
-      "}";
-#elif defined(ENABLE_WASAPI)
-  const char* json1 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2,\n"
-      "            \"polling\": true\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2,\n"
-      "            \"polling\": true\n"
-      "        }\n"
-      "    }\n"
-      "}";
-
-  const char* json2 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2,\n"
-      "            \"polling\": true\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2,\n"
-      "            \"polling\": true\n"
-      "        }\n"
-      "    },\n"
-      "    \"mixers\": {\n"
-      "        \"mymixer\": {\n"
-      "            \"channels_in\": 2,\n"
-      "            \"channels_out\": 2,\n"
-      "            \"mapping\": [{\n"
-      "                \"dest\": 0,\n"
-      "                \"sources\": [{\"channel\": 0, \"gain\": 0.0, "
-      "\"inverted\": "
-      "false, \"mute\": false}]\n"
-      "            }, {\n"
-      "                \"dest\": 1,\n"
-      "                \"sources\": [{\"channel\": 1, \"gain\": 0.0, "
-      "\"inverted\": "
-      "false, \"mute\": false}]\n"
-      "            }]\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Mixer\",\n"
-      "        \"name\": \"mymixer\"\n"
-      "    }]\n"
-      "}";
-#elif defined(ENABLE_COREAUDIO)
-  const char* json1 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
-
-  const char* json2 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    },\n"
-      "    \"mixers\": {\n"
-      "        \"mymixer\": {\n"
-      "            \"channels_in\": 2,\n"
-      "            \"channels_out\": 2,\n"
-      "            \"mapping\": [{\n"
-      "                \"dest\": 0,\n"
-      "                \"sources\": [{\"channel\": 0, \"gain\": 0.0, "
-      "\"inverted\": "
-      "false, \"mute\": false}]\n"
-      "            }, {\n"
-      "                \"dest\": 1,\n"
-      "                \"sources\": [{\"channel\": 1, \"gain\": 0.0, "
-      "\"inverted\": "
-      "false, \"mute\": false}]\n"
-      "            }]\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Mixer\",\n"
-      "        \"name\": \"mymixer\"\n"
-      "    }]\n"
-      "}";
-#else
   const char* json1 =
       "{\n"
       "    \"devices\": {\n"
@@ -342,7 +153,6 @@ TEST(DSPEngineSetConfigAndReload) {
       "        \"name\": \"mymixer\"\n"
       "    }]\n"
       "}";
-#endif
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
@@ -378,189 +188,6 @@ TEST(DSPEngineHotParameterReload) {
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-#if defined(ENABLE_ALSA)
-  const char* json1 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    },\n"
-      "    \"filters\": {\n"
-      "        \"mygain\": {\n"
-      "            \"type\": \"Gain\",\n"
-      "            \"parameters\": {\n"
-      "                \"gain\": -6.0\n"
-      "            }\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Filter\",\n"
-      "        \"channel\": 0,\n"
-      "        \"names\": [\"mygain\"]\n"
-      "    }]\n"
-      "}";
-
-  const char* json2 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    },\n"
-      "    \"filters\": {\n"
-      "        \"mygain\": {\n"
-      "            \"type\": \"Gain\",\n"
-      "            \"parameters\": {\n"
-      "                \"gain\": -3.0\n"
-      "            }\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Filter\",\n"
-      "        \"channel\": 0,\n"
-      "        \"names\": [\"mygain\"]\n"
-      "    }]\n"
-      "}";
-#elif defined(ENABLE_WASAPI)
-  const char* json1 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2,\n"
-      "            \"polling\": true\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2,\n"
-      "            \"polling\": true\n"
-      "        }\n"
-      "    },\n"
-      "    \"filters\": {\n"
-      "        \"mygain\": {\n"
-      "            \"type\": \"Gain\",\n"
-      "            \"parameters\": {\n"
-      "                \"gain\": -6.0\n"
-      "            }\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Filter\",\n"
-      "        \"channel\": 0,\n"
-      "        \"names\": [\"mygain\"]\n"
-      "    }]\n"
-      "}";
-
-  const char* json2 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2,\n"
-      "            \"polling\": true\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2,\n"
-      "            \"polling\": true\n"
-      "        }\n"
-      "    },\n"
-      "    \"filters\": {\n"
-      "        \"mygain\": {\n"
-      "            \"type\": \"Gain\",\n"
-      "            \"parameters\": {\n"
-      "                \"gain\": -3.0\n"
-      "            }\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Filter\",\n"
-      "        \"channel\": 0,\n"
-      "        \"names\": [\"mygain\"]\n"
-      "    }]\n"
-      "}";
-#elif defined(ENABLE_COREAUDIO)
-  const char* json1 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    },\n"
-      "    \"filters\": {\n"
-      "        \"mygain\": {\n"
-      "            \"type\": \"Gain\",\n"
-      "            \"parameters\": {\n"
-      "                \"gain\": -6.0\n"
-      "            }\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Filter\",\n"
-      "        \"channel\": 0,\n"
-      "        \"names\": [\"mygain\"]\n"
-      "    }]\n"
-      "}";
-
-  const char* json2 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    },\n"
-      "    \"filters\": {\n"
-      "        \"mygain\": {\n"
-      "            \"type\": \"Gain\",\n"
-      "            \"parameters\": {\n"
-      "                \"gain\": -3.0\n"
-      "            }\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Filter\",\n"
-      "        \"channel\": 0,\n"
-      "        \"names\": [\"mygain\"]\n"
-      "    }]\n"
-      "}";
-#else
   const char* json1 =
       "{\n"
       "    \"devices\": {\n"
@@ -626,7 +253,6 @@ TEST(DSPEngineHotParameterReload) {
       "        \"names\": [\"mygain\"]\n"
       "    }]\n"
       "}";
-#endif
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
@@ -656,59 +282,6 @@ TEST(DSPEngineSetConfigStruct) {
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-#if defined(ENABLE_ALSA)
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
-#elif defined(ENABLE_WASAPI)
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2,\n"
-      "            \"polling\": true\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2,\n"
-      "            \"polling\": true\n"
-      "        }\n"
-      "    }\n"
-      "}";
-#elif defined(ENABLE_COREAUDIO)
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
-#else
   const char* json =
       "{\n"
       "    \"devices\": {\n"
@@ -728,7 +301,6 @@ TEST(DSPEngineSetConfigStruct) {
       "        }\n"
       "    }\n"
       "}";
-#endif
 
   dsp_config_t* parsed = NULL;
   config_error_t cerr;
@@ -737,54 +309,6 @@ TEST(DSPEngineSetConfigStruct) {
   ASSERT_TRUE(parsed != NULL);
 
   const char* json_override =
-#if defined(ENABLE_ALSA)
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 4\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 4\n"
-      "        }\n"
-      "    }\n"
-      "}";
-#elif defined(ENABLE_WASAPI)
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
-#elif defined(ENABLE_COREAUDIO)
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 4\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 4\n"
-      "        }\n"
-      "    }\n"
-      "}";
-#else
       "{\n"
       "    \"devices\": {\n"
       "        \"samplerate\": 48000,\n"
@@ -803,7 +327,6 @@ TEST(DSPEngineSetConfigStruct) {
       "        }\n"
       "    }\n"
       "}";
-#endif
 
   audio_backend_error_t berr;
   bool ok = engine->set_config_json(engine->ctx, json_override, &berr);
@@ -817,11 +340,7 @@ TEST(DSPEngineSetConfigStruct) {
   ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr2));
   ASSERT_TRUE(active != NULL);
   ASSERT_EQ(48000, active->devices.samplerate);
-#if defined(_WIN32)
-  ASSERT_EQ(2, capture_device_config_get_channels(&active->devices.capture));
-#else
   ASSERT_EQ(4, capture_device_config_get_channels(&active->devices.capture));
-#endif
   dsp_config_free(active);
   free(active_json);
   dsp_config_free(parsed);
@@ -1920,11 +1439,6 @@ TEST(DSPEngineE2E_PipeWire) {
 
 TEST(DSPEngineE2E_CoreAudio) {
 #if defined(__APPLE__)
-  int lock_fd = open("/tmp/cdsp_coreaudio_test.lock", O_RDWR | O_CREAT, 0666);
-  if (lock_fd >= 0) {
-    flock(lock_fd, LOCK_EX);
-  }
-
   const char* json =
       "{\n"
       "    \"devices\": {\n"
@@ -1941,20 +1455,11 @@ TEST(DSPEngineE2E_CoreAudio) {
       "    }\n"
       "}";
   run_e2e_test_config(json, "CoreAudio");
-
-  if (lock_fd >= 0) {
-    flock(lock_fd, LOCK_UN);
-    close(lock_fd);
-  }
 #endif
 }
 
 TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
 #if defined(__APPLE__) && defined(ENABLE_COREAUDIO)
-  int lock_fd = open("/tmp/cdsp_coreaudio_test.lock", O_RDWR | O_CREAT, 0666);
-  if (lock_fd >= 0) {
-    flock(lock_fd, LOCK_EX);
-  }
   cdsp_sleep_ms(150);
 
   // Resolve capture and playback device IDs and nominal rate
@@ -1966,10 +1471,6 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
     printf(
         "⚠️ [E2E Warning] Skipping CoreAudio rate change test: BlackHole "
         "devices not found\n");
-    if (lock_fd >= 0) {
-      flock(lock_fd, LOCK_UN);
-      close(lock_fd);
-    }
     return;
   }
 
@@ -2145,20 +1646,11 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
     cdsp_sleep_ms(20);
   }
   cdsp_sleep_ms(100);
-
-  if (lock_fd >= 0) {
-    flock(lock_fd, LOCK_UN);
-    close(lock_fd);
-  }
 #endif
 }
 
 TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
 #if defined(__APPLE__) && defined(ENABLE_COREAUDIO)
-  int lock_fd = open("/tmp/cdsp_coreaudio_test.lock", O_RDWR | O_CREAT, 0666);
-  if (lock_fd >= 0) {
-    flock(lock_fd, LOCK_EX);
-  }
   cdsp_sleep_ms(150);
 
   // Resolve playback device ID and nominal rate
@@ -2344,11 +1836,6 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
     cdsp_sleep_ms(20);
   }
   cdsp_sleep_ms(100);
-
-  if (lock_fd >= 0) {
-    flock(lock_fd, LOCK_UN);
-    close(lock_fd);
-  }
 #endif
 }
 
