@@ -387,7 +387,7 @@ set_target_properties(cdsp PROPERTIES
 # Testing: libdsp_test & CTest Test Infrastructure
 # -----------------------------------------------------------------------------
 if(BUILD_TESTING)
-    enable_testing()
+    include(CTest)
 
     # Optional Rust Harness Build (if cargo is installed)
     find_program(CARGO_EXECUTABLE cargo)
