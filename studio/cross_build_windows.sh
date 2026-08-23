@@ -23,13 +23,14 @@ QT_HOST_PATH="${QT_HOST_PATH:-/Users/wangyue/Qt6.8.2/6.8.2/macos}"
 
 # Options matching cdsp (ASIO, WASAPI, FFTW & LIBDISPATCH)
 ENABLE_FFTW="${ENABLE_FFTW:-ON}"
-USE_LIBDISPATCH="${USE_LIBDISPATCH:-ON}"
+ENABLE_LIBDISPATCH="${ENABLE_LIBDISPATCH:-ON}"
+ENABLE_NATIVE_ARCH="${ENABLE_NATIVE_ARCH:-OFF}"
 
 NPROC="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)}"
 export CMAKE_BUILD_PARALLEL_LEVEL="$NPROC"
 
 echo "=== Cross-compiling Monitor-Qt for Windows (x86_64 MinGW) on Mac ==="
-echo "Options:      WASAPI=1, ASIO=1, FFTW=${ENABLE_FFTW}, LIBDISPATCH=${USE_LIBDISPATCH}"
+echo "Options:      WASAPI=ON, ASIO=ON, FFTW=${ENABLE_FFTW}, LIBDISPATCH=${ENABLE_LIBDISPATCH}"
 echo "Compiler:     ${CROSS_PREFIX}gcc / ${CROSS_PREFIX}g++"
 echo "Toolchain:    $TOOLCHAIN_FILE"
 echo "Build Dir:    $BUILD_DIR"
@@ -41,7 +42,8 @@ CMAKE_ARGS=(
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE"
     -DCMAKE_BUILD_TYPE=Release
     -DENABLE_FFTW="$ENABLE_FFTW"
-    -DUSE_LIBDISPATCH="$USE_LIBDISPATCH"
+    -DENABLE_LIBDISPATCH="$ENABLE_LIBDISPATCH"
+    -DENABLE_NATIVE_ARCH="$ENABLE_NATIVE_ARCH"
 )
 
 if [ -d "$WIN_QT_DIR" ]; then

@@ -20,15 +20,16 @@ if [ ! -f "$TOOLCHAIN_FILE" ]; then
 fi
 
 # Matching cdsp/cross_build.sh options:
-# ENABLE_ALSA=1, ENABLE_PIPEWIRE=1, ENABLE_FFTW=1, USE_LIBDISPATCH=1
+# ENABLE_ALSA=ON, ENABLE_PIPEWIRE=ON, ENABLE_FFTW=ON, ENABLE_LIBDISPATCH=ON, ENABLE_NATIVE_ARCH=OFF
 ENABLE_FFTW="${ENABLE_FFTW:-ON}"
-USE_LIBDISPATCH="${USE_LIBDISPATCH:-ON}"
+ENABLE_LIBDISPATCH="${ENABLE_LIBDISPATCH:-ON}"
+ENABLE_NATIVE_ARCH="${ENABLE_NATIVE_ARCH:-OFF}"
 
 NPROC="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)}"
 export CMAKE_BUILD_PARALLEL_LEVEL="$NPROC"
 
 echo "=== Cross-compiling Monitor-Qt for Raspberry Pi (aarch64) on Mac ==="
-echo "Matching cdsp options: ALSA=1, PIPEWIRE=1, FFTW=${ENABLE_FFTW}, LIBDISPATCH=${USE_LIBDISPATCH}"
+echo "Matching cdsp options: ALSA=ON, PIPEWIRE=ON, FFTW=${ENABLE_FFTW}, LIBDISPATCH=${ENABLE_LIBDISPATCH}"
 echo "Sysroot:   $SYSROOT"
 echo "Toolchain: $TOOLCHAIN_FILE"
 echo "Build Dir: $BUILD_DIR"
@@ -38,8 +39,10 @@ cmake -B "$BUILD_DIR" -S "$PROJECT_DIR" \
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
     -DCMAKE_BUILD_TYPE=Release \
     -DENABLE_FFTW="$ENABLE_FFTW" \
-    -DUSE_LIBDISPATCH="$USE_LIBDISPATCH"
+    -DENABLE_LIBDISPATCH="$ENABLE_LIBDISPATCH" \
+    -DENABLE_NATIVE_ARCH="$ENABLE_NATIVE_ARCH" \
+    "$@"
 
-cmake --build "$BUILD_DIR" --parallel "$NPROC" "$@"
+cmake --build "$BUILD_DIR" --parallel "$NPROC"
 
 echo "✅ Raspberry Pi cross-compilation complete: $BUILD_DIR/MonitorQt"
