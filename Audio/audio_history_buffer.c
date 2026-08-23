@@ -7,6 +7,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "Utils/cdsp_time.h"
+
 #if defined(ENABLE_ACCELERATE)
 #include <Accelerate/Accelerate.h>
 #endif
@@ -277,10 +279,13 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
   if (count > cap) return AUDIO_HISTORY_BUFFER_ERROR_OUT_OF_RANGE;
   size_t mask = cap - 1;
 
-  for (int retry = 0; retry < 10; retry++) {
+  for (int retry = 0; retry < 100; retry++) {
     uint64_t seq_before =
         atomic_load_explicit(&history->write_seq, memory_order_acquire);
-    if (seq_before & 1) continue;
+    if (seq_before & 1) {
+      cdsp_sleep_us(10);
+      continue;
+    }
 
     uint64_t total =
         atomic_load_explicit(&history->total_written, memory_order_acquire);
@@ -312,6 +317,7 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
       if (enough_data) *enough_data = true;
       return AUDIO_HISTORY_BUFFER_OK;
     }
+    cdsp_sleep_us(10);
   }
 
   return AUDIO_HISTORY_BUFFER_OK;

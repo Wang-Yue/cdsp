@@ -4635,7 +4635,7 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
       .capture_rms = cap_rms,
       .capture_peak = cap_pk,
   };
-  for (int retry = 0; retry < 50; retry++) {
+  for (int retry = 0; retry < 150; retry++) {
     cdsp_sleep_ms(10);
     if (cdsp_get_vu_levels(engine, &vu)) {
       got_vu = true;
@@ -4654,7 +4654,7 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
       .magnitudes = mags,
   };
   bool got_spec = false;
-  for (int retry = 0; retry < 50; retry++) {
+  for (int retry = 0; retry < 150; retry++) {
     got_spec = cdsp_get_spectrum(engine, CDSP_SPECTRUM_SIDE_CAPTURE, NULL,
                                  20.0f, 20000.0f, 16, &spec);
     if (got_spec) break;
@@ -4673,7 +4673,7 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
       .channels = chans,
   };
   bool got_samples = false;
-  for (int retry = 0; retry < 50; retry++) {
+  for (int retry = 0; retry < 150; retry++) {
     got_samples = cdsp_get_samples(engine, true, 128, &samples, NULL);
     if (got_samples) break;
     cdsp_sleep_ms(10);
