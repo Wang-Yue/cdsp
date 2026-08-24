@@ -47,9 +47,10 @@ void ConvolutionPresetDetailView::setupUi() {
     nameFont.setBold(true);
     m_nameEdit->setFont(nameFont);
     m_nameEdit->setPlaceholderText("Preset Name");
-    connect(m_nameEdit, &QLineEdit::textChanged, [this](const QString& text) {
-        if (m_preset.name != text.toStdString()) {
-            m_preset.name = text.toStdString();
+    connect(m_nameEdit, &QLineEdit::editingFinished, [this]() {
+        std::string newName = m_nameEdit->text().toStdString();
+        if (m_preset.name != newName) {
+            m_preset.name = newName;
             m_pipeline->updateConvPreset(m_preset);
         }
     });

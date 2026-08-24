@@ -78,11 +78,12 @@ void EQPresetDetailView::setupUi() {
     nameFont.setBold(true);
     m_nameEdit->setFont(nameFont);
     m_nameEdit->setPlaceholderText("Preset Name");
-    connect(m_nameEdit, &QLineEdit::textChanged, [this](const QString& text) {
+    connect(m_nameEdit, &QLineEdit::editingFinished, [this]() {
         if (m_isRefreshing)
             return;
-        if (m_preset.name != text.toStdString()) {
-            m_preset.name = text.toStdString();
+        std::string newName = m_nameEdit->text().toStdString();
+        if (m_preset.name != newName) {
+            m_preset.name = newName;
             if (m_pipeline) {
                 m_pipeline->updateEQPreset(m_preset);
             }
