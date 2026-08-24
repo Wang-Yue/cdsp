@@ -270,10 +270,58 @@ else()
             list(APPEND CDSP_PLATFORM_INCLUDES ${DISPATCH_INCLUDE_DIRS})
             list(APPEND CDSP_PLATFORM_DEPS ${DISPATCH_LIBRARIES})
         else()
-            list(APPEND CDSP_PLATFORM_INCLUDES "/usr/libexec/swift/lib/swift")
-            list(APPEND CDSP_PLATFORM_DEPS dispatch BlocksRuntime)
-            link_directories("/usr/libexec/swift/lib/swift/linux")
-            set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_RPATH}:/usr/libexec/swift/lib/swift/linux")
+            find_path(SWIFT_DISPATCH_INCLUDE_DIR
+                NAMES dispatch/dispatch.h
+                PATHS
+                    /usr/lib/swift
+                    /usr/lib/swift/linux
+                    /usr/lib/swift/linux/x86_64
+                    /usr/lib/swift/linux/aarch64
+                    /usr/libexec/swift/lib/swift
+                    /usr/libexec/swift/lib/swift/linux
+                    /usr/include
+            )
+            find_library(SWIFT_DISPATCH_LIB
+                NAMES dispatch libdispatch
+                PATHS
+                    /usr/lib/swift/linux
+                    /usr/lib/swift/linux/x86_64
+                    /usr/lib/swift/linux/aarch64
+                    /usr/libexec/swift/lib/swift/linux
+                    /usr/lib/x86_64-linux-gnu
+                    /usr/lib/aarch64-linux-gnu
+                    /usr/lib
+            )
+            find_library(SWIFT_BLOCKSRUNTIME_LIB
+                NAMES BlocksRuntime libBlocksRuntime
+                PATHS
+                    /usr/lib/swift/linux
+                    /usr/lib/swift/linux/x86_64
+                    /usr/lib/swift/linux/aarch64
+                    /usr/libexec/swift/lib/swift/linux
+                    /usr/lib/x86_64-linux-gnu
+                    /usr/lib/aarch64-linux-gnu
+                    /usr/lib
+            )
+
+            if(SWIFT_DISPATCH_INCLUDE_DIR)
+                list(APPEND CDSP_PLATFORM_INCLUDES ${SWIFT_DISPATCH_INCLUDE_DIR})
+            endif()
+
+            if(SWIFT_DISPATCH_LIB)
+                list(APPEND CDSP_PLATFORM_DEPS ${SWIFT_DISPATCH_LIB})
+                get_filename_component(SWIFT_DISPATCH_LIB_DIR "${SWIFT_DISPATCH_LIB}" DIRECTORY)
+                set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_RPATH}:${SWIFT_DISPATCH_LIB_DIR}")
+                set(CMAKE_BUILD_RPATH "${CMAKE_BUILD_RPATH}:${SWIFT_DISPATCH_LIB_DIR}")
+            else()
+                list(APPEND CDSP_PLATFORM_DEPS dispatch)
+            endif()
+
+            if(SWIFT_BLOCKSRUNTIME_LIB)
+                list(APPEND CDSP_PLATFORM_DEPS ${SWIFT_BLOCKSRUNTIME_LIB})
+            else()
+                list(APPEND CDSP_PLATFORM_DEPS BlocksRuntime)
+            endif()
         endif()
     elseif(ENABLE_OPENMP)
         find_package(OpenMP REQUIRED)
