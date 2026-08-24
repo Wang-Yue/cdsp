@@ -109,12 +109,8 @@ elseif(WIN32)
             COMMENT "Deploying Qt Windows DLLs alongside MonitorQt.exe..."
         )
     endif()
-else()
-    # Linux runtime library path for Swift libdispatch if enabled
-    if(ENABLE_LIBDISPATCH)
-        target_link_options(MonitorQt PRIVATE -Wl,-rpath,/usr/libexec/swift/lib/swift/linux)
-    endif()
 endif()
+
 
 # ==============================================================================
 # Code Formatting (clang-format)
