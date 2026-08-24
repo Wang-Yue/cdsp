@@ -264,7 +264,7 @@ else()
 
     if(ENABLE_LIBDISPATCH)
         if(PKG_CONFIG_FOUND)
-            pkg_check_modules(DISPATCH libdispatch)
+            pkg_check_modules(DISPATCH QUIET libdispatch)
         endif()
         if(DISPATCH_FOUND)
             list(APPEND CDSP_PLATFORM_INCLUDES ${DISPATCH_INCLUDE_DIRS})
