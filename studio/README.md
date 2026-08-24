@@ -1,4 +1,4 @@
-# CamillaDSP Monitor (Qt)
+# CDSP Monitor (Qt)
 
 <p align="center">
   <strong>A high-performance, cross-platform audio DSP monitoring and pipeline control interface.</strong>
@@ -96,11 +96,11 @@ Monitor-Qt automatically leverages optimal platform audio APIs and hardware SIMD
 
 ```bash
 # Install dependencies via Homebrew
-brew install cmake qt@6 fftw
+brew install cmake qt
 
 # Configure and build
-cmake -B build -S . -DCMAKE_PREFIX_PATH=$(brew --prefix qt@6)
-cmake --build build -j$(sysctl -n hw.ncpu)
+cmake -B build
+cmake --build build
 ```
 
 ### Linux (Ubuntu / Debian)
@@ -114,31 +114,15 @@ sudo apt-get update && sudo apt-get install -y \
     libfftw3-dev
 
 # Configure and build
-cmake -B build -S .
-cmake --build build -j$(nproc)
+cmake -B build
+cmake --build build
 ```
 
-### Linux (Arch Linux)
+### Windows
 
 ```bash
-# Install dependencies
-sudo pacman -S --needed base-devel cmake qt6-base qt6-multimedia alsa-lib pipewire dbus fftw
-
-# Configure and build
-cmake -B build -S .
-cmake --build build -j$(nproc)
-```
-
-### Windows (Cross-compiling via MinGW on macOS/Linux)
-
-```bash
-cmake -B build-windows -S . \
-    -DCMAKE_SYSTEM_NAME=Windows \
-    -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
-    -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
-    -DCMAKE_PREFIX_PATH=/path/to/Qt6-Win/mingw_64
-
-cmake --build build-windows -j$(nproc)
+cmake -B build
+cmake --build build
 ```
 
 ---
