@@ -39,7 +39,20 @@ if(NOT ALSA_PLUGIN_DIR)
     endif()
 endif()
 
+# Detect system ALSA conf.d directory for auto-discovery
+pkg_get_variable(ALSA_DATA_DIR alsa datadir)
+if(NOT ALSA_DATA_DIR)
+    set(ALSA_CONF_DIR "${CMAKE_INSTALL_FULL_DATADIR}/alsa/alsa.conf.d")
+else()
+    set(ALSA_CONF_DIR "${ALSA_DATA_DIR}/alsa/alsa.conf.d")
+endif()
+
 install(TARGETS asound_module_pcm_rate_notify
     LIBRARY DESTINATION ${ALSA_PLUGIN_DIR}
 )
+
+install(FILES 50-cdsp.conf
+    DESTINATION ${ALSA_CONF_DIR}
+)
+
 

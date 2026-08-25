@@ -48,14 +48,16 @@ card 0 [Loopback       ]: Loopback - Loopback
 
 ## Build & Installation
 
-### Option 1: System-Wide Installation (Recommended)
+### Option 1: System-Wide Installation (Recommended - Zero User Config Needed)
 ```bash
 cd Monitor-Qt/build
 sudo cmake --install plugins/alsa_rate_notify
-
-# Or copy manually to your architecture's ALSA plugins directory:
-sudo cp plugins/alsa_rate_notify/libasound_module_pcm_rate_notify.so $(pkg-config --variable=libdir alsa)/alsa-lib/
 ```
+When installed via `cmake --install`, CMake automatically installs:
+1. `libasound_module_pcm_rate_notify.so` to your distro's ALSA plugin directory (e.g. `/usr/lib/x86_64-linux-gnu/alsa-lib/` or `/usr/lib64/alsa-lib/`).
+2. `50-cdsp.conf` to `/usr/share/alsa/alsa.conf.d/50-cdsp.conf`.
+
+**Zero Configuration Required**: Once installed, `"Monitor-Qt / CamillaDSP Dynamic Rate Audio"` (`pcm.cdsp`) is automatically discovered by ALSA and immediately appears in device picker dropdowns across all applications (Audacious, VLC, mpv, etc.) without creating or editing `~/.asoundrc`.
 
 ### Option 2: User-Level Installation (No Root/Sudo Required)
 ```bash
@@ -64,32 +66,24 @@ cd Monitor-Qt
 cmake -B build
 cmake --build build
 
-# Copy to a user directory (e.g. ~/.local/lib/alsa-lib)
+# Copy to user directory
 mkdir -p ~/.local/lib/alsa-lib
 cp build/plugins/alsa_rate_notify/libasound_module_pcm_rate_notify.so ~/.local/lib/alsa-lib/
 ```
 
 ---
 
-## ALSA Configuration (`~/.asoundrc` or `/etc/asound.conf`)
+## ALSA Configuration (Optional Customization)
 
-### Standard Configuration (System Install)
-When installed to the system ALSA plugins directory, ALSA automatically detects the plugin on any architecture:
+If you installed system-wide (Option 1), `pcm.cdsp` works automatically out of the box. 
+
+If you want `cdsp` to be your system's global **`default`** audio sink, or if you did a user-level install (Option 2), add the following to `~/.asoundrc` or `/etc/asound.conf`:
 
 ```alsa
-# Rate notify wrapper over Loopback playback device (Device 0, Subdevice 0)
-pcm.cdsp_in {
-    type rate_notify
-    slave "hw:Loopback,0,0"
-    ctl_card "Loopback"
-    ctl_device 1
-    ctl_subdevice 0
-}
-
-# Set as default playback PCM for desktop applications
+# Set Monitor-Qt / cdsp as the global default playback PCM
 pcm.!default {
     type plug
-    slave.pcm "cdsp_in"
+    slave.pcm "cdsp"
 }
 
 # Default mixer control
