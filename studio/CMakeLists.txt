@@ -18,6 +18,12 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOGEN_PARALLEL "AUTO")
 
 # ==============================================================================
+# RPATH Configuration for Installed Binaries
+# ==============================================================================
+# Automatically include directories of all linked dependencies in install RPATH
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+# ==============================================================================
 # Dependencies
 # ==============================================================================
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent Multimedia)
