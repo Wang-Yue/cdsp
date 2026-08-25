@@ -8,7 +8,7 @@
             "name": "Debug MonitorQt",
             "type": "lldb-dap",
             "request": "launch",
-            "program": "${workspaceFolder}/build/MonitorQt.app/Contents/MacOS/MonitorQt",
+            "program": "${workspaceFolder}/build/MonitorQt",
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "Build MonitorQt",
             "stopOnEntry": false,

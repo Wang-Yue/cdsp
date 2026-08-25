@@ -132,6 +132,8 @@ cmake --build build
 ```text
 Monitor-Qt/
 ├── CMakeLists.txt              # CMake build configuration and platform dependencies
+├── plugins/
+│   └── alsa_rate_notify/       # ALSA PCM plugin for dynamic sample rate notification (Linux)
 ├── src/
 │   ├── main.cpp                # Application entrypoint & high-DPI initialization
 │   ├── config/                 # Biquad coefficients, DSP types, and configuration models
@@ -151,10 +153,10 @@ The codebase enforces consistent styling with `clang-format`:
 
 ```bash
 # Format all C/C++ files
-cmake --build build --target format
+cmake --build build --target format-qt
 
 # Check formatting compliance
-cmake --build build --target format-check
+cmake --build build --target format-check-qt
 ```
 
 ---

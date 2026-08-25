@@ -171,5 +171,15 @@ if(UNIX AND NOT APPLE)
             message(WARNING \"'setcap' tool not found. Real-time scheduling capability was not applied.\")
         endif()
     ")
+
+    # ALSA Rate Notify plugin for Linux / snd-aloop rate change detection
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(ALSA QUIET alsa)
+        if(ALSA_FOUND)
+            add_subdirectory(plugins/alsa_rate_notify)
+        endif()
+    endif()
 endif()
+
 
