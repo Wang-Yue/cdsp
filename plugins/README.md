@@ -139,6 +139,51 @@ In **Monitor-Qt** $\rightarrow$ **Device Settings** tab:
 
 ---
 
+## Optional: PipeWire / WirePlumber Loopback Configuration
+
+If your system uses **PipeWire** (standard on modern Linux desktop environments like KDE Plasma or GNOME) and you route system/desktop audio to the **Loopback** sink:
+
+### Why this is needed
+By default, PipeWire opens ALSA PCM sinks using planar (non-interleaved) access mode (`MMAP_NONINTERLEAVED`, format `S32P`). However, the Linux kernel's `snd-aloop` driver strictly requires matching interleaved modes on both ends of the loopback cable. When CamillaDSP attempts to capture using standard interleaved access (`MMAP_INTERLEAVED`), the kernel rejects the capture stream with:
+```text
+Capture error: ALSA function 'snd_pcm_start' failed with error 'I/O error (5)'
+```
+
+### Configuration
+Force WirePlumber to open the ALSA Loopback device with interleaved audio format (`S32LE`).
+
+Create `~/.config/wireplumber/wireplumber.conf.d/50-loopback.conf` (or `/etc/wireplumber/wireplumber.conf.d/50-loopback.conf` for system-wide):
+
+```spa-json
+monitor.alsa.rules = [
+  {
+    matches = [
+      {
+        node.name = "~alsa_output.*snd_aloop.*"
+      }
+    ]
+    actions = {
+      update-props = {
+        audio.format = "S32LE"
+      }
+    }
+  }
+]
+```
+
+Apply the changes by restarting WirePlumber:
+```bash
+systemctl --user restart wireplumber
+```
+
+You can verify the active access mode on the loopback playback endpoint:
+```bash
+cat /proc/asound/Loopback/pcm0p/sub0/hw_params
+# Should show: access: MMAP_INTERLEAVED
+```
+
+---
+
 ## Verification
 
 You can test rate switching by playing different sample rate files with `aplay` or any media player:
