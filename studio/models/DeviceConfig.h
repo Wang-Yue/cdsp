@@ -25,7 +25,7 @@ struct DeviceConfig {
     int channels = 2;
     int deviceChannels = 2;
     int sampleRate = 48000;
-    std::string format = "F32";
+    std::optional<std::string> format;
     bool exclusive = false;
     bool loopback = false;
     bool polling = false;

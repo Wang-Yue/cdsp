@@ -164,9 +164,9 @@ DeviceConfig DeviceConfig::enforced() const {
         }
 
         auto fmts = res.supportedFormats();
-        if (!fmts.empty()) {
-            if (std::find(fmts.begin(), fmts.end(), res.format) == fmts.end()) {
-                res.format = fmts[0];
+        if (res.format.has_value() && !res.format->empty() && *res.format != "Auto" && !fmts.empty()) {
+            if (std::find(fmts.begin(), fmts.end(), *res.format) == fmts.end()) {
+                res.format = std::nullopt;
             }
         }
     } else if (res.backend == AudioBackendType::WavFile) {
@@ -253,7 +253,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     case AudioBackendType::CoreAudio:
         cap.coreAudio.channels = channels;
         cap.coreAudio.device = deviceName();
-        cap.coreAudio.format = format;
+        cap.coreAudio.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         cap.coreAudio.bypassDoP = bypassDoP;
         cap.coreAudio.dopCutoffHz = dopCutoffHz;
         break;
@@ -262,7 +262,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     case AudioBackendType::WASAPI:
         cap.wasapi.channels = channels;
         cap.wasapi.device = deviceName();
-        cap.wasapi.format = format;
+        cap.wasapi.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         cap.wasapi.exclusive = exclusive;
         cap.wasapi.loopback = loopback;
         cap.wasapi.polling = polling;
@@ -274,7 +274,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     case AudioBackendType::ASIO:
         cap.asio.channels = channels;
         cap.asio.device = deviceName();
-        cap.asio.format = format;
+        cap.asio.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         cap.asio.bypassDoP = bypassDoP;
         cap.asio.dopCutoffHz = dopCutoffHz;
         break;
@@ -283,7 +283,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     case AudioBackendType::ALSA:
         cap.alsa.channels = channels;
         cap.alsa.device = deviceName();
-        cap.alsa.format = format;
+        cap.alsa.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         cap.alsa.stopOnInactive = stopOnInactive;
         cap.alsa.threaded = threaded;
         if (!linkVolumeControl.empty())
@@ -296,7 +296,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     case AudioBackendType::PipeWire:
         cap.pipeWire.channels = channels;
         cap.pipeWire.device = deviceName();
-        cap.pipeWire.format = format;
+        cap.pipeWire.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         if (!nodeName.empty())
             cap.pipeWire.nodeName = nodeName;
         if (!nodeDescription.empty())
@@ -337,7 +337,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
     case AudioBackendType::CoreAudio:
         pb.coreAudio.channels = channels;
         pb.coreAudio.device = deviceName();
-        pb.coreAudio.format = format;
+        pb.coreAudio.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         pb.coreAudio.exclusive = exclusive;
         pb.coreAudio.outputDoP = outputDoP;
         pb.coreAudio.dsdEncoderFilter = dsdEncoderFilter;
@@ -347,7 +347,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
     case AudioBackendType::WASAPI:
         pb.wasapi.channels = channels;
         pb.wasapi.device = deviceName();
-        pb.wasapi.format = format;
+        pb.wasapi.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         pb.wasapi.exclusive = exclusive;
         pb.wasapi.polling = polling;
         pb.wasapi.outputDoP = outputDoP;
@@ -358,7 +358,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
     case AudioBackendType::ASIO:
         pb.asio.channels = channels;
         pb.asio.device = deviceName();
-        pb.asio.format = format;
+        pb.asio.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         pb.asio.outputDoP = outputDoP;
         pb.asio.dsdEncoderFilter = dsdEncoderFilter;
         break;
@@ -367,7 +367,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
     case AudioBackendType::ALSA:
         pb.alsa.channels = channels;
         pb.alsa.device = deviceName();
-        pb.alsa.format = format;
+        pb.alsa.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         pb.alsa.threaded = threaded;
         pb.alsa.outputDoP = outputDoP;
         pb.alsa.dsdEncoderFilter = dsdEncoderFilter;
@@ -377,7 +377,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
     case AudioBackendType::PipeWire:
         pb.pipeWire.channels = channels;
         pb.pipeWire.device = deviceName();
-        pb.pipeWire.format = format;
+        pb.pipeWire.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         if (!nodeName.empty())
             pb.pipeWire.nodeName = nodeName;
         if (!nodeDescription.empty())
@@ -410,7 +410,8 @@ QJsonObject DeviceConfig::toJson() const {
     obj["channels"] = channels;
     obj["deviceChannels"] = deviceChannels;
     obj["sampleRate"] = sampleRate;
-    obj["format"] = QString::fromStdString(format);
+    if (format.has_value() && !format->empty() && *format != "Auto")
+        obj["format"] = QString::fromStdString(*format);
     obj["exclusive"] = exclusive;
     obj["loopback"] = loopback;
     obj["polling"] = polling;
@@ -455,8 +456,15 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
     }
     if (json.contains("sampleRate"))
         cfg.sampleRate = json["sampleRate"].toInt();
-    if (json.contains("format"))
-        cfg.format = json["format"].toString().toStdString();
+    if (json.contains("format") && !json["format"].isNull()) {
+        std::string fmtStr = json["format"].toString().toStdString();
+        if (!fmtStr.empty() && fmtStr != "Auto")
+            cfg.format = fmtStr;
+        else
+            cfg.format = std::nullopt;
+    } else {
+        cfg.format = std::nullopt;
+    }
     if (json.contains("exclusive"))
         cfg.exclusive = json["exclusive"].toBool();
     if (json.contains("loopback"))

@@ -1057,10 +1057,12 @@ void DevicePickerView::updateDoPCapability() {
 
     QString formatStr;
     if (m_pbFormatCombo && m_pbFormatCombo->currentIndex() >= 0) {
-        formatStr = m_pbFormatCombo->currentText();
+        formatStr = m_pbFormatCombo->currentData().toString();
+        if (formatStr.isEmpty())
+            formatStr = m_pbFormatCombo->currentText();
     }
-    if (formatStr.isEmpty() && m_devices) {
-        formatStr = QString::fromStdString(m_devices->playbackConfig.format);
+    if (formatStr.isEmpty() && m_devices && m_devices->playbackConfig.format.has_value()) {
+        formatStr = QString::fromStdString(m_devices->playbackConfig.format.value());
     }
     bool isDsdFormat = formatStr.contains("DSD", Qt::CaseInsensitive);
 
@@ -1353,15 +1355,26 @@ void DevicePickerView::refreshUi() {
             m_capFormatLabel->hide();
             m_capFormatCombo->blockSignals(true);
             m_capFormatCombo->clear();
+            m_capFormatCombo->addItem(tr("Auto (Default)"), QString(""));
             for (const auto& fmt : capFormats) {
-                m_capFormatCombo->addItem(QString::fromStdString(fmt));
+                m_capFormatCombo->addItem(QString::fromStdString(fmt), QString::fromStdString(fmt));
             }
-            m_capFormatCombo->setCurrentText(QString::fromStdString(m_devices->captureConfig.format));
+            if (m_devices->captureConfig.format.has_value() && !m_devices->captureConfig.format->empty() && *m_devices->captureConfig.format != "Auto") {
+                int idx = m_capFormatCombo->findData(QString::fromStdString(*m_devices->captureConfig.format));
+                if (idx >= 0)
+                    m_capFormatCombo->setCurrentIndex(idx);
+                else
+                    m_capFormatCombo->setCurrentIndex(0);
+            } else {
+                m_capFormatCombo->setCurrentIndex(0);
+            }
             m_capFormatCombo->blockSignals(false);
         } else {
             m_capFormatCombo->hide();
             m_capFormatLabel->show();
-            m_capFormatLabel->setText(QString::fromStdString(m_devices->captureConfig.format));
+            m_capFormatLabel->setText(m_devices->captureConfig.format.has_value() && !m_devices->captureConfig.format->empty() && *m_devices->captureConfig.format != "Auto"
+                ? QString::fromStdString(*m_devices->captureConfig.format)
+                : tr("Auto (Default)"));
         }
     }
 
@@ -1546,15 +1559,26 @@ void DevicePickerView::refreshUi() {
             m_pbFormatLabel->hide();
             m_pbFormatCombo->blockSignals(true);
             m_pbFormatCombo->clear();
+            m_pbFormatCombo->addItem(tr("Auto (Default)"), QString(""));
             for (const auto& fmt : pbFormats) {
-                m_pbFormatCombo->addItem(QString::fromStdString(fmt));
+                m_pbFormatCombo->addItem(QString::fromStdString(fmt), QString::fromStdString(fmt));
             }
-            m_pbFormatCombo->setCurrentText(QString::fromStdString(m_devices->playbackConfig.format));
+            if (m_devices->playbackConfig.format.has_value() && !m_devices->playbackConfig.format->empty() && *m_devices->playbackConfig.format != "Auto") {
+                int idx = m_pbFormatCombo->findData(QString::fromStdString(*m_devices->playbackConfig.format));
+                if (idx >= 0)
+                    m_pbFormatCombo->setCurrentIndex(idx);
+                else
+                    m_pbFormatCombo->setCurrentIndex(0);
+            } else {
+                m_pbFormatCombo->setCurrentIndex(0);
+            }
             m_pbFormatCombo->blockSignals(false);
         } else {
             m_pbFormatCombo->hide();
             m_pbFormatLabel->show();
-            m_pbFormatLabel->setText(QString::fromStdString(m_devices->playbackConfig.format));
+            m_pbFormatLabel->setText(m_devices->playbackConfig.format.has_value() && !m_devices->playbackConfig.format->empty() && *m_devices->playbackConfig.format != "Auto"
+                ? QString::fromStdString(*m_devices->playbackConfig.format)
+                : tr("Auto (Default)"));
         }
     }
 
@@ -1721,8 +1745,15 @@ void DevicePickerView::applySettings() {
             }
 
             auto pbFormats = pbCfg.supportedFormats();
-            if (!pbFormats.empty() && m_pbFormatCombo->isVisible()) {
-                pbCfg.format = m_pbFormatCombo->currentText().toStdString();
+            if (!pbFormats.empty() && m_pbFormatCombo->isVisible() && m_pbFormatCombo->currentIndex() >= 0) {
+                QString sel = m_pbFormatCombo->currentData().toString();
+                if (sel.isEmpty() || sel == "Auto") {
+                    pbCfg.format = std::nullopt;
+                } else {
+                    pbCfg.format = sel.toStdString();
+                }
+            } else {
+                pbCfg.format = std::nullopt;
             }
         }
 
@@ -1802,8 +1833,15 @@ void DevicePickerView::applySettings() {
             }
 
             auto capFormats = capCfg.supportedFormats();
-            if (!capFormats.empty() && m_capFormatCombo->isVisible()) {
-                capCfg.format = m_capFormatCombo->currentText().toStdString();
+            if (!capFormats.empty() && m_capFormatCombo->isVisible() && m_capFormatCombo->currentIndex() >= 0) {
+                QString sel = m_capFormatCombo->currentData().toString();
+                if (sel.isEmpty() || sel == "Auto") {
+                    capCfg.format = std::nullopt;
+                } else {
+                    capCfg.format = sel.toStdString();
+                }
+            } else {
+                capCfg.format = std::nullopt;
             }
         }
 
