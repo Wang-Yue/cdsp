@@ -934,7 +934,10 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     connect(m_pbFormatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, [this]() { applySettings(); });
+        QTimer::singleShot(0, [this]() {
+            applySettings();
+            updateDoPCapability();
+        });
     });
 
     m_pbFormatLabel = new QLabel(m_pbFormatRow);
@@ -1049,10 +1052,19 @@ void DevicePickerView::updateDoPCapability() {
     int currentRate = m_pbRateCombo->currentData().toInt();
     bool isCapable = (currentRate == 176400 || currentRate == 192000 || currentRate == 352800 ||
                       currentRate == 384000 || currentRate == 705600 || currentRate == 768000);
-    bool isRust = m_devices && m_devices->isRustEngine();
 
-    m_outputDoPCheck->setEnabled(isCapable && !isRust);
-    bool sdmEnabled = isCapable && m_outputDoPCheck->isChecked() && !isRust;
+    m_outputDoPCheck->setEnabled(isCapable);
+
+    QString formatStr;
+    if (m_pbFormatCombo && m_pbFormatCombo->currentIndex() >= 0) {
+        formatStr = m_pbFormatCombo->currentText();
+    }
+    if (formatStr.isEmpty() && m_devices) {
+        formatStr = QString::fromStdString(m_devices->playbackConfig.format);
+    }
+    bool isDsdFormat = formatStr.contains("DSD", Qt::CaseInsensitive);
+
+    bool sdmEnabled = (isCapable && m_outputDoPCheck->isChecked()) || isDsdFormat;
     m_sdmFilterCombo->setEnabled(sdmEnabled);
     if (m_pbCoreAudioForm) {
         QWidget* filterLabel = m_pbCoreAudioForm->labelForField(m_sdmFilterCombo);
@@ -1060,7 +1072,7 @@ void DevicePickerView::updateDoPCapability() {
             filterLabel->setEnabled(sdmEnabled);
         }
     }
-    m_pbDopHintLabel->setVisible(!isCapable && !isRust);
+    m_pbDopHintLabel->setVisible(!isCapable);
 }
 
 QWidget* DevicePickerView::createPbFileView(bool isWav) {
@@ -1354,7 +1366,7 @@ void DevicePickerView::refreshUi() {
     }
 
     // Capture DoP
-    bool capDopVisible = !m_devices->isRustEngine() && !isCapPw && isHardwareBackend(m_devices->captureConfig.backend);
+    bool capDopVisible = !isCapPw && isHardwareBackend(m_devices->captureConfig.backend);
     if (m_capCoreAudioForm) {
         m_capCoreAudioForm->setRowVisible(m_bypassDoPCheck, capDopVisible);
         m_capCoreAudioForm->setRowVisible(m_dopCutoffCombo, capDopVisible);
@@ -1553,7 +1565,7 @@ void DevicePickerView::refreshUi() {
 
     m_pbAlsaThreadedCheck->setChecked(m_devices->playbackConfig.threaded);
 
-    bool pbDopVisible = !m_devices->isRustEngine() && !isPbPw && isHardwareBackend(m_devices->playbackConfig.backend);
+    bool pbDopVisible = !isPbPw && isHardwareBackend(m_devices->playbackConfig.backend);
     m_outputDoPCheck->setChecked(m_devices->playbackConfig.outputDoP);
 
     int filterIdx = m_sdmFilterCombo->findData(static_cast<int>(m_devices->playbackConfig.dsdEncoderFilter));

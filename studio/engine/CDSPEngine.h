@@ -31,9 +31,6 @@ public:
     CDSPEngine();
     ~CDSPEngine();
 
-    bool isCEngine() const { return true; }
-    bool isRustEngine() const { return false; }
-
     // Disable copy
     CDSPEngine(const CDSPEngine&) = delete;
     CDSPEngine& operator=(const CDSPEngine&) = delete;

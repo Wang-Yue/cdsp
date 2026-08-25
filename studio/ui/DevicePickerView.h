@@ -29,12 +29,12 @@
  * │ Backend     │ Mode     │ Device List  │ Dev Chans  │ Stream Chs │ Rate   │ Format       │ Exclusive │ Polling │ ALSA Link │ PipeWire │ DoP & SDM │
  * │             │          │ & Warnings   │ (Hardware) │            │        │ (Bit-depth)  │ (Hog)     │ (WASAPI)│ Vol / Mute│ Nodes    │ Filters   │
  * ├─────────────┼──────────┼──────────────┼────────────┼────────────┼────────┼──────────────┼───────────┼─────────┼───────────┼──────────┼───────────┤
- * │ CoreAudio   │ Capture  │     YES      │    YES     │    YES     │  YES   │     YES      │    NO     │   NO    │    NO     │    NO    │  YES (C)  │
- * │ CoreAudio   │ Playback │     YES      │    YES     │    YES     │  YES   │     YES      │    YES    │   NO    │    NO     │    NO    │  YES (C)  │
- * │ WASAPI      │ Capture  │     YES      │    YES     │    YES     │  YES   │     YES      │    YES    │   YES   │    NO     │    NO    │  YES (C)  │
- * │ WASAPI      │ Playback │     YES      │    YES     │    YES     │  YES   │     YES      │    YES    │   YES   │    NO     │    NO    │  YES (C)  │
- * │ ASIO        │ Cap / Pb │     YES      │    YES     │    YES     │  YES   │     YES      │    NO     │   NO    │    NO     │    NO    │  YES (C)  │
- * │ ALSA        │ Cap / Pb │     YES      │    YES     │    YES     │  YES   │     YES      │    NO     │   NO    │    YES    │    NO    │  YES (C)  │
+ * │ CoreAudio   │ Capture  │     YES      │    YES     │    YES     │  YES   │     YES      │    NO     │   NO    │    NO     │    NO    │    YES    │
+ * │ CoreAudio   │ Playback │     YES      │    YES     │    YES     │  YES   │     YES      │    YES    │   NO    │    NO     │    NO    │    YES    │
+ * │ WASAPI      │ Capture  │     YES      │    YES     │    YES     │  YES   │     YES      │    YES    │   YES   │    NO     │    NO    │    YES    │
+ * │ WASAPI      │ Playback │     YES      │    YES     │    YES     │  YES   │     YES      │    YES    │   YES   │    NO     │    NO    │    YES    │
+ * │ ASIO        │ Cap / Pb │     YES      │    YES     │    YES     │  YES   │     YES      │    NO     │   NO    │    NO     │    NO    │    YES    │
+ * │ ALSA        │ Cap / Pb │     YES      │    YES     │    YES     │  YES   │     YES      │    NO     │   NO    │    YES    │    NO    │    YES    │
  * │ PipeWire    │ Cap / Pb │      NO      │     NO     │    YES     │  YES   │      NO      │    NO     │   NO    │    NO     │   YES    │    NO     │
  * │ RawFile     │ Cap / Pb │      NO      │     NO     │    YES     │   NO   │     YES      │    NO     │   NO    │    NO     │    NO    │    NO     │
  * │ WavFile     │ Cap / Pb │      NO      │     NO     │NO(Cap)/Y(Pb│   NO   │ NO(Cap)/Y(Pb)│    NO     │   NO    │    NO     │    NO    │    NO     │
