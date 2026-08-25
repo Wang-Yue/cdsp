@@ -3,12 +3,13 @@
 ## Overview
 This ALSA PCM I/O plugin (`ioplug`) bridges playback applications (e.g., Audacious, `mpv`, Spotify, web browsers) and **CamillaDSP / Monitor-Qt** over an ALSA loopback device (`snd-aloop`).
 
-When an application switches sample rates (e.g., between 44.1 kHz, 48 kHz, 96 kHz, 192 kHz):
+When an application switches sample rates (e.g., between 44.1 kHz, 48 kHz, 96 kHz, 192 kHz) or sample formats (`FLOAT_LE`, `S16_LE`, `S24_LE`, `S32_LE`):
 1. The plugin intercepts the `snd_pcm_hw_params()` request before configuring the slave device.
-2. It automatically writes the new sample rate to the `"Capture Rate"` ALSA control on the `Loopback` card (device 1), creating the control if it doesn't already exist.
-3. **`cdsp`'s ALSA capture backend** (`alsa_capture.c`) detects the `SND_CTL_EVENT_ELEM` control event and halts with `CDSP_STOP_REASON_CAPTURE_FORMAT_CHANGE`.
-4. **`Monitor-Qt`** (`MonitoringController.cpp`) catches the format change event and automatically restarts the DSP engine at the new native sample rate.
-5. The plugin completes opening the loopback playback side (`hw:Loopback,0,0`) at the matching sample rate, ensuring bit-perfect playback without resampling.
+2. It automatically writes the new sample rate to the `"Capture Rate"` ALSA control on the `Loopback` card (device 1), triggering an immediate format/rate change event.
+3. It configures the loopback playback endpoint (`hw:Loopback,0,0`) with the player's exact format and rate first, constraining the ALSA loopback cable so that when `cdsp` restarts with `format: null` (auto-detect), `cdsp` automatically and natively matches the player's format.
+4. **`cdsp`'s ALSA capture backend** (`alsa_capture.c`) detects the `SND_CTL_EVENT_ELEM` control event and halts with `CDSP_STOP_REASON_CAPTURE_FORMAT_CHANGE`.
+5. **`Monitor-Qt`** (`MonitoringController.cpp`) catches the format change event and restarts the DSP engine at the new native sample rate and format.
+6. The plugin performs a synchronized handshake with the active capture peer, ensuring bit-perfect playback from Frame 0 without initial audio drops or resampling.
 
 ---
 
@@ -55,7 +56,7 @@ sudo cmake --install plugins/alsa_rate_notify
 ```
 When installed via `cmake --install`, CMake automatically installs:
 1. `libasound_module_pcm_rate_notify.so` to your distro's ALSA plugin directory (e.g. `/usr/lib/x86_64-linux-gnu/alsa-lib/` or `/usr/lib64/alsa-lib/`).
-2. `50-cdsp.conf` to `/usr/share/alsa/alsa.conf.d/50-cdsp.conf`.
+2. `50-cdsp.conf` to `/etc/alsa/conf.d/50-cdsp.conf`.
 
 **Zero Configuration Required**: Once installed, `"Monitor-Qt / CamillaDSP Dynamic Rate Audio"` (`pcm.cdsp`) is automatically discovered by ALSA and immediately appears in device picker dropdowns across all applications (Audacious, VLC, mpv, etc.) without creating or editing `~/.asoundrc`.
 
