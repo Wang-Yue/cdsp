@@ -219,6 +219,50 @@ static int set_slave_hw_params(snd_pcm_t *slave, snd_pcm_hw_params_t *params) {
     return snd_pcm_hw_params(slave, sp);
 }
 
+static bool is_capture_active_at_rate(const char *card, long device, unsigned int target_rate) {
+    if (!card) return true;
+    char ctl_name[64];
+    snprintf(ctl_name, sizeof(ctl_name), "hw:%s", card);
+    snd_ctl_t *ctl = NULL;
+    if (snd_ctl_open(&ctl, ctl_name, 0) < 0) return true;
+
+    snd_ctl_elem_id_t *id_active, *id_rate;
+    snd_ctl_elem_id_alloca(&id_active);
+    snd_ctl_elem_id_alloca(&id_rate);
+
+    snd_ctl_elem_id_set_interface(id_active, SND_CTL_ELEM_IFACE_PCM);
+    snd_ctl_elem_id_set_device(id_active, (unsigned int)device);
+    snd_ctl_elem_id_set_name(id_active, "PCM Slave Active");
+
+    snd_ctl_elem_id_set_interface(id_rate, SND_CTL_ELEM_IFACE_PCM);
+    snd_ctl_elem_id_set_device(id_rate, (unsigned int)device);
+    snd_ctl_elem_id_set_name(id_rate, "PCM Slave Rate");
+
+    snd_ctl_elem_value_t *val_active, *val_rate;
+    snd_ctl_elem_value_alloca(&val_active);
+    snd_ctl_elem_value_alloca(&val_rate);
+    snd_ctl_elem_value_set_id(val_active, id_active);
+    snd_ctl_elem_value_set_id(val_rate, id_rate);
+
+    bool active = false;
+    if (snd_ctl_elem_read(ctl, val_active) == 0) {
+        int is_act = snd_ctl_elem_value_get_boolean(val_active, 0);
+        if (is_act) {
+            if (target_rate > 0 && snd_ctl_elem_read(ctl, val_rate) == 0) {
+                long r = snd_ctl_elem_value_get_integer(val_rate, 0);
+                if ((unsigned int)r == target_rate) {
+                    active = true;
+                }
+            } else {
+                active = true;
+            }
+        }
+    }
+
+    snd_ctl_close(ctl);
+    return active;
+}
+
 static int rn_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params) {
     rate_notify_ioplug_t *rec = (rate_notify_ioplug_t *)io;
     unsigned int rate = 0;
@@ -237,17 +281,29 @@ static int rn_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params) {
         rec->slave = NULL;
     }
 
-    // 3. Re-open slave PCM with retries to give cdsp/Monitor-Qt time to restart at new rate
+    // 3. Re-open slave PCM with retries to give cdsp/Monitor-Qt time to restart at new rate.
+    // Wait until the capture endpoint (hw:Loopback,1,0) is actively capturing at the new rate.
     int err = -EBUSY;
     for (int i = 0; i < rec->retry_count; i++) {
+        bool peer_ready = is_capture_active_at_rate(rec->ctl_card, rec->ctl_device, rate);
+        if (peer_ready) {
+            err = snd_pcm_open(&rec->slave, rec->slave_name, io->stream, io->nonblock);
+            if (err == 0 && rec->slave) {
+                err = set_slave_hw_params(rec->slave, params);
+                if (err == 0) break;
+                snd_pcm_close(rec->slave);
+                rec->slave = NULL;
+            }
+        }
+        usleep((useconds_t)rec->retry_delay_us);
+    }
+
+    // Fallback: If peer took longer than retry window, open slave anyway so playback doesn't hard-fail
+    if (!rec->slave) {
         err = snd_pcm_open(&rec->slave, rec->slave_name, io->stream, io->nonblock);
         if (err == 0 && rec->slave) {
             err = set_slave_hw_params(rec->slave, params);
-            if (err == 0) break;
-            snd_pcm_close(rec->slave);
-            rec->slave = NULL;
         }
-        usleep((useconds_t)rec->retry_delay_us);
     }
 
     return err;
@@ -274,8 +330,8 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rate_notify) {
     const char *ctl_card = "Loopback";
     long ctl_device = 1;
     long ctl_subdevice = 0;
-    long retry_count = 30;
-    long retry_delay_us = 15000; // 15ms * 30 = 450ms total wait window
+    long retry_count = 50;
+    long retry_delay_us = 15000; // 15ms * 50 = 750ms total wait window
     int err;
 
     snd_config_for_each(i, next, conf) {
