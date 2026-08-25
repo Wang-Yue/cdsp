@@ -417,6 +417,9 @@ target_include_directories(dsp PUBLIC ${CDSP_INCLUDE_DIRS})
 target_compile_definitions(dsp PUBLIC ${CDSP_C_DEFINITIONS})
 target_compile_options(dsp PUBLIC ${CDSP_C_FLAGS})
 target_link_libraries(dsp PUBLIC ${CDSP_PLATFORM_DEPS})
+if(SWIFT_DISPATCH_LIB_DIR)
+    target_link_directories(dsp PUBLIC "${SWIFT_DISPATCH_LIB_DIR}")
+endif()
 
 # -----------------------------------------------------------------------------
 # CLI Executable: cdsp
