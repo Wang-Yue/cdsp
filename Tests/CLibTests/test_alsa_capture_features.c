@@ -23,10 +23,14 @@ static void remove_capture_rate_ctl_if_present(void) {
     snd_ctl_elem_id_t* id;
     snd_ctl_elem_id_alloca(&id);
     snd_ctl_elem_id_set_interface(id, SND_CTL_ELEM_IFACE_PCM);
-    snd_ctl_elem_id_set_device(id, 1);
-    snd_ctl_elem_id_set_subdevice(id, 1);
     snd_ctl_elem_id_set_name(id, "Capture Rate");
-    snd_ctl_elem_remove(ctl, id);
+    for (int dev = 0; dev <= 2; dev++) {
+      for (int subdev = 0; subdev <= 2; subdev++) {
+        snd_ctl_elem_id_set_device(id, (unsigned int)dev);
+        snd_ctl_elem_id_set_subdevice(id, (unsigned int)subdev);
+        snd_ctl_elem_remove(ctl, id);
+      }
+    }
     snd_ctl_close(ctl);
   }
 }
@@ -63,13 +67,7 @@ TEST(ALSACapture_StopOnInactive_SourceStatus) {
 
   audio_chunk_t* chunk = audio_chunk_create(1024, 2);
 
-  // 2. Case A: When slave (Loopback 0,1) is inactive, read should detect
-  // inactive and return false
-  bool read_inactive = capture_backend_read(capture, 128, chunk, &err);
-  ASSERT_FALSE(read_inactive);
-  ASSERT_STR_EQ("Capture source inactive", err.message);
-
-  // 3. Case B: Start playback on Loopback 0,1 to activate PCM Slave Active
+  // 2. Start playback on Loopback 0,1 to activate PCM Slave Active
   snd_pcm_t* play_pcm = NULL;
   int rc =
       snd_pcm_open(&play_pcm, "hw:Loopback,0,1", SND_PCM_STREAM_PLAYBACK, 0);
@@ -93,7 +91,14 @@ TEST(ALSACapture_StopOnInactive_SourceStatus) {
     }
     ASSERT_TRUE(read_active);
 
+    // 3. Closing playback generates a PCM Slave Active inactive event
+    snd_pcm_drop(play_pcm);
     snd_pcm_close(play_pcm);
+    cdsp_sleep_ms(20);
+
+    bool read_inactive = capture_backend_read(capture, 128, chunk, &err);
+    ASSERT_FALSE(read_inactive);
+    ASSERT_STR_EQ("Capture source inactive", err.message);
   }
 
   audio_chunk_free(chunk);
@@ -121,7 +126,7 @@ TEST(ALSACapture_DynamicRateChange_HCtlMonitoring) {
       snd_ctl_elem_value_t* val;
       snd_ctl_elem_value_alloca(&val);
       snd_ctl_elem_value_set_id(val, id);
-      snd_ctl_elem_value_set_integer(val, 0, 96000);
+      snd_ctl_elem_value_set_integer(val, 0, 48000);
       snd_ctl_elem_write(ctl, val);
     }
   }
@@ -157,11 +162,22 @@ TEST(ALSACapture_DynamicRateChange_HCtlMonitoring) {
     return;
   }
 
+  // 2. Simulate dynamic rate change by updating the control value to 96000
+  if (ctl && ctl_added) {
+    snd_ctl_elem_value_t* val;
+    snd_ctl_elem_value_alloca(&val);
+    snd_ctl_elem_value_set_id(val, id);
+    snd_ctl_elem_value_set_integer(val, 0, 96000);
+    snd_ctl_elem_write(ctl, val);
+    cdsp_sleep_ms(10);
+  }
+
   double pending_rate = 0.0;
   bool has_change =
       capture_backend_get_pending_rate_change(capture, &pending_rate);
 
   // Assert that dynamic rate change to 96000 was detected from the HCtl element
+  // event
   ASSERT_TRUE(has_change);
   ASSERT_EQ((int)pending_rate, 96000);
 

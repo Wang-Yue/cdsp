@@ -195,44 +195,11 @@ static void alsa_capture_init_controls(alsa_capture_t* capture) {
       capture->hctl_loopback_active_elem =
           alsa_find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
                          "PCM Slave Active", &capture->loopback_active_numid);
-      if (capture->hctl_loopback_active_elem) {
-        bool active = false;
-        if (alsa_elem_read_as_bool(capture->hctl_loopback_active_elem,
-                                   &active)) {
-          if (!active) {
-            if (capture->stop_on_inactive) {
-              atomic_store_explicit(&capture->is_inactive, true,
-                                    memory_order_release);
-            }
-          } else {
-            atomic_store_explicit(&capture->is_inactive, false,
-                                  memory_order_release);
-          }
-        }
-      }
 
       // Look up Capture Rate (gadget rate)
       capture->hctl_rate_elem =
           alsa_find_elem(hctl, SND_CTL_ELEM_IFACE_PCM, dev_idx, subdev_idx,
                          "Capture Rate", &capture->gadget_rate_numid);
-      if (capture->hctl_rate_elem) {
-        long rate = 0;
-        if (alsa_elem_read_as_int(capture->hctl_rate_elem, &rate)) {
-          if (rate == 0) {
-            if (capture->stop_on_inactive) {
-              atomic_store_explicit(&capture->is_inactive, true,
-                                    memory_order_release);
-            }
-          } else if (rate > 0 && rate != capture->capture_sample_rate) {
-            atomic_store_explicit(&capture->pending_rate, (double)rate,
-                                  memory_order_release);
-            atomic_store_explicit(&capture->has_pending_rate_change, true,
-                                  memory_order_release);
-            atomic_store_explicit(&capture->is_inactive, false,
-                                  memory_order_release);
-          }
-        }
-      }
 
       // Look up Mixer Volume Control
       if (capture->link_volume_control[0]) {
@@ -965,7 +932,7 @@ static bool alsa_capture_get_pending_rate_change(void* ctx, double* out_rate) {
   if (!capture) return false;
   alsa_capture_process_events(capture);
   if (atomic_load_explicit(&capture->has_pending_rate_change,
-                            memory_order_acquire)) {
+                           memory_order_acquire)) {
     if (out_rate) {
       *out_rate =
           atomic_load_explicit(&capture->pending_rate, memory_order_acquire);
