@@ -457,15 +457,6 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
 
   alsa_capture_init_controls(capture);
 
-  rc = snd_pcm_start(capture->pcm);
-  if (rc < 0) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         snd_strerror(rc));
-    }
-    goto error_cleanup;
-  }
-
   if (capture->threaded) {
     size_t ring_frames = alsa_capture_ring_capacity_frames(
         (size_t)capture->chunk_size, capture->period);
