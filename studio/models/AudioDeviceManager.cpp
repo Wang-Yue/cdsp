@@ -424,22 +424,22 @@ void AudioDeviceManager::updateCapabilitiesFromDescriptor(DeviceConfig& cfg, boo
 }
 
 void AudioDeviceManager::handleFormatChange(bool isCapture, int newRate) {
+    m_capabilityRequestVersion++;
+    m_fetchDevicesVersion++;
+    m_devicesWatcher.cancel();
+    m_capabilitiesWatcher.cancel();
+    if (m_deviceChangeDebounceTimer) {
+        m_deviceChangeDebounceTimer->stop();
+    }
+
     AppLogger::info("AudioDeviceManager", QString("Handling %1 format change to %2 Hz")
                                               .arg(isCapture ? "capture" : "playback")
                                               .arg(newRate));
 
-    auto applyRateChange = [this](DeviceConfig& cfg, bool isCap, int rate) {
-        auto desc = queryDeviceCapabilities(cfg, isCap);
-        if (desc) {
-            updateCapabilitiesFromDescriptor(cfg, isCap, desc);
-        }
-        cfg.updateRate(rate);
-    };
-
-    applyRateChange(isCapture ? captureConfig : playbackConfig, isCapture, newRate);
+    config(isCapture).updateRate(newRate);
 
     if (m_settings && !m_settings->resamplerEnabled) {
-        applyRateChange(isCapture ? playbackConfig : captureConfig, !isCapture, newRate);
+        config(!isCapture).updateRate(newRate);
     }
 
     validateSampleRates();
