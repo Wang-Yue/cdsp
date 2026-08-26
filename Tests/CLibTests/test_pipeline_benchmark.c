@@ -25,7 +25,8 @@
 
 #define CHUNK_SIZE 1024
 #define SAMPLE_RATE 48000
-#define ITERS 200
+#define ITERS_BIQUAD 200
+#define ITERS_CONV 10
 
 static const double pre_bq_freqs[] = {
     120.0,  220.0,  350.0,  500.0,  700.0,  900.0,  1200.0, 1600.0,
@@ -223,30 +224,30 @@ TEST(Pipeline_Biquads_Benchmark) {
   // Benchmark Single
   struct timespec start_single, end_single;
   clock_gettime(CLOCK_MONOTONIC, &start_single);
-  for (int i = 0; i < ITERS; i++) {
+  for (int i = 0; i < ITERS_BIQUAD; i++) {
     pipeline_process(pipeline_single, input, output);
   }
   clock_gettime(CLOCK_MONOTONIC, &end_single);
   double single_ns = (double)(end_single.tv_sec - start_single.tv_sec) * 1e9 +
                      (double)(end_single.tv_nsec - start_single.tv_nsec);
-  double c_single_ms = single_ns / (double)ITERS / 1e6;
+  double c_single_ms = single_ns / (double)ITERS_BIQUAD / 1e6;
 
   // Benchmark Multi
   struct timespec start_multi, end_multi;
   clock_gettime(CLOCK_MONOTONIC, &start_multi);
-  for (int i = 0; i < ITERS; i++) {
+  for (int i = 0; i < ITERS_BIQUAD; i++) {
     pipeline_process(pipeline_multi, input, output);
   }
   clock_gettime(CLOCK_MONOTONIC, &end_multi);
   double multi_ns = (double)(end_multi.tv_sec - start_multi.tv_sec) * 1e9 +
                     (double)(end_multi.tv_nsec - start_multi.tv_nsec);
-  double c_multi_ms = multi_ns / (double)ITERS / 1e6;
+  double c_multi_ms = multi_ns / (double)ITERS_BIQUAD / 1e6;
 
   // Load Rust results
   double rust_single = fetch_rust_pipeline_benchmark("pipeline_biquad", false,
-                                                     CHUNK_SIZE, ITERS);
-  double rust_multi =
-      fetch_rust_pipeline_benchmark("pipeline_biquad", true, CHUNK_SIZE, ITERS);
+                                                     CHUNK_SIZE, ITERS_BIQUAD);
+  double rust_multi = fetch_rust_pipeline_benchmark("pipeline_biquad", true,
+                                                    CHUNK_SIZE, ITERS_BIQUAD);
 
   print_comparison_table(
       "Upstream Match: 4-in 2-out Biquad Pipeline (96 EQ evaluations)",
@@ -396,33 +397,33 @@ TEST(Pipeline_Biquads_Conv_Benchmark) {
     pipeline_process(pipeline_multi, input, output);
   }
 
-  // Benchmark Single (10 per user request)
+  // Benchmark Single
   struct timespec start_single, end_single;
   clock_gettime(CLOCK_MONOTONIC, &start_single);
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < ITERS_CONV; i++) {
     pipeline_process(pipeline_single, input, output);
   }
   clock_gettime(CLOCK_MONOTONIC, &end_single);
   double single_ns = (double)(end_single.tv_sec - start_single.tv_sec) * 1e9 +
                      (double)(end_single.tv_nsec - start_single.tv_nsec);
-  double c_single_ms = single_ns / 10.0 / 1e6;
+  double c_single_ms = single_ns / (double)ITERS_CONV / 1e6;
 
-  // Benchmark Multi (10 per user request)
+  // Benchmark Multi
   struct timespec start_multi, end_multi;
   clock_gettime(CLOCK_MONOTONIC, &start_multi);
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < ITERS_CONV; i++) {
     pipeline_process(pipeline_multi, input, output);
   }
   clock_gettime(CLOCK_MONOTONIC, &end_multi);
   double multi_ns = (double)(end_multi.tv_sec - start_multi.tv_sec) * 1e9 +
                     (double)(end_multi.tv_nsec - start_multi.tv_nsec);
-  double c_multi_ms = multi_ns / 10.0 / 1e6;
+  double c_multi_ms = multi_ns / (double)ITERS_CONV / 1e6;
 
   // Load Rust results
-  double rust_single = fetch_rust_pipeline_benchmark("pipeline_biquad_conv",
-                                                     false, CHUNK_SIZE, 10);
-  double rust_multi = fetch_rust_pipeline_benchmark("pipeline_biquad_conv",
-                                                    true, CHUNK_SIZE, 10);
+  double rust_single = fetch_rust_pipeline_benchmark(
+      "pipeline_biquad_conv", false, CHUNK_SIZE, ITERS_CONV);
+  double rust_multi = fetch_rust_pipeline_benchmark(
+      "pipeline_biquad_conv", true, CHUNK_SIZE, ITERS_CONV);
 
   print_comparison_table(
       "Upstream Match: 4-in 2-out Biquad + Convolution Pipeline (96 EQ + 12 "
