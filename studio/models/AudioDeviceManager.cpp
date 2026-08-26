@@ -438,10 +438,6 @@ void AudioDeviceManager::handleFormatChange(bool isCapture, int newRate) {
 
     config(isCapture).updateRate(newRate);
 
-    if (m_settings && !m_settings->resamplerEnabled) {
-        config(!isCapture).updateRate(newRate);
-    }
-
     validateSampleRates();
     saveConfigs();
     emit configChanged();
