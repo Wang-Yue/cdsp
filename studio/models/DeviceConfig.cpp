@@ -7,25 +7,60 @@
 #include <fstream>
 #include <set>
 
-static const DeviceCapabilitySet* findActiveCapabilitySet(const AudioDeviceDescriptor& desc, bool exclusive) {
-    if (desc.capability_sets.empty())
+const DeviceCapabilitySet* DeviceConfig::activeCapabilitySet() const {
+    if (capabilities.capability_sets.empty())
         return nullptr;
     if (exclusive) {
-        for (const auto& set : desc.capability_sets) {
-            if (set.mode == "Exclusive")
+        for (const auto& set : capabilities.capability_sets) {
+            if (set.mode == "Exclusive" || set.mode == "Direct")
                 return &set;
         }
     } else {
-        for (const auto& set : desc.capability_sets) {
+        for (const auto& set : capabilities.capability_sets) {
             if (set.mode == "Shared")
                 return &set;
         }
     }
-    return &desc.capability_sets[0];
+    return &capabilities.capability_sets[0];
+}
+
+DeviceCapabilitySet* DeviceConfig::activeCapabilitySet() {
+    if (capabilities.capability_sets.empty())
+        return nullptr;
+    if (exclusive) {
+        for (auto& set : capabilities.capability_sets) {
+            if (set.mode == "Exclusive" || set.mode == "Direct")
+                return &set;
+        }
+    } else {
+        for (auto& set : capabilities.capability_sets) {
+            if (set.mode == "Shared")
+                return &set;
+        }
+    }
+    return &capabilities.capability_sets[0];
+}
+
+void DeviceConfig::updateRate(int newRate) {
+    auto* set = activeCapabilitySet();
+    if (set && set->mode == "Shared") {
+        for (auto& cap : set->capabilities) {
+            if (!cap.samplerates.empty()) {
+                cap.samplerates[0].samplerate = newRate;
+            } else {
+                SamplerateCapability sr;
+                sr.samplerate = newRate;
+                sr.formats = {"F32"};
+                cap.samplerates.push_back(sr);
+            }
+        }
+    }
+    sampleRate = newRate;
+    *this = enforced();
 }
 
 std::vector<int> DeviceConfig::supportedChannels() const {
-    const auto* set = findActiveCapabilitySet(capabilities, exclusive);
+    const auto* set = activeCapabilitySet();
     if (!set || set->capabilities.empty())
         return {};
     std::set<int> chs;
@@ -45,7 +80,7 @@ std::vector<int> DeviceConfig::supportedRates() const {
         return MONITOR_STANDARD_RATES;
     }
 
-    const auto* set = findActiveCapabilitySet(capabilities, exclusive);
+    const auto* set = activeCapabilitySet();
     if (!set || set->capabilities.empty())
         return {};
 
@@ -94,7 +129,7 @@ static int formatPriority(const std::string& fmt) {
 }
 
 std::vector<std::string> DeviceConfig::supportedFormats() const {
-    const auto* set = findActiveCapabilitySet(capabilities, exclusive);
+    const auto* set = activeCapabilitySet();
     if (!set || set->capabilities.empty())
         return {};
 

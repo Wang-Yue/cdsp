@@ -69,6 +69,10 @@ struct DeviceConfig {
         }
     }
 
+    const DeviceCapabilitySet* activeCapabilitySet() const;
+    DeviceCapabilitySet* activeCapabilitySet();
+    void updateRate(int newRate);
+
     std::vector<int> supportedChannels() const;
     std::vector<int> supportedRates() const;
     std::vector<std::string> supportedFormats() const;

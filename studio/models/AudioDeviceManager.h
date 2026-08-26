@@ -37,6 +37,8 @@ public:
     void startDeviceChangeListener();
     void stopDeviceChangeListener();
 
+    std::vector<int> commonRateOptions() const;
+    std::vector<int> rateOptions(bool isCapture) const;
     std::vector<int> captureRateOptions() const;
     std::vector<int> playbackRateOptions() const;
     double latencyMs() const;
@@ -77,6 +79,21 @@ private:
 
     uint64_t m_fetchDevicesVersion = 0;
     uint64_t m_capabilityRequestVersion = 0;
+
+    DeviceConfig& config(bool isCapture) { return isCapture ? captureConfig : playbackConfig; }
+    const DeviceConfig& config(bool isCapture) const { return isCapture ? captureConfig : playbackConfig; }
+    const std::vector<AudioDevice>& deviceList(bool isCapture, bool isWasapiLoopback = false) const {
+        return (isWasapiLoopback || !isCapture) ? playbackDevices : captureDevices;
+    }
+    std::map<std::string, DeviceConfig>& deviceConfigCache(bool isCapture) {
+        return isCapture ? m_captureDeviceConfigs : m_playbackDeviceConfigs;
+    }
+
+    void setConfig(bool isCapture, const DeviceConfig& config);
+    bool isDeviceAvailable(const DeviceConfig& cfg, bool isCapture) const;
+    void validateDevicePresence(DeviceConfig& cfg, bool isCapture,
+                                const std::vector<AudioDevice>& capList,
+                                const std::vector<AudioDevice>& pbList);
 
     std::optional<AudioDeviceDescriptor> queryDeviceCapabilities(const DeviceConfig& cfg, bool isCapture) const;
     void updateCapabilitiesFromDescriptor(DeviceConfig& cfg, bool isCapture,

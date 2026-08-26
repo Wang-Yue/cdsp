@@ -9,6 +9,51 @@
 #include <algorithm>
 #include <set>
 
+namespace {
+DeviceConfig loadConfig(QSettings& s, const QString& key, const DeviceConfig& defaultCfg) {
+    if (s.contains(key)) {
+        QByteArray data = s.value(key).toByteArray();
+        QJsonDocument doc = QJsonDocument::fromJson(data);
+        if (doc.isObject())
+            return DeviceConfig::fromJson(doc.object());
+    }
+    return defaultCfg;
+}
+
+std::map<std::string, DeviceConfig> loadConfigMap(QSettings& s, const QString& key, const DeviceConfig& fallback) {
+    std::map<std::string, DeviceConfig> result;
+    if (s.contains(key)) {
+        QByteArray data = s.value(key).toByteArray();
+        QJsonDocument doc = QJsonDocument::fromJson(data);
+        if (doc.isObject()) {
+            QJsonObject obj = doc.object();
+            for (auto it = obj.begin(); it != obj.end(); ++it) {
+                if (it.value().isObject()) {
+                    result[it.key().toStdString()] = DeviceConfig::fromJson(it.value().toObject());
+                }
+            }
+        }
+    }
+    if (result.empty()) {
+        result[fallback.deviceName().value_or("")] = fallback;
+    }
+    return result;
+}
+
+void saveConfig(QSettings& s, const QString& key, const DeviceConfig& cfg) {
+    QJsonDocument doc(cfg.toJson());
+    s.setValue(key, doc.toJson(QJsonDocument::Compact));
+}
+
+void saveConfigMap(QSettings& s, const QString& key, const std::map<std::string, DeviceConfig>& map) {
+    QJsonObject obj;
+    for (const auto& [name, cfg] : map) {
+        obj.insert(QString::fromStdString(name), cfg.toJson());
+    }
+    s.setValue(key, QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+} // namespace
+
 AudioDeviceManager::AudioDeviceManager(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<AudioSettings> settings,
                                        QObject* parent)
     : QObject(parent), m_engine(engine), m_settings(settings) {
@@ -94,90 +139,39 @@ void AudioDeviceManager::stopDeviceChangeListener() {
 
 void AudioDeviceManager::loadSavedConfigs() {
     QSettings s("DSPMonitor", "MonitorQt");
-    if (s.contains("captureConfig")) {
-        QByteArray data = s.value("captureConfig").toByteArray();
-        QJsonDocument doc = QJsonDocument::fromJson(data);
-        if (doc.isObject())
-            captureConfig = DeviceConfig::fromJson(doc.object());
-    }
-    if (s.contains("playbackConfig")) {
-        QByteArray data = s.value("playbackConfig").toByteArray();
-        QJsonDocument doc = QJsonDocument::fromJson(data);
-        if (doc.isObject())
-            playbackConfig = DeviceConfig::fromJson(doc.object());
-    }
-
-    if (s.contains("captureDeviceConfigs")) {
-        QByteArray data = s.value("captureDeviceConfigs").toByteArray();
-        QJsonDocument doc = QJsonDocument::fromJson(data);
-        if (doc.isObject()) {
-            QJsonObject obj = doc.object();
-            for (auto it = obj.begin(); it != obj.end(); ++it) {
-                if (it.value().isObject()) {
-                    m_captureDeviceConfigs[it.key().toStdString()] = DeviceConfig::fromJson(it.value().toObject());
-                }
-            }
-        }
-    } else {
-        m_captureDeviceConfigs[captureConfig.deviceName().value_or("")] = captureConfig;
-    }
-
-    if (s.contains("playbackDeviceConfigs")) {
-        QByteArray data = s.value("playbackDeviceConfigs").toByteArray();
-        QJsonDocument doc = QJsonDocument::fromJson(data);
-        if (doc.isObject()) {
-            QJsonObject obj = doc.object();
-            for (auto it = obj.begin(); it != obj.end(); ++it) {
-                if (it.value().isObject()) {
-                    m_playbackDeviceConfigs[it.key().toStdString()] = DeviceConfig::fromJson(it.value().toObject());
-                }
-            }
-        }
-    } else {
-        m_playbackDeviceConfigs[playbackConfig.deviceName().value_or("")] = playbackConfig;
-    }
-
+    captureConfig = loadConfig(s, "captureConfig", captureConfig);
+    playbackConfig = loadConfig(s, "playbackConfig", playbackConfig);
+    m_captureDeviceConfigs = loadConfigMap(s, "captureDeviceConfigs", captureConfig);
+    m_playbackDeviceConfigs = loadConfigMap(s, "playbackDeviceConfigs", playbackConfig);
     exclusiveMode = s.value("exclusiveMode", false).toBool();
 }
 
 void AudioDeviceManager::saveConfigs() {
     QSettings s("DSPMonitor", "MonitorQt");
-    QJsonDocument docCap(captureConfig.toJson());
-    s.setValue("captureConfig", docCap.toJson(QJsonDocument::Compact));
-
-    QJsonDocument docPb(playbackConfig.toJson());
-    s.setValue("playbackConfig", docPb.toJson(QJsonDocument::Compact));
-
-    QJsonObject capDictObj;
-    for (const auto& [name, cfg] : m_captureDeviceConfigs) {
-        capDictObj.insert(QString::fromStdString(name), cfg.toJson());
-    }
-    s.setValue("captureDeviceConfigs", QJsonDocument(capDictObj).toJson(QJsonDocument::Compact));
-
-    QJsonObject pbDictObj;
-    for (const auto& [name, cfg] : m_playbackDeviceConfigs) {
-        pbDictObj.insert(QString::fromStdString(name), cfg.toJson());
-    }
-    s.setValue("playbackDeviceConfigs", QJsonDocument(pbDictObj).toJson(QJsonDocument::Compact));
-
+    saveConfig(s, "captureConfig", captureConfig);
+    saveConfig(s, "playbackConfig", playbackConfig);
+    saveConfigMap(s, "captureDeviceConfigs", m_captureDeviceConfigs);
+    saveConfigMap(s, "playbackDeviceConfigs", m_playbackDeviceConfigs);
     s.setValue("exclusiveMode", exclusiveMode);
 }
 
-void AudioDeviceManager::setCaptureConfig(const DeviceConfig& config) {
+void AudioDeviceManager::setConfig(bool isCapture, const DeviceConfig& newConfig) {
     if (m_isInitializing)
         return;
-    DeviceConfig enforced = config.enforced();
-    bool backendChanged = (enforced.backend != captureConfig.backend);
-    bool devChanged = (enforced.deviceName() != captureConfig.deviceName() || backendChanged);
+
+    DeviceConfig enforced = newConfig.enforced();
+    DeviceConfig& current = config(isCapture);
+    bool backendChanged = (enforced.backend != current.backend);
+    bool devChanged = (enforced.deviceName() != current.deviceName() || backendChanged);
 
     if (backendChanged) {
         enforced.setDeviceName("");
     } else if (!devChanged) {
         std::string name = enforced.deviceName().value_or("");
-        m_captureDeviceConfigs[name] = enforced;
+        deviceConfigCache(isCapture)[name] = enforced;
     }
 
-    captureConfig = enforced;
+    current = enforced;
     saveConfigs();
 
     if (backendChanged) {
@@ -194,35 +188,12 @@ void AudioDeviceManager::setCaptureConfig(const DeviceConfig& config) {
     }
 }
 
+void AudioDeviceManager::setCaptureConfig(const DeviceConfig& config) {
+    setConfig(true, config);
+}
+
 void AudioDeviceManager::setPlaybackConfig(const DeviceConfig& config) {
-    if (m_isInitializing)
-        return;
-    DeviceConfig enforced = config.enforced();
-    bool backendChanged = (enforced.backend != playbackConfig.backend);
-    bool devChanged = (enforced.deviceName() != playbackConfig.deviceName() || backendChanged);
-
-    if (backendChanged) {
-        enforced.setDeviceName("");
-    } else if (!devChanged) {
-        std::string name = enforced.deviceName().value_or("");
-        m_playbackDeviceConfigs[name] = enforced;
-    }
-
-    playbackConfig = enforced;
-    saveConfigs();
-
-    if (backendChanged) {
-        fetchDevices();
-    } else if (devChanged) {
-        refreshDeviceCapabilities();
-    } else {
-        bool rateChanged = validateSampleRates();
-        if (!rateChanged) {
-            emit configChanged();
-            if (onConfigChanged)
-                onConfigChanged();
-        }
-    }
+    setConfig(false, config);
 }
 
 void AudioDeviceManager::setExclusiveMode(bool exclusive) {
@@ -241,9 +212,7 @@ void AudioDeviceManager::setExclusiveMode(bool exclusive) {
     }
 }
 
-std::vector<int> AudioDeviceManager::captureRateOptions() const {
-    if (!m_settings || m_settings->resamplerEnabled)
-        return captureConfig.supportedRates();
+std::vector<int> AudioDeviceManager::commonRateOptions() const {
     auto cap = captureConfig.supportedRates();
     auto pb = playbackConfig.supportedRates();
     if (cap.empty())
@@ -258,13 +227,24 @@ std::vector<int> AudioDeviceManager::captureRateOptions() const {
             common.push_back(r);
     }
     std::sort(common.begin(), common.end());
-    return common.empty() ? pb : common;
+    return common;
+}
+
+std::vector<int> AudioDeviceManager::rateOptions(bool isCapture) const {
+    if (m_settings && !m_settings->resamplerEnabled) {
+        auto common = commonRateOptions();
+        if (!common.empty())
+            return common;
+    }
+    return isCapture ? captureConfig.supportedRates() : playbackConfig.supportedRates();
+}
+
+std::vector<int> AudioDeviceManager::captureRateOptions() const {
+    return rateOptions(true);
 }
 
 std::vector<int> AudioDeviceManager::playbackRateOptions() const {
-    if (!m_settings)
-        return playbackConfig.supportedRates();
-    return m_settings->resamplerEnabled ? playbackConfig.supportedRates() : captureRateOptions();
+    return rateOptions(false);
 }
 
 double AudioDeviceManager::latencyMs() const {
@@ -273,43 +253,54 @@ double AudioDeviceManager::latencyMs() const {
     return (static_cast<double>(chunkSize) / static_cast<double>(rate)) * 1000.0;
 }
 
-bool AudioDeviceManager::devicesAvailable() const {
-    if (backendHasDeviceList(captureConfig.backend)) {
-        if (auto name = captureConfig.deviceName()) {
-            if (!name.value().empty()) {
-                bool found = false;
-                bool isWasapiLoopback = false;
+bool AudioDeviceManager::isDeviceAvailable(const DeviceConfig& cfg, bool isCapture) const {
+    if (!backendHasDeviceList(cfg.backend))
+        return true;
+
+    auto name = cfg.deviceName();
+    if (!name || name->empty())
+        return true;
+
+    bool isWasapiLoopback = false;
 #if defined(ENABLE_WASAPI)
-                isWasapiLoopback = (captureConfig.backend == AudioBackendType::WASAPI && captureConfig.loopback);
+    isWasapiLoopback = (isCapture && cfg.backend == AudioBackendType::WASAPI && cfg.loopback);
 #endif
-                const auto& devList = isWasapiLoopback ? playbackDevices : captureDevices;
-                for (const auto& d : devList) {
-                    if (d.id == name.value() || d.name == name.value()) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                    return false;
-            }
-        }
+    const auto& list = deviceList(isCapture, isWasapiLoopback);
+    return std::any_of(list.begin(), list.end(), [&](const AudioDevice& d) {
+        return d.id == *name || d.name == *name;
+    });
+}
+
+bool AudioDeviceManager::devicesAvailable() const {
+    return isDeviceAvailable(captureConfig, true) && isDeviceAvailable(playbackConfig, false);
+}
+
+void AudioDeviceManager::validateDevicePresence(DeviceConfig& cfg, bool isCapture,
+                                                const std::vector<AudioDevice>& capList,
+                                                const std::vector<AudioDevice>& pbList) {
+    if (!backendHasDeviceList(cfg.backend))
+        return;
+
+    auto name = cfg.deviceName();
+    if (!name || name->empty())
+        return;
+
+    bool isWasapiLoopback = false;
+#if defined(ENABLE_WASAPI)
+    isWasapiLoopback = (isCapture && cfg.backend == AudioBackendType::WASAPI && cfg.loopback);
+#endif
+    const auto& list = (isWasapiLoopback || !isCapture) ? pbList : capList;
+    bool found = std::any_of(list.begin(), list.end(), [&](const AudioDevice& d) {
+        return d.id == *name || d.name == *name;
+    });
+
+    if (!found) {
+        AppLogger::warn("AudioDeviceManager",
+                        QString("Configured %1 device '%2' is disconnected/missing. Falling back to default.")
+                            .arg(isCapture ? "capture" : "playback")
+                            .arg(QString::fromStdString(*name)));
+        cfg.setDeviceName("");
     }
-    if (backendHasDeviceList(playbackConfig.backend)) {
-        if (auto name = playbackConfig.deviceName()) {
-            if (!name.value().empty()) {
-                bool found = false;
-                for (const auto& d : playbackDevices) {
-                    if (d.id == name.value() || d.name == name.value()) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                    return false;
-            }
-        }
-    }
-    return true;
 }
 
 void AudioDeviceManager::fetchDevices() {
@@ -323,12 +314,13 @@ void AudioDeviceManager::fetchDevices() {
         std::transform(str.begin(), str.end(), str.begin(), ::tolower);
         return str;
     };
-    std::string capBackendLower = backendHasDeviceList(captureConfig.backend)
-                                      ? toLowerStr(audioBackendTypeToString(captureConfig.backend))
-                                      : toLowerStr(audioBackendTypeToString(defaultHardwareBackend()));
-    std::string pbBackendLower = backendHasDeviceList(playbackConfig.backend)
-                                     ? toLowerStr(audioBackendTypeToString(playbackConfig.backend))
-                                     : toLowerStr(audioBackendTypeToString(defaultHardwareBackend()));
+    auto backendString = [&toLowerStr](const DeviceConfig& cfg) {
+        auto b = backendHasDeviceList(cfg.backend) ? cfg.backend : defaultHardwareBackend();
+        return toLowerStr(audioBackendTypeToString(b));
+    };
+
+    std::string capBackendLower = backendString(captureConfig);
+    std::string pbBackendLower = backendString(playbackConfig);
 
     m_isFetchingDevices = true;
     m_devicesWatcher.setFuture(QtConcurrent::run([this, engine, version, capBackendLower, pbBackendLower]() {
@@ -342,55 +334,8 @@ void AudioDeviceManager::fetchDevices() {
             captureDevices = cap;
             playbackDevices = pb;
 
-            // Safe fallback logic: if configured hardware device is disconnected/unplugged, fallback to default
-            // hardware device ("")
-            if (backendHasDeviceList(captureConfig.backend)) {
-                if (auto name = captureConfig.deviceName()) {
-                    if (!name.value().empty()) {
-                        bool found = false;
-                        bool isWasapiLoopback = false;
-#if defined(ENABLE_WASAPI)
-                        isWasapiLoopback =
-                            (captureConfig.backend == AudioBackendType::WASAPI && captureConfig.loopback);
-#endif
-                        const auto& devList = isWasapiLoopback ? pb : cap;
-                        for (const auto& d : devList) {
-                            if (d.id == name.value() || d.name == name.value()) {
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            AppLogger::warn("AudioDeviceManager",
-                                            QString("Configured capture device %1 is disconnected/missing. Falling "
-                                                    "back to default input device.")
-                                                .arg(QString::fromStdString(name.value())));
-                            captureConfig.setDeviceName("");
-                        }
-                    }
-                }
-            }
-
-            if (backendHasDeviceList(playbackConfig.backend)) {
-                if (auto name = playbackConfig.deviceName()) {
-                    if (!name.value().empty()) {
-                        bool found = false;
-                        for (const auto& d : pb) {
-                            if (d.id == name.value() || d.name == name.value()) {
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            AppLogger::warn("AudioDeviceManager",
-                                            QString("Configured playback device %1 is disconnected/missing. Falling "
-                                                    "back to default output device.")
-                                                .arg(QString::fromStdString(name.value())));
-                            playbackConfig.setDeviceName("");
-                        }
-                    }
-                }
-            }
+            validateDevicePresence(captureConfig, true, cap, pb);
+            validateDevicePresence(playbackConfig, false, cap, pb);
 
             refreshDeviceCapabilities();
             emit devicesRefreshed();
@@ -425,12 +370,13 @@ void AudioDeviceManager::updateCapabilitiesFromDescriptor(DeviceConfig& cfg, boo
     }
     std::string name = cfg.deviceName().value_or("");
     std::string origId = cfg.capabilities.name;
+    auto& cache = deviceConfigCache(isCapture);
+
     if (desc.has_value() && !desc->capability_sets.empty()) {
         cfg.capabilities = desc.value();
     } else {
-        auto& dict = isCapture ? m_captureDeviceConfigs : m_playbackDeviceConfigs;
-        auto it = dict.find(name);
-        if (it != dict.end() && !it->second.capabilities.capability_sets.empty()) {
+        auto it = cache.find(name);
+        if (it != cache.end() && !it->second.capabilities.capability_sets.empty()) {
             cfg.capabilities = it->second.capabilities;
         }
     }
@@ -438,25 +384,23 @@ void AudioDeviceManager::updateCapabilitiesFromDescriptor(DeviceConfig& cfg, boo
         cfg.capabilities.name = origId;
     }
     if (!name.empty() && !cfg.capabilities.capability_sets.empty()) {
-        if (isCapture)
-            m_captureDeviceConfigs[name] = cfg;
-        else
-            m_playbackDeviceConfigs[name] = cfg;
+        cache[name] = cfg;
     }
 }
 
 void AudioDeviceManager::handleFormatChange(bool isCapture, int newRate) {
-    DeviceConfig& primary = isCapture ? captureConfig : playbackConfig;
-    DeviceConfig& secondary = isCapture ? playbackConfig : captureConfig;
+    auto applyRateChange = [this](DeviceConfig& cfg, bool isCap, int rate) {
+        auto desc = queryDeviceCapabilities(cfg, isCap);
+        if (desc) {
+            updateCapabilitiesFromDescriptor(cfg, isCap, desc);
+        }
+        cfg.updateRate(rate);
+    };
 
-    updateCapabilitiesFromDescriptor(primary, isCapture, queryDeviceCapabilities(primary, isCapture));
-    primary.sampleRate = newRate;
-    primary = primary.enforced();
+    applyRateChange(isCapture ? captureConfig : playbackConfig, isCapture, newRate);
 
     if (m_settings && !m_settings->resamplerEnabled) {
-        updateCapabilitiesFromDescriptor(secondary, !isCapture, queryDeviceCapabilities(secondary, !isCapture));
-        secondary.sampleRate = primary.sampleRate;
-        secondary = secondary.enforced();
+        applyRateChange(isCapture ? playbackConfig : captureConfig, !isCapture, newRate);
     }
 
     validateSampleRates();
@@ -506,26 +450,25 @@ bool AudioDeviceManager::validateSampleRates() {
 
     bool changed = false;
 
-    auto pbOptions = playbackRateOptions();
-    if (!pbOptions.empty() &&
-        std::find(pbOptions.begin(), pbOptions.end(), playbackConfig.sampleRate) == pbOptions.end()) {
-        int best = DeviceConfig::bestRate(pbOptions, playbackConfig.sampleRate);
-        if (playbackConfig.sampleRate != best) {
-            playbackConfig.sampleRate = best;
-            changed = true;
+    auto clampToOptions = [&changed](DeviceConfig& cfg, const std::vector<int>& options) {
+        if (!options.empty() && std::find(options.begin(), options.end(), cfg.sampleRate) == options.end()) {
+            int best = DeviceConfig::bestRate(options, cfg.sampleRate);
+            if (cfg.sampleRate != best) {
+                cfg.sampleRate = best;
+                changed = true;
+            }
         }
-    }
-    auto capOptions = captureRateOptions();
-    if (!capOptions.empty() &&
-        std::find(capOptions.begin(), capOptions.end(), captureConfig.sampleRate) == capOptions.end()) {
-        int best = DeviceConfig::bestRate(capOptions, captureConfig.sampleRate);
-        if (captureConfig.sampleRate != best) {
-            captureConfig.sampleRate = best;
-            changed = true;
-        }
-    }
+    };
+
+    clampToOptions(playbackConfig, playbackRateOptions());
+    clampToOptions(captureConfig, captureRateOptions());
+
     if (m_settings && !m_settings->resamplerEnabled && captureConfig.sampleRate != playbackConfig.sampleRate) {
-        captureConfig.sampleRate = playbackConfig.sampleRate;
+        if (isHardwareBackend(captureConfig.backend)) {
+            playbackConfig.sampleRate = captureConfig.sampleRate;
+        } else {
+            captureConfig.sampleRate = playbackConfig.sampleRate;
+        }
         changed = true;
     }
     if (m_settings && m_settings->resamplerEnabled && m_settings->resamplerType == ResamplerType::Slip &&
