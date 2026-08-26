@@ -24,6 +24,8 @@ typedef struct {
     int ctl_subdevice;
     int retry_count;
     int retry_delay_us;
+    snd_pcm_format_t last_format;
+    unsigned int last_rate;
     snd_pcm_uframes_t hw_ptr;
 } rate_notify_ioplug_t;
 
@@ -266,47 +268,80 @@ static bool is_capture_active_at_rate(const char *card, long device, unsigned in
 static int rn_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params) {
     rate_notify_ioplug_t *rec = (rate_notify_ioplug_t *)io;
     unsigned int rate = 0;
+    snd_pcm_format_t format = SND_PCM_FORMAT_UNKNOWN;
 
     snd_pcm_hw_params_get_rate(params, &rate, 0);
     if (rate == 0) rate = io->rate;
+    snd_pcm_hw_params_get_format(params, &format);
+    if (format == SND_PCM_FORMAT_UNKNOWN) format = io->format;
 
-    // 1. Notify CamillaDSP via "Capture Rate" control on Loopback
+    bool rate_changed = (rate != rec->last_rate);
+    bool format_changed = (rec->last_format != SND_PCM_FORMAT_UNKNOWN && format != rec->last_format);
+
+    // 1. If format changed even without a rate change, signal cdsp to restart by toggling Capture Rate
+    if (format_changed && !rate_changed) {
+        notify_capture_rate(rec->ctl_card, rec->ctl_device, rec->ctl_subdevice, 0);
+        usleep(5000);
+    }
+
+    // 2. Notify CamillaDSP via "Capture Rate" control on Loopback
     if (rate > 0) {
         notify_capture_rate(rec->ctl_card, rec->ctl_device, rec->ctl_subdevice, rate);
     }
 
-    // 2. If slave is already open, close it to let new params apply cleanly
+    // 3. Close old slave handle so it can be re-opened with new format/rate
     if (rec->slave) {
         snd_pcm_close(rec->slave);
         rec->slave = NULL;
     }
 
-    // 3. Re-open slave PCM with retries to give cdsp/Monitor-Qt time to restart at new rate.
-    // Wait until the capture endpoint (hw:Loopback,1,0) is actively capturing at the new rate.
+    // 4. Open slave and apply player's hw_params (format, rate, channels) FIRST.
+    // This locks the loopback cable to the player's format & rate in the ALSA kernel.
     int err = -EBUSY;
     for (int i = 0; i < rec->retry_count; i++) {
-        bool peer_ready = is_capture_active_at_rate(rec->ctl_card, rec->ctl_device, rate);
-        if (peer_ready) {
-            err = snd_pcm_open(&rec->slave, rec->slave_name, io->stream, io->nonblock);
-            if (err == 0 && rec->slave) {
-                err = set_slave_hw_params(rec->slave, params);
-                if (err == 0) break;
-                snd_pcm_close(rec->slave);
-                rec->slave = NULL;
+        err = snd_pcm_open(&rec->slave, rec->slave_name, io->stream, io->nonblock);
+        if (err == 0 && rec->slave) {
+            err = set_slave_hw_params(rec->slave, params);
+            if (err == 0) {
+                // Successfully locked loopback to player's format & rate
+                break;
             }
+            snd_pcm_close(rec->slave);
+            rec->slave = NULL;
         }
         usleep((useconds_t)rec->retry_delay_us);
     }
 
-    // Fallback: If peer took longer than retry window, open slave anyway so playback doesn't hard-fail
-    if (!rec->slave) {
-        err = snd_pcm_open(&rec->slave, rec->slave_name, io->stream, io->nonblock);
+    // Safety fallback: if raw hw open fails (e.g. peer locked in incompatible mode), fallback to plughw
+    if (err < 0 || !rec->slave) {
+        char plug_name[256];
+        if (strncmp(rec->slave_name, "hw:", 3) == 0) {
+            snprintf(plug_name, sizeof(plug_name), "plughw:%s", rec->slave_name + 3);
+        } else {
+            snprintf(plug_name, sizeof(plug_name), "plug:%s", rec->slave_name);
+        }
+        err = snd_pcm_open(&rec->slave, plug_name, io->stream, io->nonblock);
         if (err == 0 && rec->slave) {
             err = set_slave_hw_params(rec->slave, params);
         }
     }
 
-    return err;
+    if (err < 0 || !rec->slave) {
+        return err;
+    }
+
+    // 5. Now wait for cdsp/Monitor-Qt to restart and capture at the new rate.
+    // When cdsp probes formats with format: null, the ALSA kernel will only offer the player's format!
+    for (int i = 0; i < rec->retry_count; i++) {
+        if (is_capture_active_at_rate(rec->ctl_card, rec->ctl_device, rate)) {
+            break;
+        }
+        usleep((useconds_t)rec->retry_delay_us);
+    }
+
+    rec->last_rate = rate;
+    rec->last_format = format;
+    return 0;
 }
 
 static const snd_pcm_ioplug_callback_t rn_callback = {
