@@ -438,6 +438,11 @@ void AudioDeviceManager::handleFormatChange(bool isCapture, int newRate) {
 
     config(isCapture).updateRate(newRate);
 
+    if (m_settings && !m_settings->resamplerEnabled) {
+        config(!isCapture).sampleRate = config(isCapture).sampleRate;
+        config(!isCapture) = config(!isCapture).enforced();
+    }
+
     validateSampleRates();
     saveConfigs();
     emit configChanged();
@@ -503,7 +508,13 @@ bool AudioDeviceManager::validateSampleRates() {
     clampToOptions(captureConfig, captureRateOptions());
 
     if (m_settings && !m_settings->resamplerEnabled && captureConfig.sampleRate != playbackConfig.sampleRate) {
-        if (isHardwareBackend(captureConfig.backend)) {
+        auto common = commonRateOptions();
+        if (!common.empty()) {
+            int target = isHardwareBackend(captureConfig.backend) ? captureConfig.sampleRate : playbackConfig.sampleRate;
+            int best = DeviceConfig::bestRate(common, target);
+            captureConfig.sampleRate = best;
+            playbackConfig.sampleRate = best;
+        } else if (isHardwareBackend(captureConfig.backend)) {
             playbackConfig.sampleRate = captureConfig.sampleRate;
         } else {
             captureConfig.sampleRate = playbackConfig.sampleRate;
