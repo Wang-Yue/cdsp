@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Logging/app_logger.h"
 #include "test_support.h"
 
 int g_test_count = 0;
@@ -29,6 +30,7 @@ int main(int argc, char* argv[]) {
     while (curr) {
       if (strcmp(curr->name, run_only) == 0) {
         curr->func();
+        app_logger_flush_and_stop(app_logger_get_shared());
         return g_test_failures > 0 ? 1 : 0;
       }
       curr = curr->next;
@@ -48,5 +50,6 @@ int main(int argc, char* argv[]) {
   }
   printf("\n=== Test Results: %d run, %d failures ===\n\n", g_test_count,
          g_test_failures);
+  app_logger_flush_and_stop(app_logger_get_shared());
   return g_test_failures > 0 ? 1 : 0;
 }

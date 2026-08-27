@@ -20,36 +20,42 @@ endif()
 # Options & Platform Defaults
 # -----------------------------------------------------------------------------
 if(APPLE)
-    set(DEFAULT_ENABLE_COREAUDIO ON)
-    set(DEFAULT_ENABLE_ACCELERATE ON)
+    set(DEFAULT_ENABLE_COREAUDIO   ON)
+    set(DEFAULT_ENABLE_ACCELERATE  ON)
     set(DEFAULT_ENABLE_LIBDISPATCH ON)
-    set(DEFAULT_ENABLE_ALSA OFF)
-    set(DEFAULT_ENABLE_PIPEWIRE OFF)
-    set(DEFAULT_ENABLE_WASAPI OFF)
-    set(DEFAULT_ENABLE_ASIO OFF)
-    set(DEFAULT_ENABLE_FFTW OFF)
-    set(DEFAULT_ENABLE_DBUS OFF)
+    set(DEFAULT_ENABLE_ALSA        OFF)
+    set(DEFAULT_ENABLE_PIPEWIRE    OFF)
+    set(DEFAULT_ENABLE_WASAPI      OFF)
+    set(DEFAULT_ENABLE_ASIO        OFF)
+    set(DEFAULT_ENABLE_FFTW        OFF)
+    set(DEFAULT_ENABLE_BLAS        OFF)
+    set(DEFAULT_ENABLE_OPENMP      OFF)
+    set(DEFAULT_ENABLE_DBUS        OFF)
 elseif(WIN32)
-    set(DEFAULT_ENABLE_COREAUDIO OFF)
-    set(DEFAULT_ENABLE_ACCELERATE OFF)
+    set(DEFAULT_ENABLE_COREAUDIO   OFF)
+    set(DEFAULT_ENABLE_ACCELERATE  OFF)
     set(DEFAULT_ENABLE_LIBDISPATCH OFF)
-    set(DEFAULT_ENABLE_ALSA OFF)
-    set(DEFAULT_ENABLE_PIPEWIRE OFF)
-    set(DEFAULT_ENABLE_WASAPI ON)
-    set(DEFAULT_ENABLE_ASIO ON)
-    set(DEFAULT_ENABLE_FFTW ON)
-    set(DEFAULT_ENABLE_DBUS OFF)
+    set(DEFAULT_ENABLE_ALSA        OFF)
+    set(DEFAULT_ENABLE_PIPEWIRE    OFF)
+    set(DEFAULT_ENABLE_WASAPI      ON)
+    set(DEFAULT_ENABLE_ASIO        ON)
+    set(DEFAULT_ENABLE_FFTW        ON)
+    set(DEFAULT_ENABLE_BLAS        ON)
+    set(DEFAULT_ENABLE_OPENMP      ON)
+    set(DEFAULT_ENABLE_DBUS        OFF)
 else()
     # Linux (Default)
-    set(DEFAULT_ENABLE_COREAUDIO OFF)
-    set(DEFAULT_ENABLE_ACCELERATE OFF)
+    set(DEFAULT_ENABLE_COREAUDIO   OFF)
+    set(DEFAULT_ENABLE_ACCELERATE  OFF)
     set(DEFAULT_ENABLE_LIBDISPATCH OFF)
-    set(DEFAULT_ENABLE_ALSA ON)
-    set(DEFAULT_ENABLE_PIPEWIRE ON)
-    set(DEFAULT_ENABLE_WASAPI OFF)
-    set(DEFAULT_ENABLE_ASIO OFF)
-    set(DEFAULT_ENABLE_FFTW ON)
-    set(DEFAULT_ENABLE_DBUS ON)
+    set(DEFAULT_ENABLE_ALSA        ON)
+    set(DEFAULT_ENABLE_PIPEWIRE    ON)
+    set(DEFAULT_ENABLE_WASAPI      OFF)
+    set(DEFAULT_ENABLE_ASIO        OFF)
+    set(DEFAULT_ENABLE_FFTW        ON)
+    set(DEFAULT_ENABLE_BLAS        ON)
+    set(DEFAULT_ENABLE_OPENMP      ON)
+    set(DEFAULT_ENABLE_DBUS        ON)
 endif()
 
 option(ENABLE_COREAUDIO   "Enable macOS CoreAudio backend"      ${DEFAULT_ENABLE_COREAUDIO})
@@ -59,8 +65,8 @@ option(ENABLE_PIPEWIRE    "Enable Linux PipeWire backend"       ${DEFAULT_ENABLE
 option(ENABLE_WASAPI      "Enable Windows WASAPI audio backend" ${DEFAULT_ENABLE_WASAPI})
 option(ENABLE_ASIO        "Enable Windows ASIO audio backend"   ${DEFAULT_ENABLE_ASIO})
 option(ENABLE_FFTW        "Enable FFTW library for FFT"         ${DEFAULT_ENABLE_FFTW})
-option(ENABLE_BLAS        "Enable OpenBLAS library"             OFF)
-option(ENABLE_OPENMP      "Enable OpenMP parallelization"       OFF)
+option(ENABLE_BLAS        "Enable OpenBLAS/CBLAS library"       ${DEFAULT_ENABLE_BLAS})
+option(ENABLE_OPENMP      "Enable OpenMP parallelization"       ${DEFAULT_ENABLE_OPENMP})
 option(ENABLE_WEBSOCKET   "Enable WebSocket control server"     ON)
 option(ENABLE_DBUS        "Enable Linux DBus device monitoring" ${DEFAULT_ENABLE_DBUS})
 option(ENABLE_LIBDISPATCH "Enable Apple libdispatch (GCD)"      ${DEFAULT_ENABLE_LIBDISPATCH})
@@ -73,7 +79,7 @@ option(BUILD_BENCHMARKS   "Build benchmark targets"             ON)
 set(ENABLE_SANITIZER "none" CACHE STRING "Sanitizer to enable (none, address, thread, undefined, memory, leak, intsan, cfi)")
 
 # -----------------------------------------------------------------------------
-# Global Compiler / Linker Configurations
+# Global Optimization & Build Settings
 # -----------------------------------------------------------------------------
 if(ENABLE_LTO)
     include(CheckIPOSupported)
@@ -85,18 +91,13 @@ if(ENABLE_LTO)
     endif()
 endif()
 
-# Default build type to Release if not specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
-# Common compiler flags
-set(CDSP_C_FLAGS "")
-set(CDSP_C_DEFINITIONS "CDSP_BUILD_SHARED")
-
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
-    list(APPEND CDSP_C_FLAGS
+    add_compile_options(
         -Wall
         -Wextra
         -O3
@@ -108,9 +109,9 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
 
     if(ENABLE_NATIVE_ARCH AND NOT CMAKE_CROSSCOMPILING)
         if(APPLE)
-            list(APPEND CDSP_C_FLAGS -mcpu=native)
+            add_compile_options(-mcpu=native)
         else()
-            list(APPEND CDSP_C_FLAGS -march=native)
+            add_compile_options(-march=native)
         endif()
     endif()
 endif()
@@ -118,17 +119,17 @@ endif()
 # Sanitizers
 if(NOT ENABLE_SANITIZER STREQUAL "none")
     if(ENABLE_SANITIZER STREQUAL "address")
-        list(APPEND CDSP_C_FLAGS -fsanitize=address,undefined -fno-omit-frame-pointer -g)
-        link_libraries(-fsanitize=address,undefined)
+        add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=address,undefined)
     elseif(ENABLE_SANITIZER STREQUAL "thread")
-        list(APPEND CDSP_C_FLAGS -fsanitize=thread -fno-omit-frame-pointer -g)
-        link_libraries(-fsanitize=thread)
+        add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=thread)
     elseif(ENABLE_SANITIZER STREQUAL "undefined")
-        list(APPEND CDSP_C_FLAGS -fsanitize=undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g)
-        link_libraries(-fsanitize=undefined)
+        add_compile_options(-fsanitize=undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=undefined)
     elseif(ENABLE_SANITIZER STREQUAL "intsan")
-        list(APPEND CDSP_C_FLAGS -fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fno-sanitize-recover=all -fno-omit-frame-pointer -g)
-        link_libraries(-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero)
+        add_compile_options(-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fno-sanitize-recover=all -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero)
     elseif(ENABLE_SANITIZER STREQUAL "memory")
         if(APPLE)
             message(FATAL_ERROR "MemorySanitizer is not supported on macOS")
@@ -136,249 +137,23 @@ if(NOT ENABLE_SANITIZER STREQUAL "none")
         set(ENABLE_ALSA OFF CACHE BOOL "Disabled under MemorySanitizer" FORCE)
         set(ENABLE_PIPEWIRE OFF CACHE BOOL "Disabled under MemorySanitizer" FORCE)
         set(ENABLE_DBUS OFF CACHE BOOL "Disabled under MemorySanitizer" FORCE)
-        list(APPEND CDSP_C_FLAGS -fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer -g)
-        link_libraries(-fsanitize=memory)
+        add_compile_options(-fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=memory)
     elseif(ENABLE_SANITIZER STREQUAL "leak")
         if(APPLE)
-            list(APPEND CDSP_C_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
-            link_libraries(-fsanitize=address)
+            add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+            add_link_options(-fsanitize=address)
         else()
-            list(APPEND CDSP_C_FLAGS -fsanitize=leak -fno-omit-frame-pointer -g)
-            link_libraries(-fsanitize=leak)
+            add_compile_options(-fsanitize=leak -fno-omit-frame-pointer -g)
+            add_link_options(-fsanitize=leak)
         endif()
     elseif(ENABLE_SANITIZER STREQUAL "cfi")
-        list(APPEND CDSP_C_FLAGS -flto -fvisibility=hidden -fsanitize=cfi -fno-omit-frame-pointer -g)
-        link_libraries(-flto -fsanitize=cfi)
+        add_compile_options(-flto -fvisibility=hidden -fsanitize=cfi -fno-omit-frame-pointer -g)
+        add_link_options(-flto -fsanitize=cfi)
     else()
         message(FATAL_ERROR "Unknown sanitizer: ${ENABLE_SANITIZER}")
     endif()
 endif()
-
-# Feature Preprocessor Definitions
-if(ENABLE_COREAUDIO)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_COREAUDIO)
-endif()
-if(ENABLE_ACCELERATE)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_ACCELERATE)
-endif()
-if(ENABLE_ALSA)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_ALSA)
-endif()
-if(ENABLE_PIPEWIRE)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_PIPEWIRE)
-endif()
-if(ENABLE_WASAPI)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_WASAPI)
-endif()
-if(ENABLE_ASIO)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_ASIO)
-endif()
-if(ENABLE_FFTW)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_FFTW)
-endif()
-if(ENABLE_BLAS)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_BLAS)
-endif()
-if(ENABLE_WEBSOCKET)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_WEBSOCKET)
-endif()
-if(ENABLE_OPENMP)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_OPENMP)
-endif()
-if(ENABLE_LIBDISPATCH)
-    list(APPEND CDSP_C_DEFINITIONS ENABLE_LIBDISPATCH)
-endif()
-
-# Platform-specific definitions and dependencies
-find_package(Threads REQUIRED)
-set(CDSP_PLATFORM_DEPS Threads::Threads)
-set(CDSP_PLATFORM_INCLUDES "")
-
-if(WIN32)
-    list(APPEND CDSP_C_DEFINITIONS
-        COBJMACROS
-        _WIN32
-        UNICODE
-        _UNICODE
-        _USE_MATH_DEFINES
-    )
-    if(ENABLE_LIBDISPATCH)
-        list(APPEND CDSP_C_DEFINITIONS HAVE_MODE_T)
-        list(APPEND CDSP_PLATFORM_DEPS dispatch BlocksRuntime)
-    endif()
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/win_deps/include")
-        list(APPEND CDSP_PLATFORM_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/win_deps/include")
-    endif()
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/win_deps/lib")
-        link_directories("${CMAKE_CURRENT_SOURCE_DIR}/win_deps/lib")
-    endif()
-    if(ENABLE_FFTW)
-        list(APPEND CDSP_PLATFORM_DEPS fftw3 fftw3f)
-    endif()
-    if(ENABLE_BLAS)
-        list(APPEND CDSP_PLATFORM_DEPS openblas)
-    endif()
-    list(APPEND CDSP_PLATFORM_DEPS ws2_32 winmm ole32 uuid ksuser ksguid avrt)
-elseif(APPLE)
-    list(APPEND CDSP_PLATFORM_DEPS "-framework CoreFoundation")
-    if(ENABLE_COREAUDIO)
-        list(APPEND CDSP_PLATFORM_DEPS "-framework CoreAudio" "-framework AudioToolbox")
-    endif()
-    if(ENABLE_ACCELERATE)
-        list(APPEND CDSP_PLATFORM_DEPS "-framework Accelerate")
-    endif()
-    if(ENABLE_FFTW)
-        find_path(FFTW3_INCLUDE_DIR fftw3.h PATHS /opt/homebrew/include /usr/local/include)
-        find_library(FFTW3_LIB fftw3 PATHS /opt/homebrew/lib /usr/local/lib)
-        find_library(FFTW3F_LIB fftw3f PATHS /opt/homebrew/lib /usr/local/lib)
-        if(FFTW3_INCLUDE_DIR)
-            list(APPEND CDSP_PLATFORM_INCLUDES ${FFTW3_INCLUDE_DIR})
-        endif()
-        if(FFTW3_LIB AND FFTW3F_LIB)
-            list(APPEND CDSP_PLATFORM_DEPS ${FFTW3_LIB} ${FFTW3F_LIB})
-        else()
-            list(APPEND CDSP_PLATFORM_DEPS fftw3 fftw3f)
-        endif()
-    endif()
-    list(APPEND CDSP_PLATFORM_DEPS m)
-else()
-    # Linux
-    list(APPEND CDSP_C_DEFINITIONS _GNU_SOURCE)
-    find_package(PkgConfig QUIET)
-
-    if(ENABLE_DBUS)
-        if(PKG_CONFIG_FOUND)
-            pkg_check_modules(DBUS dbus-1)
-            if(DBUS_FOUND)
-                list(APPEND CDSP_PLATFORM_INCLUDES ${DBUS_INCLUDE_DIRS})
-                list(APPEND CDSP_PLATFORM_DEPS ${DBUS_LIBRARIES})
-            else()
-                list(APPEND CDSP_PLATFORM_DEPS dbus-1)
-            endif()
-        else()
-            list(APPEND CDSP_PLATFORM_DEPS dbus-1)
-        endif()
-    else()
-        list(APPEND CDSP_C_DEFINITIONS NO_DBUS)
-    endif()
-
-    if(ENABLE_LIBDISPATCH)
-        if(PKG_CONFIG_FOUND)
-            pkg_check_modules(DISPATCH QUIET libdispatch)
-        endif()
-        if(DISPATCH_FOUND)
-            list(APPEND CDSP_PLATFORM_INCLUDES ${DISPATCH_INCLUDE_DIRS})
-            list(APPEND CDSP_PLATFORM_DEPS ${DISPATCH_LIBRARIES})
-        else()
-            find_path(SWIFT_DISPATCH_INCLUDE_DIR
-                NAMES dispatch/dispatch.h
-                PATHS
-                    /usr/lib/swift
-                    /usr/lib/swift/linux
-                    /usr/lib/swift/linux/x86_64
-                    /usr/lib/swift/linux/aarch64
-                    /usr/libexec/swift/lib/swift
-                    /usr/libexec/swift/lib/swift/linux
-                    /usr/include
-            )
-            find_library(SWIFT_DISPATCH_LIB
-                NAMES dispatch libdispatch
-                PATHS
-                    /usr/lib/swift/linux
-                    /usr/lib/swift/linux/x86_64
-                    /usr/lib/swift/linux/aarch64
-                    /usr/libexec/swift/lib/swift/linux
-                    /usr/lib/x86_64-linux-gnu
-                    /usr/lib/aarch64-linux-gnu
-                    /usr/lib
-            )
-            find_library(SWIFT_BLOCKSRUNTIME_LIB
-                NAMES BlocksRuntime libBlocksRuntime
-                PATHS
-                    /usr/lib/swift/linux
-                    /usr/lib/swift/linux/x86_64
-                    /usr/lib/swift/linux/aarch64
-                    /usr/libexec/swift/lib/swift/linux
-                    /usr/lib/x86_64-linux-gnu
-                    /usr/lib/aarch64-linux-gnu
-                    /usr/lib
-            )
-
-            if(SWIFT_DISPATCH_INCLUDE_DIR)
-                list(APPEND CDSP_PLATFORM_INCLUDES ${SWIFT_DISPATCH_INCLUDE_DIR})
-            endif()
-
-            if(SWIFT_DISPATCH_LIB)
-                list(APPEND CDSP_PLATFORM_DEPS ${SWIFT_DISPATCH_LIB})
-                get_filename_component(SWIFT_DISPATCH_LIB_DIR "${SWIFT_DISPATCH_LIB}" DIRECTORY)
-                set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_RPATH}:${SWIFT_DISPATCH_LIB_DIR}")
-                set(CMAKE_BUILD_RPATH "${CMAKE_BUILD_RPATH}:${SWIFT_DISPATCH_LIB_DIR}")
-            else()
-                list(APPEND CDSP_PLATFORM_DEPS dispatch)
-            endif()
-
-            if(SWIFT_BLOCKSRUNTIME_LIB)
-                list(APPEND CDSP_PLATFORM_DEPS ${SWIFT_BLOCKSRUNTIME_LIB})
-            else()
-                list(APPEND CDSP_PLATFORM_DEPS BlocksRuntime)
-            endif()
-        endif()
-    elseif(ENABLE_OPENMP)
-        find_package(OpenMP REQUIRED)
-        list(APPEND CDSP_PLATFORM_DEPS OpenMP::OpenMP_C)
-    endif()
-
-    if(ENABLE_ALSA)
-        list(APPEND CDSP_PLATFORM_DEPS asound)
-    endif()
-
-    if(ENABLE_PIPEWIRE)
-        if(PKG_CONFIG_FOUND)
-            pkg_check_modules(PIPEWIRE libpipewire-0.3)
-            if(PIPEWIRE_FOUND)
-                list(APPEND CDSP_PLATFORM_INCLUDES ${PIPEWIRE_INCLUDE_DIRS})
-                list(APPEND CDSP_PLATFORM_DEPS ${PIPEWIRE_LIBRARIES})
-            else()
-                list(APPEND CDSP_PLATFORM_DEPS pipewire-0.3)
-            endif()
-        else()
-            list(APPEND CDSP_PLATFORM_DEPS pipewire-0.3)
-        endif()
-    endif()
-
-    if(ENABLE_FFTW)
-        list(APPEND CDSP_PLATFORM_DEPS fftw3 fftw3f)
-    endif()
-
-    if(ENABLE_BLAS)
-        list(APPEND CDSP_PLATFORM_DEPS openblas)
-    endif()
-
-    list(APPEND CDSP_PLATFORM_DEPS m rt)
-endif()
-
-# -----------------------------------------------------------------------------
-# Include Directories
-# -----------------------------------------------------------------------------
-set(CDSP_INCLUDE_DIRS
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/Audio
-    ${CMAKE_CURRENT_SOURCE_DIR}/Backend
-    ${CMAKE_CURRENT_SOURCE_DIR}/Config
-    ${CMAKE_CURRENT_SOURCE_DIR}/DoP
-    ${CMAKE_CURRENT_SOURCE_DIR}/Engine
-    ${CMAKE_CURRENT_SOURCE_DIR}/FFT
-    ${CMAKE_CURRENT_SOURCE_DIR}/Filters
-    ${CMAKE_CURRENT_SOURCE_DIR}/Logging
-    ${CMAKE_CURRENT_SOURCE_DIR}/Mixer
-    ${CMAKE_CURRENT_SOURCE_DIR}/Pipeline
-    ${CMAKE_CURRENT_SOURCE_DIR}/Processors
-    ${CMAKE_CURRENT_SOURCE_DIR}/Public
-    ${CMAKE_CURRENT_SOURCE_DIR}/Resampler
-    ${CMAKE_CURRENT_SOURCE_DIR}/Server
-    ${CMAKE_CURRENT_SOURCE_DIR}/Utils
-    ${CDSP_PLATFORM_INCLUDES}
-)
 
 # -----------------------------------------------------------------------------
 # Source Files Selection
@@ -408,17 +183,294 @@ else()
 endif()
 
 # -----------------------------------------------------------------------------
-# Main Library: dsp
+# Core Library: dsp
 # -----------------------------------------------------------------------------
 add_library(dsp STATIC ${DSP_SRCS})
 add_library(cdsp::dsp ALIAS dsp)
 
-target_include_directories(dsp PUBLIC ${CDSP_INCLUDE_DIRS})
-target_compile_definitions(dsp PUBLIC ${CDSP_C_DEFINITIONS})
-target_compile_options(dsp PUBLIC ${CDSP_C_FLAGS})
-target_link_libraries(dsp PUBLIC ${CDSP_PLATFORM_DEPS})
-if(SWIFT_DISPATCH_LIB_DIR)
-    target_link_directories(dsp PUBLIC "${SWIFT_DISPATCH_LIB_DIR}")
+target_include_directories(dsp PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Audio>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Backend>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Config>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/DoP>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Engine>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/FFT>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Filters>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Logging>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Mixer>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Pipeline>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Processors>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Public>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Resampler>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Server>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Utils>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cdsp>
+)
+
+target_compile_definitions(dsp PUBLIC CDSP_BUILD_SHARED)
+
+# -----------------------------------------------------------------------------
+# Base Platform Dependencies
+# -----------------------------------------------------------------------------
+find_package(Threads REQUIRED)
+target_link_libraries(dsp PUBLIC Threads::Threads)
+
+find_package(PkgConfig QUIET)
+
+if(WIN32)
+    target_compile_definitions(dsp PUBLIC
+        COBJMACROS
+        _WIN32
+        UNICODE
+        _UNICODE
+        _USE_MATH_DEFINES
+    )
+    target_link_libraries(dsp PUBLIC ws2_32 winmm ole32 uuid ksuser ksguid avrt)
+elseif(APPLE)
+    target_link_libraries(dsp PUBLIC "-framework CoreFoundation" m)
+else()
+    target_compile_definitions(dsp PUBLIC _GNU_SOURCE)
+    target_link_libraries(dsp PUBLIC m rt)
+endif()
+
+# -----------------------------------------------------------------------------
+# Audio Backends
+# -----------------------------------------------------------------------------
+if(ENABLE_COREAUDIO)
+    target_compile_definitions(dsp PUBLIC ENABLE_COREAUDIO)
+    target_link_libraries(dsp PUBLIC "-framework CoreAudio" "-framework AudioToolbox")
+endif()
+
+if(ENABLE_ACCELERATE)
+    target_compile_definitions(dsp PUBLIC ENABLE_ACCELERATE)
+    target_link_libraries(dsp PUBLIC "-framework Accelerate")
+endif()
+
+if(ENABLE_WASAPI)
+    target_compile_definitions(dsp PUBLIC ENABLE_WASAPI)
+endif()
+
+if(ENABLE_ASIO)
+    target_compile_definitions(dsp PUBLIC ENABLE_ASIO)
+endif()
+
+if(ENABLE_ALSA)
+    find_package(ALSA QUIET)
+    if(TARGET ALSA::ALSA)
+        target_link_libraries(dsp PUBLIC ALSA::ALSA)
+        target_compile_definitions(dsp PUBLIC ENABLE_ALSA)
+    elseif(PKG_CONFIG_FOUND)
+        pkg_check_modules(ALSA QUIET IMPORTED_TARGET alsa)
+        if(TARGET PkgConfig::ALSA)
+            target_link_libraries(dsp PUBLIC PkgConfig::ALSA)
+            target_compile_definitions(dsp PUBLIC ENABLE_ALSA)
+        endif()
+    endif()
+endif()
+
+if(ENABLE_PIPEWIRE AND PKG_CONFIG_FOUND)
+    pkg_check_modules(PIPEWIRE QUIET IMPORTED_TARGET libpipewire-0.3)
+    if(TARGET PkgConfig::PIPEWIRE)
+        target_link_libraries(dsp PUBLIC PkgConfig::PIPEWIRE)
+        target_compile_definitions(dsp PUBLIC ENABLE_PIPEWIRE)
+    endif()
+endif()
+
+if(ENABLE_DBUS AND PKG_CONFIG_FOUND)
+    pkg_check_modules(DBUS QUIET IMPORTED_TARGET dbus-1)
+    if(TARGET PkgConfig::DBUS)
+        target_link_libraries(dsp PUBLIC PkgConfig::DBUS)
+        target_compile_definitions(dsp PUBLIC ENABLE_DBUS)
+    else()
+        target_compile_definitions(dsp PUBLIC NO_DBUS)
+    endif()
+else()
+    target_compile_definitions(dsp PUBLIC NO_DBUS)
+endif()
+
+if(ENABLE_WEBSOCKET)
+    target_compile_definitions(dsp PUBLIC ENABLE_WEBSOCKET)
+endif()
+
+# -----------------------------------------------------------------------------
+# Math, FFT & Acceleration Libraries
+# -----------------------------------------------------------------------------
+if(ENABLE_FFTW)
+    set(FFTW_FOUND_FLAG FALSE)
+    # 1. Search for headers and full absolute library paths first (prevents MSYS2 FFTW3Config.cmake relative path bugs)
+    find_path(FFTW3_INCLUDE_DIR NAMES fftw3.h)
+    find_library(FFTW3_LIB NAMES fftw3 libfftw3-3 libfftw3)
+    find_library(FFTW3F_LIB NAMES fftw3f libfftw3f-3 libfftw3f)
+
+    if(FFTW3_INCLUDE_DIR AND FFTW3_LIB AND FFTW3F_LIB)
+        target_include_directories(dsp PUBLIC ${FFTW3_INCLUDE_DIR})
+        target_link_libraries(dsp PUBLIC ${FFTW3_LIB} ${FFTW3F_LIB})
+        target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
+        set(FFTW_FOUND_FLAG TRUE)
+    elseif(PKG_CONFIG_FOUND)
+        pkg_check_modules(FFTW3 QUIET IMPORTED_TARGET fftw3 fftw3f)
+        if(TARGET PkgConfig::FFTW3)
+            target_link_libraries(dsp PUBLIC PkgConfig::FFTW3)
+            target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
+            set(FFTW_FOUND_FLAG TRUE)
+        endif()
+    endif()
+
+    if(NOT FFTW_FOUND_FLAG)
+        find_package(FFTW3 CONFIG QUIET)
+        find_package(FFTW3f CONFIG QUIET)
+        if(TARGET FFTW3::fftw3 AND TARGET FFTW3::fftw3f)
+            target_link_libraries(dsp PUBLIC FFTW3::fftw3 FFTW3::fftw3f)
+            target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
+            set(FFTW_FOUND_FLAG TRUE)
+        endif()
+    endif()
+
+    if(FFTW_FOUND_FLAG)
+        message(STATUS "FFTW3 found and enabled")
+    else()
+        message(STATUS "FFTW3 not found, falling back to built-in mixed-radix Real FFT")
+    endif()
+endif()
+
+if(ENABLE_BLAS)
+    set(BLAS_FOUND_FLAG FALSE)
+    # Search for cblas.h in standard directories & multi-arch subdirectories
+    find_path(CBLAS_INCLUDE_DIR NAMES cblas.h
+        PATH_SUFFIXES openblas openblas-pthread openblas-openmp openblas-serial cblas
+    )
+    find_library(CBLAS_LIB NAMES openblas cblas blas libopenblas)
+    if(CBLAS_INCLUDE_DIR AND CBLAS_LIB)
+        target_include_directories(dsp PUBLIC ${CBLAS_INCLUDE_DIR})
+        target_link_libraries(dsp PUBLIC ${CBLAS_LIB})
+        target_compile_definitions(dsp PUBLIC ENABLE_BLAS)
+        set(BLAS_FOUND_FLAG TRUE)
+    elseif(PKG_CONFIG_FOUND)
+        pkg_check_modules(OPENBLAS QUIET IMPORTED_TARGET openblas cblas)
+        if(TARGET PkgConfig::OPENBLAS)
+            target_link_libraries(dsp PUBLIC PkgConfig::OPENBLAS)
+            if(CBLAS_INCLUDE_DIR)
+                target_include_directories(dsp PUBLIC ${CBLAS_INCLUDE_DIR})
+            endif()
+            target_compile_definitions(dsp PUBLIC ENABLE_BLAS)
+            set(BLAS_FOUND_FLAG TRUE)
+        endif()
+    elseif(TARGET BLAS::BLAS AND CBLAS_INCLUDE_DIR)
+        target_link_libraries(dsp PUBLIC BLAS::BLAS)
+        target_include_directories(dsp PUBLIC ${CBLAS_INCLUDE_DIR})
+        target_compile_definitions(dsp PUBLIC ENABLE_BLAS)
+        set(BLAS_FOUND_FLAG TRUE)
+    endif()
+
+    if(BLAS_FOUND_FLAG)
+        message(STATUS "BLAS/CBLAS found and enabled: ${CBLAS_INCLUDE_DIR}")
+    else()
+        message(STATUS "BLAS/CBLAS not found, falling back to built-in vectorized C implementation")
+    endif()
+endif()
+
+# -----------------------------------------------------------------------------
+# Parallelization: OpenMP & libdispatch (GCD)
+# -----------------------------------------------------------------------------
+if(ENABLE_OPENMP)
+    find_package(OpenMP QUIET)
+    if(TARGET OpenMP::OpenMP_C)
+        target_link_libraries(dsp PUBLIC OpenMP::OpenMP_C)
+        target_compile_definitions(dsp PUBLIC ENABLE_OPENMP)
+    endif()
+endif()
+
+if(ENABLE_LIBDISPATCH)
+    set(DISPATCH_FOUND_FLAG FALSE)
+    if(WIN32)
+        target_compile_definitions(dsp PUBLIC HAVE_MODE_T ENABLE_LIBDISPATCH)
+        target_link_libraries(dsp PUBLIC dispatch BlocksRuntime)
+        set(DISPATCH_FOUND_FLAG TRUE)
+    elseif(APPLE)
+        # Built-in in Darwin libSystem
+        target_compile_definitions(dsp PUBLIC ENABLE_LIBDISPATCH)
+        set(DISPATCH_FOUND_FLAG TRUE)
+    else()
+        # 1. Discover Swift toolchain paths if swift is installed
+        find_program(SWIFT_EXECUTABLE swift)
+        set(SWIFT_SEARCH_PATHS "")
+        if(SWIFT_EXECUTABLE)
+            get_filename_component(SWIFT_REAL_PATH "${SWIFT_EXECUTABLE}" REALPATH)
+            get_filename_component(SWIFT_BIN_DIR "${SWIFT_REAL_PATH}" DIRECTORY)
+            get_filename_component(SWIFT_TOOLCHAIN_DIR "${SWIFT_BIN_DIR}" DIRECTORY)
+            list(APPEND SWIFT_SEARCH_PATHS
+                "${SWIFT_TOOLCHAIN_DIR}/lib/swift"
+                "${SWIFT_TOOLCHAIN_DIR}/lib/swift/linux"
+                "${SWIFT_TOOLCHAIN_DIR}/lib/swift/linux/${CMAKE_SYSTEM_PROCESSOR}"
+                "${SWIFT_TOOLCHAIN_DIR}/lib/swift_static"
+                "${SWIFT_TOOLCHAIN_DIR}/lib/swift_static/linux"
+            )
+        endif()
+
+        # 2. Try pkg-config if available
+        if(PKG_CONFIG_FOUND)
+            pkg_check_modules(DISPATCH QUIET IMPORTED_TARGET libdispatch dispatch)
+            if(TARGET PkgConfig::DISPATCH)
+                target_link_libraries(dsp PUBLIC PkgConfig::DISPATCH)
+                target_compile_definitions(dsp PUBLIC ENABLE_LIBDISPATCH)
+                set(DISPATCH_FOUND_FLAG TRUE)
+            endif()
+        endif()
+
+        # 3. Fallback to searching header & libraries in Swift toolchain and system paths
+        if(NOT DISPATCH_FOUND_FLAG)
+            find_path(DISPATCH_INCLUDE_DIR NAMES dispatch/dispatch.h
+                HINTS ${SWIFT_SEARCH_PATHS}
+                PATH_SUFFIXES
+                    dispatch
+                    swift
+                    swift/linux/${CMAKE_SYSTEM_PROCESSOR}
+                    swift/linux
+                    lib/swift
+                    lib/swift/dispatch
+                    usr/lib/swift
+                    usr/libexec/swift/lib/swift
+            )
+            find_library(DISPATCH_LIB NAMES dispatch libdispatch
+                HINTS ${SWIFT_SEARCH_PATHS}
+                PATH_SUFFIXES
+                    swift/linux/${CMAKE_SYSTEM_PROCESSOR}
+                    swift/linux
+                    lib/swift/linux
+                    usr/lib/swift/linux
+                    usr/libexec/swift/lib/swift/linux
+            )
+            find_library(BLOCKSRUNTIME_LIB NAMES BlocksRuntime libBlocksRuntime
+                HINTS ${SWIFT_SEARCH_PATHS}
+                PATH_SUFFIXES
+                    swift/linux/${CMAKE_SYSTEM_PROCESSOR}
+                    swift/linux
+                    lib/swift/linux
+                    usr/lib/swift/linux
+                    usr/libexec/swift/lib/swift/linux
+            )
+
+            if(DISPATCH_INCLUDE_DIR AND DISPATCH_LIB)
+                target_include_directories(dsp PUBLIC ${DISPATCH_INCLUDE_DIR})
+                target_link_libraries(dsp PUBLIC ${DISPATCH_LIB})
+                if(BLOCKSRUNTIME_LIB)
+                    target_link_libraries(dsp PUBLIC ${BLOCKSRUNTIME_LIB})
+                endif()
+                get_filename_component(DISPATCH_LIB_DIR "${DISPATCH_LIB}" DIRECTORY)
+                target_link_directories(dsp PUBLIC "${DISPATCH_LIB_DIR}")
+                target_link_options(dsp PUBLIC "-Wl,-rpath,${DISPATCH_LIB_DIR}")
+                target_compile_definitions(dsp PUBLIC ENABLE_LIBDISPATCH)
+                set(DISPATCH_FOUND_FLAG TRUE)
+            endif()
+        endif()
+
+        if(DISPATCH_FOUND_FLAG)
+            message(STATUS "libdispatch (GCD) found and enabled: ${DISPATCH_LIB}")
+        else()
+            message(WARNING "ENABLE_LIBDISPATCH was requested but libdispatch headers or libraries were not found.")
+        endif()
+    endif()
 endif()
 
 # -----------------------------------------------------------------------------
@@ -426,11 +478,6 @@ endif()
 # -----------------------------------------------------------------------------
 add_executable(cdsp main.c ${SERVER_SRCS})
 target_link_libraries(cdsp PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,dsp>")
-target_include_directories(cdsp PRIVATE ${CDSP_INCLUDE_DIRS})
-target_compile_definitions(cdsp PRIVATE ${CDSP_C_DEFINITIONS})
-target_compile_options(cdsp PRIVATE ${CDSP_C_FLAGS})
-
-# Output binary to bin/ inside build directory or top-level bin
 set_target_properties(cdsp PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
@@ -452,14 +499,11 @@ if(BUILD_TESTING)
     endif()
 
     add_library(dsp_test STATIC ${DSP_SRCS})
-    target_include_directories(dsp_test PUBLIC ${CDSP_INCLUDE_DIRS})
+    target_link_libraries(dsp_test PUBLIC dsp)
     target_compile_definitions(dsp_test PUBLIC
-        ${CDSP_C_DEFINITIONS}
         CDSP_TEST
         CDSP_COMBINED_TEST_SUITE
     )
-    target_compile_options(dsp_test PUBLIC ${CDSP_C_FLAGS})
-    target_link_libraries(dsp_test PUBLIC ${CDSP_PLATFORM_DEPS})
 
     file(GLOB TEST_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests/test_*.c")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_runner_main\\.c$")
@@ -477,18 +521,9 @@ if(BUILD_TESTING)
         ${TEST_SRCS}
         ${SERVER_SRCS}
     )
-    target_include_directories(test_runner PRIVATE
-        ${CDSP_INCLUDE_DIRS}
-        ${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests
-    )
-    target_compile_definitions(test_runner PRIVATE
-        ${CDSP_C_DEFINITIONS}
-        CDSP_TEST
-        CDSP_COMBINED_TEST_SUITE
-        CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
-    )
-    target_compile_options(test_runner PRIVATE ${CDSP_C_FLAGS})
     target_link_libraries(test_runner PRIVATE dsp_test)
+    target_include_directories(test_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests)
+    target_compile_definitions(test_runner PRIVATE CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
 
     if(TARGET test-rust-build)
         add_dependencies(test_runner test-rust-build)
@@ -521,7 +556,7 @@ if(BUILD_TESTING)
         VERBATIM
     )
 
-    # Convenience targets
+    # Convenience target
     add_custom_target(check
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j
         DEPENDS test_runner
@@ -544,16 +579,9 @@ if(BUILD_BENCHMARKS)
     set(BENCH_TARGETS "")
     foreach(bench_name ${BENCHMARK_NAMES})
         add_executable(${bench_name} Tests/CLibTests/${bench_name}.c)
-        target_include_directories(${bench_name} PRIVATE
-            ${CDSP_INCLUDE_DIRS}
-            ${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests
-        )
-        target_compile_definitions(${bench_name} PRIVATE
-            ${CDSP_C_DEFINITIONS}
-            CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
-        )
-        target_compile_options(${bench_name} PRIVATE ${CDSP_C_FLAGS})
         target_link_libraries(${bench_name} PRIVATE dsp)
+        target_include_directories(${bench_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests)
+        target_compile_definitions(${bench_name} PRIVATE CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
         set_target_properties(${bench_name} PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Tests/CLibTests/bin"
         )

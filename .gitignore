@@ -1,5 +1,4 @@
 build*/
 .DS_Store
 target/
-win_deps/
 compile_commands.json

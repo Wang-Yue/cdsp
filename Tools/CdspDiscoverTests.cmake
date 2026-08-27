@@ -59,16 +59,8 @@ foreach(TEST_NAME IN LISTS TEST_LIST)
 
     set(TEST_PROPERTIES "LABELS \"${TEST_LABEL}\" TIMEOUT 30 ENVIRONMENT \"TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_LIST_DIR}/tsan_suppressions.txt:second_deadlock_stack=1;LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_LIST_DIR}/lsan_suppressions.txt\"")
 
-    if("${TEST_NAME}" MATCHES "(CoreAudio)")
-        string(APPEND TEST_PROPERTIES " RESOURCE_LOCK \"coreaudio_hardware\"")
-    elseif("${TEST_NAME}" MATCHES "ALSA")
-        string(APPEND TEST_PROPERTIES " RESOURCE_LOCK \"alsa_hardware\"")
-    elseif("${TEST_NAME}" MATCHES "PipeWire")
-        string(APPEND TEST_PROPERTIES " RESOURCE_LOCK \"pipewire_hardware\"")
-    elseif("${TEST_NAME}" MATCHES "WASAPI")
-        string(APPEND TEST_PROPERTIES " RESOURCE_LOCK \"wasapi_hardware\"")
-    elseif("${TEST_NAME}" MATCHES "ASIO")
-        string(APPEND TEST_PROPERTIES " RESOURCE_LOCK \"asio_hardware\"")
+    if("${TEST_NAME}" MATCHES "(CoreAudio|ALSA|PipeWire|WASAPI|ASIO)")
+        string(APPEND TEST_PROPERTIES " RESOURCE_LOCK \"audio_hardware\"")
     endif()
 
     string(APPEND CTEST_CONTENT "add_test(\"${TEST_NAME}\" \"${TEST_EXECUTABLE}\" \"--run\" \"${TEST_NAME}\")\n")
