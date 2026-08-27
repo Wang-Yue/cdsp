@@ -76,6 +76,14 @@ static inline float dsp_ops_peak_absolute(waveform_t buffer, size_t count) {
  */
 static inline float dsp_ops_rms(waveform_t buffer, size_t count) {
   if (count == 0) return 0.0f;
+#if defined(ENABLE_ACCELERATE)
+  double res = 0.0;
+  vDSP_rmsqvD(buffer, 1, &res, count);
+  return (float)res;
+#elif defined(ENABLE_BLAS)
+  double norm = cblas_dnrm2((int)count, buffer, 1);
+  return (float)(norm / sqrt((double)count));
+#else
   float sum = 0.0f;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
@@ -87,6 +95,7 @@ static inline float dsp_ops_rms(waveform_t buffer, size_t count) {
     sum += f * f;
   }
   return sqrtf(sum / (float)count);
+#endif
 }
 
 /**
@@ -104,23 +113,23 @@ static inline void dsp_ops_float_multiply(const float* a, const float* b,
 }
 
 /**
- * @brief Multiply float vector by scalar.
+ * @brief Multiply float vector by scalar (in-place).
+ *
+ * Computes: `buffer[i] *= scalar` for `i < count`.
+ *
+ * @param buffer The buffer to multiply (in-place).
+ * @param scalar The scalar multiplier.
+ * @param count Number of elements to process.
  */
-static inline void dsp_ops_float_scalar_multiply(const float* vector,
-                                                 float scalar, float* result,
+static inline void dsp_ops_float_scalar_multiply(float* buffer, float scalar,
                                                  size_t count) {
 #if defined(ENABLE_ACCELERATE)
-  vDSP_vsmul(vector, 1, &scalar, result, 1, count);
+  vDSP_vsmul(buffer, 1, &scalar, buffer, 1, count);
 #elif defined(ENABLE_BLAS)
-  if (result == vector) {
-    cblas_sscal((int)count, scalar, (float*)vector, 1);
-  } else {
-    memcpy(result, vector, count * sizeof(float));
-    cblas_sscal((int)count, scalar, result, 1);
-  }
+  cblas_sscal((int)count, scalar, buffer, 1);
 #else
   for (size_t i = 0; i < count; i++) {
-    result[i] = vector[i] * scalar;
+    buffer[i] *= scalar;
   }
 #endif
 }

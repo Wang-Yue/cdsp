@@ -123,15 +123,7 @@ static inline void dsp_ops_scalar_multiply(mutable_waveform_t buffer,
  * @param count Number of elements to clear.
  */
 static inline void dsp_ops_clear(mutable_waveform_t buffer, size_t count) {
-#if defined(ENABLE_ACCELERATE)
-  vDSP_vclrD(buffer, 1, count);
-#elif defined(ENABLE_BLAS)
   memset(buffer, 0, count * sizeof(double));
-#else
-  for (size_t i = 0; i < count; i++) {
-    buffer[i] = 0.0;
-  }
-#endif
 }
 
 /**

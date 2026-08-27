@@ -163,8 +163,7 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
 
   dsp_ops_float_zvabs(analyzer->realp, analyzer->imagp, analyzer->magnitudes,
                       half_n + 1);
-  dsp_ops_float_scalar_multiply(analyzer->magnitudes, scale,
-                                analyzer->magnitudes, half_n + 1);
+  dsp_ops_float_scalar_multiply(analyzer->magnitudes, scale, half_n + 1);
 
   // Correct scaling for DC and Nyquist (they are not doubled, so scale by 1.0/N
   // instead of 2.0/N)
