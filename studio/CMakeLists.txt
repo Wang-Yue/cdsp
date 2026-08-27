@@ -105,16 +105,6 @@ if(APPLE)
         COMMAND codesign --force --sign - $<TARGET_FILE:MonitorQt>
         COMMENT "Ad-hoc signing MonitorQt executable..."
     )
-elseif(WIN32)
-    find_program(WINDEPLOYQT_BIN NAMES windeployqt.exe HINTS "${Qt6_DIR}/../../../bin")
-    if(WINDEPLOYQT_BIN)
-        add_custom_target(
-            deploy-win
-            COMMAND ${WINDEPLOYQT_BIN} $<TARGET_FILE:MonitorQt>
-            DEPENDS MonitorQt
-            COMMENT "Deploying Qt Windows DLLs alongside MonitorQt.exe..."
-        )
-    endif()
 endif()
 
 
