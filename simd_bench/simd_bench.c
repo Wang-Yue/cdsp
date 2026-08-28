@@ -129,7 +129,6 @@ typedef enum {
   OP_FLT_HANN,
   OP_FLT_MAX,
   OP_FLT_ZVABS,
-  OP_FLT_VTHR,
   OP_FLT_VDBCON,
   OP_COUNT
 } bench_op_id_t;
@@ -160,7 +159,6 @@ static const bench_op_info_t OP_INFOS[OP_COUNT] = {
     {OP_FLT_HANN, "dsp_ops_float_hann_window", true, false, true},
     {OP_FLT_MAX, "dsp_ops_float_max", true, false, true},
     {OP_FLT_ZVABS, "dsp_ops_float_zvabs", true, false, true},
-    {OP_FLT_VTHR, "dsp_ops_float_vthr", true, false, true},
     {OP_FLT_VDBCON, "dsp_ops_float_vdbcon", true, false, true}};
 
 #define NUM_BENCH_SIZES 6
@@ -287,9 +285,6 @@ static void benchmark_op_at_size(bench_op_id_t op_id, size_t size_idx) {
         case OP_FLT_ZVABS:
           dsp_ops_float_zvabs(fa1, fa2, fa_out_c, count);
           break;
-        case OP_FLT_VTHR:
-          dsp_ops_float_vthr(fa1, threshold_f, fa_out_c, count);
-          break;
         case OP_FLT_VDBCON:
           dsp_ops_float_vdbcon(fa1, ref_f, fa_out_c, count);
           break;
@@ -384,9 +379,6 @@ static void benchmark_op_at_size(bench_op_id_t op_id, size_t size_idx) {
             vDSP_zvabs(&sc, 1, fa_out_lib, 1, count);
             break;
           }
-          case OP_FLT_VTHR:
-            vDSP_vthr(fa1, 1, &threshold_f, fa_out_lib, 1, count);
-            break;
           case OP_FLT_VDBCON:
             vDSP_vdbcon(fa1, 1, &ref_f, fa_out_lib, 1, count, 1);
             break;

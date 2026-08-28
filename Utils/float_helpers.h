@@ -176,7 +176,7 @@ ALWAYS_INLINE void dsp_ops_float_multiply(const float* a, const float* b,
 ALWAYS_INLINE void dsp_ops_float_scalar_multiply(float* buffer, float scalar,
                                                  size_t count) {
 #if defined(ENABLE_ACCELERATE)
-  vDSP_vsmul(buffer, 1, &scalar, buffer, 1, count);
+  cblas_sscal((int)count, scalar, buffer, 1);
 #else
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
@@ -285,26 +285,6 @@ static inline void dsp_ops_float_zvabs(const float* real, const float* imag,
     float im = imag[i];
     magnitudes[i] = sqrtf(re * re + im * im);
   }
-}
-
-/**
- * @brief Threshold a float vector in-place or into another vector.
- */
-static inline void dsp_ops_float_vthr(const float* vector, float threshold,
-                                      float* result, size_t count) {
-#if defined(ENABLE_ACCELERATE)
-  vDSP_vthr(vector, 1, &threshold, result, 1, count);
-#else
-#if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
-  for (size_t i = 0; i < count; i++) {
-    float val = vector[i];
-    result[i] = val < threshold ? threshold : val;
-  }
-#endif
 }
 
 /**

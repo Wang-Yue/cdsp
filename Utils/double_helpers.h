@@ -186,7 +186,11 @@ ALWAYS_INLINE void dsp_ops_vector_add(const double* a, const double* b,
  * @param count Number of elements to process.
  */
 ALWAYS_INLINE void dsp_ops_add(const double* a, double* b, size_t count) {
+#if defined(ENABLE_ACCELERATE)
+  cblas_daxpy((int)count, 1.0, a, 1, b, 1);
+#else
   dsp_ops_vector_add(a, b, b, count);
+#endif
 }
 
 /**
@@ -269,9 +273,6 @@ ALWAYS_INLINE double sinc_dot_product(const double* a, const double* b,
  */
 ALWAYS_INLINE void dsp_ops_clip(double* buffer, double low, double high,
                                 size_t count) {
-#if defined(ENABLE_ACCELERATE)
-  vDSP_vclipD(buffer, 1, &low, &high, buffer, 1, count);
-#else
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
 #elif defined(__GNUC__)
@@ -283,7 +284,6 @@ ALWAYS_INLINE void dsp_ops_clip(double* buffer, double low, double high,
     val = val > high ? high : val;
     buffer[i] = val;
   }
-#endif
 }
 
 /**
