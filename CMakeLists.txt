@@ -103,13 +103,18 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
         -fvisibility=hidden
     )
 
-    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+        add_compile_options(
+            -mllvm -force-vector-interleave=8
+        )
+    elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU")
         add_compile_options(
             -fassociative-math
             -fno-signed-zeros
             -fno-trapping-math
             -fvariable-expansion-in-unroller
-            --param=max-variable-expansions-in-unroller=4
+            --param=max-variable-expansions-in-unroller=8
+            --param=max-unroll-times=8
         )
     endif()
 
