@@ -50,6 +50,16 @@ typedef const double* waveform_t;
 static inline double double_from_db(double db) { return pow(10.0, db / 20.0); }
 
 /**
+ * @brief Convert linear gain to dB.
+ *
+ * @param linear Linear gain value.
+ * @return Value in decibels.
+ */
+static inline double double_to_db(double linear) {
+  return 20.0 * log10(linear);
+}
+
+/**
  * @brief Apply attack/release envelope smoothing to an input signal.
  *
  * @param input The current input value.

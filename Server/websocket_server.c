@@ -100,16 +100,9 @@ void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...) {
   va_end(args);
 }
 
-float db_to_amplitude(float db) {
-  if (db <= -1000.0f) return 0.0f;
-  return powf(10.0f, db / 20.0f);
-}
+float db_to_amplitude(float db) { return powf(10.0f, db / 20.0f); }
 
-float amplitude_to_db(float amp) {
-  if (amp <= 0.0f) return -1000.0f;
-  float db = 20.0f * log10f(amp);
-  return db < -1000.0f ? -1000.0f : db;
-}
+float amplitude_to_db(float amp) { return 20.0f * log10f(amp); }
 
 void client_session_clear(client_session_t* session) {
   if (!session) return;
@@ -299,7 +292,7 @@ static void* server_thread_func(void* arg) {
               server->capture_global_peaks = new_peaks;
               for (size_t k = server->capture_global_peaks_count;
                    k < cap_channels; k++) {
-                server->capture_global_peaks[k] = -1000.0f;
+                server->capture_global_peaks[k] = -INFINITY;
               }
               server->capture_global_peaks_count = cap_channels;
             }
@@ -323,7 +316,7 @@ static void* server_thread_func(void* arg) {
               server->playback_global_peaks = new_peaks;
               for (size_t k = server->playback_global_peaks_count;
                    k < pb_channels; k++) {
-                server->playback_global_peaks[k] = -1000.0f;
+                server->playback_global_peaks[k] = -INFINITY;
               }
               server->playback_global_peaks_count = pb_channels;
             }

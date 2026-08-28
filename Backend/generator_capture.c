@@ -10,6 +10,7 @@
 #include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
 #include "Utils/cdsp_time.h"
+#include "Utils/double_helpers.h"
 
 static const logger_t g_logger = {"dsp.backend.generator"};
 
@@ -56,14 +57,6 @@ struct generator_capture {
  * @return Monotonic time in nanoseconds.
  */
 static uint64_t get_time_ns(void) { return cdsp_time_now_ns(); }
-
-/**
- * @brief Convert decibels to linear amplitude multiplier.
- *
- * @param db Value in dB.
- * @return Linear amplitude multiplier.
- */
-static double db_to_linear(double db) { return pow(10.0, db / 20.0); }
 
 /**
  * @brief Open the generator capture device.
@@ -228,8 +221,9 @@ static bool generator_capture_pitch_control_supported(void* ctx) {
 static void generator_capture_set_pitch(void* ctx, double multiplier) {
   (void)ctx;
   (void)multiplier;
-  logger_warn(&g_logger,
-              "Signal generator does not support rate adjust. Ignoring request.");
+  logger_warn(
+      &g_logger,
+      "Signal generator does not support rate adjust. Ignoring request.");
 }
 
 /**
@@ -308,7 +302,7 @@ static capture_backend_t* generator_capture_create(
 
   capture->signal_type = config->cfg.generator.signal.type;
   capture->frequency = config->cfg.generator.signal.frequency;
-  capture->amplitude = db_to_linear(config->cfg.generator.signal.level);
+  capture->amplitude = double_from_db(config->cfg.generator.signal.level);
 
   capture->sample_rate = sample_rate;
   capture->channels = config->cfg.generator.channels;

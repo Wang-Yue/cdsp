@@ -7,6 +7,7 @@
 #include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"
 #include "Public/cdsp_pub_types.h"
+#include "Utils/double_helpers.h"
 
 cdsp_processing_state_t cdsp_get_state(const dsp_engine_t* engine) {
   if (engine && engine->get_status) {
@@ -60,7 +61,7 @@ double cdsp_get_signal_range(const dsp_engine_t* engine) {
         if (vu.capture_rms) free(vu.capture_rms);
         return 0.0;
       }
-      double max_peak = -1000.0;
+      double max_peak = -INFINITY;
       for (size_t i = 0; i < count; i++) {
         double pk = vu.playback_peak[i];
         if (pk > max_peak) max_peak = pk;
@@ -69,7 +70,7 @@ double cdsp_get_signal_range(const dsp_engine_t* engine) {
       if (vu.playback_rms) free(vu.playback_rms);
       if (vu.capture_peak) free(vu.capture_peak);
       if (vu.capture_rms) free(vu.capture_rms);
-      return 2.0 * pow(10.0, max_peak / 20.0);
+      return 2.0 * double_from_db(max_peak);
     }
   }
   return 0.0;

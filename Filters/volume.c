@@ -249,10 +249,9 @@ void volume_filter_advance_ramp(volume_filter_t* filter) {
   if (!filter || filter->ramp_step <= 0) return;
   if (filter->chunk_size > 0) {
     // Update current volume based on the last computed gain sample of the
-    // chunk. Clamp to a tiny value to prevent log10(0) returning -inf.
+    // chunk.
     double last_gain = filter->current_ramp_gains[filter->chunk_size - 1];
-    double val = last_gain > 1e-150 ? last_gain : 1e-150;
-    filter->current_volume = 20.0 * log10(val);
+    filter->current_volume = double_to_db(last_gain);
   }
   filter->ramp_step++;
   if (filter->ramp_step > filter->ramptime_in_chunks) {

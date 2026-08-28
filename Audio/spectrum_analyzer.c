@@ -159,7 +159,6 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
 
   // 3. Compute magnitudes in dBFS directly into preallocated arrays
   float scale = 2.0f / analyzer->window_sum;
-  float floor_val = 1e-10f;  // Threshold to prevent log10(0)
 
   dsp_ops_float_zvabs(analyzer->realp, analyzer->imagp, analyzer->magnitudes,
                       half_n + 1);
@@ -170,9 +169,6 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
   analyzer->magnitudes[0] *= 0.5f;
   analyzer->magnitudes[half_n] *= 0.5f;
 
-  // Threshold the entire magnitudes array to floor_val in-place
-  dsp_ops_float_vthr(analyzer->magnitudes, floor_val, analyzer->magnitudes,
-                     half_n + 1);
   // Convert the entire magnitudes array to decibels (dBFS)
   float ref = 1.0f;
   dsp_ops_float_vdbcon(analyzer->magnitudes, ref, analyzer->db_magnitudes,

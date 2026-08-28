@@ -105,7 +105,7 @@ static bool biquad_coefficients_compute(const biquad_config_t* params,
     w0 = 2.0 * M_PI * freq / fs;
     cos_w0 = cos(w0);
     sin_w0 = sin(w0);
-    A = pow(10.0, gain / 40.0);
+    A = double_from_db(gain / 2.0);
 
     if (fabs(sin_w0) < 1e-12) sin_w0 = 1e-12;
     if (A < 1e-12) A = 1e-12;

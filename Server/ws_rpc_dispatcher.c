@@ -1719,10 +1719,10 @@ static void handle_cmd_reset_signal_peaks_since_start(
   (void)client_idx;
   (void)arg;
   for (size_t i = 0; i < server->capture_global_peaks_count; i++) {
-    server->capture_global_peaks[i] = -1000.0f;
+    server->capture_global_peaks[i] = -INFINITY;
   }
   for (size_t i = 0; i < server->playback_global_peaks_count; i++) {
-    server->playback_global_peaks[i] = -1000.0f;
+    server->playback_global_peaks[i] = -INFINITY;
   }
   reply_ok(cmd_name, NULL, ds);
 }
@@ -1794,7 +1794,7 @@ static void handle_cmd_get_signal_range(websocket_server_t* server,
         .playback_peak = pb_pk_buf,
     };
     if (pb_pk_buf && cdsp_get_vu_levels(server->engine, &vu)) {
-      float max_peak = -1000.0f;
+      float max_peak = -INFINITY;
       for (size_t i = 0; i < count; i++) {
         float pk = vu.playback_peak[i];
         if (pk > max_peak) max_peak = pk;

@@ -33,6 +33,7 @@
 #include "Filters/volume.h"
 #include "Mixer/mixer.h"
 #include "Processors/processor.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 #ifndef M_PI
@@ -519,7 +520,7 @@ TEST(Mixer_Vs_AnalyticalReference_StereoToMono) {
   ASSERT_TRUE(out != NULL);
   double* out_ch0 = audio_chunk_get_channel(out, 0);
 
-  double gain_r = pow(10.0, -6.0 / 20.0);
+  double gain_r = double_from_db(-6.0);
   for (int i = 0; i < 1024; i++) {
     double expected = l[i] + gain_r * r[i];
     ASSERT_NEAR(expected, out_ch0[i], 1e-12);

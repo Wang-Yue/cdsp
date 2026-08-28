@@ -32,10 +32,10 @@ TEST(DoubleHelpersDecibelsAndEnvelope) {
   ASSERT_NEAR(db_unity, 0.0f, 1e-6);
 
   float db_zero = float_to_db(0.0f);
-  ASSERT_EQ(db_zero, -1000.0f);
+  ASSERT_TRUE(isinf(db_zero) && db_zero < 0.0f);
 
   float db_neg = float_to_db(-5.0f);
-  ASSERT_EQ(db_neg, -1000.0f);
+  ASSERT_TRUE(isnan(db_neg));
 
   // Attack / Release envelope smoothing
   double smoothed_attack = double_smooth_envelope(1.0, 0.0, 0.1, 0.01);

@@ -42,7 +42,7 @@ static inline void chunk_level_history_init(chunk_level_history_t* hist,
     hist->data = (float*)cdsp_aligned_alloc(64, total * sizeof(float));
     if (hist->data) {
       for (size_t i = 0; i < total; i++) {
-        hist->data[i] = -1000.0f;
+        hist->data[i] = -INFINITY;
       }
     }
   } else {
@@ -64,7 +64,7 @@ static inline void chunk_level_history_get_max_since(
     size_t count) {
   if (!out_levels || count == 0) return;
   for (size_t c = 0; c < count; c++) {
-    out_levels[c] = -1000.0f;
+    out_levels[c] = -INFINITY;
   }
   if (!hist || !hist->data || hist->channels == 0) return;
   size_t ch_limit = count < hist->channels ? count : hist->channels;
@@ -85,7 +85,7 @@ static inline void chunk_level_history_get_max_since(
     size_t idx = (pos + mask) & mask;
 
     for (size_t c = 0; c < ch_limit; c++) {
-      out_levels[c] = -1000.0f;
+      out_levels[c] = -INFINITY;
     }
 
     for (size_t i = 0; i < available; i++) {
@@ -111,7 +111,7 @@ static inline void chunk_level_history_get_rms_since(
     size_t count) {
   if (!out_levels || count == 0) return;
   for (size_t c = 0; c < count; c++) {
-    out_levels[c] = -1000.0f;
+    out_levels[c] = -INFINITY;
   }
   if (!hist || !hist->data || hist->channels == 0) return;
   size_t ch_limit = count < hist->channels ? count : hist->channels;
@@ -141,7 +141,7 @@ static inline void chunk_level_history_get_rms_since(
       if (ts < since_ms) break;
       for (size_t ch = 0; ch < ch_limit; ch++) {
         float db = hist->data[(ch * CHUNK_LEVEL_HISTORY_CAPACITY) + idx];
-        float amp = (db <= -1000.0f) ? 0.0f : powf(10.0f, db / 20.0f);
+        float amp = float_from_db(db);
         out_levels[ch] += amp * amp;
       }
       count_samples++;
@@ -154,12 +154,11 @@ static inline void chunk_level_history_get_rms_since(
       if (count_samples > 0) {
         for (size_t ch = 0; ch < ch_limit; ch++) {
           float mean_sq = out_levels[ch] / (float)count_samples;
-          out_levels[ch] =
-              (mean_sq <= 0.0f) ? -1000.0f : 10.0f * log10f(mean_sq);
+          out_levels[ch] = 10.0f * log10f(mean_sq);
         }
       } else {
         for (size_t ch = 0; ch < count; ch++) {
-          out_levels[ch] = -1000.0f;
+          out_levels[ch] = -INFINITY;
         }
       }
       return;
@@ -167,7 +166,7 @@ static inline void chunk_level_history_get_rms_since(
   }
 
   for (size_t ch = 0; ch < count; ch++) {
-    out_levels[ch] = -1000.0f;
+    out_levels[ch] = -INFINITY;
   }
 }
 
@@ -324,8 +323,8 @@ processing_parameters_t* processing_parameters_create(
       return NULL;
     }
     for (size_t i = 0; i < capture_channels; i++) {
-      atomic_float_init(&params->capture_signal_peak[i], -1000.0f);
-      atomic_float_init(&params->capture_signal_rms[i], -1000.0f);
+      atomic_float_init(&params->capture_signal_peak[i], -INFINITY);
+      atomic_float_init(&params->capture_signal_rms[i], -INFINITY);
     }
   }
 
@@ -341,8 +340,8 @@ processing_parameters_t* processing_parameters_create(
       return NULL;
     }
     for (size_t i = 0; i < playback_channels; i++) {
-      atomic_float_init(&params->playback_signal_peak[i], -1000.0f);
-      atomic_float_init(&params->playback_signal_rms[i], -1000.0f);
+      atomic_float_init(&params->playback_signal_peak[i], -INFINITY);
+      atomic_float_init(&params->playback_signal_rms[i], -INFINITY);
     }
   }
 
@@ -530,18 +529,18 @@ static float update_levels_internal(const audio_chunk_t* chunk,
                                     chunk_level_history_t* peak_hist,
                                     chunk_level_history_t* rms_hist,
                                     size_t storage_count) {
-  if (!chunk || !peak_storage || !rms_storage) return -1000.0f;
+  if (!chunk || !peak_storage || !rms_storage) return -INFINITY;
   size_t chunk_channels = audio_chunk_get_channels(chunk);
   size_t channel_count =
       chunk_channels < storage_count ? chunk_channels : storage_count;
-  if (channel_count == 0) return -1000.0f;
+  if (channel_count == 0) return -INFINITY;
   size_t frame_count = audio_chunk_get_valid_frames(chunk);
   if (frame_count == 0) {
     for (size_t i = 0; i < channel_count; i++) {
-      atomic_float_set(&peak_storage[i], -1000.0f);
-      atomic_float_set(&rms_storage[i], -1000.0f);
+      atomic_float_set(&peak_storage[i], -INFINITY);
+      atomic_float_set(&rms_storage[i], -INFINITY);
     }
-    return -1000.0f;
+    return -INFINITY;
   }
 
   uint64_t now_ms = cdsp_time_now_ns() / 1000000ULL;
@@ -568,19 +567,20 @@ static float update_levels_internal(const audio_chunk_t* chunk,
     rms_hist->timestamps_ms[rms_pos] = now_ms;
   }
 
-  float max_peak = -1000.0f;
+  float max_peak = -INFINITY;
 
   for (size_t i = 0; i < channel_count; i++) {
     waveform_t buffer = audio_chunk_get_channel(chunk, i);
     if (!buffer) {
-      atomic_float_set(&peak_storage[i], -1000.0f);
-      atomic_float_set(&rms_storage[i], -1000.0f);
+      atomic_float_set(&peak_storage[i], -INFINITY);
+      atomic_float_set(&rms_storage[i], -INFINITY);
       if (peak_pos != (size_t)-1 && i < peak_hist->channels) {
         peak_hist->data[(i * CHUNK_LEVEL_HISTORY_CAPACITY) + peak_pos] =
-            -1000.0f;
+            -INFINITY;
       }
       if (rms_pos != (size_t)-1 && i < rms_hist->channels) {
-        rms_hist->data[(i * CHUNK_LEVEL_HISTORY_CAPACITY) + rms_pos] = -1000.0f;
+        rms_hist->data[(i * CHUNK_LEVEL_HISTORY_CAPACITY) + rms_pos] =
+            -INFINITY;
       }
       continue;
     }
@@ -628,7 +628,7 @@ static float update_levels_internal(const audio_chunk_t* chunk,
 
 float processing_parameters_update_capture_levels(
     processing_parameters_t* params, const audio_chunk_t* chunk) {
-  if (!params) return -1000.0f;
+  if (!params) return -INFINITY;
   return update_levels_internal(
       chunk, params->capture_signal_peak, params->capture_signal_rms,
       &params->capture_peak_history, &params->capture_rms_history,
@@ -637,7 +637,7 @@ float processing_parameters_update_capture_levels(
 
 float processing_parameters_update_playback_levels(
     processing_parameters_t* params, const audio_chunk_t* chunk) {
-  if (!params) return -1000.0f;
+  if (!params) return -INFINITY;
   return update_levels_internal(
       chunk, params->playback_signal_peak, params->playback_signal_rms,
       &params->playback_peak_history, &params->playback_rms_history,
@@ -649,7 +649,7 @@ void processing_parameters_get_capture_signal_peak_since(
     size_t count) {
   if (!params) {
     if (out_levels) {
-      for (size_t i = 0; i < count; i++) out_levels[i] = -1000.0f;
+      for (size_t i = 0; i < count; i++) out_levels[i] = -INFINITY;
     }
     return;
   }
@@ -662,7 +662,7 @@ void processing_parameters_get_capture_signal_rms_since(
     size_t count) {
   if (!params) {
     if (out_levels) {
-      for (size_t i = 0; i < count; i++) out_levels[i] = -1000.0f;
+      for (size_t i = 0; i < count; i++) out_levels[i] = -INFINITY;
     }
     return;
   }
@@ -675,7 +675,7 @@ void processing_parameters_get_playback_signal_peak_since(
     size_t count) {
   if (!params) {
     if (out_levels) {
-      for (size_t i = 0; i < count; i++) out_levels[i] = -1000.0f;
+      for (size_t i = 0; i < count; i++) out_levels[i] = -INFINITY;
     }
     return;
   }
@@ -688,7 +688,7 @@ void processing_parameters_get_playback_signal_rms_since(
     size_t count) {
   if (!params) {
     if (out_levels) {
-      for (size_t i = 0; i < count; i++) out_levels[i] = -1000.0f;
+      for (size_t i = 0; i < count; i++) out_levels[i] = -INFINITY;
     }
     return;
   }

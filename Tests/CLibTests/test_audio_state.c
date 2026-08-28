@@ -165,12 +165,12 @@ TEST(ProcessingParametersChunkLevelHistory1024) {
   ASSERT_NEAR(-6.0206f, pb_rms[0], 1e-2);
   ASSERT_NEAR(0.0f, pb_rms[1], 1e-2);
 
-  // Future timestamp should return silent levels (-1000 dB)
+  // Future timestamp should return silent levels (-inf dB)
   float future_peaks[2] = {0};
   processing_parameters_get_capture_signal_peak_since(
       params, 0xFFFFFFFFFFFFFFULL, future_peaks, 2);
-  ASSERT_EQ(-1000.0f, future_peaks[0]);
-  ASSERT_EQ(-1000.0f, future_peaks[1]);
+  ASSERT_TRUE(isinf(future_peaks[0]) && future_peaks[0] < 0.0f);
+  ASSERT_TRUE(isinf(future_peaks[1]) && future_peaks[1] < 0.0f);
 
   audio_chunk_free(chunk);
   processing_parameters_free(params);

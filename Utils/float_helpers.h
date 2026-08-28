@@ -33,12 +33,17 @@
  * @brief Convert linear gain to dB (float).
  *
  * @param linear Linear gain value.
- * @return Value in decibels. Returns -1000.0f for zero/negative input.
+ * @return Value in decibels.
  */
-static inline float float_to_db(float linear) {
-  if (linear <= 0.0f) return -1000.0f;
-  return 20.0f * log10f(linear);
-}
+static inline float float_to_db(float linear) { return 20.0f * log10f(linear); }
+
+/**
+ * @brief Convert dB to linear gain (float).
+ *
+ * @param db Value in decibels.
+ * @return Linear gain.
+ */
+static inline float float_from_db(float db) { return powf(10.0f, db / 20.0f); }
 
 /**
  * @brief Find peak absolute value across the first `count` samples of the
@@ -307,18 +312,17 @@ static inline void dsp_ops_float_vthr(const float* vector, float threshold,
  */
 static inline void dsp_ops_float_vdbcon(const float* vector, float reference,
                                         float* result, size_t count) {
-  float ref = reference > 0.0f ? reference : 1.0f;
 #if defined(ENABLE_ACCELERATE)
-  vDSP_vdbcon(vector, 1, &ref, result, 1, count, 1);
+  vDSP_vdbcon(vector, 1, &reference, result, 1, count, 1);
 #else
-  const float inv_ref = 1.0f / ref;
+  const float inv_ref = 1.0f / reference;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
   for (size_t i = 0; i < count; i++) {
-    result[i] = 20.0f * log10f(vector[i] * inv_ref);
+    result[i] = float_to_db(vector[i] * inv_ref);
   }
 #endif
 }

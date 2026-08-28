@@ -323,7 +323,7 @@ static void compressor_processor_process(void* impl, audio_chunk_t* chunk) {
   // Smoothing)
   double prev = processor->prev_loudness;
   for (size_t i = 0; i < count; i++) {
-    double val = 20.0 * log10(fabs(processor->scratch[i]) + 1e-9);
+    double val = double_to_db(fabs(processor->scratch[i]) + 1e-9);
     prev = double_smooth_envelope(val, prev, processor->attack,
                                   processor->release);
     processor->scratch[i] = prev;

@@ -13,6 +13,7 @@
 
 #include "Audio/audio_chunk.h"
 #include "Resampler/audio_resampler.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 typedef struct {
@@ -415,7 +416,7 @@ static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
         run_process(impl_id, signal, nbr_in, in_rate, out_rate, &out_count);
     if (out && out_count > out_skip) {
       double rms_val = compute_rms(out + out_skip, out_count - out_skip);
-      c.aliasing_db = 20.0 * log10(rms_val / sqrt(0.5));
+      c.aliasing_db = double_to_db(rms_val / sqrt(0.5));
       c.has_aliasing_db = true;
     }
     free(signal);
@@ -432,7 +433,7 @@ static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
         run_process(impl_id, signal, nbr_in, in_rate, out_rate, &out_count);
     if (out && out_count > out_skip) {
       double rms_val = compute_rms(out + out_skip, out_count - out_skip);
-      double dev = fabs(20.0 * log10(rms_val / sqrt(0.5)));
+      double dev = fabs(double_to_db(rms_val / sqrt(0.5)));
       if (max_dev < 0.0 || dev > max_dev) {
         max_dev = dev;
       }

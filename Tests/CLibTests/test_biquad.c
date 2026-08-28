@@ -5,6 +5,7 @@
 #include "Config/filter_config_types.h"
 #include "Filters/biquad.h"
 #include "Filters/filter.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 #ifndef M_PI
@@ -36,7 +37,7 @@ static void gain_and_phase(const biquad_config_t* params, double f, double fs,
   }
   free(wave);
   double mag = sqrt(re * re + im * im);
-  *gain_db = 20.0 * log10(mag > 1e-12 ? mag : 1e-12);
+  *gain_db = double_to_db(mag);
   *phase_deg = atan2(im, re) * 180.0 / M_PI;
 }
 

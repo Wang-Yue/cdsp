@@ -208,7 +208,6 @@ TEST(DoPSINAD) {
       total_power /= (double)active_frames;
 
       double noise_power = total_power - fundamental_power;
-      if (noise_power < 1e-20) noise_power = 1e-20;
       double sinad = 10.0 * log10(fundamental_power / noise_power);
 
       double expected_min_sinad = 80.0;
@@ -294,7 +293,6 @@ TEST(DoPVariableChunkRoundtrip) {
   total_power /= (double)active_frames;
 
   double noise_power = total_power - fundamental_power;
-  if (noise_power < 1e-20) noise_power = 1e-20;
   double sinad = 10.0 * log10(fundamental_power / noise_power);
 
   ASSERT_TRUE(sinad >= 90.0);
@@ -349,7 +347,6 @@ TEST(NativeDSD_8Bit_Roundtrip_SINAD) {
   total_power /= (double)active_frames;
 
   double noise_power = total_power - fundamental_power;
-  if (noise_power < 1e-20) noise_power = 1e-20;
   double sinad = 10.0 * log10(fundamental_power / noise_power);
 
   ASSERT_TRUE(sinad >= 90.0);
@@ -401,7 +398,6 @@ TEST(NativeDSD_16Bit_Roundtrip_SINAD) {
   total_power /= (double)active_frames;
 
   double noise_power = total_power - fundamental_power;
-  if (noise_power < 1e-20) noise_power = 1e-20;
   double sinad = 10.0 * log10(fundamental_power / noise_power);
 
   ASSERT_TRUE(sinad >= 90.0);
@@ -455,7 +451,6 @@ TEST(NativeDSD_32Bit_ASIO_Roundtrip_SINAD) {
   total_power /= (double)active_frames;
 
   double noise_power = total_power - fundamental_power;
-  if (noise_power < 1e-20) noise_power = 1e-20;
   double sinad = 10.0 * log10(fundamental_power / noise_power);
 
   ASSERT_TRUE(sinad >= 90.0);
