@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "Logging/app_logger.h"
+#include "Utils/double_helpers.h"
 #include "test_support.h"
 
 int g_test_count = 0;
@@ -11,6 +12,13 @@ test_entry_t* g_test_head = NULL;
 test_entry_t** g_test_tail = &g_test_head;
 
 int main(int argc, char* argv[]) {
+#if defined(ENABLE_ACCELERATE)
+  // Warm up Accelerate CBLAS thread-local dispatch state before running tests
+  double dummy_d[4096] = {0};
+  dsp_ops_scalar_multiply(dummy_d, 1.0, 4096);
+  dsp_ops_multiply_add(dummy_d, 1.0, dummy_d, 4096);
+#endif
+
   if (argc > 1 && strcmp(argv[1], "--list") == 0) {
     test_entry_t* curr = g_test_head;
     while (curr) {

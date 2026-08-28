@@ -12,6 +12,9 @@
 #include <stdlib.h>
 
 #if defined(ENABLE_ACCELERATE)
+#ifndef ACCELERATE_NEW_LAPACK
+#define ACCELERATE_NEW_LAPACK
+#endif
 #include <Accelerate/Accelerate.h>
 #endif
 #include <string.h>
@@ -55,11 +58,6 @@ static inline float float_to_db(float linear) {
 
 ALWAYS_INLINE float dsp_ops_peak_absolute(const double* buffer, size_t count) {
   if (count == 0) return 0.0f;
-#if defined(ENABLE_ACCELERATE)
-  double res = 0.0;
-  vDSP_maxmgvD(buffer, 1, &res, count);
-  return (float)res;
-#else
   float res = 0.0f;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
@@ -71,7 +69,6 @@ ALWAYS_INLINE float dsp_ops_peak_absolute(const double* buffer, size_t count) {
     res = fmaxf(val, res);
   }
   return res;
-#endif
 }
 
 /**
@@ -86,11 +83,6 @@ ALWAYS_INLINE float dsp_ops_peak_absolute(const double* buffer, size_t count) {
  */
 ALWAYS_INLINE float dsp_ops_rms(const double* buffer, size_t count) {
   if (count == 0) return 0.0f;
-#if defined(ENABLE_ACCELERATE)
-  double res = 0.0;
-  vDSP_rmsqvD(buffer, 1, &res, count);
-  return (float)res;
-#else
   float sum = 0.0f;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
@@ -102,7 +94,6 @@ ALWAYS_INLINE float dsp_ops_rms(const double* buffer, size_t count) {
     sum += f * f;
   }
   return sqrtf(sum / (float)count);
-#endif
 }
 
 /**
@@ -114,9 +105,6 @@ ALWAYS_INLINE float dsp_ops_rms(const double* buffer, size_t count) {
  */
 ALWAYS_INLINE void dsp_ops_double_to_float(const double* src, float* dst,
                                            size_t count) {
-#if defined(ENABLE_ACCELERATE)
-  vDSP_vdpsp(src, 1, dst, 1, count);
-#else
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
 #elif defined(__GNUC__)
@@ -125,7 +113,6 @@ ALWAYS_INLINE void dsp_ops_double_to_float(const double* src, float* dst,
   for (size_t i = 0; i < count; i++) {
     dst[i] = (float)src[i];
   }
-#endif
 }
 
 /**
@@ -204,9 +191,53 @@ static inline void dsp_ops_float_hann_window(float* buffer, size_t count) {
 #if defined(ENABLE_ACCELERATE)
   vDSP_hann_window(buffer, (vDSP_Length)count, 0);
 #else
-  double denom = (count > 1) ? (double)(count - 1) : 1.0;
-  for (size_t i = 0; i < count; i++) {
-    buffer[i] = (float)(0.5 * (1.0 - cos(2.0 * M_PI * (double)i / denom)));
+  if (count == 0) return;
+  if (count == 1) {
+    buffer[0] = 0.0f;
+    return;
+  }
+  float delta = (float)(M_PI / (double)count);
+  float c[4], s[4];
+  for (int k = 0; k < 4; k++) {
+    c[k] = cosf((float)k * delta);
+    s[k] = sinf((float)k * delta);
+  }
+  float delta4 = 4.0f * delta;
+  float s_half4 = sinf(0.5f * delta4);
+  float alpha = 2.0f * s_half4 * s_half4;
+  float beta = sinf(delta4);
+
+  size_t half = count / 2;
+  size_t i = 0;
+  for (; i + 3 <= half; i += 4) {
+    float v0 = s[0] * s[0];
+    float v1 = s[1] * s[1];
+    float v2 = s[2] * s[2];
+    float v3 = s[3] * s[3];
+    buffer[i + 0] = v0;
+    if (i + 0 > 0) buffer[count - (i + 0)] = v0;
+    buffer[i + 1] = v1;
+    buffer[count - (i + 1)] = v1;
+    buffer[i + 2] = v2;
+    buffer[count - (i + 2)] = v2;
+    buffer[i + 3] = v3;
+    buffer[count - (i + 3)] = v3;
+
+    for (int k = 0; k < 4; k++) {
+      float c_next = c[k] - (alpha * c[k] + beta * s[k]);
+      float s_next = s[k] - (alpha * s[k] - beta * c[k]);
+      c[k] = c_next;
+      s[k] = s_next;
+    }
+  }
+  for (; i <= half; i++) {
+    float val = s[0] * s[0];
+    buffer[i] = val;
+    if (i > 0 && count > i) buffer[count - i] = val;
+    float c_next = c[0] - (alpha * c[0] + beta * s[0]);
+    float s_next = s[0] - (alpha * s[0] - beta * c[0]);
+    c[0] = c_next;
+    s[0] = s_next;
   }
 #endif
 }
@@ -228,7 +259,7 @@ static inline float dsp_ops_float_max(const float* buffer, size_t count) {
 #pragma GCC ivdep
 #endif
   for (size_t i = 1; i < count; i++) {
-    if (buffer[i] > res) res = buffer[i];
+    res = fmaxf(buffer[i], res);
   }
   return res;
 #endif
@@ -239,16 +270,16 @@ static inline float dsp_ops_float_max(const float* buffer, size_t count) {
  */
 static inline void dsp_ops_float_zvabs(const float* real, const float* imag,
                                        float* magnitudes, size_t count) {
-#if defined(ENABLE_ACCELERATE)
-  DSPSplitComplex split = {(float*)real, (float*)imag};
-  vDSP_zvabs(&split, 1, magnitudes, 1, count);
-#else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t i = 0; i < count; i++) {
     float re = real[i];
     float im = imag[i];
     magnitudes[i] = sqrtf(re * re + im * im);
   }
-#endif
 }
 
 /**
@@ -280,8 +311,14 @@ static inline void dsp_ops_float_vdbcon(const float* vector, float reference,
 #if defined(ENABLE_ACCELERATE)
   vDSP_vdbcon(vector, 1, &ref, result, 1, count, 1);
 #else
+  const float inv_ref = 1.0f / ref;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t i = 0; i < count; i++) {
-    result[i] = float_to_db(vector[i] / ref);
+    result[i] = 20.0f * log10f(vector[i] * inv_ref);
   }
 #endif
 }

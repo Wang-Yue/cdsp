@@ -14,6 +14,9 @@
 #include <stdlib.h>
 
 #if defined(ENABLE_ACCELERATE)
+#ifndef ACCELERATE_NEW_LAPACK
+#define ACCELERATE_NEW_LAPACK
+#endif
 #include <Accelerate/Accelerate.h>
 #endif
 #include <string.h>
@@ -110,10 +113,10 @@ static inline double double_bessel_i0(double x) {
  * @param scalar The scalar multiplier.
  * @param count Number of elements to process.
  */
-ALWAYS_INLINE void dsp_ops_scalar_multiply(double* buffer,
-                                           double scalar, size_t count) {
+ALWAYS_INLINE void dsp_ops_scalar_multiply(double* buffer, double scalar,
+                                           size_t count) {
 #if defined(ENABLE_ACCELERATE)
-  vDSP_vsmulD(buffer, 1, &scalar, buffer, 1, count);
+  cblas_dscal((int)count, scalar, buffer, 1);
 #else
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
@@ -172,8 +175,7 @@ ALWAYS_INLINE void dsp_ops_vector_add(const double* a, const double* b,
  * @param b Destination vector (modified in-place).
  * @param count Number of elements to process.
  */
-ALWAYS_INLINE void dsp_ops_add(const double* a, double* b,
-                               size_t count) {
+ALWAYS_INLINE void dsp_ops_add(const double* a, double* b, size_t count) {
   dsp_ops_vector_add(a, b, b, count);
 }
 
@@ -186,11 +188,7 @@ ALWAYS_INLINE void dsp_ops_add(const double* a, double* b,
  * @param b Destination vector (modified in-place).
  * @param count Number of elements to process.
  */
-ALWAYS_INLINE void dsp_ops_multiply(const double* a, double* b,
-                                    size_t count) {
-#if defined(ENABLE_ACCELERATE)
-  vDSP_vmulD(a, 1, b, 1, b, 1, count);
-#else
+ALWAYS_INLINE void dsp_ops_multiply(const double* a, double* b, size_t count) {
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
 #elif defined(__GNUC__)
@@ -199,7 +197,6 @@ ALWAYS_INLINE void dsp_ops_multiply(const double* a, double* b,
   for (size_t i = 0; i < count; i++) {
     b[i] *= a[i];
   }
-#endif
 }
 
 /**
@@ -212,11 +209,9 @@ ALWAYS_INLINE void dsp_ops_multiply(const double* a, double* b,
  * @param count Number of elements to process.
  */
 ALWAYS_INLINE void dsp_ops_multiply_add(const double* a, double scalar,
-                                        double* accumulator,
-                                        size_t count) {
+                                        double* accumulator, size_t count) {
 #if defined(ENABLE_ACCELERATE)
-  // result = (a * scalar) + accumulator, written into accumulator.
-  vDSP_vsmaD(a, 1, &scalar, accumulator, 1, accumulator, 1, count);
+  cblas_daxpy((int)count, scalar, a, 1, accumulator, 1);
 #else
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
@@ -230,7 +225,8 @@ ALWAYS_INLINE void dsp_ops_multiply_add(const double* a, double scalar,
 }
 
 /**
- * @brief Computes the dot product of two vectors (e.g. wave buffer and sinc kernel).
+ * @brief Computes the dot product of two vectors (e.g. wave buffer and sinc
+ * kernel).
  *
  * @param a First input vector.
  * @param b Second input vector.
@@ -239,6 +235,8 @@ ALWAYS_INLINE void dsp_ops_multiply_add(const double* a, double scalar,
  */
 ALWAYS_INLINE double sinc_dot_product(const double* a, const double* b,
                                       size_t count) {
+  // WARNING: Do not use vDSP functions in this function as sinc_dot_product is
+  // called with tiny count. calling function makes it perform slower.
   double sum = 0.0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
@@ -271,8 +269,8 @@ ALWAYS_INLINE void dsp_ops_clip(double* buffer, double low, double high,
 #endif
   for (size_t i = 0; i < count; i++) {
     double val = buffer[i];
-    if (val < low) val = low;
-    else if (val > high) val = high;
+    val = val < low ? low : val;
+    val = val > high ? high : val;
     buffer[i] = val;
   }
 #endif
@@ -296,15 +294,8 @@ ALWAYS_INLINE void dsp_ops_clip(double* buffer, double low, double high,
 ALWAYS_INLINE void dsp_ops_complex_multiply(const double* a_re,
                                             const double* a_im,
                                             const double* b_re,
-                                            const double* b_im,
-                                            double* out_re, double* out_im,
-                                            size_t count) {
-#if defined(ENABLE_ACCELERATE)
-  DSPDoubleSplitComplex a_split = {(double*)a_re, (double*)a_im};
-  DSPDoubleSplitComplex b_split = {(double*)b_re, (double*)b_im};
-  DSPDoubleSplitComplex out_split = {out_re, out_im};
-  vDSP_zvmulD(&a_split, 1, &b_split, 1, &out_split, 1, count, 1);
-#else
+                                            const double* b_im, double* out_re,
+                                            double* out_im, size_t count) {
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
 #elif defined(__GNUC__)
@@ -318,7 +309,6 @@ ALWAYS_INLINE void dsp_ops_complex_multiply(const double* a_re,
     out_re[i] = re * fre - im * fim;
     out_im[i] = re * fim + im * fre;
   }
-#endif
 }
 
 #if defined(__GNUC__) && !defined(__clang__)
