@@ -1,9 +1,6 @@
 // Non-interleaved float buffers, one vector per channel.
 #include "Audio/audio_chunk.h"
 
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -133,13 +130,7 @@ void audio_chunk_sum_channels(const audio_chunk_t* chunk,
       memcpy(out_sum, src, frames * sizeof(double));
       initialized = true;
     } else {
-#ifdef ENABLE_ACCELERATE
-      vDSP_vaddD(out_sum, 1, src, 1, out_sum, 1, frames);
-#else
-      for (size_t i = 0; i < frames; i++) {
-        out_sum[i] += src[i];
-      }
-#endif
+      dsp_ops_add(src, out_sum, frames);
     }
   }
 
@@ -162,13 +153,7 @@ void audio_chunk_apply_gain(audio_chunk_t* chunk, const size_t* channels,
     if (ch >= total_channels) continue;
     double* wave = audio_chunk_get_channel(chunk, ch);
     if (!wave) continue;
-#ifdef ENABLE_ACCELERATE
-    vDSP_vmulD(wave, 1, gain_multipliers, 1, wave, 1, frames);
-#else
-    for (size_t i = 0; i < frames; i++) {
-      wave[i] *= gain_multipliers[i];
-    }
-#endif
+    dsp_ops_multiply(gain_multipliers, wave, frames);
   }
 }
 

@@ -15,11 +15,13 @@
 
 #if defined(ENABLE_ACCELERATE)
 #include <Accelerate/Accelerate.h>
-#elif defined(ENABLE_BLAS)
-#include <cblas.h>
+#endif
 #include <string.h>
+
+#if defined(__GNUC__) || defined(__clang__)
+#define ALWAYS_INLINE __attribute__((always_inline)) static inline
 #else
-#include <string.h>
+#define ALWAYS_INLINE static inline
 #endif
 
 /**
@@ -92,7 +94,12 @@ static inline double double_bessel_i0(double x) {
 //
 // In C, these accept pointers directly so callers holding stable pointers
 // (e.g. an audio_buffers_t channel view) avoid any copy overhead or
-// ownership checks on the audio thread.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC push_options
+#pragma GCC optimize("finite-math-only")
+#elif defined(__clang__)
+#pragma float_control(precise, off, push)
+#endif
 
 /**
  * @brief Multiply vector by scalar in-place.
@@ -103,13 +110,16 @@ static inline double double_bessel_i0(double x) {
  * @param scalar The scalar multiplier.
  * @param count Number of elements to process.
  */
-static inline void dsp_ops_scalar_multiply(mutable_waveform_t buffer,
+ALWAYS_INLINE void dsp_ops_scalar_multiply(double* buffer,
                                            double scalar, size_t count) {
 #if defined(ENABLE_ACCELERATE)
   vDSP_vsmulD(buffer, 1, &scalar, buffer, 1, count);
-#elif defined(ENABLE_BLAS)
-  cblas_dscal((int)count, scalar, buffer, 1);
 #else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t i = 0; i < count; i++) {
     buffer[i] *= scalar;
   }
@@ -122,8 +132,34 @@ static inline void dsp_ops_scalar_multiply(mutable_waveform_t buffer,
  * @param buffer The buffer to clear.
  * @param count Number of elements to clear.
  */
-static inline void dsp_ops_clear(mutable_waveform_t buffer, size_t count) {
+ALWAYS_INLINE void dsp_ops_clear(double* buffer, size_t count) {
   memset(buffer, 0, count * sizeof(double));
+}
+
+/**
+ * @brief Add vector `a` to vector `b` and write to `out`.
+ *
+ * Computes: `out[i] = a[i] + b[i]` for `i < count`.
+ *
+ * @param a First input vector.
+ * @param b Second input vector.
+ * @param out Destination vector.
+ * @param count Number of elements to process.
+ */
+ALWAYS_INLINE void dsp_ops_vector_add(const double* a, const double* b,
+                                      double* out, size_t count) {
+#if defined(ENABLE_ACCELERATE)
+  vDSP_vaddD(a, 1, b, 1, out, 1, count);
+#else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+  for (size_t i = 0; i < count; i++) {
+    out[i] = a[i] + b[i];
+  }
+#endif
 }
 
 /**
@@ -136,17 +172,9 @@ static inline void dsp_ops_clear(mutable_waveform_t buffer, size_t count) {
  * @param b Destination vector (modified in-place).
  * @param count Number of elements to process.
  */
-static inline void dsp_ops_add(waveform_t a, mutable_waveform_t b,
+ALWAYS_INLINE void dsp_ops_add(const double* a, double* b,
                                size_t count) {
-#if defined(ENABLE_ACCELERATE)
-  vDSP_vaddD(a, 1, b, 1, b, 1, count);
-#elif defined(ENABLE_BLAS)
-  cblas_daxpy((int)count, 1.0, a, 1, b, 1);
-#else
-  for (size_t i = 0; i < count; i++) {
-    b[i] += a[i];
-  }
-#endif
+  dsp_ops_vector_add(a, b, b, count);
 }
 
 /**
@@ -158,11 +186,16 @@ static inline void dsp_ops_add(waveform_t a, mutable_waveform_t b,
  * @param b Destination vector (modified in-place).
  * @param count Number of elements to process.
  */
-static inline void dsp_ops_multiply(waveform_t a, mutable_waveform_t b,
+ALWAYS_INLINE void dsp_ops_multiply(const double* a, double* b,
                                     size_t count) {
 #if defined(ENABLE_ACCELERATE)
   vDSP_vmulD(a, 1, b, 1, b, 1, count);
 #else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t i = 0; i < count; i++) {
     b[i] *= a[i];
   }
@@ -178,19 +211,120 @@ static inline void dsp_ops_multiply(waveform_t a, mutable_waveform_t b,
  * @param accumulator The accumulator vector (modified in-place).
  * @param count Number of elements to process.
  */
-static inline void dsp_ops_multiply_add(waveform_t a, double scalar,
-                                        mutable_waveform_t accumulator,
+ALWAYS_INLINE void dsp_ops_multiply_add(const double* a, double scalar,
+                                        double* accumulator,
                                         size_t count) {
 #if defined(ENABLE_ACCELERATE)
   // result = (a * scalar) + accumulator, written into accumulator.
   vDSP_vsmaD(a, 1, &scalar, accumulator, 1, accumulator, 1, count);
-#elif defined(ENABLE_BLAS)
-  cblas_daxpy((int)count, scalar, a, 1, accumulator, 1);
 #else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t i = 0; i < count; i++) {
     accumulator[i] += a[i] * scalar;
   }
 #endif
 }
+
+/**
+ * @brief Computes the dot product of two vectors (e.g. wave buffer and sinc kernel).
+ *
+ * @param a First input vector.
+ * @param b Second input vector.
+ * @param count Number of elements to process.
+ * @return The dot product (accumulated sum).
+ */
+ALWAYS_INLINE double sinc_dot_product(const double* a, const double* b,
+                                      size_t count) {
+  double sum = 0.0;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+  for (size_t i = 0; i < count; i++) {
+    sum += a[i] * b[i];
+  }
+  return sum;
+}
+
+/**
+ * @brief Clip values in vector to [low, high] in-place.
+ *
+ * @param buffer Input/output vector.
+ * @param low Lower clipping limit.
+ * @param high Upper clipping limit.
+ * @param count Number of elements to process.
+ */
+ALWAYS_INLINE void dsp_ops_clip(double* buffer, double low, double high,
+                                size_t count) {
+#if defined(ENABLE_ACCELERATE)
+  vDSP_vclipD(buffer, 1, &low, &high, buffer, 1, count);
+#else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+  for (size_t i = 0; i < count; i++) {
+    double val = buffer[i];
+    if (val < low) val = low;
+    else if (val > high) val = high;
+    buffer[i] = val;
+  }
+#endif
+}
+
+/**
+ * @brief Pointwise complex multiplication of split-complex vectors.
+ *
+ * Computes:
+ *   out_re[i] = a_re[i] * b_re[i] - a_im[i] * b_im[i]
+ *   out_im[i] = a_re[i] * b_im[i] + a_im[i] * b_re[i]
+ *
+ * @param a_re Real part of first vector.
+ * @param a_im Imaginary part of first vector.
+ * @param b_re Real part of second vector.
+ * @param b_im Imaginary part of second vector.
+ * @param out_re Output real vector (can alias a_re or b_re).
+ * @param out_im Output imaginary vector (can alias a_im or b_im).
+ * @param count Number of complex elements to process.
+ */
+ALWAYS_INLINE void dsp_ops_complex_multiply(const double* a_re,
+                                            const double* a_im,
+                                            const double* b_re,
+                                            const double* b_im,
+                                            double* out_re, double* out_im,
+                                            size_t count) {
+#if defined(ENABLE_ACCELERATE)
+  DSPDoubleSplitComplex a_split = {(double*)a_re, (double*)a_im};
+  DSPDoubleSplitComplex b_split = {(double*)b_re, (double*)b_im};
+  DSPDoubleSplitComplex out_split = {out_re, out_im};
+  vDSP_zvmulD(&a_split, 1, &b_split, 1, &out_split, 1, count, 1);
+#else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+  for (size_t i = 0; i < count; i++) {
+    double re = a_re[i];
+    double im = a_im[i];
+    double fre = b_re[i];
+    double fim = b_im[i];
+    out_re[i] = re * fre - im * fim;
+    out_im[i] = re * fim + im * fre;
+  }
+#endif
+}
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC pop_options
+#elif defined(__clang__)
+#pragma float_control(pop)
+#endif
 
 #endif  // CLIB_UTILS_DOUBLE_HELPERS_H

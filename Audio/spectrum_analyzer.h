@@ -15,10 +15,6 @@
 
 #include "Audio/audio_history_buffer.h"
 
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
-
 /**
  * @brief Structure containing the result of a spectrum analysis.
  *

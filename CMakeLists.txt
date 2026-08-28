@@ -28,7 +28,6 @@ if(APPLE)
     set(DEFAULT_ENABLE_WASAPI      OFF)
     set(DEFAULT_ENABLE_ASIO        OFF)
     set(DEFAULT_ENABLE_FFTW        OFF)
-    set(DEFAULT_ENABLE_BLAS        OFF)
     set(DEFAULT_ENABLE_OPENMP      OFF)
     set(DEFAULT_ENABLE_DBUS        OFF)
 elseif(WIN32)
@@ -40,7 +39,6 @@ elseif(WIN32)
     set(DEFAULT_ENABLE_WASAPI      ON)
     set(DEFAULT_ENABLE_ASIO        ON)
     set(DEFAULT_ENABLE_FFTW        ON)
-    set(DEFAULT_ENABLE_BLAS        ON)
     set(DEFAULT_ENABLE_OPENMP      ON)
     set(DEFAULT_ENABLE_DBUS        OFF)
 else()
@@ -53,7 +51,6 @@ else()
     set(DEFAULT_ENABLE_WASAPI      OFF)
     set(DEFAULT_ENABLE_ASIO        OFF)
     set(DEFAULT_ENABLE_FFTW        ON)
-    set(DEFAULT_ENABLE_BLAS        ON)
     set(DEFAULT_ENABLE_OPENMP      ON)
     set(DEFAULT_ENABLE_DBUS        ON)
 endif()
@@ -65,7 +62,6 @@ option(ENABLE_PIPEWIRE    "Enable Linux PipeWire backend"       ${DEFAULT_ENABLE
 option(ENABLE_WASAPI      "Enable Windows WASAPI audio backend" ${DEFAULT_ENABLE_WASAPI})
 option(ENABLE_ASIO        "Enable Windows ASIO audio backend"   ${DEFAULT_ENABLE_ASIO})
 option(ENABLE_FFTW        "Enable FFTW library for FFT"         ${DEFAULT_ENABLE_FFTW})
-option(ENABLE_BLAS        "Enable OpenBLAS/CBLAS library"       ${DEFAULT_ENABLE_BLAS})
 option(ENABLE_OPENMP      "Enable OpenMP parallelization"       ${DEFAULT_ENABLE_OPENMP})
 option(ENABLE_WEBSOCKET   "Enable WebSocket control server"     ON)
 option(ENABLE_DBUS        "Enable Linux DBus device monitoring" ${DEFAULT_ENABLE_DBUS})
@@ -106,6 +102,16 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
         -funroll-loops
         -fvisibility=hidden
     )
+
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        add_compile_options(
+            -fassociative-math
+            -fno-signed-zeros
+            -fno-trapping-math
+            -fvariable-expansion-in-unroller
+            --param=max-variable-expansions-in-unroller=4
+        )
+    endif()
 
     if(ENABLE_NATIVE_ARCH AND NOT CMAKE_CROSSCOMPILING)
         if(APPLE)
@@ -334,41 +340,7 @@ if(ENABLE_FFTW)
     endif()
 endif()
 
-if(ENABLE_BLAS)
-    set(BLAS_FOUND_FLAG FALSE)
-    # Search for cblas.h in standard directories & multi-arch subdirectories
-    find_path(CBLAS_INCLUDE_DIR NAMES cblas.h
-        PATH_SUFFIXES openblas openblas-pthread openblas-openmp openblas-serial cblas
-    )
-    find_library(CBLAS_LIB NAMES openblas cblas blas libopenblas)
-    if(CBLAS_INCLUDE_DIR AND CBLAS_LIB)
-        target_include_directories(dsp PUBLIC ${CBLAS_INCLUDE_DIR})
-        target_link_libraries(dsp PUBLIC ${CBLAS_LIB})
-        target_compile_definitions(dsp PUBLIC ENABLE_BLAS)
-        set(BLAS_FOUND_FLAG TRUE)
-    elseif(PKG_CONFIG_FOUND)
-        pkg_check_modules(OPENBLAS QUIET IMPORTED_TARGET openblas cblas)
-        if(TARGET PkgConfig::OPENBLAS)
-            target_link_libraries(dsp PUBLIC PkgConfig::OPENBLAS)
-            if(CBLAS_INCLUDE_DIR)
-                target_include_directories(dsp PUBLIC ${CBLAS_INCLUDE_DIR})
-            endif()
-            target_compile_definitions(dsp PUBLIC ENABLE_BLAS)
-            set(BLAS_FOUND_FLAG TRUE)
-        endif()
-    elseif(TARGET BLAS::BLAS AND CBLAS_INCLUDE_DIR)
-        target_link_libraries(dsp PUBLIC BLAS::BLAS)
-        target_include_directories(dsp PUBLIC ${CBLAS_INCLUDE_DIR})
-        target_compile_definitions(dsp PUBLIC ENABLE_BLAS)
-        set(BLAS_FOUND_FLAG TRUE)
-    endif()
 
-    if(BLAS_FOUND_FLAG)
-        message(STATUS "BLAS/CBLAS found and enabled: ${CBLAS_INCLUDE_DIR}")
-    else()
-        message(STATUS "BLAS/CBLAS not found, falling back to built-in vectorized C implementation")
-    endif()
-endif()
 
 # -----------------------------------------------------------------------------
 # Parallelization: OpenMP & libdispatch (GCD)
@@ -662,4 +634,12 @@ install(TARGETS cdsp dsp
 install(DIRECTORY Public/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cdsp
     FILES_MATCHING PATTERN "*.h"
+)
+
+set_source_files_properties(
+    DoP/dsd_encoder.c
+    DoP/sigma_delta_modulator.c
+    Tests/CLibTests/test_dsd.c
+    Tests/CLibTests/test_resampler_matrix.c
+    PROPERTIES COMPILE_OPTIONS "-fno-associative-math"
 )

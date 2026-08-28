@@ -8,10 +8,7 @@
 #include <string.h>
 
 #include "Utils/cdsp_time.h"
-
-#if defined(ENABLE_ACCELERATE)
-#include <Accelerate/Accelerate.h>
-#endif
+#include "Utils/float_helpers.h"
 
 #include "Audio/audio_chunk.h"
 #include "Utils/cdsp_memory.h"
@@ -45,29 +42,10 @@ static inline void copy_double_to_float_segment(const double* src, float* dst,
   if (first > count) first = count;
   size_t second = count - first;
 
-#if defined(ENABLE_ACCELERATE)
-  vDSP_vdpsp(src, 1, dst + start_idx, 1, first);
+  dsp_ops_double_to_float(src, dst + start_idx, first);
   if (second > 0) {
-    vDSP_vdpsp(src + first, 1, dst, 1, second);
+    dsp_ops_double_to_float(src + first, dst, second);
   }
-#else
-#if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
-  for (size_t f = 0; f < first; f++) {
-    dst[start_idx + f] = (float)src[f];
-  }
-#if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
-  for (size_t f = 0; f < second; f++) {
-    dst[f] = (float)src[first + f];
-  }
-#endif
 }
 
 /**
@@ -109,29 +87,10 @@ static inline void add_channel_segment(const float* ch_src, float* dest,
   if (first > count) first = count;
   size_t second = count - first;
 
-#if defined(ENABLE_ACCELERATE)
-  vDSP_vadd(dest, 1, ch_src + start, 1, dest, 1, first);
+  dsp_ops_float_add(ch_src + start, dest, first);
   if (second > 0) {
-    vDSP_vadd(dest + first, 1, ch_src, 1, dest + first, 1, second);
+    dsp_ops_float_add(ch_src, dest + first, second);
   }
-#else
-#if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
-  for (size_t i = 0; i < first; i++) {
-    dest[i] += ch_src[start + i];
-  }
-#if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
-  for (size_t i = 0; i < second; i++) {
-    dest[first + i] += ch_src[i];
-  }
-#endif
 }
 
 /**
@@ -142,18 +101,7 @@ static inline void add_channel_segment(const float* ch_src, float* dest,
  * @param scale Scalar multiplication factor.
  */
 static inline void scale_vector(float* dest, size_t count, float scale) {
-#if defined(ENABLE_ACCELERATE)
-  vDSP_vsmul(dest, 1, &scale, dest, 1, count);
-#else
-#if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
-  for (size_t i = 0; i < count; i++) {
-    dest[i] *= scale;
-  }
-#endif
+  dsp_ops_float_scalar_multiply(dest, scale, count);
 }
 
 // --- Public API ---

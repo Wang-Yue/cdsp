@@ -11,15 +11,15 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-#include "Audio/audio_chunk.h"
-
 #if defined(ENABLE_ACCELERATE)
 #include <Accelerate/Accelerate.h>
-#elif defined(ENABLE_BLAS)
-#include <cblas.h>
+#endif
 #include <string.h>
+
+#if defined(__GNUC__) || defined(__clang__)
+#define ALWAYS_INLINE __attribute__((always_inline)) static inline
 #else
-#include <string.h>
+#define ALWAYS_INLINE static inline
 #endif
 
 #ifndef M_PI
@@ -45,20 +45,30 @@ static inline float float_to_db(float linear) {
  * @param count Number of elements to process.
  * @return The peak absolute value as float, or 0.0f if count is 0.
  */
-static inline float dsp_ops_peak_absolute(waveform_t buffer, size_t count) {
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC push_options
+#pragma GCC optimize("finite-math-only")
+#elif defined(__clang__)
+#pragma float_control(precise, off, push)
+#endif
+
+ALWAYS_INLINE float dsp_ops_peak_absolute(const double* buffer, size_t count) {
   if (count == 0) return 0.0f;
 #if defined(ENABLE_ACCELERATE)
   double res = 0.0;
   vDSP_maxmgvD(buffer, 1, &res, count);
   return (float)res;
-#elif defined(ENABLE_BLAS)
-  int idx = cblas_idamax((int)count, buffer, 1);
-  return (float)fabs(buffer[idx]);
 #else
   float res = 0.0f;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t i = 0; i < count; i++) {
     float val = (float)fabs(buffer[i]);
-    if (val > res) res = val;
+    res = fmaxf(val, res);
   }
   return res;
 #endif
@@ -74,15 +84,12 @@ static inline float dsp_ops_peak_absolute(waveform_t buffer, size_t count) {
  * @param count Number of elements to process.
  * @return The RMS value as float, or 0.0f if count is 0.
  */
-static inline float dsp_ops_rms(waveform_t buffer, size_t count) {
+ALWAYS_INLINE float dsp_ops_rms(const double* buffer, size_t count) {
   if (count == 0) return 0.0f;
 #if defined(ENABLE_ACCELERATE)
   double res = 0.0;
   vDSP_rmsqvD(buffer, 1, &res, count);
   return (float)res;
-#elif defined(ENABLE_BLAS)
-  double norm = cblas_dnrm2((int)count, buffer, 1);
-  return (float)(norm / sqrt((double)count));
 #else
   float sum = 0.0f;
 #if defined(__clang__)
@@ -99,13 +106,66 @@ static inline float dsp_ops_rms(waveform_t buffer, size_t count) {
 }
 
 /**
+ * @brief Convert double-precision array to single-precision float array.
+ *
+ * @param src Input double array.
+ * @param dst Output float array.
+ * @param count Number of elements to convert.
+ */
+ALWAYS_INLINE void dsp_ops_double_to_float(const double* src, float* dst,
+                                           size_t count) {
+#if defined(ENABLE_ACCELERATE)
+  vDSP_vdpsp(src, 1, dst, 1, count);
+#else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+  for (size_t i = 0; i < count; i++) {
+    dst[i] = (float)src[i];
+  }
+#endif
+}
+
+/**
+ * @brief Add float vector `src` to `dst` in-place.
+ *
+ * Computes: `dst[i] += src[i]` for `i < count`.
+ *
+ * @param src Input float vector.
+ * @param dst Destination float vector (modified in-place).
+ * @param count Number of elements to process.
+ */
+ALWAYS_INLINE void dsp_ops_float_add(const float* src, float* dst,
+                                     size_t count) {
+#if defined(ENABLE_ACCELERATE)
+  vDSP_vadd(dst, 1, src, 1, dst, 1, count);
+#else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+  for (size_t i = 0; i < count; i++) {
+    dst[i] += src[i];
+  }
+#endif
+}
+
+/**
  * @brief Multiply two float vectors element-wise.
  */
-static inline void dsp_ops_float_multiply(const float* a, const float* b,
+ALWAYS_INLINE void dsp_ops_float_multiply(const float* a, const float* b,
                                           float* result, size_t count) {
 #if defined(ENABLE_ACCELERATE)
   vDSP_vmul(a, 1, b, 1, result, 1, count);
 #else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t i = 0; i < count; i++) {
     result[i] = a[i] * b[i];
   }
@@ -121,13 +181,16 @@ static inline void dsp_ops_float_multiply(const float* a, const float* b,
  * @param scalar The scalar multiplier.
  * @param count Number of elements to process.
  */
-static inline void dsp_ops_float_scalar_multiply(float* buffer, float scalar,
+ALWAYS_INLINE void dsp_ops_float_scalar_multiply(float* buffer, float scalar,
                                                  size_t count) {
 #if defined(ENABLE_ACCELERATE)
   vDSP_vsmul(buffer, 1, &scalar, buffer, 1, count);
-#elif defined(ENABLE_BLAS)
-  cblas_sscal((int)count, scalar, buffer, 1);
 #else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t i = 0; i < count; i++) {
     buffer[i] *= scalar;
   }
@@ -159,6 +222,11 @@ static inline float dsp_ops_float_max(const float* buffer, size_t count) {
   return res;
 #else
   float res = buffer[0];
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t i = 1; i < count; i++) {
     if (buffer[i] > res) res = buffer[i];
   }
@@ -191,6 +259,11 @@ static inline void dsp_ops_float_vthr(const float* vector, float threshold,
 #if defined(ENABLE_ACCELERATE)
   vDSP_vthr(vector, 1, &threshold, result, 1, count);
 #else
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t i = 0; i < count; i++) {
     float val = vector[i];
     result[i] = val < threshold ? threshold : val;
@@ -212,5 +285,11 @@ static inline void dsp_ops_float_vdbcon(const float* vector, float reference,
   }
 #endif
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC pop_options
+#elif defined(__clang__)
+#pragma float_control(pop)
+#endif
 
 #endif  // CLIB_UTILS_FLOAT_HELPERS_H

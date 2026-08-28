@@ -6,10 +6,6 @@
 #include "Filters/filter.h"
 #include "Utils/double_helpers.h"
 
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
-
 /**
  * @struct biquad_coefficients_t
  * @brief Structure holding the transfer function coefficients of a biquad
@@ -42,13 +38,8 @@ struct biquad_filter {
   char name[64];
   biquad_type_t type;
   biquad_coefficients_t coeffs;
-#ifdef ENABLE_ACCELERATE
-  vDSP_biquadm_SetupD setup;
-  double coeffs_array[5];
-#else
   double z1, z2;
   double neg_a1, neg_a2;
-#endif
 };
 
 typedef struct biquad_filter biquad_filter_t;
@@ -338,11 +329,6 @@ static bool biquad_config_check_stability(const biquad_config_t* params,
 static void biquad_filter_free(void* instance) {
   biquad_filter_t* filter = (biquad_filter_t*)instance;
   if (!filter) return;
-#ifdef ENABLE_ACCELERATE
-  if (filter->setup) {
-    vDSP_biquadm_DestroySetupD(filter->setup);
-  }
-#endif
   free(filter);
 }
 
@@ -612,26 +598,10 @@ static void* biquad_filter_create(const char* name,
     }
   }
 
-#ifdef ENABLE_ACCELERATE
-  filter->coeffs_array[0] = filter->coeffs.b0;
-  filter->coeffs_array[1] = filter->coeffs.b1;
-  filter->coeffs_array[2] = filter->coeffs.b2;
-  filter->coeffs_array[3] = filter->coeffs.a1;
-  filter->coeffs_array[4] = filter->coeffs.a2;
-  filter->setup = vDSP_biquadm_CreateSetupD(filter->coeffs_array, 1, 1);
-  if (!filter->setup) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "Failed to initialize vDSP biquad setup for filter '%s'",
-                     filter->name);
-    biquad_filter_free(filter);
-    return NULL;
-  }
-#else
   filter->z1 = 0.0;
   filter->z2 = 0.0;
   filter->neg_a1 = -filter->coeffs.a1;
   filter->neg_a2 = -filter->coeffs.a2;
-#endif
   return filter;
 }
 
@@ -648,12 +618,7 @@ static void biquad_filter_process(void* instance, mutable_waveform_t waveform,
                                   size_t count) {
   biquad_filter_t* filter = (biquad_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
-#ifdef ENABLE_ACCELERATE
-  if (!filter->setup) return;
-  const double* signal_ptr = waveform;
-  double* output_ptr = waveform;
-  vDSP_biquadmD(filter->setup, &signal_ptr, 1, &output_ptr, 1, count);
-#else
+
   // Direct Form II Transposed (DF2T) implementation, optimized with FMA.
   double b0 = filter->coeffs.b0;
   double b1 = filter->coeffs.b1;
@@ -674,20 +639,11 @@ static void biquad_filter_process(void* instance, mutable_waveform_t waveform,
   if (fpclassify(z2) == FP_SUBNORMAL) z2 = 0.0;
   filter->z1 = z1;
   filter->z2 = z2;
-#endif
 }
 
 double biquad_filter_process_single(biquad_filter_t* filter, double sample) {
   if (!filter) return sample;
-#ifdef ENABLE_ACCELERATE
-  if (!filter->setup) return sample;
-  double in_val = sample;
-  double out_val = 0.0;
-  const double* signal_ptr = &in_val;
-  double* dest_ptr = &out_val;
-  vDSP_biquadmD(filter->setup, &signal_ptr, 1, &dest_ptr, 1, 1);
-  return out_val;
-#else
+
   double b0 = filter->coeffs.b0;
   double b1 = filter->coeffs.b1;
   double b2 = filter->coeffs.b2;
@@ -696,7 +652,6 @@ double biquad_filter_process_single(biquad_filter_t* filter, double sample) {
   filter->z1 = filter->neg_a1 * out + tmp;
   filter->z2 = b2 * sample + filter->neg_a2 * out;
   return out;
-#endif
 }
 
 void biquad_filter_update_parameters(biquad_filter_t* filter,
@@ -708,21 +663,8 @@ void biquad_filter_update_parameters(biquad_filter_t* filter,
   if (biquad_coefficients_compute(&config->parameters.biquad, sample_rate,
                                   &new_coeffs)) {
     filter->coeffs = new_coeffs;
-
-#ifdef ENABLE_ACCELERATE
-    if (filter->setup) {
-      filter->coeffs_array[0] = new_coeffs.b0;
-      filter->coeffs_array[1] = new_coeffs.b1;
-      filter->coeffs_array[2] = new_coeffs.b2;
-      filter->coeffs_array[3] = new_coeffs.a1;
-      filter->coeffs_array[4] = new_coeffs.a2;
-      vDSP_biquadm_SetCoefficientsDoubleD(filter->setup, filter->coeffs_array,
-                                          0, 0, 1, 1);
-    }
-#else
     filter->neg_a1 = -new_coeffs.a1;
     filter->neg_a2 = -new_coeffs.a2;
-#endif
   }
 }
 
@@ -739,25 +681,13 @@ static void biquad_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   if (!dest || !src) return;
 
   if (dest->type != src->type) {
-#ifdef ENABLE_ACCELERATE
-    if (dest->setup) {
-      vDSP_biquadm_ResetStateD(dest->setup);
-    }
-#else
     dest->z1 = 0.0;
     dest->z2 = 0.0;
-#endif
     return;
   }
 
-#ifdef ENABLE_ACCELERATE
-  if (dest->setup && src->setup) {
-    vDSP_biquadm_CopyStateD(dest->setup, src->setup);
-  }
-#else
   dest->z1 = src->z1;
   dest->z2 = src->z2;
-#endif
 }
 
 const char* biquad_filter_get_name(const biquad_filter_t* filter) {

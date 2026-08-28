@@ -19,9 +19,7 @@ typedef struct clipper_filter clipper_filter_t;
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Free the clipper filter instance.
@@ -132,18 +130,7 @@ static void clipper_filter_process(void* instance, mutable_waveform_t waveform,
           scaled * (1.0 - (scaled * scaled) * inv_6_75) * filter->clip_limit;
     }
   } else {
-    double low_limit = -filter->clip_limit;
-    double high_limit = filter->clip_limit;
-#ifdef ENABLE_ACCELERATE
-    vDSP_vclipD(waveform, 1, &low_limit, &high_limit, waveform, 1, count);
-#else
-    for (size_t i = 0; i < count; i++) {
-      if (waveform[i] < low_limit)
-        waveform[i] = low_limit;
-      else if (waveform[i] > high_limit)
-        waveform[i] = high_limit;
-    }
-#endif
+    dsp_ops_clip(waveform, -filter->clip_limit, filter->clip_limit, count);
   }
 }
 

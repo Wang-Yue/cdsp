@@ -1443,7 +1443,7 @@
     "include": [
       "\"sinc_dot_product.h\"",
       "private",
-      "\"Resampler/sinc_dot_product.h\"",
+      "\"Utils/double_helpers.h\"",
       "public"
     ]
   },

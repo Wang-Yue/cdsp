@@ -138,9 +138,7 @@ struct synchronous_resampler {
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
-#endif
+#include "Utils/double_helpers.h"
 
 /**
  * @brief Computes the greatest common divisor (GCD) of two size_t integers
@@ -279,23 +277,13 @@ static resampler_error_t synchronous_resampler_process(
       // filter. Only the `sharedBins` matter since bins above are
       // dropped on the output side; doing the multiply in place over
       // that span avoids touching the upper half.
-#ifdef ENABLE_ACCELERATE
-      DSPDoubleSplitComplex io_split = {resampler->working_spec_re,
-                                        resampler->working_spec_im};
-      DSPDoubleSplitComplex f_split = {resampler->filter_spec_re,
-                                       resampler->filter_spec_im};
-      vDSP_zvmulD(&io_split, 1, &f_split, 1, &io_split, 1,
-                  resampler->shared_bins, 1);
-#else
-      for (size_t i = 0; i < resampler->shared_bins; i++) {
-        double re = resampler->working_spec_re[i];
-        double im = resampler->working_spec_im[i];
-        double fre = resampler->filter_spec_re[i];
-        double fim = resampler->filter_spec_im[i];
-        resampler->working_spec_re[i] = re * fre - im * fim;
-        resampler->working_spec_im[i] = re * fim + im * fre;
-      }
-#endif
+      dsp_ops_complex_multiply(resampler->working_spec_re,
+                               resampler->working_spec_im,
+                               resampler->filter_spec_re,
+                               resampler->filter_spec_im,
+                               resampler->working_spec_re,
+                               resampler->working_spec_im,
+                               resampler->shared_bins);
 
       // Step 4. Build the output spectrum of length `2·outputBlockLen`:
       // copy the filtered low bins and zero the rest. For upsampling
@@ -318,14 +306,8 @@ static resampler_error_t synchronous_resampler_process(
       // Step 6. Overlap-add: write `result[0..P) + carry` as the chunk's
       // output samples, and save `result[P..2P)` for the next chunk's
       // overlap.
-#ifdef ENABLE_ACCELERATE
-      vDSP_vaddD(resampler->working_time, 1, carry_ptr, 1, out_ptr, 1,
-                 resampler->sub_fft_out);
-#else
-      for (size_t i = 0; i < resampler->sub_fft_out; i++) {
-        out_ptr[i] = resampler->working_time[i] + carry_ptr[i];
-      }
-#endif
+      dsp_ops_vector_add(resampler->working_time, carry_ptr, out_ptr,
+                         resampler->sub_fft_out);
       memcpy(carry_ptr, resampler->working_time + resampler->sub_fft_out,
              resampler->sub_fft_out * sizeof(double));
     }

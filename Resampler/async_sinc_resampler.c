@@ -20,7 +20,7 @@
 #include "Logging/app_logger.h"
 #include "Resampler/audio_resampler.h"
 #include "Resampler/resampler_error.h"
-#include "Resampler/sinc_dot_product.h"
+#include "Utils/double_helpers.h"
 
 static const logger_t g_logger = {"dsp.resampler.async_sinc"};
 
