@@ -372,6 +372,9 @@ static bool pipewire_capture_open(void* ctx, backend_error_t* err) {
     snprintf(latency_str, sizeof(latency_str), "%d/%d", capture->chunk_size,
              capture->sample_rate);
     pw_properties_set(props, PW_KEY_NODE_LATENCY, latency_str);
+    char rate_str[64];
+    snprintf(rate_str, sizeof(rate_str), "1/%d", capture->sample_rate);
+    pw_properties_set(props, PW_KEY_NODE_RATE, rate_str);
     if (capture->device[0] != '\0' && strcmp(capture->device, "default") != 0) {
       pw_properties_set(props, "target.object", capture->device);
     } else if (capture->has_autoconnect_to &&
@@ -545,8 +548,9 @@ static bool pipewire_capture_pitch_control_supported(void* ctx) {
 static void pipewire_capture_set_pitch(void* ctx, double multiplier) {
   (void)ctx;
   (void)multiplier;
-  logger_warn(&g_logger,
-              "Requested rate adjust of synchronous resampler. Ignoring request.");
+  logger_warn(
+      &g_logger,
+      "Requested rate adjust of synchronous resampler. Ignoring request.");
 }
 
 /**
@@ -785,6 +789,9 @@ static bool pipewire_playback_open(void* ctx, backend_error_t* err) {
     snprintf(latency_str, sizeof(latency_str), "%d/%d", playback->chunk_size,
              playback->sample_rate);
     pw_properties_set(props, PW_KEY_NODE_LATENCY, latency_str);
+    char rate_str[64];
+    snprintf(rate_str, sizeof(rate_str), "1/%d", playback->sample_rate);
+    pw_properties_set(props, PW_KEY_NODE_RATE, rate_str);
     if (playback->device[0] != '\0' &&
         strcmp(playback->device, "default") != 0) {
       pw_properties_set(props, "target.object", playback->device);
