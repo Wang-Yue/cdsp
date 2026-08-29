@@ -264,10 +264,6 @@ int DeviceConfig::bestRate(const std::vector<int>& rates, int currentRate) {
         return 48000;
     if (std::find(rates.begin(), rates.end(), currentRate) != rates.end())
         return currentRate;
-    for (int preferred : MONITOR_STANDARD_RATES) {
-        if (std::find(rates.begin(), rates.end(), preferred) != rates.end())
-            return preferred;
-    }
     int best = rates[0];
     int minDiff = std::abs(best - currentRate);
     for (int r : rates) {

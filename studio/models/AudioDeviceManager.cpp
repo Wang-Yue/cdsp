@@ -185,9 +185,9 @@ void AudioDeviceManager::setConfig(bool isCapture, const DeviceConfig& newConfig
     bool backendChanged = (enforced.backend != current.backend);
     bool devChanged = (enforced.deviceName() != current.deviceName() || backendChanged);
 
-    AppLogger::info("AudioDeviceManager", QString("Setting %1 config: %2")
-                                              .arg(isCapture ? "capture" : "playback")
-                                              .arg(formatConfig(enforced)));
+    AppLogger::info(
+        "AudioDeviceManager",
+        QString("Setting %1 config: %2").arg(isCapture ? "capture" : "playback").arg(formatConfig(enforced)));
 
     if (backendChanged) {
         enforced.setDeviceName("");
@@ -200,13 +200,14 @@ void AudioDeviceManager::setConfig(bool isCapture, const DeviceConfig& newConfig
     saveConfigs();
 
     if (backendChanged) {
-        AppLogger::info("AudioDeviceManager", QString("%1 backend changed, re-fetching devices...")
-                                                  .arg(isCapture ? "Capture" : "Playback"));
+        AppLogger::info("AudioDeviceManager",
+                        QString("%1 backend changed, re-fetching devices...").arg(isCapture ? "Capture" : "Playback"));
         fetchDevices();
     } else if (devChanged) {
-        AppLogger::info("AudioDeviceManager", QString("%1 device changed to '%2', refreshing capabilities...")
-                                                  .arg(isCapture ? "Capture" : "Playback")
-                                                  .arg(QString::fromStdString(current.deviceName().value_or("<default>"))));
+        AppLogger::info("AudioDeviceManager",
+                        QString("%1 device changed to '%2', refreshing capabilities...")
+                            .arg(isCapture ? "Capture" : "Playback")
+                            .arg(QString::fromStdString(current.deviceName().value_or("<default>"))));
         refreshDeviceCapabilities();
     } else {
         bool rateChanged = validateSampleRates();
@@ -297,9 +298,8 @@ bool AudioDeviceManager::isDeviceAvailable(const DeviceConfig& cfg, bool isCaptu
     isWasapiLoopback = (isCapture && cfg.backend == AudioBackendType::WASAPI && cfg.loopback);
 #endif
     const auto& list = deviceList(isCapture, isWasapiLoopback);
-    return std::any_of(list.begin(), list.end(), [&](const AudioDevice& d) {
-        return d.id == *name || d.name == *name;
-    });
+    return std::any_of(list.begin(), list.end(),
+                       [&](const AudioDevice& d) { return d.id == *name || d.name == *name; });
 }
 
 bool AudioDeviceManager::devicesAvailable() const {
@@ -321,9 +321,8 @@ void AudioDeviceManager::validateDevicePresence(DeviceConfig& cfg, bool isCaptur
     isWasapiLoopback = (isCapture && cfg.backend == AudioBackendType::WASAPI && cfg.loopback);
 #endif
     const auto& list = (isWasapiLoopback || !isCapture) ? pbList : capList;
-    bool found = std::any_of(list.begin(), list.end(), [&](const AudioDevice& d) {
-        return d.id == *name || d.name == *name;
-    });
+    bool found =
+        std::any_of(list.begin(), list.end(), [&](const AudioDevice& d) { return d.id == *name || d.name == *name; });
 
     if (!found) {
         AppLogger::warn("AudioDeviceManager",
@@ -365,9 +364,9 @@ void AudioDeviceManager::fetchDevices() {
             captureDevices = cap;
             playbackDevices = pb;
 
-            AppLogger::info("AudioDeviceManager", QString("Devices refreshed: %1 capture, %2 playback device(s) found")
-                                                      .arg(cap.size())
-                                                      .arg(pb.size()));
+            AppLogger::info(
+                "AudioDeviceManager",
+                QString("Devices refreshed: %1 capture, %2 playback device(s) found").arg(cap.size()).arg(pb.size()));
 
             validateDevicePresence(captureConfig, true, cap, pb);
             validateDevicePresence(playbackConfig, false, cap, pb);
@@ -432,13 +431,17 @@ void AudioDeviceManager::handleFormatChange(bool isCapture, int newRate) {
         m_deviceChangeDebounceTimer->stop();
     }
 
-    AppLogger::info("AudioDeviceManager", QString("Handling %1 format change to %2 Hz")
-                                              .arg(isCapture ? "capture" : "playback")
-                                              .arg(newRate));
+    AppLogger::info("AudioDeviceManager",
+                    QString("Handling %1 format change to %2 Hz").arg(isCapture ? "capture" : "playback").arg(newRate));
+
+    auto capDesc = queryDeviceCapabilities(config(isCapture), isCapture);
+    updateCapabilitiesFromDescriptor(config(isCapture), isCapture, capDesc);
 
     config(isCapture).updateRate(newRate);
 
     if (m_settings && !m_settings->resamplerEnabled) {
+        auto otherDesc = queryDeviceCapabilities(config(!isCapture), !isCapture);
+        updateCapabilitiesFromDescriptor(config(!isCapture), !isCapture, otherDesc);
         config(!isCapture).sampleRate = config(isCapture).sampleRate;
         config(!isCapture) = config(!isCapture).enforced();
     }
@@ -472,9 +475,10 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
             captureConfig = captureConfig.enforced();
             playbackConfig = playbackConfig.enforced();
 
-            AppLogger::debug("AudioDeviceManager", QString("Capabilities refreshed (Capture rates: [%1], Playback rates: [%2])")
-                                                       .arg(formatRates(captureConfig.supportedRates()))
-                                                       .arg(formatRates(playbackConfig.supportedRates())));
+            AppLogger::debug("AudioDeviceManager",
+                             QString("Capabilities refreshed (Capture rates: [%1], Playback rates: [%2])")
+                                 .arg(formatRates(captureConfig.supportedRates()))
+                                 .arg(formatRates(playbackConfig.supportedRates())));
 
             bool rateChanged = validateSampleRates();
             if (!rateChanged) {
@@ -510,7 +514,8 @@ bool AudioDeviceManager::validateSampleRates() {
     if (m_settings && !m_settings->resamplerEnabled && captureConfig.sampleRate != playbackConfig.sampleRate) {
         auto common = commonRateOptions();
         if (!common.empty()) {
-            int target = isHardwareBackend(captureConfig.backend) ? captureConfig.sampleRate : playbackConfig.sampleRate;
+            int target =
+                isHardwareBackend(captureConfig.backend) ? captureConfig.sampleRate : playbackConfig.sampleRate;
             int best = DeviceConfig::bestRate(common, target);
             captureConfig.sampleRate = best;
             playbackConfig.sampleRate = best;
@@ -529,9 +534,10 @@ bool AudioDeviceManager::validateSampleRates() {
     }
 
     if (changed) {
-        AppLogger::info("AudioDeviceManager", QString("Sample rates updated by validation: Capture=%1 Hz, Playback=%2 Hz")
-                                                  .arg(captureConfig.sampleRate)
-                                                  .arg(playbackConfig.sampleRate));
+        AppLogger::info("AudioDeviceManager",
+                        QString("Sample rates updated by validation: Capture=%1 Hz, Playback=%2 Hz")
+                            .arg(captureConfig.sampleRate)
+                            .arg(playbackConfig.sampleRate));
         captureConfig = captureConfig.enforced();
         playbackConfig = playbackConfig.enforced();
         saveConfigs();
