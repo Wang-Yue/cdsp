@@ -636,7 +636,24 @@ void MainWindow::setupTrayIcon() {
     auto quitAct = m_trayMenu->addAction("Quit CDSP Monitor");
     connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
 
+#ifdef Q_OS_MAC
+    // On macOS (Sonoma & Sequoia), calling setContextMenu() attaches a native NSMenu to
+    // NSStatusItem and registers QStatusItemDelegate for NSMenuDidBeginTrackingNotification.
+    // Inside statusItemMenuBeganTracking:, Qt's Cocoa platform plugin (libqcocoa.dylib)
+    // unconditionally invokes -[NSEvent clickCount] on [NSApp currentEvent]. Because
+    // [NSApp currentEvent] during menu tracking is not always a mouse event, AppKit throws
+    // an uncaught NSInvalidArgumentException that crashes the app with SIGABRT.
+    // Bypassing setContextMenu() on macOS and popping up the QMenu via activated signal
+    // completely avoids this Qt bug while providing standard menu bar click behavior.
+    connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason) {
+        updateTrayMenu();
+        m_trayMenu->popup(QCursor::pos());
+    });
+#else
+    // On Linux (StatusNotifierItem/DBusMenu) and Windows, setContextMenu() is required for
+    // proper native desktop shell integration, remote menu export, and right-click handling.
     m_trayIcon->setContextMenu(m_trayMenu);
+#endif
     m_trayIcon->show();
 
     updateTrayMenu();
