@@ -21,7 +21,6 @@
  * their names, default devices, channel counts, and detailed capabilities.
  */
 
-
 /**
  * @brief Get the name of the default CoreAudio device for capture or playback.
  *

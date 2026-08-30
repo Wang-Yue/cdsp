@@ -13,14 +13,16 @@ __attribute__((unused)) static const logger_t g_logger = {"dsp.fft"};
 // MARK: - Core RealFFT Context Structures
 
 struct real_fft {
-  size_t length;          /**< Time-domain length (must be positive and even). */
-  size_t spectrum_length; /**< Number of unique complex bins (= length / 2 + 1). */
+  size_t length; /**< Time-domain length (must be positive and even). */
+  size_t
+      spectrum_length; /**< Number of unique complex bins (= length / 2 + 1). */
   real_fft_backend_t* backend; /**< Dispatched backend implementation. */
 };
 
 struct real_fftf {
-  size_t length;          /**< Time-domain length (must be positive and even). */
-  size_t spectrum_length; /**< Number of unique complex bins (= length / 2 + 1). */
+  size_t length; /**< Time-domain length (must be positive and even). */
+  size_t
+      spectrum_length; /**< Number of unique complex bins (= length / 2 + 1). */
   real_fftf_backend_t* backend; /**< Dispatched backend implementation. */
 };
 
@@ -109,11 +111,14 @@ void real_fftf_free(real_fftf_t* fft) {
 //      from one N-point complex FFT plus an O(N) untwiddle pass —
 //      `ComplexInnerRealFFT`. The inner complex FFT is itself routed here,
 //      in priority order:
-//      a. `VDSPComplexDFT` — `vDSP_DFT_zopD` for sizes `f·2ᵐ`, `f ∈ {1, 3, 5, 15}`, `m ≥ 3`.
-//      b. `MixedRadixFFT` — native mixed-radix for prime factorisations in `{2, 3, 5, 7}`.
-//         Its radix-2/4/8 stages are NOT redundant with branch (1): they handle the
-//         power-of-two portion of a mixed factorisation (e.g. `1120 = 2⁵·5·7` factored as `[8, 4, 5, 7]`).
-//      c. `BluesteinFFT` — universal fallback for anything with a prime factor `> 7`
+//      a. `VDSPComplexDFT` — `vDSP_DFT_zopD` for sizes `f·2ᵐ`, `f ∈ {1, 3, 5,
+//      15}`, `m ≥ 3`. b. `MixedRadixFFT` — native mixed-radix for prime
+//      factorisations in `{2, 3, 5, 7}`.
+//         Its radix-2/4/8 stages are NOT redundant with branch (1): they handle
+//         the power-of-two portion of a mixed factorisation (e.g. `1120 =
+//         2⁵·5·7` factored as `[8, 4, 5, 7]`).
+//      c. `BluesteinFFT` — universal fallback for anything with a prime factor
+//      `> 7`
 //         (e.g. 11→13k rate pair, halfN = 1034 has primes 11 and 47).
 //
 // Every backend exposes the same external semantics — forward =

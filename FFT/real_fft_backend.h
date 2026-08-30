@@ -7,7 +7,8 @@
  *
  * This header defines the polymorphic dispatch interface used by RealFFT
  * implementations (vDSP, FFTW, ComplexInner, Software Fallback).
- * It is intended for internal FFT subsystem use and not exposed to public consumers.
+ * It is intended for internal FFT subsystem use and not exposed to public
+ * consumers.
  */
 
 #include <stddef.h>
@@ -37,10 +38,11 @@ typedef void (*real_fft_backend_free_fn)(void* ctx);
 
 /**
  * @struct real_fft_backend
- * @brief Structure defining the dispatch table for a double-precision real FFT backend.
+ * @brief Structure defining the dispatch table for a double-precision real FFT
+ * backend.
  */
 typedef struct {
-  void* ctx;                            /**< Opaque backend context pointer. */
+  void* ctx;                           /**< Opaque backend context pointer. */
   real_fft_backend_forward_fn forward; /**< Forward FFT function. */
   real_fft_backend_inverse_fn inverse; /**< Inverse FFT function. */
   real_fft_backend_free_fn free;       /**< Cleanup function. */
@@ -68,10 +70,11 @@ typedef void (*real_fftf_backend_free_fn)(void* ctx);
 
 /**
  * @struct real_fftf_backend
- * @brief Structure defining the dispatch table for a single-precision real FFT backend.
+ * @brief Structure defining the dispatch table for a single-precision real FFT
+ * backend.
  */
 typedef struct {
-  void* ctx;                             /**< Opaque backend context pointer. */
+  void* ctx;                            /**< Opaque backend context pointer. */
   real_fftf_backend_forward_fn forward; /**< Forward FFT function. */
   real_fftf_backend_inverse_fn inverse; /**< Inverse FFT function. */
   real_fftf_backend_free_fn free;       /**< Cleanup function. */

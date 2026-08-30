@@ -164,7 +164,8 @@ void real_fftf_forward(real_fftf_t* fft, const float* real_in, float* spec_re,
  * @param fft The float real FFT context.
  * @param spec_re Input buffer for the real parts of the spectrum.
  * @param spec_im Input buffer for the imaginary parts of the spectrum.
- * @param real_out Output buffer for reconstructed real float samples. Output is scaled by length.
+ * @param real_out Output buffer for reconstructed real float samples. Output is
+ * scaled by length.
  */
 void real_fftf_inverse(real_fftf_t* fft, const float* spec_re,
                        const float* spec_im, float* real_out);

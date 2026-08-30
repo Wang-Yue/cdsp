@@ -277,13 +277,11 @@ static resampler_error_t synchronous_resampler_process(
       // filter. Only the `sharedBins` matter since bins above are
       // dropped on the output side; doing the multiply in place over
       // that span avoids touching the upper half.
-      dsp_ops_complex_multiply(resampler->working_spec_re,
-                               resampler->working_spec_im,
-                               resampler->filter_spec_re,
-                               resampler->filter_spec_im,
-                               resampler->working_spec_re,
-                               resampler->working_spec_im,
-                               resampler->shared_bins);
+      dsp_ops_complex_multiply(
+          resampler->working_spec_re, resampler->working_spec_im,
+          resampler->filter_spec_re, resampler->filter_spec_im,
+          resampler->working_spec_re, resampler->working_spec_im,
+          resampler->shared_bins);
 
       // Step 4. Build the output spectrum of length `2·outputBlockLen`:
       // copy the filtered low bins and zero the rest. For upsampling

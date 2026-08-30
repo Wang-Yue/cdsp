@@ -17,8 +17,8 @@
 #include "Config/config_parse_pipeline.h"
 #include "Config/config_parser_internal.h"
 #include "Config/configuration.h"
-#include "Logging/app_logger.h"
 #include "Config/engine_config_types.h"
+#include "Logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.config.parser"};
 

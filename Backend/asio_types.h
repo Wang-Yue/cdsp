@@ -60,7 +60,6 @@ typedef long ASIOError;
 #define K_ASIO_SUPPORTS_TIME_INFO 7
 #define K_ASIO_SUPPORTS_TIME_CODE 8
 
-
 // ASIO DSD Future Selectors (Steinberg ASIO SDK 2.3 / azo-sys FutureSelector)
 #define kAsioSetIoFormat 0x23111961L
 #define kAsioGetIoFormat 0x23111983L

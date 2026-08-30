@@ -353,8 +353,7 @@ bool core_audio_device_select_adjustable_clock_source(AudioDeviceID device_id) {
           logger_debug(
               &g_coreaudio_dev_logger,
               "Changing capture device clock source to item with index %d.", i);
-          bool ok =
-              core_audio_device_set_clock_source_id(device_id, source_id);
+          bool ok = core_audio_device_set_clock_source_id(device_id, source_id);
           if (ok) {
             logger_info(&g_coreaudio_dev_logger,
                         "The capture device supports pitch control.");
@@ -390,15 +389,14 @@ void core_audio_device_set_pitch(AudioDeviceID device_id, double pitch) {
   float pan = (float)((pitch - 1.0) * 50.0 + 0.5);
   if (pan < 0.0f) pan = 0.0f;
   if (pan > 1.0f) pan = 1.0f;
-  logger_debug(
-      &g_coreaudio_dev_logger,
-      "Setting capture pitch to: %f, corresponding pan value: %f.",
-      pitch, (double)pan);
-  OSStatus status =
-      AudioObjectSetPropertyData(device_id, &addr, 0, NULL, sizeof(float), &pan);
+  logger_debug(&g_coreaudio_dev_logger,
+               "Setting capture pitch to: %f, corresponding pan value: %f.",
+               pitch, (double)pan);
+  OSStatus status = AudioObjectSetPropertyData(device_id, &addr, 0, NULL,
+                                               sizeof(float), &pan);
   if (status != noErr) {
-    logger_warn(&g_coreaudio_dev_logger,
-                "Unable to set pitch, error code: %d.", (int)status);
+    logger_warn(&g_coreaudio_dev_logger, "Unable to set pitch, error code: %d.",
+                (int)status);
   }
 }
 
@@ -886,7 +884,8 @@ bool core_audio_device_acquire_hog_mode(AudioDeviceID device_id) {
   if (AudioObjectGetPropertyData(device_id, &hog_addr, 0, NULL, &hog_size,
                                  &current_hog_pid) == noErr) {
     if (current_hog_pid == camilla_pid) {
-      logger_debug(&g_coreaudio_dev_logger, "We already have exclusive access.");
+      logger_debug(&g_coreaudio_dev_logger,
+                   "We already have exclusive access.");
       return true;
     } else if (current_hog_pid != -1) {
       logger_warn(&g_coreaudio_dev_logger,
@@ -934,7 +933,8 @@ void core_audio_device_release_hog_mode(AudioDeviceID device_id) {
     if (current_hog_pid == camilla_pid) {
       logger_debug(&g_coreaudio_dev_logger, "Releasing exclusive access.");
       pid_t pid = -1;
-      AudioObjectSetPropertyData(device_id, &addr, 0, NULL, sizeof(pid_t), &pid);
+      AudioObjectSetPropertyData(device_id, &addr, 0, NULL, sizeof(pid_t),
+                                 &pid);
       pid_t new_device_pid = -1;
       if (AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &hog_size,
                                      &new_device_pid) == noErr &&

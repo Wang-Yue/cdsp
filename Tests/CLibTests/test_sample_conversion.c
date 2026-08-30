@@ -4,8 +4,8 @@
 
 #include "Audio/audio_chunk.h"
 #include "Audio/sample_conversion.h"
-#include "test_support.h"
 #include "Config/engine_config_types.h"
+#include "test_support.h"
 
 TEST(SampleConversion_S16_RoundTrip) {
   double samples[] = {-0.5, 0.0, 0.5};

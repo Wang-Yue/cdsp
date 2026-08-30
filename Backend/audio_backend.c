@@ -24,8 +24,8 @@
 #include "Backend/wasapi_playback.h"
 #endif
 
-#include <stdlib.h>
 #include <stdatomic.h>
+#include <stdlib.h>
 
 #include "Audio/audio_chunk.h"
 #include "Config/engine_config_types.h"

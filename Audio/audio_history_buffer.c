@@ -7,11 +7,10 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "Utils/cdsp_time.h"
-#include "Utils/float_helpers.h"
-
 #include "Audio/audio_chunk.h"
 #include "Utils/cdsp_memory.h"
+#include "Utils/cdsp_time.h"
+#include "Utils/float_helpers.h"
 
 struct audio_history_buffer {
   size_t channels;

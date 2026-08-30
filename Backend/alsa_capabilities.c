@@ -13,7 +13,6 @@
 
 #include "Backend/alsa_device.h"
 
-
 static const unsigned int CAPABILITY_PROBE_CHANNEL_LIMIT = 128;
 
 // Lists hardware devices matching get_card_names and list_hw_devices in

@@ -6,8 +6,8 @@
 #ifndef CLIB_AUDIO_AUDIO_CHUNK_H
 #define CLIB_AUDIO_AUDIO_CHUNK_H
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "Audio/audio_buffers.h"
 #include "Config/engine_config_types.h"

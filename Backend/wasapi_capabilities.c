@@ -178,8 +178,8 @@ static void int_list_to_str(const int* values, size_t count, char* buf,
   size_t offset = 0;
   offset += snprintf(buf + offset, buf_len - offset, "[");
   for (size_t i = 0; i < count; i++) {
-    offset += snprintf(buf + offset, buf_len - offset,
-                       (i > 0 ? ", %d" : "%d"), values[i]);
+    offset += snprintf(buf + offset, buf_len - offset, (i > 0 ? ", %d" : "%d"),
+                       values[i]);
   }
   snprintf(buf + offset, buf_len - offset, "]");
 }

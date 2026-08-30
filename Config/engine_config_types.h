@@ -219,7 +219,8 @@ typedef struct {
 } audio_device_descriptor_t;
 
 /**
- * @brief Curated list of standard audio sample rates matching CamillaDSP STANDARD_RATES (src/lib.rs).
+ * @brief Curated list of standard audio sample rates matching CamillaDSP
+ * STANDARD_RATES (src/lib.rs).
  */
 #define STANDARD_RATES_COUNT 17
 extern const uint32_t STANDARD_RATES[STANDARD_RATES_COUNT];
