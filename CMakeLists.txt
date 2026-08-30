@@ -568,6 +568,12 @@ if(BUILD_BENCHMARKS)
     endforeach()
 
     if(TARGET test_simd_benchmark)
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(test_simd_benchmark PRIVATE -UENABLE_ACCELERATE)
+        elseif(MSVC)
+            target_compile_options(test_simd_benchmark PRIVATE /UENABLE_ACCELERATE)
+        endif()
+
         if(APPLE)
             target_compile_definitions(test_simd_benchmark PRIVATE ACCELERATE_NEW_LAPACK)
         else()

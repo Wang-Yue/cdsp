@@ -30,6 +30,13 @@ __attribute__((weak)) void openblas_set_num_threads(int num_threads);
 #define HAS_BLAS 0
 #endif
 
+// Ensure ENABLE_ACCELERATE is disabled for this test so CDSP helper ops
+// are compiled as pure compiler-optimized C loops (to benchmark against
+// vDSP/BLAS)
+#ifdef ENABLE_ACCELERATE
+#undef ENABLE_ACCELERATE
+#endif
+
 #include "Utils/double_helpers.h"
 #include "Utils/float_helpers.h"
 #include "test_support.h"
