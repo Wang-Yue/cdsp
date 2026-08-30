@@ -91,6 +91,13 @@ static void mixed_radix_fft_free_wrapper(void* ctx) {
   mixed_radix_fft_free((mixed_radix_fft_t*)ctx);
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC push_options
+#pragma GCC optimize("O3,fast-math,finite-math-only")
+#elif defined(__clang__)
+#pragma float_control(precise, off, push)
+#endif
+
 /**
  * @brief Apply radix-2 butterflies across `n / (m·2)` blocks of size `m·2`.
  *
@@ -109,20 +116,47 @@ static inline void stage_radix2(mixed_radix_fft_t* fft, double* work_re,
                                 double* work_im, size_t m, const double* tw_re,
                                 const double* tw_im) {
   size_t block_size = m * 2;
+  if (m == 1) {
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+    for (size_t b = 0; b < fft->n; b += 2) {
+      double v0r = work_re[b];
+      double v0i = work_im[b];
+      double v1r = work_re[b + 1];
+      double v1i = work_im[b + 1];
+      work_re[b] = v0r + v1r;
+      work_im[b] = v0i + v1i;
+      work_re[b + 1] = v0r - v1r;
+      work_im[b + 1] = v0i - v1i;
+    }
+    return;
+  }
+  const double* tw1R = tw_re + m;
+  const double* tw1I = tw_im + m;
   for (size_t b = 0; b < fft->n; b += block_size) {
+    double* w0r = work_re + b;
+    double* w0i = work_im + b;
+    double* w1r = w0r + m;
+    double* w1i = w0i + m;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
     for (size_t k = 0; k < m; k++) {
-      size_t i0 = b + k;
-      size_t i1 = i0 + m;
-      double twR = tw_re[m + k];
-      double twI = tw_im[m + k];
-      double v1r = work_re[i1] * twR - work_im[i1] * twI;
-      double v1i = work_re[i1] * twI + work_im[i1] * twR;
-      double v0r = work_re[i0];
-      double v0i = work_im[i0];
-      work_re[i0] = v0r + v1r;
-      work_im[i0] = v0i + v1i;
-      work_re[i1] = v0r - v1r;
-      work_im[i1] = v0i - v1i;
+      double twR = tw1R[k];
+      double twI = tw1I[k];
+      double v1r = w1r[k] * twR - w1i[k] * twI;
+      double v1i = w1r[k] * twI + w1i[k] * twR;
+      double v0r = w0r[k];
+      double v0i = w0i[k];
+      w0r[k] = v0r + v1r;
+      w0i[k] = v0i + v1i;
+      w1r[k] = v0r - v1r;
+      w1i[k] = v0i - v1i;
     }
   }
 }
@@ -150,22 +184,107 @@ static inline void stage_radix3(mixed_radix_fft_t* fft, double* work_re,
   size_t block_size = m * 3;
   // W3 = exp(-2π i / 3) = (-1/2, -√3/2). The constant `√3/2` recurs below.
   double s32 = sin(2.0 * M_PI / 3.0);
+  if (m == 1) {
+    size_t b = 0;
+    for (; b + 6 <= fft->n; b += 6) {
+      double v0r_0 = work_re[b];
+      double v0i_0 = work_im[b];
+      double v1r_0 = work_re[b + 1];
+      double v1i_0 = work_im[b + 1];
+      double v2r_0 = work_re[b + 2];
+      double v2i_0 = work_im[b + 2];
+
+      double v0r_1 = work_re[b + 3];
+      double v0i_1 = work_im[b + 3];
+      double v1r_1 = work_re[b + 4];
+      double v1i_1 = work_im[b + 4];
+      double v2r_1 = work_re[b + 5];
+      double v2i_1 = work_im[b + 5];
+
+      double sR_0 = v1r_0 + v2r_0;
+      double sI_0 = v1i_0 + v2i_0;
+      double dR_0 = v1r_0 - v2r_0;
+      double dI_0 = v1i_0 - v2i_0;
+      double aR_0 = v0r_0 - 0.5 * sR_0;
+      double aI_0 = v0i_0 - 0.5 * sI_0;
+      double bR_0 = s32 * dR_0;
+      double bI_0 = s32 * dI_0;
+
+      double sR_1 = v1r_1 + v2r_1;
+      double sI_1 = v1i_1 + v2i_1;
+      double dR_1 = v1r_1 - v2r_1;
+      double dI_1 = v1i_1 - v2i_1;
+      double aR_1 = v0r_1 - 0.5 * sR_1;
+      double aI_1 = v0i_1 - 0.5 * sI_1;
+      double bR_1 = s32 * dR_1;
+      double bI_1 = s32 * dI_1;
+
+      work_re[b] = v0r_0 + sR_0;
+      work_im[b] = v0i_0 + sI_0;
+      work_re[b + 1] = aR_0 + bI_0;
+      work_im[b + 1] = aI_0 - bR_0;
+      work_re[b + 2] = aR_0 - bI_0;
+      work_im[b + 2] = aI_0 + bR_0;
+
+      work_re[b + 3] = v0r_1 + sR_1;
+      work_im[b + 3] = v0i_1 + sI_1;
+      work_re[b + 4] = aR_1 + bI_1;
+      work_im[b + 4] = aI_1 - bR_1;
+      work_re[b + 5] = aR_1 - bI_1;
+      work_im[b + 5] = aI_1 + bR_1;
+    }
+    for (; b < fft->n; b += 3) {
+      double v0r = work_re[b];
+      double v0i = work_im[b];
+      double v1r = work_re[b + 1];
+      double v1i = work_im[b + 1];
+      double v2r = work_re[b + 2];
+      double v2i = work_im[b + 2];
+      double sR = v1r + v2r;
+      double sI = v1i + v2i;
+      double dR = v1r - v2r;
+      double dI = v1i - v2i;
+      double aR = v0r - 0.5 * sR;
+      double aI = v0i - 0.5 * sI;
+      double bR = s32 * dR;
+      double bI = s32 * dI;
+      work_re[b] = v0r + sR;
+      work_im[b] = v0i + sI;
+      work_re[b + 1] = aR + bI;
+      work_im[b + 1] = aI - bR;
+      work_re[b + 2] = aR - bI;
+      work_im[b + 2] = aI + bR;
+    }
+    return;
+  }
+  const double* tw1R = tw_re + m;
+  const double* tw1I = tw_im + m;
+  const double* tw2R = tw_re + 2 * m;
+  const double* tw2I = tw_im + 2 * m;
   for (size_t b = 0; b < fft->n; b += block_size) {
+    double* w0r = work_re + b;
+    double* w0i = work_im + b;
+    double* w1r = w0r + m;
+    double* w1i = w0i + m;
+    double* w2r = w1r + m;
+    double* w2i = w1i + m;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
     for (size_t k = 0; k < m; k++) {
-      size_t i0 = b + k;
-      size_t i1 = i0 + m;
-      size_t i2 = i1 + m;
-      double tw1R = tw_re[m + k];
-      double tw1I = tw_im[m + k];
-      double tw2R = tw_re[2 * m + k];
-      double tw2I = tw_im[2 * m + k];
+      double tw1R_k = tw1R[k];
+      double tw1I_k = tw1I[k];
+      double tw2R_k = tw2R[k];
+      double tw2I_k = tw2I[k];
       // Twiddle.
-      double v1r = work_re[i1] * tw1R - work_im[i1] * tw1I;
-      double v1i = work_re[i1] * tw1I + work_im[i1] * tw1R;
-      double v2r = work_re[i2] * tw2R - work_im[i2] * tw2I;
-      double v2i = work_re[i2] * tw2I + work_im[i2] * tw2R;
-      double v0r = work_re[i0];
-      double v0i = work_im[i0];
+      double v1r = w1r[k] * tw1R_k - w1i[k] * tw1I_k;
+      double v1i = w1r[k] * tw1I_k + w1i[k] * tw1R_k;
+      double v2r = w2r[k] * tw2R_k - w2i[k] * tw2I_k;
+      double v2i = w2r[k] * tw2I_k + w2i[k] * tw2R_k;
+      double v0r = w0r[k];
+      double v0i = w0i[k];
       // Radix-3 DFT.
       double sR = v1r + v2r;
       double sI = v1i + v2i;
@@ -175,12 +294,12 @@ static inline void stage_radix3(mixed_radix_fft_t* fft, double* work_re,
       double aI = v0i - 0.5 * sI;
       double bR = s32 * dR;
       double bI = s32 * dI;
-      work_re[i0] = v0r + sR;
-      work_im[i0] = v0i + sI;
-      work_re[i1] = aR + bI;
-      work_im[i1] = aI - bR;
-      work_re[i2] = aR - bI;
-      work_im[i2] = aI + bR;
+      w0r[k] = v0r + sR;
+      w0i[k] = v0i + sI;
+      w1r[k] = aR + bI;
+      w1i[k] = aI - bR;
+      w2r[k] = aR - bI;
+      w2i[k] = aI + bR;
     }
   }
 }
@@ -201,26 +320,75 @@ static inline void stage_radix4(mixed_radix_fft_t* fft, double* work_re,
                                 double* work_im, size_t m, const double* tw_re,
                                 const double* tw_im) {
   size_t block_size = m * 4;
+  if (m == 1) {
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+    for (size_t b = 0; b < fft->n; b += 4) {
+      double v0r = work_re[b];
+      double v0i = work_im[b];
+      double v1r = work_re[b + 1];
+      double v1i = work_im[b + 1];
+      double v2r = work_re[b + 2];
+      double v2i = work_im[b + 2];
+      double v3r = work_re[b + 3];
+      double v3i = work_im[b + 3];
+      double t0r = v0r + v2r;
+      double t0i = v0i + v2i;
+      double t1r2 = v0r - v2r;
+      double t1i2 = v0i - v2i;
+      double t2r2 = v1r + v3r;
+      double t2i2 = v1i + v3i;
+      double t3r2 = v1r - v3r;
+      double t3i2 = v1i - v3i;
+      work_re[b] = t0r + t2r2;
+      work_im[b] = t0i + t2i2;
+      work_re[b + 1] = t1r2 + t3i2;
+      work_im[b + 1] = t1i2 - t3r2;
+      work_re[b + 2] = t0r - t2r2;
+      work_im[b + 2] = t0i - t2i2;
+      work_re[b + 3] = t1r2 - t3i2;
+      work_im[b + 3] = t1i2 + t3r2;
+    }
+    return;
+  }
+  const double* tw1R = tw_re + m;
+  const double* tw1I = tw_im + m;
+  const double* tw2R = tw_re + 2 * m;
+  const double* tw2I = tw_im + 2 * m;
+  const double* tw3R = tw_re + 3 * m;
+  const double* tw3I = tw_im + 3 * m;
   for (size_t b = 0; b < fft->n; b += block_size) {
+    double* w0r = work_re + b;
+    double* w0i = work_im + b;
+    double* w1r = w0r + m;
+    double* w1i = w0i + m;
+    double* w2r = w1r + m;
+    double* w2i = w1i + m;
+    double* w3r = w2r + m;
+    double* w3i = w2i + m;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
     for (size_t k = 0; k < m; k++) {
-      size_t i0 = b + k;
-      size_t i1 = i0 + m;
-      size_t i2 = i1 + m;
-      size_t i3 = i2 + m;
-      double t1R = tw_re[m + k];
-      double t1I = tw_im[m + k];
-      double t2R = tw_re[2 * m + k];
-      double t2I = tw_im[2 * m + k];
-      double t3R = tw_re[3 * m + k];
-      double t3I = tw_im[3 * m + k];
-      double v0r = work_re[i0];
-      double v0i = work_im[i0];
-      double v1r = work_re[i1] * t1R - work_im[i1] * t1I;
-      double v1i = work_re[i1] * t1I + work_im[i1] * t1R;
-      double v2r = work_re[i2] * t2R - work_im[i2] * t2I;
-      double v2i = work_re[i2] * t2I + work_im[i2] * t2R;
-      double v3r = work_re[i3] * t3R - work_im[i3] * t3I;
-      double v3i = work_re[i3] * t3I + work_im[i3] * t3R;
+      double tw1R_k = tw1R[k];
+      double tw1I_k = tw1I[k];
+      double tw2R_k = tw2R[k];
+      double tw2I_k = tw2I[k];
+      double tw3R_k = tw3R[k];
+      double tw3I_k = tw3I[k];
+      double v0r = w0r[k];
+      double v0i = w0i[k];
+      double v1r = w1r[k] * tw1R_k - w1i[k] * tw1I_k;
+      double v1i = w1r[k] * tw1I_k + w1i[k] * tw1R_k;
+      double v2r = w2r[k] * tw2R_k - w2i[k] * tw2I_k;
+      double v2i = w2r[k] * tw2I_k + w2i[k] * tw2R_k;
+      double v3r = w3r[k] * tw3R_k - w3i[k] * tw3I_k;
+      double v3i = w3r[k] * tw3I_k + w3i[k] * tw3R_k;
       // Inner radix-4 DFT: T0=v0+v2, T1=v0-v2, T2=v1+v3, T3=v1-v3
       // O[0]=T0+T2, O[1]=T1-i·T3, O[2]=T0-T2, O[3]=T1+i·T3
       // -i·z = (z.im, -z.re); +i·z = (-z.im, z.re).
@@ -232,14 +400,14 @@ static inline void stage_radix4(mixed_radix_fft_t* fft, double* work_re,
       double t2i2 = v1i + v3i;
       double t3r2 = v1r - v3r;
       double t3i2 = v1i - v3i;
-      work_re[i0] = t0r + t2r2;
-      work_im[i0] = t0i + t2i2;
-      work_re[i1] = t1r2 + t3i2;
-      work_im[i1] = t1i2 - t3r2;
-      work_re[i2] = t0r - t2r2;
-      work_im[i2] = t0i - t2i2;
-      work_re[i3] = t1r2 - t3i2;
-      work_im[i3] = t1i2 + t3r2;
+      w0r[k] = t0r + t2r2;
+      w0i[k] = t0i + t2i2;
+      w1r[k] = t1r2 + t3i2;
+      w1i[k] = t1i2 - t3r2;
+      w2r[k] = t0r - t2r2;
+      w2i[k] = t0i - t2i2;
+      w3r[k] = t1r2 - t3i2;
+      w3i[k] = t1i2 + t3r2;
     }
   }
 }
@@ -272,32 +440,172 @@ static inline void stage_radix5(mixed_radix_fft_t* fft, double* work_re,
   double w1I = -sin(2.0 * M_PI / 5.0);
   double w2R = cos(4.0 * M_PI / 5.0);
   double w2I = -sin(4.0 * M_PI / 5.0);
+
+  if (m == 1) {
+    size_t b = 0;
+    for (; b + 10 <= fft->n; b += 10) {
+      double v0r_0 = work_re[b];
+      double v0i_0 = work_im[b];
+      double v1r_0 = work_re[b + 1];
+      double v1i_0 = work_im[b + 1];
+      double v2r_0 = work_re[b + 2];
+      double v2i_0 = work_im[b + 2];
+      double v3r_0 = work_re[b + 3];
+      double v3i_0 = work_im[b + 3];
+      double v4r_0 = work_re[b + 4];
+      double v4i_0 = work_im[b + 4];
+
+      double v0r_1 = work_re[b + 5];
+      double v0i_1 = work_im[b + 5];
+      double v1r_1 = work_re[b + 6];
+      double v1i_1 = work_im[b + 6];
+      double v2r_1 = work_re[b + 7];
+      double v2i_1 = work_im[b + 7];
+      double v3r_1 = work_re[b + 8];
+      double v3i_1 = work_im[b + 8];
+      double v4r_1 = work_re[b + 9];
+      double v4i_1 = work_im[b + 9];
+
+      // Butterfly 0
+      double sum14R_0 = v1r_0 + v4r_0;
+      double sum14I_0 = v1i_0 + v4i_0;
+      double diff14R_0 = v1r_0 - v4r_0;
+      double diff14I_0 = v1i_0 - v4i_0;
+      double sum23R_0 = v2r_0 + v3r_0;
+      double sum23I_0 = v2i_0 + v3i_0;
+      double diff23R_0 = v2r_0 - v3r_0;
+      double diff23I_0 = v2i_0 - v3i_0;
+      work_re[b] = v0r_0 + sum14R_0 + sum23R_0;
+      work_im[b] = v0i_0 + sum14I_0 + sum23I_0;
+      double cR14_0 = w1R * sum14R_0 + w2R * sum23R_0;
+      double cI14_0 = w1R * sum14I_0 + w2R * sum23I_0;
+      double tR14_0 = w1I * diff14I_0 + w2I * diff23I_0;
+      double tI14_0 = w1I * diff14R_0 + w2I * diff23R_0;
+      work_re[b + 1] = v0r_0 + cR14_0 - tR14_0;
+      work_im[b + 1] = v0i_0 + cI14_0 + tI14_0;
+      work_re[b + 4] = v0r_0 + cR14_0 + tR14_0;
+      work_im[b + 4] = v0i_0 + cI14_0 - tI14_0;
+      double cR23_0 = w2R * sum14R_0 + w1R * sum23R_0;
+      double cI23_0 = w2R * sum14I_0 + w1R * sum23I_0;
+      double tR23_0 = w2I * diff14I_0 - w1I * diff23I_0;
+      double tI23_0 = w2I * diff14R_0 - w1I * diff23R_0;
+      work_re[b + 2] = v0r_0 + cR23_0 - tR23_0;
+      work_im[b + 2] = v0i_0 + cI23_0 + tI23_0;
+      work_re[b + 3] = v0r_0 + cR23_0 + tR23_0;
+      work_im[b + 3] = v0i_0 + cI23_0 - tI23_0;
+
+      // Butterfly 1
+      double sum14R_1 = v1r_1 + v4r_1;
+      double sum14I_1 = v1i_1 + v4i_1;
+      double diff14R_1 = v1r_1 - v4r_1;
+      double diff14I_1 = v1i_1 - v4i_1;
+      double sum23R_1 = v2r_1 + v3r_1;
+      double sum23I_1 = v2i_1 + v3i_1;
+      double diff23R_1 = v2r_1 - v3r_1;
+      double diff23I_1 = v2i_1 - v3i_1;
+      work_re[b + 5] = v0r_1 + sum14R_1 + sum23R_1;
+      work_im[b + 5] = v0i_1 + sum14I_1 + sum23I_1;
+      double cR14_1 = w1R * sum14R_1 + w2R * sum23R_1;
+      double cI14_1 = w1R * sum14I_1 + w2R * sum23I_1;
+      double tR14_1 = w1I * diff14I_1 + w2I * diff23I_1;
+      double tI14_1 = w1I * diff14R_1 + w2I * diff23R_1;
+      work_re[b + 6] = v0r_1 + cR14_1 - tR14_1;
+      work_im[b + 6] = v0i_1 + cI14_1 + tI14_1;
+      work_re[b + 9] = v0r_1 + cR14_1 + tR14_1;
+      work_im[b + 9] = v0i_1 + cI14_1 - tI14_1;
+      double cR23_1 = w2R * sum14R_1 + w1R * sum23R_1;
+      double cI23_1 = w2R * sum14I_1 + w1R * sum23I_1;
+      double tR23_1 = w2I * diff14I_1 - w1I * diff23I_1;
+      double tI23_1 = w2I * diff14R_1 - w1I * diff23R_1;
+      work_re[b + 7] = v0r_1 + cR23_1 - tR23_1;
+      work_im[b + 7] = v0i_1 + cI23_1 + tI23_1;
+      work_re[b + 8] = v0r_1 + cR23_1 + tR23_1;
+      work_im[b + 8] = v0i_1 + cI23_1 - tI23_1;
+    }
+    for (; b < fft->n; b += 5) {
+      double v0r = work_re[b];
+      double v0i = work_im[b];
+      double v1r = work_re[b + 1];
+      double v1i = work_im[b + 1];
+      double v2r = work_re[b + 2];
+      double v2i = work_im[b + 2];
+      double v3r = work_re[b + 3];
+      double v3i = work_im[b + 3];
+      double v4r = work_re[b + 4];
+      double v4i = work_im[b + 4];
+      double sum14R = v1r + v4r;
+      double sum14I = v1i + v4i;
+      double diff14R = v1r - v4r;
+      double diff14I = v1i - v4i;
+      double sum23R = v2r + v3r;
+      double sum23I = v2i + v3i;
+      double diff23R = v2r - v3r;
+      double diff23I = v2i - v3i;
+      work_re[b] = v0r + sum14R + sum23R;
+      work_im[b] = v0i + sum14I + sum23I;
+      double cR14 = w1R * sum14R + w2R * sum23R;
+      double cI14 = w1R * sum14I + w2R * sum23I;
+      double tR14 = w1I * diff14I + w2I * diff23I;
+      double tI14 = w1I * diff14R + w2I * diff23R;
+      work_re[b + 1] = v0r + cR14 - tR14;
+      work_im[b + 1] = v0i + cI14 + tI14;
+      work_re[b + 4] = v0r + cR14 + tR14;
+      work_im[b + 4] = v0i + cI14 - tI14;
+      double cR23 = w2R * sum14R + w1R * sum23R;
+      double cI23 = w2R * sum14I + w1R * sum23I;
+      double tR23 = w2I * diff14I - w1I * diff23I;
+      double tI23 = w2I * diff14R - w1I * diff23R;
+      work_re[b + 2] = v0r + cR23 - tR23;
+      work_im[b + 2] = v0i + cI23 + tI23;
+      work_re[b + 3] = v0r + cR23 + tR23;
+      work_im[b + 3] = v0i + cI23 - tI23;
+    }
+    return;
+  }
+  const double* tw1R = tw_re + m;
+  const double* tw1I = tw_im + m;
+  const double* tw2R = tw_re + 2 * m;
+  const double* tw2I = tw_im + 2 * m;
+  const double* tw3R = tw_re + 3 * m;
+  const double* tw3I = tw_im + 3 * m;
+  const double* tw4R = tw_re + 4 * m;
+  const double* tw4I = tw_im + 4 * m;
   for (size_t b = 0; b < fft->n; b += block_size) {
+    double* w0r = work_re + b;
+    double* w0i = work_im + b;
+    double* w1r = w0r + m;
+    double* w1i = w0i + m;
+    double* w2r = w1r + m;
+    double* w2i = w1i + m;
+    double* w3r = w2r + m;
+    double* w3i = w2i + m;
+    double* w4r = w3r + m;
+    double* w4i = w3i + m;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
     for (size_t k = 0; k < m; k++) {
-      size_t i0 = b + k;
-      size_t i1 = i0 + m;
-      size_t i2 = i1 + m;
-      size_t i3 = i2 + m;
-      size_t i4 = i3 + m;
       // Outer-stage twiddle on samples 1..4.
-      double t1R = tw_re[m + k];
-      double t1I = tw_im[m + k];
-      double t2R = tw_re[2 * m + k];
-      double t2I = tw_im[2 * m + k];
-      double t3R = tw_re[3 * m + k];
-      double t3I = tw_im[3 * m + k];
-      double t4R = tw_re[4 * m + k];
-      double t4I = tw_im[4 * m + k];
-      double v1r = work_re[i1] * t1R - work_im[i1] * t1I;
-      double v1i = work_re[i1] * t1I + work_im[i1] * t1R;
-      double v2r = work_re[i2] * t2R - work_im[i2] * t2I;
-      double v2i = work_re[i2] * t2I + work_im[i2] * t2R;
-      double v3r = work_re[i3] * t3R - work_im[i3] * t3I;
-      double v3i = work_re[i3] * t3I + work_im[i3] * t3R;
-      double v4r = work_re[i4] * t4R - work_im[i4] * t4I;
-      double v4i = work_re[i4] * t4I + work_im[i4] * t4R;
-      double v0r = work_re[i0];
-      double v0i = work_im[i0];
+      double t1R = tw1R[k];
+      double t1I = tw1I[k];
+      double t2R = tw2R[k];
+      double t2I = tw2I[k];
+      double t3R = tw3R[k];
+      double t3I = tw3I[k];
+      double t4R = tw4R[k];
+      double t4I = tw4I[k];
+      double v1r = w1r[k] * t1R - w1i[k] * t1I;
+      double v1i = w1r[k] * t1I + w1i[k] * t1R;
+      double v2r = w2r[k] * t2R - w2i[k] * t2I;
+      double v2i = w2r[k] * t2I + w2i[k] * t2R;
+      double v3r = w3r[k] * t3R - w3i[k] * t3I;
+      double v3i = w3r[k] * t3I + w3i[k] * t3R;
+      double v4r = w4r[k] * t4R - w4i[k] * t4I;
+      double v4i = w4r[k] * t4I + w4i[k] * t4R;
+      double v0r = w0r[k];
+      double v0i = w0i[k];
       // Radix-5 DFT (direct, not Winograd). 4 unique inner products plus
       // the DC term — straightforward and lets the compiler issue plenty
       // of FMAs.
@@ -319,26 +627,26 @@ static inline void stage_radix5(mixed_radix_fft_t* fft, double* work_re,
       double diff23R = v2r - v3r;
       double diff23I = v2i - v3i;
       // O[0]
-      work_re[i0] = v0r + sum14R + sum23R;
-      work_im[i0] = v0i + sum14I + sum23I;
+      w0r[k] = v0r + sum14R + sum23R;
+      w0i[k] = v0i + sum14I + sum23I;
       // Conjugate pair (1, 4).
       double cR14 = w1R * sum14R + w2R * sum23R;
       double cI14 = w1R * sum14I + w2R * sum23I;
       double tR14 = w1I * diff14I + w2I * diff23I;
       double tI14 = w1I * diff14R + w2I * diff23R;
-      work_re[i1] = v0r + cR14 - tR14;
-      work_im[i1] = v0i + cI14 + tI14;
-      work_re[i4] = v0r + cR14 + tR14;
-      work_im[i4] = v0i + cI14 - tI14;
+      w1r[k] = v0r + cR14 - tR14;
+      w1i[k] = v0i + cI14 + tI14;
+      w4r[k] = v0r + cR14 + tR14;
+      w4i[k] = v0i + cI14 - tI14;
       // Conjugate pair (2, 3).
       double cR23 = w2R * sum14R + w1R * sum23R;
       double cI23 = w2R * sum14I + w1R * sum23I;
       double tR23 = w2I * diff14I - w1I * diff23I;
       double tI23 = w2I * diff14R - w1I * diff23R;
-      work_re[i2] = v0r + cR23 - tR23;
-      work_im[i2] = v0i + cI23 + tI23;
-      work_re[i3] = v0r + cR23 + tR23;
-      work_im[i3] = v0i + cI23 - tI23;
+      w2r[k] = v0r + cR23 - tR23;
+      w2i[k] = v0i + cI23 + tI23;
+      w3r[k] = v0r + cR23 + tR23;
+      w3i[k] = v0i + cI23 - tI23;
     }
   }
 }
@@ -371,53 +679,135 @@ static inline void stage_radix7(mixed_radix_fft_t* fft, double* work_re,
   double w2I = -sin(4.0 * M_PI / 7.0);
   double w3R = cos(6.0 * M_PI / 7.0);
   double w3I = -sin(6.0 * M_PI / 7.0);
-  // Cache the m-multiples once per stage call so the inner loop
-  // computes each twiddle base address with one `add` instead of
-  // a `mul` per iteration.
-  size_t m2 = m << 1;
-  size_t m3 = m2 + m;
-  size_t m4 = m << 2;
-  size_t m5 = m4 + m;
-  size_t m6 = m3 << 1;
-  for (size_t b = 0; b < fft->n; b += block_size) {
-    for (size_t k = 0; k < m; k++) {
-      size_t i0 = b + k;
-      size_t i1 = i0 + m;
-      size_t i2 = i1 + m;
-      size_t i3 = i2 + m;
-      size_t i4 = i3 + m;
-      size_t i5 = i4 + m;
-      size_t i6 = i5 + m;
-      // Outer-stage twiddles on samples 1..6. Reuse the cached
-      // `m2..m6` from above so the twiddle base addresses are
-      // single `+` ops instead of `Int` multiplies with overflow
-      // traps.
-      double t1R = tw_re[m + k];
-      double t1I = tw_im[m + k];
-      double t2R = tw_re[m2 + k];
-      double t2I = tw_im[m2 + k];
-      double t3R = tw_re[m3 + k];
-      double t3I = tw_im[m3 + k];
-      double t4R = tw_re[m4 + k];
-      double t4I = tw_im[m4 + k];
-      double t5R = tw_re[m5 + k];
-      double t5I = tw_im[m5 + k];
-      double t6R = tw_re[m6 + k];
-      double t6I = tw_im[m6 + k];
-      double v1r = work_re[i1] * t1R - work_im[i1] * t1I;
-      double v1i = work_re[i1] * t1I + work_im[i1] * t1R;
-      double v2r = work_re[i2] * t2R - work_im[i2] * t2I;
-      double v2i = work_re[i2] * t2I + work_im[i2] * t2R;
-      double v3r = work_re[i3] * t3R - work_im[i3] * t3I;
-      double v3i = work_re[i3] * t3I + work_im[i3] * t3R;
-      double v4r = work_re[i4] * t4R - work_im[i4] * t4I;
-      double v4i = work_re[i4] * t4I + work_im[i4] * t4R;
-      double v5r = work_re[i5] * t5R - work_im[i5] * t5I;
-      double v5i = work_re[i5] * t5I + work_im[i5] * t5R;
-      double v6r = work_re[i6] * t6R - work_im[i6] * t6I;
-      double v6i = work_re[i6] * t6I + work_im[i6] * t6R;
-      double v0r = work_re[i0];
-      double v0i = work_im[i0];
+
+  if (m == 1) {
+    size_t b = 0;
+    for (; b + 14 <= fft->n; b += 14) {
+      double v0r_0 = work_re[b];
+      double v0i_0 = work_im[b];
+      double v1r_0 = work_re[b + 1];
+      double v1i_0 = work_im[b + 1];
+      double v2r_0 = work_re[b + 2];
+      double v2i_0 = work_im[b + 2];
+      double v3r_0 = work_re[b + 3];
+      double v3i_0 = work_im[b + 3];
+      double v4r_0 = work_re[b + 4];
+      double v4i_0 = work_im[b + 4];
+      double v5r_0 = work_re[b + 5];
+      double v5i_0 = work_im[b + 5];
+      double v6r_0 = work_re[b + 6];
+      double v6i_0 = work_im[b + 6];
+
+      double v0r_1 = work_re[b + 7];
+      double v0i_1 = work_im[b + 7];
+      double v1r_1 = work_re[b + 8];
+      double v1i_1 = work_im[b + 8];
+      double v2r_1 = work_re[b + 9];
+      double v2i_1 = work_im[b + 9];
+      double v3r_1 = work_re[b + 10];
+      double v3i_1 = work_im[b + 10];
+      double v4r_1 = work_re[b + 11];
+      double v4i_1 = work_im[b + 11];
+      double v5r_1 = work_re[b + 12];
+      double v5i_1 = work_im[b + 12];
+      double v6r_1 = work_re[b + 13];
+      double v6i_1 = work_im[b + 13];
+
+      // Butterfly 0
+      double s16R_0 = v1r_0 + v6r_0;
+      double s16I_0 = v1i_0 + v6i_0;
+      double d16R_0 = v1r_0 - v6r_0;
+      double d16I_0 = v1i_0 - v6i_0;
+      double s25R_0 = v2r_0 + v5r_0;
+      double s25I_0 = v2i_0 + v5i_0;
+      double d25R_0 = v2r_0 - v5r_0;
+      double d25I_0 = v2i_0 - v5i_0;
+      double s34R_0 = v3r_0 + v4r_0;
+      double s34I_0 = v3i_0 + v4i_0;
+      double d34R_0 = v3r_0 - v4r_0;
+      double d34I_0 = v3i_0 - v4i_0;
+      work_re[b] = v0r_0 + s16R_0 + s25R_0 + s34R_0;
+      work_im[b] = v0i_0 + s16I_0 + s25I_0 + s34I_0;
+      double cR16_0 = w1R * s16R_0 + w2R * s25R_0 + w3R * s34R_0;
+      double cI16_0 = w1R * s16I_0 + w2R * s25I_0 + w3R * s34I_0;
+      double tR16_0 = w1I * d16I_0 + w2I * d25I_0 + w3I * d34I_0;
+      double tI16_0 = w1I * d16R_0 + w2I * d25R_0 + w3I * d34R_0;
+      work_re[b + 1] = v0r_0 + cR16_0 - tR16_0;
+      work_im[b + 1] = v0i_0 + cI16_0 + tI16_0;
+      work_re[b + 6] = v0r_0 + cR16_0 + tR16_0;
+      work_im[b + 6] = v0i_0 + cI16_0 - tI16_0;
+      double cR25_0 = w2R * s16R_0 + w3R * s25R_0 + w1R * s34R_0;
+      double cI25_0 = w2R * s16I_0 + w3R * s25I_0 + w1R * s34I_0;
+      double tR25_0 = w2I * d16I_0 - w3I * d25I_0 - w1I * d34I_0;
+      double tI25_0 = w2I * d16R_0 - w3I * d25R_0 - w1I * d34R_0;
+      work_re[b + 2] = v0r_0 + cR25_0 - tR25_0;
+      work_im[b + 2] = v0i_0 + cI25_0 + tI25_0;
+      work_re[b + 5] = v0r_0 + cR25_0 + tR25_0;
+      work_im[b + 5] = v0i_0 + cI25_0 - tI25_0;
+      double cR34_0 = w3R * s16R_0 + w1R * s25R_0 + w2R * s34R_0;
+      double cI34_0 = w3R * s16I_0 + w1R * s25I_0 + w2R * s34I_0;
+      double tR34_0 = w3I * d16I_0 - w1I * d25I_0 + w2I * d34I_0;
+      double tI34_0 = w3I * d16R_0 - w1I * d25R_0 + w2I * d34R_0;
+      work_re[b + 3] = v0r_0 + cR34_0 - tR34_0;
+      work_im[b + 3] = v0i_0 + cI34_0 + tI34_0;
+      work_re[b + 4] = v0r_0 + cR34_0 + tR34_0;
+      work_im[b + 4] = v0i_0 + cI34_0 - tI34_0;
+
+      // Butterfly 1
+      double s16R_1 = v1r_1 + v6r_1;
+      double s16I_1 = v1i_1 + v6i_1;
+      double d16R_1 = v1r_1 - v6r_1;
+      double d16I_1 = v1i_1 - v6i_1;
+      double s25R_1 = v2r_1 + v5r_1;
+      double s25I_1 = v2i_1 + v5i_1;
+      double d25R_1 = v2r_1 - v5r_1;
+      double d25I_1 = v2i_1 - v5i_1;
+      double s34R_1 = v3r_1 + v4r_1;
+      double s34I_1 = v3i_1 + v4i_1;
+      double d34R_1 = v3r_1 - v4r_1;
+      double d34I_1 = v3i_1 - v4i_1;
+      work_re[b + 7] = v0r_1 + s16R_1 + s25R_1 + s34R_1;
+      work_im[b + 7] = v0i_1 + s16I_1 + s25I_1 + s34I_1;
+      double cR16_1 = w1R * s16R_1 + w2R * s25R_1 + w3R * s34R_1;
+      double cI16_1 = w1R * s16I_1 + w2R * s25I_1 + w3R * s34I_1;
+      double tR16_1 = w1I * d16I_1 + w2I * d25I_1 + w3I * d34I_1;
+      double tI16_1 = w1I * d16R_1 + w2I * d25R_1 + w3I * d34R_1;
+      work_re[b + 8] = v0r_1 + cR16_1 - tR16_1;
+      work_im[b + 8] = v0i_1 + cI16_1 + tI16_1;
+      work_re[b + 13] = v0r_1 + cR16_1 + tR16_1;
+      work_im[b + 13] = v0i_1 + cI16_1 - tI16_1;
+      double cR25_1 = w2R * s16R_1 + w3R * s25R_1 + w1R * s34R_1;
+      double cI25_1 = w2R * s16I_1 + w3R * s25I_1 + w1R * s34I_1;
+      double tR25_1 = w2I * d16I_1 - w3I * d25I_1 - w1I * d34I_1;
+      double tI25_1 = w2I * d16R_1 - w3I * d25R_1 - w1I * d34R_1;
+      work_re[b + 9] = v0r_1 + cR25_1 - tR25_1;
+      work_im[b + 9] = v0i_1 + cI25_1 + tI25_1;
+      work_re[b + 12] = v0r_1 + cR25_1 + tR25_1;
+      work_im[b + 12] = v0i_1 + cI25_1 - tI25_1;
+      double cR34_1 = w3R * s16R_1 + w1R * s25R_1 + w2R * s34R_1;
+      double cI34_1 = w3R * s16I_1 + w1R * s25I_1 + w2R * s34I_1;
+      double tR34_1 = w3I * d16I_1 - w1I * d25I_1 + w2I * d34I_1;
+      double tI34_1 = w3I * d16R_1 - w1I * d25R_1 + w2I * d34R_1;
+      work_re[b + 10] = v0r_1 + cR34_1 - tR34_1;
+      work_im[b + 10] = v0i_1 + cI34_1 + tI34_1;
+      work_re[b + 11] = v0r_1 + cR34_1 + tR34_1;
+      work_im[b + 11] = v0i_1 + cI34_1 - tI34_1;
+    }
+    for (; b < fft->n; b += 7) {
+      double v0r = work_re[b];
+      double v0i = work_im[b];
+      double v1r = work_re[b + 1];
+      double v1i = work_im[b + 1];
+      double v2r = work_re[b + 2];
+      double v2i = work_im[b + 2];
+      double v3r = work_re[b + 3];
+      double v3i = work_im[b + 3];
+      double v4r = work_re[b + 4];
+      double v4i = work_im[b + 4];
+      double v5r = work_re[b + 5];
+      double v5i = work_im[b + 5];
+      double v6r = work_re[b + 6];
+      double v6i = work_im[b + 6];
       // Build pair sums/diffs with conjugate-symmetric partners.
       // {1,6}: W^1, W^6 = W^-1 → coef pair (w1, conj(w1))
       // {2,5}: W^2, W^5 = W^-2 → (w2, conj(w2))
@@ -435,36 +825,147 @@ static inline void stage_radix7(mixed_radix_fft_t* fft, double* work_re,
       double d34R = v3r - v4r;
       double d34I = v3i - v4i;
       // O[0] = v0 + sum of all sums.
-      work_re[i0] = v0r + s16R + s25R + s34R;
-      work_im[i0] = v0i + s16I + s25I + s34I;
+      work_re[b] = v0r + s16R + s25R + s34R;
+      work_im[b] = v0i + s16I + s25I + s34I;
       // Conjugate-pair factoring.
       // Pair (1, 6).
       double cR16 = w1R * s16R + w2R * s25R + w3R * s34R;
       double cI16 = w1R * s16I + w2R * s25I + w3R * s34I;
       double tR16 = w1I * d16I + w2I * d25I + w3I * d34I;
       double tI16 = w1I * d16R + w2I * d25R + w3I * d34R;
-      work_re[i1] = v0r + cR16 - tR16;
-      work_im[i1] = v0i + cI16 + tI16;
-      work_re[i6] = v0r + cR16 + tR16;
-      work_im[i6] = v0i + cI16 - tI16;
+      work_re[b + 1] = v0r + cR16 - tR16;
+      work_im[b + 1] = v0i + cI16 + tI16;
+      work_re[b + 6] = v0r + cR16 + tR16;
+      work_im[b + 6] = v0i + cI16 - tI16;
       // Pair (2, 5).
       double cR25 = w2R * s16R + w3R * s25R + w1R * s34R;
       double cI25 = w2R * s16I + w3R * s25I + w1R * s34I;
       double tR25 = w2I * d16I - w3I * d25I - w1I * d34I;
       double tI25 = w2I * d16R - w3I * d25R - w1I * d34R;
-      work_re[i2] = v0r + cR25 - tR25;
-      work_im[i2] = v0i + cI25 + tI25;
-      work_re[i5] = v0r + cR25 + tR25;
-      work_im[i5] = v0i + cI25 - tI25;
+      work_re[b + 2] = v0r + cR25 - tR25;
+      work_im[b + 2] = v0i + cI25 + tI25;
+      work_re[b + 5] = v0r + cR25 + tR25;
+      work_im[b + 5] = v0i + cI25 - tI25;
       // Pair (3, 4).
       double cR34 = w3R * s16R + w1R * s25R + w2R * s34R;
       double cI34 = w3R * s16I + w1R * s25I + w2R * s34I;
       double tR34 = w3I * d16I - w1I * d25I + w2I * d34I;
       double tI34 = w3I * d16R - w1I * d25R + w2I * d34R;
-      work_re[i3] = v0r + cR34 - tR34;
-      work_im[i3] = v0i + cI34 + tI34;
-      work_re[i4] = v0r + cR34 + tR34;
-      work_im[i4] = v0i + cI34 - tI34;
+      work_re[b + 3] = v0r + cR34 - tR34;
+      work_im[b + 3] = v0i + cI34 + tI34;
+      work_re[b + 4] = v0r + cR34 + tR34;
+      work_im[b + 4] = v0i + cI34 - tI34;
+    }
+    return;
+  }
+
+  const double* tw1R = tw_re + m;
+  const double* tw1I = tw_im + m;
+  const double* tw2R = tw_re + 2 * m;
+  const double* tw2I = tw_im + 2 * m;
+  const double* tw3R = tw_re + 3 * m;
+  const double* tw3I = tw_im + 3 * m;
+  const double* tw4R = tw_re + 4 * m;
+  const double* tw4I = tw_im + 4 * m;
+  const double* tw5R = tw_re + 5 * m;
+  const double* tw5I = tw_im + 5 * m;
+  const double* tw6R = tw_re + 6 * m;
+  const double* tw6I = tw_im + 6 * m;
+  for (size_t b = 0; b < fft->n; b += block_size) {
+    double* w0r = work_re + b;
+    double* w0i = work_im + b;
+    double* w1r = w0r + m;
+    double* w1i = w0i + m;
+    double* w2r = w1r + m;
+    double* w2i = w1i + m;
+    double* w3r = w2r + m;
+    double* w3i = w2i + m;
+    double* w4r = w3r + m;
+    double* w4i = w3i + m;
+    double* w5r = w4r + m;
+    double* w5i = w4i + m;
+    double* w6r = w5r + m;
+    double* w6i = w5i + m;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+    for (size_t k = 0; k < m; k++) {
+      // Outer-stage twiddles on samples 1..6.
+      double t1R = tw1R[k];
+      double t1I = tw1I[k];
+      double t2R = tw2R[k];
+      double t2I = tw2I[k];
+      double t3R = tw3R[k];
+      double t3I = tw3I[k];
+      double t4R = tw4R[k];
+      double t4I = tw4I[k];
+      double t5R = tw5R[k];
+      double t5I = tw5I[k];
+      double t6R = tw6R[k];
+      double t6I = tw6I[k];
+      double v1r = w1r[k] * t1R - w1i[k] * t1I;
+      double v1i = w1r[k] * t1I + w1i[k] * t1R;
+      double v2r = w2r[k] * t2R - w2i[k] * t2I;
+      double v2i = w2r[k] * t2I + w2i[k] * t2R;
+      double v3r = w3r[k] * t3R - w3i[k] * t3I;
+      double v3i = w3r[k] * t3I + w3i[k] * t3R;
+      double v4r = w4r[k] * t4R - w4i[k] * t4I;
+      double v4i = w4r[k] * t4I + w4i[k] * t4R;
+      double v5r = w5r[k] * t5R - w5i[k] * t5I;
+      double v5i = w5r[k] * t5I + w5i[k] * t5R;
+      double v6r = w6r[k] * t6R - w6i[k] * t6I;
+      double v6i = w6r[k] * t6I + w6i[k] * t6R;
+      double v0r = w0r[k];
+      double v0i = w0i[k];
+      // Build pair sums/diffs with conjugate-symmetric partners.
+      // {1,6}: W^1, W^6 = W^-1 → coef pair (w1, conj(w1))
+      // {2,5}: W^2, W^5 = W^-2 → (w2, conj(w2))
+      // {3,4}: W^3, W^4 = W^-3 → (w3, conj(w3))
+      double s16R = v1r + v6r;
+      double s16I = v1i + v6i;
+      double d16R = v1r - v6r;
+      double d16I = v1i - v6i;
+      double s25R = v2r + v5r;
+      double s25I = v2i + v5i;
+      double d25R = v2r - v5r;
+      double d25I = v2i - v5i;
+      double s34R = v3r + v4r;
+      double s34I = v3i + v4i;
+      double d34R = v3r - v4r;
+      double d34I = v3i - v4i;
+      // O[0] = v0 + sum of all sums.
+      w0r[k] = v0r + s16R + s25R + s34R;
+      w0i[k] = v0i + s16I + s25I + s34I;
+      // Conjugate-pair factoring.
+      // Pair (1, 6).
+      double cR16 = w1R * s16R + w2R * s25R + w3R * s34R;
+      double cI16 = w1R * s16I + w2R * s25I + w3R * s34I;
+      double tR16 = w1I * d16I + w2I * d25I + w3I * d34I;
+      double tI16 = w1I * d16R + w2I * d25R + w3I * d34R;
+      w1r[k] = v0r + cR16 - tR16;
+      w1i[k] = v0i + cI16 + tI16;
+      w6r[k] = v0r + cR16 + tR16;
+      w6i[k] = v0i + cI16 - tI16;
+      // Pair (2, 5).
+      double cR25 = w2R * s16R + w3R * s25R + w1R * s34R;
+      double cI25 = w2R * s16I + w3R * s25I + w1R * s34I;
+      double tR25 = w2I * d16I - w3I * d25I - w1I * d34I;
+      double tI25 = w2I * d16R - w3I * d25R - w1I * d34R;
+      w2r[k] = v0r + cR25 - tR25;
+      w2i[k] = v0i + cI25 + tI25;
+      w5r[k] = v0r + cR25 + tR25;
+      w5i[k] = v0i + cI25 - tI25;
+      // Pair (3, 4).
+      double cR34 = w3R * s16R + w1R * s25R + w2R * s34R;
+      double cI34 = w3R * s16I + w1R * s25I + w2R * s34I;
+      double tR34 = w3I * d16I - w1I * d25I + w2I * d34I;
+      double tI34 = w3I * d16R - w1I * d25R + w2I * d34R;
+      w3r[k] = v0r + cR34 - tR34;
+      w3i[k] = v0i + cI34 + tI34;
+      w4r[k] = v0r + cR34 + tR34;
+      w4i[k] = v0i + cI34 - tI34;
     }
   }
 }
@@ -489,46 +990,30 @@ static inline void stage_radix8(mixed_radix_fft_t* fft, double* work_re,
                                 const double* tw_im) {
   size_t block_size = m * 8;
   double s2 = 0.7071067811865476;  // √2/2
-  for (size_t b = 0; b < fft->n; b += block_size) {
-    for (size_t k = 0; k < m; k++) {
-      size_t i0 = b + k;
-      size_t i1 = i0 + m;
-      size_t i2 = i1 + m;
-      size_t i3 = i2 + m;
-      size_t i4 = i3 + m;
-      size_t i5 = i4 + m;
-      size_t i6 = i5 + m;
-      size_t i7 = i6 + m;
-      double t1R = tw_re[m + k];
-      double t1I = tw_im[m + k];
-      double t2R = tw_re[2 * m + k];
-      double t2I = tw_im[2 * m + k];
-      double t3R = tw_re[3 * m + k];
-      double t3I = tw_im[3 * m + k];
-      double t4R = tw_re[4 * m + k];
-      double t4I = tw_im[4 * m + k];
-      double t5R = tw_re[5 * m + k];
-      double t5I = tw_im[5 * m + k];
-      double t6R = tw_re[6 * m + k];
-      double t6I = tw_im[6 * m + k];
-      double t7R = tw_re[7 * m + k];
-      double t7I = tw_im[7 * m + k];
-      double v0r = work_re[i0];
-      double v0i = work_im[i0];
-      double v1r = work_re[i1] * t1R - work_im[i1] * t1I;
-      double v1i = work_re[i1] * t1I + work_im[i1] * t1R;
-      double v2r = work_re[i2] * t2R - work_im[i2] * t2I;
-      double v2i = work_re[i2] * t2I + work_im[i2] * t2R;
-      double v3r = work_re[i3] * t3R - work_im[i3] * t3I;
-      double v3i = work_re[i3] * t3I + work_im[i3] * t3R;
-      double v4r = work_re[i4] * t4R - work_im[i4] * t4I;
-      double v4i = work_re[i4] * t4I + work_im[i4] * t4R;
-      double v5r = work_re[i5] * t5R - work_im[i5] * t5I;
-      double v5i = work_re[i5] * t5I + work_im[i5] * t5R;
-      double v6r = work_re[i6] * t6R - work_im[i6] * t6I;
-      double v6i = work_re[i6] * t6I + work_im[i6] * t6R;
-      double v7r = work_re[i7] * t7R - work_im[i7] * t7I;
-      double v7i = work_re[i7] * t7I + work_im[i7] * t7R;
+
+  if (m == 1) {
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+    for (size_t b = 0; b < fft->n; b += 8) {
+      double v0r = work_re[b];
+      double v0i = work_im[b];
+      double v1r = work_re[b + 1];
+      double v1i = work_im[b + 1];
+      double v2r = work_re[b + 2];
+      double v2i = work_im[b + 2];
+      double v3r = work_re[b + 3];
+      double v3i = work_im[b + 3];
+      double v4r = work_re[b + 4];
+      double v4i = work_im[b + 4];
+      double v5r = work_re[b + 5];
+      double v5i = work_im[b + 5];
+      double v6r = work_re[b + 6];
+      double v6i = work_im[b + 6];
+      double v7r = work_re[b + 7];
+      double v7i = work_im[b + 7];
       // Even radix-4: DFT of (v0, v2, v4, v6).
       double eA0r = v0r + v4r;
       double eA0i = v0i + v4i;
@@ -574,25 +1059,164 @@ static inline void stage_radix8(mixed_radix_fft_t* fft, double* work_re,
       double w3r = s2 * (oo3i - oo3r);
       double w3i = -s2 * (oo3r + oo3i);
       // O[k] = E[k] + W_8^k·O_odd[k], O[k+4] = E[k] - W_8^k·O_odd[k].
-      work_re[i0] = e0r + w0r;
-      work_im[i0] = e0i + w0i;
-      work_re[i1] = e1r + w1r;
-      work_im[i1] = e1i + w1i;
-      work_re[i2] = e2r + w2r;
-      work_im[i2] = e2i + w2i;
-      work_re[i3] = e3r + w3r;
-      work_im[i3] = e3i + w3i;
-      work_re[i4] = e0r - w0r;
-      work_im[i4] = e0i - w0i;
-      work_re[i5] = e1r - w1r;
-      work_im[i5] = e1i - w1i;
-      work_re[i6] = e2r - w2r;
-      work_im[i6] = e2i - w2i;
-      work_re[i7] = e3r - w3r;
-      work_im[i7] = e3i - w3i;
+      work_re[b] = e0r + w0r;
+      work_im[b] = e0i + w0i;
+      work_re[b + 1] = e1r + w1r;
+      work_im[b + 1] = e1i + w1i;
+      work_re[b + 2] = e2r + w2r;
+      work_im[b + 2] = e2i + w2i;
+      work_re[b + 3] = e3r + w3r;
+      work_im[b + 3] = e3i + w3i;
+      work_re[b + 4] = e0r - w0r;
+      work_im[b + 4] = e0i - w0i;
+      work_re[b + 5] = e1r - w1r;
+      work_im[b + 5] = e1i - w1i;
+      work_re[b + 6] = e2r - w2r;
+      work_im[b + 6] = e2i - w2i;
+      work_re[b + 7] = e3r - w3r;
+      work_im[b + 7] = e3i - w3i;
+    }
+    return;
+  }
+
+  const double* tw1R = tw_re + m;
+  const double* tw1I = tw_im + m;
+  const double* tw2R = tw_re + 2 * m;
+  const double* tw2I = tw_im + 2 * m;
+  const double* tw3R = tw_re + 3 * m;
+  const double* tw3I = tw_im + 3 * m;
+  const double* tw4R = tw_re + 4 * m;
+  const double* tw4I = tw_im + 4 * m;
+  const double* tw5R = tw_re + 5 * m;
+  const double* tw5I = tw_im + 5 * m;
+  const double* tw6R = tw_re + 6 * m;
+  const double* tw6I = tw_im + 6 * m;
+  const double* tw7R = tw_re + 7 * m;
+  const double* tw7I = tw_im + 7 * m;
+  for (size_t b = 0; b < fft->n; b += block_size) {
+    double* w0r = work_re + b;
+    double* w0i = work_im + b;
+    double* w1r = w0r + m;
+    double* w1i = w0i + m;
+    double* w2r = w1r + m;
+    double* w2i = w1i + m;
+    double* w3r = w2r + m;
+    double* w3i = w2i + m;
+    double* w4r = w3r + m;
+    double* w4i = w3i + m;
+    double* w5r = w4r + m;
+    double* w5i = w4i + m;
+    double* w6r = w5r + m;
+    double* w6i = w5i + m;
+    double* w7r = w6r + m;
+    double* w7i = w6i + m;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
+    for (size_t k = 0; k < m; k++) {
+      double t1R = tw1R[k];
+      double t1I = tw1I[k];
+      double t2R = tw2R[k];
+      double t2I = tw2I[k];
+      double t3R = tw3R[k];
+      double t3I = tw3I[k];
+      double t4R = tw4R[k];
+      double t4I = tw4I[k];
+      double t5R = tw5R[k];
+      double t5I = tw5I[k];
+      double t6R = tw6R[k];
+      double t6I = tw6I[k];
+      double t7R = tw7R[k];
+      double t7I = tw7I[k];
+      double v0r = w0r[k];
+      double v0i = w0i[k];
+      double v1r = w1r[k] * t1R - w1i[k] * t1I;
+      double v1i = w1r[k] * t1I + w1i[k] * t1R;
+      double v2r = w2r[k] * t2R - w2i[k] * t2I;
+      double v2i = w2r[k] * t2I + w2i[k] * t2R;
+      double v3r = w3r[k] * t3R - w3i[k] * t3I;
+      double v3i = w3r[k] * t3I + w3i[k] * t3R;
+      double v4r = w4r[k] * t4R - w4i[k] * t4I;
+      double v4i = w4r[k] * t4I + w4i[k] * t4R;
+      double v5r = w5r[k] * t5R - w5i[k] * t5I;
+      double v5i = w5r[k] * t5I + w5i[k] * t5R;
+      double v6r = w6r[k] * t6R - w6i[k] * t6I;
+      double v6i = w6r[k] * t6I + w6i[k] * t6R;
+      double v7r = w7r[k] * t7R - w7i[k] * t7I;
+      double v7i = w7r[k] * t7I + w7i[k] * t7R;
+      // Even radix-4: DFT of (v0, v2, v4, v6).
+      double eA0r = v0r + v4r;
+      double eA0i = v0i + v4i;
+      double eA1r = v0r - v4r;
+      double eA1i = v0i - v4i;
+      double eA2r = v2r + v6r;
+      double eA2i = v2i + v6i;
+      double eA3r = v2r - v6r;
+      double eA3i = v2i - v6i;
+      double e0r = eA0r + eA2r;
+      double e0i = eA0i + eA2i;
+      double e1r = eA1r + eA3i;
+      double e1i = eA1i - eA3r;
+      double e2r = eA0r - eA2r;
+      double e2i = eA0i - eA2i;
+      double e3r = eA1r - eA3i;
+      double e3i = eA1i + eA3r;
+      // Odd radix-4: DFT of (v1, v3, v5, v7).
+      double oA0r = v1r + v5r;
+      double oA0i = v1i + v5i;
+      double oA1r = v1r - v5r;
+      double oA1i = v1i - v5i;
+      double oA2r = v3r + v7r;
+      double oA2i = v3i + v7i;
+      double oA3r = v3r - v7r;
+      double oA3i = v3i - v7i;
+      double oo0r = oA0r + oA2r;
+      double oo0i = oA0i + oA2i;
+      double oo1r = oA1r + oA3i;
+      double oo1i = oA1i - oA3r;
+      double oo2r = oA0r - oA2r;
+      double oo2i = oA0i - oA2i;
+      double oo3r = oA1r - oA3i;
+      double oo3i = oA1i + oA3r;
+      // Apply W_8^k to odd outputs:
+      //   W_8^0 = 1; W_8^1 = (s2, -s2); W_8^2 = -i; W_8^3 = (-s2, -s2).
+      double wo0r = oo0r;
+      double wo0i = oo0i;
+      double wo1r = s2 * (oo1r + oo1i);
+      double wo1i = s2 * (oo1i - oo1r);
+      double wo2r = oo2i;
+      double wo2i = -oo2r;
+      double wo3r = s2 * (oo3i - oo3r);
+      double wo3i = -s2 * (oo3r + oo3i);
+      // O[k] = E[k] + W_8^k·O_odd[k], O[k+4] = E[k] - W_8^k·O_odd[k].
+      w0r[k] = e0r + wo0r;
+      w0i[k] = e0i + wo0i;
+      w1r[k] = e1r + wo1r;
+      w1i[k] = e1i + wo1i;
+      w2r[k] = e2r + wo2r;
+      w2i[k] = e2i + wo2i;
+      w3r[k] = e3r + wo3r;
+      w3i[k] = e3i + wo3i;
+      w4r[k] = e0r - wo0r;
+      w4i[k] = e0i - wo0i;
+      w5r[k] = e1r - wo1r;
+      w5i[k] = e1i - wo1i;
+      w6r[k] = e2r - wo2r;
+      w6i[k] = e2i - wo2i;
+      w7r[k] = e3r - wo3r;
+      w7i[k] = e3i - wo3i;
     }
   }
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC pop_options
+#elif defined(__clang__)
+#pragma float_control(pop)
+#endif
+
 
 mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
   if (n == 0) return NULL;
