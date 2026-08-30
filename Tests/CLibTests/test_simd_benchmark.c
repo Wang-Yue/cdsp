@@ -30,14 +30,9 @@ __attribute__((weak)) void openblas_set_num_threads(int num_threads);
 #define HAS_BLAS 0
 #endif
 
-// Include CDSP double and float helpers (compiled as pure C in this benchmark)
-#if __has_include("Utils/double_helpers.h")
 #include "Utils/double_helpers.h"
 #include "Utils/float_helpers.h"
-#else
-#include "cdsp/Utils/double_helpers.h"
-#include "cdsp/Utils/float_helpers.h"
-#endif
+#include "test_support.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -54,10 +49,24 @@ static inline void do_not_optimize(void* p) {
 
 static void* alloc_aligned(size_t bytes) {
   void* ptr = NULL;
+#if defined(_WIN32)
+  return _aligned_malloc(bytes, 64);
+#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
   if (posix_memalign(&ptr, 64, bytes) != 0) {
     return malloc(bytes);
   }
   return ptr;
+#else
+  return malloc(bytes);
+#endif
+}
+
+static void free_aligned(void* ptr) {
+#if defined(_WIN32)
+  _aligned_free(ptr);
+#else
+  free(ptr);
+#endif
 }
 
 static void pin_cpu_if_needed(void) {
@@ -462,18 +471,18 @@ static void benchmark_op_at_size(bench_op_id_t op_id, size_t size_idx) {
   g_speedup_blas[op_id][size_idx] = -1.0;  // null
 #endif
 
-  free(da1);
-  free(da2);
-  free(da3);
-  free(da4);
-  free(da_out_c);
-  free(da_out_c2);
-  free(da_out_lib);
-  free(da_out_lib2);
-  free(fa1);
-  free(fa2);
-  free(fa_out_c);
-  free(fa_out_lib);
+  free_aligned(da1);
+  free_aligned(da2);
+  free_aligned(da3);
+  free_aligned(da4);
+  free_aligned(da_out_c);
+  free_aligned(da_out_c2);
+  free_aligned(da_out_lib);
+  free_aligned(da_out_lib2);
+  free_aligned(fa1);
+  free_aligned(fa2);
+  free_aligned(fa_out_c);
+  free_aligned(fa_out_lib);
 }
 
 // Format speedup entry "vDSP / BLAS"
@@ -497,11 +506,12 @@ static void format_entry(char* buf, size_t buf_len, double sp_vdsp,
   snprintf(buf, buf_len, "%s / %s", vdsp_str, blas_str);
 }
 
-int main(int argc, char** argv) {
-  (void)argc;
-  (void)argv;
-
+TEST(SIMD_Benchmark) {
+#if defined(_WIN32)
+  _putenv("VECLIB_MAXIMUM_THREADS=1");
+#else
   setenv("VECLIB_MAXIMUM_THREADS", "1", 1);
+#endif
 #if defined(HAS_CBLAS) && !defined(__APPLE__)
   if (openblas_set_num_threads) {
     openblas_set_num_threads(1);
@@ -568,6 +578,6 @@ int main(int argc, char** argv) {
   printf(
       "Note: Speedup > 1.00x means library out-performed pure C. 'null' "
       "indicates not applicable or unsupported on current platform.\n\n");
-
-  return 0;
 }
+
+TEST_MAIN()

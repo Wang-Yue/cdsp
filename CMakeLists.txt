@@ -488,6 +488,7 @@ if(BUILD_TESTING)
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_dsd_benchmark\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_pipeline_benchmark\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_resampler_matrix\\.c$")
+    list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_simd_benchmark\\.c$")
 
     if(NOT ENABLE_WEBSOCKET)
         list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_websocket_server\\.c$")
@@ -551,6 +552,7 @@ if(BUILD_BENCHMARKS)
         test_dsd_benchmark
         test_pipeline_benchmark
         test_resampler_matrix
+        test_simd_benchmark
     )
 
     set(BENCH_TARGETS "")
@@ -565,11 +567,44 @@ if(BUILD_BENCHMARKS)
         list(APPEND BENCH_TARGETS ${bench_name})
     endforeach()
 
+    if(TARGET test_simd_benchmark)
+        if(APPLE)
+            target_compile_definitions(test_simd_benchmark PRIVATE ACCELERATE_NEW_LAPACK)
+        else()
+            if(PKG_CONFIG_FOUND)
+                pkg_check_modules(OPENBLAS QUIET IMPORTED_TARGET openblas cblas)
+            endif()
+            if(TARGET PkgConfig::OPENBLAS)
+                target_compile_definitions(test_simd_benchmark PRIVATE HAS_CBLAS)
+                target_link_libraries(test_simd_benchmark PRIVATE PkgConfig::OPENBLAS)
+            else()
+                find_path(CBLAS_INCLUDE_DIR NAMES cblas.h
+                    PATH_SUFFIXES openblas openblas-pthread openblas-openmp openblas-serial cblas
+                )
+                find_library(CBLAS_LIB NAMES openblas cblas blas libopenblas)
+                if(CBLAS_INCLUDE_DIR)
+                    target_include_directories(test_simd_benchmark PRIVATE ${CBLAS_INCLUDE_DIR})
+                endif()
+                if(CBLAS_LIB)
+                    target_compile_definitions(test_simd_benchmark PRIVATE HAS_CBLAS)
+                    target_link_libraries(test_simd_benchmark PRIVATE ${CBLAS_LIB})
+                else()
+                    find_package(BLAS QUIET)
+                    if(BLAS_FOUND)
+                        target_compile_definitions(test_simd_benchmark PRIVATE HAS_CBLAS)
+                        target_link_libraries(test_simd_benchmark PRIVATE ${BLAS_LIBRARIES})
+                    endif()
+                endif()
+            endif()
+        endif()
+    endif()
+
     add_custom_target(bench
         COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_filter_benchmark
         COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_dsd_benchmark
         COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_pipeline_benchmark
         COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_resampler_matrix
+        COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_simd_benchmark
         DEPENDS ${BENCH_TARGETS}
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "Running C benchmarks..."
