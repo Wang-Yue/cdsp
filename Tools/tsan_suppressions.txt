@@ -10,3 +10,7 @@ race:lock_free_ring_buffer.c
 race:libdbus-1.so
 race:libpipewire-0.3.so
 race:libasound.so
+race:libomp.so
+race:libomp.so.5
+race:libgomp.so.1
+

@@ -57,7 +57,11 @@ foreach(TEST_NAME IN LISTS TEST_LIST)
         set(TEST_LABEL "unit;realtime")
     endif()
 
-    set(TEST_PROPERTIES "LABELS \"${TEST_LABEL}\" TIMEOUT 30 ENVIRONMENT \"TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_LIST_DIR}/tsan_suppressions.txt:second_deadlock_stack=1;LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_LIST_DIR}/lsan_suppressions.txt\"")
+    set(TEST_ENV "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_LIST_DIR}/tsan_suppressions.txt:second_deadlock_stack=1:ignore_noninstrumented_modules=1;LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_LIST_DIR}/lsan_suppressions.txt")
+    if(DEFINED LIBARCHER_PATH AND EXISTS "${LIBARCHER_PATH}")
+        string(APPEND TEST_ENV ";OMP_TOOL_LIBRARIES=${LIBARCHER_PATH}")
+    endif()
+    set(TEST_PROPERTIES "LABELS \"${TEST_LABEL}\" TIMEOUT 30 ENVIRONMENT \"${TEST_ENV}\"")
 
     if("${TEST_NAME}" MATCHES "(CoreAudio|ALSA|PipeWire|WASAPI|ASIO)")
         string(APPEND TEST_PROPERTIES " RESOURCE_LOCK \"audio_hardware\"")

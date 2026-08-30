@@ -61,9 +61,20 @@ for san in "${SANITIZERS[@]}"; do
     echo ">>> Running Sanitizer: $san (build dir: $BUILD_DIR)"
     echo "================================================================="
 
+    EXTRA_ENV=()
+    if [ "$san" = "thread" ]; then
+        EXTRA_ENV+=(TSAN_OPTIONS="suppressions=${CDSP_DIR}/Tools/tsan_suppressions.txt:second_deadlock_stack=1:ignore_noninstrumented_modules=1")
+        if [ "$OS" = "Linux" ]; then
+            ARCHER_PATH="$(${CC:-clang} -print-file-name=libarcher.so 2>/dev/null || true)"
+            if [ -f "$ARCHER_PATH" ]; then
+                EXTRA_ENV+=(OMP_TOOL_LIBRARIES="$ARCHER_PATH")
+            fi
+        fi
+    fi
+
     if cmake -B "$BUILD_DIR" -DENABLE_SANITIZER="$san" -DCMAKE_BUILD_TYPE=Debug && \
        cmake --build "$BUILD_DIR" -j"$JOBS" && \
-       ctest --test-dir "$BUILD_DIR" --output-on-failure -j"$JOBS"; then
+       env "${EXTRA_ENV[@]}" ctest --test-dir "$BUILD_DIR" --output-on-failure -j"$JOBS"; then
         echo "✅ Sanitizer [$san] PASSED"
         PASSED_SANITIZERS+=("$san")
     else

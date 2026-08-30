@@ -128,6 +128,17 @@ if(NOT ENABLE_SANITIZER STREQUAL "none")
     elseif(ENABLE_SANITIZER STREQUAL "thread")
         add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g)
         add_link_options(-fsanitize=thread)
+        if(ENABLE_OPENMP AND CMAKE_C_COMPILER_ID MATCHES "Clang")
+            execute_process(
+                COMMAND ${CMAKE_C_COMPILER} -print-file-name=libarcher.so
+                OUTPUT_VARIABLE _libarcher_path
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            if(EXISTS "${_libarcher_path}")
+                set(LIBARCHER_PATH "${_libarcher_path}")
+                message(STATUS "ThreadSanitizer: Found Archer for OpenMP at ${LIBARCHER_PATH}")
+            endif()
+        endif()
     elseif(ENABLE_SANITIZER STREQUAL "undefined")
         add_compile_options(-fsanitize=undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g)
         add_link_options(-fsanitize=undefined)
@@ -523,6 +534,7 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_COMMAND}
             -DTEST_EXECUTABLE=$<TARGET_FILE:test_runner>
             -DCTEST_FILE=${CDSP_DISCOVERED_TESTS_FILE}
+            -DLIBARCHER_PATH=${LIBARCHER_PATH}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/Tools/CdspDiscoverTests.cmake
         COMMENT "Discovering CTest test cases from test_runner..."
         VERBATIM
