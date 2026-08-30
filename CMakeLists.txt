@@ -81,7 +81,9 @@ if(ENABLE_LTO)
     include(CheckIPOSupported)
     check_ipo_supported(RESULT ipo_supported OUTPUT ipo_error)
     if(ipo_supported)
-        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ON)
     else()
         message(STATUS "IPO/LTO not supported: ${ipo_error}")
     endif()
@@ -96,18 +98,17 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     add_compile_options(
         -Wall
         -Wextra
-        -O3
-        -ffp-contract=fast
-        -fno-math-errno
-        -funroll-loops
         -fvisibility=hidden
+    )
+
+    # Optimization flags applied only to Release and RelWithDebInfo builds
+    add_compile_options(
+        "$<$<CONFIG:Release,RelWithDebInfo>:-O3;-ffp-contract=fast;-fno-math-errno;-funroll-loops>"
     )
 
     if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
         add_compile_options(
-            -fassociative-math
-            -fno-signed-zeros
-            -fno-trapping-math
+            "$<$<CONFIG:Release,RelWithDebInfo>:-fassociative-math;-fno-signed-zeros;-fno-trapping-math>"
         )
     endif()
 
