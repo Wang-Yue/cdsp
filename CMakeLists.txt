@@ -5,6 +5,11 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Output all built binaries and libraries in top-level build/bin and build/lib
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+
 # Symlink compile_commands.json to source root for seamless LSP support (clangd / VS Code)
 if(CMAKE_EXPORT_COMPILE_COMMANDS AND NOT CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     file(CREATE_LINK
@@ -460,9 +465,6 @@ endif()
 # -----------------------------------------------------------------------------
 add_executable(cdsp main.c ${SERVER_SRCS})
 target_link_libraries(cdsp PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,dsp>")
-set_target_properties(cdsp PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-)
 
 # -----------------------------------------------------------------------------
 # Testing: libdsp_test & CTest Test Infrastructure
@@ -519,10 +521,6 @@ if(BUILD_TESTING)
         )
     endif()
 
-    set_target_properties(test_runner PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Tests/CLibTests/bin"
-    )
-
     # CTest Test Discovery: Register each unit test case as an individual CTest test
     set(CDSP_DISCOVERED_TESTS_FILE "${CMAKE_CURRENT_BINARY_DIR}/cdsp_tests.cmake")
     if(NOT EXISTS "${CDSP_DISCOVERED_TESTS_FILE}")
@@ -569,9 +567,6 @@ if(BUILD_BENCHMARKS)
         target_link_libraries(${bench_name} PRIVATE dsp)
         target_include_directories(${bench_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests)
         target_compile_definitions(${bench_name} PRIVATE CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
-        set_target_properties(${bench_name} PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Tests/CLibTests/bin"
-        )
         list(APPEND BENCH_TARGETS ${bench_name})
     endforeach()
 
@@ -614,12 +609,12 @@ if(BUILD_BENCHMARKS)
     endif()
 
     add_custom_target(bench
-        COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_filter_benchmark
-        COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_dsd_benchmark
-        COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_pipeline_benchmark
-        COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_resampler_matrix
-        COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_simd_benchmark
-        COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_mixed_radix_fft_benchmark
+        COMMAND $<TARGET_FILE:test_filter_benchmark>
+        COMMAND $<TARGET_FILE:test_dsd_benchmark>
+        COMMAND $<TARGET_FILE:test_pipeline_benchmark>
+        COMMAND $<TARGET_FILE:test_resampler_matrix>
+        COMMAND $<TARGET_FILE:test_simd_benchmark>
+        COMMAND $<TARGET_FILE:test_mixed_radix_fft_benchmark>
         DEPENDS ${BENCH_TARGETS}
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "Running C benchmarks..."
