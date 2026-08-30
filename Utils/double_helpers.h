@@ -251,16 +251,47 @@ ALWAYS_INLINE double sinc_dot_product(const double* a, const double* b,
                                       size_t count) {
   // WARNING: Do not use vDSP functions in this function as sinc_dot_product is
   // called with tiny count. calling function makes it perform slower.
-  double sum = 0.0;
 #if defined(__clang__)
+  double sum = 0.0;
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
   for (size_t i = 0; i < count; i++) {
     sum += a[i] * b[i];
   }
   return sum;
+#else
+  double s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0;
+  double s4 = 0.0, s5 = 0.0, s6 = 0.0, s7 = 0.0;
+  double s8 = 0.0, s9 = 0.0, s10 = 0.0, s11 = 0.0;
+  double s12 = 0.0, s13 = 0.0, s14 = 0.0, s15 = 0.0;
+  size_t i = 0;
+#pragma GCC ivdep
+  for (; i + 15 < count; i += 16) {
+    s0 += a[i] * b[i];
+    s1 += a[i + 1] * b[i + 1];
+    s2 += a[i + 2] * b[i + 2];
+    s3 += a[i + 3] * b[i + 3];
+    s4 += a[i + 4] * b[i + 4];
+    s5 += a[i + 5] * b[i + 5];
+    s6 += a[i + 6] * b[i + 6];
+    s7 += a[i + 7] * b[i + 7];
+    s8 += a[i + 8] * b[i + 8];
+    s9 += a[i + 9] * b[i + 9];
+    s10 += a[i + 10] * b[i + 10];
+    s11 += a[i + 11] * b[i + 11];
+    s12 += a[i + 12] * b[i + 12];
+    s13 += a[i + 13] * b[i + 13];
+    s14 += a[i + 14] * b[i + 14];
+    s15 += a[i + 15] * b[i + 15];
+  }
+
+  double sum = ((s0 + s1) + (s2 + s3)) + ((s4 + s5) + (s6 + s7)) +
+               ((s8 + s9) + (s10 + s11)) + ((s12 + s13) + (s14 + s15));
+
+  for (; i < count; i++) {
+    sum += a[i] * b[i];
+  }
+  return sum;
+#endif
 }
 
 /**
