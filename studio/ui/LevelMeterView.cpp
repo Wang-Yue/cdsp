@@ -1,18 +1,34 @@
 #include "ui/LevelMeterView.h"
 
-#include "models/MonitoringController.h"
-#include "utils/ThemeManager.h"
+#include "models/MonitoringController.h" // for MonitoringController
+#include "utils/ThemeManager.h"          // for ThemeManager
 
-#include <QFontDatabase>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QPainterPath>
-#include <QScrollArea>
-#include <QSizePolicy>
-#include <QVBoxLayout>
-#include <algorithm>
-#include <cmath>
+#include <QBrush>           // for QLinearGradient, QBrush
+#include <QColor>           // for QColor
+#include <QFlags>           // for QFlags
+#include <QFont>            // for QFont
+#include <QFontDatabase>    // for QFontDatabase
+#include <QFormLayout>      // for QFormLayout
+#include <QFrame>           // for QFrame
+#include <QGroupBox>        // for QGroupBox
+#include <QHBoxLayout>      // for QHBoxLayout
+#include <QLabel>           // for QLabel
+#include <QPainter>         // for QPainter
+#include <QPainterPath>     // for QPainterPath
+#include <QPalette>         // for QPalette
+#include <QPen>             // for QPen
+#include <QRectF>           // for QRectF
+#include <QScrollArea>      // for QScrollArea
+#include <QSize>            // for QSize
+#include <QSizePolicy>      // for QSizePolicy
+#include <QVBoxLayout>      // for QVBoxLayout
+#include <Qt>               // for AlignmentFlag, operator|, BrushStyle, PenCapStyle, PenJoinStyle
+#include <QtGlobal>         // for Q_UNUSED, qreal
+#include <algorithm>        // for max, clamp
+#include <cmath>            // for isnan
+#include <initializer_list> // for initializer_list
+#include <mutex>            // for mutex, lock_guard
+#include <stddef.h>         // for size_t
 
 LevelMeterView::LevelMeterView(QWidget* parent) : QWidget(parent) {}
 

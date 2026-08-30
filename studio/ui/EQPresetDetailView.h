@@ -1,25 +1,23 @@
 #ifndef EQ_PRESET_DETAIL_VIEW_H
 #define EQ_PRESET_DETAIL_VIEW_H
 
-#include "models/DSPEngineController.h"
-#include "models/EQPreset.h"
-#include "models/PipelineStore.h"
-#include "ui/EQDiagramWidget.h"
+#include "models/DSPEngineController.h" // for DSPEngineController
+#include "models/EQPreset.h"            // for EQPreset
+#include "models/PipelineStore.h"       // for PipelineStore
+#include "models/SpectrumEngine.h"      // for SpectrumEngine
+#include "ui/EQDiagramWidget.h"         // for EQDiagramWidget
 
-#include <QComboBox>
-#include <QDoubleSpinBox>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QHeaderView>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QSlider>
-#include <QTabWidget>
-#include <QTableWidget>
-#include <QTextEdit>
-#include <QWidget>
-#include <memory>
+#include <QDoubleSpinBox> // for QDoubleSpinBox
+#include <QLabel>         // for QLabel
+#include <QLineEdit>      // for QLineEdit
+#include <QObject>        // for Q_OBJECT, slots
+#include <QPushButton>    // for QPushButton
+#include <QSlider>        // for QSlider
+#include <QTabWidget>     // for QTabWidget
+#include <QTableWidget>   // for QTableWidget
+#include <QTextEdit>      // for QTextEdit
+#include <QWidget>        // for QWidget
+#include <memory>         // for shared_ptr
 
 class EQPresetDetailView : public QWidget {
     Q_OBJECT

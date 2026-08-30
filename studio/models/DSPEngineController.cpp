@@ -1,6 +1,15 @@
 #include "models/DSPEngineController.h"
 
-#include "models/LogManager.h"
+#include "models/DeviceConfig.h"  // for DeviceConfig
+#include "models/LogManager.h"    // for info, error
+#include "models/PipelineStage.h" // for StageBuildResult
+
+#include <QString>          // for QString
+#include <functional>       // for function
+#include <initializer_list> // for initializer_list
+#include <map>              // for map
+#include <optional>         // for optional
+#include <vector>           // for vector
 
 DSPEngineController::DSPEngineController(std::shared_ptr<CDSPEngine> engine,
                                          std::shared_ptr<AudioDeviceManager> devices,

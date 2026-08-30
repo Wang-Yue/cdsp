@@ -1,19 +1,22 @@
 #ifndef ORATORY_PRESET_PICKER_DLG_H
 #define ORATORY_PRESET_PICKER_DLG_H
 
-#include "models/DSPEngineController.h"
-#include "models/OratoryPresetService.h"
-#include "models/PipelineStore.h"
+#include "models/DSPEngineController.h"  // for DSPEngineController
+#include "models/OratoryPresetService.h" // for OratoryIndexEntry, OratoryPresetService
+#include "models/PipelineStore.h"        // for PipelineStore
 
-#include <QDialog>
-#include <memory>
-#include <vector>
+#include <QDialog>     // for QDialog
+#include <QLabel>      // for QLabel
+#include <QObject>     // for Q_OBJECT, slots
+#include <QPushButton> // for QPushButton
+#include <QString>     // for QString
+#include <QWidget>     // for QWidget
+#include <memory>      // for shared_ptr
+#include <vector>      // for vector
 
 class QDialogButtonBox;
-class QLabel;
 class QLineEdit;
 class QListWidget;
-class QPushButton;
 class QStackedWidget;
 
 class OratoryPresetPickerDlg : public QDialog {

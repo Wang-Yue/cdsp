@@ -1,10 +1,18 @@
 #include "ui/ConvolutionIRPlot.h"
 
-#include "models/ConvCoefficientLoader.h"
+#include "models/ConvCoefficientLoader.h" // for ConvCoefficientLoader
 
-#include <QPainterPath>
-#include <algorithm>
-#include <cmath>
+#include <QBrush>       // for QBrush
+#include <QFont>        // for QFont
+#include <QPainter>     // for QPainter
+#include <QPainterPath> // for QPainterPath
+#include <QPalette>     // for QPalette
+#include <QPen>         // for QPen
+#include <QString>      // for QString
+#include <Qt>           // for PenStyle
+#include <QtGlobal>     // for Q_UNUSED
+#include <algorithm>    // for max
+#include <cstdlib>      // for size_t, abs
 
 ConvolutionIRPlot::ConvolutionIRPlot(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(100);

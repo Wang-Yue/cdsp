@@ -1,18 +1,16 @@
 #ifndef PIPELINE_STAGE_H
 #define PIPELINE_STAGE_H
 
-#include "config/DSPConfigTypes.h"
-#include "models/AudioSettings.h"
-#include "models/ConvolutionPreset.h"
-#include "models/EQPreset.h"
+#include "config/DSPConfigTypes.h"    // for TimeUnit, MixerMapping, DelayUnit, Fader, PipelineStep, BiquadComboType
+#include "models/ConvolutionPreset.h" // for ConvolutionPreset
+#include "models/EQPreset.h"          // for EQPreset
 
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QUuid>
-#include <map>
-#include <optional>
-#include <string>
-#include <vector>
+#include <QJsonObject> // for QJsonObject
+#include <QUuid>       // for QUuid
+#include <map>         // for map
+#include <optional>    // for optional
+#include <string>      // for basic_string, string
+#include <vector>      // for vector
 
 enum class StageCategory { Filters, Mixer, Processors, Others };
 

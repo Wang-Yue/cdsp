@@ -1,8 +1,6 @@
 #ifndef VU_SETTINGS_H
 #define VU_SETTINGS_H
 
-#include <QSettings>
-
 enum class VUTheme { VintageAmber = 0, DarkStealth = 1, WarmTube = 2 };
 
 struct VUSettings {

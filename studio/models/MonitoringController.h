@@ -1,20 +1,19 @@
 #ifndef MONITORING_CONTROLLER_H
 #define MONITORING_CONTROLLER_H
 
-#include "engine/CDSPEngine.h"
-#include "models/AudioDeviceManager.h"
-#include "models/AudioSettings.h"
-#include "models/LevelState.h"
-#include "models/SpectrogramEngine.h"
-#include "models/SpectrumEngine.h"
-#include "models/VectorScopeEngine.h"
+#include "config/DSPConfigTypes.h"     // for ProcessingState, ProcessingStopReason
+#include "engine/CDSPEngine.h"         // for CDSPEngine
+#include "models/AudioDeviceManager.h" // for AudioDeviceManager
+#include "models/AudioSettings.h"      // for AudioSettings
+#include "models/LevelState.h"         // for LevelState
+#include "models/SpectrogramEngine.h"  // for SpectrogramEngine
+#include "models/SpectrumEngine.h"     // for SpectrumEngine
+#include "models/VectorScopeEngine.h"  // for VectorScopeEngine
 
-#include <QObject>
-#include <QSettings>
-#include <QTimer>
-#include <algorithm>
-#include <functional>
-#include <memory>
+#include <QObject>    // for QObject, Q_OBJECT, signals, slots
+#include <QTimer>     // for QTimer
+#include <functional> // for function
+#include <memory>     // for shared_ptr
 
 class DSPEngineController;
 

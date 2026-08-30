@@ -1,17 +1,29 @@
 #include "ui/VisualizerDetailViews.h"
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QFontDatabase>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QPushButton>
-#include <QSlider>
-#include <QSpinBox>
-#include <QTabBar>
-#include <QVBoxLayout>
+#include "models/DeviceConfig.h" // for DeviceConfig
+#include "models/LevelState.h"   // for LevelState
+
+#include <QCheckBox>     // for QCheckBox
+#include <QComboBox>     // for QComboBox
+#include <QFont>         // for QFont
+#include <QFontDatabase> // for QFontDatabase
+#include <QFormLayout>   // for QFormLayout
+#include <QGroupBox>     // for QGroupBox
+#include <QHBoxLayout>   // for QHBoxLayout
+#include <QLabel>        // for QLabel
+#include <QPushButton>   // for QPushButton
+#include <QSlider>       // for QSlider
+#include <QSpinBox>      // for QSpinBox
+#include <QString>       // for QString
+#include <QTabBar>       // for QTabBar
+#include <QVBoxLayout>   // for QVBoxLayout
+#include <QVariant>      // for QVariant
+#include <Qt>            // for CursorShape, Orientation
+#include <QtGlobal>      // for QOverload
+#include <algorithm>     // for max
+#include <optional>      // for optional
+#include <stddef.h>      // for size_t
+#include <vector>        // for vector
 
 // ==================== AnalogVUDetailView ====================
 

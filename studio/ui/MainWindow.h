@@ -1,31 +1,35 @@
 #ifndef MAIN_WINDOW_H
 #define MAIN_WINDOW_H
 
-#include "engine/CDSPEngine.h"
-#include "models/AudioDeviceManager.h"
-#include "models/AudioSettings.h"
-#include "models/DSPEngineController.h"
-#include "models/MonitoringController.h"
-#include "models/PipelineStore.h"
-#include "models/SpectrogramEngine.h"
-#include "models/SpectrumEngine.h"
-#include "models/VectorScopeEngine.h"
-#include "ui/LevelMeterView.h"
-#include "ui/MiniPlayerView.h"
+#include "config/DSPConfigTypes.h"       // for ProcessingState
+#include "engine/CDSPEngine.h"           // for CDSPEngine
+#include "models/AudioDeviceManager.h"   // for AudioDeviceManager
+#include "models/AudioSettings.h"        // for AudioSettings
+#include "models/DSPEngineController.h"  // for DSPEngineController
+#include "models/MonitoringController.h" // for MonitoringController
+#include "models/PipelineStore.h"        // for PipelineStore
+#include "models/SpectrogramEngine.h"    // for SpectrogramEngine
+#include "models/SpectrumEngine.h"       // for SpectrumEngine
+#include "models/VectorScopeEngine.h"    // for VectorScopeEngine
+#include "ui/LevelMeterView.h"           // for CompactLevelMeterBar
+#include "ui/MiniPlayerView.h"           // for MiniPlayerView
 
-#include <QAction>
-#include <QElapsedTimer>
-#include <QKeySequence>
-#include <QLabel>
-#include <QMainWindow>
-#include <QPushButton>
-#include <QSlider>
-#include <QSplitter>
-#include <QStackedWidget>
-#include <QStatusBar>
-#include <QSystemTrayIcon>
-#include <QTimer>
-#include <QTreeWidget>
+#include <QAction>         // for QAction
+#include <QLabel>          // for QLabel
+#include <QMainWindow>     // for QMainWindow
+#include <QMap>            // for QMap
+#include <QMenu>           // for QMenu
+#include <QObject>         // for Q_OBJECT, slots
+#include <QPushButton>     // for QPushButton
+#include <QSlider>         // for QSlider
+#include <QSplitter>       // for QSplitter
+#include <QStackedWidget>  // for QStackedWidget
+#include <QString>         // for QString
+#include <QSystemTrayIcon> // for QSystemTrayIcon
+#include <QTreeWidget>     // for QTreeWidget
+#include <QTreeWidgetItem> // for QTreeWidgetItem
+#include <QWidget>         // for QWidget
+#include <memory>          // for shared_ptr, unique_ptr
 
 class MainWindow : public QMainWindow {
     Q_OBJECT

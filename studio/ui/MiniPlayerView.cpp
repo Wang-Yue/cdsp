@@ -1,23 +1,48 @@
 #include "ui/MiniPlayerView.h"
 
-#include "utils/MacUtils.h"
+#include "models/AudioDeviceManager.h" // for AudioDeviceManager
+#include "models/DeviceConfig.h"       // for DeviceConfig
+#include "models/LevelState.h"         // for LevelState
+#include "models/PipelineStage.h"      // for PipelineStage
+#include "models/PipelineStore.h"      // for PipelineStore
+#include "models/SpectrogramEngine.h"  // for SpectrogramEngine
+#include "models/SpectrumEngine.h"     // for SpectrumEngine
+#include "models/VectorScopeEngine.h"  // for VectorScopeEngine
+#include "utils/MacUtils.h"            // for setupAlwaysOnTopAboveFullScreen
 
-#include <QAbstractButton>
-#include <QAbstractSlider>
-#include <QFontDatabase>
-#include <QGraphicsOpacityEffect>
-#include <QGuiApplication>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QMouseEvent>
-#include <QPainter>
-#include <QPropertyAnimation>
-#include <QScreen>
-#include <QScrollArea>
-#include <QSettings>
-#include <QStyleOption>
-#include <QVBoxLayout>
-#include <QWindow>
+#include <QAbstractAnimation>     // for QAbstractAnimation
+#include <QAbstractButton>        // for QAbstractButton
+#include <QAbstractSlider>        // for QAbstractSlider
+#include <QByteArray>             // for QByteArray
+#include <QEvent>                 // for QEvent
+#include <QFlags>                 // for QFlags
+#include <QFont>                  // for QFont
+#include <QFontDatabase>          // for QFontDatabase
+#include <QGraphicsOpacityEffect> // for QGraphicsOpacityEffect
+#include <QGuiApplication>        // for QGuiApplication
+#include <QHBoxLayout>            // for QHBoxLayout
+#include <QKeyEvent>              // for QKeyEvent
+#include <QLabel>                 // for QLabel
+#include <QLayout>                // for QLayout
+#include <QLayoutItem>            // for QLayoutItem
+#include <QMouseEvent>            // for QMouseEvent
+#include <QPainter>               // for QPainter
+#include <QPointF>                // for QPointF
+#include <QPropertyAnimation>     // for QPropertyAnimation
+#include <QScreen>                // for QScreen
+#include <QScrollArea>            // for QScrollArea
+#include <QSettings>              // for QSettings
+#include <QSizePolicy>            // for QSizePolicy
+#include <QString>                // for QString
+#include <QStyle>                 // for QStyle
+#include <QStyleOption>           // for QStyleOption
+#include <QUuid>                  // for QUuid, operator==
+#include <QVBoxLayout>            // for QVBoxLayout
+#include <QVariant>               // for QVariant
+#include <Qt>                     // for CursorShape, AlignmentFlag, MouseButton, Key, operator|, WindowType
+#include <QtGlobal>               // for qBound, Q_UNUSED
+#include <optional>               // for optional
+#include <string>                 // for basic_string
 
 static void enableMouseTrackingRecursively(QWidget* w, QObject* filter) {
     if (!w)

@@ -1,23 +1,20 @@
 #ifndef STAGE_DETAIL_VIEW_H
 #define STAGE_DETAIL_VIEW_H
 
-#include "models/DSPEngineController.h"
-#include "models/PipelineStage.h"
-#include "models/PipelineStore.h"
-#include "ui/ConvolutionIRPlot.h"
-#include "ui/EQDiagramWidget.h"
+#include "models/DSPEngineController.h" // for DSPEngineController
+#include "models/PipelineStage.h"       // for PipelineStage
+#include "models/PipelineStore.h"       // for PipelineStore
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QDoubleSpinBox>
-#include <QLabel>
-#include <QLineEdit>
-#include <QSlider>
-#include <QSpinBox>
-#include <QTableWidget>
-#include <QWidget>
-#include <functional>
-#include <memory>
+#include <QCheckBox>    // for QCheckBox
+#include <QLineEdit>    // for QLineEdit
+#include <QObject>      // for Q_OBJECT, signals, slots
+#include <QString>      // for QString
+#include <QTableWidget> // for QTableWidget
+#include <QUuid>        // for QUuid
+#include <QWidget>      // for QWidget
+#include <functional>   // for function
+#include <memory>       // for shared_ptr
+#include <vector>       // for vector
 
 class VSliderWidget : public QWidget {
     Q_OBJECT

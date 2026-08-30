@@ -1,10 +1,9 @@
 #ifndef BIQUAD_COEFFICIENTS_H
 #define BIQUAD_COEFFICIENTS_H
 
-#include <QJsonObject>
-#include <cmath>
-#include <optional>
-#include <string>
+#include <QJsonObject> // for QJsonObject
+#include <optional>    // for optional, operator==
+#include <string>      // for string
 
 enum class BiquadType {
     Free,

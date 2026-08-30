@@ -1,7 +1,13 @@
 #include "models/LogTableModel.h"
 
-#include <QColor>
-#include <QFontDatabase>
+#include <QColor>        // for QColor
+#include <QDateTime>     // for QDateTime
+#include <QFlags>        // for QFlags
+#include <QFontDatabase> // for QFontDatabase
+#include <QList>         // for QList
+#include <QStringList>   // for QStringList
+#include <QVariant>      // for QVariant
+#include <stddef.h>      // for size_t
 
 LogTableModel::LogTableModel(QObject* parent) : QAbstractTableModel(parent) {
     m_captionFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);

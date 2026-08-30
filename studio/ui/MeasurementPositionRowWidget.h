@@ -1,15 +1,16 @@
 #ifndef MEASUREMENT_POSITION_ROW_WIDGET_H
 #define MEASUREMENT_POSITION_ROW_WIDGET_H
 
-#include "room_correction/MeasurementSession.h"
+#include "room_correction/MeasurementSession.h" // for MeasurementSession, MeasurementPosition
 
-#include <QUuid>
-#include <QWidget>
+#include <QObject>     // for Q_OBJECT, signals
+#include <QToolButton> // for QToolButton
+#include <QUuid>       // for QUuid
+#include <QWidget>     // for QWidget
 
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
-class QToolButton;
 
 class MeasurementPositionRowWidget : public QWidget {
     Q_OBJECT

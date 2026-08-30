@@ -1,10 +1,9 @@
 #include "room_correction/SweepDeconvolver.h"
 
-#include "room_correction/MeasurementFFT.h"
-#include "room_correction/SweepGenerator.h"
+#include "room_correction/MeasurementFFT.h" // for MeasurementFFT
+#include "room_correction/SweepGenerator.h" // for SweepGenerator
 
-#include <algorithm>
-#include <cmath>
+#include <stddef.h> // for size_t
 
 std::vector<double> SweepDeconvolver::convolve(const std::vector<double>& a, const std::vector<double>& b) {
     if (a.empty() || b.empty())

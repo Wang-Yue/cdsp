@@ -1,12 +1,13 @@
 #include "ui/GeneralSettingsView.h"
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QFontDatabase>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QVBoxLayout>
+#include <QFont>         // for QFont
+#include <QFontDatabase> // for QFontDatabase
+#include <QFormLayout>   // for QFormLayout
+#include <QGroupBox>     // for QGroupBox
+#include <QHBoxLayout>   // for QHBoxLayout
+#include <QString>       // for QString
+#include <QVBoxLayout>   // for QVBoxLayout
+#include <Qt>            // for AlignmentFlag, Orientation, operator|
 
 GeneralSettingsView::GeneralSettingsView(std::shared_ptr<AudioSettings> settings,
                                          std::shared_ptr<MonitoringController> monitoring, QWidget* parent)

@@ -1,11 +1,19 @@
 #include "ui/ResamplerDetailView.h"
 
-#include "config/DSPConfigTypes.h"
+#include "config/DSPConfigTypes.h" // for ResamplerType, resamplerInterpolationToString, resamplerProfileToString
+#include "models/DeviceConfig.h"   // for DeviceConfig
 
-#include <QFontDatabase>
-#include <QHBoxLayout>
-#include <QVBoxLayout>
-#include <cmath>
+#include <QFont>         // for QFont
+#include <QFontDatabase> // for QFontDatabase
+#include <QHBoxLayout>   // for QHBoxLayout
+#include <QList>         // for QList
+#include <QString>       // for QString
+#include <QVBoxLayout>   // for QVBoxLayout
+#include <QVariant>      // for QVariant
+#include <Qt>            // for AlignmentFlag, Orientation, operator|
+#include <QtGlobal>      // for QOverload
+#include <cmath>         // for round
+#include <string>        // for basic_string, operator==, string
 
 ResamplerDetailView::ResamplerDetailView(std::shared_ptr<AudioSettings> settings,
                                          std::shared_ptr<AudioDeviceManager> devices,

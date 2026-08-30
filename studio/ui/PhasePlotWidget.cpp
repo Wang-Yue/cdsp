@@ -1,13 +1,30 @@
 #include "ui/PhasePlotWidget.h"
 
-#include <QFileDialog>
-#include <QFontDatabase>
-#include <QHBoxLayout>
-#include <QMessageBox>
-#include <QPainter>
-#include <QPainterPath>
-#include <algorithm>
-#include <cmath>
+#include "models/EQPreset.h" // for EQPreset
+
+#include <QBrush>           // for QBrush
+#include <QColor>           // for QColor
+#include <QFileDialog>      // for QFileDialog
+#include <QFlags>           // for QFlags
+#include <QFont>            // for QFont
+#include <QFontDatabase>    // for QFontDatabase
+#include <QMessageBox>      // for QMessageBox
+#include <QPainter>         // for QPainter
+#include <QPainterPath>     // for QPainterPath
+#include <QPalette>         // for QPalette
+#include <QPen>             // for QPen
+#include <QPixmap>          // for QPixmap
+#include <QPointF>          // for QPointF
+#include <QRect>            // for QRect
+#include <QRectF>           // for QRectF
+#include <QString>          // for QString, operator+
+#include <Qt>               // for AlignmentFlag, operator|
+#include <QtGlobal>         // for QOverload
+#include <algorithm>        // for max, min, max_element, min_element
+#include <cmath>            // for M_PI, log10, ceil, floor
+#include <initializer_list> // for initializer_list
+#include <optional>         // for optional
+#include <stddef.h>         // for size_t
 
 PhasePlotWidget::PhasePlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(240);

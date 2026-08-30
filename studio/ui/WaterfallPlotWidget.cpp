@@ -1,15 +1,30 @@
 #include "ui/WaterfallPlotWidget.h"
 
-#include <QFileDialog>
-#include <QFutureWatcher>
-#include <QHBoxLayout>
-#include <QMessageBox>
-#include <QPainterPath>
-#include <QPointer>
-#include <QVBoxLayout>
-#include <QtConcurrent/QtConcurrent>
-#include <algorithm>
-#include <cmath>
+#include <QBrush>         // for QBrush
+#include <QColor>         // for QColor
+#include <QFileDialog>    // for QFileDialog
+#include <QFont>          // for QFont
+#include <QFuture>        // for QFuture
+#include <QFutureWatcher> // for QFutureWatcher
+#include <QHBoxLayout>    // for QHBoxLayout
+#include <QLabel>         // for QLabel
+#include <QMessageBox>    // for QMessageBox
+#include <QPainter>       // for QPainter
+#include <QPainterPath>   // for QPainterPath
+#include <QPalette>       // for QPalette
+#include <QPen>           // for QPen
+#include <QPixmap>        // for QPixmap
+#include <QPointer>       // for QPointer
+#include <QRect>          // for QRect
+#include <QString>        // for QString, operator+
+#include <QVBoxLayout>    // for QVBoxLayout
+#include <QVariant>       // for QVariant
+#include <Qt>             // for BrushStyle, AlignmentFlag
+#include <QtConcurrent>   // for run
+#include <QtGlobal>       // for QOverload, Q_UNUSED
+#include <algorithm>      // for max, min
+#include <cmath>          // for log10, abs
+#include <stdlib.h>       // for size_t, abs
 
 WaterfallPlotWidget::WaterfallPlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(280);

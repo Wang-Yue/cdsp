@@ -1,23 +1,27 @@
 #ifndef MINI_PLAYER_VIEW_H
 #define MINI_PLAYER_VIEW_H
 
-#include "models/AudioSettings.h"
-#include "models/DSPEngineController.h"
-#include "models/MonitoringController.h"
-#include "ui/AnalogVUMeterView.h"
-#include "ui/LevelMeterView.h"
-#include "ui/SpectrogramView.h"
-#include "ui/SpectrumView.h"
-#include "ui/VectorScopeView.h"
+#include "config/DSPConfigTypes.h"       // for Fader, ProcessingState
+#include "models/AudioSettings.h"        // for AudioSettings
+#include "models/DSPEngineController.h"  // for DSPEngineController
+#include "models/MonitoringController.h" // for MonitoringController
+#include "ui/AnalogVUMeterView.h"        // for AnalogVUMeterView
+#include "ui/LevelMeterView.h"           // for LevelMeterView
+#include "ui/SpectrogramView.h"          // for SpectrogramView
+#include "ui/SpectrumView.h"             // for SpectrumView
+#include "ui/VectorScopeView.h"          // for VectorScopeView
 
-#include <QGraphicsOpacityEffect>
-#include <QLabel>
-#include <QPoint>
-#include <QPushButton>
-#include <QSlider>
-#include <QStackedWidget>
-#include <QWidget>
-#include <memory>
+#include <QGraphicsOpacityEffect> // for QGraphicsOpacityEffect
+#include <QLabel>                 // for QLabel
+#include <QObject>                // for Q_OBJECT, signals, slots
+#include <QPoint>                 // for QPoint
+#include <QPushButton>            // for QPushButton
+#include <QRect>                  // for QRect
+#include <QSlider>                // for QSlider
+#include <QStackedWidget>         // for QStackedWidget
+#include <QWidget>                // for QWidget
+#include <memory>                 // for shared_ptr
+#include <vector>                 // for vector
 
 class MiniPlayerView : public QWidget {
     Q_OBJECT

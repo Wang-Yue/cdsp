@@ -1,12 +1,12 @@
 #ifndef VECTOR_SCOPE_VIEW_H
 #define VECTOR_SCOPE_VIEW_H
 
-#include "config/DSPConfigTypes.h"
-#include "models/VectorScopeEngine.h"
+#include "config/DSPConfigTypes.h"    // for AudioSamplesData
+#include "models/VectorScopeEngine.h" // for VectorScopeEngine
 
-#include <QPainter>
-#include <QWidget>
-#include <memory>
+#include <QObject> // for Q_OBJECT
+#include <QWidget> // for QWidget
+#include <memory>  // for shared_ptr
 
 class VectorScopeView : public QWidget {
     Q_OBJECT

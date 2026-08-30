@@ -1,10 +1,9 @@
-#include "ui/MainWindow.h"
-#include "utils/AppIcon.h"
-#include "utils/MacUtils.h"
-#include "utils/ThemeManager.h"
+#include "ui/MainWindow.h"      // for MainWindow
+#include "utils/AppIcon.h"      // for getAppIcon
+#include "utils/ThemeManager.h" // for ThemeManager
 
-#include <QApplication>
-#include <QSurfaceFormat>
+#include <QApplication>   // for QApplication
+#include <QSurfaceFormat> // for QSurfaceFormat
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);

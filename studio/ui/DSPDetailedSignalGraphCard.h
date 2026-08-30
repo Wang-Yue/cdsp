@@ -1,21 +1,22 @@
 #ifndef DSP_DETAILED_SIGNAL_GRAPH_CARD_H
 #define DSP_DETAILED_SIGNAL_GRAPH_CARD_H
 
-#include "models/DSPEngineController.h"
+#include "models/DSPEngineController.h" // for DSPEngineController
 
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QMouseEvent>
-#include <QPainter>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QVBoxLayout>
-#include <QWidget>
-#include <map>
-#include <memory>
-#include <set>
-#include <vector>
+#include <QGroupBox>   // for QGroupBox
+#include <QLabel>      // for QLabel
+#include <QObject>     // for Q_OBJECT, slots, signals
+#include <QPointF>     // for QPointF
+#include <QPushButton> // for QPushButton
+#include <QScrollArea> // for QScrollArea
+#include <QSizeF>      // for QSizeF
+#include <QString>     // for QString, operator<
+#include <QWidget>     // for QWidget
+#include <QtGlobal>    // for qreal
+#include <map>         // for map
+#include <memory>      // for shared_ptr
+#include <string>      // for string
+#include <vector>      // for vector
 
 // MARK: - Graph Elements Data Structures
 

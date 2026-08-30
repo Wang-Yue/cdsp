@@ -1,10 +1,14 @@
 #include "ui/MeasurementPositionRowWidget.h"
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QHBoxLayout>
-#include <QLineEdit>
-#include <QToolButton>
+#include <QCheckBox>   // for QCheckBox
+#include <QComboBox>   // for QComboBox
+#include <QHBoxLayout> // for QHBoxLayout
+#include <QLineEdit>   // for QLineEdit
+#include <QString>     // for QString
+#include <QToolButton> // for QToolButton
+#include <QtGlobal>    // for QOverload
+#include <string>      // for basic_string
+#include <vector>      // for vector
 
 MeasurementPositionRowWidget::MeasurementPositionRowWidget(const MeasurementPosition& position,
                                                            MeasurementSession* session, QWidget* parent)

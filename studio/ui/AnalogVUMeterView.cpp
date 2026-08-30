@@ -1,15 +1,30 @@
 #include "ui/AnalogVUMeterView.h"
 
-#include "utils/ThemeManager.h"
+#include "utils/ThemeManager.h" // for ThemeManager
 
-#include <QEvent>
-#include <QFont>
-#include <QFontMetrics>
-#include <QLinearGradient>
-#include <QPainterPath>
-#include <QRadialGradient>
-#include <algorithm>
-#include <cmath>
+#include <QBrush>           // for QRadialGradient, QBrush, QLinearGradient
+#include <QColor>           // for QColor
+#include <QEvent>           // for QEvent
+#include <QFont>            // for QFont
+#include <QFontMetrics>     // for QFontMetrics
+#include <QFrame>           // for QFrame
+#include <QPainter>         // for QPainter
+#include <QPainterPath>     // for QPainterPath
+#include <QPalette>         // for QPalette
+#include <QPen>             // for QPen
+#include <QPointF>          // for QPointF
+#include <QRect>            // for QRect
+#include <QRectF>           // for QRectF
+#include <QSizePolicy>      // for QSizePolicy
+#include <QString>          // for QString
+#include <QVBoxLayout>      // for QVBoxLayout
+#include <Qt>               // for AlignmentFlag, ScrollBarPolicy, Alignment, GlobalColor, operator|
+#include <QtGlobal>         // for Q_UNUSED, qFuzzyCompare, qreal
+#include <algorithm>        // for max, min
+#include <cmath>            // for cos, sin, M_PI, isnan, pow
+#include <cstdlib>          // for abs
+#include <initializer_list> // for initializer_list
+#include <mutex>            // for mutex, lock_guard
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

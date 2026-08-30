@@ -1,11 +1,15 @@
 #include "models/DeviceConfig.h"
 
-#include <QFile>
-#include <algorithm>
-#include <cmath>
-#include <cstring>
-#include <fstream>
-#include <set>
+#include <QByteArray> // for QByteArray
+#include <QFile>      // for QFile
+#include <QIODevice>  // for QIODevice
+#include <QJsonValue> // for QJsonValue, QJsonValueRef
+#include <QString>    // for QString
+#include <QtGlobal>   // for qint64
+#include <algorithm>  // for max, find, min, find_if, max_element, sort
+#include <cstdlib>    // for abs
+#include <cstring>    // for memcpy
+#include <set>        // for set, operator!=
 
 const DeviceCapabilitySet* DeviceConfig::activeCapabilitySet() const {
     if (capabilities.capability_sets.empty())

@@ -1,22 +1,24 @@
 #ifndef CONVOLUTION_IMPORT_DLG_H
 #define CONVOLUTION_IMPORT_DLG_H
 
-#include "models/PipelineStore.h"
+#include "models/PipelineStore.h" // for PipelineStore
 
-#include <QDialog>
-#include <QFutureWatcher>
-#include <map>
-#include <memory>
-#include <string>
-#include <vector>
+#include <QDialog>        // for QDialog
+#include <QFrame>         // for QFrame
+#include <QFutureWatcher> // for QFutureWatcher
+#include <QLabel>         // for QLabel
+#include <QObject>        // for Q_OBJECT, slots
+#include <QPushButton>    // for QPushButton
+#include <QString>        // for QString
+#include <QStringList>    // for QStringList
+#include <QWidget>        // for QWidget
+#include <map>            // for map
+#include <memory>         // for shared_ptr
+#include <string>         // for basic_string, string
+#include <vector>         // for vector
 
 class QDialogButtonBox;
-class QDragEnterEvent;
-class QDropEvent;
-class QFrame;
-class QLabel;
 class QLineEdit;
-class QPushButton;
 class QScrollArea;
 class QVBoxLayout;
 

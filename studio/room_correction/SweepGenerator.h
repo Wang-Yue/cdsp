@@ -1,8 +1,9 @@
 #ifndef SWEEP_GENERATOR_H
 #define SWEEP_GENERATOR_H
 
-#include <tuple>
-#include <vector>
+#include <stddef.h> // for size_t
+#include <utility>  // for pair
+#include <vector>   // for vector
 
 class SweepGenerator {
 public:

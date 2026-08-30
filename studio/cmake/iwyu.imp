@@ -1,0 +1,57 @@
+# Include-What-You-Use (IWYU) mapping file for Monitor-Qt
+# References qt6.imp and contains libc++, macOS SDK, and cdsp mappings.
+
+[
+  { "ref": "qt6.imp" },
+
+  # ============================================================================
+  # macOS / BSD / POSIX Internal Type Mappings -> Standard C++ Headers
+  # ============================================================================
+  { "include": ["<_string.h>", "private", "<cstring>", "public"] },
+  { "include": ["<_ctype.h>", "private", "<cctype>", "public"] },
+  { "include": ["<_stdlib.h>", "private", "<cstdlib>", "public"] },
+  { "include": ["<_stdio.h>", "private", "<cstdio>", "public"] },
+  { "include": ["<_time.h>", "private", "<ctime>", "public"] },
+  { "include": ["<_math.h>", "private", "<cmath>", "public"] },
+  { "include": ["<_wctype.h>", "private", "<cwctype>", "public"] },
+  { "include": ["<_wchar.h>", "private", "<cwchar>", "public"] },
+
+  { "include": ["<sys/_types/_timespec.h>", "private", "<ctime>", "public"] },
+  { "include": ["<sys/_types/_timeval.h>", "private", "<ctime>", "public"] },
+
+  # LLVM / libc++ internal detail headers -> public STL headers
+  { "include": ["@<__algorithm/.*>", "private", "<algorithm>", "public"] },
+  { "include": ["@<__atomic/.*>", "private", "<atomic>", "public"] },
+  { "include": ["@<__bit/.*>", "private", "<bit>", "public"] },
+  { "include": ["@<__chrono/.*>", "private", "<chrono>", "public"] },
+  { "include": ["@<__compare/.*>", "private", "<compare>", "public"] },
+  { "include": ["@<__complex/.*>", "private", "<complex>", "public"] },
+  { "include": ["@<__filesystem/.*>", "private", "<filesystem>", "public"] },
+  { "include": ["@<__format/.*>", "private", "<format>", "public"] },
+  { "include": ["@<__functional/.*>", "private", "<functional>", "public"] },
+  { "include": ["@<__iterator/.*>", "private", "<iterator>", "public"] },
+  { "include": ["@<__math/.*>", "private", "<cmath>", "public"] },
+  { "include": ["@<__memory/.*>", "private", "<memory>", "public"] },
+  { "include": ["@<__mutex/.*>", "private", "<mutex>", "public"] },
+  { "include": ["@<__numeric/.*>", "private", "<numeric>", "public"] },
+  { "include": ["@<__random/.*>", "private", "<random>", "public"] },
+  { "include": ["@<__string/.*>", "private", "<string>", "public"] },
+  { "include": ["@<__thread/.*>", "private", "<thread>", "public"] },
+  { "include": ["@<__tuple/.*>", "private", "<tuple>", "public"] },
+  { "include": ["@<__type_traits/.*>", "private", "<type_traits>", "public"] },
+  { "include": ["@<__utility/.*>", "private", "<utility>", "public"] },
+  { "include": ["@<__variant/.*>", "private", "<variant>", "public"] },
+  { "include": ["@<__vector/.*>", "private", "<vector>", "public"] },
+
+  # ============================================================================
+  # Project cdsp Public Library Header Mappings
+  # ============================================================================
+  { "include": ["\"cdsp_pub_types.h\"", "private", "\"Public/cdsp_pub_types.h\"", "public"] },
+  { "include": ["\"config.h\"", "private", "\"Public/config.h\"", "public"] },
+  { "include": ["\"devices.h\"", "private", "\"Public/devices.h\"", "public"] },
+  { "include": ["\"fader.h\"", "private", "\"Public/fader.h\"", "public"] },
+  { "include": ["\"general.h\"", "private", "\"Public/general.h\"", "public"] },
+  { "include": ["\"processing.h\"", "private", "\"Public/processing.h\"", "public"] },
+  { "include": ["\"signal_levels.h\"", "private", "\"Public/signal_levels.h\"", "public"] },
+  { "include": ["\"spectrum.h\"", "private", "\"Public/spectrum.h\"", "public"] }
+]

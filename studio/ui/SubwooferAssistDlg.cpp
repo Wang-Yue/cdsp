@@ -1,16 +1,29 @@
 #include "ui/SubwooferAssistDlg.h"
 
-#include <QComboBox>
-#include <QDialogButtonBox>
-#include <QFontDatabase>
-#include <QFormLayout>
-#include <QGridLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QMessageBox>
-#include <QPushButton>
-#include <QVBoxLayout>
+#include "config/BiquadCoefficients.h"       // for BiquadParameters
+#include "config/DSPConfigTypes.h"           // for DelayUnit
+#include "models/PipelineStage.h"            // for PipelineStage, StageType
+#include "room_correction/ImpulseResponse.h" // for ImpulseResponse
+
+#include <QComboBox>        // for QComboBox
+#include <QDialogButtonBox> // for QDialogButtonBox
+#include <QFont>            // for QFont
+#include <QFontDatabase>    // for QFontDatabase
+#include <QFormLayout>      // for QFormLayout
+#include <QGridLayout>      // for QGridLayout
+#include <QGroupBox>        // for QGroupBox
+#include <QHBoxLayout>      // for QHBoxLayout
+#include <QLabel>           // for QLabel
+#include <QMessageBox>      // for QMessageBox
+#include <QPushButton>      // for QPushButton
+#include <QString>          // for QString
+#include <QUuid>            // for QUuid, operator==
+#include <QVBoxLayout>      // for QVBoxLayout
+#include <QVariant>         // for QVariant
+#include <QtGlobal>         // for QOverload
+#include <cstdlib>          // for abs, size_t
+#include <string>           // for basic_string
+#include <vector>           // for vector
 
 SubwooferAssistDlg::SubwooferAssistDlg(MeasurementSession* session, std::shared_ptr<PipelineStore> pipeline,
                                        QWidget* parent)

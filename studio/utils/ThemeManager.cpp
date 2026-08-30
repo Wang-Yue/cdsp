@@ -1,12 +1,16 @@
 #include "utils/ThemeManager.h"
 
-#include <QApplication>
-#include <QColor>
-#include <QGuiApplication>
-#include <QStyle>
-#include <QStyleFactory>
-#include <QStyleHints>
-#include <QWidget>
+#include <QApplication>     // for QApplication
+#include <QColor>           // for QColor
+#include <QCoreApplication> // for qApp
+#include <QDebug>           // for operator<<
+#include <QGuiApplication>  // for QGuiApplication
+#include <QPalette>         // for QPalette
+#include <QString>          // for QString, operator==
+#include <QStyleFactory>    // for QStyleFactory
+#include <QStyleHints>      // for QStyleHints
+#include <QWidget>          // for QWidget
+#include <Qt>               // for GlobalColor
 
 ThemeManager::ThemeManager(QObject* parent) : QObject(parent) {}
 

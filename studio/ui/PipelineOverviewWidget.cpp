@@ -1,23 +1,46 @@
 #include "ui/PipelineOverviewWidget.h"
 
-#include <QAction>
-#include <QEvent>
-#include <QFormLayout>
-#include <QFrame>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QMenu>
-#include <QPainter>
-#include <QPen>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QScrollBar>
-#include <QStyle>
-#include <QTimer>
-#include <QVBoxLayout>
-#include <algorithm>
-#include <cmath>
+#include "models/AudioDeviceManager.h" // for AudioDeviceManager
+#include "models/AudioSettings.h"      // for AudioSettings
+#include "models/ConvolutionPreset.h"  // for ConvolutionPreset
+#include "models/DeviceConfig.h"       // for DeviceConfig
+#include "models/EQPreset.h"           // for EQPreset
+#include "models/PipelineStore.h"      // for PipelineStore
+
+#include <QAction>     // for QAction
+#include <QBrush>      // for QBrush
+#include <QChar>       // for QChar
+#include <QEvent>      // for QEvent
+#include <QFont>       // for QFont
+#include <QFormLayout> // for QFormLayout
+#include <QFrame>      // for QFrame
+#include <QGroupBox>   // for QGroupBox
+#include <QHBoxLayout> // for QHBoxLayout
+#include <QLabel>      // for QLabel
+#include <QLayout>     // for QLayout
+#include <QLayoutItem> // for QLayoutItem
+#include <QList>       // for QList
+#include <QMenu>       // for QMenu
+#include <QPainter>    // for QPainter
+#include <QPen>        // for QPen
+#include <QPixmap>     // for QPixmap
+#include <QPoint>      // for QPoint
+#include <QPointF>     // for QPointF
+#include <QPushButton> // for QPushButton
+#include <QScrollArea> // for QScrollArea
+#include <QScrollBar>  // for QScrollBar
+#include <QSize>       // for QSize
+#include <QSizePolicy> // for QSizePolicy
+#include <QStringList> // for QStringList
+#include <QStyle>      // for QStyle
+#include <QTimer>      // for QTimer
+#include <QUuid>       // for QUuid, operator<, operator==
+#include <QVBoxLayout> // for QVBoxLayout
+#include <Qt>          // for AlignmentFlag, ScrollBarPolicy, PenStyle, ContextMenuPolicy, GlobalColor
+#include <algorithm>   // for max, sort
+#include <stddef.h>    // for size_t
+#include <utility>     // for get, make_pair
+#include <vector>      // for vector
 
 OverviewCanvasWidget::OverviewCanvasWidget(PipelineOverviewWidget* owner, QWidget* parent)
     : QWidget(parent), m_owner(owner) {}

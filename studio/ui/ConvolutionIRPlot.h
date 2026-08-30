@@ -1,10 +1,10 @@
 #ifndef CONVOLUTION_IR_PLOT_H
 #define CONVOLUTION_IR_PLOT_H
 
-#include <QPainter>
-#include <QWidget>
-#include <string>
-#include <vector>
+#include <QObject> // for Q_OBJECT
+#include <QWidget> // for QWidget
+#include <string>  // for basic_string, string
+#include <vector>  // for vector
 
 class ConvolutionIRPlot : public QWidget {
     Q_OBJECT

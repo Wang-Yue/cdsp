@@ -1,12 +1,11 @@
 #ifndef CONVOLUTION_PRESET_H
 #define CONVOLUTION_PRESET_H
 
-#include <QJsonObject>
-#include <QUuid>
-#include <map>
-#include <optional>
-#include <string>
-#include <vector>
+#include <QJsonObject> // for QJsonObject
+#include <QUuid>       // for QUuid
+#include <map>         // for map
+#include <string>      // for basic_string, string
+#include <vector>      // for vector
 
 class ConvolutionPreset {
 public:

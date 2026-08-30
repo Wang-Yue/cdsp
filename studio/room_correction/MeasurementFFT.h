@@ -1,8 +1,9 @@
 #ifndef MEASUREMENT_FFT_H
 #define MEASUREMENT_FFT_H
 
-#include <complex>
-#include <vector>
+#include <complex>  // for complex
+#include <stddef.h> // for size_t
+#include <vector>   // for vector
 
 class MeasurementFFT {
 public:

@@ -1,36 +1,47 @@
 #include "ui/ConvolutionImportDlg.h"
 
-#include "config/DSPConfigTypes.h"
-#include "models/ConvCoefficientLoader.h"
+#include "config/DSPConfigTypes.h"        // for MONITOR_STANDARD_RATES
+#include "models/ConvCoefficientLoader.h" // for WavHeaderInfo, ConvCoefficientLoader
+#include "models/ConvolutionPreset.h"     // for ConvolutionPreset
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QDialogButtonBox>
-#include <QDir>
-#include <QDragEnterEvent>
-#include <QDropEvent>
-#include <QFileDialog>
-#include <QFileInfo>
-#include <QFormLayout>
-#include <QFrame>
-#include <QGridLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QHeaderView>
-#include <QLabel>
-#include <QLineEdit>
-#include <QMimeData>
-#include <QPushButton>
-#include <QRegularExpression>
-#include <QScrollArea>
-#include <QSpinBox>
-#include <QStandardPaths>
-#include <QUrl>
-#include <QUuid>
-#include <QVBoxLayout>
-#include <QtConcurrent>
-#include <set>
-#include <stdexcept>
+#include <QCheckBox>          // for QCheckBox
+#include <QComboBox>          // for QComboBox
+#include <QDialogButtonBox>   // for QDialogButtonBox, operator|
+#include <QDir>               // for QDir
+#include <QDragEnterEvent>    // for QDragEnterEvent
+#include <QDropEvent>         // for QDropEvent
+#include <QFileDialog>        // for QFileDialog
+#include <QFileInfo>          // for QFileInfo
+#include <QFont>              // for QFont
+#include <QFormLayout>        // for QFormLayout
+#include <QFrame>             // for QFrame
+#include <QGridLayout>        // for QGridLayout
+#include <QGroupBox>          // for QGroupBox
+#include <QHBoxLayout>        // for QHBoxLayout
+#include <QLabel>             // for QLabel
+#include <QLayoutItem>        // for QLayoutItem
+#include <QLineEdit>          // for QLineEdit
+#include <QList>              // for QList
+#include <QMetaObject>        // for QMetaObject
+#include <QMimeData>          // for QMimeData
+#include <QPushButton>        // for QPushButton
+#include <QRegularExpression> // for QRegularExpression
+#include <QScrollArea>        // for QScrollArea
+#include <QSpinBox>           // for QSpinBox
+#include <QStandardPaths>     // for QStandardPaths
+#include <QUrl>               // for QUrl
+#include <QUuid>              // for QUuid
+#include <QVBoxLayout>        // for QVBoxLayout
+#include <QVariant>           // for QVariant
+#include <Qt>                 // for AlignmentFlag, ConnectionType
+#include <QtConcurrent>       // for run
+#include <QtGlobal>           // for QOverload
+#include <algorithm>          // for sort
+#include <exception>          // for exception
+#include <functional>         // for greater
+#include <optional>           // for optional
+#include <set>                // for set
+#include <stddef.h>           // for size_t
 
 ConvolutionImportDlg::ConvolutionImportDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)
     : QDialog(parent), m_pipeline(pipeline) {

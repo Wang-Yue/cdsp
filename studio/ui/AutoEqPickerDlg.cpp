@@ -1,17 +1,28 @@
 #include "ui/AutoEqPickerDlg.h"
 
-#include <QDialogButtonBox>
-#include <QFontDatabase>
-#include <QFormLayout>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QLineEdit>
-#include <QListWidget>
-#include <QPointer>
-#include <QPushButton>
-#include <QStackedWidget>
-#include <QVBoxLayout>
-#include <algorithm>
+#include "models/EQPreset.h" // for EQPreset
+
+#include <QDialogButtonBox> // for QDialogButtonBox
+#include <QFont>            // for QFont
+#include <QFontDatabase>    // for QFontDatabase
+#include <QFontMetrics>     // for QFontMetrics
+#include <QFormLayout>      // for QFormLayout
+#include <QLabel>           // for QLabel
+#include <QLineEdit>        // for QLineEdit
+#include <QList>            // for QList
+#include <QListWidget>      // for QListWidget
+#include <QListWidgetItem>  // for QListWidgetItem
+#include <QPointer>         // for QPointer
+#include <QPushButton>      // for QPushButton
+#include <QStackedWidget>   // for QStackedWidget
+#include <QVBoxLayout>      // for QVBoxLayout
+#include <QVariant>         // for QVariant
+#include <Qt>               // for AlignmentFlag, ItemDataRole, CaseSensitivity, TextElideMode
+#include <algorithm>        // for min
+#include <functional>       // for function
+#include <optional>         // for optional
+#include <stddef.h>         // for size_t
+#include <string>           // for basic_string
 
 AutoEqPickerDlg::AutoEqPickerDlg(std::shared_ptr<PipelineStore> pipeline,
                                  std::shared_ptr<DSPEngineController> dspController, QWidget* parent)

@@ -1,13 +1,23 @@
 #include "models/AudioDeviceManager.h"
 
-#include "models/LogManager.h"
+#include "models/LogManager.h" // for info, debug, warn
 
-#include <QJsonDocument>
-#include <QMediaDevices>
-#include <QSettings>
-#include <QtConcurrent>
-#include <algorithm>
-#include <set>
+#include <QByteArray>    // for QByteArray
+#include <QDateTime>     // for QDateTime
+#include <QJsonDocument> // for QJsonDocument
+#include <QJsonObject>   // for QJsonObject, operator!=
+#include <QJsonValue>    // for QJsonValueRef
+#include <QList>         // for QList
+#include <QMediaDevices> // for QMediaDevices
+#include <QSettings>     // for QSettings
+#include <QString>       // for QString, QAnyStringView::QAnyStringView
+#include <QStringList>   // for QStringList
+#include <QVariant>      // for QVariant
+#include <QtConcurrent>  // for run
+#include <algorithm>     // for any_of, transform, find, max, sort
+#include <cctype>        // for tolower
+#include <set>           // for set
+#include <utility>       // for get
 
 namespace {
 QString formatRates(const std::vector<int>& rates) {

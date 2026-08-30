@@ -1,9 +1,11 @@
 #include "room_correction/CalibrationCurve.h"
 
-#include <algorithm>
-#include <cmath>
-#include <fstream>
-#include <sstream>
+#include <algorithm> // for max, sort
+#include <cmath>     // for log10
+#include <cstdio>    // for size_t, snprintf
+#include <cstdlib>   // for strtod
+#include <fstream>   // for basic_ofstream, basic_istream, basic_ifstream, operator<<, basic_ostream, stringstream
+#include <sstream>   // for basic_stringstream
 
 CalibrationCurve::CalibrationCurve(const std::vector<double>& freqs, const std::vector<double>& mags,
                                    const std::vector<double>& phases)

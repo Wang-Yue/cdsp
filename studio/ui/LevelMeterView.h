@@ -1,16 +1,16 @@
 #ifndef LEVEL_METER_VIEW_H
 #define LEVEL_METER_VIEW_H
 
-#include "models/DSPEngineController.h"
-#include "models/LevelState.h"
+#include "models/DSPEngineController.h"  // for DSPEngineController
+#include "models/LevelState.h"           // for LevelState
+#include "models/MonitoringController.h" // for MonitoringController
 
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QPainter>
-#include <QWidget>
-#include <memory>
+#include <QObject> // for Q_OBJECT
+#include <QString> // for QString
+#include <QWidget> // for QWidget
+#include <memory>  // for shared_ptr
+#include <vector>  // for vector
 
-class MonitoringController;
 class MeterGroupWidget;
 
 class LevelMeterView : public QWidget {

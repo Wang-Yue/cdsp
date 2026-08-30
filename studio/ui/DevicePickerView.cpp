@@ -1,16 +1,32 @@
 #include "ui/DevicePickerView.h"
 
-#include <QFileDialog>
-#include <QFontDatabase>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QListWidget>
-#include <QScrollArea>
-#include <QTimer>
-#include <QVBoxLayout>
-#include <algorithm>
+#include "models/DeviceConfig.h" // for DeviceConfig
+
+#include <QAbstractItemView> // for QAbstractItemView
+#include <QFileDialog>       // for QFileDialog
+#include <QFont>             // for QFont
+#include <QFontDatabase>     // for QFontDatabase
+#include <QFontMetrics>      // for QFontMetrics
+#include <QFormLayout>       // for QFormLayout
+#include <QFrame>            // for QFrame
+#include <QGroupBox>         // for QGroupBox
+#include <QHBoxLayout>       // for QHBoxLayout
+#include <QLabel>            // for QLabel
+#include <QLayoutItem>       // for QLayoutItem
+#include <QList>             // for QList
+#include <QListWidget>       // for QListWidget
+#include <QListWidgetItem>   // for QListWidgetItem
+#include <QPushButton>       // for QPushButton
+#include <QScrollArea>       // for QScrollArea
+#include <QTimer>            // for QTimer
+#include <QVBoxLayout>       // for QVBoxLayout
+#include <QVariant>          // for QVariant
+#include <Qt>                // for AlignmentFlag, ItemDataRole, ConnectionType, Orientation, operator|, CaseSe...
+#include <QtGlobal>          // for QOverload
+#include <algorithm>         // for max
+#include <functional>        // for function
+#include <initializer_list>  // for initializer_list
+#include <stddef.h>          // for size_t
 
 DevicePickerView::DevicePickerView(std::shared_ptr<AudioDeviceManager> devices, std::shared_ptr<AudioSettings> settings,
                                    QWidget* parent)
@@ -1359,7 +1375,8 @@ void DevicePickerView::refreshUi() {
             for (const auto& fmt : capFormats) {
                 m_capFormatCombo->addItem(QString::fromStdString(fmt), QString::fromStdString(fmt));
             }
-            if (m_devices->captureConfig.format.has_value() && !m_devices->captureConfig.format->empty() && *m_devices->captureConfig.format != "Auto") {
+            if (m_devices->captureConfig.format.has_value() && !m_devices->captureConfig.format->empty() &&
+                *m_devices->captureConfig.format != "Auto") {
                 int idx = m_capFormatCombo->findData(QString::fromStdString(*m_devices->captureConfig.format));
                 if (idx >= 0)
                     m_capFormatCombo->setCurrentIndex(idx);
@@ -1372,9 +1389,11 @@ void DevicePickerView::refreshUi() {
         } else {
             m_capFormatCombo->hide();
             m_capFormatLabel->show();
-            m_capFormatLabel->setText(m_devices->captureConfig.format.has_value() && !m_devices->captureConfig.format->empty() && *m_devices->captureConfig.format != "Auto"
-                ? QString::fromStdString(*m_devices->captureConfig.format)
-                : tr("Auto (Default)"));
+            m_capFormatLabel->setText(m_devices->captureConfig.format.has_value() &&
+                                              !m_devices->captureConfig.format->empty() &&
+                                              *m_devices->captureConfig.format != "Auto"
+                                          ? QString::fromStdString(*m_devices->captureConfig.format)
+                                          : tr("Auto (Default)"));
         }
     }
 
@@ -1563,7 +1582,8 @@ void DevicePickerView::refreshUi() {
             for (const auto& fmt : pbFormats) {
                 m_pbFormatCombo->addItem(QString::fromStdString(fmt), QString::fromStdString(fmt));
             }
-            if (m_devices->playbackConfig.format.has_value() && !m_devices->playbackConfig.format->empty() && *m_devices->playbackConfig.format != "Auto") {
+            if (m_devices->playbackConfig.format.has_value() && !m_devices->playbackConfig.format->empty() &&
+                *m_devices->playbackConfig.format != "Auto") {
                 int idx = m_pbFormatCombo->findData(QString::fromStdString(*m_devices->playbackConfig.format));
                 if (idx >= 0)
                     m_pbFormatCombo->setCurrentIndex(idx);
@@ -1576,9 +1596,11 @@ void DevicePickerView::refreshUi() {
         } else {
             m_pbFormatCombo->hide();
             m_pbFormatLabel->show();
-            m_pbFormatLabel->setText(m_devices->playbackConfig.format.has_value() && !m_devices->playbackConfig.format->empty() && *m_devices->playbackConfig.format != "Auto"
-                ? QString::fromStdString(*m_devices->playbackConfig.format)
-                : tr("Auto (Default)"));
+            m_pbFormatLabel->setText(m_devices->playbackConfig.format.has_value() &&
+                                             !m_devices->playbackConfig.format->empty() &&
+                                             *m_devices->playbackConfig.format != "Auto"
+                                         ? QString::fromStdString(*m_devices->playbackConfig.format)
+                                         : tr("Auto (Default)"));
         }
     }
 

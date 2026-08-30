@@ -1,15 +1,14 @@
 #ifndef EQ_PRESET_H
 #define EQ_PRESET_H
 
-#include "config/BiquadCoefficients.h"
+#include "config/BiquadCoefficients.h" // for BiquadCoefficients
 
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QUuid>
-#include <memory>
-#include <optional>
-#include <string>
-#include <vector>
+#include <QJsonObject> // for QJsonObject
+#include <QUuid>       // for QUuid
+#include <optional>    // for optional
+#include <stddef.h>    // for size_t
+#include <string>      // for string, basic_string
+#include <vector>      // for vector
 
 enum class EQBandType {
     Peaking,

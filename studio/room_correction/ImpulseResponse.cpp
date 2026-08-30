@@ -1,7 +1,8 @@
 #include "room_correction/ImpulseResponse.h"
 
-#include <algorithm>
-#include <cmath>
+#include <algorithm> // for min, max
+#include <cmath>     // for cos, M_PI, abs, log10
+#include <stdlib.h>  // for abs
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

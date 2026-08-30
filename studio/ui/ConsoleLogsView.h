@@ -1,15 +1,16 @@
 #ifndef CONSOLE_LOGS_VIEW_H
 #define CONSOLE_LOGS_VIEW_H
 
-#include "models/LogTableModel.h"
+#include "models/LogTableModel.h" // for LogTableModel
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QTableView>
-#include <QWidget>
+#include <QCheckBox>   // for QCheckBox
+#include <QComboBox>   // for QComboBox
+#include <QLabel>      // for QLabel
+#include <QLineEdit>   // for QLineEdit
+#include <QObject>     // for Q_OBJECT, slots
+#include <QPushButton> // for QPushButton
+#include <QTableView>  // for QTableView
+#include <QWidget>     // for QWidget
 
 class ConsoleLogsView : public QWidget {
     Q_OBJECT

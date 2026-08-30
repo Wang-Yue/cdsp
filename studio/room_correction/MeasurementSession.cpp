@@ -1,19 +1,26 @@
 #include "room_correction/MeasurementSession.h"
 
-#include "config/DSPConfigTypes.h"
-#include "models/ConvCoefficientLoader.h"
-#include "room_correction/SweepDeconvolver.h"
-#include "room_correction/SweepGenerator.h"
+#include "config/DSPConfigTypes.h"            // for MONITOR_STANDARD_RATES
+#include "models/ConvCoefficientLoader.h"     // for ConvCoefficientLoader
+#include "room_correction/FIRDesign.h"        // for FIRDesignOptions, FIRDesignMeasurementOptions, FIRDesign
+#include "room_correction/PEQAutoFit.h"       // for PEQAutoFit, PEQAutoFitOptions
+#include "room_correction/SweepDeconvolver.h" // for SweepDeconvolver
+#include "room_correction/SweepGenerator.h"   // for SweepGenerator
 
-#include <QDir>
-#include <QFileInfo>
-#include <QPointer>
-#include <QStandardPaths>
-#include <QUuid>
-#include <QtConcurrent>
-#include <algorithm>
-#include <cmath>
-#include <random>
+#include <QDir>           // for QDir
+#include <QFileInfo>      // for QFileInfo
+#include <QMetaObject>    // for QMetaObject
+#include <QPointer>       // for QPointer
+#include <QStandardPaths> // for QStandardPaths
+#include <QString>        // for QString, operator+
+#include <QUuid>          // for QUuid, operator==
+#include <QtConcurrent>   // for run
+#include <algorithm>      // for max, find, sort, remove_if
+#include <cmath>          // for log10, pow, M_PI, cos, isfinite, sin, sqrt
+#include <map>            // for map, __tree_node, operator!=
+#include <random>         // for uniform_real_distribution, uniform_int_distribution, random_de...
+#include <stddef.h>       // for size_t
+#include <utility>        // for get
 
 std::string channelKindToString(MeasurementChannelKind kind) {
     switch (kind) {
@@ -207,7 +214,7 @@ void MeasurementSession::generateMockMeasurement(bool append) {
     });
 }
 
-#include "room_correction/SweepRecorder.h"
+#include "room_correction/SweepRecorder.h" // for SweepCaptureResult, SweepRecorder
 
 void MeasurementSession::recordPosition(bool append, const std::string& inputDeviceName,
                                         const std::string& outputDeviceName, int inputChannel, int outputChannel,

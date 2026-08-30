@@ -1,17 +1,14 @@
 #ifndef GENERAL_SETTINGS_VIEW_H
 #define GENERAL_SETTINGS_VIEW_H
 
-#include "models/AudioSettings.h"
-#include "models/MonitoringController.h"
+#include "models/AudioSettings.h"        // for AudioSettings
+#include "models/MonitoringController.h" // for MonitoringController
 
-#include <QLabel>
-#include <QShowEvent>
-#include <QSlider>
-#include <QWidget>
-#include <memory>
-
-class QCheckBox;
-class QComboBox;
+#include <QLabel>  // for QLabel
+#include <QObject> // for Q_OBJECT, slots
+#include <QSlider> // for QSlider
+#include <QWidget> // for QWidget
+#include <memory>  // for shared_ptr
 
 class GeneralSettingsView : public QWidget {
     Q_OBJECT

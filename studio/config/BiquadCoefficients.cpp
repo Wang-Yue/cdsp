@@ -1,6 +1,9 @@
 #include "config/BiquadCoefficients.h"
 
-#include <cmath>
+#include <QJsonValue> // for QJsonValue, QJsonValueRef
+#include <QString>    // for QString
+#include <cmath>      // for sqrt, M_PI, cos, sin, pow, tan, atan2, log, log10, sinh
+#include <cstdlib>    // for abs
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

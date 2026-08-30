@@ -1,10 +1,13 @@
 #include "room_correction/SubwooferAssist.h"
 
-#include "room_correction/FrequencyResponse.h"
+#include "room_correction/FrequencyResponse.h" // for FrequencyResponse
 
-#include <algorithm>
-#include <cmath>
-#include <sstream>
+#include <algorithm> // for max, min
+#include <cmath>     // for round
+#include <cstdlib>   // for size_t, abs
+#include <optional>  // for optional
+#include <sstream>   // for basic_stringstream, basic_ostream, operator<<, stringstream
+#include <vector>    // for vector
 
 static double snapToCommonCrossover(double f) {
     const std::vector<double> common = {40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 120.0, 150.0, 180.0, 200.0};

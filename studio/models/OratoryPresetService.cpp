@@ -1,13 +1,18 @@
 #include "models/OratoryPresetService.h"
 
-#include <QDir>
-#include <QFile>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QNetworkRequest>
-#include <QStandardPaths>
-#include <QUrl>
+#include <QByteArray>      // for QByteArray
+#include <QChar>           // for QChar
+#include <QDir>            // for QDir
+#include <QFile>           // for QFile
+#include <QIODevice>       // for QIODevice
+#include <QJsonArray>      // for QJsonArray
+#include <QJsonDocument>   // for QJsonDocument
+#include <QJsonObject>     // for QJsonObject
+#include <QNetworkReply>   // for QNetworkReply
+#include <QNetworkRequest> // for QNetworkRequest
+#include <QPointer>        // for QPointer
+#include <QStandardPaths>  // for QStandardPaths
+#include <QUrl>            // for QUrl
 
 OratoryPresetService::OratoryPresetService(QObject* parent) : QObject(parent) {}
 

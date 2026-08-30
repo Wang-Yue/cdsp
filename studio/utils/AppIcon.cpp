@@ -1,11 +1,14 @@
 #include "utils/AppIcon.h"
 
-#include <QColor>
-#include <QLinearGradient>
-#include <QPainter>
-#include <QRectF>
-#include <algorithm>
-#include <vector>
+#include <QBrush>    // for QLinearGradient, QBrush
+#include <QColor>    // for QColor
+#include <QPainter>  // for QPainter
+#include <QPointF>   // for QPointF
+#include <QRectF>    // for QRectF
+#include <Qt>        // for GlobalColor, PenStyle
+#include <QtGlobal>  // for qreal
+#include <algorithm> // for max
+#include <vector>    // for vector
 
 namespace AppIcon {
 

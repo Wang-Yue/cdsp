@@ -1,9 +1,13 @@
 #include "models/LogManager.h"
 
-#include "engine/CDSPEngine.h"
+#include "engine/CDSPEngine.h" // for CDSPEngine
 
-#include <QMetaObject>
-#include <QSettings>
+#include <QMetaObject> // for QMetaObject
+#include <QMetaType>   // for qRegisterMetaType
+#include <QSettings>   // for QSettings
+#include <QVariant>    // for QVariant
+#include <Qt>          // for ConnectionType
+#include <string>      // for string, basic_string
 
 QString logLevelToString(LogLevel level) {
     switch (level) {

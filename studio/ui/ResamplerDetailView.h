@@ -1,20 +1,20 @@
 #ifndef RESAMPLER_DETAIL_VIEW_H
 #define RESAMPLER_DETAIL_VIEW_H
 
-#include "models/AudioDeviceManager.h"
-#include "models/AudioSettings.h"
-#include "models/DSPEngineController.h"
+#include "models/AudioDeviceManager.h"  // for AudioDeviceManager
+#include "models/AudioSettings.h"       // for AudioSettings
+#include "models/DSPEngineController.h" // for DSPEngineController
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QDoubleSpinBox>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QLabel>
-#include <QSlider>
-#include <QSpinBox>
-#include <QWidget>
-#include <memory>
+#include <QCheckBox>   // for QCheckBox
+#include <QComboBox>   // for QComboBox
+#include <QFormLayout> // for QFormLayout
+#include <QGroupBox>   // for QGroupBox
+#include <QLabel>      // for QLabel
+#include <QObject>     // for Q_OBJECT, slots
+#include <QSlider>     // for QSlider
+#include <QSpinBox>    // for QSpinBox
+#include <QWidget>     // for QWidget
+#include <memory>      // for shared_ptr
 
 class ResamplerDetailView : public QWidget {
     Q_OBJECT

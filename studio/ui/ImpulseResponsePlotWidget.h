@@ -1,10 +1,11 @@
 #ifndef IMPULSE_RESPONSE_PLOT_WIDGET_H
 #define IMPULSE_RESPONSE_PLOT_WIDGET_H
 
-#include "room_correction/MeasurementSession.h"
+#include "room_correction/MeasurementSession.h" // for MeasurementSession
 
-#include <QPushButton>
-#include <QWidget>
+#include <QObject>     // for Q_OBJECT
+#include <QPushButton> // for QPushButton
+#include <QWidget>     // for QWidget
 
 class ImpulseResponsePlotWidget : public QWidget {
     Q_OBJECT

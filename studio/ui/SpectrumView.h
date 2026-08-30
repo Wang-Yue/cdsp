@@ -1,12 +1,14 @@
 #ifndef SPECTRUM_VIEW_H
 #define SPECTRUM_VIEW_H
 
-#include "config/DSPConfigTypes.h"
-#include "models/SpectrumEngine.h"
+#include "config/DSPConfigTypes.h" // for SpectrumData
+#include "models/SpectrumEngine.h" // for OctaveSmoothing, SpectrumEngine
 
-#include <QPainter>
-#include <QWidget>
-#include <memory>
+#include <QObject> // for Q_OBJECT
+#include <QPoint>  // for QPoint
+#include <QWidget> // for QWidget
+#include <memory>  // for shared_ptr
+#include <vector>  // for vector
 
 class SpectrumView : public QWidget {
     Q_OBJECT

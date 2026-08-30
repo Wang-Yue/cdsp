@@ -1,61 +1,81 @@
 #include "ui/MainWindow.h"
 
-#include "ui/AnalogVUMeterView.h"
-#include "ui/AutoEqPickerDlg.h"
-#include "ui/ConsoleLogsView.h"
-#include "ui/ConvolutionImportDlg.h"
-#include "ui/ConvolutionPresetDetailView.h"
-#include "ui/DashboardView.h"
-#include "ui/DevicePickerView.h"
-#include "ui/EQPresetDetailView.h"
-#include "ui/GeneralSettingsView.h"
-#include "ui/LevelMeterView.h"
-#include "ui/OratoryPresetPickerDlg.h"
-#include "ui/ResamplerDetailView.h"
-#include "ui/RoomCorrectionDlg.h"
-#include "ui/SpectrogramView.h"
-#include "ui/SpectrumView.h"
-#include "ui/StageDetailView.h"
-#include "ui/VectorScopeView.h"
-#include "ui/VisualizerDetailViews.h"
-#include "utils/AppIcon.h"
-#include "utils/MacUtils.h"
-#include "utils/ThemeManager.h"
+#include "models/ConvolutionPreset.h"       // for ConvolutionPreset
+#include "models/DeviceConfig.h"            // for DeviceConfig
+#include "models/EQPreset.h"                // for EQPreset
+#include "models/LevelState.h"              // for LevelState
+#include "models/LogManager.h"              // for LogManager
+#include "models/PipelineStage.h"           // for StageType, PipelineStage, StageCategory, stageCategoryToString
+#include "ui/AutoEqPickerDlg.h"             // for AutoEqPickerDlg
+#include "ui/ConsoleLogsView.h"             // for ConsoleLogsView
+#include "ui/ConvolutionImportDlg.h"        // for ConvolutionImportDlg
+#include "ui/ConvolutionPresetDetailView.h" // for ConvolutionPresetDetailView
+#include "ui/DashboardView.h"               // for DashboardView
+#include "ui/DevicePickerView.h"            // for DevicePickerView
+#include "ui/EQPresetDetailView.h"          // for EQPresetDetailView
+#include "ui/GeneralSettingsView.h"         // for GeneralSettingsView
+#include "ui/LevelMeterView.h"              // for CompactLevelMeterBar, LevelMetersDetailView
+#include "ui/OratoryPresetPickerDlg.h"      // for OratoryPresetPickerDlg
+#include "ui/ResamplerDetailView.h"         // for ResamplerDetailView
+#include "ui/RoomCorrectionDlg.h"           // for RoomCorrectionDlg
+#include "ui/StageDetailView.h"             // for StageDetailView
+#include "ui/VisualizerDetailViews.h"       // for AnalogVUDetailView, SpectrogramDetailView, SpectrumDetailView
+#include "utils/AppIcon.h"                  // for getAppIcon
+#include "utils/MacUtils.h"                 // for disableFullScreen, setupMinimizeToTray, showDockIcon, hideDockIcon
 
-#include <QAbstractButton>
-#include <QAbstractSpinBox>
-#include <QAction>
-#include <QActionGroup>
-#include <QApplication>
-#include <QCheckBox>
-#include <QCloseEvent>
-#include <QComboBox>
-#include <QContextMenuEvent>
-#include <QCursor>
-#include <QDesktopServices>
-#include <QDoubleSpinBox>
-#include <QFileDialog>
-#include <QFontDatabase>
-#include <QFrame>
-#include <QHBoxLayout>
-#include <QHideEvent>
-#include <QJsonDocument>
-#include <QLineEdit>
-#include <QMenu>
-#include <QMenuBar>
-#include <QMessageBox>
-#include <QPlainTextEdit>
-#include <QShowEvent>
-#include <QSpinBox>
-#include <QSplitter>
-#include <QTextEdit>
-#include <QTimer>
-#include <QToolBar>
-#include <QTreeWidgetItem>
-#include <QUrl>
-#include <QUuid>
-#include <QVBoxLayout>
-#include <cmath>
+#include <QAbstractButton>   // for QAbstractButton
+#include <QAbstractItemView> // for QAbstractItemView
+#include <QAbstractSpinBox>  // for QAbstractSpinBox
+#include <QAction>           // for QAction
+#include <QApplication>      // for QApplication
+#include <QCheckBox>         // for QCheckBox
+#include <QCloseEvent>       // for QCloseEvent
+#include <QComboBox>         // for QComboBox
+#include <QContextMenuEvent> // for QContextMenuEvent
+#include <QCoreApplication>  // for qApp, QCoreApplication
+#include <QCursor>           // for QCursor
+#include <QDesktopServices>  // for QDesktopServices
+#include <QDoubleSpinBox>    // for QDoubleSpinBox
+#include <QEvent>            // for QEvent
+#include <QFile>             // for QFile
+#include <QFileDialog>       // for QFileDialog
+#include <QFlags>            // for QFlags
+#include <QFont>             // for QFont
+#include <QFontDatabase>     // for QFontDatabase
+#include <QFrame>            // for QFrame
+#include <QHBoxLayout>       // for QHBoxLayout
+#include <QIODevice>         // for QIODevice, operator|
+#include <QKeySequence>      // for QKeySequence
+#include <QLineEdit>         // for QLineEdit
+#include <QList>             // for QList
+#include <QMenu>             // for QMenu
+#include <QMenuBar>          // for QMenuBar
+#include <QMessageBox>       // for QMessageBox
+#include <QMouseEvent>       // for QMouseEvent
+#include <QPlainTextEdit>    // for QPlainTextEdit
+#include <QPoint>            // for QPoint
+#include <QSize>             // for QSize
+#include <QSizePolicy>       // for QSizePolicy
+#include <QSpinBox>          // for QSpinBox
+#include <QSplitter>         // for QSplitter
+#include <QStatusBar>        // for QStatusBar
+#include <QStringList>       // for QStringList
+#include <QStyle>            // for QStyle
+#include <QTextEdit>         // for QTextEdit
+#include <QTimer>            // for QTimer
+#include <QToolBar>          // for QToolBar
+#include <QUrl>              // for QUrl
+#include <QUuid>             // for QUuid, operator==
+#include <QVBoxLayout>       // for QVBoxLayout
+#include <QVariant>          // for QVariant
+#include <Qt>                // for ItemDataRole, operator|, Modifier, Key, AlignmentFlag, CursorShape
+#include <QtGlobal>          // for Q_OS_MAC, Q_UNUSED
+#include <cmath>             // for round
+#include <functional>        // for function
+#include <initializer_list>  // for initializer_list
+#include <stddef.h>          // for size_t
+#include <string>            // for basic_string, string
+#include <vector>            // for vector
 
 namespace {
 bool isInputWidgetFocused() {

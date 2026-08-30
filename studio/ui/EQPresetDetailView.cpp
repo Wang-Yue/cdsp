@@ -1,27 +1,48 @@
 #include "ui/EQPresetDetailView.h"
 
-#include "ui/AutoEqPickerDlg.h"
-#include "ui/OratoryPresetPickerDlg.h"
+#include "models/AudioSettings.h" // for AudioSettings
 
-#include <QAction>
-#include <QApplication>
-#include <QCheckBox>
-#include <QClipboard>
-#include <QFileDialog>
-#include <QFontDatabase>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QHeaderView>
-#include <QMenu>
-#include <QMessageBox>
-#include <QScrollArea>
-#include <QSettings>
-#include <QTabWidget>
-#include <QTimer>
-#include <QVBoxLayout>
-#include <fstream>
-#include <sstream>
+#include <QAbstractItemView> // for QAbstractItemView
+#include <QAction>           // for QAction
+#include <QApplication>      // for QApplication
+#include <QCheckBox>         // for QCheckBox
+#include <QClipboard>        // for QClipboard
+#include <QComboBox>         // for QComboBox
+#include <QCursor>           // for QCursor
+#include <QEvent>            // for QEvent
+#include <QFileDialog>       // for QFileDialog
+#include <QFont>             // for QFont
+#include <QFontDatabase>     // for QFontDatabase
+#include <QFormLayout>       // for QFormLayout
+#include <QFrame>            // for QFrame
+#include <QHBoxLayout>       // for QHBoxLayout
+#include <QHeaderView>       // for QHeaderView
+#include <QLayoutItem>       // for QLayoutItem
+#include <QList>             // for QList
+#include <QMenu>             // for QMenu
+#include <QMessageBox>       // for QMessageBox
+#include <QMouseEvent>       // for QMouseEvent
+#include <QPalette>          // for QPalette
+#include <QPoint>            // for QPoint
+#include <QScrollArea>       // for QScrollArea
+#include <QSettings>         // for QSettings
+#include <QString>           // for QString
+#include <QTabWidget>        // for QTabWidget
+#include <QTimer>            // for QTimer
+#include <QUuid>             // for QUuid, operator==
+#include <QVBoxLayout>       // for QVBoxLayout
+#include <QVariant>          // for QVariant
+#include <Qt>                // for AlignmentFlag, Orientation, ScrollBarPolicy, WidgetAttribute, ContextMenuP...
+#include <QtGlobal>          // for QOverload
+#include <cmath>             // for round
+#include <cstdlib>           // for abs, size_t
+#include <fstream>           // for basic_ofstream, basic_ifstream, basic_filebuf, ifstream, ofstream, operator<<
+#include <functional>        // for function
+#include <initializer_list>  // for initializer_list
+#include <optional>          // for optional
+#include <sstream>           // for basic_stringstream
+#include <string>            // for char_traits, basic_string, operator!=, string
+#include <vector>            // for vector
 
 EQPresetDetailView::EQPresetDetailView(EQPreset preset, std::shared_ptr<PipelineStore> pipeline,
                                        std::shared_ptr<DSPEngineController> dspController, QWidget* parent)

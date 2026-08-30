@@ -1,17 +1,17 @@
 #ifndef WATERFALL_PLOT_WIDGET_H
 #define WATERFALL_PLOT_WIDGET_H
 
-#include "room_correction/FrequencyResponse.h"
-#include "room_correction/ImpulseResponse.h"
+#include "room_correction/FrequencyResponse.h" // for FrequencyResponse
+#include "room_correction/ImpulseResponse.h"   // for ImpulseResponse
 
-#include <QComboBox>
-#include <QFutureWatcher>
-#include <QLabel>
-#include <QPainter>
-#include <QPushButton>
-#include <QWidget>
-#include <optional>
-#include <vector>
+#include <QComboBox>      // for QComboBox
+#include <QFutureWatcher> // for QFutureWatcher
+#include <QObject>        // for Q_OBJECT
+#include <QPushButton>    // for QPushButton
+#include <QWidget>        // for QWidget
+#include <optional>       // for optional
+#include <utility>        // for pair
+#include <vector>         // for vector
 
 class WaterfallPlotWidget : public QWidget {
     Q_OBJECT

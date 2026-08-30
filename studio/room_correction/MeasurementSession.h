@@ -1,21 +1,21 @@
 #ifndef MEASUREMENT_SESSION_H
 #define MEASUREMENT_SESSION_H
 
-#include "models/ConvolutionPreset.h"
-#include "models/EQPreset.h"
-#include "room_correction/CalibrationCurve.h"
-#include "room_correction/FIRDesign.h"
-#include "room_correction/FrequencyResponse.h"
-#include "room_correction/ImpulseResponse.h"
-#include "room_correction/PEQAutoFit.h"
-#include "room_correction/SubwooferAssist.h"
-#include "room_correction/TargetCurve.h"
+#include "config/BiquadCoefficients.h"         // for BiquadParameters
+#include "models/ConvolutionPreset.h"          // for ConvolutionPreset
+#include "models/EQPreset.h"                   // for EQPreset, EQBand
+#include "room_correction/CalibrationCurve.h"  // for CalibrationCurve
+#include "room_correction/FrequencyResponse.h" // for FrequencyResponse
+#include "room_correction/ImpulseResponse.h"   // for ImpulseResponse
+#include "room_correction/SubwooferAssist.h"   // for SubwooferRecommendation
+#include "room_correction/TargetCurve.h"       // for TargetCurve, TargetBreakpoint, TargetPreset
 
-#include <QObject>
-#include <QUuid>
-#include <optional>
-#include <string>
-#include <vector>
+#include <QObject>    // for QObject, Q_OBJECT, signals
+#include <QUuid>      // for QUuid
+#include <functional> // for function
+#include <optional>   // for optional, nullopt, nullopt_t
+#include <string>     // for string, basic_string
+#include <vector>     // for vector
 
 enum class MeasurementChannelKind { Full, Mains, Subwoofer };
 std::string channelKindToString(MeasurementChannelKind kind);

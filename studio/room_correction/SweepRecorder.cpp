@@ -1,21 +1,25 @@
 #include "room_correction/SweepRecorder.h"
 
-#include "room_correction/SweepDeconvolver.h"
-#include "room_correction/SweepGenerator.h"
+#include "room_correction/SweepDeconvolver.h" // for SweepDeconvolver
+#include "room_correction/SweepGenerator.h"   // for SweepGenerator
 
-#include <QAudioFormat>
-#include <QAudioSink>
-#include <QAudioSource>
-#include <QBuffer>
-#include <QEventLoop>
-#include <QMediaDevices>
-#include <QTimer>
-#include <QtGlobal>
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <cstring>
-#include <thread>
+#include <QAudioDevice>  // for QAudioDevice
+#include <QAudioFormat>  // for QAudioFormat
+#include <QAudioSink>    // for QAudioSink
+#include <QAudioSource>  // for QAudioSource
+#include <QBuffer>       // for QBuffer
+#include <QByteArray>    // for QByteArray
+#include <QEventLoop>    // for QEventLoop
+#include <QIODevice>     // for QIODevice
+#include <QList>         // for QList
+#include <QMediaDevices> // for QMediaDevices
+#include <QString>       // for QString
+#include <QTimer>        // for QTimer
+#include <QtGlobal>      // for qsizetype
+#include <algorithm>     // for max, clamp
+#include <cmath>         // for pow
+#include <cstdlib>       // for abs
+#include <utility>       // for get
 
 std::optional<int> SweepRecorder::locateSweepStart(const std::vector<double>& recording,
                                                    const std::vector<double>& inverse) {

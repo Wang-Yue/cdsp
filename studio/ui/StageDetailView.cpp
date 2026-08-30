@@ -1,20 +1,56 @@
 #include "ui/StageDetailView.h"
 
-#include <QButtonGroup>
-#include <QFontDatabase>
-#include <QFormLayout>
-#include <QGridLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QHeaderView>
-#include <QMouseEvent>
-#include <QPainter>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QVBoxLayout>
-#include <algorithm>
-#include <cmath>
-#include <functional>
+#include "config/DSPConfigTypes.h"     // for MixerSource, DitherType, MixerMapping, BiquadComboType, DelayUnit
+#include "models/AudioDeviceManager.h" // for AudioDeviceManager
+#include "models/ConvolutionPreset.h"  // for ConvolutionPreset
+#include "models/DeviceConfig.h"       // for DeviceConfig
+#include "models/EQPreset.h"           // for EQPreset
+#include "ui/ConvolutionIRPlot.h"      // for ConvolutionIRPlot
+#include "ui/EQDiagramWidget.h"        // for EQDiagramWidget
+
+#include <QAbstractButton> // for QAbstractButton
+#include <QBrush>          // for QBrush
+#include <QColor>          // for QColor
+#include <QComboBox>       // for QComboBox
+#include <QDoubleSpinBox>  // for QDoubleSpinBox
+#include <QFlags>          // for QFlags
+#include <QFont>           // for QFont
+#include <QFontDatabase>   // for QFontDatabase
+#include <QFormLayout>     // for QFormLayout
+#include <QFrame>          // for QFrame
+#include <QGridLayout>     // for QGridLayout
+#include <QGroupBox>       // for QGroupBox
+#include <QHBoxLayout>     // for QHBoxLayout
+#include <QHeaderView>     // for QHeaderView
+#include <QLabel>          // for QLabel
+#include <QLayout>         // for QLayout
+#include <QLayoutItem>     // for QLayoutItem
+#include <QList>           // for QList
+#include <QMouseEvent>     // for QMouseEvent
+#include <QPainter>        // for QPainter
+#include <QPalette>        // for QPalette
+#include <QPen>            // for QPen
+#include <QPoint>          // for QPoint
+#include <QPushButton>     // for QPushButton
+#include <QRectF>          // for QRectF
+#include <QScrollArea>     // for QScrollArea
+#include <QSize>           // for QSize
+#include <QSizePolicy>     // for QSizePolicy
+#include <QSlider>         // for QSlider
+#include <QSpinBox>        // for QSpinBox
+#include <QStringList>     // for QStringList
+#include <QStyle>          // for QStyle
+#include <QVBoxLayout>     // for QVBoxLayout
+#include <QVariant>        // for QVariant
+#include <Qt>              // for Orientation, AlignmentFlag, CursorShape, ScrollBarPolicy, MouseButton
+#include <QtGlobal>        // for QOverload, Q_UNUSED
+#include <algorithm>       // for find_if, min, find, clamp, max, min_element, remove_if
+#include <cmath>           // for log, floor, round, pow
+#include <cstdlib>         // for abs, size_t
+#include <functional>      // for function
+#include <iterator>        // for prev
+#include <optional>        // for optional, nullopt, nullopt_t
+#include <string>          // for basic_string, string
 
 VSliderWidget::VSliderWidget(double value, double minVal, double maxVal, QWidget* parent)
     : QWidget(parent), m_value(value), m_minVal(minVal), m_maxVal(maxVal) {

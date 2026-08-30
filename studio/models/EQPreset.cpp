@@ -1,9 +1,13 @@
 #include "models/EQPreset.h"
 
-#include <algorithm>
-#include <cctype>
-#include <iomanip>
-#include <sstream>
+#include <QJsonArray> // for QJsonArray
+#include <QJsonValue> // for QJsonValueRef, QJsonValue
+#include <QString>    // for QString, QAnyStringView::QAnyStringView
+#include <algorithm>  // for transform, replace
+#include <cctype>     // for toupper, tolower
+#include <cmath>      // for round
+#include <iomanip>    // for operator<<, setprecision
+#include <sstream>    // for basic_ostream, basic_stringstream, operator<<, basic_istream, fixed, stringstream, ope...
 
 std::string eqBandTypeToString(EQBandType type) {
     switch (type) {

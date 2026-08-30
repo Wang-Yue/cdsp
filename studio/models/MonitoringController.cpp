@@ -1,7 +1,17 @@
 #include "models/MonitoringController.h"
 
-#include "models/DSPEngineController.h"
-#include "models/LogManager.h"
+#include "models/DSPEngineController.h" // for DSPEngineController
+#include "models/DeviceConfig.h"        // for DeviceConfig
+#include "models/LogManager.h"          // for error, info
+
+#include <QSettings> // for QSettings
+#include <QString>   // for QString
+#include <QVariant>  // for QVariant
+#include <algorithm> // for max
+#include <optional>  // for optional
+#include <stddef.h>  // for size_t
+#include <string>    // for basic_string, operator+, operator!=
+#include <vector>    // for vector
 
 MonitoringController::MonitoringController(std::shared_ptr<CDSPEngine> engine, std::shared_ptr<LevelState> levelsPtr,
                                            std::shared_ptr<SpectrumEngine> spectrumEngine,

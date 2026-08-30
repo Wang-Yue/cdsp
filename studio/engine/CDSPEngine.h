@@ -1,26 +1,16 @@
 #ifndef CDSP_ENGINE_H
 #define CDSP_ENGINE_H
 
-#include "config/DSPConfigTypes.h"
+#include "config/DSPConfigTypes.h" // for Fader, AudioDevice, AudioDeviceDescriptor, AudioSamplesData, SpectrumData
 
-#include <bitset>
-#include <complex>
-#include <functional>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <string>
-#include <vector>
+#include <functional> // for function
+#include <optional>   // for optional
+#include <stddef.h>   // for size_t
+#include <string>     // for string
+#include <vector>     // for vector
 
 extern "C" {
-#include "Public/cdsp_pub_types.h"
-#include "Public/config.h"
-#include "Public/devices.h"
-#include "Public/fader.h"
-#include "Public/general.h"
-#include "Public/processing.h"
-#include "Public/signal_levels.h"
-#include "Public/spectrum.h"
+#include "Public/cdsp_pub_types.h" // for cdsp_fader_t, dsp_engine_t
 }
 
 class CDSPEngine {

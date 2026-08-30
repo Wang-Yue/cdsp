@@ -1,13 +1,28 @@
 #include "ui/SpectrogramView.h"
 
-#include "utils/ThemeManager.h"
+#include "utils/ThemeManager.h" // for ThemeManager
 
-#include <QEvent>
-#include <QFontDatabase>
-#include <QPainterPath>
-#include <algorithm>
-#include <array>
-#include <cmath>
+#include <QBrush>           // for QBrush
+#include <QEvent>           // for QEvent
+#include <QFont>            // for QFont
+#include <QFontDatabase>    // for QFontDatabase
+#include <QPalette>         // for QPalette
+#include <QPen>             // for QPen
+#include <QPointF>          // for QPointF
+#include <QPolygon>         // for QPolygonF
+#include <QRectF>           // for QRectF
+#include <QSize>            // for QSize, operator!=
+#include <QSizePolicy>      // for QSizePolicy
+#include <QString>          // for QString
+#include <Qt>               // for PenStyle, AlignmentFlag, BrushStyle
+#include <QtGlobal>         // for Q_UNUSED
+#include <algorithm>        // for min, max, clamp
+#include <array>            // for array
+#include <cmath>            // for log10, isnan, round
+#include <initializer_list> // for initializer_list
+#include <qrgb.h>           // for QRgb
+#include <stddef.h>         // for size_t
+#include <vector>           // for vector
 
 SpectrogramView::SpectrogramView(QWidget* parent) : QWidget(parent) {
     setMinimumSize(40, 24);

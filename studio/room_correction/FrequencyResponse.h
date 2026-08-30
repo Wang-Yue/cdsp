@@ -1,10 +1,11 @@
 #ifndef FREQUENCY_RESPONSE_H
 #define FREQUENCY_RESPONSE_H
 
-#include "room_correction/ImpulseResponse.h"
+#include "room_correction/ImpulseResponse.h" // for ImpulseResponse
 
-#include <tuple>
-#include <vector>
+#include <stddef.h> // for size_t
+#include <utility>  // for pair
+#include <vector>   // for vector
 
 class FrequencyResponse {
 public:

@@ -1,11 +1,12 @@
 #ifndef PEQ_AUTO_FIT_H
 #define PEQ_AUTO_FIT_H
 
-#include "config/BiquadCoefficients.h"
-#include "room_correction/FrequencyResponse.h"
-#include "room_correction/TargetCurve.h"
+#include "config/BiquadCoefficients.h"         // for BiquadParameters
+#include "room_correction/FrequencyResponse.h" // for FrequencyResponse
+#include "room_correction/TargetCurve.h"       // for TargetCurve
 
-#include <vector>
+#include <stddef.h> // for size_t
+#include <vector>   // for vector
 
 struct PEQAutoFitOptions {
     int bandCount = 10;

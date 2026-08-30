@@ -1,20 +1,24 @@
 #include "ui/DashboardView.h"
 
-#include "models/PipelineStage.h"
+#include "models/AudioSettings.h" // for AudioSettings
+#include "models/LevelState.h"    // for LevelState
+#include "models/PipelineStore.h" // for PipelineStore
 
-#include <QComboBox>
-#include <QFont>
-#include <QFontDatabase>
-#include <QFormLayout>
-#include <QGridLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QSlider>
-#include <QVBoxLayout>
-#include <cmath>
+#include <QFont>         // for QFont
+#include <QFontDatabase> // for QFontDatabase
+#include <QFrame>        // for QFrame
+#include <QGridLayout>   // for QGridLayout
+#include <QGroupBox>     // for QGroupBox
+#include <QLabel>        // for QLabel
+#include <QPushButton>   // for QPushButton
+#include <QScrollArea>   // for QScrollArea
+#include <QSizePolicy>   // for QSizePolicy
+#include <QSlider>       // for QSlider
+#include <QString>       // for QString
+#include <QStyle>        // for QStyle
+#include <QVBoxLayout>   // for QVBoxLayout
+#include <Qt>            // for AlignmentFlag, Orientation, ScrollBarPolicy, operator|
+#include <cmath>         // for round
 
 DashboardView::DashboardView(std::shared_ptr<MonitoringController> monitoring,
                              std::shared_ptr<DSPEngineController> dspController,

@@ -1,19 +1,19 @@
 #ifndef CONVOLUTION_PRESET_DETAIL_VIEW_H
 #define CONVOLUTION_PRESET_DETAIL_VIEW_H
 
-#include "models/AudioDeviceManager.h"
-#include "models/ConvolutionPreset.h"
-#include "models/PipelineStore.h"
-#include "ui/ConvolutionIRPlot.h"
+#include "models/AudioDeviceManager.h" // for AudioDeviceManager
+#include "models/ConvolutionPreset.h"  // for ConvolutionPreset
+#include "models/PipelineStore.h"      // for PipelineStore
+#include "ui/ConvolutionIRPlot.h"      // for ConvolutionIRPlot
 
-#include <QComboBox>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QWidget>
-#include <memory>
+#include <QComboBox>   // for QComboBox
+#include <QFormLayout> // for QFormLayout
+#include <QGroupBox>   // for QGroupBox
+#include <QLabel>      // for QLabel
+#include <QLineEdit>   // for QLineEdit
+#include <QObject>     // for Q_OBJECT, slots
+#include <QWidget>     // for QWidget
+#include <memory>      // for shared_ptr
 
 class ConvolutionPresetDetailView : public QWidget {
     Q_OBJECT

@@ -1,15 +1,17 @@
 #ifndef ANALOG_VU_METER_VIEW_H
 #define ANALOG_VU_METER_VIEW_H
 
-#include "models/LevelState.h"
-#include "ui/VUSettings.h"
+#include "models/LevelState.h" // for LevelState
+#include "ui/VUSettings.h"     // for VUSettings, VUTheme
 
-#include <QHBoxLayout>
-#include <QPainter>
-#include <QPixmap>
-#include <QScrollArea>
-#include <QWidget>
-#include <vector>
+#include <QHBoxLayout> // for QHBoxLayout
+#include <QObject>     // for Q_OBJECT
+#include <QPixmap>     // for QPixmap
+#include <QScrollArea> // for QScrollArea
+#include <QSize>       // for QSize
+#include <QWidget>     // for QWidget
+#include <stddef.h>    // for size_t
+#include <vector>      // for vector
 
 class AnalogVUMeter : public QWidget {
     Q_OBJECT

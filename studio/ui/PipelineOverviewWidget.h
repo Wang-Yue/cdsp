@@ -1,22 +1,24 @@
 #ifndef PIPELINE_OVERVIEW_WIDGET_H
 #define PIPELINE_OVERVIEW_WIDGET_H
 
-#include "models/DSPEngineController.h"
+#include "config/DSPConfigTypes.h"      // for PipelineStepType
+#include "models/DSPEngineController.h" // for DSPEngineController
+#include "models/PipelineStage.h"       // for PipelineStage, StageCategory
 
-#include <QColor>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QMenu>
-#include <QPaintEvent>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QVBoxLayout>
-#include <QWidget>
-#include <map>
-#include <memory>
-#include <optional>
+#include <QColor>      // for QColor
+#include <QGroupBox>   // for QGroupBox
+#include <QHBoxLayout> // for QHBoxLayout
+#include <QIcon>       // for QIcon
+#include <QLabel>      // for QLabel
+#include <QObject>     // for QObject, Q_OBJECT, slots
+#include <QPushButton> // for QPushButton
+#include <QScrollArea> // for QScrollArea
+#include <QString>     // for QString
+#include <QWidget>     // for QWidget
+#include <map>         // for map
+#include <memory>      // for shared_ptr
+#include <optional>    // for optional, nullopt, nullopt_t
+#include <string>      // for string
 
 class PipelineOverviewWidget;
 

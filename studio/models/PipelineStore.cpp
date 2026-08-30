@@ -1,12 +1,20 @@
 #include "models/PipelineStore.h"
 
-#include <QFile>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QSettings>
-#include <QStandardPaths>
-#include <algorithm>
+#include "config/DSPConfigTypes.h" // for PipelineStep, FilterConfig, MixerConfig, ProcessorConfig
+
+#include <QFile>           // for QFile
+#include <QIODevice>       // for QIODevice, operator|
+#include <QJsonArray>      // for QJsonArray
+#include <QJsonDocument>   // for QJsonDocument
+#include <QJsonObject>     // for QJsonObject
+#include <QJsonParseError> // for QJsonParseError
+#include <QJsonValue>      // for QJsonValueRef, QJsonValue
+#include <QSettings>       // for QSettings
+#include <QVariant>        // for QVariant
+#include <algorithm>       // for find_if, remove_if
+#include <iterator>        // for distance
+#include <map>             // for map, __tree_node
+#include <utility>         // for get
 
 PipelineStore::PipelineStore(QObject* parent) : QObject(parent) {
     load();

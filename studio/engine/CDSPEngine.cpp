@@ -1,8 +1,17 @@
 #include "engine/CDSPEngine.h"
 
-#include <cstring>
-#include <iostream>
-#include <mutex>
+#include "Public/config.h"        // for cdsp_set_config_json
+#include "Public/devices.h"       // for cdsp_free_device_capabilities, cdsp_device_info_t, cdsp_get_available_devices
+#include "Public/fader.h"         // for cdsp_get_fader_mute, cdsp_get_fader_volume, cdsp_set_fader_mute, cdsp_set_...
+#include "Public/general.h"       // for cdsp_set_log_callback, cdsp_engine_create, cdsp_engine_free, cdsp_engine_poll
+#include "Public/processing.h"    // for cdsp_get_samples, cdsp_get_state, cdsp_get_stop_reason
+#include "Public/signal_levels.h" // for cdsp_get_vu_levels
+#include "Public/spectrum.h"      // for cdsp_get_spectrum, cdsp_spectrum_t
+
+#include <cstring>  // for memset
+#include <mutex>    // for mutex, lock_guard
+#include <stdlib.h> // for free
+#include <utility>  // for move
 
 static CDSPEngine::LogCallback s_logCallback = nullptr;
 static std::mutex s_logMutex;

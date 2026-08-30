@@ -1,11 +1,12 @@
 #ifndef LOG_MANAGER_H
 #define LOG_MANAGER_H
 
-#include <QDateTime>
-#include <QObject>
-#include <QString>
-#include <mutex>
-#include <vector>
+#include <QDateTime> // for QDateTime
+#include <QObject>   // for QObject, Q_OBJECT, signals
+#include <QString>   // for QString
+#include <mutex>     // for mutex
+#include <stddef.h>  // for size_t
+#include <vector>    // for vector
 
 enum class LogLevel { Off, Error, Warn, Info, Debug, Trace };
 

@@ -1,32 +1,27 @@
 #ifndef VISUALIZER_DETAIL_VIEWS_H
 #define VISUALIZER_DETAIL_VIEWS_H
 
-#include "models/AudioDeviceManager.h"
-#include "models/MonitoringController.h"
-#include "models/SpectrogramEngine.h"
-#include "models/SpectrumEngine.h"
-#include "models/VectorScopeEngine.h"
-#include "ui/AnalogVUMeterView.h"
-#include "ui/LogRangeSlider.h"
-#include "ui/SpectrogramView.h"
-#include "ui/SpectrumView.h"
-#include "ui/VectorScopeView.h"
+#include "models/AudioDeviceManager.h"   // for AudioDeviceManager
+#include "models/MonitoringController.h" // for MonitoringController
+#include "models/SpectrogramEngine.h"    // for SpectrogramEngine
+#include "models/SpectrumEngine.h"       // for SpectrumEngine
+#include "models/VectorScopeEngine.h"    // for VectorScopeEngine
+#include "ui/AnalogVUMeterView.h"        // for AnalogVUMeterView
+#include "ui/LogRangeSlider.h"           // for LogRangeSlider
+#include "ui/SpectrogramView.h"          // for SpectrogramView
+#include "ui/SpectrumView.h"             // for SpectrumView
+#include "ui/VUSettings.h"               // for VUSettings
+#include "ui/VectorScopeView.h"          // for VectorScopeView
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QDoubleSpinBox>
-#include <QFormLayout>
-#include <QFrame>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QPushButton>
-#include <QSlider>
-#include <QSpinBox>
-#include <QTabBar>
-#include <QVBoxLayout>
-#include <QWidget>
-#include <memory>
+#include <QCheckBox> // for QCheckBox
+#include <QComboBox> // for QComboBox
+#include <QLabel>    // for QLabel
+#include <QObject>   // for Q_OBJECT, slots
+#include <QSlider>   // for QSlider
+#include <QSpinBox>  // for QSpinBox
+#include <QTabBar>   // for QTabBar
+#include <QWidget>   // for QWidget
+#include <memory>    // for shared_ptr
 
 class AnalogVUDetailView : public QWidget {
     Q_OBJECT

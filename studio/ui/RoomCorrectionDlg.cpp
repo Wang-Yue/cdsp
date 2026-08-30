@@ -1,20 +1,42 @@
 #include "ui/RoomCorrectionDlg.h"
 
-#include "room_correction/CalibrationCurve.h"
+#include "models/ConvolutionPreset.h"          // for ConvolutionPreset
+#include "models/EQPreset.h"                   // for EQPreset, EQBand
+#include "room_correction/FrequencyResponse.h" // for FrequencyResponse
+#include "room_correction/ImpulseResponse.h"   // for ImpulseResponse
+#include "room_correction/TargetCurve.h"       // for TargetCurve, TargetPreset
+#include "ui/MeasurementPositionRowWidget.h"   // for MeasurementPositionRowWidget
+#include "ui/SubwooferAssistDlg.h"             // for SubwooferAssistDlg
 
-#include <QEventLoop>
-#include <QFileDialog>
-#include <QFormLayout>
-#include <QFrame>
-#include <QGroupBox>
-#include <QHeaderView>
-#include <QMenu>
-#include <QMessageBox>
-#include <QStandardPaths>
+#include <QDialogButtonBox> // for QDialogButtonBox
+#include <QFileDialog>      // for QFileDialog
+#include <QFileInfo>        // for QFileInfo
+#include <QFormLayout>      // for QFormLayout
+#include <QFrame>           // for QFrame
+#include <QGroupBox>        // for QGroupBox
+#include <QLayoutItem>      // for QLayoutItem
+#include <QList>            // for QList
+#include <QMenu>            // for QMenu
+#include <QMessageBox>      // for QMessageBox
+#include <QScrollArea>      // for QScrollArea
+#include <QSizePolicy>      // for QSizePolicy
+#include <QSplitter>        // for QSplitter
+#include <QStatusBar>       // for QStatusBar
+#include <QString>          // for QString, operator==
+#include <QToolBar>         // for QToolBar
+#include <QVBoxLayout>      // for QVBoxLayout
+#include <QVariant>         // for QVariant
+#include <Qt>               // for ScrollBarPolicy, Orientation, AlignmentFlag
+#include <QtGlobal>         // for QOverload
+#include <algorithm>        // for max
+#include <functional>       // for function
+#include <optional>         // for optional, nullopt, nullopt_t
+#include <string>           // for basic_string, operator+, string
+#include <vector>           // for vector
 
 #ifdef QT_MULTIMEDIA_LIB
-#include <QAudioDevice>
-#include <QMediaDevices>
+#include <QAudioDevice>  // for QAudioDevice
+#include <QMediaDevices> // for QMediaDevices
 #endif
 
 RoomCorrectionDlg::RoomCorrectionDlg(std::shared_ptr<PipelineStore> pipeline, QWidget* parent)

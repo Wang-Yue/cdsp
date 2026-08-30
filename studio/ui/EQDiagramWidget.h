@@ -1,18 +1,19 @@
 #ifndef EQ_DIAGRAM_WIDGET_H
 #define EQ_DIAGRAM_WIDGET_H
 
-#include "models/AudioSettings.h"
-#include "models/EQPreset.h"
-#include "models/PipelineStore.h"
-#include "models/SpectrumEngine.h"
-#include "room_correction/TargetCurve.h"
+#include "models/AudioSettings.h"        // for AudioSettings
+#include "models/EQPreset.h"             // for EQPreset
+#include "models/PipelineStore.h"        // for PipelineStore
+#include "models/SpectrumEngine.h"       // for SpectrumEngine
+#include "room_correction/TargetCurve.h" // for TargetCurve
 
-#include <QCheckBox>
-#include <QMouseEvent>
-#include <QPainter>
-#include <QWheelEvent>
-#include <QWidget>
-#include <functional>
+#include <QColor>     // for QColor
+#include <QObject>    // for Q_OBJECT
+#include <QPainter>   // for QPainter
+#include <QWidget>    // for QWidget
+#include <functional> // for function
+#include <memory>     // for shared_ptr
+#include <vector>     // for vector
 
 struct EQReferenceOverlayData {
     std::vector<double> frequencies;

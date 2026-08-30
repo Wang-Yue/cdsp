@@ -17,6 +17,16 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOGEN_PARALLEL "AUTO")
 
+# Always generate compile_commands.json for tooling (IWYU, clang-tidy, LSP)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Option to run IWYU directly during target compilation
+option(ENABLE_IWYU "Enable Include-What-You-Use during compilation" OFF)
+
+# Build acceleration & memory optimization options
+option(ENABLE_PCH "Enable Precompiled Headers (PCH) to speed up compilation and reduce memory usage" ON)
+option(ENABLE_UNITY_BUILD "Enable Unity (Jumbo) build to combine translation units" OFF)
+
 # ==============================================================================
 # RPATH Configuration for Installed Binaries
 # ==============================================================================
@@ -85,6 +95,41 @@ target_link_libraries(MonitorQt PRIVATE
 )
 
 # ==============================================================================
+# Build Optimization: Precompiled Headers (PCH) & Unity Build
+# ==============================================================================
+if(ENABLE_PCH)
+    target_precompile_headers(MonitorQt PRIVATE
+        <QtCore>
+        <QtGui>
+        <QtWidgets>
+        <vector>
+        <string>
+        <memory>
+        <functional>
+        <optional>
+        <algorithm>
+    )
+    if(APPLE)
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/utils/MacUtils.mm" PROPERTIES
+            SKIP_PRECOMPILE_HEADERS ON
+        )
+    endif()
+endif()
+
+if(ENABLE_UNITY_BUILD)
+    set_target_properties(MonitorQt PROPERTIES
+        UNITY_BUILD ON
+        UNITY_BUILD_BATCH_SIZE 8
+        UNITY_BUILD_MODE BATCH
+    )
+    if(APPLE)
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/utils/MacUtils.mm" PROPERTIES
+            SKIP_UNITY_BUILD_INCLUSION ON
+        )
+    endif()
+endif()
+
+# ==============================================================================
 # Platform Properties & Link Options
 # ==============================================================================
 if(APPLE)
@@ -107,6 +152,56 @@ if(APPLE)
     )
 endif()
 
+
+# ==============================================================================
+# Include-What-You-Use (IWYU)
+# ==============================================================================
+find_program(IWYU_BIN NAMES include-what-you-use)
+if(ENABLE_IWYU)
+    if(IWYU_BIN)
+        message(STATUS "Include-What-You-Use enabled for MonitorQt")
+        set(IWYU_MAPPING_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/iwyu.imp")
+        set(IWYU_OPTIONS
+            ${IWYU_BIN}
+            -Xiwyu --mapping_file=${IWYU_MAPPING_FILE}
+            -Xiwyu --no_fwd_decls
+            -Xiwyu --max_line_length=120
+        )
+        if(APPLE AND CMAKE_OSX_SYSROOT)
+            list(APPEND IWYU_OPTIONS -isysroot ${CMAKE_OSX_SYSROOT})
+        endif()
+        set_target_properties(MonitorQt PROPERTIES
+            CXX_INCLUDE_WHAT_YOU_USE "${IWYU_OPTIONS}"
+        )
+    else()
+        message(WARNING "ENABLE_IWYU is ON, but 'include-what-you-use' executable was not found.")
+    endif()
+endif()
+
+# Standalone targets to check or fix includes across the project
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh")
+    add_custom_target(
+        iwyu-qt
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh" --check
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Analyzing MonitorQt includes with Include-What-You-Use..."
+        USES_TERMINAL
+    )
+    add_custom_target(
+        iwyu-check-qt
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh" --check
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Analyzing MonitorQt includes with Include-What-You-Use..."
+        USES_TERMINAL
+    )
+    add_custom_target(
+        iwyu-fix-qt
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh" --fix
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Applying Include-What-You-Use include fixes automatically..."
+        USES_TERMINAL
+    )
+endif()
 
 # ==============================================================================
 # Code Formatting (clang-format)

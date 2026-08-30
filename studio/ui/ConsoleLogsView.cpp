@@ -1,22 +1,43 @@
 #include "ui/ConsoleLogsView.h"
 
-#include <QApplication>
-#include <QClipboard>
-#include <QFontDatabase>
-#include <QGuiApplication>
-#include <QHBoxLayout>
-#include <QHeaderView>
-#include <QMenu>
-#include <QPainter>
-#include <QResizeEvent>
-#include <QShowEvent>
-#include <QStyledItemDelegate>
-#include <QTableView>
-#include <QTextLayout>
-#include <QTextOption>
-#include <QVBoxLayout>
-#include <algorithm>
-#include <cmath>
+#include "models/LogManager.h" // for LogLevel, LogManager
+
+#include <QAbstractItemModel>   // for QAbstractItemModel
+#include <QAbstractItemView>    // for QAbstractItemView
+#include <QAction>              // for QAction
+#include <QApplication>         // for QApplication
+#include <QClipboard>           // for QClipboard
+#include <QColor>               // for QColor, operator<<, operator>>
+#include <QCursor>              // for QCursor
+#include <QFlags>               // for QFlags
+#include <QFont>                // for QFont
+#include <QFontDatabase>        // for QFontDatabase
+#include <QGuiApplication>      // for QGuiApplication
+#include <QHBoxLayout>          // for QHBoxLayout
+#include <QHeaderView>          // for QHeaderView
+#include <QItemSelectionModel>  // for QItemSelectionModel
+#include <QMenu>                // for QMenu
+#include <QModelIndex>          // for QModelIndex
+#include <QPainter>             // for QPainter
+#include <QPalette>             // for QPalette
+#include <QPoint>               // for QPoint
+#include <QRect>                // for QRect
+#include <QRectF>               // for QRectF
+#include <QSize>                // for QSize
+#include <QString>              // for QString
+#include <QStyle>               // for QStyle
+#include <QStyleOptionViewItem> // for QStyleOptionViewItem
+#include <QStyledItemDelegate>  // for QStyledItemDelegate
+#include <QTableView>           // for QTableView
+#include <QTextLayout>          // for QTextLayout, QTextLine
+#include <QTextOption>          // for QTextOption
+#include <QVBoxLayout>          // for QVBoxLayout
+#include <QVariant>             // for QVariant
+#include <Qt>                   // for AlignmentFlag, ContextMenuPolicy, ItemDataRole, TextElideMode, operator|
+#include <QtGlobal>             // for QOverload, Q_UNUSED, qreal
+#include <algorithm>            // for max, sort
+#include <cmath>                // for ceil
+#include <vector>               // for vector
 
 namespace {
 

@@ -1,7 +1,7 @@
 #include "room_correction/MeasurementFFT.h"
 
-#include <cmath>
-#include <stdexcept>
+#include <cmath>   // for M_PI, cos, sin
+#include <utility> // for swap
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

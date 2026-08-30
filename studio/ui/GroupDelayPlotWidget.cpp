@@ -1,12 +1,27 @@
 #include "ui/GroupDelayPlotWidget.h"
 
-#include <QFileDialog>
-#include <QFontDatabase>
-#include <QMessageBox>
-#include <QPainter>
-#include <QPainterPath>
-#include <algorithm>
-#include <cmath>
+#include <QBrush>           // for QBrush
+#include <QColor>           // for QColor
+#include <QFileDialog>      // for QFileDialog
+#include <QFont>            // for QFont
+#include <QFontDatabase>    // for QFontDatabase
+#include <QMessageBox>      // for QMessageBox
+#include <QPainter>         // for QPainter
+#include <QPainterPath>     // for QPainterPath
+#include <QPalette>         // for QPalette
+#include <QPen>             // for QPen
+#include <QPixmap>          // for QPixmap
+#include <QPointF>          // for QPointF
+#include <QRect>            // for QRect
+#include <QRectF>           // for QRectF
+#include <QString>          // for QString, operator+
+#include <Qt>               // for AlignmentFlag
+#include <QtGlobal>         // for QOverload
+#include <algorithm>        // for max, min, sort
+#include <cmath>            // for log10, abs
+#include <cstdlib>          // for size_t, abs
+#include <initializer_list> // for initializer_list
+#include <optional>         // for optional
 
 GroupDelayPlotWidget::GroupDelayPlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(240);

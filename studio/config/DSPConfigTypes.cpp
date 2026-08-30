@@ -1,8 +1,12 @@
 #include "config/DSPConfigTypes.h"
 
-#include <cmath>
-#include <set>
-#include <stdexcept>
+#include <QByteArray>    // for QByteArray
+#include <QJsonArray>    // for QJsonArray
+#include <QJsonDocument> // for QJsonDocument
+#include <QJsonValue>    // for QJsonValueRef, QJsonValue
+#include <QString>       // for QString
+#include <algorithm>     // for transform
+#include <cctype>        // for tolower
 
 const std::vector<int> MONITOR_STANDARD_RATES = {5512,  8000,  11025,  16000,  22050,  32000,  44100,  48000, 64000,
                                                  88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000};

@@ -1,11 +1,12 @@
 #ifndef AUDIO_SETTINGS_H
 #define AUDIO_SETTINGS_H
 
-#include "config/DSPConfigTypes.h"
+#include "config/DSPConfigTypes.h" // for ResamplerInterpolation, ResamplerProfile, ResamplerType, SincInterpolation
 
-#include <QObject>
-#include <QSettings>
-#include <functional>
+#include <QObject>               // for QObject, Q_OBJECT, signals
+#include <functional>            // for function
+#include <qtclasshelpermacros.h> // for Q_DISABLE_COPY
+#include <string>                // for basic_string, string
 
 class AudioSettings : public QObject {
     Q_OBJECT

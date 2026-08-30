@@ -1,11 +1,41 @@
 #include "ui/DSPDetailedSignalGraphCard.h"
 
-#include <QFontDatabase>
-#include <QPainterPath>
-#include <QScrollBar>
-#include <QTimer>
-#include <algorithm>
-#include <cmath>
+#include "config/DSPConfigTypes.h"     // for PipelineStep, MixerConfig, MixerMapping, MixerSource, PipelineStepType
+#include "models/AudioDeviceManager.h" // for AudioDeviceManager
+#include "models/AudioSettings.h"      // for AudioSettings
+#include "models/ConvolutionPreset.h"  // for ConvolutionPreset
+#include "models/DeviceConfig.h"       // for DeviceConfig
+#include "models/EQPreset.h"           // for EQPreset
+#include "models/PipelineStage.h"      // for PipelineStage, StageBuildResult, StageBuilders
+#include "models/PipelineStore.h"      // for PipelineStore
+
+#include <QBrush>        // for QBrush
+#include <QChar>         // for QChar
+#include <QColor>        // for QColor
+#include <QFont>         // for QFont
+#include <QFontDatabase> // for QFontDatabase
+#include <QFontMetrics>  // for QFontMetricsF
+#include <QFrame>        // for QFrame
+#include <QHBoxLayout>   // for QHBoxLayout
+#include <QList>         // for QList
+#include <QMouseEvent>   // for QMouseEvent
+#include <QPainter>      // for QPainter
+#include <QPainterPath>  // for QPainterPath
+#include <QPalette>      // for QPalette
+#include <QPen>          // for QPen
+#include <QPolygon>      // for QPolygonF
+#include <QRectF>        // for QRectF
+#include <QScrollBar>    // for QScrollBar
+#include <QStringList>   // for QStringList
+#include <QTimer>        // for QTimer
+#include <QUuid>         // for QUuid, operator<
+#include <QVBoxLayout>   // for QVBoxLayout
+#include <Qt>            // for AlignmentFlag, CursorShape, BrushStyle, MouseButton, PenStyle, Scroll...
+#include <algorithm>     // for max, min
+#include <cmath>         // for ceil
+#include <optional>      // for optional
+#include <set>           // for set
+#include <stddef.h>      // for size_t
 
 // MARK: - DSPGraphCanvas Implementation
 

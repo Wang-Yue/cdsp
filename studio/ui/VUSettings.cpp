@@ -1,5 +1,9 @@
 #include "ui/VUSettings.h"
 
+#include <QSettings> // for QSettings
+#include <QString>   // for QString, operator==
+#include <QVariant>  // for QVariant
+
 VUSettings::VUSettings() {
     load();
 }

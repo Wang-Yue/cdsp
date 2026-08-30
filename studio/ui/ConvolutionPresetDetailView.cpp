@@ -1,16 +1,33 @@
 #include "ui/ConvolutionPresetDetailView.h"
 
-#include <QDesktopServices>
-#include <QFileInfo>
-#include <QFontDatabase>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QScrollArea>
-#include <QUrl>
-#include <QVBoxLayout>
-#include <algorithm>
-#include <cmath>
+#include "models/DeviceConfig.h" // for DeviceConfig
+
+#include <QDesktopServices> // for QDesktopServices
+#include <QFileInfo>        // for QFileInfo
+#include <QFont>            // for QFont
+#include <QFontDatabase>    // for QFontDatabase
+#include <QFormLayout>      // for QFormLayout
+#include <QFrame>           // for QFrame
+#include <QGroupBox>        // for QGroupBox
+#include <QHBoxLayout>      // for QHBoxLayout
+#include <QLayoutItem>      // for QLayoutItem
+#include <QList>            // for QList
+#include <QPushButton>      // for QPushButton
+#include <QScrollArea>      // for QScrollArea
+#include <QSizePolicy>      // for QSizePolicy
+#include <QString>          // for QString
+#include <QStringList>      // for QStringList
+#include <QUrl>             // for QUrl
+#include <QUuid>            // for QUuid, operator==
+#include <QVBoxLayout>      // for QVBoxLayout
+#include <QVariant>         // for QVariant
+#include <Qt>               // for ScrollBarPolicy
+#include <QtGlobal>         // for QOverload
+#include <algorithm>        // for find, min_element
+#include <cmath>            // for log
+#include <cstdlib>          // for abs
+#include <string>           // for basic_string, string, operator!=
+#include <vector>           // for vector
 
 ConvolutionPresetDetailView::ConvolutionPresetDetailView(ConvolutionPreset preset,
                                                          std::shared_ptr<PipelineStore> pipeline,

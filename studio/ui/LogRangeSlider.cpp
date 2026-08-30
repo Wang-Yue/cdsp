@@ -1,7 +1,18 @@
 #include "ui/LogRangeSlider.h"
 
-#include <algorithm>
-#include <cmath>
+#include <QBrush>      // for QBrush
+#include <QColor>      // for QColor
+#include <QFlags>      // for QFlags
+#include <QMouseEvent> // for QMouseEvent
+#include <QPainter>    // for QPainter
+#include <QPalette>    // for QPalette
+#include <QPen>        // for QPen
+#include <QPoint>      // for QPoint
+#include <Qt>          // for CursorShape, MouseButton, PenCapStyle, PenStyle
+#include <QtGlobal>    // for Q_UNUSED
+#include <algorithm>   // for max, min
+#include <cmath>       // for log10, round, pow
+#include <cstdlib>     // for abs
 
 LogRangeSlider::LogRangeSlider(QWidget* parent) : QWidget(parent) {
     setFixedHeight(28);

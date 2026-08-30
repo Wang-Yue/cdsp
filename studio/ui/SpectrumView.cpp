@@ -1,12 +1,27 @@
 #include "ui/SpectrumView.h"
 
-#include "utils/ThemeManager.h"
+#include "utils/ThemeManager.h" // for ThemeManager
 
-#include <QFontDatabase>
-#include <QMouseEvent>
-#include <QPainterPath>
-#include <algorithm>
-#include <cmath>
+#include <QBrush>           // for QLinearGradient, QBrush
+#include <QColor>           // for QColor
+#include <QFlags>           // for QFlags
+#include <QFont>            // for QFont
+#include <QFontDatabase>    // for QFontDatabase
+#include <QMouseEvent>      // for QMouseEvent
+#include <QPainter>         // for QPainter
+#include <QPalette>         // for QPalette
+#include <QPen>             // for QPen
+#include <QPointF>          // for QPointF
+#include <QRect>            // for QRect
+#include <QRectF>           // for QRectF
+#include <QSizePolicy>      // for QSizePolicy
+#include <QString>          // for QString
+#include <Qt>               // for AlignmentFlag, PenStyle, operator|
+#include <QtGlobal>         // for Q_UNUSED
+#include <algorithm>        // for max, clamp, min
+#include <cmath>            // for log10, pow, round, isnan, log2
+#include <cstdlib>          // for size_t, abs
+#include <initializer_list> // for initializer_list
 
 SpectrumView::SpectrumView(QWidget* parent) : QWidget(parent) {
     setMinimumSize(40, 24);

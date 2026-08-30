@@ -1,12 +1,33 @@
 #include "ui/EQDiagramWidget.h"
 
-#include <QContextMenuEvent>
-#include <QFontDatabase>
-#include <QLinearGradient>
-#include <QMenu>
-#include <QPainterPath>
-#include <algorithm>
-#include <cmath>
+#include "config/DSPConfigTypes.h" // for SpectrumData
+#include "models/PipelineStage.h"  // for PipelineStage, StageType
+
+#include <QAction>           // for QAction
+#include <QBrush>            // for QBrush, QLinearGradient
+#include <QContextMenuEvent> // for QContextMenuEvent
+#include <QFlags>            // for QFlags
+#include <QFont>             // for QFont
+#include <QFontDatabase>     // for QFontDatabase
+#include <QFontMetrics>      // for QFontMetrics
+#include <QList>             // for QList
+#include <QMenu>             // for QMenu
+#include <QMouseEvent>       // for QMouseEvent
+#include <QPainterPath>      // for QPainterPath
+#include <QPalette>          // for QPalette
+#include <QPen>              // for QPen
+#include <QPoint>            // for QPoint
+#include <QPointF>           // for QPointF
+#include <QRect>             // for QRect
+#include <QString>           // for QString
+#include <QWheelEvent>       // for QWheelEvent
+#include <Qt>                // for PenStyle, CursorShape, ConnectionType, MouseButton, AlignmentFlag, Global...
+#include <QtGlobal>          // for QOverload, Q_UNUSED
+#include <algorithm>         // for max, min, sort
+#include <cmath>             // for round, log10, pow, hypot, isnan, isfinite
+#include <cstdlib>           // for size_t, abs
+#include <initializer_list>  // for initializer_list
+#include <string>            // for basic_string
 
 EQDiagramWidget::EQDiagramWidget(QWidget* parent) : QWidget(parent) {
     setMouseTracking(true);

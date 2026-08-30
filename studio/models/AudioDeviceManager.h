@@ -1,18 +1,24 @@
 #ifndef AUDIO_DEVICE_MANAGER_H
 #define AUDIO_DEVICE_MANAGER_H
 
-#include "engine/CDSPEngine.h"
-#include "models/AudioSettings.h"
-#include "models/DeviceConfig.h"
+#include "config/DSPConfigTypes.h" // for AudioDevice, AudioDeviceDescriptor, AudioBackendType
+#include "engine/CDSPEngine.h"     // for CDSPEngine
+#include "models/AudioSettings.h"  // for AudioSettings
+#include "models/DeviceConfig.h"   // for DeviceConfig
 
-#include <QFutureWatcher>
-#include <QMediaDevices>
-#include <QObject>
-#include <QTimer>
-#include <map>
-#include <memory>
-#include <string>
-#include <vector>
+#include <QFutureWatcher> // for QFutureWatcher
+#include <QMediaDevices>  // for QMediaDevices
+#include <QMetaObject>    // for QMetaObject
+#include <QObject>        // for QObject, Q_OBJECT, signals
+#include <QTimer>         // for QTimer
+#include <QtGlobal>       // for qint64
+#include <functional>     // for function
+#include <map>            // for map
+#include <memory>         // for shared_ptr
+#include <optional>       // for optional
+#include <stdint.h>       // for uint64_t
+#include <string>         // for basic_string, string
+#include <vector>         // for vector
 
 class AudioDeviceManager : public QObject {
     Q_OBJECT
@@ -91,8 +97,7 @@ private:
 
     void setConfig(bool isCapture, const DeviceConfig& config);
     bool isDeviceAvailable(const DeviceConfig& cfg, bool isCapture) const;
-    void validateDevicePresence(DeviceConfig& cfg, bool isCapture,
-                                const std::vector<AudioDevice>& capList,
+    void validateDevicePresence(DeviceConfig& cfg, bool isCapture, const std::vector<AudioDevice>& capList,
                                 const std::vector<AudioDevice>& pbList);
 
     std::optional<AudioDeviceDescriptor> queryDeviceCapabilities(const DeviceConfig& cfg, bool isCapture) const;

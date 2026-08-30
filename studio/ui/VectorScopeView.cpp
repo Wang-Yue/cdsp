@@ -1,12 +1,24 @@
 #include "ui/VectorScopeView.h"
 
-#include "utils/ThemeManager.h"
+#include "utils/ThemeManager.h" // for ThemeManager
 
-#include <QEvent>
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <vector>
+#include <QBrush>      // for QBrush
+#include <QColor>      // for QColor
+#include <QEvent>      // for QEvent
+#include <QFont>       // for QFont
+#include <QLine>       // for QLine
+#include <QPainter>    // for QPainter
+#include <QPalette>    // for QPalette
+#include <QPen>        // for QPen
+#include <QPoint>      // for QPoint
+#include <QRect>       // for QRect
+#include <QSizePolicy> // for QSizePolicy
+#include <Qt>          // for AlignmentFlag, PenStyle, PenCapStyle
+#include <QtGlobal>    // for Q_UNUSED
+#include <algorithm>   // for max, min, clamp
+#include <cmath>       // for isnan, isfinite, sqrt
+#include <stddef.h>    // for size_t
+#include <vector>      // for vector
 
 VectorScopeView::VectorScopeView(QWidget* parent) : QWidget(parent) {
     setMinimumSize(40, 24);

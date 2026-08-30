@@ -1,9 +1,12 @@
 #include "room_correction/PEQAutoFit.h"
 
-#include <algorithm>
-#include <cmath>
-#include <functional>
-#include <limits>
+#include <algorithm>  // for max, min, clamp, remove_if, sort
+#include <cmath>      // for log10, pow, exp, log2, round, sqrt, M_PI
+#include <cstdlib>    // for abs
+#include <functional> // for function
+#include <limits>     // for numeric_limits
+#include <optional>   // for optional, nullopt, nullopt_t, operator!=, operator==
+#include <utility>    // for pair
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

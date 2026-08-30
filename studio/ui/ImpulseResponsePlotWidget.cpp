@@ -1,12 +1,28 @@
 #include "ui/ImpulseResponsePlotWidget.h"
 
-#include <QFileDialog>
-#include <QFontDatabase>
-#include <QMessageBox>
-#include <QPainter>
-#include <QPainterPath>
-#include <algorithm>
-#include <cmath>
+#include "room_correction/ImpulseResponse.h" // for ImpulseResponse
+
+#include <QBrush>        // for QBrush
+#include <QColor>        // for QColor
+#include <QFileDialog>   // for QFileDialog
+#include <QFont>         // for QFont
+#include <QFontDatabase> // for QFontDatabase
+#include <QMessageBox>   // for QMessageBox
+#include <QPainter>      // for QPainter
+#include <QPainterPath>  // for QPainterPath
+#include <QPalette>      // for QPalette
+#include <QPen>          // for QPen
+#include <QPixmap>       // for QPixmap
+#include <QPointF>       // for QPointF
+#include <QRect>         // for QRect
+#include <QRectF>        // for QRectF
+#include <QString>       // for QString, operator+
+#include <Qt>            // for AlignmentFlag, GlobalColor
+#include <QtGlobal>      // for QOverload
+#include <algorithm>     // for max, min
+#include <cstdlib>       // for abs, size_t
+#include <optional>      // for optional
+#include <vector>        // for vector
 
 ImpulseResponsePlotWidget::ImpulseResponsePlotWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(240);

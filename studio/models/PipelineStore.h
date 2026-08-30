@@ -1,18 +1,19 @@
 #ifndef PIPELINE_STORE_H
 #define PIPELINE_STORE_H
 
-#include "models/ConvolutionPreset.h"
-#include "models/EQPreset.h"
-#include "models/PipelineStage.h"
+#include "models/ConvolutionPreset.h" // for ConvolutionPreset
+#include "models/EQPreset.h"          // for EQPreset, EQBand
+#include "models/PipelineStage.h"     // for PipelineStage, StageBuildResult, StageType
 
-#include <QByteArray>
-#include <QJsonObject>
-#include <QObject>
-#include <QUuid>
-#include <map>
-#include <optional>
-#include <string>
-#include <vector>
+#include <QByteArray>  // for QByteArray
+#include <QJsonObject> // for QJsonObject
+#include <QObject>     // for QObject, Q_OBJECT, signals
+#include <QString>     // for QString
+#include <QUuid>       // for QUuid
+#include <optional>    // for optional, nullopt, nullopt_t
+#include <stddef.h>    // for size_t
+#include <string>      // for basic_string, string
+#include <vector>      // for vector
 
 struct PipelineStoreSnapshot {
     std::vector<PipelineStage> stages;

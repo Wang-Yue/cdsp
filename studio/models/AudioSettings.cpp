@@ -1,5 +1,9 @@
 #include "models/AudioSettings.h"
 
+#include <QSettings> // for QSettings
+#include <QString>   // for QString
+#include <QVariant>  // for QVariant
+
 AudioSettings::AudioSettings(QObject* parent) : QObject(parent) {
     loadPreferences();
 }

@@ -1,7 +1,15 @@
 #include "models/PipelineStage.h"
 
-#include <algorithm>
-#include <cmath>
+#include "config/BiquadCoefficients.h" // for BiquadParameters, BiquadType, stringToBiquadType
+
+#include <QJsonArray>       // for QJsonArray
+#include <QJsonValue>       // for QJsonValue, QJsonValueRef
+#include <QString>          // for QString, QAnyStringView::QAnyStringView, operator==
+#include <algorithm>        // for max, min, sort, unique, find_if, transform
+#include <cctype>           // for tolower
+#include <cmath>            // for log10, pow
+#include <cstdlib>          // for abs, size_t
+#include <initializer_list> // for initializer_list
 
 std::string stageCategoryToString(StageCategory cat) {
     switch (cat) {

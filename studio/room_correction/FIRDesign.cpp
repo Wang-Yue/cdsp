@@ -1,9 +1,11 @@
 #include "room_correction/FIRDesign.h"
 
-#include "room_correction/MeasurementFFT.h"
+#include "room_correction/MeasurementFFT.h" // for MeasurementFFT
 
-#include <algorithm>
-#include <cmath>
+#include <algorithm> // for max, min, max_element
+#include <cmath>     // for pow, cos, M_PI, sin, log, log10, atan2, exp, isfinite, round, sqrt
+#include <cstdlib>   // for size_t, abs
+#include <iterator>  // for distance
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

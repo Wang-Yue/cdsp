@@ -1,12 +1,15 @@
 #ifndef LOG_TABLE_MODEL_H
 #define LOG_TABLE_MODEL_H
 
-#include "models/LogManager.h"
+#include "models/LogManager.h" // for LogEntry
 
-#include <QAbstractTableModel>
-#include <QFont>
-#include <QString>
-#include <vector>
+#include <QAbstractTableModel> // for QAbstractTableModel
+#include <QFont>               // for QFont
+#include <QModelIndex>         // for QModelIndex
+#include <QObject>             // for QObject, Q_OBJECT, slots
+#include <QString>             // for QString
+#include <Qt>                  // for ItemDataRole, Orientation
+#include <vector>              // for vector
 
 class LogTableModel : public QAbstractTableModel {
     Q_OBJECT

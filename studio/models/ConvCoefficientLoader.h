@@ -1,10 +1,10 @@
 #ifndef CONV_COEFFICIENT_LOADER_H
 #define CONV_COEFFICIENT_LOADER_H
 
-#include <cstdint>
-#include <optional>
-#include <string>
-#include <vector>
+#include <optional> // for optional
+#include <stddef.h> // for size_t
+#include <string>   // for string, basic_string
+#include <vector>   // for vector
 
 struct WavHeaderInfo {
     int sampleRate = 48000;

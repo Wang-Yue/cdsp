@@ -1,15 +1,17 @@
 #ifndef ORATORY_PRESET_SERVICE_H
 #define ORATORY_PRESET_SERVICE_H
 
-#include "models/EQPreset.h"
+#include "models/EQPreset.h" // for EQPreset
 
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QObject>
-#include <QPointer>
-#include <functional>
-#include <string>
-#include <vector>
+#include <QJsonObject>           // for QJsonObject
+#include <QJsonValue>            // for QJsonValue, QJsonValueRef
+#include <QNetworkAccessManager> // for QNetworkAccessManager
+#include <QObject>               // for QObject, Q_OBJECT
+#include <QString>               // for QString
+#include <functional>            // for function
+#include <optional>              // for optional
+#include <string>                // for basic_string, string
+#include <vector>                // for vector
 
 struct OratoryIndexEntry {
     std::string id;

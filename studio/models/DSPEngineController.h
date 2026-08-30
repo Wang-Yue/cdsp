@@ -1,17 +1,18 @@
 #ifndef DSP_ENGINE_CONTROLLER_H
 #define DSP_ENGINE_CONTROLLER_H
 
-#include "engine/CDSPEngine.h"
-#include "models/AudioDeviceManager.h"
-#include "models/AudioSettings.h"
-#include "models/LevelState.h"
-#include "models/MonitoringController.h"
-#include "models/PipelineStore.h"
+#include "config/DSPConfigTypes.h"       // for ProcessingState, Fader, ProcessingStopReason, DSPConfiguration
+#include "engine/CDSPEngine.h"           // for CDSPEngine
+#include "models/AudioDeviceManager.h"   // for AudioDeviceManager
+#include "models/AudioSettings.h"        // for AudioSettings
+#include "models/LevelState.h"           // for LevelState
+#include "models/MonitoringController.h" // for MonitoringController
+#include "models/PipelineStore.h"        // for PipelineStore
 
-#include <QObject>
-#include <QTimer>
-#include <memory>
-#include <string>
+#include <QObject> // for QObject, Q_OBJECT, signals
+#include <QTimer>  // for QTimer
+#include <memory>  // for shared_ptr
+#include <string>  // for basic_string, string
 
 class DSPEngineController : public QObject {
     Q_OBJECT

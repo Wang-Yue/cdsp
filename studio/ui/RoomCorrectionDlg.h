@@ -1,37 +1,29 @@
 #ifndef ROOM_CORRECTION_DLG_H
 #define ROOM_CORRECTION_DLG_H
 
-#include "models/PipelineStore.h"
-#include "room_correction/MeasurementSession.h"
-#include "ui/EQDiagramWidget.h"
-#include "ui/GroupDelayPlotWidget.h"
-#include "ui/ImpulseResponsePlotWidget.h"
-#include "ui/MeasurementPositionRowWidget.h"
-#include "ui/PhasePlotWidget.h"
-#include "ui/SubwooferAssistDlg.h"
-#include "ui/WaterfallPlotWidget.h"
+#include "models/PipelineStore.h"               // for PipelineStore
+#include "room_correction/MeasurementSession.h" // for MeasurementSession
+#include "ui/EQDiagramWidget.h"                 // for EQDiagramWidget
+#include "ui/GroupDelayPlotWidget.h"            // for GroupDelayPlotWidget
+#include "ui/ImpulseResponsePlotWidget.h"       // for ImpulseResponsePlotWidget
+#include "ui/PhasePlotWidget.h"                 // for PhasePlotWidget
+#include "ui/WaterfallPlotWidget.h"             // for WaterfallPlotWidget
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QDialog>
-#include <QDialogButtonBox>
-#include <QDoubleSpinBox>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QSlider>
-#include <QSplitter>
-#include <QStackedWidget>
-#include <QStatusBar>
-#include <QTabBar>
-#include <QToolBar>
-#include <QToolButton>
-#include <QVBoxLayout>
-#include <QWidget>
-#include <memory>
+#include <QAction>        // for QAction
+#include <QCheckBox>      // for QCheckBox
+#include <QComboBox>      // for QComboBox
+#include <QDialog>        // for QDialog
+#include <QDoubleSpinBox> // for QDoubleSpinBox
+#include <QHBoxLayout>    // for QHBoxLayout
+#include <QLabel>         // for QLabel
+#include <QObject>        // for Q_OBJECT, slots
+#include <QPushButton>    // for QPushButton
+#include <QSlider>        // for QSlider
+#include <QStackedWidget> // for QStackedWidget
+#include <QTabBar>        // for QTabBar
+#include <QToolButton>    // for QToolButton
+#include <QWidget>        // for QWidget
+#include <memory>         // for shared_ptr
 
 class RoomCorrectionDlg : public QDialog {
     Q_OBJECT

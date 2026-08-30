@@ -1,9 +1,10 @@
 #ifndef SWEEP_RECORDER_H
 #define SWEEP_RECORDER_H
 
-#include <optional>
-#include <string>
-#include <vector>
+#include <optional> // for optional
+#include <stddef.h> // for size_t
+#include <string>   // for basic_string, string
+#include <vector>   // for vector
 
 struct SweepCaptureResult {
     std::vector<double> captured;

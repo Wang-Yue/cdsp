@@ -19,6 +19,32 @@
                 "reveal": "always",
                 "clear": true
             }
+        },
+        {
+            "label": "IWYU: Check Includes",
+            "type": "shell",
+            "command": "./scripts/run-iwyu.sh --check",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "clear": true
+            }
+        },
+        {
+            "label": "IWYU: Fix Includes",
+            "type": "shell",
+            "command": "./scripts/run-iwyu.sh --fix",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "clear": true
+            }
         }
     ]
 }

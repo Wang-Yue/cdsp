@@ -1,10 +1,12 @@
 #include "models/ConvCoefficientLoader.h"
 
-#include <algorithm>
-#include <cmath>
-#include <cstring>
-#include <fstream>
-#include <sstream>
+#include <algorithm> // for max, min, transform
+#include <cctype>    // for toupper
+#include <cmath>     // for pow
+#include <cstdlib>   // for abs
+#include <cstring>   // for memcmp
+#include <fstream>   // for basic_ifstream, basic_istream, basic_ios, basic_ofstream, fpos, ios, ifstream, ofstream
+#include <stdint.h>  // for int32_t, int16_t, uint16_t, uint32_t, uint8_t
 
 std::optional<WavHeaderInfo> ConvCoefficientLoader::parseWavHeader(const std::string& path) {
     std::ifstream file(path, std::ios::binary);

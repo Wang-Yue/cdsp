@@ -1,9 +1,10 @@
 #include "room_correction/FrequencyResponse.h"
 
-#include "room_correction/MeasurementFFT.h"
+#include "room_correction/MeasurementFFT.h" // for MeasurementFFT
 
-#include <algorithm>
-#include <cmath>
+#include <algorithm> // for max, fill, min
+#include <cmath>     // for M_PI, cos, atan2, ceil, floor, log10, sin, sqrt, abs
+#include <stdlib.h>  // for abs
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

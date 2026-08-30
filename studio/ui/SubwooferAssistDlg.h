@@ -1,19 +1,21 @@
 #ifndef SUBWOOFER_ASSIST_DLG_H
 #define SUBWOOFER_ASSIST_DLG_H
 
-#include "models/PipelineStore.h"
-#include "room_correction/MeasurementSession.h"
-#include "room_correction/SubwooferAssist.h"
+#include "models/PipelineStore.h"               // for PipelineStore
+#include "room_correction/MeasurementSession.h" // for MeasurementSession
+#include "room_correction/SubwooferAssist.h"    // for SubwooferRecommendation
 
-#include <QDialog>
-#include <memory>
-#include <optional>
+#include <QDialog>     // for QDialog
+#include <QLabel>      // for QLabel
+#include <QObject>     // for Q_OBJECT, slots
+#include <QPushButton> // for QPushButton
+#include <QWidget>     // for QWidget
+#include <memory>      // for shared_ptr
+#include <optional>    // for optional
 
 class QComboBox;
 class QDialogButtonBox;
 class QGroupBox;
-class QLabel;
-class QPushButton;
 
 class SubwooferAssistDlg : public QDialog {
     Q_OBJECT

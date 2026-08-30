@@ -1,10 +1,9 @@
 #ifndef THEME_MANAGER_H
 #define THEME_MANAGER_H
 
-#include <QColor>
-#include <QObject>
-
-class QWidget;
+#include <QColor>  // for QColor
+#include <QObject> // for QObject, Q_OBJECT
+#include <QWidget> // for QWidget
 
 class ThemeManager : public QObject {
     Q_OBJECT

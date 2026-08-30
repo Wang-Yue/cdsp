@@ -1,8 +1,10 @@
 #include "models/ConvolutionPreset.h"
 
-#include <QJsonArray>
-#include <algorithm>
-#include <cmath>
+#include <QJsonValue> // for QJsonValue, QJsonValueRef
+#include <QString>    // for QString, QAnyStringView::QAnyStringView
+#include <cmath>      // for log
+#include <cstdlib>    // for abs
+#include <utility>    // for get
 
 ConvolutionPreset::ConvolutionPreset() : id(QUuid::createUuid()), name("Untitled IR") {}
 

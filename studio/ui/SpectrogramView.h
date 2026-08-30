@@ -1,13 +1,16 @@
 #ifndef SPECTROGRAM_VIEW_H
 #define SPECTROGRAM_VIEW_H
 
-#include "models/SpectrogramEngine.h"
+#include "config/DSPConfigTypes.h"    // for SpectrumData
+#include "models/SpectrogramEngine.h" // for ColorPalette, SpectrogramEngine
 
-#include <QDateTime>
-#include <QPainter>
-#include <QWidget>
-#include <deque>
-#include <memory>
+#include <QColor>   // for QColor
+#include <QImage>   // for QImage
+#include <QObject>  // for Q_OBJECT
+#include <QPainter> // for QPainter
+#include <QWidget>  // for QWidget
+#include <deque>    // for deque
+#include <memory>   // for shared_ptr
 
 class SpectrogramView : public QWidget {
     Q_OBJECT

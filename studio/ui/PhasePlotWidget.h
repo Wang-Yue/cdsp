@@ -1,11 +1,13 @@
 #ifndef PHASE_PLOT_WIDGET_H
 #define PHASE_PLOT_WIDGET_H
 
-#include "room_correction/MeasurementSession.h"
+#include "room_correction/FrequencyResponse.h"  // for FrequencyResponse
+#include "room_correction/MeasurementSession.h" // for MeasurementSession
 
-#include <QPushButton>
-#include <QWidget>
-#include <memory>
+#include <QObject>     // for Q_OBJECT
+#include <QPushButton> // for QPushButton
+#include <QWidget>     // for QWidget
+#include <vector>      // for vector
 
 class PhasePlotWidget : public QWidget {
     Q_OBJECT

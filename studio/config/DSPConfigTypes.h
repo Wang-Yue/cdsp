@@ -1,16 +1,16 @@
 #ifndef DSP_CONFIG_TYPES_H
 #define DSP_CONFIG_TYPES_H
 
-#include "config/BiquadCoefficients.h"
+#include "config/BiquadCoefficients.h" // for BiquadParameters
 
-#include <QDateTime>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <map>
-#include <optional>
-#include <string>
-#include <vector>
+#include <QDateTime>   // for QDateTime, operator==
+#include <QJsonObject> // for QJsonObject
+#include <map>         // for map, operator==
+#include <optional>    // for optional, operator==, nullopt, nullopt_t
+#include <stdint.h>    // for uint8_t
+#include <string>      // for basic_string, string, operator==
+#include <utility>     // for move
+#include <vector>      // for vector, operator==
 
 enum class Fader { Main = 0, Aux1 = 1, Aux2 = 2, Aux3 = 3, Aux4 = 4 };
 
@@ -21,7 +21,7 @@ Fader stringToFader(const std::string& str);
 
 enum class ProcessingState { Inactive, Starting, Running, Paused, Stalled };
 
-#include "models/LogManager.h"
+#include "models/LogManager.h" // for LogLevel
 
 std::string processingStateToString(ProcessingState state);
 ProcessingState uint8ToProcessingState(uint8_t rawByte);

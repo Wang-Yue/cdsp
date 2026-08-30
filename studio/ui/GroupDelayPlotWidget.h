@@ -1,10 +1,13 @@
 #ifndef GROUP_DELAY_PLOT_WIDGET_H
 #define GROUP_DELAY_PLOT_WIDGET_H
 
-#include "room_correction/MeasurementSession.h"
+#include "room_correction/FrequencyResponse.h"  // for FrequencyResponse
+#include "room_correction/MeasurementSession.h" // for MeasurementSession
 
-#include <QPushButton>
-#include <QWidget>
+#include <QObject>     // for Q_OBJECT
+#include <QPushButton> // for QPushButton
+#include <QWidget>     // for QWidget
+#include <vector>      // for vector
 
 class GroupDelayPlotWidget : public QWidget {
     Q_OBJECT

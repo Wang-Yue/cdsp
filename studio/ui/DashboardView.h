@@ -1,26 +1,28 @@
 #ifndef DASHBOARD_VIEW_H
 #define DASHBOARD_VIEW_H
 
-#include "models/DSPEngineController.h"
-#include "models/MonitoringController.h"
-#include "models/SpectrogramEngine.h"
-#include "models/SpectrumEngine.h"
-#include "models/VectorScopeEngine.h"
-#include "ui/AnalogVUMeterView.h"
-#include "ui/DSPDetailedSignalGraphCard.h"
-#include "ui/LevelMeterView.h"
-#include "ui/PipelineOverviewWidget.h"
-#include "ui/SpectrogramView.h"
-#include "ui/SpectrumView.h"
-#include "ui/VectorScopeView.h"
+#include "config/DSPConfigTypes.h"         // for Fader
+#include "models/DSPEngineController.h"    // for DSPEngineController
+#include "models/MonitoringController.h"   // for MonitoringController
+#include "models/SpectrogramEngine.h"      // for SpectrogramEngine
+#include "models/SpectrumEngine.h"         // for SpectrumEngine
+#include "models/VectorScopeEngine.h"      // for VectorScopeEngine
+#include "ui/AnalogVUMeterView.h"          // for AnalogVUMeterView
+#include "ui/DSPDetailedSignalGraphCard.h" // for DSPDetailedSignalGraphCard
+#include "ui/LevelMeterView.h"             // for LevelMetersCard
+#include "ui/PipelineOverviewWidget.h"     // for PipelineOverviewWidget
+#include "ui/SpectrogramView.h"            // for SpectrogramView
+#include "ui/SpectrumView.h"               // for SpectrumView
+#include "ui/VectorScopeView.h"            // for VectorScopeView
 
-#include <QComboBox>
-#include <QGroupBox>
-#include <QLabel>
-#include <QPushButton>
-#include <QSlider>
-#include <QWidget>
-#include <vector>
+#include <QGroupBox>   // for QGroupBox
+#include <QLabel>      // for QLabel
+#include <QObject>     // for Q_OBJECT, slots
+#include <QPushButton> // for QPushButton
+#include <QSlider>     // for QSlider
+#include <QWidget>     // for QWidget
+#include <memory>      // for shared_ptr
+#include <vector>      // for vector
 
 class DashboardView : public QWidget {
     Q_OBJECT
