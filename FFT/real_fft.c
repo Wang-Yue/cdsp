@@ -109,16 +109,10 @@ void real_fftf_free(real_fftf_t* fft) {
 //      (radix-2 split-complex real FFT, hand-tuned NEON on Apple Silicon).
 //   2. Otherwise (arbitrary even length): a 2N-point real FFT is built
 //      from one N-point complex FFT plus an O(N) untwiddle pass —
-//      `ComplexInnerRealFFT`. The inner complex FFT is itself routed here,
-//      in priority order:
-//      a. `VDSPComplexDFT` — `vDSP_DFT_zopD` for sizes `f·2ᵐ`, `f ∈ {1, 3, 5,
-//      15}`, `m ≥ 3`. b. `MixedRadixFFT` — native mixed-radix for prime
-//      factorisations in `{2, 3, 5, 7}`.
-//         Its radix-2/4/8 stages are NOT redundant with branch (1): they handle
-//         the power-of-two portion of a mixed factorisation (e.g. `1120 =
-//         2⁵·5·7` factored as `[8, 4, 5, 7]`).
-//      c. `BluesteinFFT` — universal fallback for anything with a prime factor
-//      `> 7`
+//      `ComplexInnerRealFFT`. The inner complex FFT is routed in priority order:
+//      a. `MixedRadixFFT` — native mixed-radix for prime factorisations in `{2, 3, 5, 7}`.
+//         Outperforms vDSP_DFT_zopD across mixed-radix sizes and supports radix-7.
+//      b. `BluesteinFFT` — universal fallback for anything with a prime factor `> 7`
 //         (e.g. 11→13k rate pair, halfN = 1034 has primes 11 and 47).
 //
 // Every backend exposes the same external semantics — forward =
@@ -133,7 +127,6 @@ void real_fftf_free(real_fftf_t* fft) {
 #include "FFT/bluestein_fft.h"
 #include "FFT/complex_inner_real_fft.h"
 #include "FFT/mixed_radix_fft.h"
-#include "FFT/vdsp_complex_dft.h"
 #include "FFT/vdsp_real_fft.h"
 
 real_fft_t* real_fft_create(size_t length, config_error_t* err) {
@@ -177,21 +170,15 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
   arbitrary_complex_fft_t* inner = NULL;
   const char* backend_name = "unknown";
 
-  vdsp_complex_dft_t* dft = vdsp_complex_dft_create(half_n);
-  if (dft) {
-    inner = vdsp_complex_dft_as_arbitrary(dft);
-    backend_name = "vDSP Complex DFT";
+  mixed_radix_fft_t* mr = mixed_radix_fft_create(half_n);
+  if (mr) {
+    inner = mixed_radix_fft_as_arbitrary(mr);
+    backend_name = "Mixed-Radix FFT";
   } else {
-    mixed_radix_fft_t* mr = mixed_radix_fft_create(half_n);
-    if (mr) {
-      inner = mixed_radix_fft_as_arbitrary(mr);
-      backend_name = "Mixed-Radix FFT";
-    } else {
-      bluestein_fft_t* bs = bluestein_fft_create(half_n, err);
-      if (bs) {
-        inner = bluestein_fft_as_arbitrary(bs);
-        backend_name = "Bluestein FFT";
-      }
+    bluestein_fft_t* bs = bluestein_fft_create(half_n, err);
+    if (bs) {
+      inner = bluestein_fft_as_arbitrary(bs);
+      backend_name = "Bluestein FFT";
     }
   }
 

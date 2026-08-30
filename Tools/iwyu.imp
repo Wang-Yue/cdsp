@@ -1513,14 +1513,6 @@
   },
   {
     "include": [
-      "\"vdsp_complex_dft.h\"",
-      "private",
-      "\"FFT/vdsp_complex_dft.h\"",
-      "public"
-    ]
-  },
-  {
-    "include": [
       "\"vdsp_real_fft.h\"",
       "private",
       "\"FFT/vdsp_real_fft.h\"",

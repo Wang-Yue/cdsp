@@ -45,15 +45,11 @@ typedef void (*arbitrary_complex_fft_free_fn)(void* ctx);
  * @brief Common interface for any complex-input/output unscaled DFT.
  *
  * Conformers in this module:
- *   * `BluesteinFFT` — universal fallback for any `n`.
- *   * `MixedRadixFFT` — native, supports `n` whose prime factors are
- *     in `{2, 3, 5, 7}`.
- *   * `VDSPComplexDFT` — Apple's `vDSP_DFT_zopD`, supports
- *     `n = f·2ᵐ` with `f ∈ {1, 3, 5, 15}`, `m ≥ 3`.
+ *   * `MixedRadixFFT` — native mixed-radix for `n` with prime factors in `{2, 3, 5, 7}`.
+ *   * `BluesteinFFT` — universal chirp-z fallback for prime factors `> 7`.
  *
- * All three return the unscaled DFT in both directions (forward
- * followed by inverse scales the input by `n`), so they're
- * interchangeable as `ComplexInnerRealFFT.inner`.
+ * Both return the unscaled DFT in both directions (forward followed by inverse
+ * scales the input by `n`), making them interchangeable as `ComplexInnerRealFFT.inner`.
  */
 typedef struct {
   void* ctx; /**< Implementation-specific context pointer. */

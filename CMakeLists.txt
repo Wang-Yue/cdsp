@@ -489,6 +489,7 @@ if(BUILD_TESTING)
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_pipeline_benchmark\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_resampler_matrix\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_simd_benchmark\\.c$")
+    list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_mixed_radix_fft_benchmark\\.c$")
 
     if(NOT ENABLE_WEBSOCKET)
         list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_websocket_server\\.c$")
@@ -553,6 +554,7 @@ if(BUILD_BENCHMARKS)
         test_pipeline_benchmark
         test_resampler_matrix
         test_simd_benchmark
+        test_mixed_radix_fft_benchmark
     )
 
     set(BENCH_TARGETS "")
@@ -611,6 +613,7 @@ if(BUILD_BENCHMARKS)
         COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_pipeline_benchmark
         COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_resampler_matrix
         COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_simd_benchmark
+        COMMAND ${CMAKE_BINARY_DIR}/Tests/CLibTests/bin/test_mixed_radix_fft_benchmark
         DEPENDS ${BENCH_TARGETS}
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "Running C benchmarks..."
