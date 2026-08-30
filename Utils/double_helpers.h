@@ -129,7 +129,7 @@ ALWAYS_INLINE void dsp_ops_scalar_multiply(double* buffer, double scalar,
   cblas_dscal((int)count, scalar, buffer, 1);
 #else
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -165,7 +165,7 @@ ALWAYS_INLINE void dsp_ops_vector_add(const double* a, const double* b,
   vDSP_vaddD(a, 1, b, 1, out, 1, count);
 #else
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -204,7 +204,7 @@ ALWAYS_INLINE void dsp_ops_add(const double* a, double* b, size_t count) {
  */
 ALWAYS_INLINE void dsp_ops_multiply(const double* a, double* b, size_t count) {
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -228,7 +228,7 @@ ALWAYS_INLINE void dsp_ops_multiply_add(const double* a, double scalar,
   cblas_daxpy((int)count, scalar, a, 1, accumulator, 1);
 #else
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -253,7 +253,7 @@ ALWAYS_INLINE double sinc_dot_product(const double* a, const double* b,
   // called with tiny count. calling function makes it perform slower.
 #if defined(__clang__)
   double sum = 0.0;
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
   for (size_t i = 0; i < count; i++) {
     sum += a[i] * b[i];
   }
@@ -305,7 +305,7 @@ ALWAYS_INLINE double sinc_dot_product(const double* a, const double* b,
 ALWAYS_INLINE void dsp_ops_clip(double* buffer, double low, double high,
                                 size_t count) {
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -338,7 +338,7 @@ ALWAYS_INLINE void dsp_ops_complex_multiply(const double* a_re,
                                             const double* b_im, double* out_re,
                                             double* out_im, size_t count) {
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif

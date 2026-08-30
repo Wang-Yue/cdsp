@@ -118,7 +118,7 @@ static inline void stage_radix2(mixed_radix_fft_t* fft, double* work_re,
   size_t block_size = m * 2;
   if (m == 1) {
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -142,7 +142,7 @@ static inline void stage_radix2(mixed_radix_fft_t* fft, double* work_re,
     double* w1r = w0r + m;
     double* w1i = w0i + m;
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -269,7 +269,7 @@ static inline void stage_radix3(mixed_radix_fft_t* fft, double* work_re,
     double* w2r = w1r + m;
     double* w2i = w1i + m;
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -322,7 +322,7 @@ static inline void stage_radix4(mixed_radix_fft_t* fft, double* work_re,
   size_t block_size = m * 4;
   if (m == 1) {
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -370,7 +370,7 @@ static inline void stage_radix4(mixed_radix_fft_t* fft, double* work_re,
     double* w3r = w2r + m;
     double* w3i = w2i + m;
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -582,7 +582,7 @@ static inline void stage_radix5(mixed_radix_fft_t* fft, double* work_re,
     double* w4r = w3r + m;
     double* w4i = w3i + m;
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -887,7 +887,7 @@ static inline void stage_radix7(mixed_radix_fft_t* fft, double* work_re,
     double* w6r = w5r + m;
     double* w6i = w5i + m;
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -993,7 +993,7 @@ static inline void stage_radix8(mixed_radix_fft_t* fft, double* work_re,
 
   if (m == 1) {
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -1111,7 +1111,7 @@ static inline void stage_radix8(mixed_radix_fft_t* fft, double* work_re,
     double* w7r = w6r + m;
     double* w7i = w6i + m;
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif

@@ -65,7 +65,7 @@ ALWAYS_INLINE float dsp_ops_peak_absolute(const double* buffer, size_t count) {
   if (count == 0) return 0.0f;
   float res = 0.0f;
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -90,7 +90,7 @@ ALWAYS_INLINE float dsp_ops_rms(const double* buffer, size_t count) {
   if (count == 0) return 0.0f;
   float sum = 0.0f;
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -111,7 +111,7 @@ ALWAYS_INLINE float dsp_ops_rms(const double* buffer, size_t count) {
 ALWAYS_INLINE void dsp_ops_double_to_float(const double* src, float* dst,
                                            size_t count) {
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -135,7 +135,7 @@ ALWAYS_INLINE void dsp_ops_float_add(const float* src, float* dst,
   vDSP_vadd(dst, 1, src, 1, dst, 1, count);
 #else
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -154,7 +154,7 @@ ALWAYS_INLINE void dsp_ops_float_multiply(const float* a, const float* b,
   vDSP_vmul(a, 1, b, 1, result, 1, count);
 #else
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -179,7 +179,7 @@ ALWAYS_INLINE void dsp_ops_float_scalar_multiply(float* buffer, float scalar,
   cblas_sscal((int)count, scalar, buffer, 1);
 #else
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -259,7 +259,7 @@ static inline float dsp_ops_float_max(const float* buffer, size_t count) {
 #else
   float res = buffer[0];
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -276,7 +276,7 @@ static inline float dsp_ops_float_max(const float* buffer, size_t count) {
 static inline void dsp_ops_float_zvabs(const float* real, const float* imag,
                                        float* magnitudes, size_t count) {
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
@@ -297,7 +297,7 @@ static inline void dsp_ops_float_vdbcon(const float* vector, float reference,
 #else
   const float inv_ref = 1.0f / reference;
 #if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
 #elif defined(__GNUC__)
 #pragma GCC ivdep
 #endif
