@@ -5,32 +5,27 @@
  * @file real_fft.h
  * @brief Real-input FFT of arbitrary even length.
  *
- * `RealFFT.init` is the **single dispatch point** for the resampler's FFT
+ * `real_fft_create` is the **single dispatch point** for the resampler's FFT
  * subsystem — it inspects the requested length once and picks the fastest
- * available backend, so callers (and the per-backend classes) never repeat that
+ * available backend, so callers (and the per-backend modules) never repeat that
  * decision.
  *
  * Decision tree (top-to-bottom, first match wins):
  *   1. `length` is a power of two `≥ 8`
- *      → `VDSPRealFFT` (`VDSPRealFFT.swift`), wrapping Apple's
+ *      → `vdsp_real_fft` (`vdsp_real_fft.c`), wrapping Apple's
  *      `vDSP_fft_zrip` / `vDSP_fft_zripD` (radix-2 split-complex real FFT,
  *      hand-tuned NEON on Apple Silicon).
  *   2. Otherwise (arbitrary even length): a 2N-point real FFT is built
  *      from one N-point complex FFT plus an O(N) untwiddle pass —
- *      `ComplexInnerRealFFT` (`ComplexInnerRealFFT.swift`). The inner
- *      complex FFT is itself routed here, in priority order:
- *      a. `VDSPComplexDFT` (`VDSPComplexDFT.swift`) — `vDSP_DFT_zopD`
- *         for sizes `f·2ᵐ`, `f ∈ {1, 3, 5, 15}`, `m ≥ 3`.
- *      b. `MixedRadixFFT` (`MixedRadixFFT.swift`) — native mixed-radix
+ *      `complex_inner_real_fft` (`complex_inner_real_fft.c`). The inner
+ *      complex FFT is routed in priority order:
+ *      a. `mixed_radix_fft` (`mixed_radix_fft.c`) — native mixed-radix
  *         for prime factorisations in `{2, 3, 5, 7}`. Its radix-2/4/8
- *         stages are NOT redundant with branch (1): they handle the
- *         *power-of-two portion* of a mixed factorisation (e.g.
- *         `1120 = 2⁵·5·7` factored as `[8, 4, 5, 7]`). Without them
- *         MixedRadix could only support odd-only sizes like
- *         `105 = 3·5·7`.
- *      c. `BluesteinFFT` (`BluesteinFFT.swift`) — universal fallback
- *         for anything with a prime factor `> 7` (e.g. our `11→13k`
- *         rate pair, halfN = 1034 has primes 11 and 47).
+ *         stages handle the *power-of-two portion* of a mixed factorisation
+ *         (e.g. `1120 = 2⁵·5·7` factored as `[8, 4, 5, 7]`).
+ *      b. `bluestein_fft` (`bluestein_fft.c`) — universal fallback
+ *         for anything with a prime factor `> 7` (e.g. `11→13k` rate pair,
+ *         halfN = 1034 has primes 11 and 47).
  *
  * Every backend exposes the same external semantics — forward =
  * unscaled DFT, inverse = `length · signal` — so the resampler is

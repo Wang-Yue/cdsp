@@ -1,7 +1,7 @@
 #if defined(ENABLE_ACCELERATE)
 // vDSP `fft_zrip` backend for power-of-two real-FFT lengths.
 //
-// Selected by `RealFFT.init` when `length` is a power of two
+// Selected by `real_fft_create` when `length` is a power of two
 // `≥ 8`. vDSP's hand-tuned NEON/SSE radix-2 split-complex real FFT is
 // the fastest path on Apple Silicon — for our resampler matrix it
 // roughly doubles the throughput of the "complex-FFT-via-half-N" path

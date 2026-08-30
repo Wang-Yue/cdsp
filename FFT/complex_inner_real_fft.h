@@ -8,13 +8,13 @@
  *
  * Real-FFT backend that builds a 2N-point real FFT from one N-point
  * complex FFT plus an O(N) "untwiddle" pass. Used for any even length
- * that doesn't qualify for `VDSPRealFFT` (i.e. non-power-of-two, or
+ * that doesn't qualify for `vdsp_real_fft` (i.e. non-power-of-two, or
  * pow2 < 8).
  *
  * The inner N-point complex FFT is supplied by the caller —
- * `RealFFT.init` picks between `VDSPComplexDFT`,
- * `MixedRadixFFT`, and `BluesteinFFT` based on `halfN`'s factorisation.
- * This class stays purely about the real-FFT structure (packing,
+ * `real_fft_create` picks between `mixed_radix_fft` and `bluestein_fft`
+ * based on `half_n`'s factorisation.
+ * This module stays purely about the real-FFT structure (packing,
  * untwiddle, inverse unpack) and never re-decides the backend.
  *
  * Algorithm references:

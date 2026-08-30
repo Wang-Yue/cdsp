@@ -25,10 +25,10 @@
 // Cost is three length-M FFTs per logical N-point transform, still
 // O(N log N).
 //
-// Storage uses raw `UnsafeMutablePointer<Double>` buffers (allocated in init,
-// freed in deinit) so the hot path can hand them straight to vDSP without
-// nested `withUnsafe*` closures. All complex multiplications run through
-// `vDSP_zvmulD`, which on Apple Silicon issues packed NEON `fmla.2d` pairs.
+// Storage uses heap-allocated double buffers (allocated in create, freed
+// in free) so the hot path runs directly on raw pointers.
+// All complex multiplications run through `vDSP_zvmulD`, which on Apple
+// Silicon issues packed NEON `fmla.2d` pairs.
 
 #include "FFT/bluestein_fft.h"
 

@@ -99,24 +99,24 @@ void real_fftf_free(real_fftf_t* fft) {
 // Real-input FFT of arbitrary even length. `real_fft_create` is
 // the single dispatch point for the resampler's FFT subsystem — it
 // inspects the requested length once and picks the fastest available
-// backend, so callers (and the per-backend classes) never repeat that
+// backend, so callers (and the per-backend modules) never repeat that
 // decision.
 //
 // Decision tree (top-to-bottom, first match wins)
 // ------------------------------------------------
 //   1. `length` is a power of two `≥ 8`
-//      → `VDSPRealFFT`, wrapping Apple's `vDSP_fft_zrip` / `vDSP_fft_zripD`
+//      → `vdsp_real_fft`, wrapping Apple's `vDSP_fft_zrip` / `vDSP_fft_zripD`
 //      (radix-2 split-complex real FFT, hand-tuned NEON on Apple Silicon).
 //   2. Otherwise (arbitrary even length): a 2N-point real FFT is built
 //      from one N-point complex FFT plus an O(N) untwiddle pass —
-//      `ComplexInnerRealFFT`. The inner complex FFT is routed in priority
-//      order: a. `MixedRadixFFT` — native mixed-radix for prime factorisations
-//      in `{2, 3, 5, 7}`.
+//      `complex_inner_real_fft`. The inner complex FFT is routed in priority
+//      order:
+//      a. `mixed_radix_fft` — native mixed-radix for prime factorisations
+//         in `{2, 3, 5, 7}`.
 //         Outperforms vDSP_DFT_zopD across mixed-radix sizes and supports
 //         radix-7.
-//      b. `BluesteinFFT` — universal fallback for anything with a prime factor
-//      `> 7`
-//         (e.g. 11→13k rate pair, halfN = 1034 has primes 11 and 47).
+//      b. `bluestein_fft` — universal fallback for anything with a prime factor
+//         `> 7` (e.g. 11→13k rate pair, halfN = 1034 has primes 11 and 47).
 //
 // Every backend exposes the same external semantics — forward =
 // unscaled DFT, inverse = `length · signal` — so the resampler is

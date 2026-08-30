@@ -1,13 +1,13 @@
 #if defined(ENABLE_ACCELERATE)
 // Real-FFT backend that builds a 2N-point real FFT from one N-point
 // complex FFT plus an O(N) "untwiddle" pass. Used for any even length
-// that doesn't qualify for `VDSPRealFFT` (i.e. non-power-of-two, or
+// that doesn't qualify for `vdsp_real_fft` (i.e. non-power-of-two, or
 // pow2 < 8).
 //
 // The inner N-point complex FFT is supplied by the caller —
-// `RealFFT.init` picks between `VDSPComplexDFT`,
-// `MixedRadixFFT`, and `BluesteinFFT` based on `halfN`'s factorisation.
-// This class stays purely about the real-FFT structure (packing,
+// `real_fft_create` picks between `mixed_radix_fft` and `bluestein_fft`
+// based on `half_n`'s factorisation.
+// This module stays purely about the real-FFT structure (packing,
 // untwiddle, inverse unpack) and never re-decides the backend.
 //
 // Algorithm references:
@@ -39,8 +39,8 @@ struct complex_inner_real_fft {
   real_fft_backend_t base;
   size_t half_n;  // = length / 2 = N
   /// The N-point complex FFT picked at construction. Could be any
-  /// `ArbitraryComplexFFT` — `VDSPComplexDFT`, `MixedRadixFFT`, or
-  /// `BluesteinFFT` depending on what `RealFFT.init` chose.
+  /// `arbitrary_complex_fft_t` — `mixed_radix_fft` or `bluestein_fft`
+  /// depending on what `real_fft_create` chose.
   arbitrary_complex_fft_t* inner;
   // Unit-modulus twiddle table `W[k] = exp(-iπk/N)` for k = 0..N-1.
   double* twiddle_re;

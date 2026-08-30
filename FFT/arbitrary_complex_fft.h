@@ -6,8 +6,8 @@
  * @brief Shared interface for complex-input/output Discrete Fourier Transform
  * (DFT) engines.
  *
- * The `ComplexInnerRealFFT` real-FFT backend takes one of these as its
- * inner transform; `RealFFT.init` does the priority-based
+ * The `complex_inner_real_fft` real-FFT backend takes one of these as its
+ * inner transform; `real_fft_create` does the priority-based
  * selection between the available conformers.
  */
 

@@ -5,7 +5,7 @@
  * @file vdsp_real_fft.h
  * @brief vDSP `fft_zrip` backend for power-of-two real-FFT lengths.
  *
- * Selected by `RealFFT.init` when `length` is a power of two `≥ 8`.
+ * Selected by `real_fft_create` when `length` is a power of two `≥ 8`.
  * vDSP's hand-tuned NEON/SSE radix-2 split-complex real FFT is the fastest path
  * on Apple Silicon — for our resampler matrix it roughly doubles the throughput
  * of the "complex-FFT-via-half-N" path for sizes like 1024/2048/4096.
@@ -26,7 +26,7 @@
  * internal scaling is asymmetric — forward applies a `2×` factor, inverse
  * does not — so we fold a `0.5` factor into the spectrum unpack on the
  * forward path. The externally observed semantics then match
- * `ComplexInnerRealFFT` exactly: forward = unscaled DFT, inverse =
+ * `complex_inner_real_fft` exactly: forward = unscaled DFT, inverse =
  * `length · signal`.
  *
  * vDSP's spectrum packing: DC is in `realp[0]`, Nyquist in `imagp[0]`,
