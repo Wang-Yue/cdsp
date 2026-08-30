@@ -1217,7 +1217,6 @@ static inline void stage_radix8(mixed_radix_fft_t* fft, double* work_re,
 #pragma float_control(pop)
 #endif
 
-
 mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
   if (n == 0) return NULL;
   // Factorise into 2/3/4/5/7/8 with the power-of-2 portion preferring

@@ -16,6 +16,7 @@
 
 #include "FFT/complex_inner_real_fft.h"
 
+#include <Accelerate/Accelerate.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -23,8 +24,11 @@
 #include "Utils/double_helpers.h"
 #include "real_fft_backend.h"
 
-#ifdef ENABLE_ACCELERATE
-#include <Accelerate/Accelerate.h>
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC push_options
+#pragma GCC optimize("O3,fast-math,finite-math-only")
+#elif defined(__clang__)
+#pragma float_control(precise, off, push)
 #endif
 
 #ifndef M_PI
@@ -143,18 +147,12 @@ void complex_inner_real_fft_forward(complex_inner_real_fft_t* fft,
                                     mutable_waveform_t spec_im) {
   if (!fft) return;
   size_t n = fft->half_n;
-#ifdef ENABLE_ACCELERATE
+
   // Pack the 2N real samples into N complex: z[k] = x[2k] + i·x[2k+1].
   // Reinterpret `realIn` as interleaved complex pairs and let `vDSP_ctozD`
   // do the deinterleave in one pass.
   DSPDoubleSplitComplex zSplit = {fft->z_re, fft->z_im};
   vDSP_ctozD((const DSPDoubleComplex*)real_in, 2, &zSplit, 1, (vDSP_Length)n);
-#else
-  for (size_t k = 0; k < n; k++) {
-    fft->z_re[k] = real_in[2 * k];
-    fft->z_im[k] = real_in[2 * k + 1];
-  }
-#endif
 
   // Z = FFT_N(z). Unnormalised forward.
   arbitrary_complex_fft_execute(fft->inner, fft->z_re, fft->z_im, fft->z_f_re,
@@ -174,27 +172,34 @@ void complex_inner_real_fft_forward(complex_inner_real_fft_t* fft,
   //   E[k] = ½ · (Z[k] + conj(Z[N-k]))
   //   O[k] = -½·i · (Z[k] - conj(Z[N-k]))
   //   X[k] = E[k] + W^k · O[k],  W^k = exp(-iπk/N)
-  //
-  // SIMD2 path processes consecutive `k` pairs. The partners (N-k, N-k-1)
-  // are also adjacent in memory but in reversed order — we build the
-  // SIMD2 explicitly to keep lane 0 = `k` and lane 1 = `k+1`.
+  const double* __restrict__ z_f_re = fft->z_f_re;
+  const double* __restrict__ z_f_im = fft->z_f_im;
+  const double* __restrict__ tw_re = fft->twiddle_re;
+  const double* __restrict__ tw_im = fft->twiddle_im;
+  double* __restrict__ out_re = spec_re;
+  double* __restrict__ out_im = spec_im;
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t k = 1; k < n; k++) {
-    double zkR = fft->z_f_re[k];
-    double zkI = fft->z_f_im[k];
-    double zmR = fft->z_f_re[n - k];
-    double zmI = fft->z_f_im[n - k];
+    double zkR = z_f_re[k];
+    double zkI = z_f_im[k];
+    double zmR = z_f_re[n - k];
+    double zmI = z_f_im[n - k];
     double eRe = 0.5 * (zkR + zmR);
     double eIm = 0.5 * (zkI - zmI);
     double diffRe = zkR - zmR;
     double diffIm = zkI + zmI;
     double oRe = 0.5 * diffIm;
     double oIm = -0.5 * diffRe;
-    double twR = fft->twiddle_re[k];
-    double twI = fft->twiddle_im[k];
+    double twR = tw_re[k];
+    double twI = tw_im[k];
     double woRe = twR * oRe - twI * oIm;
     double woIm = twR * oIm + twI * oRe;
-    spec_re[k] = eRe + woRe;
-    spec_im[k] = eIm + woIm;
+    out_re[k] = eRe + woRe;
+    out_im[k] = eIm + woIm;
   }
 }
 
@@ -214,23 +219,32 @@ void complex_inner_real_fft_inverse(complex_inner_real_fft_t* fft,
   //   E[k] = ½·(X[k] + conj(X[N-k]))
   //   O[k] = ½·conj(W^k)·(X[k] - conj(X[N-k]))
   //   z[k] = E[k] + i·O[k]
-  //
-  // SIMD2 path: same partner-mirror trick as in `forward()`.
+  const double* __restrict__ in_re = spec_re;
+  const double* __restrict__ in_im = spec_im;
+  const double* __restrict__ tw_re = fft->twiddle_re;
+  const double* __restrict__ tw_im = fft->twiddle_im;
+  double* __restrict__ z_re = fft->z_re;
+  double* __restrict__ z_im = fft->z_im;
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
   for (size_t k = 1; k < n; k++) {
-    double xkR = spec_re[k];
-    double xkI = spec_im[k];
-    double xmR = spec_re[n - k];
-    double xmI = spec_im[n - k];
+    double xkR = in_re[k];
+    double xkI = in_im[k];
+    double xmR = in_re[n - k];
+    double xmI = in_im[n - k];
     double eRe = 0.5 * (xkR + xmR);
     double eIm = 0.5 * (xkI - xmI);
     double halfDiffRe = 0.5 * (xkR - xmR);
     double halfDiffIm = 0.5 * (xkI + xmI);
-    double twR = fft->twiddle_re[k];
-    double twI = fft->twiddle_im[k];
+    double twR = tw_re[k];
+    double twI = tw_im[k];
     double oRe = halfDiffRe * twR + halfDiffIm * twI;
     double oIm = halfDiffIm * twR - halfDiffRe * twI;
-    fft->z_re[k] = eRe - oIm;
-    fft->z_im[k] = eIm + oRe;
+    z_re[k] = eRe - oIm;
+    z_im[k] = eIm + oRe;
   }
 
   // Inner inverse FFT. The inner returns the unnormalised N-point IFFT,
@@ -239,21 +253,21 @@ void complex_inner_real_fft_inverse(complex_inner_real_fft_t* fft,
   arbitrary_complex_fft_execute(fft->inner, fft->z_re, fft->z_im, fft->z_f_re,
                                 fft->z_f_im, true);
 
-#ifdef ENABLE_ACCELERATE
-  // Scale by 2 in place, then re-interleave back into `realOut` via
-  // `vDSP_ztocD`. Two vDSP calls beat the scalar 2N store loop on Apple
-  // Silicon when n ≥ ~1k.
-  double two = 2.0;
-  vDSP_vsmulD(fft->z_f_re, 1, &two, fft->z_f_re, 1, (vDSP_Length)n);
-  vDSP_vsmulD(fft->z_f_im, 1, &two, fft->z_f_im, 1, (vDSP_Length)n);
-  DSPDoubleSplitComplex zFSplit = {fft->z_f_re, fft->z_f_im};
-  vDSP_ztocD(&zFSplit, 1, (DSPDoubleComplex*)real_out, 2, (vDSP_Length)n);
-#else
-  for (size_t k = 0; k < n; k++) {
-    real_out[2 * k] = 2.0 * fft->z_f_re[k];
-    real_out[2 * k + 1] = 2.0 * fft->z_f_im[k];
-  }
+  // Fused scale-by-2 and interleave unpack in a single memory pass.
+  // Reconstructs the 2N unnormalised real samples:
+  // real_out[2k] = 2·Re(z[k]), real_out[2k+1] = 2·Im(z[k]).
+  const double* __restrict__ z_f_re = fft->z_f_re;
+  const double* __restrict__ z_f_im = fft->z_f_im;
+  double* __restrict__ out = real_out;
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
 #endif
+  for (size_t k = 0; k < n; k++) {
+    out[2 * k] = 2.0 * z_f_re[k];
+    out[2 * k + 1] = 2.0 * z_f_im[k];
+  }
 }
 
 void complex_inner_real_fft_free(complex_inner_real_fft_t* fft) {
@@ -267,4 +281,11 @@ void complex_inner_real_fft_free(complex_inner_real_fft_t* fft) {
   if (fft->z_f_im) free(fft->z_f_im);
   free(fft);
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC pop_options
+#elif defined(__clang__)
+#pragma float_control(pop)
+#endif
+
 #endif  // ENABLE_ACCELERATE

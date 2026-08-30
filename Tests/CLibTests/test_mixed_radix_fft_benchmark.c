@@ -21,6 +21,7 @@
 
 #if defined(ENABLE_ACCELERATE)
 #include <Accelerate/Accelerate.h>
+
 #include "FFT/complex_inner_real_fft.h"
 
 typedef struct {
@@ -53,8 +54,7 @@ static vdsp_bench_dft_t* vdsp_bench_dft_create(size_t n) {
 static void vdsp_bench_dft_execute(void* ctx, waveform_t real_in,
                                    waveform_t imag_in,
                                    mutable_waveform_t real_out,
-                                   mutable_waveform_t imag_out,
-                                   bool inverse) {
+                                   mutable_waveform_t imag_out, bool inverse) {
   vdsp_bench_dft_t* dft = (vdsp_bench_dft_t*)ctx;
   if (!dft) return;
   vDSP_DFT_SetupD setup = inverse ? dft->setup_inverse : dft->setup_forward;
@@ -154,10 +154,10 @@ static inline size_t gcd_u64(size_t a, size_t b) {
 }
 
 static void run_rate_conversion_matrix_benchmark(void) {
-  static const uint32_t rates[] = {8000,   12000,  16000,  24000,  32000,
-                                   48000,  64000,  96000,  192000, 384000};
-  static const char* labels[] = {"8k",   "12k",  "16k",  "24k",   "32k",
-                                 "48k",  "64k",  "96k",  "192k",  "384k"};
+  static const uint32_t rates[] = {8000,  12000, 16000, 24000,  32000,
+                                   48000, 64000, 96000, 192000, 384000};
+  static const char* labels[] = {"8k",  "12k", "16k", "24k",  "32k",
+                                 "48k", "64k", "96k", "192k", "384k"};
   const size_t num_rates = sizeof(rates) / sizeof(rates[0]);
 
   double matrix_vs_vdsp[10][10];
@@ -282,7 +282,8 @@ static void run_rate_conversion_matrix_benchmark(void) {
 
   printf(
       "\n======================================================================"
-      "=========================================================================="
+      "========================================================================"
+      "=="
       "=====\n");
   printf(
       " 14. vDSP_DFT_zop Supported Audio & Telecom Rates Conversion Matrix "
@@ -325,7 +326,7 @@ static void run_rate_conversion_matrix_benchmark(void) {
 static void run_441_48k_family_matrix_benchmark(void) {
   static const uint32_t rates[] = {44100,  48000,  88200,  96000,  176400,
                                    192000, 352800, 384000, 705600, 768000};
-  static const char* labels[] = {"44.1k", "48k",   "88.2k", "96k",   "176.4k",
+  static const char* labels[] = {"44.1k", "48k",    "88.2k", "96k",    "176.4k",
                                  "192k",  "352.8k", "384k",  "705.6k", "768k"};
   const size_t num_rates = sizeof(rates) / sizeof(rates[0]);
 
@@ -413,13 +414,17 @@ static void run_441_48k_family_matrix_benchmark(void) {
   }
 
   printf(
-      "\n=========================================================================================================================================\n");
+      "\n======================================================================"
+      "===================================================================\n");
   printf(
-      " 15. Complete 44.1k & 48k Family Cross-Rate Conversion Matrix (44.1 kHz to 768 kHz)\n");
+      " 15. Complete 44.1k & 48k Family Cross-Rate Conversion Matrix (44.1 kHz "
+      "to 768 kHz)\n");
   printf(
-      "     Cell Value: Conversion Throughput in Mpt/s (Million Complex Points / sec; higher is faster).\n");
+      "     Cell Value: Conversion Throughput in Mpt/s (Million Complex Points "
+      "/ sec; higher is faster).\n");
   printf(
-      "=========================================================================================================================================\n");
+      "========================================================================"
+      "=================================================================\n");
 
   printf(" In \\ Out   |");
   for (size_t c = 0; c < num_rates; c++) {
@@ -444,34 +449,42 @@ static void run_441_48k_family_matrix_benchmark(void) {
   }
 
   printf(
-      "------------+----------+----------+----------+----------+----------+----------+----------+----------+----------+----------+\n");
+      "------------+----------+----------+----------+----------+----------+----"
+      "------+----------+----------+----------+----------+\n");
 }
 
 TEST(MixedRadixFFT_AllFactors_Benchmark) {
   printf(
-      "\n=========================================================================================================================================\n");
+      "\n======================================================================"
+      "===================================================================\n");
   printf(
-      "                                       MIXED-RADIX FFT RESAMPLER CONVERSION BENCHMARK\n");
+      "                                       MIXED-RADIX FFT RESAMPLER "
+      "CONVERSION BENCHMARK\n");
   printf(
-      "=========================================================================================================================================\n");
+      "========================================================================"
+      "=================================================================\n");
   printf(
-      " Methodology: High-resolution monotonic timer, 5-trial median, warm-up runs, anti-DCE memory barriers.\n");
+      " Methodology: High-resolution monotonic timer, 5-trial median, warm-up "
+      "runs, anti-DCE memory barriers.\n");
   printf(
-      " Operations: Forward FFT (size N_in) + Backward IFFT (size N_out) matching resampler spectral pipeline.\n");
+      " Operations: Forward FFT (size N_in) + Backward IFFT (size N_out) "
+      "matching resampler spectral pipeline.\n");
 
-  // 1. vDSP_DFT_zop Supported Audio & Telecom Rates Conversion Matrix (8k to 384k)
+  // 1. vDSP_DFT_zop Supported Audio & Telecom Rates Conversion Matrix (8k to
+  // 384k)
   run_rate_conversion_matrix_benchmark();
 
-  // 2. Complete 44.1k & 48k Family Cross-Rate Conversion Matrix (44.1 kHz to 768 kHz)
+  // 2. Complete 44.1k & 48k Family Cross-Rate Conversion Matrix (44.1 kHz to
+  // 768 kHz)
   run_441_48k_family_matrix_benchmark();
 
   printf(
-      "\n=========================================================================================================================================\n");
+      "\n======================================================================"
+      "===================================================================\n");
   printf(" Benchmark completed successfully.\n");
   printf(
-      "=========================================================================================================================================\n\n");
+      "========================================================================"
+      "=================================================================\n\n");
 }
 
 TEST_MAIN()
-
-

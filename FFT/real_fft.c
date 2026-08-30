@@ -109,10 +109,13 @@ void real_fftf_free(real_fftf_t* fft) {
 //      (radix-2 split-complex real FFT, hand-tuned NEON on Apple Silicon).
 //   2. Otherwise (arbitrary even length): a 2N-point real FFT is built
 //      from one N-point complex FFT plus an O(N) untwiddle pass —
-//      `ComplexInnerRealFFT`. The inner complex FFT is routed in priority order:
-//      a. `MixedRadixFFT` — native mixed-radix for prime factorisations in `{2, 3, 5, 7}`.
-//         Outperforms vDSP_DFT_zopD across mixed-radix sizes and supports radix-7.
-//      b. `BluesteinFFT` — universal fallback for anything with a prime factor `> 7`
+//      `ComplexInnerRealFFT`. The inner complex FFT is routed in priority
+//      order: a. `MixedRadixFFT` — native mixed-radix for prime factorisations
+//      in `{2, 3, 5, 7}`.
+//         Outperforms vDSP_DFT_zopD across mixed-radix sizes and supports
+//         radix-7.
+//      b. `BluesteinFFT` — universal fallback for anything with a prime factor
+//      `> 7`
 //         (e.g. 11→13k rate pair, halfN = 1034 has primes 11 and 47).
 //
 // Every backend exposes the same external semantics — forward =

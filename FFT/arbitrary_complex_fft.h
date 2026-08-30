@@ -45,11 +45,13 @@ typedef void (*arbitrary_complex_fft_free_fn)(void* ctx);
  * @brief Common interface for any complex-input/output unscaled DFT.
  *
  * Conformers in this module:
- *   * `MixedRadixFFT` — native mixed-radix for `n` with prime factors in `{2, 3, 5, 7}`.
+ *   * `MixedRadixFFT` — native mixed-radix for `n` with prime factors in `{2,
+ * 3, 5, 7}`.
  *   * `BluesteinFFT` — universal chirp-z fallback for prime factors `> 7`.
  *
  * Both return the unscaled DFT in both directions (forward followed by inverse
- * scales the input by `n`), making them interchangeable as `ComplexInnerRealFFT.inner`.
+ * scales the input by `n`), making them interchangeable as
+ * `ComplexInnerRealFFT.inner`.
  */
 typedef struct {
   void* ctx; /**< Implementation-specific context pointer. */
