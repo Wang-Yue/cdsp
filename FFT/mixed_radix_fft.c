@@ -2337,12 +2337,6 @@ static inline void stage_radix13(mixed_radix_fft_t* fft, double* work_re,
   }
 }
 
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC pop_options
-#elif defined(__clang__)
-#pragma float_control(pop)
-#endif
-
 /* -------------------------------------------------------------------------
  * Rader's Algorithm for Prime Stages (p > 13)
  * Converts length-p prime DFT into cyclic convolution of length p - 1.
@@ -2520,6 +2514,11 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
   for (size_t b = 0; b < fft->n; b += block_size) {
     for (size_t k = 0; k < m; k++) {
       if (m == 1) {
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
         for (size_t j = 0; j < p; j++) {
           vr[j] = work_re[b + j];
           vi[j] = work_im[b + j];
@@ -2527,6 +2526,11 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
       } else {
         vr[0] = work_re[b + k];
         vi[0] = work_im[b + k];
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
         for (size_t j = 1; j < p; j++) {
           size_t idx = b + j * m + k;
           double tr = tw_re[j * m + k];
@@ -2540,11 +2544,21 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
 
       double sum_r = vr[0];
       double sum_i = vi[0];
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
       for (size_t j = 1; j < p; j++) {
         sum_r += vr[j];
         sum_i += vi[j];
       }
 
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
       for (size_t q = 0; q < p - 1; q++) {
         size_t idx = g_inv[q];
         a_re[q] = vr[idx];
@@ -2555,6 +2569,11 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
 
       mixed_radix_fft_execute(rader->conv_fft, a_re, a_im, f_re, f_im, false);
 
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
       for (size_t i = 0; i < conv_len; i++) {
         double fr = f_re[i], fi = f_im[i];
         double br = b_re[i], bi = b_im[i];
@@ -2567,6 +2586,11 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
       if (m == 1) {
         work_re[b] = sum_r;
         work_im[b] = sum_i;
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
         for (size_t r = 0; r < p - 1; r++) {
           size_t idx = g_pow[r];
           work_re[b + idx] = vr[0] + a_re[r + p - 2] * scale;
@@ -2575,6 +2599,11 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
       } else {
         work_re[b + k] = sum_r;
         work_im[b + k] = sum_i;
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
         for (size_t r = 0; r < p - 1; r++) {
           size_t idx = g_pow[r];
           work_re[b + idx * m + k] = vr[0] + a_re[r + p - 2] * scale;
@@ -2759,12 +2788,22 @@ void mixed_radix_fft_execute(mixed_radix_fft_t* fft, waveform_t real_in,
 
   // Step 1: permute input. For inverse, conjugate as we go
   if (inverse) {
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
     for (size_t i = 0; i < fft->n; i++) {
       size_t p = fft->permutation[i];
       work_re[p] = src_re[i];
       work_im[p] = -src_im[i];
     }
   } else {
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
     for (size_t i = 0; i < fft->n; i++) {
       size_t p = fft->permutation[i];
       work_re[p] = src_re[i];
@@ -2817,11 +2856,22 @@ void mixed_radix_fft_execute(mixed_radix_fft_t* fft, waveform_t real_in,
   // Step 3: re-conjugate the imaginary part for the inverse direction.
   // Forward direction is already done in place — no copy needed.
   if (inverse) {
+#if defined(__clang__)
+#pragma clang loop vectorize(assume_safety) interleave(enable)
+#elif defined(__GNUC__)
+#pragma GCC ivdep
+#endif
     for (size_t i = 0; i < fft->n; i++) {
       imag_out[i] = -imag_out[i];
     }
   }
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC pop_options
+#elif defined(__clang__)
+#pragma float_control(pop)
+#endif
 
 void mixed_radix_fft_free(mixed_radix_fft_t* fft) {
   if (!fft) return;
