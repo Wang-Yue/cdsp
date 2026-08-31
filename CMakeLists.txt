@@ -32,7 +32,6 @@ if(APPLE)
     set(DEFAULT_ENABLE_PIPEWIRE    OFF)
     set(DEFAULT_ENABLE_WASAPI      OFF)
     set(DEFAULT_ENABLE_ASIO        OFF)
-    set(DEFAULT_ENABLE_FFTW        OFF)
     set(DEFAULT_ENABLE_OPENMP      OFF)
     set(DEFAULT_ENABLE_DBUS        OFF)
 elseif(WIN32)
@@ -43,7 +42,6 @@ elseif(WIN32)
     set(DEFAULT_ENABLE_PIPEWIRE    OFF)
     set(DEFAULT_ENABLE_WASAPI      ON)
     set(DEFAULT_ENABLE_ASIO        ON)
-    set(DEFAULT_ENABLE_FFTW        ON)
     set(DEFAULT_ENABLE_OPENMP      ON)
     set(DEFAULT_ENABLE_DBUS        OFF)
 else()
@@ -55,7 +53,6 @@ else()
     set(DEFAULT_ENABLE_PIPEWIRE    ON)
     set(DEFAULT_ENABLE_WASAPI      OFF)
     set(DEFAULT_ENABLE_ASIO        OFF)
-    set(DEFAULT_ENABLE_FFTW        ON)
     set(DEFAULT_ENABLE_OPENMP      ON)
     set(DEFAULT_ENABLE_DBUS        ON)
 endif()
@@ -66,7 +63,6 @@ option(ENABLE_ALSA        "Enable Linux ALSA audio backend"     ${DEFAULT_ENABLE
 option(ENABLE_PIPEWIRE    "Enable Linux PipeWire backend"       ${DEFAULT_ENABLE_PIPEWIRE})
 option(ENABLE_WASAPI      "Enable Windows WASAPI audio backend" ${DEFAULT_ENABLE_WASAPI})
 option(ENABLE_ASIO        "Enable Windows ASIO audio backend"   ${DEFAULT_ENABLE_ASIO})
-option(ENABLE_FFTW        "Enable FFTW library for FFT"         ${DEFAULT_ENABLE_FFTW})
 option(ENABLE_OPENMP      "Enable OpenMP parallelization"       ${DEFAULT_ENABLE_OPENMP})
 option(ENABLE_WEBSOCKET   "Enable WebSocket control server"     ON)
 option(ENABLE_DBUS        "Enable Linux DBus device monitoring" ${DEFAULT_ENABLE_DBUS})
@@ -313,44 +309,40 @@ if(ENABLE_WEBSOCKET)
 endif()
 
 # -----------------------------------------------------------------------------
-# Math, FFT & Acceleration Libraries
+# Math, FFT & Acceleration Libraries (FFTW3 Required)
 # -----------------------------------------------------------------------------
-if(ENABLE_FFTW)
-    set(FFTW_FOUND_FLAG FALSE)
-    # 1. Search for headers and full absolute library paths first (prevents MSYS2 FFTW3Config.cmake relative path bugs)
-    find_path(FFTW3_INCLUDE_DIR NAMES fftw3.h)
-    find_library(FFTW3_LIB NAMES fftw3 libfftw3-3 libfftw3)
-    find_library(FFTW3F_LIB NAMES fftw3f libfftw3f-3 libfftw3f)
+set(FFTW_FOUND_FLAG FALSE)
+# 1. Search for headers and full absolute library paths first (prevents MSYS2 FFTW3Config.cmake relative path bugs)
+find_path(FFTW3_INCLUDE_DIR NAMES fftw3.h PATHS /opt/homebrew/include /usr/local/include /usr/include)
+find_library(FFTW3_LIB NAMES fftw3 libfftw3-3 libfftw3 PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
+find_library(FFTW3F_LIB NAMES fftw3f libfftw3f-3 libfftw3f PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
 
-    if(FFTW3_INCLUDE_DIR AND FFTW3_LIB AND FFTW3F_LIB)
-        target_include_directories(dsp PUBLIC ${FFTW3_INCLUDE_DIR})
-        target_link_libraries(dsp PUBLIC ${FFTW3_LIB} ${FFTW3F_LIB})
+if(FFTW3_INCLUDE_DIR AND FFTW3_LIB AND FFTW3F_LIB)
+    target_include_directories(dsp PUBLIC ${FFTW3_INCLUDE_DIR})
+    target_link_libraries(dsp PUBLIC ${FFTW3_LIB} ${FFTW3F_LIB})
+    target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
+    set(FFTW_FOUND_FLAG TRUE)
+elseif(PKG_CONFIG_FOUND)
+    pkg_check_modules(FFTW3 QUIET IMPORTED_TARGET fftw3 fftw3f)
+    if(TARGET PkgConfig::FFTW3)
+        target_link_libraries(dsp PUBLIC PkgConfig::FFTW3)
         target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
         set(FFTW_FOUND_FLAG TRUE)
-    elseif(PKG_CONFIG_FOUND)
-        pkg_check_modules(FFTW3 QUIET IMPORTED_TARGET fftw3 fftw3f)
-        if(TARGET PkgConfig::FFTW3)
-            target_link_libraries(dsp PUBLIC PkgConfig::FFTW3)
-            target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
-            set(FFTW_FOUND_FLAG TRUE)
-        endif()
     endif()
+endif()
 
-    if(NOT FFTW_FOUND_FLAG)
-        find_package(FFTW3 CONFIG QUIET)
-        find_package(FFTW3f CONFIG QUIET)
-        if(TARGET FFTW3::fftw3 AND TARGET FFTW3::fftw3f)
-            target_link_libraries(dsp PUBLIC FFTW3::fftw3 FFTW3::fftw3f)
-            target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
-            set(FFTW_FOUND_FLAG TRUE)
-        endif()
+if(NOT FFTW_FOUND_FLAG)
+    find_package(FFTW3 CONFIG QUIET)
+    find_package(FFTW3f CONFIG QUIET)
+    if(TARGET FFTW3::fftw3 AND TARGET FFTW3::fftw3f)
+        target_link_libraries(dsp PUBLIC FFTW3::fftw3 FFTW3::fftw3f)
+        target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
+        set(FFTW_FOUND_FLAG TRUE)
     endif()
+endif()
 
-    if(FFTW_FOUND_FLAG)
-        message(STATUS "FFTW3 found and enabled")
-    else()
-        message(STATUS "FFTW3 not found, falling back to built-in mixed-radix Real FFT")
-    endif()
+if(NOT FFTW_FOUND_FLAG)
+    message(FATAL_ERROR "FFTW3 (both double-precision 'fftw3' and single-precision 'fftw3f') is required to build cdsp.")
 endif()
 
 
@@ -494,7 +486,6 @@ if(BUILD_TESTING)
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_pipeline_benchmark\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_resampler_matrix\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_simd_benchmark\\.c$")
-    list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_mixed_radix_fft_benchmark\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_convolution_backends_benchmark\\.c$")
 
     if(NOT ENABLE_WEBSOCKET)
@@ -557,7 +548,6 @@ if(BUILD_BENCHMARKS)
         test_pipeline_benchmark
         test_resampler_matrix
         test_simd_benchmark
-        test_mixed_radix_fft_benchmark
         test_convolution_backends_benchmark
     )
 
@@ -629,7 +619,7 @@ if(BUILD_BENCHMARKS)
         COMMAND $<TARGET_FILE:test_pipeline_benchmark>
         COMMAND $<TARGET_FILE:test_resampler_matrix>
         COMMAND $<TARGET_FILE:test_simd_benchmark>
-        COMMAND $<TARGET_FILE:test_mixed_radix_fft_benchmark>
+        COMMAND $<TARGET_FILE:test_convolution_backends_benchmark>
         DEPENDS ${BENCH_TARGETS}
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "Running C benchmarks..."

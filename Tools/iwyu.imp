@@ -703,14 +703,7 @@
       "public"
     ]
   },
-  {
-    "include": [
-      "\"arbitrary_complex_fft.h\"",
-      "private",
-      "\"FFT/arbitrary_complex_fft.h\"",
-      "public"
-    ]
-  },
+
   {
     "include": [
       "\"asio_backend.h\"",
@@ -831,14 +824,7 @@
       "public"
     ]
   },
-  {
-    "include": [
-      "\"bluestein_fft.h\"",
-      "private",
-      "\"FFT/bluestein_fft.h\"",
-      "public"
-    ]
-  },
+
   {
     "include": [
       "\"cJSON.h\"",
@@ -903,14 +889,7 @@
       "public"
     ]
   },
-  {
-    "include": [
-      "\"complex_inner_real_fft.h\"",
-      "private",
-      "\"FFT/complex_inner_real_fft.h\"",
-      "public"
-    ]
-  },
+
   {
     "include": [
       "\"compressor_processor.h\"",
@@ -1279,14 +1258,7 @@
       "public"
     ]
   },
-  {
-    "include": [
-      "\"mixed_radix_fft.h\"",
-      "private",
-      "\"FFT/mixed_radix_fft.h\"",
-      "public"
-    ]
-  },
+
   {
     "include": [
       "\"mixer.h\"",
@@ -1511,14 +1483,7 @@
       "public"
     ]
   },
-  {
-    "include": [
-      "\"vdsp_real_fft.h\"",
-      "private",
-      "\"FFT/vdsp_real_fft.h\"",
-      "public"
-    ]
-  },
+
   {
     "include": [
       "\"wasapi_capabilities.h\"",

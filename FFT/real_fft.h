@@ -3,37 +3,14 @@
 
 /**
  * @file real_fft.h
- * @brief Real-input FFT of arbitrary even length.
+ * @brief Real-input FFT of arbitrary even length using FFTW3.
  *
- * `real_fft_create` is the **single dispatch point** for the resampler's FFT
- * subsystem — it inspects the requested length once and picks the fastest
- * available backend, so callers (and the per-backend modules) never repeat that
- * decision.
+ * Provides forward (r2c) and inverse (c2r) double-precision (`real_fft_t`)
+ * and single-precision (`real_fftf_t`) real FFT operations using FFTW3.
  *
- * Decision tree (top-to-bottom, first match wins):
- *   1. `length` is a power of two `≥ 8`
- *      → `vdsp_real_fft` (`vdsp_real_fft.c`), wrapping Apple's
- *      `vDSP_fft_zrip` / `vDSP_fft_zripD` (radix-2 split-complex real FFT,
- *      hand-tuned NEON on Apple Silicon).
- *   2. Otherwise (arbitrary even length): a 2N-point real FFT is built
- *      from one N-point complex FFT plus an O(N) untwiddle pass —
- *      `complex_inner_real_fft` (`complex_inner_real_fft.c`). The inner
- *      complex FFT is routed in priority order:
- *      a. `mixed_radix_fft` (`mixed_radix_fft.c`) — native mixed-radix
- *         for prime factorisations in `{2, 3, 5, 7}`. Its radix-2/4/8
- *         stages handle the *power-of-two portion* of a mixed factorisation
- *         (e.g. `1120 = 2⁵·5·7` factored as `[8, 4, 5, 7]`).
- *      b. `bluestein_fft` (`bluestein_fft.c`) — universal fallback
- *         for anything with a prime factor `> 7` (e.g. `11→13k` rate pair,
- *         halfN = 1034 has primes 11 and 47).
- *
- * Every backend exposes the same external semantics — forward =
- * unscaled DFT, inverse = `length · signal` — so the resampler is
- * oblivious to which path runs.
- *
- * Algorithm references:
- *   - https://www.dsprelated.com/showarticle/4.php (Real FFT from complex FFT)
- *   - https://en.wikipedia.org/wiki/Fast_Fourier_transform#Real-input_FFTs
+ * External semantics:
+ *   - Forward = unscaled DFT, producing N/2 + 1 complex bins.
+ *   - Inverse = unscaled IFFT, producing `length * signal`.
  */
 
 #include <stdbool.h>
