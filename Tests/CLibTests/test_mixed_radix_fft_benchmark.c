@@ -453,6 +453,359 @@ static void run_441_48k_family_matrix_benchmark(void) {
       "------+----------+----------+----------+----------+\n");
 }
 
+static uint32_t gcd_u32(uint32_t a, uint32_t b) {
+  while (b != 0) {
+    uint32_t t = b;
+    b = a % b;
+    a = t;
+  }
+  return a;
+}
+
+typedef struct {
+  size_t prime;
+  size_t count;
+} prime_freq_t;
+
+static int compare_prime_freq(const void* a, const void* b) {
+  const prime_freq_t* pa = (const prime_freq_t*)a;
+  const prime_freq_t* pb = (const prime_freq_t*)b;
+  if (pa->count != pb->count) {
+    return (pb->count > pa->count) ? 1 : -1;
+  }
+  return (pa->prime > pb->prime) ? 1 : -1;
+}
+
+static void analyze_factors(size_t n, size_t* prime_counts,
+                            size_t max_prime_tracked) {
+  size_t rem = n;
+  while (rem % 2 == 0) rem /= 2;
+  while (rem % 3 == 0) rem /= 3;
+  while (rem % 5 == 0) rem /= 5;
+  while (rem % 7 == 0) rem /= 7;
+  while (rem % 11 == 0) rem /= 11;
+  while (rem % 13 == 0) rem /= 13;
+
+  for (size_t d = 17; d * d <= rem; d += 2) {
+    if (rem % d == 0) {
+      if (d < max_prime_tracked) {
+        prime_counts[d]++;
+      }
+      while (rem % d == 0) rem /= d;
+    }
+  }
+  if (rem > 1 && rem < max_prime_tracked) {
+    prime_counts[rem]++;
+  }
+}
+
+static void print_missing_primes_table(const size_t* prime_counts,
+                                       size_t max_prime_tracked,
+                                       const char* survey_title) {
+  prime_freq_t list[512];
+  size_t num_unique = 0;
+  for (size_t p = 14; p < max_prime_tracked; p++) {
+    if (prime_counts[p] > 0) {
+      list[num_unique].prime = p;
+      list[num_unique].count = prime_counts[p];
+      num_unique++;
+      if (num_unique >= 512) break;
+    }
+  }
+
+  printf(
+      "\n--- Missing Prime Factors Required for 100%% Mixed-Radix Coverage "
+      "(%s) ---\n",
+      survey_title);
+  if (num_unique == 0) {
+    printf(
+        " None! Current unrolled radixes (2, 3, 4, 5, 7, 8, 9, 11, 13) achieve "
+        "100%% full coverage.\n\n");
+    return;
+  }
+
+  qsort(list, num_unique, sizeof(prime_freq_t), compare_prime_freq);
+
+  printf(
+      " Prime Factor (p > 13) | Fallback Block Occurrences (N_in / N_out)\n");
+  printf(
+      "-----------------------+------------------------------------------\n");
+  for (size_t i = 0; i < num_unique; i++) {
+    printf("  Radix-%-14zu | %zu occurrences\n", list[i].prime, list[i].count);
+  }
+  printf(
+      "-----------------------+------------------------------------------\n");
+  printf(" Unique Primes Needed  : ");
+  for (size_t i = 0; i < num_unique; i++) {
+    printf("%zu%s", list[i].prime, (i + 1 < num_unique) ? ", " : "\n\n");
+  }
+}
+
+static void run_exhaustive_rate_grid_survey(void) {
+  printf(
+      "\n======================================================================"
+      "===================================================================\n");
+  printf(
+      "         EXHAUSTIVE RATE GRID BACKEND SURVEY (19x19 RATES x 9 CHUNK "
+      "SIZES = 3,249 CASES)\n");
+  printf(
+      "========================================================================"
+      "=================================================================\n");
+  printf(
+      " Cell format: 'MR' = 100%% Mixed-Radix (all 9 chunk sizes), or 'M/9' = "
+      "M of 9 chunk sizes using Mixed-Radix.\n\n");
+
+  static const uint32_t standard_rates[] = {
+      8000,   11025,  12000,  16000,  22050, 24000,  32000,
+      44100,  48000,  64000,  88200,  96000, 128000, 176400,
+      192000, 352800, 384000, 705600, 768000};
+  static const char* labels[] = {"8k",    "11k",  "12k",   "16k",  "22k",
+                                 "24k",   "32k",  "44.1k", "48k",  "64k",
+                                 "88.2k", "96k",  "128k",  "176k", "192k",
+                                 "353k",  "384k", "706k",  "768k"};
+  size_t num_rates = sizeof(standard_rates) / sizeof(standard_rates[0]);
+
+  static const size_t sample_sizes[] = {64,   128,  256,  512,  1024,
+                                        2048, 4096, 8192, 16384};
+  size_t num_sample_sizes = sizeof(sample_sizes) / sizeof(sample_sizes[0]);
+
+  int support_matrix[19][19];
+  size_t chunk_mr_counts[9] = {0};
+  size_t prime_counts[100000] = {0};
+  size_t total_configs = 0;
+  size_t total_mr = 0;
+  size_t total_bluestein = 0;
+
+  for (size_t r_in = 0; r_in < num_rates; r_in++) {
+    for (size_t r_out = 0; r_out < num_rates; r_out++) {
+      uint32_t in_rate = standard_rates[r_in];
+      uint32_t out_rate = standard_rates[r_out];
+      uint32_t g = gcd_u32(in_rate, out_rate);
+      uint32_t M = in_rate / g;
+      uint32_t L = out_rate / g;
+
+      int mr_for_pair = 0;
+      for (size_t s = 0; s < num_sample_sizes; s++) {
+        size_t chunk_size = sample_sizes[s];
+        size_t k = (chunk_size + M - 1) / M;
+        if (k == 0) k = 1;
+        size_t n_in = k * (size_t)M;
+        size_t n_out = k * (size_t)L;
+
+        total_configs++;
+
+        mixed_radix_fft_t* plan_in = mixed_radix_fft_create(n_in);
+        mixed_radix_fft_t* plan_out = mixed_radix_fft_create(n_out);
+
+        if (plan_in && plan_out) {
+          mr_for_pair++;
+          chunk_mr_counts[s]++;
+          total_mr++;
+        } else {
+          total_bluestein++;
+          if (!plan_in) analyze_factors(n_in, prime_counts, 100000);
+          if (!plan_out) analyze_factors(n_out, prime_counts, 100000);
+        }
+
+        if (plan_in) mixed_radix_fft_free(plan_in);
+        if (plan_out) mixed_radix_fft_free(plan_out);
+      }
+      support_matrix[r_in][r_out] = mr_for_pair;
+    }
+  }
+
+  // Print 19x19 Matrix Table
+  printf(" In \\ Out  |");
+  for (size_t c = 0; c < num_rates; c++) {
+    printf(" %-5s |", labels[c]);
+  }
+  printf("\n-----------+");
+  for (size_t c = 0; c < num_rates; c++) {
+    printf("-------+");
+  }
+  printf("\n");
+
+  for (size_t r = 0; r < num_rates; r++) {
+    printf(" %-9s |", labels[r]);
+    for (size_t c = 0; c < num_rates; c++) {
+      int cnt = support_matrix[r][c];
+      if (cnt == (int)num_sample_sizes) {
+        printf("  MR   |");
+      } else if (cnt == 0) {
+        printf(" Blue  |");
+      } else {
+        printf("  %d/9  |", cnt);
+      }
+    }
+    printf("\n");
+  }
+  printf("-----------+");
+  for (size_t c = 0; c < num_rates; c++) {
+    printf("-------+");
+  }
+  printf("\n\n");
+
+  // Print Chunk-Size Breakdown Table
+  printf("--- Coverage by Sample Size ---\n");
+  printf(" Sample Size | Pairs Supported / Total | Coverage | Status\n");
+  printf(
+      "-------------+-------------------------+----------+---------------------"
+      "------\n");
+  for (size_t s = 0; s < num_sample_sizes; s++) {
+    size_t mr = chunk_mr_counts[s];
+    size_t total_pairs = num_rates * num_rates;
+    double pct = 100.0 * (double)mr / (double)total_pairs;
+    printf(" %-11zu | %4zu / %-4zu              | %5.1f%%   | %s\n",
+           sample_sizes[s], mr, total_pairs, pct,
+           mr == total_pairs ? "100% Zero-Bluestein"
+                             : "Partial Bluestein fallback");
+  }
+  printf(
+      "-------------+-------------------------+----------+---------------------"
+      "------\n");
+
+  printf("\n--- Overall Summary ---\n");
+  printf(" Total Rate-Grid Configurations : %zu\n", total_configs);
+  printf(" Mixed-Radix Engine (Fast Paths): %zu (%.1f%%)\n", total_mr,
+         100.0 * (double)total_mr / (double)total_configs);
+  printf(" Bluestein Fallback Cases       : %zu (%.1f%%)\n", total_bluestein,
+         100.0 * (double)total_bluestein / (double)total_configs);
+
+  print_missing_primes_table(prime_counts, 100000,
+                             "19x19 Full Rate Grid (3,249 cases)");
+}
+
+static void run_441_48k_family_survey(void) {
+  printf(
+      "\n======================================================================"
+      "===================================================================\n");
+  printf(
+      "         44.1k & 48k FAMILY BACKEND SURVEY (10x10 RATES x 4 CHUNK SIZES "
+      "= 400 CASES)\n");
+  printf("         Chunk Sizes: 1024, 2048, 4096, 8192\n");
+  printf(
+      "========================================================================"
+      "=================================================================\n");
+  printf(
+      " Cell format: 'MR' = 100%% Mixed-Radix (all 4 chunk sizes), or 'M/4' = "
+      "M of 4 chunk sizes using Mixed-Radix.\n\n");
+
+  static const uint32_t rates[] = {44100,  48000,  88200,  96000,  176400,
+                                   192000, 352800, 384000, 705600, 768000};
+  static const char* labels[] = {"44.1k", "48k",    "88.2k", "96k",    "176.4k",
+                                 "192k",  "352.8k", "384k",  "705.6k", "768k"};
+  const size_t num_rates = sizeof(rates) / sizeof(rates[0]);
+
+  static const size_t sample_sizes[] = {1024, 2048, 4096, 8192};
+  const size_t num_sample_sizes =
+      sizeof(sample_sizes) / sizeof(sample_sizes[0]);
+
+  int support_matrix[10][10];
+  size_t chunk_mr_counts[4] = {0};
+  size_t prime_counts[100000] = {0};
+  size_t total_configs = 0;
+  size_t total_mr = 0;
+  size_t total_bluestein = 0;
+
+  for (size_t r_in = 0; r_in < num_rates; r_in++) {
+    for (size_t r_out = 0; r_out < num_rates; r_out++) {
+      uint32_t in_rate = rates[r_in];
+      uint32_t out_rate = rates[r_out];
+      uint32_t g = gcd_u32(in_rate, out_rate);
+      uint32_t M = in_rate / g;
+      uint32_t L = out_rate / g;
+
+      int mr_for_pair = 0;
+      for (size_t s = 0; s < num_sample_sizes; s++) {
+        size_t chunk_size = sample_sizes[s];
+        size_t k = (chunk_size + M - 1) / M;
+        if (k == 0) k = 1;
+        size_t n_in = k * (size_t)M;
+        size_t n_out = k * (size_t)L;
+
+        total_configs++;
+
+        mixed_radix_fft_t* plan_in = mixed_radix_fft_create(n_in);
+        mixed_radix_fft_t* plan_out = mixed_radix_fft_create(n_out);
+
+        if (plan_in && plan_out) {
+          mr_for_pair++;
+          chunk_mr_counts[s]++;
+          total_mr++;
+        } else {
+          total_bluestein++;
+          if (!plan_in) analyze_factors(n_in, prime_counts, 100000);
+          if (!plan_out) analyze_factors(n_out, prime_counts, 100000);
+        }
+
+        if (plan_in) mixed_radix_fft_free(plan_in);
+        if (plan_out) mixed_radix_fft_free(plan_out);
+      }
+      support_matrix[r_in][r_out] = mr_for_pair;
+    }
+  }
+
+  // Print 10x10 Matrix Table
+  printf(" In \\ Out  |");
+  for (size_t c = 0; c < num_rates; c++) {
+    printf(" %-8s |", labels[c]);
+  }
+  printf("\n-----------+");
+  for (size_t c = 0; c < num_rates; c++) {
+    printf("----------+");
+  }
+  printf("\n");
+
+  for (size_t r = 0; r < num_rates; r++) {
+    printf(" %-9s |", labels[r]);
+    for (size_t c = 0; c < num_rates; c++) {
+      int cnt = support_matrix[r][c];
+      if (cnt == (int)num_sample_sizes) {
+        printf("    MR    |");
+      } else if (cnt == 0) {
+        printf("   Blue   |");
+      } else {
+        printf("   %d/4   |", cnt);
+      }
+    }
+    printf("\n");
+  }
+  printf("-----------+");
+  for (size_t c = 0; c < num_rates; c++) {
+    printf("----------+");
+  }
+  printf("\n\n");
+
+  // Print Chunk-Size Breakdown Table
+  printf("--- Coverage by Sample Size (44.1k/48k Family) ---\n");
+  printf(" Sample Size | Pairs Supported / Total | Coverage | Status\n");
+  printf(
+      "-------------+-------------------------+----------+---------------------"
+      "------\n");
+  for (size_t s = 0; s < num_sample_sizes; s++) {
+    size_t mr = chunk_mr_counts[s];
+    size_t total_pairs = num_rates * num_rates;
+    double pct = 100.0 * (double)mr / (double)total_pairs;
+    printf(" %-11zu | %4zu / %-4zu              | %5.1f%%   | %s\n",
+           sample_sizes[s], mr, total_pairs, pct,
+           mr == total_pairs ? "100% Zero-Bluestein"
+                             : "Partial Bluestein fallback");
+  }
+  printf(
+      "-------------+-------------------------+----------+---------------------"
+      "------\n");
+
+  printf("\n--- 44.1k & 48k Family Summary ---\n");
+  printf(" Total Configurations Evaluated : %zu\n", total_configs);
+  printf(" Mixed-Radix Engine (Fast Paths): %zu (%.1f%%)\n", total_mr,
+         100.0 * (double)total_mr / (double)total_configs);
+  printf(" Bluestein Fallback Cases       : %zu (%.1f%%)\n", total_bluestein,
+         100.0 * (double)total_bluestein / (double)total_configs);
+
+  print_missing_primes_table(prime_counts, 100000,
+                             "44.1k & 48k Family (400 cases)");
+}
+
 TEST(MixedRadixFFT_AllFactors_Benchmark) {
   printf(
       "\n======================================================================"
@@ -470,11 +823,17 @@ TEST(MixedRadixFFT_AllFactors_Benchmark) {
       " Operations: Forward FFT (size N_in) + Backward IFFT (size N_out) "
       "matching resampler spectral pipeline.\n");
 
-  // 1. vDSP_DFT_zop Supported Audio & Telecom Rates Conversion Matrix (8k to
+  // 1. Exhaustive rate grid backend survey (3,249 configurations)
+  run_exhaustive_rate_grid_survey();
+
+  // 2. Focused 44.1k & 48k Family Survey (1024, 2048, 4096, 8192 - 400 cases)
+  run_441_48k_family_survey();
+
+  // 3. vDSP_DFT_zop Supported Audio & Telecom Rates Conversion Matrix (8k to
   // 384k)
   run_rate_conversion_matrix_benchmark();
 
-  // 2. Complete 44.1k & 48k Family Cross-Rate Conversion Matrix (44.1 kHz to
+  // 4. Complete 44.1k & 48k Family Cross-Rate Conversion Matrix (44.1 kHz to
   // 768 kHz)
   run_441_48k_family_matrix_benchmark();
 

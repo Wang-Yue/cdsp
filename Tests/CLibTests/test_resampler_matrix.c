@@ -32,6 +32,8 @@ static const rate_pair_t g_rate_grid[] = {
 static const size_t g_rate_grid_count =
     sizeof(g_rate_grid) / sizeof(g_rate_grid[0]);
 
+static const size_t MATRIX_BENCH_CHUNK_SIZE = 1024;
+
 typedef struct {
   const char* label;
   bool has_aliasing_max;
@@ -332,12 +334,14 @@ static double* run_rubato(const char* mode, int in_rate, int out_rate,
   char cmd[1024];
 #ifdef _WIN32
   snprintf(cmd, sizeof(cmd),
-           "\"\"%s\" %s \"%s\" \"%s\" %d %d %d --no-partial > NUL 2>&1\"",
-           g_rubato_bin_path, mode, in_path, out_path, in_rate, out_rate, 1024);
+           "\"\"%s\" %s \"%s\" \"%s\" %d %d %zu --no-partial > NUL 2>&1\"",
+           g_rubato_bin_path, mode, in_path, out_path, in_rate, out_rate,
+           MATRIX_BENCH_CHUNK_SIZE);
 #else
   snprintf(cmd, sizeof(cmd),
-           "\"%s\" %s \"%s\" \"%s\" %d %d %d --no-partial >/dev/null 2>&1",
-           g_rubato_bin_path, mode, in_path, out_path, in_rate, out_rate, 1024);
+           "\"%s\" %s \"%s\" \"%s\" %d %d %zu --no-partial >/dev/null 2>&1",
+           g_rubato_bin_path, mode, in_path, out_path, in_rate, out_rate,
+           MATRIX_BENCH_CHUNK_SIZE);
 #endif
   int status = system(cmd);
   if (status != 0) {
@@ -389,7 +393,7 @@ static double* run_process(int impl_id, const double* input, size_t input_count,
       return NULL;
   }
 
-  size_t cs = 1024;
+  size_t cs = MATRIX_BENCH_CHUNK_SIZE;
   resampler_t* res =
       resampler_create_from_config(&cfg, in_rate, out_rate, 1, cs, NULL);
   if (!res) return NULL;
@@ -401,7 +405,7 @@ static double* run_process(int impl_id, const double* input, size_t input_count,
 static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
   cell_t c;
   memset(&c, 0, sizeof(c));
-  size_t cs = 1024;
+  size_t cs = MATRIX_BENCH_CHUNK_SIZE;
   size_t nbr_in = 64 * cs;
   size_t out_skip_val = 4 * cs * out_rate / in_rate;
   size_t out_skip = out_skip_val > 1 ? out_skip_val : 1;
@@ -519,7 +523,7 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
       return false;
   }
 
-  size_t base_cs = 1024;
+  size_t base_cs = MATRIX_BENCH_CHUNK_SIZE;
   resampler_t* resampler =
       resampler_create_from_config(&cfg, in_rate, out_rate, 1, base_cs, NULL);
   if (!resampler) return false;
@@ -591,7 +595,7 @@ static bool measure_rubato_perf(const char* mode, int in_rate, int out_rate,
                                 double* out_ns_per_frame, double* out_rtf) {
   if (!check_rubato_available()) return false;
 
-  size_t cs = 1024;
+  size_t cs = MATRIX_BENCH_CHUNK_SIZE;
   size_t chunk_count = 64;
   size_t nbr_in = chunk_count * cs;
 

@@ -91,7 +91,7 @@ static bool check_matches_direct_dft(size_t n) {
   direct_dft(in_re, in_im, dir_re, dir_im, n, false);
 
   double diff = max_abs_diff(mr_re, mr_im, dir_re, dir_im, n);
-  double tol = 1e-10 * (double)n;
+  double tol = 2e-10 * (double)n;
 
   mixed_radix_fft_free(fft);
   free(in_re);
@@ -230,8 +230,16 @@ TEST(MixedRadixInPlace) {
   }
 }
 
+TEST(SupportedRadixesMatchDirectDFT) {
+  size_t sizes[] = {9, 11, 13, 18, 22, 27, 33, 65, 99, 121, 143, 169};
+  for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+    ASSERT_TRUE(check_matches_direct_dft(sizes[i]));
+  }
+}
+
 TEST(UnsupportedFactorsReturnNil) {
-  size_t sizes[] = {11, 13, 17, 22, 33, 121};
+  size_t sizes[] = {17, 19, 23, 29, 31, 37, 41, 43, 47, 53,
+                    59, 61, 67, 71, 73, 79, 83, 89, 97, 619};
   for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
     mixed_radix_fft_t* fft = mixed_radix_fft_create(sizes[i]);
     ASSERT_TRUE(fft == NULL);

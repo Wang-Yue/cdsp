@@ -489,7 +489,7 @@ if(BUILD_TESTING)
         CDSP_COMBINED_TEST_SUITE
     )
 
-    file(GLOB TEST_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests/test_*.c")
+    file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests/test_*.c")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_runner_main\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_filter_benchmark\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_dsd_benchmark\\.c$")
