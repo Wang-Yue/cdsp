@@ -2631,16 +2631,26 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
     }
   }
 
-  // 4. Any arbitrary primes (17, 19, 23, 29, 31, 37, 41, 43, ..., 103, ...)
+#define RADER_MAX_PRIME 4096
+
+  // 4. Moderate primes (17 <= p <= 4096): handled via Rader's Algorithm in
+  // L1/L2 cache. Primes > 4096 return NULL so the system falls back to
+  // Bluestein's sequential streaming FFT.
   size_t d = 17;
   while (d * d <= rem) {
     while (rem % d == 0) {
+      if (d > RADER_MAX_PRIME) {
+        return NULL;
+      }
       fs[stage_count++] = (int)d;
       rem /= d;
     }
     d += 2;
   }
   if (rem > 1) {
+    if (rem > RADER_MAX_PRIME) {
+      return NULL;
+    }
     fs[stage_count++] = (int)rem;
     rem = 1;
   }
