@@ -27,6 +27,17 @@
 #define ALWAYS_INLINE static inline
 #endif
 
+#if defined(__clang__)
+#define PRAGMA_VECTORIZE_LOOP \
+  _Pragma("clang loop vectorize(assume_safety) interleave(enable)")
+#elif defined(__GNUC__)
+#define PRAGMA_VECTORIZE_LOOP _Pragma("GCC ivdep")
+#elif defined(_MSC_VER)
+#define PRAGMA_VECTORIZE_LOOP __pragma(loop(ivdep))
+#else
+#define PRAGMA_VECTORIZE_LOOP
+#endif
+
 /**
  * @typedef mutable_waveform_t
  * @brief A high-performance descriptive view of a single channel's mutable
@@ -128,11 +139,7 @@ ALWAYS_INLINE void dsp_ops_scalar_multiply(double* buffer, double scalar,
 #if defined(ENABLE_ACCELERATE)
   cblas_dscal((int)count, scalar, buffer, 1);
 #else
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     buffer[i] *= scalar;
   }
@@ -164,11 +171,7 @@ ALWAYS_INLINE void dsp_ops_vector_add(const double* a, const double* b,
 #if defined(ENABLE_ACCELERATE)
   vDSP_vaddD(a, 1, b, 1, out, 1, count);
 #else
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     out[i] = a[i] + b[i];
   }
@@ -203,11 +206,7 @@ ALWAYS_INLINE void dsp_ops_add(const double* a, double* b, size_t count) {
  * @param count Number of elements to process.
  */
 ALWAYS_INLINE void dsp_ops_multiply(const double* a, double* b, size_t count) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     b[i] *= a[i];
   }
@@ -227,11 +226,7 @@ ALWAYS_INLINE void dsp_ops_multiply_add(const double* a, double scalar,
 #if defined(ENABLE_ACCELERATE)
   cblas_daxpy((int)count, scalar, a, 1, accumulator, 1);
 #else
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     accumulator[i] += a[i] * scalar;
   }
@@ -253,7 +248,7 @@ ALWAYS_INLINE double sinc_dot_product(const double* a, const double* b,
   // called with tiny count. calling function makes it perform slower.
 #if defined(__clang__)
   double sum = 0.0;
-#pragma clang loop vectorize(assume_safety) interleave(enable)
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     sum += a[i] * b[i];
   }
@@ -264,7 +259,7 @@ ALWAYS_INLINE double sinc_dot_product(const double* a, const double* b,
   double s8 = 0.0, s9 = 0.0, s10 = 0.0, s11 = 0.0;
   double s12 = 0.0, s13 = 0.0, s14 = 0.0, s15 = 0.0;
   size_t i = 0;
-#pragma GCC ivdep
+  PRAGMA_VECTORIZE_LOOP
   for (; i + 15 < count; i += 16) {
     s0 += a[i] * b[i];
     s1 += a[i + 1] * b[i + 1];
@@ -304,11 +299,7 @@ ALWAYS_INLINE double sinc_dot_product(const double* a, const double* b,
  */
 ALWAYS_INLINE void dsp_ops_clip(double* buffer, double low, double high,
                                 size_t count) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     double val = buffer[i];
     val = val < low ? low : val;
@@ -337,11 +328,7 @@ ALWAYS_INLINE void dsp_ops_complex_multiply(const double* a_re,
                                             const double* b_re,
                                             const double* b_im, double* out_re,
                                             double* out_im, size_t count) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     double re = a_re[i];
     double im = a_im[i];

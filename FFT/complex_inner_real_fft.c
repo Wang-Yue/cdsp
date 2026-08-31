@@ -178,11 +178,7 @@ void complex_inner_real_fft_forward(complex_inner_real_fft_t* fft,
   const double* __restrict__ tw_im = fft->twiddle_im;
   double* __restrict__ out_re = spec_re;
   double* __restrict__ out_im = spec_im;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t k = 1; k < n; k++) {
     double zkR = z_f_re[k];
     double zkI = z_f_im[k];
@@ -225,11 +221,7 @@ void complex_inner_real_fft_inverse(complex_inner_real_fft_t* fft,
   const double* __restrict__ tw_im = fft->twiddle_im;
   double* __restrict__ z_re = fft->z_re;
   double* __restrict__ z_im = fft->z_im;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t k = 1; k < n; k++) {
     double xkR = in_re[k];
     double xkI = in_im[k];
@@ -259,11 +251,7 @@ void complex_inner_real_fft_inverse(complex_inner_real_fft_t* fft,
   const double* __restrict__ z_f_re = fft->z_f_re;
   const double* __restrict__ z_f_im = fft->z_f_im;
   double* __restrict__ out = real_out;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t k = 0; k < n; k++) {
     out[2 * k] = 2.0 * z_f_re[k];
     out[2 * k + 1] = 2.0 * z_f_im[k];

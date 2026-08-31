@@ -116,11 +116,7 @@ static inline void stage_radix2(mixed_radix_fft_t* fft, double* work_re,
                                 const double* tw_im) {
   size_t block_size = m * 2;
   if (m == 1) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t b = 0; b < fft->n; b += 2) {
       double v0r = work_re[b];
       double v0i = work_im[b];
@@ -140,11 +136,7 @@ static inline void stage_radix2(mixed_radix_fft_t* fft, double* work_re,
     double* w0i = work_im + b;
     double* w1r = w0r + m;
     double* w1i = w0i + m;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t k = 0; k < m; k++) {
       double twR = tw1R[k];
       double twI = tw1I[k];
@@ -267,11 +259,7 @@ static inline void stage_radix3(mixed_radix_fft_t* fft, double* work_re,
     double* w1i = w0i + m;
     double* w2r = w1r + m;
     double* w2i = w1i + m;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t k = 0; k < m; k++) {
       double tw1R_k = tw1R[k];
       double tw1I_k = tw1I[k];
@@ -320,11 +308,7 @@ static inline void stage_radix4(mixed_radix_fft_t* fft, double* work_re,
                                 const double* tw_im) {
   size_t block_size = m * 4;
   if (m == 1) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t b = 0; b < fft->n; b += 4) {
       double v0r = work_re[b];
       double v0i = work_im[b];
@@ -368,11 +352,7 @@ static inline void stage_radix4(mixed_radix_fft_t* fft, double* work_re,
     double* w2i = w1i + m;
     double* w3r = w2r + m;
     double* w3i = w2i + m;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t k = 0; k < m; k++) {
       double tw1R_k = tw1R[k];
       double tw1I_k = tw1I[k];
@@ -580,11 +560,7 @@ static inline void stage_radix5(mixed_radix_fft_t* fft, double* work_re,
     double* w3i = w2i + m;
     double* w4r = w3r + m;
     double* w4i = w3i + m;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t k = 0; k < m; k++) {
       // Outer-stage twiddle on samples 1..4.
       double t1R = tw1R[k];
@@ -885,11 +861,7 @@ static inline void stage_radix7(mixed_radix_fft_t* fft, double* work_re,
     double* w5i = w4i + m;
     double* w6r = w5r + m;
     double* w6i = w5i + m;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t k = 0; k < m; k++) {
       // Outer-stage twiddles on samples 1..6.
       double t1R = tw1R[k];
@@ -991,11 +963,7 @@ static inline void stage_radix8(mixed_radix_fft_t* fft, double* work_re,
   double s2 = 0.7071067811865476;  // √2/2
 
   if (m == 1) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t b = 0; b < fft->n; b += 8) {
       double v0r = work_re[b];
       double v0i = work_im[b];
@@ -1109,11 +1077,7 @@ static inline void stage_radix8(mixed_radix_fft_t* fft, double* work_re,
     double* w6i = w5i + m;
     double* w7r = w6r + m;
     double* w7i = w6i + m;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t k = 0; k < m; k++) {
       double t1R = tw1R[k];
       double t1I = tw1I[k];
@@ -1351,11 +1315,7 @@ static inline void stage_radix9(mixed_radix_fft_t* fft, double* work_re,
     double* w8r = w7r + m;
     double* w8i = w7i + m;
 
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t k = 0; k < m; k++) {
       double v0r = w0r[k], v0i = w0i[k];
       double t1R = tw1R[k], t1I = tw1I[k];
@@ -1741,11 +1701,7 @@ static inline void stage_radix11(mixed_radix_fft_t* fft, double* work_re,
     double* w10r = w9r + m;
     double* w10i = w9i + m;
 
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t k = 0; k < m; k++) {
       double t1R = tw1R[k], t1I = tw1I[k];
       double t2R = tw2R[k], t2I = tw2I[k];
@@ -2195,11 +2151,7 @@ static inline void stage_radix13(mixed_radix_fft_t* fft, double* work_re,
     double* w12r = w11r + m;
     double* w12i = w11i + m;
 
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t k = 0; k < m; k++) {
       double t1R = tw1R[k], t1I = tw1I[k];
       double t2R = tw2R[k], t2I = tw2I[k];
@@ -2514,11 +2466,7 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
   for (size_t b = 0; b < fft->n; b += block_size) {
     for (size_t k = 0; k < m; k++) {
       if (m == 1) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
         for (size_t j = 0; j < p; j++) {
           vr[j] = work_re[b + j];
           vi[j] = work_im[b + j];
@@ -2526,11 +2474,7 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
       } else {
         vr[0] = work_re[b + k];
         vi[0] = work_im[b + k];
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
         for (size_t j = 1; j < p; j++) {
           size_t idx = b + j * m + k;
           double tr = tw_re[j * m + k];
@@ -2544,21 +2488,13 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
 
       double sum_r = vr[0];
       double sum_i = vi[0];
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
       for (size_t j = 1; j < p; j++) {
         sum_r += vr[j];
         sum_i += vi[j];
       }
 
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
       for (size_t q = 0; q < p - 1; q++) {
         size_t idx = g_inv[q];
         a_re[q] = vr[idx];
@@ -2569,11 +2505,7 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
 
       mixed_radix_fft_execute(rader->conv_fft, a_re, a_im, f_re, f_im, false);
 
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
       for (size_t i = 0; i < conv_len; i++) {
         double fr = f_re[i], fi = f_im[i];
         double br = b_re[i], bi = b_im[i];
@@ -2586,11 +2518,7 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
       if (m == 1) {
         work_re[b] = sum_r;
         work_im[b] = sum_i;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
         for (size_t r = 0; r < p - 1; r++) {
           size_t idx = g_pow[r];
           work_re[b + idx] = vr[0] + a_re[r + p - 2] * scale;
@@ -2599,11 +2527,7 @@ static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
       } else {
         work_re[b + k] = sum_r;
         work_im[b + k] = sum_i;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
         for (size_t r = 0; r < p - 1; r++) {
           size_t idx = g_pow[r];
           work_re[b + idx * m + k] = vr[0] + a_re[r + p - 2] * scale;
@@ -2788,22 +2712,14 @@ void mixed_radix_fft_execute(mixed_radix_fft_t* fft, waveform_t real_in,
 
   // Step 1: permute input. For inverse, conjugate as we go
   if (inverse) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t i = 0; i < fft->n; i++) {
       size_t p = fft->permutation[i];
       work_re[p] = src_re[i];
       work_im[p] = -src_im[i];
     }
   } else {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t i = 0; i < fft->n; i++) {
       size_t p = fft->permutation[i];
       work_re[p] = src_re[i];
@@ -2856,11 +2772,7 @@ void mixed_radix_fft_execute(mixed_radix_fft_t* fft, waveform_t real_in,
   // Step 3: re-conjugate the imaginary part for the inverse direction.
   // Forward direction is already done in place — no copy needed.
   if (inverse) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+PRAGMA_VECTORIZE_LOOP
     for (size_t i = 0; i < fft->n; i++) {
       imag_out[i] = -imag_out[i];
     }

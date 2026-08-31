@@ -25,6 +25,17 @@
 #define ALWAYS_INLINE static inline
 #endif
 
+#if defined(__clang__)
+#define PRAGMA_VECTORIZE_LOOP \
+  _Pragma("clang loop vectorize(assume_safety) interleave(enable)")
+#elif defined(__GNUC__)
+#define PRAGMA_VECTORIZE_LOOP _Pragma("GCC ivdep")
+#elif defined(_MSC_VER)
+#define PRAGMA_VECTORIZE_LOOP __pragma(loop(ivdep))
+#else
+#define PRAGMA_VECTORIZE_LOOP
+#endif
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -64,11 +75,7 @@ static inline float float_from_db(float db) { return powf(10.0f, db / 20.0f); }
 ALWAYS_INLINE float dsp_ops_peak_absolute(const double* buffer, size_t count) {
   if (count == 0) return 0.0f;
   float res = 0.0f;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     float val = (float)fabs(buffer[i]);
     res = fmaxf(val, res);
@@ -89,11 +96,7 @@ ALWAYS_INLINE float dsp_ops_peak_absolute(const double* buffer, size_t count) {
 ALWAYS_INLINE float dsp_ops_rms(const double* buffer, size_t count) {
   if (count == 0) return 0.0f;
   float sum = 0.0f;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     float f = (float)buffer[i];
     sum += f * f;
@@ -110,11 +113,7 @@ ALWAYS_INLINE float dsp_ops_rms(const double* buffer, size_t count) {
  */
 ALWAYS_INLINE void dsp_ops_double_to_float(const double* src, float* dst,
                                            size_t count) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     dst[i] = (float)src[i];
   }
@@ -134,11 +133,7 @@ ALWAYS_INLINE void dsp_ops_float_add(const float* src, float* dst,
 #if defined(ENABLE_ACCELERATE)
   vDSP_vadd(dst, 1, src, 1, dst, 1, count);
 #else
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     dst[i] += src[i];
   }
@@ -153,11 +148,7 @@ ALWAYS_INLINE void dsp_ops_float_multiply(const float* a, const float* b,
 #if defined(ENABLE_ACCELERATE)
   vDSP_vmul(a, 1, b, 1, result, 1, count);
 #else
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     result[i] = a[i] * b[i];
   }
@@ -178,11 +169,7 @@ ALWAYS_INLINE void dsp_ops_float_scalar_multiply(float* buffer, float scalar,
 #if defined(ENABLE_ACCELERATE)
   cblas_sscal((int)count, scalar, buffer, 1);
 #else
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     buffer[i] *= scalar;
   }
@@ -258,11 +245,7 @@ static inline float dsp_ops_float_max(const float* buffer, size_t count) {
   return res;
 #else
   float res = buffer[0];
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 1; i < count; i++) {
     res = fmaxf(buffer[i], res);
   }
@@ -275,11 +258,7 @@ static inline float dsp_ops_float_max(const float* buffer, size_t count) {
  */
 static inline void dsp_ops_float_zvabs(const float* real, const float* imag,
                                        float* magnitudes, size_t count) {
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     float re = real[i];
     float im = imag[i];
@@ -291,16 +270,12 @@ static inline void dsp_ops_float_zvabs(const float* real, const float* imag,
  * @brief Convert linear amplitude values to decibels (dBFS).
  */
 static inline void dsp_ops_float_vdbcon(const float* vector, float reference,
-                                        float* result, size_t count) {
+                                         float* result, size_t count) {
 #if defined(ENABLE_ACCELERATE)
   vDSP_vdbcon(vector, 1, &reference, result, 1, count, 1);
 #else
   const float inv_ref = 1.0f / reference;
-#if defined(__clang__)
-#pragma clang loop vectorize(assume_safety) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
-#endif
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < count; i++) {
     result[i] = float_to_db(vector[i] * inv_ref);
   }
