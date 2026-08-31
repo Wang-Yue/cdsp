@@ -120,7 +120,7 @@ static inline double double_bessel_i0(double x) {
 // (e.g. an audio_buffers_t channel view) avoid any copy overhead or
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC push_options
-#pragma GCC optimize("finite-math-only")
+#pragma GCC optimize("O3,fast-math,finite-math-only")
 #elif defined(__clang__)
 #pragma float_control(precise, off, push)
 #endif

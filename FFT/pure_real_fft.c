@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Utils/cdsp_memory.h"
 #include "Utils/float_helpers.h"
 
 #ifndef M_PI
@@ -368,12 +369,12 @@ pure_real_fft_t* pure_real_fft_create(size_t length) {
   fft->twiddle_re = (double**)calloc(stage_count, sizeof(double*));
   fft->twiddle_im = (double**)calloc(stage_count, sizeof(double*));
   fft->permutation = (size_t*)calloc(n, sizeof(size_t));
-  fft->untw_re = (double*)calloc(n / 2 + 1, sizeof(double));
-  fft->untw_im = (double*)calloc(n / 2 + 1, sizeof(double));
-  fft->scratch_re = (double*)malloc(n * sizeof(double));
-  fft->scratch_im = (double*)malloc(n * sizeof(double));
-  fft->work_re = (double*)malloc(n * sizeof(double));
-  fft->work_im = (double*)malloc(n * sizeof(double));
+  fft->untw_re = (double*)cdsp_aligned_alloc(64, (n / 2 + 1) * sizeof(double));
+  fft->untw_im = (double*)cdsp_aligned_alloc(64, (n / 2 + 1) * sizeof(double));
+  fft->scratch_re = (double*)cdsp_aligned_alloc(64, n * sizeof(double));
+  fft->scratch_im = (double*)cdsp_aligned_alloc(64, n * sizeof(double));
+  fft->work_re = (double*)cdsp_aligned_alloc(64, n * sizeof(double));
+  fft->work_im = (double*)cdsp_aligned_alloc(64, n * sizeof(double));
 
   if (!fft->factors || !fft->twiddle_re || !fft->twiddle_im ||
       !fft->permutation || !fft->untw_re || !fft->untw_im ||
@@ -388,8 +389,8 @@ pure_real_fft_t* pure_real_fft_create(size_t length) {
     int r = fs[s];
     fft->factors[s] = r;
     size_t len = m * (size_t)r;
-    fft->twiddle_re[s] = (double*)calloc(len, sizeof(double));
-    fft->twiddle_im[s] = (double*)calloc(len, sizeof(double));
+    fft->twiddle_re[s] = (double*)cdsp_aligned_alloc(64, len * sizeof(double));
+    fft->twiddle_im[s] = (double*)cdsp_aligned_alloc(64, len * sizeof(double));
     if (!fft->twiddle_re[s] || !fft->twiddle_im[s]) {
       pure_real_fft_free(fft);
       return NULL;
@@ -555,24 +556,24 @@ void pure_real_fft_free(pure_real_fft_t* fft) {
   if (!fft) return;
   if (fft->twiddle_re) {
     for (int s = 0; s < fft->stage_count; s++) {
-      if (fft->twiddle_re[s]) free(fft->twiddle_re[s]);
+      if (fft->twiddle_re[s]) cdsp_aligned_free(fft->twiddle_re[s]);
     }
     free(fft->twiddle_re);
   }
   if (fft->twiddle_im) {
     for (int s = 0; s < fft->stage_count; s++) {
-      if (fft->twiddle_im[s]) free(fft->twiddle_im[s]);
+      if (fft->twiddle_im[s]) cdsp_aligned_free(fft->twiddle_im[s]);
     }
     free(fft->twiddle_im);
   }
   if (fft->factors) free(fft->factors);
   if (fft->permutation) free(fft->permutation);
-  if (fft->untw_re) free(fft->untw_re);
-  if (fft->untw_im) free(fft->untw_im);
-  if (fft->scratch_re) free(fft->scratch_re);
-  if (fft->scratch_im) free(fft->scratch_im);
-  if (fft->work_re) free(fft->work_re);
-  if (fft->work_im) free(fft->work_im);
+  if (fft->untw_re) cdsp_aligned_free(fft->untw_re);
+  if (fft->untw_im) cdsp_aligned_free(fft->untw_im);
+  if (fft->scratch_re) cdsp_aligned_free(fft->scratch_re);
+  if (fft->scratch_im) cdsp_aligned_free(fft->scratch_im);
+  if (fft->work_re) cdsp_aligned_free(fft->work_re);
+  if (fft->work_im) cdsp_aligned_free(fft->work_im);
   free(fft);
 }
 
@@ -927,12 +928,12 @@ pure_real_fftf_t* pure_real_fftf_create(size_t length) {
   fft->twiddle_re = (float**)calloc(stage_count, sizeof(float*));
   fft->twiddle_im = (float**)calloc(stage_count, sizeof(float*));
   fft->permutation = (size_t*)calloc(n, sizeof(size_t));
-  fft->untw_re = (float*)calloc(n / 2 + 1, sizeof(float));
-  fft->untw_im = (float*)calloc(n / 2 + 1, sizeof(float));
-  fft->scratch_re = (float*)malloc(n * sizeof(float));
-  fft->scratch_im = (float*)malloc(n * sizeof(float));
-  fft->work_re = (float*)malloc(n * sizeof(float));
-  fft->work_im = (float*)malloc(n * sizeof(float));
+  fft->untw_re = (float*)cdsp_aligned_alloc(64, (n / 2 + 1) * sizeof(float));
+  fft->untw_im = (float*)cdsp_aligned_alloc(64, (n / 2 + 1) * sizeof(float));
+  fft->scratch_re = (float*)cdsp_aligned_alloc(64, n * sizeof(float));
+  fft->scratch_im = (float*)cdsp_aligned_alloc(64, n * sizeof(float));
+  fft->work_re = (float*)cdsp_aligned_alloc(64, n * sizeof(float));
+  fft->work_im = (float*)cdsp_aligned_alloc(64, n * sizeof(float));
 
   if (!fft->factors || !fft->twiddle_re || !fft->twiddle_im ||
       !fft->permutation || !fft->untw_re || !fft->untw_im ||
@@ -947,8 +948,8 @@ pure_real_fftf_t* pure_real_fftf_create(size_t length) {
     int r = fs[s];
     fft->factors[s] = r;
     size_t len = m * (size_t)r;
-    fft->twiddle_re[s] = (float*)calloc(len, sizeof(float));
-    fft->twiddle_im[s] = (float*)calloc(len, sizeof(float));
+    fft->twiddle_re[s] = (float*)cdsp_aligned_alloc(64, len * sizeof(float));
+    fft->twiddle_im[s] = (float*)cdsp_aligned_alloc(64, len * sizeof(float));
     if (!fft->twiddle_re[s] || !fft->twiddle_im[s]) {
       pure_real_fftf_free(fft);
       return NULL;
@@ -1103,24 +1104,24 @@ void pure_real_fftf_free(pure_real_fftf_t* fft) {
   if (!fft) return;
   if (fft->twiddle_re) {
     for (int s = 0; s < fft->stage_count; s++) {
-      if (fft->twiddle_re[s]) free(fft->twiddle_re[s]);
+      if (fft->twiddle_re[s]) cdsp_aligned_free(fft->twiddle_re[s]);
     }
     free(fft->twiddle_re);
   }
   if (fft->twiddle_im) {
     for (int s = 0; s < fft->stage_count; s++) {
-      if (fft->twiddle_im[s]) free(fft->twiddle_im[s]);
+      if (fft->twiddle_im[s]) cdsp_aligned_free(fft->twiddle_im[s]);
     }
     free(fft->twiddle_im);
   }
   if (fft->factors) free(fft->factors);
   if (fft->permutation) free(fft->permutation);
-  if (fft->untw_re) free(fft->untw_re);
-  if (fft->untw_im) free(fft->untw_im);
-  if (fft->scratch_re) free(fft->scratch_re);
-  if (fft->scratch_im) free(fft->scratch_im);
-  if (fft->work_re) free(fft->work_re);
-  if (fft->work_im) free(fft->work_im);
+  if (fft->untw_re) cdsp_aligned_free(fft->untw_re);
+  if (fft->untw_im) cdsp_aligned_free(fft->untw_im);
+  if (fft->scratch_re) cdsp_aligned_free(fft->scratch_re);
+  if (fft->scratch_im) cdsp_aligned_free(fft->scratch_im);
+  if (fft->work_re) cdsp_aligned_free(fft->work_re);
+  if (fft->work_im) cdsp_aligned_free(fft->work_im);
   free(fft);
 }
 

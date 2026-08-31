@@ -111,11 +111,9 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
         "$<$<CONFIG:Release,RelWithDebInfo>:-O3;-ffp-contract=fast;-fno-math-errno;-funroll-loops>"
     )
 
-    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-        add_compile_options(
-            "$<$<CONFIG:Release,RelWithDebInfo>:-fassociative-math;-fno-signed-zeros;-fno-trapping-math>"
-        )
-    endif()
+    add_compile_options(
+        "$<$<CONFIG:Release,RelWithDebInfo>:-fassociative-math;-fno-signed-zeros;-fno-trapping-math>"
+    )
 
     if(ENABLE_NATIVE_ARCH AND NOT CMAKE_CROSSCOMPILING)
         if(APPLE)

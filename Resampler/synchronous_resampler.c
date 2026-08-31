@@ -86,6 +86,15 @@
 #include "Resampler/audio_resampler.h"
 #include "Resampler/resampler_error.h"
 #include "Resampler/sinc_window_function.h"
+#include "Utils/cdsp_memory.h"
+#include "Utils/double_helpers.h"
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC push_options
+#pragma GCC optimize("O3,fast-math,finite-math-only")
+#elif defined(__clang__)
+#pragma float_control(precise, off, push)
+#endif
 
 typedef struct synchronous_resampler synchronous_resampler_t;
 
@@ -167,17 +176,17 @@ static void synchronous_resampler_free(void* impl) {
   if (!resampler) return;
   if (resampler->input_fft) real_fft_free(resampler->input_fft);
   if (resampler->output_fft) real_fft_free(resampler->output_fft);
-  free(resampler->filter_spec_re);
-  free(resampler->filter_spec_im);
+  if (resampler->filter_spec_re) cdsp_aligned_free(resampler->filter_spec_re);
+  if (resampler->filter_spec_im) cdsp_aligned_free(resampler->filter_spec_im);
   if (resampler->carries) {
     for (size_t ch = 0; ch < resampler->channels; ch++) {
-      free(resampler->carries[ch]);
+      if (resampler->carries[ch]) cdsp_aligned_free(resampler->carries[ch]);
     }
     free(resampler->carries);
   }
-  free(resampler->working_time);
-  free(resampler->working_spec_re);
-  free(resampler->working_spec_im);
+  if (resampler->working_time) cdsp_aligned_free(resampler->working_time);
+  if (resampler->working_spec_re) cdsp_aligned_free(resampler->working_spec_re);
+  if (resampler->working_spec_im) cdsp_aligned_free(resampler->working_spec_im);
   free(resampler);
 }
 
@@ -425,8 +434,10 @@ static void* synchronous_resampler_create_impl(size_t channels,
     return NULL;
   }
 
-  resampler->filter_spec_re = (double*)calloc(sub_fft_in + 1, sizeof(double));
-  resampler->filter_spec_im = (double*)calloc(sub_fft_in + 1, sizeof(double));
+  resampler->filter_spec_re =
+      (double*)cdsp_aligned_alloc(64, (sub_fft_in + 1) * sizeof(double));
+  resampler->filter_spec_im =
+      (double*)cdsp_aligned_alloc(64, (sub_fft_in + 1) * sizeof(double));
   if (!resampler->filter_spec_re || !resampler->filter_spec_im) {
     config_error_set(
         err, CONFIG_ERR_PARSE,
@@ -435,6 +446,8 @@ static void* synchronous_resampler_create_impl(size_t channels,
     synchronous_resampler_free(resampler);
     return NULL;
   }
+  memset(resampler->filter_spec_re, 0, (sub_fft_in + 1) * sizeof(double));
+  memset(resampler->filter_spec_im, 0, (sub_fft_in + 1) * sizeof(double));
   real_fft_forward(resampler->input_fft, filter_time, resampler->filter_spec_re,
                    resampler->filter_spec_im);
   free(filter_time);
@@ -448,7 +461,8 @@ static void* synchronous_resampler_create_impl(size_t channels,
     return NULL;
   }
   for (size_t ch = 0; ch < channels; ch++) {
-    resampler->carries[ch] = (double*)calloc(sub_fft_out, sizeof(double));
+    resampler->carries[ch] =
+        (double*)cdsp_aligned_alloc(64, sub_fft_out * sizeof(double));
     if (!resampler->carries[ch]) {
       config_error_set(err, CONFIG_ERR_PARSE,
                        "SynchronousResampler: Failed to allocate carry buffer "
@@ -457,12 +471,16 @@ static void* synchronous_resampler_create_impl(size_t channels,
       synchronous_resampler_free(resampler);
       return NULL;
     }
+    memset(resampler->carries[ch], 0, sub_fft_out * sizeof(double));
   }
 
   size_t max_len = sub_fft_in > sub_fft_out ? sub_fft_in : sub_fft_out;
-  resampler->working_time = (double*)calloc(2 * max_len, sizeof(double));
-  resampler->working_spec_re = (double*)calloc(max_len + 1, sizeof(double));
-  resampler->working_spec_im = (double*)calloc(max_len + 1, sizeof(double));
+  resampler->working_time =
+      (double*)cdsp_aligned_alloc(64, 2 * max_len * sizeof(double));
+  resampler->working_spec_re =
+      (double*)cdsp_aligned_alloc(64, (max_len + 1) * sizeof(double));
+  resampler->working_spec_im =
+      (double*)cdsp_aligned_alloc(64, (max_len + 1) * sizeof(double));
   if (!resampler->working_time || !resampler->working_spec_re ||
       !resampler->working_spec_im) {
     config_error_set(
@@ -471,6 +489,9 @@ static void* synchronous_resampler_create_impl(size_t channels,
     synchronous_resampler_free(resampler);
     return NULL;
   }
+  memset(resampler->working_time, 0, 2 * max_len * sizeof(double));
+  memset(resampler->working_spec_re, 0, (max_len + 1) * sizeof(double));
+  memset(resampler->working_spec_im, 0, (max_len + 1) * sizeof(double));
 
   return resampler;
 }

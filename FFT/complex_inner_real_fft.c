@@ -18,11 +18,13 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 
 #if defined(ENABLE_ACCELERATE)
 #include <Accelerate/Accelerate.h>
 #endif
 
+#include "Utils/cdsp_memory.h"
 #include "Utils/double_helpers.h"
 #include "real_fft_backend.h"
 
@@ -120,18 +122,24 @@ complex_inner_real_fft_t* complex_inner_real_fft_create(
   fft->base.free = complex_inner_real_fft_free_wrapper;
   fft->half_n = half_n;
 
-  fft->twiddle_re = (double*)calloc(half_n, sizeof(double));
-  fft->twiddle_im = (double*)calloc(half_n, sizeof(double));
-  fft->z_re = (double*)calloc(half_n, sizeof(double));
-  fft->z_im = (double*)calloc(half_n, sizeof(double));
-  fft->z_f_re = (double*)calloc(half_n, sizeof(double));
-  fft->z_f_im = (double*)calloc(half_n, sizeof(double));
+  fft->twiddle_re = (double*)cdsp_aligned_alloc(64, half_n * sizeof(double));
+  fft->twiddle_im = (double*)cdsp_aligned_alloc(64, half_n * sizeof(double));
+  fft->z_re = (double*)cdsp_aligned_alloc(64, half_n * sizeof(double));
+  fft->z_im = (double*)cdsp_aligned_alloc(64, half_n * sizeof(double));
+  fft->z_f_re = (double*)cdsp_aligned_alloc(64, half_n * sizeof(double));
+  fft->z_f_im = (double*)cdsp_aligned_alloc(64, half_n * sizeof(double));
 
   if (!fft->twiddle_re || !fft->twiddle_im || !fft->z_re || !fft->z_im ||
       !fft->z_f_re || !fft->z_f_im) {
     complex_inner_real_fft_free(fft);
     return NULL;
   }
+  memset(fft->twiddle_re, 0, half_n * sizeof(double));
+  memset(fft->twiddle_im, 0, half_n * sizeof(double));
+  memset(fft->z_re, 0, half_n * sizeof(double));
+  memset(fft->z_im, 0, half_n * sizeof(double));
+  memset(fft->z_f_re, 0, half_n * sizeof(double));
+  memset(fft->z_f_im, 0, half_n * sizeof(double));
 
   fft->inner = inner;
 
@@ -269,12 +277,12 @@ void complex_inner_real_fft_inverse(complex_inner_real_fft_t* fft,
 void complex_inner_real_fft_free(complex_inner_real_fft_t* fft) {
   if (!fft) return;
   if (fft->inner) arbitrary_complex_fft_free(fft->inner);
-  if (fft->twiddle_re) free(fft->twiddle_re);
-  if (fft->twiddle_im) free(fft->twiddle_im);
-  if (fft->z_re) free(fft->z_re);
-  if (fft->z_im) free(fft->z_im);
-  if (fft->z_f_re) free(fft->z_f_re);
-  if (fft->z_f_im) free(fft->z_f_im);
+  if (fft->twiddle_re) cdsp_aligned_free(fft->twiddle_re);
+  if (fft->twiddle_im) cdsp_aligned_free(fft->twiddle_im);
+  if (fft->z_re) cdsp_aligned_free(fft->z_re);
+  if (fft->z_im) cdsp_aligned_free(fft->z_im);
+  if (fft->z_f_re) cdsp_aligned_free(fft->z_f_re);
+  if (fft->z_f_im) cdsp_aligned_free(fft->z_f_im);
   free(fft);
 }
 
