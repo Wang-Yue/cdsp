@@ -20,19 +20,12 @@
  * The inner sum is the convolution of the chirp-modulated input with the
  * length-(2N−1) chirp kernel b[n] = exp(+iπn²/N). We zero-pad both to the
  * smallest power of two M ≥ 2N − 1 and evaluate the convolution via the
- * standard FFT-multiply-IFFT pipeline; the outer chirp is applied as a
- * pointwise post-multiply.
- *
- * vDSP's complex FFT (`vDSP_DFT_zop_CreateSetupD`) only accepts power-of-2
- * lengths ≥ 16, so logical sizes that aren't powers of two (e.g. the
- * L+M block lengths chosen by `SynchronousResampler`) need this fallback.
- * Cost is three length-M FFTs per logical N-point transform, still
- * O(N log N).
+ * standard FFT-multiply-IFFT pipeline using mixed_radix_fft; the outer chirp
+ * is applied as a pointwise post-multiply.
  *
  * Storage uses heap-allocated double buffers (allocated in create, freed
- * in free) so the hot path runs directly on raw pointers.
- * All complex multiplications run through `vDSP_zvmulD`, which on Apple
- * Silicon issues packed NEON `fmla.2d` pairs.
+ * in free) so the hot path runs directly on raw pointers with 0 dynamic
+ * memory allocations during execution.
  */
 
 #include <stdbool.h>
@@ -42,7 +35,6 @@
 #include "FFT/arbitrary_complex_fft.h"
 #include "Utils/double_helpers.h"
 
-#if defined(ENABLE_ACCELERATE)
 /**
  * @struct bluestein_fft
  * @brief Opaque structure representing a Bluestein FFT context.
@@ -68,11 +60,6 @@ bluestein_fft_t* bluestein_fft_create(size_t n, config_error_t* err);
  *   `x[n] = Σₖ X[k] · exp(+2πi · n · k / N)`
  * for arbitrary `N > 0`. Inverse callers that want the true inverse must
  * divide by `N` themselves — both directions are returned scale-free.
- *
- * Implementation: `IDFT(x) = conj(DFT(conj(x)))`, which lets the inverse
- * path reuse the forward `α` and `bRealF/bImagF` tables — pre-multiply
- * with `Conjugate=-1` (vDSP applies conj to B), post-multiply regular,
- * then negate the imag of the output.
  *
  * @param fft The Bluestein FFT context.
  * @param real_in Input buffer containing the real parts of the signal.
@@ -103,6 +90,5 @@ static inline arbitrary_complex_fft_t* bluestein_fft_as_arbitrary(
     bluestein_fft_t* fft) {
   return (arbitrary_complex_fft_t*)fft;
 }
-#endif  // ENABLE_ACCELERATE
 
 #endif  // CLIB_FFT_BLUESTEINFFT_H

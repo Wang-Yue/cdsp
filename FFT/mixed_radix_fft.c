@@ -1,20 +1,18 @@
-// Arbitrary-N complex DFT via iterative DIT Cooley-Tukey where all prime
-// factors are all ≤ 7. Targets `N = 1029 = 3 · 7³` and `N = 1120 = 2⁵ · 5 · 7`
-// — the inner FFT sizes that `real_fft` needs for 44.1↔48 kHz
-// resampling. Compared with Bluestein-on-vDSP, this trades the inner
-// power-of-2 transforms (M = 4096) for a direct decomposition into
-// `O(N · Σ pᵢ)` ops — about 6× fewer arithmetic operations at N = 1029.
+// Arbitrary-N complex DFT via iterative DIT Cooley-Tukey and Rader's Algorithm.
 //
-// Note on the radix-2/4/8 stages: they're not redundant with
-// `real_fft`'s outer `vdsp_real_fft` fast path. That fast path
-// fires only when the *whole* real-FFT length is a power of two; the
-// radix-2/4/8 stages here handle the *power-of-two portion* of a mixed
-// factorisation (e.g. `1120 = 2⁵·5·7` collapses into `[8, 4, 5, 7]`).
-// Without them this module could only support odd-prime-only sizes like
-// `105 = 3·5·7`, and most of our resampler's mixed-rate FFTs would fall
-// through to Bluestein.
+// Architecture:
+//   - Fast specialized unrolled kernels:
+//       * Powers of 2: Radix-8, Radix-4, Radix-2
+//       * Powers of 3: Radix-9, Radix-3
+//       * Small Primes: Radix-5, Radix-7, Radix-11, Radix-13
+//   - Rader's FFT Algorithm for arbitrary primes p > 13: converts length-p
+//     prime DFT stages into length-(p-1) cyclic convolutions computed via
+//     internal power-of-2 FFTs in O(p log p) time.
 //
-// Architecture: classic iterative DIT (decimation-in-time) Cooley-Tukey.
+// Compared with pure Bluestein-on-vDSP, this direct decomposition into
+// `O(N · Σ pᵢ)` ops gives about 6× fewer arithmetic operations at N = 1029.
+//
+// Execution pipeline:
 //   1. Permute input via mixed-radix digit reversal.
 //   2. For each factor `r` (in order), apply length-`r` butterflies on
 //      stride-`m` groups, where `m` grows by `r` after each stage. Twiddle
@@ -24,9 +22,9 @@
 // Inverse FFT uses the identity `IDFT(x) = conj(DFT(conj(x)))`, so we only
 // pre-compute the forward twiddles. Both transforms are unnormalised.
 //
-// All buffers (twiddles, permutation LUT, scratch) are heap-allocated at
-// init and freed in deinit. The hot path runs purely on raw pointers — no
-// allocations, no closures.
+// All buffers (twiddles, permutation LUT, scratch, Rader plans) are
+// heap-allocated at init and freed in deinit. The hot path runs purely on raw
+// pointers — 0 dynamic allocations during execution.
 
 #include "FFT/mixed_radix_fft.h"
 

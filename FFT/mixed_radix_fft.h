@@ -3,36 +3,21 @@
 
 /**
  * @file mixed_radix_fft.h
- * @brief Arbitrary-N complex DFT via iterative Cooley-Tukey mixed-radix FFT.
- *
- * Arbitrary-N complex DFT via iterative DIT Cooley-Tukey where all prime
- * factors are all ≤ 7. Targets `N = 1029 = 3 · 7³` and `N = 1120 = 2⁵ · 5 · 7`
- * — the inner FFT sizes that `real_fft` needs for 44.1↔48 kHz
- * resampling. Compared with Bluestein-on-vDSP, this trades the inner
- * power-of-2 transforms (M = 4096) for a direct decomposition into
- * `O(N · Σ pᵢ)` ops — about 6× fewer arithmetic operations at N = 1029.
- *
- * Note on the radix-2/4/8 stages: they're not redundant with
- * `real_fft`'s outer `vdsp_real_fft` fast path. That fast path
- * fires only when the *whole* real-FFT length is a power of two; the
- * radix-2/4/8 stages here handle the *power-of-two portion* of a mixed
- * factorisation (e.g. `1120 = 2⁵·5·7` collapses into `[8, 4, 5, 7]`).
- * Without them this class could only support odd-prime-only sizes like
- * `105 = 3·5·7`, and most of our resampler's mixed-rate FFTs would fall
- * through to Bluestein.
+ * @brief Arbitrary-N complex DFT via iterative Cooley-Tukey and Rader's
+ * mixed-radix FFT.
  *
  * Architecture:
- *   1. Permute input via mixed-radix digit reversal.
- *   2. For each factor `r` (in order), apply length-`r` butterflies on
- *      stride-`m` groups, where `m` grows by `r` after each stage. Twiddle
- *      factors W_{m·r}^(j·k) are pre-computed once at init.
- *   3. Copy out (with conjugation for the inverse direction).
- *
- * Inverse FFT uses the identity `IDFT(x) = conj(DFT(conj(x)))`, so we only
- * pre-compute the forward twiddles. Both transforms are unnormalised.
+ *   - Specialized fast unrolled kernels:
+ *       * Powers of 2: Radix-8, Radix-4, Radix-2
+ *       * Powers of 3: Radix-9, Radix-3
+ *       * Small Primes: Radix-5, Radix-7, Radix-11, Radix-13
+ *   - Rader's FFT Algorithm for arbitrary primes p > 13: converts length-p
+ *     prime DFT stages into length-(p-1) cyclic convolutions computed via
+ *     internal power-of-2 FFTs in O(p log p) time.
  *
  * All buffers (twiddles, permutation LUT, scratch) are heap-allocated at
- * init and freed in deinit. The hot path runs purely on raw pointers.
+ * init and freed in deinit. The hot path runs purely on raw pointers with
+ * 0 dynamic memory allocations during execution.
  */
 
 #include <stdbool.h>
@@ -50,11 +35,11 @@ typedef struct mixed_radix_fft mixed_radix_fft_t;
 /**
  * @brief Creates a mixed-radix complex FFT context for length N.
  *
- * Mixed-radix complex FFT supporting `N = 2^a · 3^b · 5^c · 7^d`.
+ * Supports arbitrary positive integers N > 0.
  *
  * @param n The transform length.
- * @return A pointer to the created mixed_radix_fft_t context, or NULL if
- *         `n` has any prime factor > 7.
+ * @return A pointer to the created mixed_radix_fft_t context, or NULL on
+ * allocation failure.
  */
 mixed_radix_fft_t* mixed_radix_fft_create(size_t n);
 
