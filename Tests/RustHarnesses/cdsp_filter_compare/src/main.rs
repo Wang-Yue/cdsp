@@ -175,6 +175,33 @@ fn main() {
                     let mut filter = FftConv::new("test", chunk_size, &coeffs);
                     bench_filter(&mut filter, chunk_size, iters);
                 }
+                "realfft" => {
+                    let length: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(1024);
+                    let iters: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(5000);
+                    let mut planner = realfft::RealFftPlanner::<f64>::new();
+                    let r2c = planner.plan_fft_forward(length);
+                    let c2r = planner.plan_fft_inverse(length);
+                    let mut in_real = r2c.make_input_vec();
+                    let mut spec = r2c.make_output_vec();
+                    let mut out_real = c2r.make_output_vec();
+                    for i in 0..length {
+                        in_real[i] = (2.0 * std::f64::consts::PI * 1000.0 * (i as f64) / 48000.0).sin();
+                    }
+                    // warm-up
+                    for _ in 0..50 {
+                        r2c.process(&mut in_real, &mut spec).unwrap();
+                        c2r.process(&mut spec, &mut out_real).unwrap();
+                    }
+                    let start = std::time::Instant::now();
+                    for _ in 0..iters {
+                        r2c.process(&mut in_real, &mut spec).unwrap();
+                        c2r.process(&mut spec, &mut out_real).unwrap();
+                        std::hint::black_box(&out_real);
+                    }
+                    let elapsed_ns = start.elapsed().as_nanos() as f64;
+                    let ns_per_roundtrip = elapsed_ns / (iters as f64);
+                    println!("{ns_per_roundtrip:.3}");
+                }
                 "pipeline_biquad" => {
                     let multi = args.get(3).map(|s| s == "multi").unwrap_or(false);
                     let chunk_size: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(1024);

@@ -495,6 +495,7 @@ if(BUILD_TESTING)
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_resampler_matrix\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_simd_benchmark\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_mixed_radix_fft_benchmark\\.c$")
+    list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_convolution_backends_benchmark\\.c$")
 
     if(NOT ENABLE_WEBSOCKET)
         list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_websocket_server\\.c$")
@@ -557,6 +558,7 @@ if(BUILD_BENCHMARKS)
         test_resampler_matrix
         test_simd_benchmark
         test_mixed_radix_fft_benchmark
+        test_convolution_backends_benchmark
     )
 
     set(BENCH_TARGETS "")
@@ -567,6 +569,20 @@ if(BUILD_BENCHMARKS)
         target_compile_definitions(${bench_name} PRIVATE CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
         list(APPEND BENCH_TARGETS ${bench_name})
     endforeach()
+
+    if(TARGET test_convolution_backends_benchmark)
+        if(APPLE)
+            target_compile_definitions(test_convolution_backends_benchmark PRIVATE ENABLE_ACCELERATE)
+            target_link_libraries(test_convolution_backends_benchmark PRIVATE "-framework Accelerate")
+        endif()
+        find_path(BENCH_FFTW3_INC NAMES fftw3.h PATHS /opt/homebrew/opt/fftw/include /usr/local/include)
+        find_library(BENCH_FFTW3_LIB NAMES fftw3 libfftw3 PATHS /opt/homebrew/opt/fftw/lib /usr/local/lib)
+        if(BENCH_FFTW3_INC AND BENCH_FFTW3_LIB)
+            target_include_directories(test_convolution_backends_benchmark PRIVATE ${BENCH_FFTW3_INC})
+            target_link_libraries(test_convolution_backends_benchmark PRIVATE ${BENCH_FFTW3_LIB})
+            target_compile_definitions(test_convolution_backends_benchmark PRIVATE HAS_FFTW)
+        endif()
+    endif()
 
     if(TARGET test_simd_benchmark)
         if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
