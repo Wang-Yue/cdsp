@@ -66,6 +66,7 @@ struct mixed_radix_fft {
   double* work_im;
   double* scratch_re;
   double* scratch_im;
+  struct rader_plan_s** rader_plans;
 };
 
 /**
@@ -2344,21 +2345,260 @@ static inline void stage_radix13(mixed_radix_fft_t* fft, double* work_re,
 #pragma float_control(pop)
 #endif
 
+/* -------------------------------------------------------------------------
+ * Rader's Algorithm for Prime Stages (p > 13)
+ * Converts length-p prime DFT into cyclic convolution of length p - 1.
+ * ------------------------------------------------------------------------- */
+
+typedef struct rader_plan_s {
+  size_t p;
+  size_t conv_len;
+  uint64_t g;
+  size_t* g_pow;
+  size_t* g_inv_pow;
+  mixed_radix_fft_t* conv_fft;
+  double* b_freq_re;
+  double* b_freq_im;
+  double* scratch_time_re;
+  double* scratch_time_im;
+  double* scratch_freq_re;
+  double* scratch_freq_im;
+  double* v_re;
+  double* v_im;
+} rader_plan_t;
+
+static uint64_t rader_mod_pow(uint64_t base, uint64_t exp, uint64_t mod) {
+  uint64_t res = 1;
+  base %= mod;
+  while (exp > 0) {
+    if (exp % 2 == 1) res = (uint64_t)((__int128)res * base % mod);
+    base = (uint64_t)((__int128)base * base % mod);
+    exp /= 2;
+  }
+  return res;
+}
+
+static uint64_t rader_find_primitive_root(uint64_t p) {
+  if (p == 2) return 1;
+  uint64_t phi = p - 1;
+  uint64_t factors[32];
+  int num_factors = 0;
+  uint64_t temp = phi;
+  for (uint64_t d = 2; d * d <= temp; d++) {
+    if (temp % d == 0) {
+      factors[num_factors++] = d;
+      while (temp % d == 0) temp /= d;
+    }
+  }
+  if (temp > 1) {
+    factors[num_factors++] = temp;
+  }
+
+  for (uint64_t g = 2; g < p; g++) {
+    bool ok = true;
+    for (int i = 0; i < num_factors; i++) {
+      if (rader_mod_pow(g, phi / factors[i], p) == 1) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return g;
+  }
+  return 0;
+}
+
+static inline size_t rader_next_pow2(size_t v) {
+  if (v <= 1) return 1;
+  size_t p = 1;
+  while (p < v) p <<= 1;
+  return p;
+}
+
+static void rader_plan_free(rader_plan_t* rader) {
+  if (!rader) return;
+  if (rader->g_pow) free(rader->g_pow);
+  if (rader->g_inv_pow) free(rader->g_inv_pow);
+  if (rader->conv_fft) mixed_radix_fft_free(rader->conv_fft);
+  if (rader->b_freq_re) free(rader->b_freq_re);
+  if (rader->b_freq_im) free(rader->b_freq_im);
+  if (rader->scratch_time_re) free(rader->scratch_time_re);
+  if (rader->scratch_time_im) free(rader->scratch_time_im);
+  if (rader->scratch_freq_re) free(rader->scratch_freq_re);
+  if (rader->scratch_freq_im) free(rader->scratch_freq_im);
+  if (rader->v_re) free(rader->v_re);
+  if (rader->v_im) free(rader->v_im);
+  free(rader);
+}
+
+static rader_plan_t* rader_plan_create(size_t p) {
+  rader_plan_t* rader = (rader_plan_t*)calloc(1, sizeof(rader_plan_t));
+  if (!rader) return NULL;
+  rader->p = p;
+  rader->conv_len = rader_next_pow2(2 * p - 3);
+  rader->g = rader_find_primitive_root((uint64_t)p);
+  if (rader->g == 0) {
+    rader_plan_free(rader);
+    return NULL;
+  }
+
+  rader->g_pow = (size_t*)malloc((p - 1) * sizeof(size_t));
+  rader->g_inv_pow = (size_t*)malloc((p - 1) * sizeof(size_t));
+  if (!rader->g_pow || !rader->g_inv_pow) {
+    rader_plan_free(rader);
+    return NULL;
+  }
+
+  uint64_t cur = 1;
+  for (size_t r = 0; r < p - 1; r++) {
+    rader->g_pow[r] = (size_t)cur;
+    cur = (uint64_t)((__int128)cur * rader->g % p);
+  }
+
+  uint64_t g_inv = rader_mod_pow(rader->g, p - 2, p);
+  cur = 1;
+  for (size_t q = 0; q < p - 1; q++) {
+    rader->g_inv_pow[q] = (size_t)cur;
+    cur = (uint64_t)((__int128)cur * g_inv % p);
+  }
+
+  rader->b_freq_re = (double*)calloc(rader->conv_len, sizeof(double));
+  rader->b_freq_im = (double*)calloc(rader->conv_len, sizeof(double));
+  rader->scratch_time_re = (double*)calloc(rader->conv_len, sizeof(double));
+  rader->scratch_time_im = (double*)calloc(rader->conv_len, sizeof(double));
+  rader->scratch_freq_re = (double*)calloc(rader->conv_len, sizeof(double));
+  rader->scratch_freq_im = (double*)calloc(rader->conv_len, sizeof(double));
+  rader->v_re = (double*)malloc(p * sizeof(double));
+  rader->v_im = (double*)malloc(p * sizeof(double));
+
+  if (!rader->b_freq_re || !rader->b_freq_im || !rader->scratch_time_re ||
+      !rader->scratch_time_im || !rader->scratch_freq_re ||
+      !rader->scratch_freq_im || !rader->v_re || !rader->v_im) {
+    rader_plan_free(rader);
+    return NULL;
+  }
+
+  rader->conv_fft = mixed_radix_fft_create(rader->conv_len);
+  if (!rader->conv_fft) {
+    rader_plan_free(rader);
+    return NULL;
+  }
+
+  double* b_time_re = rader->scratch_time_re;
+  double* b_time_im = rader->scratch_time_im;
+  memset(b_time_re, 0, rader->conv_len * sizeof(double));
+  memset(b_time_im, 0, rader->conv_len * sizeof(double));
+
+  for (size_t m = 0; m < 2 * p - 3; m++) {
+    size_t pow_idx = (m + 1) % (p - 1);
+    double theta = -2.0 * M_PI * (double)rader->g_pow[pow_idx] / (double)p;
+    b_time_re[m] = cos(theta);
+    b_time_im[m] = sin(theta);
+  }
+
+  mixed_radix_fft_execute(rader->conv_fft, b_time_re, b_time_im,
+                          rader->b_freq_re, rader->b_freq_im, false);
+
+  return rader;
+}
+
+static inline void stage_rader(mixed_radix_fft_t* fft, double* work_re,
+                               double* work_im, size_t m, const double* tw_re,
+                               const double* tw_im, rader_plan_t* rader) {
+  size_t p = rader->p;
+  size_t block_size = m * p;
+  size_t conv_len = rader->conv_len;
+  double scale = 1.0 / (double)conv_len;
+  double* vr = rader->v_re;
+  double* vi = rader->v_im;
+  double* a_re = rader->scratch_time_re;
+  double* a_im = rader->scratch_time_im;
+  double* f_re = rader->scratch_freq_re;
+  double* f_im = rader->scratch_freq_im;
+  const double* b_re = rader->b_freq_re;
+  const double* b_im = rader->b_freq_im;
+  const size_t* g_inv = rader->g_inv_pow;
+  const size_t* g_pow = rader->g_pow;
+
+  for (size_t b = 0; b < fft->n; b += block_size) {
+    for (size_t k = 0; k < m; k++) {
+      if (m == 1) {
+        for (size_t j = 0; j < p; j++) {
+          vr[j] = work_re[b + j];
+          vi[j] = work_im[b + j];
+        }
+      } else {
+        vr[0] = work_re[b + k];
+        vi[0] = work_im[b + k];
+        for (size_t j = 1; j < p; j++) {
+          size_t idx = b + j * m + k;
+          double tr = tw_re[j * m + k];
+          double ti = tw_im[j * m + k];
+          double r_val = work_re[idx];
+          double i_val = work_im[idx];
+          vr[j] = r_val * tr - i_val * ti;
+          vi[j] = r_val * ti + i_val * tr;
+        }
+      }
+
+      double sum_r = vr[0];
+      double sum_i = vi[0];
+      for (size_t j = 1; j < p; j++) {
+        sum_r += vr[j];
+        sum_i += vi[j];
+      }
+
+      for (size_t q = 0; q < p - 1; q++) {
+        size_t idx = g_inv[q];
+        a_re[q] = vr[idx];
+        a_im[q] = vi[idx];
+      }
+      memset(a_re + (p - 1), 0, (conv_len - (p - 1)) * sizeof(double));
+      memset(a_im + (p - 1), 0, (conv_len - (p - 1)) * sizeof(double));
+
+      mixed_radix_fft_execute(rader->conv_fft, a_re, a_im, f_re, f_im, false);
+
+      for (size_t i = 0; i < conv_len; i++) {
+        double fr = f_re[i], fi = f_im[i];
+        double br = b_re[i], bi = b_im[i];
+        f_re[i] = fr * br - fi * bi;
+        f_im[i] = fr * bi + fi * br;
+      }
+
+      mixed_radix_fft_execute(rader->conv_fft, f_re, f_im, a_re, a_im, true);
+
+      if (m == 1) {
+        work_re[b] = sum_r;
+        work_im[b] = sum_i;
+        for (size_t r = 0; r < p - 1; r++) {
+          size_t idx = g_pow[r];
+          work_re[b + idx] = vr[0] + a_re[r + p - 2] * scale;
+          work_im[b + idx] = vi[0] + a_im[r + p - 2] * scale;
+        }
+      } else {
+        work_re[b + k] = sum_r;
+        work_im[b + k] = sum_i;
+        for (size_t r = 0; r < p - 1; r++) {
+          size_t idx = g_pow[r];
+          work_re[b + idx * m + k] = vr[0] + a_re[r + p - 2] * scale;
+          work_im[b + idx * m + k] = vi[0] + a_im[r + p - 2] * scale;
+        }
+      }
+    }
+  }
+}
+
 mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
   if (n == 0) return NULL;
-  // Factorise into 2/3/4/5/7/8 and arbitrary prime radices.
-  // Power-of-2 portion prefers larger radixes: `2⁵ = 32 → [8, 4]`.
   int fs[64];
   int stage_count = 0;
   size_t rem = n;
 
+  // 1. Powers of 2: greedy 8 -> 4 -> 2
   int two_pow = 0;
   while (rem % 2 == 0) {
     two_pow++;
     rem /= 2;
   }
-  // Greedy: take 8s while we have >= 3 powers of 2 remaining, then a
-  // single 4 if 2 remain, or a 2 if 1 remains.
   while (two_pow >= 3) {
     fs[stage_count++] = 8;
     two_pow -= 3;
@@ -2393,10 +2633,18 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
     }
   }
 
-  // If there are unsupported prime factors remaining (p > 13), mixed-radix
-  // cannot handle this size; return NULL to allow fallback (e.g. Bluestein).
+  // 4. Any arbitrary primes (17, 19, 23, 29, 31, 37, 41, 43, ..., 103, ...)
+  size_t d = 17;
+  while (d * d <= rem) {
+    while (rem % d == 0) {
+      fs[stage_count++] = (int)d;
+      rem /= d;
+    }
+    d += 2;
+  }
   if (rem > 1) {
-    return NULL;
+    fs[stage_count++] = (int)rem;
+    rem = 1;
   }
 
   mixed_radix_fft_t* fft =
@@ -2411,10 +2659,11 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
   fft->factors = (int*)calloc(stage_count, sizeof(int));
   fft->twiddle_re = (double**)calloc(stage_count, sizeof(double*));
   fft->twiddle_im = (double**)calloc(stage_count, sizeof(double*));
+  fft->rader_plans = (rader_plan_t**)calloc(stage_count, sizeof(rader_plan_t*));
   fft->permutation = (size_t*)calloc(n, sizeof(size_t));
 
   if (!fft->factors || !fft->twiddle_re || !fft->twiddle_im ||
-      !fft->permutation) {
+      !fft->rader_plans || !fft->permutation) {
     mixed_radix_fft_free(fft);
     return NULL;
   }
@@ -2423,9 +2672,10 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
     fft->factors[s] = fs[s];
     fft->twiddle_re[s] = NULL;
     fft->twiddle_im[s] = NULL;
+    fft->rader_plans[s] = NULL;
   }
 
-  // Allocate per-stage twiddle buffers.
+  // Allocate per-stage twiddle buffers and Rader plans for p > 13.
   size_t m = 1;
   for (int s = 0; s < stage_count; s++) {
     int r = fs[s];
@@ -2436,7 +2686,6 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
       mixed_radix_fft_free(fft);
       return NULL;
     }
-    // twiddle[j*m + k] = W_{m·r}^(j·k) for j in 0..r-1, k in 0..m-1.
     double invMR = 1.0 / (double)(m * (size_t)r);
     for (int j = 0; j < r; j++) {
       for (size_t k = 0; k < m; k++) {
@@ -2445,16 +2694,19 @@ mixed_radix_fft_t* mixed_radix_fft_create(size_t n) {
         fft->twiddle_im[s][(size_t)j * m + k] = sin(theta);
       }
     }
+
+    if (r > 13) {
+      fft->rader_plans[s] = rader_plan_create((size_t)r);
+      if (!fft->rader_plans[s]) {
+        mixed_radix_fft_free(fft);
+        return NULL;
+      }
+    }
+
     m *= (size_t)r;
   }
 
-  // Pre-compute the digit-reversal permutation. We store `factors` in
-  // stage-iteration order (`factors[0]` is the radix processed first, with
-  // `m = 1`); the corresponding decimation order, used to build the perm,
-  // is the reverse. So we iterate `factors.reversed()` here. Failing to
-  // reverse leaves stage 0 operating on the wrong input groups — the bug
-  // that turned this whole mixed-radix path into garbage on the first
-  // attempt.
+  // Pre-compute the digit-reversal permutation.
   for (size_t i = 0; i < n; i++) {
     size_t idx = i;
     size_t rev = 0;
@@ -2548,6 +2800,7 @@ void mixed_radix_fft_execute(mixed_radix_fft_t* fft, waveform_t real_in,
         stage_radix13(fft, work_re, work_im, m, twRe, twIm);
         break;
       default:
+        stage_rader(fft, work_re, work_im, m, twRe, twIm, fft->rader_plans[s]);
         break;
     }
     m *= (size_t)r;
@@ -2575,6 +2828,14 @@ void mixed_radix_fft_free(mixed_radix_fft_t* fft) {
       if (fft->twiddle_im[s]) free(fft->twiddle_im[s]);
     }
     free(fft->twiddle_im);
+  }
+  if (fft->rader_plans) {
+    for (int s = 0; s < fft->stage_count; s++) {
+      if (fft->rader_plans[s]) {
+        rader_plan_free(fft->rader_plans[s]);
+      }
+    }
+    free(fft->rader_plans);
   }
   if (fft->factors) free(fft->factors);
   if (fft->permutation) free(fft->permutation);

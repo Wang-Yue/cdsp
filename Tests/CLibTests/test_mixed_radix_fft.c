@@ -237,12 +237,11 @@ TEST(SupportedRadixesMatchDirectDFT) {
   }
 }
 
-TEST(UnsupportedFactorsReturnNil) {
-  size_t sizes[] = {17, 19, 23, 29, 31, 37, 41, 43, 47, 53,
-                    59, 61, 67, 71, 73, 79, 83, 89, 97, 619};
+TEST(RaderPrimeRadixesMatchDirectDFT) {
+  size_t sizes[] = {17, 19, 23, 29, 31, 37, 41, 43, 47,  53, 59,
+                    61, 67, 71, 73, 79, 83, 89, 97, 103, 619};
   for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
-    mixed_radix_fft_t* fft = mixed_radix_fft_create(sizes[i]);
-    ASSERT_TRUE(fft == NULL);
+    ASSERT_TRUE(check_matches_direct_dft(sizes[i]));
   }
 }
 
