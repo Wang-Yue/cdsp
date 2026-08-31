@@ -269,16 +269,46 @@ static double* read_raw_f64(const char* path, size_t* out_count) {
   return buf;
 }
 
+static inline size_t matrix_gcd(size_t a, size_t b) {
+  size_t x = a, y = b;
+  while (y != 0) {
+    size_t t = y;
+    y = x % y;
+    x = t;
+  }
+  return x;
+}
+
+static void get_effective_chunk_sizes(int in_rate, int out_rate, size_t base_cs,
+                                      size_t* out_chunk_in,
+                                      size_t* out_chunk_out) {
+  size_t g = matrix_gcd((size_t)in_rate, (size_t)out_rate);
+  size_t min_in = (size_t)in_rate / g;
+  size_t min_out = (size_t)out_rate / g;
+  size_t mult = (size_t)ceil((double)base_cs / (double)min_in);
+  if (mult < 1) mult = 1;
+  size_t chunk_in = mult * min_in;
+  size_t chunk_out = mult * min_out;
+  if (chunk_in < base_cs) chunk_in = base_cs;
+  if (chunk_out < base_cs) chunk_out = base_cs;
+  *out_chunk_in = chunk_in;
+  *out_chunk_out = chunk_out;
+}
+
 static double* run_resampler_full(resampler_t* res, const double* input,
                                   size_t input_count, size_t* out_count) {
   size_t max_out_per_chunk = resampler_get_max_output_frames(res);
   double ratio = resampler_get_ratio(res);
 
-  size_t estimated_out = (size_t)((double)input_count * ratio) + 1024;
+  size_t estimated_out =
+      (size_t)((double)input_count * ratio) + 2 * max_out_per_chunk + 1024;
   double* output = (double*)calloc(estimated_out, sizeof(double));
   if (!output) return NULL;
 
-  audio_chunk_t* in_chunk = audio_chunk_create(65536, 1);
+  size_t max_in_buf = resampler_get_chunk_size(res);
+  if (max_in_buf < 65536) max_in_buf = 65536;
+
+  audio_chunk_t* in_chunk = audio_chunk_create(max_in_buf, 1);
   audio_chunk_t* out_chunk = audio_chunk_create(max_out_per_chunk, 1);
 
   size_t idx = 0;
@@ -287,6 +317,10 @@ static double* run_resampler_full(resampler_t* res, const double* input,
     size_t needed_in = resampler_get_input_frames_next(res);
     if (idx + needed_in > input_count) break;
 
+    if (needed_in > audio_chunk_get_frames(in_chunk)) {
+      audio_chunk_free(in_chunk);
+      in_chunk = audio_chunk_create(needed_in + 1024, 1);
+    }
     double* ch0 = audio_chunk_get_channel(in_chunk, 0);
     memcpy(ch0, input + idx, needed_in * sizeof(double));
     audio_chunk_set_valid_frames(in_chunk, needed_in);
@@ -406,9 +440,13 @@ static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
   cell_t c;
   memset(&c, 0, sizeof(c));
   size_t cs = MATRIX_BENCH_CHUNK_SIZE;
-  size_t nbr_in = 64 * cs;
-  size_t out_skip_val = 4 * cs * out_rate / in_rate;
-  size_t out_skip = out_skip_val > 1 ? out_skip_val : 1;
+  size_t chunk_in = 0, chunk_out = 0;
+  get_effective_chunk_sizes(in_rate, out_rate, cs, &chunk_in, &chunk_out);
+
+  size_t chunk_count = chunk_in > cs ? 16 : 64;
+  size_t nbr_in = chunk_count * chunk_in;
+  size_t out_skip = 4 * chunk_in * out_rate / in_rate;
+  if (out_skip < 1) out_skip = 1;
 
   if (out_rate < in_rate) {
     double out_ny = 0.5 * (double)out_rate;
@@ -450,10 +488,11 @@ static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
     c.has_passband_db = true;
   }
 
-  size_t imp_count = 32 * cs;
+  size_t imp_chunks = chunk_in > cs ? 8 : 32;
+  size_t imp_count = imp_chunks * chunk_in;
   double* imp_signal = (double*)calloc(imp_count, sizeof(double));
   if (imp_signal) {
-    imp_signal[16 * cs] = 1.0;
+    imp_signal[(imp_chunks / 2) * chunk_in] = 1.0;
     size_t imp_out_count = 0;
     double* imp_out = run_process(impl_id, imp_signal, imp_count, in_rate,
                                   out_rate, &imp_out_count);
@@ -478,8 +517,10 @@ static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
       double* down_out = run_process(impl_id, up_out, up_count, out_rate,
                                      in_rate, &down_count);
       if (down_out && down_count > 0) {
-        size_t skip = 4 * cs;
-        size_t end_idx = skip + 8192 < down_count ? skip + 8192 : down_count;
+        size_t skip = 4 * chunk_in;
+        size_t fit_len = 8192 > chunk_in ? 8192 : chunk_in;
+        size_t end_idx =
+            skip + fit_len < down_count ? skip + fit_len : down_count;
         if (end_idx > skip) {
           double sinad =
               sinad_db(down_out + skip, end_idx - skip, in_rate, 1000.0);
@@ -528,8 +569,12 @@ static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
       resampler_create_from_config(&cfg, in_rate, out_rate, 1, base_cs, NULL);
   if (!resampler) return false;
 
-  size_t chunk_count = 64;
-  size_t max_in_buf = base_cs * 4;
+  size_t chunk_in = resampler_get_chunk_size(resampler);
+  size_t needed_first = resampler_get_input_frames_next(resampler);
+  size_t max_in_buf = needed_first > chunk_in ? needed_first : chunk_in;
+  if (max_in_buf < base_cs * 4) max_in_buf = base_cs * 4;
+
+  size_t chunk_count = max_in_buf > base_cs * 4 ? 8 : 64;
   size_t total_nbr_in = 0;
 
   audio_chunk_t* chunks[64];
@@ -596,8 +641,11 @@ static bool measure_rubato_perf(const char* mode, int in_rate, int out_rate,
   if (!check_rubato_available()) return false;
 
   size_t cs = MATRIX_BENCH_CHUNK_SIZE;
-  size_t chunk_count = 64;
-  size_t nbr_in = chunk_count * cs;
+  size_t chunk_in = 0, chunk_out = 0;
+  get_effective_chunk_sizes(in_rate, out_rate, cs, &chunk_in, &chunk_out);
+
+  size_t chunk_count = chunk_in > cs ? 8 : 64;
+  size_t nbr_in = chunk_count * chunk_in;
 
   double* input = (double*)malloc(nbr_in * sizeof(double));
   if (!input) return false;

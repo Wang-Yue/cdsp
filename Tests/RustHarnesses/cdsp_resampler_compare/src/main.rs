@@ -191,10 +191,12 @@ fn main() {
     let ratio = fs_out as f64 / fs_in as f64;
     let mut resampler = make_resampler(mode, ratio, chunk_size, fs_in, fs_out);
 
-    // Pre-allocate output with slack.
-    let max_out_per_chunk = ((chunk_size as f64) * ratio).ceil() as usize + 64;
-    let nbr_chunks_full = nbr_in / chunk_size;
-    let total_out_capacity = (nbr_chunks_full + 4) * max_out_per_chunk;
+    // Pre-allocate output with slack to accommodate arbitrary chunk sizes and partial blocks.
+    let max_out_per_chunk = resampler.output_frames_max();
+    let max_in_per_chunk = resampler.input_frames_max().max(1);
+    let nbr_chunks_full = (nbr_in + max_in_per_chunk - 1) / max_in_per_chunk;
+    let total_out_capacity =
+        (nbr_chunks_full + 8) * max_out_per_chunk + ((nbr_in as f64) * ratio).ceil() as usize + 65536;
     let mut outdata = vec![0f64; total_out_capacity];
 
     let in_adapter = SequentialSlice::new(&indata, 1, nbr_in).unwrap();
