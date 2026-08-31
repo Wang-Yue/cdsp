@@ -30,7 +30,6 @@
 #include "FFT/real_fft_backend.h"
 #include "Utils/double_helpers.h"
 
-#if defined(ENABLE_ACCELERATE)
 /**
  * @struct complex_inner_real_fft
  * @brief Opaque structure representing a Complex Inner Real FFT context.
@@ -95,6 +94,5 @@ static inline real_fft_backend_t* complex_inner_real_fft_as_backend(
     complex_inner_real_fft_t* fft) {
   return (real_fft_backend_t*)fft;
 }
-#endif  // ENABLE_ACCELERATE
 
 #endif  // CLIB_FFT_COMPLEXINNERREALFFT_H

@@ -1,4 +1,3 @@
-#if defined(ENABLE_ACCELERATE)
 // Real-FFT backend that builds a 2N-point real FFT from one N-point
 // complex FFT plus an O(N) "untwiddle" pass. Used for any even length
 // that doesn't qualify for `vdsp_real_fft` (i.e. non-power-of-two, or
@@ -16,10 +15,13 @@
 
 #include "FFT/complex_inner_real_fft.h"
 
-#include <Accelerate/Accelerate.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
+
+#if defined(ENABLE_ACCELERATE)
+#include <Accelerate/Accelerate.h>
+#endif
 
 #include "Utils/double_helpers.h"
 #include "real_fft_backend.h"
@@ -149,10 +151,16 @@ void complex_inner_real_fft_forward(complex_inner_real_fft_t* fft,
   size_t n = fft->half_n;
 
   // Pack the 2N real samples into N complex: z[k] = x[2k] + i·x[2k+1].
-  // Reinterpret `realIn` as interleaved complex pairs and let `vDSP_ctozD`
-  // do the deinterleave in one pass.
+#if defined(ENABLE_ACCELERATE)
   DSPDoubleSplitComplex zSplit = {fft->z_re, fft->z_im};
   vDSP_ctozD((const DSPDoubleComplex*)real_in, 2, &zSplit, 1, (vDSP_Length)n);
+#else
+  PRAGMA_VECTORIZE_LOOP
+  for (size_t k = 0; k < n; k++) {
+    fft->z_re[k] = real_in[2 * k];
+    fft->z_im[k] = real_in[2 * k + 1];
+  }
+#endif
 
   // Z = FFT_N(z). Unnormalised forward.
   arbitrary_complex_fft_execute(fft->inner, fft->z_re, fft->z_im, fft->z_f_re,
@@ -275,5 +283,3 @@ void complex_inner_real_fft_free(complex_inner_real_fft_t* fft) {
 #elif defined(__clang__)
 #pragma float_control(pop)
 #endif
-
-#endif  // ENABLE_ACCELERATE

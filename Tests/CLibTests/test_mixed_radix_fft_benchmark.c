@@ -16,6 +16,7 @@
 
 #include "FFT/arbitrary_complex_fft.h"
 #include "FFT/mixed_radix_fft.h"
+#include "FFT/pure_real_fft.h"
 #include "FFT/real_fft.h"
 #include "test_support.h"
 
@@ -23,6 +24,7 @@
 #include <Accelerate/Accelerate.h>
 
 #include "FFT/complex_inner_real_fft.h"
+#include "FFT/vdsp_real_fft.h"
 
 typedef struct {
   vDSP_DFT_SetupD setup_forward;
@@ -806,6 +808,116 @@ static void run_441_48k_family_survey(void) {
                              "44.1k & 48k Family (400 cases)");
 }
 
+static void run_pure_real_fft_vs_vdsp_benchmark(void) {
+  printf(
+      "\n========================================================================"
+      "=============================================\n");
+  printf(
+      " 5. Pure C Power-of-2 Real FFT vs Apple vDSP_fft_zripD (16 to 65536 "
+      "points)\n");
+  printf(
+      "    Operations: Forward Real FFT + Inverse Real IFFT\n");
+  printf(
+      "========================================================================"
+      "=============================================\n");
+  printf(
+      " Length | Pure C (ns) | vDSP (ns)   | Perf Ratio (vDSP/Pure C) | "
+      "Roundtrip Error (SINAD)\n");
+  printf(
+      "-------+-------------+-------------+--------------------------+---------"
+      "---------------\n");
+
+  size_t test_lengths[] = {16,   32,   64,    128,   256,   512,  1024,
+                           2048, 4096, 8192, 16384, 32768, 65536};
+  size_t num_lengths = sizeof(test_lengths) / sizeof(test_lengths[0]);
+
+  for (size_t l = 0; l < num_lengths; l++) {
+    size_t length = test_lengths[l];
+    size_t spec_len = length / 2 + 1;
+
+    pure_real_fft_t* pure_c = pure_real_fft_create(length);
+#if defined(ENABLE_ACCELERATE)
+    vdsp_real_fft_t* vdsp = vdsp_real_fft_create(length);
+#endif
+
+    double* real_in = (double*)malloc(length * sizeof(double));
+    double* spec_re = (double*)malloc(spec_len * sizeof(double));
+    double* spec_im = (double*)malloc(spec_len * sizeof(double));
+    double* real_out = (double*)malloc(length * sizeof(double));
+
+    for (size_t i = 0; i < length; i++) {
+      real_in[i] = sin(2.0 * M_PI * 1000.0 * (double)i / 48000.0) +
+                   0.5 * cos(2.0 * M_PI * 5000.0 * (double)i / 48000.0);
+    }
+
+    // Measure Pure C Roundtrip SINAD
+    pure_real_fft_forward(pure_c, real_in, spec_re, spec_im);
+    pure_real_fft_inverse(pure_c, spec_re, spec_im, real_out);
+
+    double sig_pow = 0.0, err_pow = 0.0;
+    double scale = 1.0 / (double)length;
+    for (size_t i = 0; i < length; i++) {
+      double orig = real_in[i];
+      double recon = real_out[i] * scale;
+      double err = recon - orig;
+      sig_pow += orig * orig;
+      err_pow += err * err;
+    }
+    double sinad_db = err_pow > 1e-30 ? 10.0 * log10(sig_pow / err_pow) : 320.0;
+
+    // Benchmark Pure C
+    size_t iters = length <= 1024 ? 5000 : (length <= 8192 ? 1000 : 200);
+    double pure_times[NUM_TRIALS];
+    for (int t = 0; t < NUM_TRIALS; t++) {
+      uint64_t t0 = get_time_ns();
+      for (size_t it = 0; it < iters; it++) {
+        pure_real_fft_forward(pure_c, real_in, spec_re, spec_im);
+        do_not_optimize(spec_re);
+        pure_real_fft_inverse(pure_c, spec_re, spec_im, real_out);
+        do_not_optimize(real_out);
+      }
+      uint64_t t1 = get_time_ns();
+      pure_times[t] = (double)(t1 - t0) / (double)iters;
+    }
+    qsort(pure_times, NUM_TRIALS, sizeof(double), compare_doubles);
+    double pure_med = pure_times[NUM_TRIALS / 2];
+
+    double vdsp_med = 0.0;
+#if defined(ENABLE_ACCELERATE)
+    double vdsp_times[NUM_TRIALS];
+    for (int t = 0; t < NUM_TRIALS; t++) {
+      uint64_t t0 = get_time_ns();
+      for (size_t it = 0; it < iters; it++) {
+        vdsp_real_fft_forward(vdsp, real_in, spec_re, spec_im);
+        do_not_optimize(spec_re);
+        vdsp_real_fft_inverse(vdsp, spec_re, spec_im, real_out);
+        do_not_optimize(real_out);
+      }
+      uint64_t t1 = get_time_ns();
+      vdsp_times[t] = (double)(t1 - t0) / (double)iters;
+    }
+    qsort(vdsp_times, NUM_TRIALS, sizeof(double), compare_doubles);
+    vdsp_med = vdsp_times[NUM_TRIALS / 2];
+#endif
+
+    double ratio = vdsp_med > 0 ? vdsp_med / pure_med : 0.0;
+    const char* flag = ratio >= 1.0 ? "\033[32m" : "\033[33m";
+    const char* reset = "\033[0m";
+
+    printf(" %6zu | %11.1f | %11.1f | %s%6.2fx%s                     | %6.1f dB\n",
+           length, pure_med, vdsp_med, flag, ratio, reset, sinad_db);
+
+    pure_real_fft_free(pure_c);
+#if defined(ENABLE_ACCELERATE)
+    vdsp_real_fft_free(vdsp);
+#endif
+    free(real_in);
+    free(spec_re);
+    free(spec_im);
+    free(real_out);
+  }
+}
+
 TEST(MixedRadixFFT_AllFactors_Benchmark) {
   printf(
       "\n======================================================================"
@@ -836,6 +948,9 @@ TEST(MixedRadixFFT_AllFactors_Benchmark) {
   // 4. Complete 44.1k & 48k Family Cross-Rate Conversion Matrix (44.1 kHz to
   // 768 kHz)
   run_441_48k_family_matrix_benchmark();
+
+  // 5. Pure C Power-of-2 Real FFT vs Apple vDSP_fft_zripD
+  run_pure_real_fft_vs_vdsp_benchmark();
 
   printf(
       "\n======================================================================"

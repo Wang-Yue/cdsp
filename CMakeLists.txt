@@ -579,6 +579,7 @@ if(BUILD_BENCHMARKS)
 
         if(APPLE)
             target_compile_definitions(test_simd_benchmark PRIVATE ACCELERATE_NEW_LAPACK)
+            target_link_libraries(test_simd_benchmark PRIVATE "-framework Accelerate")
         else()
             if(PKG_CONFIG_FOUND)
                 pkg_check_modules(OPENBLAS QUIET IMPORTED_TARGET openblas cblas)
