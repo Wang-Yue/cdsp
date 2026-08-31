@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "Config/filter_config_types.h"
+#include "FFT/real_fft.h"
 #include "Filters/convolution.h"
 #include "Filters/filter.h"
 #include "test_support.h"
@@ -251,6 +252,229 @@ TEST(Convolution_Performance_Chunk_Size_Sweep) {
     fflush(stdout);
   }
   free(coeffs);
+  printf(
+      "------------------------------------------------------------------------"
+      "-------------------------------------------------\n\n");
+}
+
+// ----------------------------------------------------------------------------
+// Test 3: Pure Real FFT (R2C + C2R Roundtrip) Performance Sweep
+// ----------------------------------------------------------------------------
+static double measure_realfft_roundtrip_ns(size_t length, size_t iters) {
+  real_fft_t* fft = real_fft_create(length, NULL);
+  if (!fft) return NAN;
+
+  size_t spec_len = real_fft_get_spectrum_length(fft);
+  double* in_real = (double*)calloc(length, sizeof(double));
+  double* spec_re = (double*)calloc(spec_len, sizeof(double));
+  double* spec_im = (double*)calloc(spec_len, sizeof(double));
+  double* out_real = (double*)calloc(length, sizeof(double));
+  if (!in_real || !spec_re || !spec_im || !out_real) {
+    if (in_real) free(in_real);
+    if (spec_re) free(spec_re);
+    if (spec_im) free(spec_im);
+    if (out_real) free(out_real);
+    real_fft_free(fft);
+    return NAN;
+  }
+
+  for (size_t i = 0; i < length; i++) {
+    in_real[i] = sin(2.0 * M_PI * 1000.0 * (double)i / 48000.0);
+  }
+
+  // Warm-up
+  for (size_t i = 0; i < 50; i++) {
+    real_fft_forward(fft, in_real, spec_re, spec_im);
+    real_fft_inverse(fft, spec_re, spec_im, out_real);
+  }
+
+  double trials[NUM_TRIALS];
+  for (int t = 0; t < NUM_TRIALS; t++) {
+    uint64_t t0 = get_time_ns();
+    for (size_t i = 0; i < iters; i++) {
+      real_fft_forward(fft, in_real, spec_re, spec_im);
+      real_fft_inverse(fft, spec_re, spec_im, out_real);
+      do_not_optimize(out_real);
+    }
+    uint64_t t1 = get_time_ns();
+    trials[t] = (double)(t1 - t0) / (double)iters;
+  }
+
+  free(in_real);
+  free(spec_re);
+  free(spec_im);
+  free(out_real);
+  real_fft_free(fft);
+
+  qsort(trials, NUM_TRIALS, sizeof(double), compare_doubles);
+  return trials[NUM_TRIALS / 2];
+}
+
+static double fetch_rust_realfft_ns(size_t length, size_t iters) {
+  char args[256];
+  snprintf(args, sizeof(args), "bench realfft %zu %zu", length, iters);
+  return test_run_rust_harness_bench("cdsp_filter_compare", args);
+}
+
+TEST(RealFFT_PowerOfTwo_Performance_Sweep) {
+  printf(
+      "\n======================================================================"
+      "===================================================\n");
+  printf(
+      " REAL FFT (POWER-OF-TWO) ROUNDTRIP BENCHMARK: CDSP (FFTW3) vs Rust "
+      "(realfft/RustFFT)\n");
+  printf(
+      " R2C Forward FFT + C2R Inverse FFT Roundtrip (Double Precision f64)\n");
+  printf(
+      " Monotonic Timer: 5-trial median with warm-up runs and anti-DCE memory "
+      "barriers\n");
+  printf(
+      "========================================================================"
+      "=================================================\n");
+  printf(
+      " Length |   CDSP FFTW3 (f64)  |    Rust (realfft)   |  CDSP vs Rust "
+      "Speedup \n");
+  printf(
+      " (pts)  |  us/roundtrip (ns)  |  us/roundtrip (ns)  |        (ratio)    "
+      "    \n");
+  printf(
+      "--------+---------------------+---------------------+-------------------"
+      "----\n");
+  fflush(stdout);
+
+  size_t lengths[] = {128,  256,   512,   1024,  2048,  4096,
+                      8192, 16384, 32768, 65536, 131072};
+  size_t num_lengths = sizeof(lengths) / sizeof(lengths[0]);
+
+  for (size_t i = 0; i < num_lengths; i++) {
+    size_t len = lengths[i];
+    size_t iters = (len <= 1024)
+                       ? 8000
+                       : ((len <= 8192) ? 3000 : ((len <= 32768) ? 1000 : 300));
+
+    // 1. CDSP FFTW3
+    double cdsp_ns = measure_realfft_roundtrip_ns(len, iters);
+
+    // 2. Rust realfft / RustFFT
+    double rust_ns = fetch_rust_realfft_ns(len, iters);
+
+    char cdsp_str[32], rust_str[32], speedup_str[32];
+    if (!isnan(cdsp_ns)) {
+      snprintf(cdsp_str, sizeof(cdsp_str), "%6.2f us (%5.0f ns)",
+               cdsp_ns / 1000.0, cdsp_ns);
+    } else {
+      strcpy(cdsp_str, "        N/A    ");
+    }
+
+    if (!isnan(rust_ns)) {
+      snprintf(rust_str, sizeof(rust_str), "%6.2f us (%5.0f ns)",
+               rust_ns / 1000.0, rust_ns);
+    } else {
+      strcpy(rust_str, "        N/A    ");
+    }
+
+    if (!isnan(cdsp_ns) && !isnan(rust_ns)) {
+      snprintf(speedup_str, sizeof(speedup_str), "        %5.2fx        ",
+               rust_ns / cdsp_ns);
+    } else {
+      strcpy(speedup_str, "        N/A          ");
+    }
+
+    printf(" %6zu | %19s | %19s | %s\n", len, cdsp_str, rust_str, speedup_str);
+    fflush(stdout);
+  }
+  printf(
+      "------------------------------------------------------------------------"
+      "-------------------------------------------------\n\n");
+}
+
+// ----------------------------------------------------------------------------
+// Test 4: Synchronous Resampler Non-Power-of-Two Real FFT Sweep
+// ----------------------------------------------------------------------------
+typedef struct {
+  size_t length;
+  const char* context;
+} resampler_fft_entry_t;
+
+TEST(RealFFT_Resampler_NonPowerOfTwo_Sweep) {
+  printf(
+      "\n======================================================================"
+      "===================================================\n");
+  printf(
+      " REAL FFT (NON-POWER-OF-TWO RESAMPLER) BENCHMARK: CDSP (FFTW3) vs Rust "
+      "(realfft/RustFFT)\n");
+  printf(
+      " Critical composite/prime-factored FFT lengths used in Synchronous "
+      "Resampling (f64)\n");
+  printf(
+      " Monotonic Timer: 5-trial median with warm-up runs and anti-DCE memory "
+      "barriers\n");
+  printf(
+      "========================================================================"
+      "=================================================\n");
+  printf(
+      " Length | Resampler Context / Sample Rates |  CDSP FFTW3 (f64)   |   "
+      "Rust (realfft)    | Speedup (ratio) \n");
+  printf(
+      "--------+----------------------------------+---------------------+------"
+      "-"
+      "--------------+-----------------\n");
+  fflush(stdout);
+
+  resampler_fft_entry_t entries[] = {
+      {294, "44.1k <-> 48k/96k  (2x147 base in) "},
+      {320, "44.1k <-> 48k      (2x160 base out)"},
+      {588, "44.1k <-> 48k      (4x147 subchunk)"},
+      {640, "44.1k <-> 96k/192k (4x160 base out)"},
+      {882, "32k   <-> 44.1k    (2x441 base out)"},
+      {960, "44.1k <-> 48k      (6x160 subchunk)"},
+      {1176, "44.1k <-> 48k      (8x147 subchunk)"},
+      {1280, "44.1k <-> 48k      (8x160 subchunk)"},
+      {1764, "32k   <-> 44.1k    (4x441 subchunk)"},
+      {2058, "44.1k <-> 48k (1024-blk in: 2x1029)"},
+      {2240, "44.1k <-> 48k (1024-blk out:2x1120)"},
+      {3528, "32k   <-> 44.1k    (8x441 subchunk)"},
+      {4116, "44.1k <-> 48k (2048-blk in: 2x2058)"},
+      {4480, "44.1k <-> 48k (2048-blk out:2x2240)"},
+  };
+  size_t num_entries = sizeof(entries) / sizeof(entries[0]);
+
+  for (size_t i = 0; i < num_entries; i++) {
+    size_t len = entries[i].length;
+    size_t iters = (len <= 1024) ? 5000 : 2000;
+
+    // 1. CDSP FFTW3
+    double cdsp_ns = measure_realfft_roundtrip_ns(len, iters);
+
+    // 2. Rust realfft / RustFFT
+    double rust_ns = fetch_rust_realfft_ns(len, iters);
+
+    char cdsp_str[32], rust_str[32], speedup_str[32];
+    if (!isnan(cdsp_ns)) {
+      snprintf(cdsp_str, sizeof(cdsp_str), "%6.2f us (%5.0f ns)",
+               cdsp_ns / 1000.0, cdsp_ns);
+    } else {
+      strcpy(cdsp_str, "        N/A    ");
+    }
+
+    if (!isnan(rust_ns)) {
+      snprintf(rust_str, sizeof(rust_str), "%6.2f us (%5.0f ns)",
+               rust_ns / 1000.0, rust_ns);
+    } else {
+      strcpy(rust_str, "        N/A    ");
+    }
+
+    if (!isnan(cdsp_ns) && !isnan(rust_ns)) {
+      snprintf(speedup_str, sizeof(speedup_str), "     %5.2fx     ",
+               rust_ns / cdsp_ns);
+    } else {
+      strcpy(speedup_str, "      N/A       ");
+    }
+
+    printf(" %6zu | %-32s | %19s | %19s | %s\n", len, entries[i].context,
+           cdsp_str, rust_str, speedup_str);
+    fflush(stdout);
+  }
   printf(
       "------------------------------------------------------------------------"
       "-------------------------------------------------\n\n");

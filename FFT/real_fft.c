@@ -69,9 +69,9 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
     return NULL;
   }
   fft->plan_forward = fftw_plan_dft_r2c_1d((int)length, fft->in_real,
-                                           fft->out_complex, FFTW_ESTIMATE);
+                                           fft->out_complex, FFTW_MEASURE);
   fft->plan_inverse = fftw_plan_dft_c2r_1d((int)length, fft->out_complex,
-                                           fft->in_real, FFTW_ESTIMATE);
+                                           fft->in_real, FFTW_MEASURE);
   if (!fft->plan_forward || !fft->plan_inverse) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to create FFTW plan");
     real_fft_free(fft);
@@ -83,26 +83,40 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
 void real_fft_forward(real_fft_t* fft, waveform_t real_in,
                       mutable_waveform_t spec_re, mutable_waveform_t spec_im) {
   if (!fft || !real_in || !spec_re || !spec_im) return;
-  memcpy(fft->in_real, real_in, fft->length * sizeof(double));
-  fftw_execute(fft->plan_forward);
+
+  fftw_execute_dft_r2c(fft->plan_forward, (double*)real_in, fft->out_complex);
   CDSP_MSAN_UNPOISON(fft->out_complex,
                      fft->spectrum_length * sizeof(fftw_complex));
-  for (size_t i = 0; i < fft->spectrum_length; i++) {
-    spec_re[i] = __real__(fft->out_complex[i]);
-    spec_im[i] = __imag__(fft->out_complex[i]);
+
+  size_t spec_len = fft->spectrum_length;
+  const double* restrict c_ptr = (const double*)fft->out_complex;
+  double* restrict sre = spec_re;
+  double* restrict sim = spec_im;
+
+  PRAGMA_VECTORIZE_LOOP
+  for (size_t i = 0; i < spec_len; i++) {
+    sre[i] = c_ptr[2 * i];
+    sim[i] = c_ptr[2 * i + 1];
   }
 }
 
 void real_fft_inverse(real_fft_t* fft, waveform_t spec_re, waveform_t spec_im,
                       mutable_waveform_t real_out) {
   if (!fft || !spec_re || !spec_im || !real_out) return;
-  for (size_t i = 0; i < fft->spectrum_length; i++) {
-    __real__(fft->out_complex[i]) = spec_re[i];
-    __imag__(fft->out_complex[i]) = spec_im[i];
+
+  size_t spec_len = fft->spectrum_length;
+  double* restrict c_ptr = (double*)fft->out_complex;
+  const double* restrict sre = spec_re;
+  const double* restrict sim = spec_im;
+
+  PRAGMA_VECTORIZE_LOOP
+  for (size_t i = 0; i < spec_len; i++) {
+    c_ptr[2 * i] = sre[i];
+    c_ptr[2 * i + 1] = sim[i];
   }
-  fftw_execute(fft->plan_inverse);
-  CDSP_MSAN_UNPOISON(fft->in_real, fft->length * sizeof(double));
-  memcpy(real_out, fft->in_real, fft->length * sizeof(double));
+
+  fftw_execute_dft_c2r(fft->plan_inverse, fft->out_complex, real_out);
+  CDSP_MSAN_UNPOISON(real_out, fft->length * sizeof(double));
 }
 
 void real_fft_free(real_fft_t* fft) {
@@ -140,9 +154,9 @@ real_fftf_t* real_fftf_create(size_t length) {
     return NULL;
   }
   fft->plan_forward = fftwf_plan_dft_r2c_1d((int)length, fft->in_real,
-                                            fft->out_complex, FFTW_ESTIMATE);
+                                            fft->out_complex, FFTW_MEASURE);
   fft->plan_inverse = fftwf_plan_dft_c2r_1d((int)length, fft->out_complex,
-                                            fft->in_real, FFTW_ESTIMATE);
+                                            fft->in_real, FFTW_MEASURE);
   if (!fft->plan_forward || !fft->plan_inverse) {
     real_fftf_free(fft);
     return NULL;
@@ -153,26 +167,32 @@ real_fftf_t* real_fftf_create(size_t length) {
 void real_fftf_forward(real_fftf_t* fft, const float* real_in, float* spec_re,
                        float* spec_im) {
   if (!fft || !real_in || !spec_re || !spec_im) return;
-  memcpy(fft->in_real, real_in, fft->length * sizeof(float));
-  fftwf_execute(fft->plan_forward);
+  fftwf_execute_dft_r2c(fft->plan_forward, (float*)real_in, fft->out_complex);
   CDSP_MSAN_UNPOISON(fft->out_complex,
                      fft->spectrum_length * sizeof(fftwf_complex));
+  const float* restrict c_ptr = (const float*)fft->out_complex;
+  float* restrict sre = spec_re;
+  float* restrict sim = spec_im;
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < fft->spectrum_length; i++) {
-    spec_re[i] = __real__(fft->out_complex[i]);
-    spec_im[i] = __imag__(fft->out_complex[i]);
+    sre[i] = c_ptr[2 * i];
+    sim[i] = c_ptr[2 * i + 1];
   }
 }
 
 void real_fftf_inverse(real_fftf_t* fft, const float* spec_re,
                        const float* spec_im, float* real_out) {
   if (!fft || !spec_re || !spec_im || !real_out) return;
+  float* restrict c_ptr = (float*)fft->out_complex;
+  const float* restrict sre = spec_re;
+  const float* restrict sim = spec_im;
+  PRAGMA_VECTORIZE_LOOP
   for (size_t i = 0; i < fft->spectrum_length; i++) {
-    __real__(fft->out_complex[i]) = spec_re[i];
-    __imag__(fft->out_complex[i]) = spec_im[i];
+    c_ptr[2 * i] = sre[i];
+    c_ptr[2 * i + 1] = sim[i];
   }
-  fftwf_execute(fft->plan_inverse);
-  CDSP_MSAN_UNPOISON(fft->in_real, fft->length * sizeof(float));
-  memcpy(real_out, fft->in_real, fft->length * sizeof(float));
+  fftwf_execute_dft_c2r(fft->plan_inverse, fft->out_complex, real_out);
+  CDSP_MSAN_UNPOISON(real_out, fft->length * sizeof(float));
 }
 
 void real_fftf_free(real_fftf_t* fft) {
