@@ -71,6 +71,8 @@ void VectorScopeView::hideEvent(QHideEvent* event) {
 
 void VectorScopeView::setSamples(const AudioSamplesData& samples, bool showParticles, bool autoScale, int channelL,
                                  int channelR, float traceDecayRate) {
+    if (!isVisible())
+        return;
     m_samples = samples;
     m_showParticles = showParticles;
     m_autoScale = autoScale;

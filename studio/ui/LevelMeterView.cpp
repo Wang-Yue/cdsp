@@ -115,6 +115,13 @@ static QColor appThemeColor(float value) {
 }
 
 void LevelMeterView::setLevels(const std::vector<float>& rms, const std::vector<float>& peak, const QString& title) {
+    if (!isVisible()) {
+        m_rms = rms;
+        m_peak = peak;
+        m_title = title;
+        m_hasExplicitLevels = true;
+        return;
+    }
     bool sizeChanged = (m_rms.size() != rms.size() || m_title != title);
     m_rms = rms;
     m_peak = peak;
@@ -526,6 +533,8 @@ void CompactLevelMeterBar::setMonitoring(std::shared_ptr<MonitoringController> m
         if (isVisible())
             m_monitoring->levelState.visibilityCount++;
         connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
+            if (!isVisible())
+                return;
             if (m_captureGroup)
                 m_captureGroup->updateMeters();
             if (m_playbackGroup)
@@ -619,6 +628,8 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
 
     if (m_monitoring) {
         connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
+            if (!isVisible())
+                return;
             if (m_captureMeters)
                 m_captureMeters->update();
             if (m_playbackMeters)
@@ -652,6 +663,8 @@ LevelMetersDetailView::LevelMetersDetailView(std::shared_ptr<MonitoringControlle
     setupUi();
     if (m_monitoring) {
         connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
+            if (!isVisible())
+                return;
             if (m_captureMeters)
                 m_captureMeters->update();
             if (m_playbackMeters)

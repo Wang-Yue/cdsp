@@ -148,6 +148,10 @@ static float normDB(float db, float minDB = -120.0f, float maxDB = 0.0f) {
 }
 
 void SpectrumView::setSpectrum(const SpectrumData& data, OctaveSmoothing smoothing, float peakHoldDecayRate) {
+    if (!isVisible()) {
+        m_data = data;
+        return;
+    }
     m_data = data;
     m_smoothing = smoothing;
     m_peakHoldDecayRate = peakHoldDecayRate;

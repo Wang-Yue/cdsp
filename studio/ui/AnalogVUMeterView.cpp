@@ -37,6 +37,10 @@ AnalogVUMeter::AnalogVUMeter(int channelIndex, const VUSettings& settings, QWidg
 }
 
 void AnalogVUMeter::setLevel(float dbFS) {
+    if (!isVisible()) {
+        m_levelDb = dbFS;
+        return;
+    }
     if (std::isnan(dbFS))
         dbFS = -100.0f;
     if (std::abs(m_levelDb - dbFS) > 0.01f) {
@@ -422,6 +426,8 @@ void AnalogVUMeterView::setLevelState(LevelState* levelState) {
 
 void AnalogVUMeterView::setLevels(const std::vector<float>& levels) {
     m_levels = levels;
+    if (!isVisible())
+        return;
     updateChannelMeters();
 }
 

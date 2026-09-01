@@ -31,6 +31,8 @@ AnalogVUDetailView::AnalogVUDetailView(std::shared_ptr<MonitoringController> mon
     : QWidget(parent), m_monitoring(monitoring) {
     setupUi();
     connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
+        if (!isVisible())
+            return;
         const auto& st = m_monitoring->levelState;
         float l = !st.playbackRms.empty() ? st.playbackRms[0] : -60.0f;
         float r = st.playbackRms.size() > 1 ? st.playbackRms[1] : l;

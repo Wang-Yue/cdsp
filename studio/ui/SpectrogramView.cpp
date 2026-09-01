@@ -79,6 +79,8 @@ void SpectrogramView::changeEvent(QEvent* event) {
 }
 
 void SpectrogramView::setHistory(const std::deque<SpectrumData>& history, bool show3D, ColorPalette palette) {
+    if (!isVisible())
+        return;
     m_history = history;
     m_show3D = show3D;
     m_palette = palette;

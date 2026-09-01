@@ -803,7 +803,7 @@ bool MiniPlayerView::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void MiniPlayerView::refreshMeters() {
-    if (!m_monitoring || !m_viewStack)
+    if (!isVisible() || !m_monitoring || !m_viewStack)
         return;
 
     int mode = m_viewStack->currentIndex();
