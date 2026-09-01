@@ -173,19 +173,24 @@ static void diffeq_filter_process(void* instance, mutable_waveform_t waveform,
 
     double out = 0.0;
     // Compute feedforward part: sum(b[n] * x[n-i])
-    int ptr_x = (int)idx_x;
+    size_t ptr_x = idx_x;
     for (size_t n = 0; n < nb; n++) {
       out += b[n] * x[ptr_x];
-      ptr_x--;
-      if (ptr_x < 0) ptr_x = (int)nb - 1;
+      if (ptr_x == 0) {
+        ptr_x = nb - 1;
+      } else {
+        ptr_x--;
+      }
     }
     // Compute feedback part: sum(a[p] * y[p-j])
-    int ptr_y = (int)idx_y - 1;
-    if (ptr_y < 0) ptr_y = (int)na - 1;
+    size_t ptr_y = (idx_y == 0) ? (na - 1) : (idx_y - 1);
     for (size_t p = 1; p < na; p++) {
       out -= a[p] * y[ptr_y];
-      ptr_y--;
-      if (ptr_y < 0) ptr_y = (int)na - 1;
+      if (ptr_y == 0) {
+        ptr_y = na - 1;
+      } else {
+        ptr_y--;
+      }
     }
 
     // Store current output sample and update waveform
