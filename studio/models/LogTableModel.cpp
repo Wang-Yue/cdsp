@@ -68,6 +68,10 @@ QVariant LogTableModel::data(const QModelIndex& index, int role) const {
         default:
             break;
         }
+    } else if (role == Qt::ToolTipRole) {
+        if (index.column() == 2) {
+            return entry.message;
+        }
     } else if (role == Qt::ForegroundRole) {
         if (index.column() == 0) {
             return QColor(128, 128, 128);
@@ -120,7 +124,6 @@ void LogTableModel::refilter() {
     m_filteredEntries.clear();
     if (LogManager::instance()) {
         auto allLogs = LogManager::instance()->logs();
-        m_filteredEntries.reserve(allLogs.size());
         for (const auto& e : allLogs) {
             if (m_filterText.isEmpty() || e.message.contains(m_filterText, Qt::CaseInsensitive)) {
                 m_filteredEntries.push_back(e);
@@ -138,7 +141,7 @@ void LogTableModel::onLogAppended(const LogEntry& entry) {
     constexpr size_t kMaxRows = 2000;
     if (m_filteredEntries.size() >= kMaxRows) {
         beginRemoveRows(QModelIndex(), 0, 0);
-        m_filteredEntries.erase(m_filteredEntries.begin());
+        m_filteredEntries.pop_front();
         endRemoveRows();
     }
 

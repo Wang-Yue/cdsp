@@ -76,39 +76,9 @@ public:
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
         QStyleOptionViewItem opt = option;
         initStyleOption(&opt, index);
-
-        int colWidth = 300;
-        if (const auto* view = qobject_cast<const QTableView*>(opt.widget)) {
-            int w = view->columnWidth(index.column());
-            if (w > 40) {
-                colWidth = w;
-            } else if (view->viewport()) {
-                int vpW = view->viewport()->width();
-                int otherCols = view->columnWidth(0) + view->columnWidth(1);
-                if (vpW > otherCols + 40) {
-                    colWidth = vpW - otherCols;
-                }
-            }
-        }
-        int availableWidth = std::max(40, colWidth - 14);
-
-        QTextLayout textLayout(opt.text, opt.font);
-        QTextOption to;
-        to.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-        textLayout.setTextOption(to);
-        textLayout.beginLayout();
-        qreal height = 0;
-        while (true) {
-            QTextLine line = textLayout.createLine();
-            if (!line.isValid())
-                break;
-            line.setLineWidth(availableWidth);
-            height += line.height();
-        }
-        textLayout.endLayout();
-
-        int h = std::max(24, static_cast<int>(std::ceil(height)) + 8);
-        return QSize(colWidth, h);
+        QFontMetrics fm(opt.font);
+        int h = fm.lineSpacing() + 8;
+        return QSize(100, std::max(24, h));
     }
 };
 
@@ -120,18 +90,53 @@ ConsoleLogsView::ConsoleLogsView(QWidget* parent) : QWidget(parent) {
 
 void ConsoleLogsView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_table) {
-        m_table->resizeRowsToContents();
-        if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model && m_model->rowCount() > 0) {
-            m_table->scrollToBottom();
-        }
+    updateAllRowHeights();
+    if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model && m_model->rowCount() > 0) {
+        m_table->scrollToBottom();
     }
 }
 
 void ConsoleLogsView::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
-    if (m_table) {
-        m_table->resizeRowsToContents();
+    int colWidth = m_table ? m_table->columnWidth(2) : 0;
+    if (colWidth > 0 && colWidth != m_lastColWidth) {
+        m_lastColWidth = colWidth;
+        updateAllRowHeights();
+    }
+}
+
+void ConsoleLogsView::updateRowHeight(int row) {
+    if (!m_table || !m_model || row < 0 || row >= m_model->rowCount())
+        return;
+    int colWidth = m_table->columnWidth(2);
+    if (colWidth <= 40 && m_table->viewport()) {
+        colWidth = m_table->viewport()->width() - m_table->columnWidth(0) - m_table->columnWidth(1);
+    }
+    int availableWidth = std::max(40, colWidth - 14);
+
+    QModelIndex idx = m_model->index(row, 2);
+    QString text = m_model->data(idx, Qt::DisplayRole).toString();
+    QFont font = m_model->data(idx, Qt::FontRole).value<QFont>();
+
+    int h = 26;
+    if (!text.isEmpty()) {
+        QFontMetrics fm(font);
+        if (!text.contains('\n') && fm.horizontalAdvance(text) < availableWidth) {
+            h = std::max(24, fm.lineSpacing() + 8);
+        } else {
+            QRect bounds = fm.boundingRect(QRect(0, 0, availableWidth, 0), Qt::TextWordWrap | Qt::AlignLeft, text);
+            h = std::max(24, bounds.height() + 8);
+        }
+    }
+    m_table->setRowHeight(row, h);
+}
+
+void ConsoleLogsView::updateAllRowHeights() {
+    if (!m_table || !m_model)
+        return;
+    int count = m_model->rowCount();
+    for (int r = 0; r < count; ++r) {
+        updateRowHeight(r);
     }
 }
 
@@ -237,11 +242,14 @@ void ConsoleLogsView::setupUi() {
     m_table->setWordWrap(true);
     m_table->setTextElideMode(Qt::ElideNone);
     m_table->verticalHeader()->setVisible(false);
-    m_table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    m_table->verticalHeader()->setDefaultSectionSize(26);
+    m_table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
     m_table->horizontalHeader()->setVisible(true);
     m_table->horizontalHeader()->setStretchLastSection(true);
-    m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
+    m_table->setColumnWidth(0, 95);
+    m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
+    m_table->setColumnWidth(1, 60);
     m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     m_table->setShowGrid(false);
     m_table->setAlternatingRowColors(true);
@@ -252,19 +260,18 @@ void ConsoleLogsView::setupUi() {
     m_table->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     m_table->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
 
-    connect(m_table->horizontalHeader(), &QHeaderView::sectionResized, this, [this](int logicalIndex, int, int) {
-        if (logicalIndex == 2 && m_table) {
-            m_table->resizeRowsToContents();
+    connect(m_model, &QAbstractItemModel::rowsInserted, this, [this](const QModelIndex& parent, int first, int last) {
+        Q_UNUSED(parent);
+        for (int r = first; r <= last; ++r) {
+            updateRowHeight(r);
         }
-    });
-
-    connect(m_model, &QAbstractItemModel::rowsInserted, this, [this]() {
         updateCountLabel();
         if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model->rowCount() > 0) {
             m_table->scrollToBottom();
         }
     });
     connect(m_model, &QAbstractItemModel::modelReset, this, [this]() {
+        updateAllRowHeights();
         updateCountLabel();
         if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model->rowCount() > 0) {
             m_table->scrollToBottom();

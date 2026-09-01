@@ -37,6 +37,9 @@ private:
 
     void setupUi();
     void updateCountLabel();
+    void updateRowHeight(int row);
+    void updateAllRowHeights();
+    int m_lastColWidth = 0;
 };
 
 #endif // CONSOLE_LOGS_VIEW_H

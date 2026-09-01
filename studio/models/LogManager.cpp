@@ -49,8 +49,11 @@ LogManager::LogManager(QObject* parent) : QObject(parent) {
         m_logLevel = stringToLogLevel(settings.value("selectedLogLevel").toString());
     }
     CDSPEngine::setLogCallback([this](const std::string& level, const std::string& label, const std::string& message) {
-        onCdspLog(stringToLogLevel(QString::fromStdString(level)), QString::fromStdString(label),
-                  QString::fromStdString(message));
+        LogLevel lvl = stringToLogLevel(QString::fromStdString(level));
+        if (m_logLevel == LogLevel::Off || lvl > m_logLevel) {
+            return;
+        }
+        onCdspLog(lvl, QString::fromStdString(label), QString::fromStdString(message));
     });
 }
 
@@ -80,12 +83,15 @@ void LogManager::setLogLevel(LogLevel level) {
 }
 
 void LogManager::appendLog(LogLevel level, const QString& message) {
+    if (m_logLevel == LogLevel::Off || level > m_logLevel) {
+        return;
+    }
     LogEntry entry{QDateTime::currentDateTime(), level, message};
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_entries.push_back(entry);
-        if (m_entries.size() > m_maxEntries) {
-            m_entries.erase(m_entries.begin(), m_entries.begin() + (m_entries.size() - m_maxEntries));
+        while (m_entries.size() > m_maxEntries) {
+            m_entries.pop_front();
         }
     }
     emit logAppended(entry);
@@ -96,18 +102,22 @@ void LogManager::appendLog(const QString& message) {
 }
 
 void LogManager::onCdspLog(LogLevel level, const QString& component, const QString& message) {
+    if (m_logLevel == LogLevel::Off || level > m_logLevel) {
+        return;
+    }
     QString fullMsg;
     if (!component.isEmpty()) {
         fullMsg = QString("[%1] %2").arg(component, message);
     } else {
-        fullMsg = QString("%1").arg(message);
+        fullMsg = message;
     }
-    QMetaObject::invokeMethod(this, [this, level, fullMsg]() { appendLog(level, fullMsg); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(
+        this, [this, level, fullMsg = std::move(fullMsg)]() { appendLog(level, fullMsg); }, Qt::QueuedConnection);
 }
 
 std::vector<LogEntry> LogManager::logs() const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_entries;
+    return std::vector<LogEntry>(m_entries.begin(), m_entries.end());
 }
 
 void LogManager::clear() {

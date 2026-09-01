@@ -4,6 +4,7 @@
 #include <QDateTime> // for QDateTime
 #include <QObject>   // for QObject, Q_OBJECT, signals
 #include <QString>   // for QString
+#include <deque>     // for deque
 #include <mutex>     // for mutex
 #include <stddef.h>  // for size_t
 #include <vector>    // for vector
@@ -48,7 +49,7 @@ private:
     mutable std::mutex m_mutex;
     CDSPEngine* m_engine = nullptr;
     LogLevel m_logLevel = LogLevel::Info;
-    std::vector<LogEntry> m_entries;
+    std::deque<LogEntry> m_entries;
     size_t m_maxEntries = 2000;
 };
 

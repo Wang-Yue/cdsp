@@ -9,6 +9,7 @@
 #include <QObject>             // for QObject, Q_OBJECT, slots
 #include <QString>             // for QString
 #include <Qt>                  // for ItemDataRole, Orientation
+#include <deque>               // for deque
 #include <vector>              // for vector
 
 class LogTableModel : public QAbstractTableModel {
@@ -28,7 +29,7 @@ public:
     void refresh();
     void clear();
 
-    const std::vector<LogEntry>& entries() const { return m_filteredEntries; }
+    const std::deque<LogEntry>& entries() const { return m_filteredEntries; }
     QString copyAllFormatted() const;
     QString copySelectedFormatted(const std::vector<int>& rows) const;
 
@@ -38,7 +39,7 @@ public slots:
 private:
     void refilter();
 
-    std::vector<LogEntry> m_filteredEntries;
+    std::deque<LogEntry> m_filteredEntries;
     QString m_filterText;
     QFont m_captionFont;
     QFont m_bodyFont;
