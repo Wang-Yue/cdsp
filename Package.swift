@@ -14,15 +14,20 @@ let package = Package(
       exclude: [
         "main.c",
         "CMakeLists.txt",
-        "libdsp.a",
+        "Examples",
         "Server",
+        "Testing",
         "Tests",
         "Tools",
+        "docs",
         "LICENSE",
         "README.md",
         "run_sanitizers.sh",
-        "cross_build.sh",
         "cross_build_windows.sh",
+        "callgraph_audit_report.md",
+        "compile_commands.json",
+        "dsp_engine_public_api_alignment.md",
+        "engine_state_management.md",
       ],
       sources: [
         "Audio",
@@ -57,13 +62,24 @@ let package = Package(
         .headerSearchPath("Resampler"),
         .define("ENABLE_COREAUDIO"),
         .define("ENABLE_ACCELERATE"),
+        .define("ACCELERATE_NEW_LAPACK"),
         .define("ENABLE_LIBDISPATCH"),
+        .unsafeFlags([
+          "-I/opt/homebrew/include",
+          "-I/usr/local/include",
+        ]),
       ],
       linkerSettings: [
         .linkedFramework("Accelerate"),
         .linkedFramework("AudioToolbox"),
         .linkedFramework("CoreAudio"),
         .linkedFramework("CoreFoundation"),
+        .linkedLibrary("fftw3"),
+        .linkedLibrary("fftw3f"),
+        .unsafeFlags([
+          "-L/opt/homebrew/lib",
+          "-L/usr/local/lib",
+        ]),
       ]
     )
   ]
