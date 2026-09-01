@@ -52,14 +52,14 @@ fn write_f64(path: &str, data: &[f64]) {
 fn run_filter<F: Filter + ?Sized>(filter: &mut F, input: Vec<f64>, chunk_size: usize) -> Vec<f64> {
     let mut samples = input;
     for chunk in samples.chunks_mut(chunk_size) {
-        filter.process_waveform(chunk).expect("process_waveform");
+        filter.process_waveform(chunk);
     }
     samples
 }
 
 fn run_filter_slice<F: Filter + ?Sized>(filter: &mut F, samples: &mut [f64], chunk_size: usize) {
     for chunk in samples.chunks_mut(chunk_size) {
-        filter.process_waveform(chunk).expect("process_waveform");
+        filter.process_waveform(chunk);
     }
 }
 
@@ -238,7 +238,7 @@ fn main() {
                             use rayon::prelude::*;
                             pre.par_iter_mut().zip(in_c.par_iter_mut()).for_each(|(flist, ch_data)| {
                                 for f in flist {
-                                    f.process_waveform(ch_data).unwrap();
+                                    f.process_waveform(ch_data);
                                 }
                             });
                             for t in 0..chunk_size {
@@ -247,13 +247,13 @@ fn main() {
                             }
                             post.par_iter_mut().zip(out_c.par_iter_mut()).for_each(|(flist, ch_data)| {
                                 for f in flist {
-                                    f.process_waveform(ch_data).unwrap();
+                                    f.process_waveform(ch_data);
                                 }
                             });
                         } else {
                             for (flist, ch_data) in pre.iter_mut().zip(in_c.iter_mut()) {
                                 for f in flist {
-                                    f.process_waveform(ch_data).unwrap();
+                                    f.process_waveform(ch_data);
                                 }
                             }
                             for t in 0..chunk_size {
@@ -262,7 +262,7 @@ fn main() {
                             }
                             for (flist, ch_data) in post.iter_mut().zip(out_c.iter_mut()) {
                                 for f in flist {
-                                    f.process_waveform(ch_data).unwrap();
+                                    f.process_waveform(ch_data);
                                 }
                             }
                         }
@@ -343,10 +343,10 @@ fn main() {
                                 .zip(in_c.par_iter_mut())
                                 .for_each(|((b_list, c_pair), ch_data)| {
                                     for f in b_list {
-                                        f.process_waveform(ch_data).unwrap();
+                                        f.process_waveform(ch_data);
                                     }
-                                    c_pair.0.process_waveform(ch_data).unwrap();
-                                    c_pair.1.process_waveform(ch_data).unwrap();
+                                    c_pair.0.process_waveform(ch_data);
+                                    c_pair.1.process_waveform(ch_data);
                                 });
                             for t in 0..chunk_size {
                                 out_c[0][t] = in_c[0][t] + gain_factor * in_c[2][t];
@@ -358,18 +358,18 @@ fn main() {
                                 .zip(out_c.par_iter_mut())
                                 .for_each(|((b_list, c_pair), ch_data)| {
                                     for f in b_list {
-                                        f.process_waveform(ch_data).unwrap();
+                                        f.process_waveform(ch_data);
                                     }
-                                    c_pair.0.process_waveform(ch_data).unwrap();
-                                    c_pair.1.process_waveform(ch_data).unwrap();
+                                    c_pair.0.process_waveform(ch_data);
+                                    c_pair.1.process_waveform(ch_data);
                                 });
                         } else {
                             for ((b_list, c_pair), ch_data) in pre_b.iter_mut().zip(pre_c.iter_mut()).zip(in_c.iter_mut()) {
                                 for f in b_list {
-                                    f.process_waveform(ch_data).unwrap();
+                                    f.process_waveform(ch_data);
                                 }
-                                c_pair.0.process_waveform(ch_data).unwrap();
-                                c_pair.1.process_waveform(ch_data).unwrap();
+                                c_pair.0.process_waveform(ch_data);
+                                c_pair.1.process_waveform(ch_data);
                             }
                             for t in 0..chunk_size {
                                 out_c[0][t] = in_c[0][t] + gain_factor * in_c[2][t];
@@ -377,10 +377,10 @@ fn main() {
                             }
                             for ((b_list, c_pair), ch_data) in post_b.iter_mut().zip(post_c.iter_mut()).zip(out_c.iter_mut()) {
                                 for f in b_list {
-                                    f.process_waveform(ch_data).unwrap();
+                                    f.process_waveform(ch_data);
                                 }
-                                c_pair.0.process_waveform(ch_data).unwrap();
-                                c_pair.1.process_waveform(ch_data).unwrap();
+                                c_pair.0.process_waveform(ch_data);
+                                c_pair.1.process_waveform(ch_data);
                             }
                         }
                     };

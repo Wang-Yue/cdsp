@@ -27,7 +27,7 @@
 
 #define CHUNK_SIZE 1024
 #define SAMPLE_RATE 48000
-#define NBR_FRAMES (16 * CHUNK_SIZE)
+#define NBR_FRAMES (160 * CHUNK_SIZE)
 
 static double fetch_rust_filter_benchmark(const char* filter_type, size_t param,
                                           size_t chunk_size, size_t iters) {
