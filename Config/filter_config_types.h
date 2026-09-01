@@ -58,7 +58,8 @@ typedef enum {
   FILTER_TYPE_DIFF_EQ,      /**< Difference equation filter. */
   FILTER_TYPE_DITHER,       /**< Dither filter. */
   FILTER_TYPE_CLIPPER,      /**< Clipper filter. */
-  FILTER_TYPE_LOOKAHEAD_LIMITER /**< Lookahead limiter filter. */
+  FILTER_TYPE_LOOKAHEAD_LIMITER, /**< Lookahead limiter filter. */
+  FILTER_TYPE_BIQUAD_CANON  /**< Biquad canon cascade filter. */
 } filter_type_t;
 
 /**
@@ -167,6 +168,18 @@ typedef struct {
   double q_target;    /**< Target Q factor (LinkwitzTransform). */
   steepness_type_t steepness_type; /**< How steepness is specified. */
 } biquad_config_t;
+
+struct biquad_filter;
+typedef struct biquad_filter biquad_filter_t;
+
+/**
+ * @brief Configuration parameters for internal biquad canon cascade.
+ */
+typedef struct {
+  biquad_filter_t** sections; /**< Array of biquad filter sections. */
+  size_t num_sections;        /**< Number of biquad filter sections. */
+  bool owns_sections;         /**< Whether the canon filter owns the sections. */
+} biquad_canon_config_t;
 
 /**
  * @brief Convolution source type.
@@ -364,8 +377,9 @@ typedef struct {
     dither_config_t dither;             /**< Dither parameters. */
     clipper_config_t clipper;           /**< Clipper parameters. */
     lookahead_limiter_config_t
-        lookahead_limiter; /**< Lookahead limiter parameters. */
-  } parameters;            /**< Filter-specific parameters. */
+        lookahead_limiter;              /**< Lookahead limiter parameters. */
+    biquad_canon_config_t biquad_canon; /**< Biquad canon parameters. */
+  } parameters;                         /**< Filter-specific parameters. */
 } filter_config_t;
 
 #endif  // CLIB_CONFIG_FILTER_CONFIG_TYPES_H

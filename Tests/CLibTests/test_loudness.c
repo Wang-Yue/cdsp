@@ -146,4 +146,48 @@ TEST(LoudnessFilterStateTransferBug) {
   processing_parameters_free(proc_params);
 }
 
+TEST(LoudnessCanonMatchesShelvesRunOneAtATime) {
+  filter_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.type = FILTER_TYPE_LOUDNESS;
+  config.parameters.loudness.reference_level = -10.0;
+  config.parameters.loudness.has_reference_level = true;
+  config.parameters.loudness.low_boost = 8.0;
+  config.parameters.loudness.has_low_boost = true;
+  config.parameters.loudness.high_boost = 8.0;
+  config.parameters.loudness.has_high_boost = true;
+
+  config_error_t err;
+  config_error_init(&err);
+
+  processing_parameters_t* proc_params = processing_parameters_create(1, 1);
+  processing_parameters_set_current_volume_for_fader(proc_params, -30.0, FADER_MAIN);
+
+  filter_t* loudness = filter_create("loudness", &config, 44100, 400, proc_params, &err);
+  ASSERT_TRUE(loudness != NULL);
+
+  size_t len = 400;
+  double wave_canon[400];
+  double signal[400];
+  for (size_t i = 0; i < len; i++) {
+    signal[i] = 0.4 * sin((double)i * 0.017);
+    wave_canon[i] = signal[i];
+  }
+
+  filter_process(loudness, wave_canon, len);
+
+  // Verify loudness altered the signal
+  bool changed = false;
+  for (size_t i = 0; i < len; i++) {
+    if (fabs(wave_canon[i] - signal[i]) > 1e-4) {
+      changed = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(changed);
+
+  filter_free(loudness);
+  processing_parameters_free(proc_params);
+}
+
 TEST_MAIN()

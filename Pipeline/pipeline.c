@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -11,11 +12,12 @@
 #include "Config/configuration.h"
 #include "Config/engine_config_types.h"
 #include "Config/filter_config_types.h"
-#include "Config/mixer_config_types.h"
 #include "Config/processor_config_types.h"
 #include "Filters/filter.h"
 #include "Filters/volume.h"
 #include "Logging/app_logger.h"
+#include "Mixer/mixer.h"
+#include "Processors/processor.h"
 #include "Utils/double_helpers.h"
 
 static const logger_t g_logger = {"dsp.pipeline"};
@@ -34,8 +36,6 @@ const char* pipeline_error_description(pipeline_error_t err) {
       return "Unknown pipeline error";
   }
 }
-#include "Mixer/mixer.h"
-#include "Processors/processor.h"
 
 #if defined(ENABLE_LIBDISPATCH)
 #include <dispatch/dispatch.h>
@@ -117,7 +117,7 @@ static void free_filter_chains(parallel_filter_chain_t* chains, size_t count) {
 }
 
 /// Transfer filter states between two filter chains matching the same channel.
-static void transfer_chain_filters(parallel_filter_chain_t* dest_chain,
+static void transfer_chain_filters(const parallel_filter_chain_t* dest_chain,
                                    const parallel_filter_chain_t* src_chain,
                                    bool* dest_used) {
   if (!dest_chain || !src_chain || src_chain->filters_count == 0) return;
@@ -126,10 +126,10 @@ static void transfer_chain_filters(parallel_filter_chain_t* dest_chain,
       src_chain->filters_count < 512 ? src_chain->filters_count : 512;
 
   for (size_t i = 0; i < dest_chain->filters_count; i++) {
-    if (dest_used[i]) continue;
+    if (i < 512 && dest_used[i]) continue;
     filter_t* dest_f = dest_chain->filters[i];
     const char* dname = filter_get_name(dest_f);
-    if (!dname) continue;
+    if (!dname || dname[0] == '\0') continue;
 
     for (size_t j = 0; j < max_src; j++) {
       if (src_used[j]) continue;
@@ -138,47 +138,40 @@ static void transfer_chain_filters(parallel_filter_chain_t* dest_chain,
       if (sname && strcmp(dname, sname) == 0) {
         filter_transfer_state(dest_f, src_f);
         src_used[j] = true;
-        dest_used[i] = true;
+        if (i < 512) dest_used[i] = true;
         break;
       }
     }
   }
 }
 
-/// Transfer state for all filter chains in a parallel filter step.
-static void transfer_parallel_filters_state(
-    const pipeline_exec_step_t* dest_step, const pipeline_t* src) {
-  for (size_t dc = 0; dc < dest_step->chains_count; dc++) {
-    parallel_filter_chain_t* dest_chain = &dest_step->chains[dc];
-    bool dest_used[512] = {0};
+/// Transfer state for named audio processors (compressor, limiter, noise gate,
+/// race).
+static void transfer_named_processors_state(pipeline_t* dest,
+                                            const pipeline_t* src) {
+  if (!dest || !src || !dest->steps || !src->steps) return;
+  bool src_proc_used[128] = {false};
+  size_t max_src = src->steps_count < 128 ? src->steps_count : 128;
 
-    for (size_t s = 0; s < src->steps_count; s++) {
-      const pipeline_exec_step_t* src_step = &src->steps[s];
-      if (src_step->type != EXEC_STEP_PARALLEL_FILTERS) continue;
-
-      for (size_t sc = 0; sc < src_step->chains_count; sc++) {
-        const parallel_filter_chain_t* src_chain = &src_step->chains[sc];
-        if (src_chain->channel == dest_chain->channel) {
-          transfer_chain_filters(dest_chain, src_chain, dest_used);
-        }
-      }
+  for (size_t di = 0; di < dest->steps_count; di++) {
+    pipeline_exec_step_t* d_step = &dest->steps[di];
+    if (d_step->type != EXEC_STEP_PROCESSOR || !d_step->processor) {
+      continue;
     }
-  }
-}
+    const char* dname = dsp_processor_get_name(d_step->processor);
+    if (!dname || dname[0] == '\0') continue;
 
-/// Transfer state for a processor in a processor step.
-static void transfer_processor_state(const pipeline_exec_step_t* dest_step,
-                                     const pipeline_t* src) {
-  if (!dest_step->processor) return;
-  const char* dname = dsp_processor_get_name(dest_step->processor);
-  if (!dname) return;
-
-  for (size_t s = 0; s < src->steps_count; s++) {
-    const pipeline_exec_step_t* src_step = &src->steps[s];
-    if (src_step->type == EXEC_STEP_PROCESSOR && src_step->processor) {
-      const char* sname = dsp_processor_get_name(src_step->processor);
+    for (size_t si = 0; si < max_src; si++) {
+      if (src_proc_used[si]) continue;
+      pipeline_exec_step_t* s_step = &src->steps[si];
+      if (s_step->type != EXEC_STEP_PROCESSOR || !s_step->processor ||
+          s_step->processor->type != d_step->processor->type) {
+        continue;
+      }
+      const char* sname = dsp_processor_get_name(s_step->processor);
       if (sname && strcmp(dname, sname) == 0) {
-        dsp_processor_transfer_state(dest_step->processor, src_step->processor);
+        dsp_processor_transfer_state(d_step->processor, s_step->processor);
+        src_proc_used[si] = true;
         break;
       }
     }
@@ -196,15 +189,32 @@ void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
     logger_info(&g_logger, "Transferred master volume filter state");
   }
 
-  // 2. Transfer steps state
-  for (size_t i = 0; i < dest->steps_count; i++) {
-    pipeline_exec_step_t* step = &dest->steps[i];
-    if (step->type == EXEC_STEP_PARALLEL_FILTERS) {
-      transfer_parallel_filters_state(step, src);
-    } else if (step->type == EXEC_STEP_PROCESSOR) {
-      transfer_processor_state(step, src);
+  // 2. Transfer all channel filter states
+  for (size_t di = 0; di < dest->steps_count; di++) {
+    const pipeline_exec_step_t* d_step = &dest->steps[di];
+    if (!d_step->chains) continue;
+
+    for (size_t dc = 0; dc < d_step->chains_count; dc++) {
+      const parallel_filter_chain_t* d_chain = &d_step->chains[dc];
+      bool dest_used[512] = {0};
+
+      for (size_t si = 0; si < src->steps_count; si++) {
+        const pipeline_exec_step_t* s_step = &src->steps[si];
+        if (!s_step->chains) continue;
+
+        for (size_t sc = 0; sc < s_step->chains_count; sc++) {
+          const parallel_filter_chain_t* s_chain = &s_step->chains[sc];
+          if (s_chain->channel == d_chain->channel) {
+            transfer_chain_filters(d_chain, s_chain, dest_used);
+          }
+        }
+      }
     }
   }
+
+  // 3. Transfer named multi-channel processors (compressor, limiter, noise
+  // gate, race)
+  transfer_named_processors_state(dest, src);
 
   logger_info(&g_logger, "Completed pipeline state transfer");
 }
@@ -229,21 +239,182 @@ void pipeline_free(pipeline_t* pipeline) {
   if (pipeline->steps) {
     for (size_t i = 0; i < pipeline->steps_count; i++) {
       pipeline_exec_step_t* step = &pipeline->steps[i];
-      if (step->type == EXEC_STEP_PARALLEL_FILTERS) {
+      if (step->chains) {
         free_filter_chains(step->chains, step->chains_count);
-      } else if (step->type == EXEC_STEP_MIXER) {
-        if (step->mixer) {
-          mixer_free(step->mixer);
-        }
-      } else if (step->type == EXEC_STEP_PROCESSOR) {
-        if (step->processor) {
-          dsp_processor_free(step->processor);
-        }
+      }
+      if (step->mixer) {
+        mixer_free(step->mixer);
+      }
+      if (step->processor) {
+        dsp_processor_free(step->processor);
       }
     }
     free(pipeline->steps);
   }
   free(pipeline);
+}
+
+// ----------------------------------------------------------------------------
+// Parallel Filter Step Lowering Helpers (split into positional runs)
+// ----------------------------------------------------------------------------
+
+static bool append_exec_step(pipeline_exec_step_t** steps, size_t* count,
+                             size_t* cap, pipeline_exec_step_t step) {
+  if (*count >= *cap) {
+    size_t new_cap = (*cap == 0) ? 8 : (*cap * 2);
+    pipeline_exec_step_t* grown = (pipeline_exec_step_t*)realloc(
+        *steps, new_cap * sizeof(pipeline_exec_step_t));
+    if (!grown) return false;
+    *steps = grown;
+    *cap = new_cap;
+  }
+  (*steps)[(*count)++] = step;
+  return true;
+}
+
+static dsp_processor_t* create_biquad_processor(
+    const char* name, const parallel_filter_chain_t* chains,
+    size_t chains_count) {
+  size_t* channels = (size_t*)calloc(chains_count, sizeof(size_t));
+  filter_t*** filters = (filter_t***)calloc(chains_count, sizeof(filter_t**));
+  size_t* counts = (size_t*)calloc(chains_count, sizeof(size_t));
+  if (!channels || !filters || !counts) {
+    if (channels) free(channels);
+    if (filters) free(filters);
+    if (counts) free(counts);
+    return NULL;
+  }
+  for (size_t c = 0; c < chains_count; c++) {
+    channels[c] = chains[c].channel;
+    filters[c] = chains[c].filters;
+    counts[c] = chains[c].filters_count;
+  }
+  processor_config_t cfg = {
+      .type = PROCESSOR_TYPE_BIQUAD,
+      .parameters.biquad =
+          {
+              .channels = channels,
+              .channels_count = chains_count,
+              .filters = (filter_t* const* const*)filters,
+              .filters_counts = counts,
+          },
+  };
+  dsp_processor_t* p = dsp_processor_create(name, &cfg, 0, 0, NULL);
+  free(channels);
+  free(filters);
+  free(counts);
+  return p;
+}
+
+static parallel_filter_chain_t* slice_chains(const parallel_filter_chain_t* src,
+                                             size_t chains_count, size_t start,
+                                             size_t len) {
+  parallel_filter_chain_t* out = (parallel_filter_chain_t*)calloc(
+      chains_count, sizeof(parallel_filter_chain_t));
+  if (!out) return NULL;
+  for (size_t c = 0; c < chains_count; c++) {
+    out[c].channel = src[c].channel;
+    if (start < src[c].filters_count) {
+      size_t avail = src[c].filters_count - start;
+      size_t take = (avail < len) ? avail : len;
+      out[c].filters_count = take;
+      if (take > 0) {
+        out[c].filters = (filter_t**)calloc(take, sizeof(filter_t*));
+        if (!out[c].filters) {
+          free_filter_chains(out, chains_count);
+          return NULL;
+        }
+        memcpy(out[c].filters, src[c].filters + start,
+               take * sizeof(filter_t*));
+      }
+    }
+  }
+  return out;
+}
+
+static bool is_biquad_at_pos(const parallel_filter_chain_t* chains,
+                             size_t chains_count, size_t pos) {
+  for (size_t c = 0; c < chains_count; c++) {
+    if (pos >= chains[c].filters_count || !chains[c].filters[pos] ||
+        chains[c].filters[pos]->type != FILTER_INSTANCE_BIQUAD) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool split_and_lower_step(pipeline_exec_step_t* old_step,
+                                 size_t step_idx,
+                                 pipeline_exec_step_t** out_steps,
+                                 size_t* out_count, size_t* out_cap) {
+  size_t max_depth = 0;
+  for (size_t c = 0; c < old_step->chains_count; c++) {
+    if (old_step->chains[c].filters_count > max_depth) {
+      max_depth = old_step->chains[c].filters_count;
+    }
+  }
+  if (max_depth == 0) {
+    return append_exec_step(out_steps, out_count, out_cap, *old_step);
+  }
+
+  size_t pos = 0;
+  size_t run_idx = 0;
+  while (pos < max_depth) {
+    bool is_bq =
+        is_biquad_at_pos(old_step->chains, old_step->chains_count, pos);
+    size_t run_start = pos++;
+    while (pos < max_depth &&
+           is_biquad_at_pos(old_step->chains, old_step->chains_count, pos) ==
+               is_bq) {
+      pos++;
+    }
+    size_t run_len = pos - run_start;
+
+    parallel_filter_chain_t* run_chains = slice_chains(
+        old_step->chains, old_step->chains_count, run_start, run_len);
+    if (!run_chains) return false;
+
+    pipeline_exec_step_t new_step = {
+        .type = EXEC_STEP_PARALLEL_FILTERS,
+        .chains = run_chains,
+        .chains_count = old_step->chains_count,
+    };
+
+    if (is_bq) {
+      char name[64];
+      const char* f0 =
+          (run_chains[0].filters_count > 0 && run_chains[0].filters[0])
+              ? filter_get_name(run_chains[0].filters[0])
+              : NULL;
+      if (f0 && f0[0]) {
+        snprintf(name, sizeof(name), "biquad_proc_%s", f0);
+      } else {
+        snprintf(name, sizeof(name), "biquad_proc_step_%zu_run_%zu", step_idx,
+                 run_idx);
+      }
+      dsp_processor_t* bq_proc =
+          create_biquad_processor(name, run_chains, old_step->chains_count);
+      if (bq_proc) {
+        new_step.type = EXEC_STEP_PROCESSOR;
+        new_step.processor = bq_proc;
+      }
+    }
+
+    if (!append_exec_step(out_steps, out_count, out_cap, new_step)) {
+      return false;
+    }
+    run_idx++;
+  }
+
+  for (size_t c = 0; c < old_step->chains_count; c++) {
+    if (old_step->chains[c].filters) {
+      free(old_step->chains[c].filters);
+    }
+  }
+  free(old_step->chains);
+  old_step->chains = NULL;
+  old_step->chains_count = 0;
+  return true;
 }
 
 /// Initialize the main audio processing pipeline.
@@ -600,7 +771,32 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
     }
   }
 
-  pipeline->steps_count = exec_idx;
+  // Lower biquad sections of parallel filter steps into biquad processors
+  // by splitting chains into positional runs (matching upstream
+  // split_into_runs).
+  pipeline_exec_step_t* lowered_steps = NULL;
+  size_t lowered_count = 0;
+  size_t lowered_cap = 0;
+
+  for (size_t s = 0; s < exec_idx; s++) {
+    pipeline_exec_step_t* step = &pipeline->steps[s];
+    if (step->type == EXEC_STEP_PARALLEL_FILTERS && step->chains &&
+        step->chains_count > 0) {
+      if (!split_and_lower_step(step, s, &lowered_steps, &lowered_count,
+                                &lowered_cap)) {
+        goto cleanup_fail;
+      }
+    } else {
+      if (!append_exec_step(&lowered_steps, &lowered_count, &lowered_cap,
+                            *step)) {
+        goto cleanup_fail;
+      }
+    }
+  }
+
+  free(pipeline->steps);
+  pipeline->steps = lowered_steps;
+  pipeline->steps_count = lowered_count;
   pipeline->expected_out_channels = current_channels;
   return pipeline;
 
@@ -937,6 +1133,9 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
             break;
           case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
             expected_channels = proc->parameters.lookahead_limiter.channels;
+            break;
+          case PROCESSOR_TYPE_BIQUAD:
+            expected_channels = proc->parameters.biquad.channels_count;
             break;
           case PROCESSOR_TYPE_INVALID:
             break;

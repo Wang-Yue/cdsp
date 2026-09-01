@@ -12,18 +12,21 @@
 //   loudness <current_volume_db> <reference_level_db> <high_boost_db> <low_boost_db>
 //            <attenuate_mid:0|1> <samplerate> <chunk_size> <input> <output>
 
+use camillalib::CamillaFloat;
 use camillalib::ProcessingParameters;
 use camillalib::audiochunk::AudioChunk;
-use camillalib::config::{LoudnessFader, LoudnessParameters};
+use camillalib::config::{self, LoudnessFader, LoudnessParameters};
 use camillalib::filters::Filter;
 use camillalib::filters::basicfilters::{Gain, Volume};
 use camillalib::filters::biquad::{Biquad, BiquadCoefficients};
 use camillalib::filters::fftconv::FftConv;
 use camillalib::filters::loudness::Loudness;
+use camillalib::pipeline::Pipeline;
 use camillalib::processors::Processor;
 use camillalib::processors::compressor::Compressor;
 use camillalib::processors::noisegate::NoiseGate;
 use camillalib::processors::race::RACE;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use std::convert::TryInto;
@@ -63,37 +66,6 @@ fn run_filter_slice<F: Filter + ?Sized>(filter: &mut F, samples: &mut [f64], chu
     }
 }
 
-fn make_peaking_biquad(samplerate: usize, freq: f64, q: f64, gain_db: f64) -> Biquad {
-    let a_gain = 10.0f64.powf(gain_db / 40.0);
-    let w0 = 2.0 * std::f64::consts::PI * freq / (samplerate as f64);
-    let alpha = w0.sin() / (2.0 * q);
-    let cos_w0 = w0.cos();
-
-    let b0 = 1.0 + alpha * a_gain;
-    let b1 = -2.0 * cos_w0;
-    let b2 = 1.0 - alpha * a_gain;
-    let a0 = 1.0 + alpha / a_gain;
-    let a1 = -2.0 * cos_w0;
-    let a2 = 1.0 - alpha / a_gain;
-
-    let coeffs = BiquadCoefficients::new(a1 / a0, a2 / a0, b0 / a0, b1 / a0, b2 / a0);
-    Biquad::new("bq", samplerate, coeffs)
-}
-
-fn make_sinc_coeffs(length: usize) -> Vec<f64> {
-    let mut values = vec![0.0f64; length];
-    for idx in 0..length {
-        let x = idx as f64 - (length - 1) as f64 * 0.5;
-        let sinc = if x == 0.0 {
-            1.0
-        } else {
-            (std::f64::consts::PI * x).sin() / (std::f64::consts::PI * x)
-        };
-        values[idx] = sinc;
-    }
-    values
-}
-
 const PRE_FREQS: [f64; 16] = [
     120.0, 220.0, 350.0, 500.0, 700.0, 900.0, 1200.0, 1600.0,
     1800.0, 2200.0, 2800.0, 3200.0, 3800.0, 4500.0, 6200.0, 8000.0,
@@ -110,6 +82,202 @@ const POST_QS: [f64; 16] = [
     0.72, 0.78, 0.83, 0.92, 1.02, 1.08, 0.98, 1.06,
     1.00, 0.94, 0.92, 0.88, 0.84, 0.80, 0.76, 0.72,
 ];
+
+fn build_biquad_filter(freq: f64, q: f64) -> config::Filter {
+    config::Filter::Biquad {
+        description: None,
+        parameters: config::BiquadParameters::Peaking(config::PeakingWidth::Q {
+            freq,
+            q,
+            gain: 1.5,
+        }),
+    }
+}
+
+fn build_conv_filter(length: usize) -> config::Filter {
+    let mut values = Vec::with_capacity(length);
+    let pi = std::f64::consts::PI;
+    for idx in 0..length {
+        let x = idx as f64 - (length as f64 - 1.0) * 0.5;
+        let sinc = if x == 0.0 {
+            1.0
+        } else {
+            (pi * x).sin() / (pi * x)
+        };
+        values.push(sinc);
+    }
+    config::Filter::Conv {
+        description: None,
+        parameters: config::ConvParameters::Values { values },
+    }
+}
+
+fn build_camilladsp_pipeline(
+    chunksize: usize,
+    multithreaded: bool,
+    conv_lengths: &[usize],
+) -> Pipeline {
+    let mut filters = HashMap::new();
+    let extra_filters = conv_lengths.len();
+    let mut pre_filter_names = Vec::with_capacity(PRE_FREQS.len() + extra_filters);
+    let mut post_filter_names = Vec::with_capacity(POST_FREQS.len() + extra_filters);
+    for (index, (&freq, &q)) in PRE_FREQS.iter().zip(PRE_QS.iter()).enumerate() {
+        let name = format!("pre_bq_{}", index + 1);
+        filters.insert(name.clone(), build_biquad_filter(freq, q));
+        pre_filter_names.push(name);
+    }
+    for (index, (&freq, &q)) in POST_FREQS.iter().zip(POST_QS.iter()).enumerate() {
+        let name = format!("post_bq_{}", index + 1);
+        filters.insert(name.clone(), build_biquad_filter(freq, q));
+        post_filter_names.push(name);
+    }
+
+    for (index, length) in conv_lengths.iter().enumerate() {
+        let pre = format!("pre_conv_{}", index + 1);
+        let post = format!("post_conv_{}", index + 1);
+        filters.insert(pre.clone(), build_conv_filter(*length));
+        filters.insert(post.clone(), build_conv_filter(*length));
+        pre_filter_names.push(pre);
+        post_filter_names.push(post);
+    }
+
+    let mixer = config::Mixer {
+        description: None,
+        channels: config::MixerChannels { r#in: 4, out: 2 },
+        mapping: vec![
+            config::MixerMapping {
+                dest: 0,
+                sources: vec![
+                    config::MixerSource {
+                        channel: 0,
+                        gain: Some(0.0),
+                        inverted: Some(false),
+                        mute: Some(false),
+                        scale: Some(config::GainScale::Decibel),
+                    },
+                    config::MixerSource {
+                        channel: 2,
+                        gain: Some(-6.0),
+                        inverted: Some(false),
+                        mute: Some(false),
+                        scale: Some(config::GainScale::Decibel),
+                    },
+                ],
+                mute: Some(false),
+            },
+            config::MixerMapping {
+                dest: 1,
+                sources: vec![
+                    config::MixerSource {
+                        channel: 1,
+                        gain: Some(0.0),
+                        inverted: Some(false),
+                        mute: Some(false),
+                        scale: Some(config::GainScale::Decibel),
+                    },
+                    config::MixerSource {
+                        channel: 3,
+                        gain: Some(-6.0),
+                        inverted: Some(false),
+                        mute: Some(false),
+                        scale: Some(config::GainScale::Decibel),
+                    },
+                ],
+                mute: Some(false),
+            },
+        ],
+        labels: None,
+    };
+
+    let mut mixers = HashMap::new();
+    mixers.insert("mix_4_to_2".to_string(), mixer);
+
+    let conf = config::Configuration {
+        title: None,
+        description: None,
+        devices: config::Devices {
+            samplerate: 48000,
+            chunksize,
+            queuelimit: None,
+            silence_threshold: None,
+            silence_timeout_s: None,
+            capture: config::CaptureDevice::Stdin(config::CaptureDeviceStdin {
+                channels: 4,
+                format: config::BinarySampleFormat::F32_LE,
+                extra_samples: None,
+                skip_bytes: None,
+                read_bytes: None,
+                labels: None,
+            }),
+            playback: config::PlaybackDevice::Stdout {
+                channels: 2,
+                format: config::BinarySampleFormat::F32_LE,
+                wav_header: None,
+            },
+            enable_rate_adjust: None,
+            target_level: None,
+            adjust_interval_s: None,
+            resampler: None,
+            capture_samplerate: None,
+            stop_on_rate_change: None,
+            rate_measure_interval_s: None,
+            volume_ramp_time_ms: None,
+            volume_limit: None,
+            multithreaded: Some(multithreaded),
+            worker_threads: None,
+        },
+        mixers: Some(mixers),
+        filters: Some(filters),
+        processors: None,
+        pipeline: Some(vec![
+            config::PipelineStep::Filter(config::PipelineStepFilter {
+                channels: None,
+                names: pre_filter_names,
+                description: None,
+                bypassed: Some(false),
+            }),
+            config::PipelineStep::Mixer(config::PipelineStepMixer {
+                name: "mix_4_to_2".to_string(),
+                description: None,
+                bypassed: Some(false),
+            }),
+            config::PipelineStep::Filter(config::PipelineStepFilter {
+                channels: None,
+                names: post_filter_names,
+                description: None,
+                bypassed: Some(false),
+            }),
+        ]),
+    };
+
+    let processing_params = Arc::new(ProcessingParameters::new(&[0.0_f32; 5], &[false; 5]));
+    let filter_pool = camillalib::processing::build_processing_threadpool(
+        multithreaded,
+        conf.devices.worker_threads(),
+        conf.devices.chunksize,
+        conf.devices.samplerate,
+    );
+    Pipeline::from_config(conf, processing_params, filter_pool)
+}
+
+fn make_camilla_chunk(channels: usize, frames: usize, samplerate: usize) -> AudioChunk {
+    let mut waveforms = Vec::with_capacity(channels);
+    for _channel in 0..channels {
+        let mut waveform = Vec::with_capacity(frames);
+        for t in 0..frames {
+            let val = (2.0 * std::f64::consts::PI * 1000.0 * (t as f64) / (samplerate as f64)).sin();
+            waveform.push(val as CamillaFloat);
+        }
+        waveforms.push(waveform);
+    }
+    AudioChunk::new(
+        waveforms,
+        0.0 as CamillaFloat,
+        0.0 as CamillaFloat,
+        frames,
+        frames,
+    )
+}
 
 fn bench_filter<F: Filter + ?Sized>(filter: &mut F, chunk_size: usize, iters: usize) {
     let mut samples = vec![0.0f64; chunk_size];
@@ -208,73 +376,21 @@ fn main() {
                     let iters: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(200);
                     let samplerate = 48000;
 
-                    let mut pre_filters: Vec<Vec<Biquad>> = (0..4)
-                        .map(|_| {
-                            (0..16)
-                                .map(|i| make_peaking_biquad(samplerate, PRE_FREQS[i], PRE_QS[i], 1.5))
-                                .collect()
-                        })
-                        .collect();
-
-                    let mut post_filters: Vec<Vec<Biquad>> = (0..2)
-                        .map(|_| {
-                            (0..16)
-                                .map(|i| make_peaking_biquad(samplerate, POST_FREQS[i], POST_QS[i], 1.5))
-                                .collect()
-                        })
-                        .collect();
-
-                    let mut in_chunks = vec![vec![0.0f64; chunk_size]; 4];
-                    for ch in 0..4 {
-                        for t in 0..chunk_size {
-                            in_chunks[ch][t] = (2.0 * std::f64::consts::PI * 1000.0 * (t as f64) / (samplerate as f64)).sin();
-                        }
-                    }
-                    let mut out_chunks = vec![vec![0.0f64; chunk_size]; 2];
-                    let gain_factor = 10.0f64.powf(-6.0 / 20.0);
-
-                    let run_step = |pre: &mut Vec<Vec<Biquad>>, post: &mut Vec<Vec<Biquad>>, in_c: &mut Vec<Vec<f64>>, out_c: &mut Vec<Vec<f64>>| {
-                        if multi {
-                            use rayon::prelude::*;
-                            pre.par_iter_mut().zip(in_c.par_iter_mut()).for_each(|(flist, ch_data)| {
-                                for f in flist {
-                                    f.process_waveform(ch_data);
-                                }
-                            });
-                            for t in 0..chunk_size {
-                                out_c[0][t] = in_c[0][t] + gain_factor * in_c[2][t];
-                                out_c[1][t] = in_c[1][t] + gain_factor * in_c[3][t];
-                            }
-                            post.par_iter_mut().zip(out_c.par_iter_mut()).for_each(|(flist, ch_data)| {
-                                for f in flist {
-                                    f.process_waveform(ch_data);
-                                }
-                            });
-                        } else {
-                            for (flist, ch_data) in pre.iter_mut().zip(in_c.iter_mut()) {
-                                for f in flist {
-                                    f.process_waveform(ch_data);
-                                }
-                            }
-                            for t in 0..chunk_size {
-                                out_c[0][t] = in_c[0][t] + gain_factor * in_c[2][t];
-                                out_c[1][t] = in_c[1][t] + gain_factor * in_c[3][t];
-                            }
-                            for (flist, ch_data) in post.iter_mut().zip(out_c.iter_mut()) {
-                                for f in flist {
-                                    f.process_waveform(ch_data);
-                                }
-                            }
-                        }
-                    };
+                    let mut pipeline = build_camilladsp_pipeline(chunk_size, multi, &[]);
 
                     for _ in 0..50 {
-                        run_step(&mut pre_filters, &mut post_filters, &mut in_chunks, &mut out_chunks);
+                        let chunk = make_camilla_chunk(4, chunk_size, samplerate);
+                        let _out = pipeline.process_chunk(chunk);
                     }
 
+                    let chunks: Vec<AudioChunk> = (0..iters)
+                        .map(|_| make_camilla_chunk(4, chunk_size, samplerate))
+                        .collect();
+
                     let start = std::time::Instant::now();
-                    for _ in 0..iters {
-                        run_step(&mut pre_filters, &mut post_filters, &mut in_chunks, &mut out_chunks);
+                    for chunk in chunks {
+                        let out = pipeline.process_chunk(chunk);
+                        std::hint::black_box(&out);
                     }
                     let elapsed_ms = (start.elapsed().as_nanos() as f64) / 1e6 / (iters as f64);
                     println!("{elapsed_ms:.3}");
@@ -285,113 +401,21 @@ fn main() {
                     let iters: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(10);
                     let samplerate = 48000;
 
-                    let conv32k_coeffs = make_sinc_coeffs(32768);
-                    let conv64k_coeffs = make_sinc_coeffs(65536);
-
-                    let mut pre_bqs: Vec<Vec<Biquad>> = (0..4)
-                        .map(|_| {
-                            (0..16)
-                                .map(|i| make_peaking_biquad(samplerate, PRE_FREQS[i], PRE_QS[i], 1.5))
-                                .collect()
-                        })
-                        .collect();
-                    let mut pre_convs: Vec<(FftConv, FftConv)> = (0..4)
-                        .map(|_| {
-                            (
-                                FftConv::new("conv1", chunk_size, &conv32k_coeffs),
-                                FftConv::new("conv2", chunk_size, &conv64k_coeffs),
-                            )
-                        })
-                        .collect();
-
-                    let mut post_bqs: Vec<Vec<Biquad>> = (0..2)
-                        .map(|_| {
-                            (0..16)
-                                .map(|i| make_peaking_biquad(samplerate, POST_FREQS[i], POST_QS[i], 1.5))
-                                .collect()
-                        })
-                        .collect();
-                    let mut post_convs: Vec<(FftConv, FftConv)> = (0..2)
-                        .map(|_| {
-                            (
-                                FftConv::new("conv1", chunk_size, &conv32k_coeffs),
-                                FftConv::new("conv2", chunk_size, &conv64k_coeffs),
-                            )
-                        })
-                        .collect();
-
-                    let mut in_chunks = vec![vec![0.0f64; chunk_size]; 4];
-                    for ch in 0..4 {
-                        for t in 0..chunk_size {
-                            in_chunks[ch][t] = (2.0 * std::f64::consts::PI * 1000.0 * (t as f64) / (samplerate as f64)).sin();
-                        }
-                    }
-                    let mut out_chunks = vec![vec![0.0f64; chunk_size]; 2];
-                    let gain_factor = 10.0f64.powf(-6.0 / 20.0);
-
-                    let run_step = |pre_b: &mut Vec<Vec<Biquad>>,
-                                        pre_c: &mut Vec<(FftConv, FftConv)>,
-                                        post_b: &mut Vec<Vec<Biquad>>,
-                                        post_c: &mut Vec<(FftConv, FftConv)>,
-                                        in_c: &mut Vec<Vec<f64>>,
-                                        out_c: &mut Vec<Vec<f64>>| {
-                        if multi {
-                            use rayon::prelude::*;
-                            pre_b
-                                .par_iter_mut()
-                                .zip(pre_c.par_iter_mut())
-                                .zip(in_c.par_iter_mut())
-                                .for_each(|((b_list, c_pair), ch_data)| {
-                                    for f in b_list {
-                                        f.process_waveform(ch_data);
-                                    }
-                                    c_pair.0.process_waveform(ch_data);
-                                    c_pair.1.process_waveform(ch_data);
-                                });
-                            for t in 0..chunk_size {
-                                out_c[0][t] = in_c[0][t] + gain_factor * in_c[2][t];
-                                out_c[1][t] = in_c[1][t] + gain_factor * in_c[3][t];
-                            }
-                            post_b
-                                .par_iter_mut()
-                                .zip(post_c.par_iter_mut())
-                                .zip(out_c.par_iter_mut())
-                                .for_each(|((b_list, c_pair), ch_data)| {
-                                    for f in b_list {
-                                        f.process_waveform(ch_data);
-                                    }
-                                    c_pair.0.process_waveform(ch_data);
-                                    c_pair.1.process_waveform(ch_data);
-                                });
-                        } else {
-                            for ((b_list, c_pair), ch_data) in pre_b.iter_mut().zip(pre_c.iter_mut()).zip(in_c.iter_mut()) {
-                                for f in b_list {
-                                    f.process_waveform(ch_data);
-                                }
-                                c_pair.0.process_waveform(ch_data);
-                                c_pair.1.process_waveform(ch_data);
-                            }
-                            for t in 0..chunk_size {
-                                out_c[0][t] = in_c[0][t] + gain_factor * in_c[2][t];
-                                out_c[1][t] = in_c[1][t] + gain_factor * in_c[3][t];
-                            }
-                            for ((b_list, c_pair), ch_data) in post_b.iter_mut().zip(post_c.iter_mut()).zip(out_c.iter_mut()) {
-                                for f in b_list {
-                                    f.process_waveform(ch_data);
-                                }
-                                c_pair.0.process_waveform(ch_data);
-                                c_pair.1.process_waveform(ch_data);
-                            }
-                        }
-                    };
+                    let mut pipeline = build_camilladsp_pipeline(chunk_size, multi, &[32768, 65536]);
 
                     for _ in 0..20 {
-                        run_step(&mut pre_bqs, &mut pre_convs, &mut post_bqs, &mut post_convs, &mut in_chunks, &mut out_chunks);
+                        let chunk = make_camilla_chunk(4, chunk_size, samplerate);
+                        let _out = pipeline.process_chunk(chunk);
                     }
 
+                    let chunks: Vec<AudioChunk> = (0..iters)
+                        .map(|_| make_camilla_chunk(4, chunk_size, samplerate))
+                        .collect();
+
                     let start = std::time::Instant::now();
-                    for _ in 0..iters {
-                        run_step(&mut pre_bqs, &mut pre_convs, &mut post_bqs, &mut post_convs, &mut in_chunks, &mut out_chunks);
+                    for chunk in chunks {
+                        let out = pipeline.process_chunk(chunk);
+                        std::hint::black_box(&out);
                     }
                     let elapsed_ms = (start.elapsed().as_nanos() as f64) / 1e6 / (iters as f64);
                     println!("{elapsed_ms:.3}");
@@ -768,8 +792,7 @@ fn main() {
                 let mut audio_chunk =
                     AudioChunk::new(waveforms, 1.0, -1.0, chunk.len(), chunk.len());
                 processor
-                    .process_chunk(&mut audio_chunk)
-                    .expect("process_chunk");
+                    .process_chunk(&mut audio_chunk);
                 output.extend_from_slice(&audio_chunk.waveforms[0]);
             }
             write_f64(out_path, &output);
@@ -805,8 +828,7 @@ fn main() {
                 let mut audio_chunk =
                     AudioChunk::new(waveforms, 1.0, -1.0, chunk.len(), chunk.len());
                 processor
-                    .process_chunk(&mut audio_chunk)
-                    .expect("process_chunk");
+                    .process_chunk(&mut audio_chunk);
                 output.extend_from_slice(&audio_chunk.waveforms[0]);
             }
             write_f64(out_path, &output);
@@ -860,8 +882,7 @@ fn main() {
                 let mut audio_chunk =
                     AudioChunk::new(waveforms, 1.0, -1.0, chunk0.len(), chunk0.len());
                 processor
-                    .process_chunk(&mut audio_chunk)
-                    .expect("process_chunk");
+                    .process_chunk(&mut audio_chunk);
                 output0.extend_from_slice(&audio_chunk.waveforms[0]);
                 output1.extend_from_slice(&audio_chunk.waveforms[1]);
             }
@@ -936,8 +957,7 @@ fn main() {
                 let mut audio_chunk =
                     AudioChunk::new(waveforms, 1.0, -1.0, chunk0.len(), chunk0.len());
                 processor
-                    .process_chunk(&mut audio_chunk)
-                    .expect("process_chunk");
+                    .process_chunk(&mut audio_chunk);
                 output0.extend_from_slice(&audio_chunk.waveforms[0]);
                 output1.extend_from_slice(&audio_chunk.waveforms[1]);
             }

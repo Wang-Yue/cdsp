@@ -6,6 +6,7 @@
 #include "Audio/processing_parameters.h"
 #include "Config/filter_config_types.h"
 #include "Filters/biquad.h"
+#include "Filters/biquad_canon.h"
 #include "Filters/biquad_combo.h"
 #include "Filters/clipper.h"
 #include "Filters/convolution.h"
@@ -45,6 +46,8 @@ static const filter_vtable_t* filter_vtable_from_type(filter_type_t type) {
       return &g_loudness_vtable;
     case FILTER_TYPE_VOLUME:
       return &g_volume_vtable;
+    case FILTER_TYPE_BIQUAD_CANON:
+      return &g_biquad_canon_vtable;
     default:
       return NULL;
   }
@@ -75,6 +78,8 @@ static filter_instance_type_t filter_instance_type_from_config(
       return FILTER_INSTANCE_LOUDNESS;
     case FILTER_TYPE_VOLUME:
       return FILTER_INSTANCE_VOLUME;
+    case FILTER_TYPE_BIQUAD_CANON:
+      return FILTER_INSTANCE_BIQUAD_CANON;
     case FILTER_TYPE_INVALID:
       break;
   }

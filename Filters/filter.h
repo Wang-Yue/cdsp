@@ -30,7 +30,8 @@ typedef enum {
   FILTER_INSTANCE_CLIPPER,           /**< Clipper filter. */
   FILTER_INSTANCE_LOOKAHEAD_LIMITER, /**< Lookahead limiter filter. */
   FILTER_INSTANCE_LOUDNESS,          /**< Loudness filter. */
-  FILTER_INSTANCE_VOLUME             /**< Volume filter. */
+  FILTER_INSTANCE_VOLUME,            /**< Volume filter. */
+  FILTER_INSTANCE_BIQUAD_CANON       /**< Internal biquad canon cascade filter. */
 } filter_instance_type_t;
 
 /**

@@ -25,7 +25,8 @@ typedef enum {
   PROCESSOR_TYPE_NOISE_GATE,     /**< Noise gate processor. */
   PROCESSOR_TYPE_RACE, /**< RACE (Receiver Active Crosstalk Cancellation)
                          processor. */
-  PROCESSOR_TYPE_LOOKAHEAD_LIMITER /**< Lookahead limiter processor. */
+  PROCESSOR_TYPE_LOOKAHEAD_LIMITER, /**< Lookahead limiter processor. */
+  PROCESSOR_TYPE_BIQUAD             /**< Multi-channel biquad processor. */
 } processor_type_t;
 
 /**
@@ -116,6 +117,19 @@ typedef struct {
   bool delay_processed_only;     /**< Only delay processed channels. */
 } lookahead_limiter_processor_config_t;
 
+struct filter;
+typedef struct filter filter_t;
+
+/**
+ * @brief Configuration parameters for internal multi-channel biquad processor.
+ */
+typedef struct {
+  const size_t* channels;          /**< Array of channel indices. */
+  size_t channels_count;           /**< Number of channels. */
+  filter_t* const* const* filters; /**< Filter pointers per channel. */
+  const size_t* filters_counts;    /**< Number of filters per channel. */
+} biquad_processor_config_t;
+
 /**
  * @brief Configuration for a processor, containing its type and parameters.
  */
@@ -126,8 +140,10 @@ typedef struct {
     noise_gate_config_t noise_gate; /**< Noise gate parameters. */
     race_config_t race;             /**< RACE parameters. */
     lookahead_limiter_processor_config_t
-        lookahead_limiter; /**< Lookahead Limiter parameters. */
-  } parameters;            /**< Union of processor parameters. */
+        lookahead_limiter;          /**< Lookahead Limiter parameters. */
+    biquad_processor_config_t
+        biquad;                     /**< Biquad processor parameters. */
+  } parameters;                     /**< Union of processor parameters. */
 } processor_config_t;
 
 #endif  // CLIB_CONFIG_PROCESSOR_CONFIG_TYPES_H

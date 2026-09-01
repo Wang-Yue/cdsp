@@ -29,7 +29,8 @@ typedef enum {
   PROCESSOR_IMPL_COMPRESSOR = 0,    ///< Dynamic range compressor processor.
   PROCESSOR_IMPL_NOISE_GATE,        ///< Noise gate processor.
   PROCESSOR_IMPL_RACE,              ///< RACE cross-talk cancellation processor.
-  PROCESSOR_IMPL_LOOKAHEAD_LIMITER  ///< Lookahead Limiter processor.
+  PROCESSOR_IMPL_LOOKAHEAD_LIMITER, ///< Lookahead Limiter processor.
+  PROCESSOR_IMPL_BIQUAD             ///< Internal multi-channel biquad processor.
 } processor_impl_type_t;
 
 /**

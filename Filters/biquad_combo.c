@@ -7,6 +7,7 @@
 #include "Config/config_error.h"
 #include "Config/filter_config_types.h"
 #include "Filters/biquad.h"
+#include "Filters/biquad_canon.h"
 #include "Filters/filter.h"
 #include "Utils/double_helpers.h"
 
@@ -14,6 +15,7 @@ struct biquad_combo_filter {
   char name[64];
   biquad_filter_t** sections;
   size_t num_sections;
+  void* canon_filter;
 };
 
 typedef struct biquad_combo_filter biquad_combo_filter_t;
@@ -268,6 +270,9 @@ static int biquad_combo_config_validate(const filter_config_t* config,
 static void biquad_combo_filter_free(void* instance) {
   biquad_combo_filter_t* filter = (biquad_combo_filter_t*)instance;
   if (!filter) return;
+  if (filter->canon_filter) {
+    g_biquad_canon_vtable.free(filter->canon_filter);
+  }
   if (filter->sections) {
     for (size_t i = 0; i < filter->num_sections; i++) {
       if (filter->sections[i] && g_biquad_vtable.free) {
@@ -452,6 +457,21 @@ static void* biquad_combo_filter_create(const char* name,
     }
   }
 
+  filter_config_t canon_cfg = {
+      .type = FILTER_TYPE_BIQUAD_CANON,
+      .parameters.biquad_canon = {
+          .sections = filter->sections,
+          .num_sections = filter->num_sections,
+          .owns_sections = false,
+      },
+  };
+  filter->canon_filter = g_biquad_canon_vtable.create(
+      name, &canon_cfg, sample_rate, 0, NULL, err);
+  if (!filter->canon_filter) {
+    biquad_combo_filter_free(filter);
+    return NULL;
+  }
+
   return filter;
 }
 
@@ -467,11 +487,7 @@ static void biquad_combo_filter_process(void* instance,
                                         size_t count) {
   biquad_combo_filter_t* filter = (biquad_combo_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
-  for (size_t i = 0; i < filter->num_sections; i++) {
-    if (filter->sections[i]) {
-      g_biquad_vtable.process(filter->sections[i], waveform, count);
-    }
-  }
+  g_biquad_canon_vtable.process(filter->canon_filter, waveform, count);
 }
 
 /**
@@ -485,18 +501,11 @@ static void biquad_combo_filter_transfer_state(void* dest_ptr,
   biquad_combo_filter_t* dest = (biquad_combo_filter_t*)dest_ptr;
   const biquad_combo_filter_t* src = (const biquad_combo_filter_t*)src_ptr;
   if (!dest || !src) return;
-  for (size_t i = 0; i < dest->num_sections; i++) {
-    const char* dest_name = biquad_filter_get_name(dest->sections[i]);
-    if (!dest_name) continue;
-    for (size_t j = 0; j < src->num_sections; j++) {
-      const char* src_name = biquad_filter_get_name(src->sections[j]);
-      if (src_name && strcmp(dest_name, src_name) == 0) {
-        g_biquad_vtable.transfer_state(dest->sections[i], src->sections[j]);
-        break;
-      }
-    }
+  if (dest->canon_filter && src->canon_filter) {
+    g_biquad_canon_vtable.transfer_state(dest->canon_filter, src->canon_filter);
   }
 }
+
 
 const filter_vtable_t g_biquad_combo_vtable = {
     .validate = biquad_combo_config_validate,

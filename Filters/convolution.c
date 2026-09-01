@@ -17,6 +17,16 @@
 #include "Utils/cdsp_path.h"
 #include "Utils/double_helpers.h"
 
+typedef struct conv_coeffs_s {
+  char name[64];
+  size_t chunk_size;
+  size_t num_segments;
+  size_t spec_len;
+  int ref_count;
+  fftw_complex* data;
+  struct conv_coeffs_s* next;
+} conv_coeffs_t;
+
 struct convolution_filter {
   char name[64];
   size_t chunk_size;
@@ -24,8 +34,8 @@ struct convolution_filter {
   size_t spec_len;
   fftw_plan plan_forward;
   fftw_plan plan_inverse;
-  fftw_complex** coeffs_f;
-  fftw_complex** hist_f;
+  conv_coeffs_t* coeffs;
+  fftw_complex* hist_f;
   fftw_complex* temp_buf;
   size_t write_idx;
   double* overlap_buffer;
@@ -638,6 +648,96 @@ static double* load_raw_file(const char* path, const char* format_str,
   return result;
 }
 
+static conv_coeffs_t* g_conv_coeffs_cache = NULL;
+
+static conv_coeffs_t* conv_coeffs_cache_find(const char* name, size_t chunk_size) {
+  const char* lookup_name = name ? name : "convolution";
+  for (conv_coeffs_t* curr = g_conv_coeffs_cache; curr != NULL; curr = curr->next) {
+    if (strcmp(curr->name, lookup_name) == 0 && curr->chunk_size == chunk_size) {
+      curr->ref_count++;
+      return curr;
+    }
+  }
+  return NULL;
+}
+
+static conv_coeffs_t* conv_coeffs_create(const char* name, size_t chunk_size,
+                                         size_t num_seg, size_t spec_len,
+                                         const double* coeffs, size_t coeffs_count,
+                                         fftw_plan plan_forward, size_t fft_len) {
+  const char* lookup_name = name ? name : "convolution";
+  for (conv_coeffs_t* curr = g_conv_coeffs_cache; curr != NULL; curr = curr->next) {
+    if (strcmp(curr->name, lookup_name) == 0 && curr->chunk_size == chunk_size) {
+      curr->ref_count++;
+      return curr;
+    }
+  }
+
+  conv_coeffs_t* entry = (conv_coeffs_t*)calloc(1, sizeof(conv_coeffs_t));
+  if (!entry) {
+    return NULL;
+  }
+  strncpy(entry->name, lookup_name, sizeof(entry->name) - 1);
+  entry->name[sizeof(entry->name) - 1] = '\0';
+  entry->chunk_size = chunk_size;
+  entry->num_segments = num_seg;
+  entry->spec_len = spec_len;
+  entry->ref_count = 1;
+  entry->data = (fftw_complex*)fftw_malloc(num_seg * spec_len * sizeof(fftw_complex));
+  if (!entry->data) {
+    free(entry);
+    return NULL;
+  }
+
+  double* scratch = (double*)fftw_malloc(fft_len * sizeof(double));
+  if (!scratch) {
+    fftw_free(entry->data);
+    free(entry);
+    return NULL;
+  }
+  double inv_scale = 1.0 / (double)fft_len;
+
+  for (size_t s = 0; s < num_seg; s++) {
+    memset(scratch, 0, fft_len * sizeof(double));
+    size_t offset = s * chunk_size;
+    size_t copy_len = (coeffs_count > offset) ? (coeffs_count - offset) : 0;
+    if (copy_len > chunk_size) copy_len = chunk_size;
+    if (copy_len > 0) {
+      for (size_t k = 0; k < copy_len; k++) {
+        scratch[k] = coeffs[offset + k] * inv_scale;
+      }
+    }
+    fftw_execute_dft_r2c(plan_forward, scratch, entry->data + s * spec_len);
+  }
+  fftw_free(scratch);
+
+  entry->next = g_conv_coeffs_cache;
+  g_conv_coeffs_cache = entry;
+  return entry;
+}
+
+static void conv_coeffs_release(conv_coeffs_t* entry) {
+  if (!entry) return;
+  entry->ref_count--;
+  if (entry->ref_count <= 0) {
+    if (g_conv_coeffs_cache == entry) {
+      g_conv_coeffs_cache = entry->next;
+    } else {
+      conv_coeffs_t* prev = g_conv_coeffs_cache;
+      while (prev && prev->next != entry) {
+        prev = prev->next;
+      }
+      if (prev) {
+        prev->next = entry->next;
+      }
+    }
+    if (entry->data) {
+      fftw_free(entry->data);
+    }
+    free(entry);
+  }
+}
+
 /**
  * @brief Free the convolution filter instance and its associated resources.
  *
@@ -646,13 +746,11 @@ static double* load_raw_file(const char* path, const char* format_str,
 static void convolution_filter_free(void* instance) {
   convolution_filter_t* filter = (convolution_filter_t*)instance;
   if (!filter) return;
-  size_t num_seg = filter->num_segments;
-  for (size_t s = 0; s < num_seg; s++) {
-    if (filter->coeffs_f && filter->coeffs_f[s]) fftw_free(filter->coeffs_f[s]);
-    if (filter->hist_f && filter->hist_f[s]) fftw_free(filter->hist_f[s]);
+  if (filter->coeffs) {
+    conv_coeffs_release(filter->coeffs);
+    filter->coeffs = NULL;
   }
-  if (filter->coeffs_f) free(filter->coeffs_f);
-  if (filter->hist_f) free(filter->hist_f);
+  if (filter->hist_f) fftw_free(filter->hist_f);
   if (filter->temp_buf) fftw_free(filter->temp_buf);
   if (filter->plan_forward) fftw_destroy_plan(filter->plan_forward);
   if (filter->plan_inverse) fftw_destroy_plan(filter->plan_inverse);
@@ -774,60 +872,56 @@ static void* convolution_filter_create(const char* name,
   size_t spec_len = fft_len / 2 + 1;
   filter->spec_len = spec_len;
 
+  // Check cache for shared coefficients
+  conv_coeffs_t* cached_coeffs = conv_coeffs_cache_find(filter->name, chunk_size);
+  if (cached_coeffs) {
+    filter->coeffs = cached_coeffs;
+    filter->num_segments = cached_coeffs->num_segments;
+  }
+
   const double* coeffs = NULL;
   size_t coeffs_count = 0;
   double* dummy_coeffs = NULL;
-  double* scratch = NULL;
 
-  if (params->type == CONV_TYPE_VALUES) {
-    coeffs = params->values;
-    coeffs_count = params->values_count;
-  } else if (params->type == CONV_TYPE_DUMMY) {
-    size_t len = params->length > 0 ? params->length : 1;
-    dummy_coeffs = (double*)calloc(len, sizeof(double));
-    if (!dummy_coeffs) {
+  if (!filter->coeffs) {
+    if (params->type == CONV_TYPE_VALUES) {
+      coeffs = params->values;
+      coeffs_count = params->values_count;
+    } else if (params->type == CONV_TYPE_DUMMY) {
+      size_t len = params->length > 0 ? params->length : 1;
+      dummy_coeffs = (double*)calloc(len, sizeof(double));
+      if (!dummy_coeffs) {
+        goto fail;
+      }
+      dummy_coeffs[0] = 1.0;
+      coeffs = dummy_coeffs;
+      coeffs_count = len;
+    } else if (params->type == CONV_TYPE_WAV) {
+      size_t count = 0;
+      dummy_coeffs = load_wav_file(params->filename, params->channel, &count);
+      coeffs = dummy_coeffs;
+      coeffs_count = count;
+    } else if (params->type == CONV_TYPE_RAW) {
+      size_t count = 0;
+      dummy_coeffs = load_raw_file(params->filename, params->format,
+                                   params->skip_bytes_lines,
+                                   params->read_bytes_lines, &count);
+      coeffs = dummy_coeffs;
+      coeffs_count = count;
+    }
+
+    if (!coeffs || coeffs_count == 0) {
       goto fail;
     }
-    dummy_coeffs[0] = 1.0;
-    coeffs = dummy_coeffs;
-    coeffs_count = len;
-  } else if (params->type == CONV_TYPE_WAV) {
-    size_t count = 0;
-    dummy_coeffs = load_wav_file(params->filename, params->channel, &count);
-    coeffs = dummy_coeffs;
-    coeffs_count = count;
-  } else if (params->type == CONV_TYPE_RAW) {
-    size_t count = 0;
-    dummy_coeffs = load_raw_file(params->filename, params->format,
-                                 params->skip_bytes_lines,
-                                 params->read_bytes_lines, &count);
-    coeffs = dummy_coeffs;
-    coeffs_count = count;
+    filter->num_segments = (coeffs_count + chunk_size - 1) / chunk_size;
   }
 
-  if (!coeffs || coeffs_count == 0) {
+  size_t num_seg = filter->num_segments;
+  filter->hist_f = (fftw_complex*)fftw_malloc(num_seg * spec_len * sizeof(fftw_complex));
+  if (!filter->hist_f) {
     goto fail;
   }
-
-  size_t num_seg = (coeffs_count + chunk_size - 1) / chunk_size;
-  filter->num_segments = num_seg;
-  filter->coeffs_f = (fftw_complex**)calloc(num_seg, sizeof(fftw_complex*));
-  filter->hist_f = (fftw_complex**)calloc(num_seg, sizeof(fftw_complex*));
-
-  if (!filter->coeffs_f || !filter->hist_f) {
-    goto fail;
-  }
-
-  for (size_t s = 0; s < num_seg; s++) {
-    filter->coeffs_f[s] =
-        (fftw_complex*)fftw_malloc(spec_len * sizeof(fftw_complex));
-    filter->hist_f[s] =
-        (fftw_complex*)fftw_malloc(spec_len * sizeof(fftw_complex));
-    if (!filter->coeffs_f[s] || !filter->hist_f[s]) {
-      goto fail;
-    }
-    memset(filter->hist_f[s], 0, spec_len * sizeof(fftw_complex));
-  }
+  memset(filter->hist_f, 0, num_seg * spec_len * sizeof(fftw_complex));
 
   filter->temp_buf =
       (fftw_complex*)fftw_malloc(spec_len * sizeof(fftw_complex));
@@ -848,7 +942,7 @@ static void* convolution_filter_create(const char* name,
   }
 
   filter->plan_forward = fftw_plan_dft_r2c_1d((int)fft_len, filter->time_buf,
-                                              filter->hist_f[0], FFTW_PATIENT);
+                                              filter->hist_f, FFTW_PATIENT);
   filter->plan_inverse = fftw_plan_dft_c2r_1d((int)fft_len, filter->temp_buf,
                                               filter->out_buf, FFTW_PATIENT);
 
@@ -857,34 +951,21 @@ static void* convolution_filter_create(const char* name,
     goto fail;
   }
 
-  // Clear buffers that might have been overwritten during FFTW_MEASURE
-  memset(filter->hist_f[0], 0, spec_len * sizeof(fftw_complex));
+  // Clear buffers that might have been overwritten during FFTW planning
+  memset(filter->hist_f, 0, num_seg * spec_len * sizeof(fftw_complex));
   memset(filter->temp_buf, 0, spec_len * sizeof(fftw_complex));
   memset(filter->time_buf, 0, fft_len * sizeof(double));
   memset(filter->out_buf, 0, fft_len * sizeof(double));
 
-  scratch = (double*)fftw_malloc(fft_len * sizeof(double));
-  if (!scratch) {
-    goto fail;
-  }
-  double inv_scale = 1.0 / (double)fft_len;
-
-  // Pre-scale and FFT each IR segment directly into interleaved
-  // frequency-domain storage.
-  for (size_t s = 0; s < num_seg; s++) {
-    memset(scratch, 0, fft_len * sizeof(double));
-    size_t offset = s * chunk_size;
-    size_t copy_len = (coeffs_count > offset) ? (coeffs_count - offset) : 0;
-    if (copy_len > chunk_size) copy_len = chunk_size;
-    if (copy_len > 0) {
-      for (size_t k = 0; k < copy_len; k++) {
-        scratch[k] = coeffs[offset + k] * inv_scale;
-      }
+  if (!filter->coeffs) {
+    filter->coeffs = conv_coeffs_create(filter->name, chunk_size, num_seg,
+                                        spec_len, coeffs, coeffs_count,
+                                        filter->plan_forward, fft_len);
+    if (!filter->coeffs) {
+      goto fail;
     }
-    fftw_execute_dft_r2c(filter->plan_forward, scratch, filter->coeffs_f[s]);
   }
-  fftw_free(scratch);
-  scratch = NULL;
+
   if (dummy_coeffs) {
     free(dummy_coeffs);
     dummy_coeffs = NULL;
@@ -900,7 +981,6 @@ fail:
                      name ? name : "");
   }
   if (dummy_coeffs) free(dummy_coeffs);
-  if (scratch) fftw_free(scratch);
   convolution_filter_free(filter);
   return NULL;
 }
@@ -924,7 +1004,7 @@ fail:
  */
 static void process_chunk(convolution_filter_t* filter,
                           mutable_waveform_t waveform) {
-  if (!filter || filter->num_segments == 0) return;
+  if (!filter || filter->num_segments == 0 || !filter->coeffs) return;
   size_t cs = filter->chunk_size;
   size_t spec_len = filter->spec_len;
   size_t num_seg = filter->num_segments;
@@ -936,20 +1016,21 @@ static void process_chunk(convolution_filter_t* filter,
   memset(filter->time_buf + cs, 0, cs * sizeof(double));
 
   // 2. Advance the history index and FFT the new block directly into that slot.
-  fftw_execute_dft_r2c(filter->plan_forward, filter->time_buf,
-                       filter->hist_f[widx]);
+  fftw_complex* dest_slot = filter->hist_f + widx * spec_len;
+  fftw_execute_dft_r2c(filter->plan_forward, filter->time_buf, dest_slot);
 
   // 3. Spectrum-domain multiply-accumulate across the segment history.
   //    seg=0 pairs the newest input with coeff[0]; seg=k pairs the input from
   //    `k` blocks ago with coeff[k].
+  const fftw_complex* coeffs_data = filter->coeffs->data;
   size_t hidx0 = widx;
-  complex_mul_simd(filter->temp_buf, filter->hist_f[hidx0], filter->coeffs_f[0],
-                   spec_len);
+  complex_mul_simd(filter->temp_buf, filter->hist_f + hidx0 * spec_len,
+                   coeffs_data, spec_len);
 
   for (size_t s = 1; s < num_seg; s++) {
     size_t hidx = (widx + num_seg - s) % num_seg;
-    complex_fma_simd(filter->temp_buf, filter->hist_f[hidx],
-                     filter->coeffs_f[s], spec_len);
+    complex_fma_simd(filter->temp_buf, filter->hist_f + hidx * spec_len,
+                     coeffs_data + s * spec_len, spec_len);
   }
 
   // 4. Inverse FFT directly into out_buf.
@@ -1030,10 +1111,8 @@ static void convolution_filter_transfer_state(void* dest_ptr,
     memcpy(dest->overlap_buffer, src->overlap_buffer,
            dest->chunk_size * sizeof(double));
 
-    // Copy history segments
-    for (size_t s = 0; s < num_seg; s++) {
-      memcpy(dest->hist_f[s], src->hist_f[s], spec_len * sizeof(fftw_complex));
-    }
+    // Copy history segments in a single contiguous block
+    memcpy(dest->hist_f, src->hist_f, num_seg * spec_len * sizeof(fftw_complex));
     dest->write_idx = src->write_idx;
     memcpy(dest->input_buffer, src->input_buffer,
            dest->chunk_size * sizeof(double));

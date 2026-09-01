@@ -25,8 +25,8 @@
 
 #define CHUNK_SIZE 1024
 #define SAMPLE_RATE 48000
-#define ITERS_BIQUAD 200
-#define ITERS_CONV 10
+#define ITERS_BIQUAD 2000
+#define ITERS_CONV 100
 
 static const double pre_bq_freqs[] = {
     120.0,  220.0,  350.0,  500.0,  700.0,  900.0,  1200.0, 1600.0,

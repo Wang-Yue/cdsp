@@ -7,6 +7,7 @@
 #include "Config/processor_config_types.h"
 #include "Filters/filter.h"
 #include "Filters/lookahead_limiter.h"
+#include "Processors/biquad_processor.h"
 #include "Processors/processor.h"
 #include "test_support.h"
 
@@ -664,6 +665,172 @@ TEST(test_lookahead_limiter_processor_validate) {
       .type = PROCESSOR_TYPE_LOOKAHEAD_LIMITER,
       .parameters.lookahead_limiter = params_invalid_attack_neg};
   ASSERT_NE(0, processor_config_validate(&cfg_invalid_attack_neg, 48000, NULL));
+}
+
+static dsp_processor_t* test_biquad_processor_create(
+    const char* name, const size_t* channels, size_t channels_count,
+    filter_t* const* const* filters, const size_t* filters_counts) {
+  processor_config_t cfg = {
+      .type = PROCESSOR_TYPE_BIQUAD,
+      .parameters.biquad = {
+          .channels = channels,
+          .channels_count = channels_count,
+          .filters = filters,
+          .filters_counts = filters_counts,
+      },
+  };
+  void* impl = g_biquad_processor_vtable.create(name, &cfg, 0, 0, NULL);
+  if (!impl) return NULL;
+  dsp_processor_t* proc = (dsp_processor_t*)calloc(1, sizeof(dsp_processor_t));
+  if (!proc) {
+    g_biquad_processor_vtable.free(impl);
+    return NULL;
+  }
+  proc->type = PROCESSOR_IMPL_BIQUAD;
+  proc->impl = impl;
+  proc->vtable = &g_biquad_processor_vtable;
+  return proc;
+}
+
+TEST(biquad_processor_interleaved_multi_channel) {
+  int fs = 48000;
+  size_t count = 256;
+  size_t num_chans = 4;
+  size_t channels[] = {0, 1, 2, 3};
+  size_t filters_counts[] = {1, 1, 1, 1};
+
+  filter_t* ch_filters[4][1];
+  filter_t* const* filter_ptrs[4];
+  filter_t* ref_filters[4];
+
+  for (size_t c = 0; c < num_chans; c++) {
+    char name[32];
+    snprintf(name, sizeof(name), "bq_ch%zu", c);
+    filter_config_t cfg = {
+        .type = FILTER_TYPE_BIQUAD,
+        .parameters.biquad = {
+            .type = BIQUAD_TYPE_PEAKING,
+            .freq = 400.0 + 150.0 * (double)c,
+            .q = 1.0,
+            .gain = 3.0}};
+    ch_filters[c][0] = filter_create(name, &cfg, fs, count, NULL, NULL);
+    ref_filters[c] = filter_create(name, &cfg, fs, count, NULL, NULL);
+    filter_ptrs[c] = ch_filters[c];
+    ASSERT_TRUE(ch_filters[c][0] != NULL);
+    ASSERT_TRUE(ref_filters[c] != NULL);
+  }
+
+  dsp_processor_t* bq_proc = test_biquad_processor_create(
+      "test_bp_int", channels, num_chans, filter_ptrs, filters_counts);
+  ASSERT_TRUE(bq_proc != NULL);
+
+  audio_chunk_t* chunk = audio_chunk_create(count, num_chans);
+  double ref_wave[4][256];
+  for (size_t c = 0; c < num_chans; c++) {
+    double* ch_buf = audio_chunk_get_channel(chunk, c);
+    for (size_t i = 0; i < count; i++) {
+      double val = sin(0.015 * (double)(i + c * 10));
+      ch_buf[i] = val;
+      ref_wave[c][i] = val;
+    }
+  }
+  audio_chunk_set_valid_frames(chunk, count);
+
+  dsp_processor_process(bq_proc, chunk);
+
+  for (size_t c = 0; c < num_chans; c++) {
+    filter_process(ref_filters[c], ref_wave[c], count);
+    const double* proc_buf = audio_chunk_get_channel(chunk, c);
+    for (size_t i = 0; i < count; i++) {
+      ASSERT_NEAR(ref_wave[c][i], proc_buf[i], 1e-12);
+    }
+    filter_free(ref_filters[c]);
+  }
+
+  audio_chunk_free(chunk);
+  dsp_processor_free(bq_proc);
+}
+
+TEST(biquad_processor_ragged_cascades) {
+  int sample_rate = 48000;
+  size_t test_shapes[][8] = {
+      {1, 4, 0},
+      {4, 1, 0},
+      {2, 5, 3, 1, 0},
+      {2, 5, 3, 1, 4, 1, 2, 0},
+  };
+
+  for (size_t t = 0; t < 4; t++) {
+    size_t num_channels = 0;
+    while (test_shapes[t][num_channels] != 0) num_channels++;
+
+    size_t chunk_size = 64;
+    size_t channels[8];
+    size_t filters_counts[8];
+    filter_t* ch_filters[8][8];
+    filter_t* ref_filters[8][8];
+    filter_t* const* filter_ptrs[8];
+
+    for (size_t ch = 0; ch < num_channels; ch++) {
+      channels[ch] = ch;
+      size_t stages = test_shapes[t][ch];
+      filters_counts[ch] = stages;
+      for (size_t s = 0; s < stages; s++) {
+        biquad_config_t p = {
+            .type = BIQUAD_TYPE_PEAKING,
+            .freq = 400.0 + 50.0 * (double)(s + ch),
+            .q = 1.0,
+            .gain = 2.0};
+        filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
+                               .parameters.biquad = p};
+        char name[32];
+        snprintf(name, sizeof(name), "bq_%zu_%zu", ch, s);
+        ch_filters[ch][s] = filter_create(name, &cfg, sample_rate, chunk_size, NULL, NULL);
+        ref_filters[ch][s] = filter_create(name, &cfg, sample_rate, chunk_size, NULL, NULL);
+      }
+      filter_ptrs[ch] = ch_filters[ch];
+    }
+
+    dsp_processor_t* bq_proc = test_biquad_processor_create(
+        "ragged_proc", channels, num_channels, filter_ptrs, filters_counts);
+    ASSERT_TRUE(bq_proc != NULL);
+
+    audio_chunk_t* chunk = audio_chunk_create(chunk_size, num_channels);
+    double ref_buffers[8][64];
+
+    for (size_t ch = 0; ch < num_channels; ch++) {
+      double* ch_buf = audio_chunk_get_channel(chunk, ch);
+      for (size_t i = 0; i < chunk_size; i++) {
+        double val = sin(0.02 * (double)(i + ch * 10));
+        ch_buf[i] = val;
+        ref_buffers[ch][i] = val;
+      }
+    }
+    audio_chunk_set_valid_frames(chunk, chunk_size);
+
+    // Process via biquad processor
+    dsp_processor_process(bq_proc, chunk);
+
+    // Process via reference filters
+    for (size_t ch = 0; ch < num_channels; ch++) {
+      size_t stages = test_shapes[t][ch];
+      for (size_t s = 0; s < stages; s++) {
+        filter_process(ref_filters[ch][s], ref_buffers[ch], chunk_size);
+        filter_free(ref_filters[ch][s]);
+      }
+    }
+
+    // Compare
+    for (size_t ch = 0; ch < num_channels; ch++) {
+      const double* proc_buf = audio_chunk_get_channel(chunk, ch);
+      for (size_t i = 0; i < chunk_size; i++) {
+        ASSERT_NEAR(ref_buffers[ch][i], proc_buf[i], 1e-12);
+      }
+    }
+
+    audio_chunk_free(chunk);
+    dsp_processor_free(bq_proc);
+  }
 }
 
 TEST_MAIN()

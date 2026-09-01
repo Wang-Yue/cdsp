@@ -12,6 +12,8 @@ const char* processor_type_to_string(processor_type_t type) {
       return "RACE";
     case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
       return "LookaheadLimiter";
+    case PROCESSOR_TYPE_BIQUAD:
+      return "Biquad";
     default:
       return "Compressor";
   }
@@ -24,5 +26,6 @@ processor_type_t processor_type_from_string(const char* str) {
   if (strcmp(str, "RACE") == 0) return PROCESSOR_TYPE_RACE;
   if (strcmp(str, "LookaheadLimiter") == 0)
     return PROCESSOR_TYPE_LOOKAHEAD_LIMITER;
+  if (strcmp(str, "Biquad") == 0) return PROCESSOR_TYPE_BIQUAD;
   return PROCESSOR_TYPE_INVALID;
 }

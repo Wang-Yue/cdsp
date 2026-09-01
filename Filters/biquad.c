@@ -6,23 +6,7 @@
 #include "Filters/filter.h"
 #include "Utils/double_helpers.h"
 
-/**
- * @struct biquad_coefficients_t
- * @brief Structure holding the transfer function coefficients of a biquad
- * filter.
- *
- * The transfer function is defined as:
- * \f$ H(z) = \frac{b_0 + b_1 z^{-1} + b_2 z^{-2}}{1 + a_1 z^{-1} + a_2 z^{-2}}
- * \f$
- */
-
-typedef struct {
-  double b0; /**< Numerator coefficient for \f$z^0\f$ */
-  double b1; /**< Numerator coefficient for \f$z^{-1}\f$ */
-  double b2; /**< Numerator coefficient for \f$z^{-2}\f$ */
-  double a1; /**< Denominator coefficient for \f$z^{-1}\f$ */
-  double a2; /**< Denominator coefficient for \f$z^{-2}\f$ */
-} biquad_coefficients_t;
+#include "Filters/biquad_internal.h"
 
 /**
  * @brief Returns coefficients for a passthrough filter (identity / no effect).
@@ -33,16 +17,6 @@ typedef struct {
 static inline biquad_coefficients_t biquad_coefficients_passthrough(void) {
   return (biquad_coefficients_t){1.0, 0.0, 0.0, 0.0, 0.0};
 }
-
-struct biquad_filter {
-  char name[64];
-  biquad_type_t type;
-  biquad_coefficients_t coeffs;
-  double z1, z2;
-  double neg_a1, neg_a2;
-};
-
-typedef struct biquad_filter biquad_filter_t;
 
 #include <math.h>
 #include <stdbool.h>

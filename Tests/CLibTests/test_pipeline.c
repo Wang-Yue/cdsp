@@ -11,6 +11,7 @@
 #include "Config/engine_config_types.h"
 #include "Config/filter_config_types.h"
 #include "Config/mixer_config_types.h"
+#include "Filters/filter.h"
 #include "Pipeline/config_loader.h"
 #include "Pipeline/pipeline.h"
 #include "Utils/double_helpers.h"
@@ -969,6 +970,204 @@ TEST(PipelineReload_StatePreserved) {
   processing_parameters_free(params);
 }
 
+TEST(Pipeline_TransferState_ParallelStepToBiquadProcessor) {
+  // Config A: Step with Biquad + Gain -> Unlowered parallel filter step
+  dsp_config_t config_a;
+  init_default_config(&config_a);
+
+  named_filter_config_t filters_a[2];
+  memset(filters_a, 0, sizeof(filters_a));
+  strcpy(filters_a[0].name, "mybiquad");
+  filters_a[0].filter.type = FILTER_TYPE_BIQUAD;
+  filters_a[0].filter.parameters.biquad.type = BIQUAD_TYPE_LOWPASS;
+  filters_a[0].filter.parameters.biquad.freq = 1000.0;
+  filters_a[0].filter.parameters.biquad.q = 5.0;
+
+  strcpy(filters_a[1].name, "mygain");
+  filters_a[1].filter.type = FILTER_TYPE_GAIN;
+  filters_a[1].filter.parameters.gain.gain = 0.0;
+  filters_a[1].filter.parameters.gain.has_gain = true;
+  filters_a[1].filter.parameters.gain.scale = GAIN_SCALE_DB;
+
+  config_a.filters = filters_a;
+  config_a.filters_count = 2;
+
+  char* step_names_a[2] = {strdup("mybiquad"), strdup("mygain")};
+  pipeline_step_config_t step_a;
+  memset(&step_a, 0, sizeof(step_a));
+  step_a.type = PIPELINE_STEP_TYPE_FILTER;
+  step_a.channel = 0;
+  step_a.has_channel = true;
+  step_a.names = step_names_a;
+  step_a.names_count = 2;
+  config_a.pipeline = &step_a;
+  config_a.pipeline_count = 1;
+
+  // Config B: Step with only Biquad -> Lowered to internal Biquad Processor
+  dsp_config_t config_b;
+  init_default_config(&config_b);
+
+  named_filter_config_t filter_b;
+  memset(&filter_b, 0, sizeof(filter_b));
+  strcpy(filter_b.name, "mybiquad");
+  filter_b.filter.type = FILTER_TYPE_BIQUAD;
+  filter_b.filter.parameters.biquad.type = BIQUAD_TYPE_LOWPASS;
+  filter_b.filter.parameters.biquad.freq = 1000.0;
+  filter_b.filter.parameters.biquad.q = 5.0;
+
+  config_b.filters = &filter_b;
+  config_b.filters_count = 1;
+
+  char* step_name_b = strdup("mybiquad");
+  pipeline_step_config_t step_b;
+  memset(&step_b, 0, sizeof(step_b));
+  step_b.type = PIPELINE_STEP_TYPE_FILTER;
+  step_b.channel = 0;
+  step_b.has_channel = true;
+  step_b.names = &step_name_b;
+  step_b.names_count = 1;
+  config_b.pipeline = &step_b;
+  config_b.pipeline_count = 1;
+
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  pipeline_t* pipe_a = pipeline_create(&config_a, params, 0, NULL);
+  ASSERT_TRUE(pipe_a != NULL);
+
+  audio_chunk_t* impulse = audio_chunk_create(1024, 2);
+  audio_chunk_get_channel(impulse, 0)[0] = 1.0;
+  audio_chunk_set_valid_frames(impulse, 1024);
+
+  audio_chunk_t* zero_chunk = audio_chunk_create(1024, 2);
+  audio_chunk_set_valid_frames(zero_chunk, 1024);
+
+  audio_chunk_t* out_a1 = audio_chunk_create(1024, 2);
+  pipeline_process(pipe_a, impulse, out_a1);
+
+  audio_chunk_t* out_a2 = audio_chunk_create(1024, 2);
+  pipeline_process(pipe_a, zero_chunk, out_a2);
+  double expected_decay = audio_chunk_get_channel(out_a2, 0)[0];
+  ASSERT_NE(0.0, expected_decay);
+
+  // Pipe B created fresh
+  pipeline_t* pipe_b = pipeline_create(&config_b, params, 0, NULL);
+  ASSERT_TRUE(pipe_b != NULL);
+
+  // Re-run chunk 1 on pipe_a to restore state at chunk boundary
+  pipeline_t* pipe_a_fresh = pipeline_create(&config_a, params, 0, NULL);
+  audio_chunk_t* dummy = audio_chunk_create(1024, 2);
+  pipeline_process(pipe_a_fresh, impulse, dummy);
+
+  // Transfer state from unlowered parallel step in pipe_a_fresh to lowered biquad processor in pipe_b
+  pipeline_transfer_state(pipe_b, pipe_a_fresh);
+
+  audio_chunk_t* out_b = audio_chunk_create(1024, 2);
+  pipeline_process(pipe_b, zero_chunk, out_b);
+  double actual_decay = audio_chunk_get_channel(out_b, 0)[0];
+  ASSERT_NEAR(expected_decay, actual_decay, 1e-12);
+
+  free(step_names_a[0]);
+  free(step_names_a[1]);
+  free(step_name_b);
+  pipeline_free(pipe_a);
+  pipeline_free(pipe_a_fresh);
+  pipeline_free(pipe_b);
+  audio_chunk_free(impulse);
+  audio_chunk_free(zero_chunk);
+  audio_chunk_free(out_a1);
+  audio_chunk_free(out_a2);
+  audio_chunk_free(dummy);
+  audio_chunk_free(out_b);
+  processing_parameters_free(params);
+}
+
+TEST(Pipeline_TransferState_MultipleBiquadSteps) {
+  dsp_config_t config;
+  init_default_config(&config);
+
+  named_filter_config_t filters[2];
+  memset(filters, 0, sizeof(filters));
+  strcpy(filters[0].name, "bq_pre");
+  filters[0].filter.type = FILTER_TYPE_BIQUAD;
+  filters[0].filter.parameters.biquad.type = BIQUAD_TYPE_HIGHSHELF;
+  filters[0].filter.parameters.biquad.freq = 4000.0;
+  filters[0].filter.parameters.biquad.gain = 4.0;
+  filters[0].filter.parameters.biquad.q = 1.0;
+
+  strcpy(filters[1].name, "bq_post");
+  filters[1].filter.type = FILTER_TYPE_BIQUAD;
+  filters[1].filter.parameters.biquad.type = BIQUAD_TYPE_LOWPASS;
+  filters[1].filter.parameters.biquad.freq = 1500.0;
+  filters[1].filter.parameters.biquad.q = 3.0;
+
+  config.filters = filters;
+  config.filters_count = 2;
+
+  char* step0_name = strdup("bq_pre");
+  char* step1_name = strdup("bq_post");
+  pipeline_step_config_t steps[2];
+  memset(steps, 0, sizeof(steps));
+  steps[0].type = PIPELINE_STEP_TYPE_FILTER;
+  steps[0].channel = 0;
+  steps[0].has_channel = true;
+  steps[0].names = &step0_name;
+  steps[0].names_count = 1;
+
+  steps[1].type = PIPELINE_STEP_TYPE_FILTER;
+  steps[1].channel = 0;
+  steps[1].has_channel = true;
+  steps[1].names = &step1_name;
+  steps[1].names_count = 1;
+
+  config.pipeline = steps;
+  config.pipeline_count = 2;
+
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  pipeline_t* pipe1 = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(pipe1 != NULL);
+
+  audio_chunk_t* impulse = audio_chunk_create(1024, 2);
+  audio_chunk_get_channel(impulse, 0)[0] = 1.0;
+  audio_chunk_set_valid_frames(impulse, 1024);
+
+  audio_chunk_t* zero_chunk = audio_chunk_create(1024, 2);
+  audio_chunk_set_valid_frames(zero_chunk, 1024);
+
+  audio_chunk_t* out1_1 = audio_chunk_create(1024, 2);
+  pipeline_process(pipe1, impulse, out1_1);
+
+  audio_chunk_t* out1_2 = audio_chunk_create(1024, 2);
+  pipeline_process(pipe1, zero_chunk, out1_2);
+  double expected_decay = audio_chunk_get_channel(out1_2, 0)[0];
+  ASSERT_NE(0.0, expected_decay);
+
+  pipeline_t* pipe2 = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(pipe2 != NULL);
+
+  pipeline_t* pipe1_fresh = pipeline_create(&config, params, 0, NULL);
+  audio_chunk_t* dummy = audio_chunk_create(1024, 2);
+  pipeline_process(pipe1_fresh, impulse, dummy);
+
+  pipeline_transfer_state(pipe2, pipe1_fresh);
+
+  audio_chunk_t* out2 = audio_chunk_create(1024, 2);
+  pipeline_process(pipe2, zero_chunk, out2);
+  double actual_decay = audio_chunk_get_channel(out2, 0)[0];
+  ASSERT_NEAR(expected_decay, actual_decay, 1e-12);
+
+  free(step0_name);
+  free(step1_name);
+  pipeline_free(pipe1);
+  pipeline_free(pipe1_fresh);
+  pipeline_free(pipe2);
+  audio_chunk_free(impulse);
+  audio_chunk_free(zero_chunk);
+  audio_chunk_free(out1_1);
+  audio_chunk_free(out1_2);
+  audio_chunk_free(dummy);
+  audio_chunk_free(out2);
+  processing_parameters_free(params);
+}
+
 TEST(PipelineProcessPartialChunk) {
   dsp_config_t config;
   init_default_config(&config);
@@ -1005,6 +1204,323 @@ TEST(PipelineProcessPartialChunk) {
   audio_chunk_free(output);
   pipeline_free(pipeline);
   processing_parameters_free(params);
+}
+
+TEST(RaggedPipelineMatchesFiltersRunOneAtATime) {
+  // Build a 2-channel pipeline where ch0 has 2 biquads, ch1 has 4 biquads
+  dsp_config_t config;
+  init_default_config(&config);
+  config.devices.samplerate = 48000;
+  config.devices.chunksize = 256;
+
+  named_filter_config_t filters[6];
+  memset(filters, 0, sizeof(filters));
+  for (int i = 0; i < 6; i++) {
+    char name[32];
+    snprintf(name, sizeof(name), "bq%d", i);
+    strncpy(filters[i].name, name, sizeof(filters[i].name) - 1);
+    filters[i].filter.type = FILTER_TYPE_BIQUAD;
+    filters[i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
+    filters[i].filter.parameters.biquad.freq = 500.0 + 100.0 * (double)i;
+    filters[i].filter.parameters.biquad.q = 1.0;
+    filters[i].filter.parameters.biquad.gain = (i % 2 == 0) ? 3.0 : -3.0;
+  }
+  config.filters = filters;
+  config.filters_count = 6;
+
+  char* step0_names[] = {filters[0].name, filters[1].name};
+  char* step1_names[] = {filters[2].name, filters[3].name, filters[4].name, filters[5].name};
+
+  pipeline_step_config_t steps[2];
+  memset(steps, 0, sizeof(steps));
+  steps[0].type = PIPELINE_STEP_TYPE_FILTER;
+  steps[0].has_channel = true;
+  steps[0].channel = 0;
+  steps[0].names = step0_names;
+  steps[0].names_count = 2;
+
+  steps[1].type = PIPELINE_STEP_TYPE_FILTER;
+  steps[1].has_channel = true;
+  steps[1].channel = 1;
+  steps[1].names = step1_names;
+  steps[1].names_count = 4;
+
+  config.pipeline = steps;
+  config.pipeline_count = 2;
+
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  pipeline_t* pipe = pipeline_create(&config, params, 256, NULL);
+  ASSERT_TRUE(pipe != NULL);
+
+  // Standalone filter references
+  filter_t* ref_ch0[2];
+  for (int i = 0; i < 2; i++) {
+    ref_ch0[i] = filter_create(filters[i].name, &filters[i].filter, 48000, 256, params, NULL);
+  }
+  filter_t* ref_ch1[4];
+  for (int i = 0; i < 4; i++) {
+    ref_ch1[i] = filter_create(filters[2 + i].name, &filters[2 + i].filter, 48000, 256, params, NULL);
+  }
+
+  audio_chunk_t* in_chunk = audio_chunk_create(256, 2);
+  audio_chunk_t* out_chunk = audio_chunk_create(256, 2);
+
+  double ref_w0[256];
+  double ref_w1[256];
+  for (size_t i = 0; i < 256; i++) {
+    double v0 = sin(0.015 * (double)i) * 0.4;
+    double v1 = cos(0.022 * (double)i) * 0.4;
+    audio_chunk_get_channel(in_chunk, 0)[i] = v0;
+    audio_chunk_get_channel(in_chunk, 1)[i] = v1;
+    ref_w0[i] = v0;
+    ref_w1[i] = v1;
+  }
+  audio_chunk_set_valid_frames(in_chunk, 256);
+
+  pipeline_error_t perr = pipeline_process(pipe, in_chunk, out_chunk);
+  ASSERT_EQ(PIPELINE_OK, perr);
+
+  // Run reference filters
+  for (int i = 0; i < 2; i++) filter_process(ref_ch0[i], ref_w0, 256);
+  for (int i = 0; i < 4; i++) filter_process(ref_ch1[i], ref_w1, 256);
+
+  waveform_t pipe_out0 = audio_chunk_get_channel(out_chunk, 0);
+  waveform_t pipe_out1 = audio_chunk_get_channel(out_chunk, 1);
+
+  for (size_t i = 0; i < 256; i++) {
+    ASSERT_NEAR(ref_w0[i], pipe_out0[i], 1e-12);
+    ASSERT_NEAR(ref_w1[i], pipe_out1[i], 1e-12);
+  }
+
+  // Cleanup
+  for (int i = 0; i < 2; i++) filter_free(ref_ch0[i]);
+  for (int i = 0; i < 4; i++) filter_free(ref_ch1[i]);
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  pipeline_free(pipe);
+  processing_parameters_free(params);
+}
+
+TEST(InterleavedPipelineMatchesParallelPipeline) {
+  dsp_config_t config;
+  init_default_config(&config);
+  config.devices.samplerate = 48000;
+  config.devices.chunksize = 256;
+  config.devices.has_multithreaded = true;
+  config.devices.multithreaded = true;
+
+  named_filter_config_t filter;
+  memset(&filter, 0, sizeof(filter));
+  strncpy(filter.name, "peq", sizeof(filter.name) - 1);
+  filter.filter.type = FILTER_TYPE_BIQUAD;
+  filter.filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
+  filter.filter.parameters.biquad.freq = 1000.0;
+  filter.filter.parameters.biquad.q = 1.0;
+  filter.filter.parameters.biquad.gain = 4.0;
+
+  config.filters = &filter;
+  config.filters_count = 1;
+
+  char* step_names[] = {filter.name};
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_FILTER;
+  step.names = step_names;
+  step.names_count = 1;
+
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  pipeline_t* pipe = pipeline_create(&config, params, 256, NULL);
+  ASSERT_TRUE(pipe != NULL);
+
+  audio_chunk_t* in_chunk = audio_chunk_create(256, 2);
+  audio_chunk_t* out_chunk = audio_chunk_create(256, 2);
+
+  for (size_t ch = 0; ch < 2; ch++) {
+    mutable_waveform_t w = audio_chunk_get_channel(in_chunk, ch);
+    for (size_t i = 0; i < 256; i++) {
+      w[i] = 0.3 * sin(0.01 * (double)(i + ch * 20));
+    }
+  }
+  audio_chunk_set_valid_frames(in_chunk, 256);
+
+  pipeline_error_t perr = pipeline_process(pipe, in_chunk, out_chunk);
+  ASSERT_EQ(PIPELINE_OK, perr);
+
+  // Standalone reference
+  filter_t* ref_filter0 = filter_create(filter.name, &filter.filter, 48000, 256, params, NULL);
+  filter_t* ref_filter1 = filter_create(filter.name, &filter.filter, 48000, 256, params, NULL);
+
+  double ref_wave0[256];
+  double ref_wave1[256];
+  memcpy(ref_wave0, audio_chunk_get_channel(in_chunk, 0), 256 * sizeof(double));
+  memcpy(ref_wave1, audio_chunk_get_channel(in_chunk, 1), 256 * sizeof(double));
+  filter_process(ref_filter0, ref_wave0, 256);
+  filter_process(ref_filter1, ref_wave1, 256);
+
+  waveform_t out_w0 = audio_chunk_get_channel(out_chunk, 0);
+  waveform_t out_w1 = audio_chunk_get_channel(out_chunk, 1);
+  for (size_t i = 0; i < 256; i++) {
+    ASSERT_NEAR(ref_wave0[i], out_w0[i], 1e-12);
+    ASSERT_NEAR(ref_wave1[i], out_w1[i], 1e-12);
+  }
+
+  filter_free(ref_filter0);
+  filter_free(ref_filter1);
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  pipeline_free(pipe);
+  processing_parameters_free(params);
+}
+
+TEST(Pipeline_ArbitraryChannels_Biquad) {
+  const size_t num_chans = 96;
+  dsp_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.devices.samplerate = 48000;
+  config.devices.chunksize = 256;
+  config.devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  config.devices.capture.cfg.raw_file.channels = (int)num_chans;
+  config.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  config.devices.playback.cfg.raw_file.channels = (int)num_chans;
+
+  named_filter_config_t filter;
+  memset(&filter, 0, sizeof(filter));
+  strcpy(filter.name, "bq96");
+  filter.filter.type = FILTER_TYPE_BIQUAD;
+  filter.filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
+  filter.filter.parameters.biquad.freq = 1000.0;
+  filter.filter.parameters.biquad.q = 1.0;
+  filter.filter.parameters.biquad.gain = 6.0;
+
+  config.filters = &filter;
+  config.filters_count = 1;
+
+  char* step_names[] = {filter.name};
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_FILTER;
+  step.names = step_names;
+  step.names_count = 1;
+
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  processing_parameters_t* params =
+      processing_parameters_create(num_chans, num_chans);
+  pipeline_t* pipe = pipeline_create(&config, params, 256, NULL);
+  ASSERT_TRUE(pipe != NULL);
+
+  audio_chunk_t* in_chunk = audio_chunk_create(256, num_chans);
+  audio_chunk_t* out_chunk = audio_chunk_create(256, num_chans);
+
+  for (size_t ch = 0; ch < num_chans; ch++) {
+    mutable_waveform_t w = audio_chunk_get_channel(in_chunk, ch);
+    for (size_t i = 0; i < 256; i++) {
+      w[i] = 0.2 * sin(0.01 * (double)(i + ch * 3));
+    }
+  }
+  audio_chunk_set_valid_frames(in_chunk, 256);
+
+  pipeline_error_t perr = pipeline_process(pipe, in_chunk, out_chunk);
+  ASSERT_EQ(PIPELINE_OK, perr);
+
+  for (size_t ch = 0; ch < num_chans; ch++) {
+    filter_t* ref_filter = filter_create(filter.name, &filter.filter, 48000, 256,
+                                         params, NULL);
+    double ref_wave[256];
+    memcpy(ref_wave, audio_chunk_get_channel(in_chunk, ch), 256 * sizeof(double));
+    filter_process(ref_filter, ref_wave, 256);
+
+    waveform_t out_w = audio_chunk_get_channel(out_chunk, ch);
+    for (size_t i = 0; i < 256; i++) {
+      ASSERT_NEAR(ref_wave[i], out_w[i], 1e-12);
+    }
+    filter_free(ref_filter);
+  }
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  pipeline_free(pipe);
+  processing_parameters_free(params);
+}
+
+TEST(Pipeline_ArbitraryCascade_Biquad) {
+  const size_t num_filters = 144;
+  dsp_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.devices.samplerate = 48000;
+  config.devices.chunksize = 128;
+  config.devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  config.devices.capture.cfg.raw_file.channels = 2;
+  config.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  config.devices.playback.cfg.raw_file.channels = 2;
+
+  named_filter_config_t* filters = calloc(num_filters, sizeof(named_filter_config_t));
+  char** step_names = calloc(num_filters, sizeof(char*));
+
+  for (size_t i = 0; i < num_filters; i++) {
+    snprintf(filters[i].name, sizeof(filters[i].name), "bq_%zu", i);
+    filters[i].filter.type = FILTER_TYPE_BIQUAD;
+    filters[i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
+    filters[i].filter.parameters.biquad.freq = 500.0 + (double)(i % 20) * 50.0;
+    filters[i].filter.parameters.biquad.q = 0.707;
+    filters[i].filter.parameters.biquad.gain = 0.05 * (double)((int)(i % 5) - 2);
+    step_names[i] = filters[i].name;
+  }
+
+  config.filters = filters;
+  config.filters_count = num_filters;
+
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_FILTER;
+  step.names = step_names;
+  step.names_count = num_filters;
+
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  config_error_t err;
+  config_error_init(&err);
+  pipeline_t* pipe = pipeline_create(&config, params, 128, &err);
+  ASSERT_TRUE(pipe != NULL);
+
+  audio_chunk_t* in_chunk = audio_chunk_create(128, 2);
+  audio_chunk_t* out_chunk = audio_chunk_create(128, 2);
+  for (size_t ch = 0; ch < 2; ch++) {
+    mutable_waveform_t w = audio_chunk_get_channel(in_chunk, ch);
+    for (size_t i = 0; i < 128; i++) {
+      w[i] = 0.1 * sin(0.02 * (double)(i + ch * 10));
+    }
+  }
+  audio_chunk_set_valid_frames(in_chunk, 128);
+
+  pipeline_error_t perr = pipeline_process(pipe, in_chunk, out_chunk);
+  ASSERT_EQ(PIPELINE_OK, perr);
+
+  double ref_wave[128];
+  memcpy(ref_wave, audio_chunk_get_channel(in_chunk, 0), 128 * sizeof(double));
+  for (size_t i = 0; i < num_filters; i++) {
+    filter_t* f = filter_create(filters[i].name, &filters[i].filter, 48000, 128,
+                                params, NULL);
+    filter_process(f, ref_wave, 128);
+    filter_free(f);
+  }
+
+  waveform_t out_w0 = audio_chunk_get_channel(out_chunk, 0);
+  for (size_t i = 0; i < 128; i++) {
+    ASSERT_NEAR(ref_wave[i], out_w0[i], 1e-10);
+  }
+
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  pipeline_free(pipe);
+  processing_parameters_free(params);
+  free(filters);
+  free(step_names);
 }
 
 TEST_MAIN()

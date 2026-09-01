@@ -148,4 +148,64 @@ TEST(DummyIsIdentity) {
   g_convolution_vtable.free(filter);
 }
 
+TEST(CachedBuildSharesCoeffsButNotState) {
+  double ir[] = {0.1, 0.2, 0.3, 0.4};
+  convolution_config_t params = {
+      .type = CONV_TYPE_VALUES, .values = ir, .values_count = 4};
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+
+  void* f1 = g_convolution_vtable.create("shared_conv", &cfg, 0, 8, NULL, NULL);
+  void* f2 = g_convolution_vtable.create("shared_conv", &cfg, 0, 8, NULL, NULL);
+  ASSERT_TRUE(f1 != NULL);
+  ASSERT_TRUE(f2 != NULL);
+
+  double wave1[8] = {1.0, 0, 0, 0, 0, 0, 0, 0};
+  double wave2[8] = {0, 1.0, 0, 0, 0, 0, 0, 0};
+
+  g_convolution_vtable.process(f1, wave1, 8);
+  g_convolution_vtable.process(f2, wave2, 8);
+
+  // wave1 should have impulse response at [0..3]
+  ASSERT_NEAR(0.1, wave1[0], 1e-7);
+  ASSERT_NEAR(0.2, wave1[1], 1e-7);
+  ASSERT_NEAR(0.3, wave1[2], 1e-7);
+  ASSERT_NEAR(0.4, wave1[3], 1e-7);
+
+  // wave2 should have impulse response at [1..4]
+  ASSERT_NEAR(0.0, wave2[0], 1e-7);
+  ASSERT_NEAR(0.1, wave2[1], 1e-7);
+  ASSERT_NEAR(0.2, wave2[2], 1e-7);
+  ASSERT_NEAR(0.3, wave2[3], 1e-7);
+  ASSERT_NEAR(0.4, wave2[4], 1e-7);
+
+  g_convolution_vtable.free(f1);
+  g_convolution_vtable.free(f2);
+}
+
+TEST(CacheDoesNotShareAcrossLengths) {
+  double ir[] = {0.1, 0.2, 0.3, 0.4};
+  convolution_config_t params = {
+      .type = CONV_TYPE_VALUES, .values = ir, .values_count = 4};
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+
+  void* short_f = g_convolution_vtable.create("size_conv", &cfg, 0, 8, NULL, NULL);
+  void* long_f = g_convolution_vtable.create("size_conv", &cfg, 0, 16, NULL, NULL);
+  ASSERT_TRUE(short_f != NULL);
+  ASSERT_TRUE(long_f != NULL);
+
+  double short_wave[8] = {1.0, 0, 0, 0, 0, 0, 0, 0};
+  double long_wave[16] = {1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+  g_convolution_vtable.process(short_f, short_wave, 8);
+  g_convolution_vtable.process(long_f, long_wave, 16);
+
+  for (size_t i = 0; i < 4; i++) {
+    ASSERT_NEAR(ir[i], short_wave[i], 1e-7);
+    ASSERT_NEAR(ir[i], long_wave[i], 1e-7);
+  }
+
+  g_convolution_vtable.free(short_f);
+  g_convolution_vtable.free(long_f);
+}
+
 TEST_MAIN()

@@ -55,6 +55,8 @@ const char* filter_type_to_string(filter_type_t type) {
       return "Clipper";
     case FILTER_TYPE_LOOKAHEAD_LIMITER:
       return "LookaheadLimiter";
+    case FILTER_TYPE_BIQUAD_CANON:
+      return "BiquadCanon";
     default:
       return "Gain";
   }
@@ -74,5 +76,6 @@ filter_type_t filter_type_from_string(const char* str) {
   if (strcmp(str, "Clipper") == 0) return FILTER_TYPE_CLIPPER;
   if (strcmp(str, "LookaheadLimiter") == 0)
     return FILTER_TYPE_LOOKAHEAD_LIMITER;
+  if (strcmp(str, "BiquadCanon") == 0) return FILTER_TYPE_BIQUAD_CANON;
   return FILTER_TYPE_INVALID;
 }

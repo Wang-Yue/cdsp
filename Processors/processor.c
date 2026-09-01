@@ -15,6 +15,7 @@
 #include "Audio/audio_chunk.h"
 #include "Config/processor_config_types.h"
 #include "Logging/app_logger.h"
+#include "Processors/biquad_processor.h"
 #include "Processors/compressor_processor.h"
 #include "Processors/lookahead_limiter_processor.h"
 #include "Processors/noise_gate_processor.h"
@@ -33,6 +34,8 @@ static const processor_vtable_t* processor_vtable_from_type(
       return &g_race_vtable;
     case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
       return &g_lookahead_limiter_processor_vtable;
+    case PROCESSOR_TYPE_BIQUAD:
+      return &g_biquad_processor_vtable;
     default:
       return NULL;
   }
@@ -49,6 +52,8 @@ static processor_impl_type_t processor_impl_type_from_config(
       return PROCESSOR_IMPL_RACE;
     case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
       return PROCESSOR_IMPL_LOOKAHEAD_LIMITER;
+    case PROCESSOR_TYPE_BIQUAD:
+      return PROCESSOR_IMPL_BIQUAD;
     case PROCESSOR_TYPE_INVALID:
       break;
   }
