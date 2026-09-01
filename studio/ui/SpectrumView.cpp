@@ -44,7 +44,7 @@ SpectrumView::~SpectrumView() {
 
 static std::vector<float> applyOctaveSmoothing(const std::vector<float>& freqs, const std::vector<float>& mags,
                                                OctaveSmoothing smoothing) {
-    if (smoothing == OctaveSmoothing::None || freqs.size() != mags.size() || freqs.empty()) {
+    if (smoothing == OctaveSmoothing::None || freqs.size() != mags.size() || freqs.size() < 2) {
         return mags;
     }
     double octaveFraction = 1.0;
@@ -64,30 +64,41 @@ static std::vector<float> applyOctaveSmoothing(const std::vector<float>& freqs, 
     default:
         return mags;
     }
-    double factor = std::pow(2.0, 1.0 / (2.0 * octaveFraction));
-    size_t count = freqs.size();
-    std::vector<float> smoothed(count);
 
+    const double factor = std::pow(2.0, 1.0 / (2.0 * octaveFraction));
+    const double invBandwidth = 2.0 * octaveFraction;
+    const size_t count = freqs.size();
+
+    std::vector<double> log2Freqs(count);
+    for (size_t i = 0; i < count; ++i) {
+        log2Freqs[i] = (freqs[i] > 0.0f) ? std::log2(static_cast<double>(freqs[i])) : 0.0;
+    }
+
+    std::vector<float> smoothed(count);
     for (size_t i = 0; i < count; ++i) {
         double centerF = freqs[i];
         if (centerF <= 0.0) {
             smoothed[i] = mags[i];
             continue;
         }
-        double minF = centerF / factor;
-        double maxF = centerF * factor;
+        float minF = static_cast<float>(centerF / factor);
+        float maxF = static_cast<float>(centerF * factor);
+
+        auto startIt = std::lower_bound(freqs.begin(), freqs.end(), minF);
+        auto endIt = std::upper_bound(freqs.begin(), freqs.end(), maxF);
+
+        size_t startIdx = static_cast<size_t>(std::distance(freqs.begin(), startIt));
+        size_t endIdx = static_cast<size_t>(std::distance(freqs.begin(), endIt));
 
         double sumWeight = 0.0;
         double sumVal = 0.0;
+        double log2CenterF = log2Freqs[i];
 
-        for (size_t j = 0; j < count; ++j) {
-            double f = freqs[j];
-            if (f > 0.0 && f >= minF && f <= maxF) {
-                double w = 1.0 - std::abs(std::log2(f / centerF)) * (2.0 * octaveFraction);
-                w = std::max(0.001, w);
-                sumVal += mags[j] * w;
-                sumWeight += w;
-            }
+        for (size_t j = startIdx; j < endIdx; ++j) {
+            double diff = std::abs(log2Freqs[j] - log2CenterF);
+            double w = std::max(0.001, 1.0 - diff * invBandwidth);
+            sumVal += mags[j] * w;
+            sumWeight += w;
         }
         smoothed[i] = (sumWeight > 0.0) ? static_cast<float>(sumVal / sumWeight) : mags[i];
     }

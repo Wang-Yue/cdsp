@@ -346,9 +346,7 @@ void AnalogVUMeter::paintEvent(QPaintEvent* event) {
 
     // 3. Draw Needle
     p.save();
-    QPainterPath clipPath;
-    clipPath.addRoundedRect(dialRect, 6 * scale, 6 * scale);
-    p.setClipPath(clipPath);
+    p.setClipRect(dialRect);
 
     double dw = dialRect.width();
     double dh = dialRect.height();

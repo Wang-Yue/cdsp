@@ -163,7 +163,7 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         // Standard Mid/Side rotation:
         // m = (L + R) / 2
         // s = (L - R) / 2
-        float maxVectorNorm = 0.0f;
+        float maxNormSq = 0.0f;
         for (size_t i = 0; i < count; ++i) {
             float l = left[i];
             float r = right[i];
@@ -174,9 +174,11 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
 
             float m = (l + r) * 0.5f;
             float s = (l - r) * 0.5f;
-            float norm = std::sqrt(m * m + s * s);
-            maxVectorNorm = std::max(maxVectorNorm, norm);
+            float normSq = m * m + s * s;
+            if (normSq > maxNormSq)
+                maxNormSq = normSq;
         }
+        float maxVectorNorm = std::sqrt(maxNormSq);
 
         if (enableAutoScale) {
             float targetAutoScaleFactor = 1.0f;
@@ -197,9 +199,9 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
         float activeScaleY = scaleY * m_autoScaleFactor;
 
         if (!showParticles) {
-            // Option 2: Disjoint drawLines with pixel-bucketing / downsampling
-            std::vector<QLine> lines;
-            lines.reserve(count);
+            // Disjoint drawLines with pixel-bucketing / downsampling
+            m_cachedLines.clear();
+            m_cachedLines.reserve(count);
 
             int prevX = -999999;
             int prevY = -999999;
@@ -230,20 +232,20 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
                 if (px == prevX && py == prevY)
                     continue;
 
-                lines.emplace_back(prevX, prevY, px, py);
+                m_cachedLines.emplace_back(prevX, prevY, px, py);
                 prevX = px;
                 prevY = py;
             }
 
-            if (!lines.empty()) {
+            if (!m_cachedLines.empty()) {
                 double lineWidth = std::max(1.0, std::min(scaleX, scaleY) / 100.0);
                 p.setPen(QPen(QColor(0, 160, 255, 210), lineWidth, Qt::SolidLine, Qt::FlatCap));
-                p.drawLines(lines.data(), static_cast<int>(lines.size()));
+                p.drawLines(m_cachedLines.data(), static_cast<int>(m_cachedLines.size()));
             }
         } else {
             // Particle Mode with pixel deduplication
-            std::vector<QPoint> pts;
-            pts.reserve(count);
+            m_cachedPoints.clear();
+            m_cachedPoints.reserve(count);
 
             int lastX = -999999;
             int lastY = -999999;
@@ -267,23 +269,23 @@ void VectorScopeView::paintEvent(QPaintEvent* event) {
 
                 lastX = px;
                 lastY = py;
-                pts.emplace_back(px, py);
+                m_cachedPoints.emplace_back(px, py);
             }
 
-            if (!pts.empty()) {
+            if (!m_cachedPoints.empty()) {
                 double baseSize = std::max(2.0, std::min(scaleX, scaleY) / 80.0);
 
                 // Pass 1: Base particle cloud
                 p.setPen(QPen(QColor(0, 180, 255, 160), baseSize, Qt::SolidLine, Qt::SquareCap));
-                p.drawPoints(pts.data(), static_cast<int>(pts.size()));
+                p.drawPoints(m_cachedPoints.data(), static_cast<int>(m_cachedPoints.size()));
 
                 // Pass 2: Head particle burst (latest 15% of samples)
-                size_t headStart = static_cast<size_t>(pts.size() * 0.85);
-                if (headStart < pts.size()) {
-                    int headCount = static_cast<int>(pts.size() - headStart);
+                size_t headStart = static_cast<size_t>(m_cachedPoints.size() * 0.85);
+                if (headStart < m_cachedPoints.size()) {
+                    int headCount = static_cast<int>(m_cachedPoints.size() - headStart);
                     double headSize = baseSize * 1.5;
                     p.setPen(QPen(QColor(80, 255, 210, 230), headSize, Qt::SolidLine, Qt::SquareCap));
-                    p.drawPoints(pts.data() + headStart, headCount);
+                    p.drawPoints(m_cachedPoints.data() + headStart, headCount);
                 }
             }
         }

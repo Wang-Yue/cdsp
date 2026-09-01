@@ -4,9 +4,12 @@
 #include "config/DSPConfigTypes.h"    // for AudioSamplesData
 #include "models/VectorScopeEngine.h" // for VectorScopeEngine
 
+#include <QLine>   // for QLine
 #include <QObject> // for Q_OBJECT
+#include <QPoint>  // for QPoint
 #include <QWidget> // for QWidget
 #include <memory>  // for shared_ptr
+#include <vector>  // for vector
 
 class VectorScopeView : public QWidget {
     Q_OBJECT
@@ -37,6 +40,8 @@ private:
     float m_traceDecayRate = 0.85f;
 
     float m_autoScaleFactor = 1.0f;
+    std::vector<QLine> m_cachedLines;
+    std::vector<QPoint> m_cachedPoints;
 };
 
 #endif // VECTOR_SCOPE_VIEW_H

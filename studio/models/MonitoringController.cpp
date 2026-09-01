@@ -169,22 +169,17 @@ void MonitoringController::poll() {
     if (m_currentStatus != ProcessingState::Inactive && m_currentStatus != ProcessingState::Paused &&
         vuVisibilityCount > 0) {
         VuLevels vu = m_engine->getVuLevels();
-        VuLevels clampedVu;
-        clampedVu.capture_peak.reserve(vu.capture_peak.size());
-        for (float v : vu.capture_peak)
-            clampedVu.capture_peak.push_back(std::max(-100.0f, v));
-        clampedVu.capture_rms.reserve(vu.capture_rms.size());
-        for (float v : vu.capture_rms)
-            clampedVu.capture_rms.push_back(std::max(-100.0f, v));
-        clampedVu.playback_peak.reserve(vu.playback_peak.size());
-        for (float v : vu.playback_peak)
-            clampedVu.playback_peak.push_back(std::max(-100.0f, v));
-        clampedVu.playback_rms.reserve(vu.playback_rms.size());
-        for (float v : vu.playback_rms)
-            clampedVu.playback_rms.push_back(std::max(-100.0f, v));
+        for (float& v : vu.capture_peak)
+            v = std::max(-100.0f, v);
+        for (float& v : vu.capture_rms)
+            v = std::max(-100.0f, v);
+        for (float& v : vu.playback_peak)
+            v = std::max(-100.0f, v);
+        for (float& v : vu.playback_rms)
+            v = std::max(-100.0f, v);
 
-        levels->update(clampedVu);
-        levelState.update(clampedVu);
+        levels->update(vu);
+        levelState.update(vu);
         emit levelsUpdated();
     } else {
         bool changed = false;

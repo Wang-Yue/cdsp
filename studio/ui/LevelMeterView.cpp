@@ -173,43 +173,55 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
             std::max(0, (h - (static_cast<int>(chCount) * barHeight + static_cast<int>(chCount - 1) * spacing)) / 2);
     }
 
+    int xStart = labelW + spacing;
+    int barW = w - xStart - rightMargin - spacing;
+    if (barW < 10)
+        return;
+
+    // Level Linear Gradient (Audio Level: green -> yellow -> orange -> red with 0.9 opacity)
+    QLinearGradient grad(xStart, 0, xStart + barW, 0);
+    grad.setColorAt(0.00, QColor(0, 255, 0, 230));
+    grad.setColorAt(0.35, QColor(0, 255, 0, 230));
+    grad.setColorAt(0.55, QColor(255, 255, 0, 230));
+    grad.setColorAt(0.75, QColor(255, 128, 0, 230));
+    grad.setColorAt(0.95, QColor(255, 0, 0, 230));
+    grad.setColorAt(1.00, QColor(255, 0, 0, 230));
+
+    QFont chFont("monospace", inMiniPlayer ? 9 : 10, QFont::Medium);
+    chFont.setStyleHint(QFont::Monospace);
+
+    QFont monoFont("monospace", 9, QFont::Normal);
+    monoFont.setStyleHint(QFont::Monospace);
+
+    qreal cornerRadius = inMiniPlayer ? 1.5 : 2.0;
+    qreal trackRadius = inMiniPlayer ? 2.0 : 3.0;
+
+    QColor trackBg = inMiniPlayer ? ThemeManager::miniPlayerTrackColor() : palette().color(QPalette::Dark);
+    QPen dividerPen(inMiniPlayer ? QColor(255, 255, 255, 26) : palette().color(QPalette::Mid), 0.5);
+    QPen tickPen(palette().color(QPalette::Midlight), 1);
+
     for (size_t i = 0; i < chCount; ++i) {
         int y = barAreaTop + static_cast<int>(i) * (barHeight + spacing);
-        int xStart = labelW + spacing;
-        int barW = w - xStart - rightMargin - spacing;
-        if (barW < 10)
-            continue;
 
         // 1. Channel Label ("1", "2", "3"...)
         QString chLabel = QString::number(i + 1);
-
-        QFont chFont("monospace", inMiniPlayer ? 9 : 10, QFont::Medium);
-        chFont.setStyleHint(QFont::Monospace);
         p.setFont(chFont);
         p.setPen(subtextColor);
         p.drawText(0, y, labelW, barHeight, Qt::AlignCenter, chLabel);
 
         // 2. Track Background Box
         int halfH = barHeight / 2;
-        if (inMiniPlayer) {
-            QPainterPath trackPath;
-            trackPath.addRoundedRect(QRectF(xStart, y, barW, barHeight), 2, 2);
-            p.fillPath(trackPath, ThemeManager::miniPlayerTrackColor());
+        p.setPen(Qt::NoPen);
+        p.setBrush(trackBg);
+        p.drawRoundedRect(QRectF(xStart, y, barW, barHeight), trackRadius, trackRadius);
 
-            // Horizontal Center Divider
-            p.setPen(QPen(QColor(255, 255, 255, 26), 0.5));
-            p.drawLine(xStart, y + halfH, xStart + barW, y + halfH);
-        } else {
-            QPainterPath trackPath;
-            trackPath.addRoundedRect(QRectF(xStart, y, barW, barHeight), 3, 3);
-            p.fillPath(trackPath, palette().color(QPalette::Dark));
+        // Horizontal Center Divider
+        p.setPen(dividerPen);
+        p.drawLine(xStart, y + halfH, xStart + barW, y + halfH);
 
-            // Horizontal Center Divider
-            p.setPen(QPen(palette().color(QPalette::Mid), 0.5));
-            p.drawLine(xStart, y + halfH, xStart + barW, y + halfH);
-
+        if (!inMiniPlayer) {
             // Tick Marks (-48 to 0 dB)
-            p.setPen(QPen(palette().color(QPalette::Midlight), 1));
+            p.setPen(tickPen);
             for (int dbMark : {-48, -36, -24, -12, -6, -3, 0}) {
                 int pos = xStart + static_cast<int>(barW * normDB(static_cast<float>(dbMark)));
                 int markH = (dbMark == 0) ? barHeight : (barHeight / 2);
@@ -231,34 +243,20 @@ void LevelMeterView::paintEvent(QPaintEvent* event) {
         int rmsW = static_cast<int>(rmsFrac * barW);
         int peakW = static_cast<int>(peakFrac * barW);
 
-        // Level Linear Gradient (Audio Level: green -> yellow -> orange -> red with 0.9 opacity)
-        QLinearGradient grad(xStart, y, xStart + barW, y);
-        grad.setColorAt(0.00, QColor(0, 255, 0, 230));
-        grad.setColorAt(0.35, QColor(0, 255, 0, 230));
-        grad.setColorAt(0.55, QColor(255, 255, 0, 230));
-        grad.setColorAt(0.75, QColor(255, 128, 0, 230));
-        grad.setColorAt(0.95, QColor(255, 0, 0, 230));
-        grad.setColorAt(1.00, QColor(255, 0, 0, 230));
-
-        qreal cornerRadius = inMiniPlayer ? 1.5 : 2.0;
+        p.setPen(Qt::NoPen);
+        p.setBrush(grad);
 
         // 5. RMS Bar (Top Half)
         if (rmsW > 0) {
-            QPainterPath rmsPath;
-            rmsPath.addRoundedRect(QRectF(xStart, y + 0.5, rmsW, halfH - 1), cornerRadius, cornerRadius);
-            p.fillPath(rmsPath, grad);
+            p.drawRoundedRect(QRectF(xStart, y + 0.5, rmsW, halfH - 1), cornerRadius, cornerRadius);
         }
 
         // 6. Peak Bar (Bottom Half)
         if (peakW > 0) {
-            QPainterPath peakPath;
-            peakPath.addRoundedRect(QRectF(xStart, y + halfH + 0.5, peakW, halfH - 1), cornerRadius, cornerRadius);
-            p.fillPath(peakPath, grad);
+            p.drawRoundedRect(QRectF(xStart, y + halfH + 0.5, peakW, halfH - 1), cornerRadius, cornerRadius);
         }
 
         // 7. Stacked Monospace Numeric Readouts (%5.1f format)
-        QFont monoFont("monospace", 9, QFont::Normal);
-        monoFont.setStyleHint(QFont::Monospace);
         p.setFont(monoFont);
         QString rmsStr = QString::asprintf("%5.1f", rmsVal);
         QString peakStr = QString::asprintf("%5.1f", peakVal);

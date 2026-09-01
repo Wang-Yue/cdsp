@@ -251,18 +251,18 @@ void SpectrogramView::paint2D(QPainter& p, int w, int h) {
 
         const auto& lut = getPaletteLUT(m_palette);
 
-        // Contiguous linear pixel write: ~20 microseconds
-        for (int row = 0; row < texH; ++row) {
-            QRgb* scanline = reinterpret_cast<QRgb*>(m_textureImage.scanLine(row));
-            size_t j = texH - 1 - row; // Higher frequencies at top
-
-            for (int col = 0; col < texW; ++col) {
-                const auto& frame = m_history[col];
-                float db = (j < frame.magnitudes.size()) ? frame.magnitudes[j] : -120.0f;
+        // Contiguous linear pixel write: cache-friendly column-first iteration
+        for (int col = 0; col < texW; ++col) {
+            const auto& mags = m_history[col].magnitudes;
+            size_t n = mags.size();
+            for (int row = 0; row < texH; ++row) {
+                size_t j = texH - 1 - row; // Higher frequencies at top
+                float db = (j < n) ? mags[j] : -120.0f;
                 if (std::isnan(db))
                     db = -120.0f;
 
                 int idx = std::clamp(static_cast<int>((db + 60.0f) * (255.0f / 60.0f)), 0, 255);
+                QRgb* scanline = reinterpret_cast<QRgb*>(m_textureImage.scanLine(row));
                 scanline[col] = lut[idx];
             }
         }

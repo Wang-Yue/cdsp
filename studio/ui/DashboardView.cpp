@@ -292,11 +292,4 @@ void DashboardView::refreshMeters() {
 
     if (m_analogVUView)
         m_analogVUView->setLevels(st.playbackRms);
-
-    if (m_spectrumEngine && m_spectrumView)
-        m_spectrumView->setSpectrum(m_spectrumEngine->data);
-    if (m_spectrogramEngine && m_spectrogramView)
-        m_spectrogramView->setHistory(m_spectrogramEngine->history, m_spectrogramEngine->show3D);
-    if (m_vectorScopeEngine && m_vectorScopeView)
-        m_vectorScopeView->setSamples(m_vectorScopeEngine->samples, m_vectorScopeEngine->showParticles);
 }
