@@ -31,6 +31,7 @@
 
 EQDiagramWidget::EQDiagramWidget(QWidget* parent) : QWidget(parent) {
     setMouseTracking(true);
+    setAttribute(Qt::WA_OpaquePaintEvent, true);
     m_gridFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     m_gridFont.setPointSize(9);
     m_readoutFont = QFont("sans-serif", 9, QFont::Medium);
@@ -293,41 +294,38 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
 
         // 1. Target Curve (Dashed Secondary Gray)
         if (!m_overlay.targetCurve.breakpoints.empty()) {
-            QPainterPath targetPath;
-            for (int x = 0; x <= w; x += 2) {
+            QPolygonF targetPoly;
+            targetPoly.reserve(w / 4 + 2);
+            for (int x = 0; x <= w; x += 4) {
                 double f = xToFreq(x, w);
                 double db = std::max(-30.0, std::min(30.0, m_overlay.targetCurve.evaluate(f)));
                 double y = dbToY(db, h);
-                if (x == 0)
-                    targetPath.moveTo(x, y);
-                else
-                    targetPath.lineTo(x, y);
+                targetPoly.append(QPointF(x, y));
             }
             QPen targetPen(palette().color(QPalette::PlaceholderText), 1.2);
             targetPen.setDashPattern({4, 3});
             painter.setPen(targetPen);
-            painter.drawPath(targetPath);
+            painter.drawPolyline(targetPoly);
         }
 
         // 2. Measured Response Curve (Blue, Normalized by normDB)
         if (!m_overlay.measuredMagDB.empty() && m_overlay.measuredMagDB.size() == m_overlay.frequencies.size()) {
-            QPainterPath measuredPath;
+            QPolygonF measuredPoly;
+            measuredPoly.reserve(m_overlay.measuredMagDB.size());
             for (size_t i = 0; i < m_overlay.measuredMagDB.size(); ++i) {
                 double f = m_overlay.frequencies[i];
                 double db = std::max(-30.0, std::min(30.0, m_overlay.measuredMagDB[i] - normDB));
                 double x = freqToX(f, w);
                 double y = dbToY(db, h);
-                if (i == 0)
-                    measuredPath.moveTo(x, y);
-                else
-                    measuredPath.lineTo(x, y);
+                measuredPoly.append(QPointF(x, y));
             }
             painter.setPen(QPen(QColor("#007AFF"), 1.4));
-            painter.drawPath(measuredPath);
+            painter.drawPolyline(measuredPoly);
 
             // 3. Corrected Response Curve (Orange)
             if (m_overlay.showCorrected) {
-                QPainterPath correctedPath;
+                QPolygonF correctedPoly;
+                correctedPoly.reserve(m_overlay.frequencies.size());
                 for (size_t i = 0; i < m_overlay.frequencies.size(); ++i) {
                     double f = m_overlay.frequencies[i];
                     double eqGain = m_preset.preampGain;
@@ -337,22 +335,26 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
                     double db = std::max(-30.0, std::min(30.0, m_overlay.measuredMagDB[i] - normDB + eqGain));
                     double x = freqToX(f, w);
                     double y = dbToY(db, h);
-                    if (i == 0)
-                        correctedPath.moveTo(x, y);
-                    else
-                        correctedPath.lineTo(x, y);
+                    correctedPoly.append(QPointF(x, y));
                 }
                 painter.setPen(QPen(QColor("#ff9500"), 1.8));
-                painter.drawPath(correctedPath);
+                painter.drawPolyline(correctedPoly);
             }
         }
     }
 
     // Evaluate individual band curves and combined response in a single pass
-    std::vector<QPainterPath> bandPaths(m_preset.bands.size());
-    QPainterPath totalPath;
+    int step = std::max(2, w / 400);
+    int numPoints = (w / step) + 2;
 
-    for (int x = 0; x <= w; x += 2) {
+    std::vector<QPolygonF> bandPolys(m_preset.bands.size());
+    for (const auto& ab : activeBands) {
+        bandPolys[ab.index].reserve(numPoints);
+    }
+    QPolygonF totalPoly;
+    totalPoly.reserve(numPoints);
+
+    for (int x = 0; x <= w; x += step) {
         double f = xToFreq(x, w);
         double totalDb = m_preset.preampGain;
 
@@ -360,17 +362,24 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
             double db = ab.coeffs.gainDB(f, sampleRate);
             totalDb += db;
             double y = dbToY(db, h);
-            if (x == 0)
-                bandPaths[ab.index].moveTo(x, y);
-            else
-                bandPaths[ab.index].lineTo(x, y);
+            bandPolys[ab.index].append(QPointF(x, y));
         }
 
         double totalY = dbToY(totalDb, h);
-        if (x == 0)
-            totalPath.moveTo(x, totalY);
-        else
-            totalPath.lineTo(x, totalY);
+        totalPoly.append(QPointF(x, totalY));
+    }
+
+    if (totalPoly.isEmpty() || totalPoly.last().x() < w) {
+        double f = xToFreq(w, w);
+        double totalDb = m_preset.preampGain;
+        for (const auto& ab : activeBands) {
+            double db = ab.coeffs.gainDB(f, sampleRate);
+            totalDb += db;
+            double y = dbToY(db, h);
+            bandPolys[ab.index].append(QPointF(w, y));
+        }
+        double totalY = dbToY(totalDb, h);
+        totalPoly.append(QPointF(w, totalY));
     }
 
     // Draw Individual Band Curves
@@ -379,7 +388,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         bool isSelected = (static_cast<int>(ab.index) == m_selectedIndex);
         bool isHovered = (static_cast<int>(ab.index) == m_hoveredIndex);
         painter.setPen(QPen(c, isSelected ? 2.0 : (isHovered ? 1.5 : 1.0)));
-        painter.drawPath(bandPaths[ab.index]);
+        painter.drawPolyline(bandPolys[ab.index]);
     }
 
     // Equal-Loudness Contour Reference Curve Overlay (after individual band curves)
@@ -407,27 +416,25 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         double bassGain = lowBoost * factor;
         double trebleGain = highBoost * factor;
 
-        QPainterPath loudnessPath;
-        for (int x = 0; x <= w; x += 2) {
+        QPolygonF loudnessPoly;
+        loudnessPoly.reserve(numPoints);
+        for (int x = 0; x <= w; x += step) {
             double f = xToFreq(x, w);
             double bassLoss = bassGain * (1.0 / (1.0 + std::pow(f / 130.0, 2.0)));
             double trebleLoss = trebleGain * (std::pow(f / 5000.0, 2.0) / (1.0 + std::pow(f / 5000.0, 2.0)));
             double db = std::max(-30.0, std::min(30.0, bassLoss + trebleLoss));
             double y = dbToY(db, h);
-            if (x == 0)
-                loudnessPath.moveTo(x, y);
-            else
-                loudnessPath.lineTo(x, y);
+            loudnessPoly.append(QPointF(x, y));
         }
         QPen loudnessPen(QColor(255, 149, 0, 166), 1.5);
         loudnessPen.setDashPattern({4, 4});
         painter.setPen(loudnessPen);
-        painter.drawPath(loudnessPath);
+        painter.drawPolyline(loudnessPoly);
     }
 
     // Combined Response Curve Line Stroke (no fill)
     painter.setPen(QPen(palette().color(QPalette::Highlight), 2.5));
-    painter.drawPath(totalPath);
+    painter.drawPolyline(totalPoly);
 
     // Draggable Band Handles & Highlight Rings
     for (size_t i = 0; i < m_preset.bands.size(); ++i) {

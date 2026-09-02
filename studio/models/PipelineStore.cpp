@@ -177,15 +177,12 @@ QUuid PipelineStore::addEQPreset(const EQPreset& preset) {
 }
 
 void PipelineStore::updateEQPreset(const EQPreset& preset) {
-    pushUndoSnapshot();
     for (auto& p : eqPresets) {
         if (p.id == preset.id) {
             p = preset;
             break;
         }
     }
-    saveEQPresets();
-    emit pipelineChanged();
 }
 
 void PipelineStore::deleteEQPreset(size_t index) {
