@@ -19,7 +19,6 @@ let package = Package(
         "Testing",
         "Tests",
         "Tools",
-        "docs",
         "LICENSE",
         "README.md",
         "run_sanitizers.sh",
@@ -74,11 +73,9 @@ let package = Package(
         .linkedFramework("AudioToolbox"),
         .linkedFramework("CoreAudio"),
         .linkedFramework("CoreFoundation"),
-        .linkedLibrary("fftw3"),
-        .linkedLibrary("fftw3f"),
         .unsafeFlags([
-          "-L/opt/homebrew/lib",
-          "-L/usr/local/lib",
+          "/opt/homebrew/lib/libfftw3.a",
+          "/opt/homebrew/lib/libfftw3f.a",
         ]),
       ]
     )
