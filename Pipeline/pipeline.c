@@ -20,6 +20,14 @@
 #include "Processors/processor.h"
 #include "Utils/double_helpers.h"
 
+#if defined(ENABLE_LIBDISPATCH)
+#include <dispatch/dispatch.h>
+#endif
+
+#if defined(ENABLE_OPENMP)
+#include <omp.h>
+#endif
+
 static const logger_t g_logger = {"dsp.pipeline"};
 
 const char* pipeline_error_description(pipeline_error_t err) {
@@ -37,13 +45,9 @@ const char* pipeline_error_description(pipeline_error_t err) {
   }
 }
 
-#if defined(ENABLE_LIBDISPATCH)
-#include <dispatch/dispatch.h>
-#endif
-
-#if defined(ENABLE_OPENMP)
-#include <omp.h>
-#endif
+// ============================================================================
+// Internal Data Structures
+// ============================================================================
 
 /// A filter chain applied to a single channel in parallel.
 typedef struct {
@@ -101,6 +105,10 @@ struct pipeline_s {
   size_t last_error_got;
 };
 
+// ============================================================================
+// Cleanup and Destruction Helpers
+// ============================================================================
+
 static void free_filter_chains(parallel_filter_chain_t* chains, size_t count) {
   if (!chains) return;
   for (size_t i = 0; i < count; i++) {
@@ -127,13 +135,57 @@ static void free_filter_chains_shallow(parallel_filter_chain_t* chains,
   free(chains);
 }
 
+static void free_exec_steps(pipeline_exec_step_t* steps, size_t count) {
+  if (!steps) return;
+  for (size_t i = 0; i < count; i++) {
+    pipeline_exec_step_t* step = &steps[i];
+    if (step->chains) {
+      free_filter_chains(step->chains, step->chains_count);
+    }
+    if (step->mixer) {
+      mixer_free(step->mixer);
+    }
+    if (step->processor) {
+      dsp_processor_free(step->processor);
+    }
+  }
+  free(steps);
+}
+
+void pipeline_free(pipeline_t* pipeline) {
+  if (!pipeline) return;
+  if (pipeline->master_volume) {
+    g_volume_vtable.free(pipeline->master_volume);
+  }
+  if (pipeline->capture_scratch) {
+    audio_chunk_free(pipeline->capture_scratch);
+  }
+  if (pipeline->scratches_for_mixers) {
+    for (size_t i = 0; i < pipeline->scratches_for_mixers_count; i++) {
+      if (pipeline->scratches_for_mixers[i]) {
+        audio_chunk_free(pipeline->scratches_for_mixers[i]);
+      }
+    }
+    free(pipeline->scratches_for_mixers);
+  }
+  if (pipeline->steps) {
+    free_exec_steps(pipeline->steps, pipeline->steps_count);
+  }
+  free(pipeline);
+}
+
+// ============================================================================
+// State Transfer (Real-Time Audio Thread Safe - Zero Allocations)
+// ============================================================================
+
 /// Transfer filter states between two filter chains matching the same channel.
 static void transfer_chain_filters(const parallel_filter_chain_t* dest_chain,
                                    const parallel_filter_chain_t* src_chain,
                                    bool* dest_used, size_t dest_count) {
   if (!dest_chain || !src_chain || src_chain->filters_count == 0 ||
-      dest_chain->filters_count == 0)
+      dest_chain->filters_count == 0) {
     return;
+  }
 
   bool src_used[512] = {false};
   size_t max_src =
@@ -159,8 +211,7 @@ static void transfer_chain_filters(const parallel_filter_chain_t* dest_chain,
   }
 }
 
-/// Transfer state for named audio processors (compressor, limiter, noise gate,
-/// race).
+/// Transfer state for named audio processors.
 static void transfer_named_processors_state(pipeline_t* dest,
                                             const pipeline_t* src) {
   if (!dest || !src || !dest->steps || !src->steps) return;
@@ -226,56 +277,15 @@ void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
     }
   }
 
-  // 3. Transfer named multi-channel processors (compressor, limiter, noise
-  // gate, race)
+  // 3. Transfer named multi-channel processors
   transfer_named_processors_state(dest, src);
 
   logger_info(&g_logger, "Completed pipeline state transfer");
 }
 
-static void free_exec_steps(pipeline_exec_step_t* steps, size_t count) {
-  if (!steps) return;
-  for (size_t i = 0; i < count; i++) {
-    pipeline_exec_step_t* step = &steps[i];
-    if (step->chains) {
-      free_filter_chains(step->chains, step->chains_count);
-    }
-    if (step->mixer) {
-      mixer_free(step->mixer);
-    }
-    if (step->processor) {
-      dsp_processor_free(step->processor);
-    }
-  }
-  free(steps);
-}
-
-/// Destroy and free the pipeline.
-void pipeline_free(pipeline_t* pipeline) {
-  if (!pipeline) return;
-  if (pipeline->master_volume) {
-    g_volume_vtable.free(pipeline->master_volume);
-  }
-  if (pipeline->capture_scratch) {
-    audio_chunk_free(pipeline->capture_scratch);
-  }
-  if (pipeline->scratches_for_mixers) {
-    for (size_t i = 0; i < pipeline->scratches_for_mixers_count; i++) {
-      if (pipeline->scratches_for_mixers[i]) {
-        audio_chunk_free(pipeline->scratches_for_mixers[i]);
-      }
-    }
-    free(pipeline->scratches_for_mixers);
-  }
-  if (pipeline->steps) {
-    free_exec_steps(pipeline->steps, pipeline->steps_count);
-  }
-  free(pipeline);
-}
-
-// ----------------------------------------------------------------------------
-// Parallel Filter Step Lowering Helpers (split into positional runs)
-// ----------------------------------------------------------------------------
+// ============================================================================
+// Parallel Filter Step Lowering Helpers (Split into Positional Runs)
+// ============================================================================
 
 static bool append_exec_step(pipeline_exec_step_t** steps, size_t* count,
                              size_t* cap, pipeline_exec_step_t step) {
@@ -436,7 +446,326 @@ static bool split_and_lower_step(pipeline_exec_step_t* old_step,
   return true;
 }
 
-/// Initialize the main audio processing pipeline.
+static bool lower_pipeline_steps(pipeline_t* pipeline, size_t unlowered_count,
+                                 config_error_t* err) {
+  pipeline_exec_step_t* lowered_steps = NULL;
+  size_t lowered_count = 0;
+  size_t lowered_cap = 0;
+
+  for (size_t s = 0; s < unlowered_count; s++) {
+    pipeline_exec_step_t* step = &pipeline->steps[s];
+    if (step->type == EXEC_STEP_PARALLEL_FILTERS && step->chains &&
+        step->chains_count > 0) {
+      if (!split_and_lower_step(step, s, &lowered_steps, &lowered_count,
+                                &lowered_cap)) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Memory allocation failure during filter lowering");
+        free_exec_steps(lowered_steps, lowered_count);
+        return false;
+      }
+    } else {
+      if (!append_exec_step(&lowered_steps, &lowered_count, &lowered_cap,
+                            *step)) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "Memory allocation failure during step appending");
+        free_exec_steps(lowered_steps, lowered_count);
+        return false;
+      }
+      step->chains = NULL;
+      step->chains_count = 0;
+      step->mixer = NULL;
+      step->processor = NULL;
+    }
+  }
+
+  free(pipeline->steps);
+  pipeline->steps = lowered_steps;
+  pipeline->steps_count = lowered_count;
+  return true;
+}
+
+// ============================================================================
+// Pipeline Step Construction Helpers
+// ============================================================================
+
+static void count_pipeline_requirements(const dsp_config_t* config,
+                                        size_t* out_total_steps,
+                                        size_t* out_num_mixers) {
+  *out_total_steps = 0;
+  *out_num_mixers = 0;
+  if (!config->pipeline || config->pipeline_count == 0) return;
+
+  for (size_t i = 0; i < config->pipeline_count; i++) {
+    const pipeline_step_config_t* step = &config->pipeline[i];
+    if (step->bypassed) continue;
+    if (step->type == PIPELINE_STEP_TYPE_FILTER) {
+      (*out_total_steps)++;
+    } else if (step->type == PIPELINE_STEP_TYPE_MIXER) {
+      (*out_total_steps)++;
+      (*out_num_mixers)++;
+    } else if (step->type == PIPELINE_STEP_TYPE_PROCESSOR) {
+      (*out_total_steps)++;
+    }
+  }
+}
+
+static bool resolve_filter_step_channels(
+    const pipeline_step_config_t* step, size_t current_channels,
+    size_t** out_channels, size_t* out_count, size_t* out_single_ch,
+    bool* out_is_allocated, config_error_t* err) {
+  *out_is_allocated = false;
+  if (step->channels && step->channels_count > 0) {
+    *out_channels = step->channels;
+    *out_count = step->channels_count;
+    return true;
+  }
+  if (step->has_channel) {
+    *out_single_ch = step->channel;
+    *out_channels = out_single_ch;
+    *out_count = 1;
+    return true;
+  }
+  if (current_channels > SIZE_MAX / sizeof(size_t)) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Integer overflow in channels count");
+    return false;
+  }
+  size_t* all_chs = (size_t*)calloc(current_channels, sizeof(size_t));
+  if (!all_chs) {
+    config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
+    return false;
+  }
+  for (size_t c = 0; c < current_channels; c++) {
+    all_chs[c] = c;
+  }
+  *out_channels = all_chs;
+  *out_count = current_channels;
+  *out_is_allocated = true;
+  return true;
+}
+
+static parallel_filter_chain_t* build_filter_chains(
+    const pipeline_step_config_t* step, const dsp_config_t* config, int rate,
+    size_t frames_per_chunk, processing_parameters_t* proc_params,
+    const size_t* channels, size_t channels_count, config_error_t* err) {
+  parallel_filter_chain_t* chains = (parallel_filter_chain_t*)calloc(
+      channels_count, sizeof(parallel_filter_chain_t));
+  if (!chains) {
+    config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
+    return NULL;
+  }
+
+  for (size_t c = 0; c < channels_count; c++) {
+    parallel_filter_chain_t* chain = &chains[c];
+    chain->channel = channels[c];
+    chain->filters_count = step->names_count;
+    chain->filters = (filter_t**)calloc(step->names_count, sizeof(filter_t*));
+    if (!chain->filters) {
+      config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
+      free_filter_chains(chains, channels_count);
+      return NULL;
+    }
+
+    for (size_t j = 0; j < step->names_count; j++) {
+      const filter_config_t* f_cfg =
+          dsp_config_get_filter(config, step->names[j]);
+      if (!f_cfg) {
+        config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                         "Filter '%s' not defined", step->names[j]);
+        free_filter_chains(chains, channels_count);
+        return NULL;
+      }
+      filter_t* f = filter_create(step->names[j], f_cfg, rate, frames_per_chunk,
+                                  proc_params, err);
+      if (!f) {
+        free_filter_chains(chains, channels_count);
+        return NULL;
+      }
+      chain->filters[j] = f;
+    }
+  }
+  return chains;
+}
+
+static bool merge_parallel_filter_chains(pipeline_exec_step_t* last,
+                                         parallel_filter_chain_t* new_chains,
+                                         size_t new_chains_count,
+                                         config_error_t* err) {
+  for (size_t c = 0; c < new_chains_count; c++) {
+    parallel_filter_chain_t* new_chain = &new_chains[c];
+    int found_idx = -1;
+    for (size_t k = 0; k < last->chains_count; k++) {
+      if (last->chains[k].channel == new_chain->channel) {
+        found_idx = (int)k;
+        break;
+      }
+    }
+
+    if (found_idx != -1) {
+      parallel_filter_chain_t* old_chain = &last->chains[found_idx];
+      size_t combined_count =
+          old_chain->filters_count + new_chain->filters_count;
+      filter_t** combined_filters = (filter_t**)realloc(
+          old_chain->filters, combined_count * sizeof(filter_t*));
+      if (!combined_filters) {
+        config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
+        return false;
+      }
+      memcpy(combined_filters + old_chain->filters_count, new_chain->filters,
+             new_chain->filters_count * sizeof(filter_t*));
+      old_chain->filters = combined_filters;
+      old_chain->filters_count = combined_count;
+      free(new_chain->filters);
+      new_chain->filters = NULL;
+    } else {
+      parallel_filter_chain_t* merged = (parallel_filter_chain_t*)realloc(
+          last->chains,
+          (last->chains_count + 1) * sizeof(parallel_filter_chain_t));
+      if (!merged) {
+        config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
+        return false;
+      }
+      merged[last->chains_count] = *new_chain;
+      last->chains = merged;
+      last->chains_count += 1;
+      new_chain->filters = NULL;
+    }
+  }
+  free(new_chains);
+  return true;
+}
+
+static bool build_filter_step(const pipeline_step_config_t* step,
+                              const dsp_config_t* config, pipeline_t* pipeline,
+                              processing_parameters_t* proc_params,
+                              size_t current_channels, size_t* inout_exec_idx,
+                              config_error_t* err) {
+  if (!step->names || step->names_count == 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Filter step missing names");
+    return false;
+  }
+
+  size_t* channels = NULL;
+  size_t channels_count = 0;
+  size_t single_ch = 0;
+  bool is_allocated = false;
+
+  if (!resolve_filter_step_channels(step, current_channels, &channels,
+                                    &channels_count, &single_ch, &is_allocated,
+                                    err)) {
+    return false;
+  }
+
+  parallel_filter_chain_t* chains = build_filter_chains(
+      step, config, pipeline->rate, pipeline->frames_per_chunk, proc_params,
+      channels, channels_count, err);
+  if (is_allocated) {
+    free(channels);
+  }
+  if (!chains) {
+    return false;
+  }
+
+  size_t exec_idx = *inout_exec_idx;
+  if (exec_idx > 0 &&
+      pipeline->steps[exec_idx - 1].type == EXEC_STEP_PARALLEL_FILTERS) {
+    if (!merge_parallel_filter_chains(&pipeline->steps[exec_idx - 1], chains,
+                                      channels_count, err)) {
+      free_filter_chains(chains, channels_count);
+      return false;
+    }
+  } else {
+    for (size_t c = 0; c < channels_count; c++) {
+      for (size_t k = 0; k < c; k++) {
+        if (chains[c].channel == chains[k].channel) {
+          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                           "Duplicate channel %zu in parallel filter step",
+                           chains[c].channel);
+          free_filter_chains(chains, channels_count);
+          return false;
+        }
+      }
+    }
+    pipeline_exec_step_t* exec = &pipeline->steps[exec_idx];
+    exec->type = EXEC_STEP_PARALLEL_FILTERS;
+    exec->chains = chains;
+    exec->chains_count = channels_count;
+    *inout_exec_idx = exec_idx + 1;
+  }
+  return true;
+}
+
+static bool build_mixer_step(const pipeline_step_config_t* step,
+                             const dsp_config_t* config, pipeline_t* pipeline,
+                             size_t* inout_channels, size_t* inout_exec_idx,
+                             size_t* inout_mixer_idx, config_error_t* err) {
+  if (!step->has_name || step->name[0] == '\0') {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Mixer step missing name or config");
+    return false;
+  }
+  const mixer_config_t* m_cfg = dsp_config_get_mixer(config, step->name);
+  if (!m_cfg) {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Mixer step missing name or config");
+    return false;
+  }
+  mixer_t* m = mixer_create(step->name, m_cfg, pipeline->frames_per_chunk, err);
+  if (!m) {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Failed to create mixer '%s'", step->name);
+    return false;
+  }
+  *inout_channels = m_cfg->channels_out;
+  audio_chunk_t* scratch =
+      audio_chunk_create(pipeline->frames_per_chunk, *inout_channels);
+  if (!scratch) {
+    mixer_free(m);
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate mixer scratch buffer");
+    return false;
+  }
+  pipeline->scratches_for_mixers[(*inout_mixer_idx)++] = scratch;
+
+  pipeline_exec_step_t* exec = &pipeline->steps[(*inout_exec_idx)++];
+  exec->type = EXEC_STEP_MIXER;
+  exec->mixer = m;
+  logger_debug(&g_logger, "Mixer '%s' added to pipeline", mixer_get_name(m));
+  return true;
+}
+
+static bool build_processor_step(const pipeline_step_config_t* step,
+                                 const dsp_config_t* config,
+                                 pipeline_t* pipeline, size_t* inout_exec_idx,
+                                 config_error_t* err) {
+  if (!step->has_name || step->name[0] == '\0') {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Processor step missing name or config");
+    return false;
+  }
+  const processor_config_t* p_cfg =
+      dsp_config_get_processor(config, step->name);
+  if (!p_cfg) {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Processor step missing name or config");
+    return false;
+  }
+  dsp_processor_t* p = dsp_processor_create(step->name, p_cfg, pipeline->rate,
+                                            pipeline->frames_per_chunk, err);
+  if (!p) {
+    return false;
+  }
+  pipeline_exec_step_t* exec = &pipeline->steps[(*inout_exec_idx)++];
+  exec->type = EXEC_STEP_PROCESSOR;
+  exec->processor = p;
+  return true;
+}
+
+// ============================================================================
+// Pipeline Lifecycle Functions
+// ============================================================================
+
 pipeline_t* pipeline_create(const dsp_config_t* config,
                             processing_parameters_t* proc_params,
                             size_t explicit_chunk_size, config_error_t* err) {
@@ -448,13 +777,6 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
     return NULL;
   }
-
-  size_t* all_chs = NULL;
-  parallel_filter_chain_t* new_chains = NULL;
-  size_t new_chains_count = 0;
-  pipeline_exec_step_t* lowered_steps = NULL;
-  size_t lowered_count = 0;
-  size_t lowered_cap = 0;
 
   pipeline->frames_per_chunk =
       explicit_chunk_size > 0 ? explicit_chunk_size : config->devices.chunksize;
@@ -470,7 +792,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
               pipeline->rate, pipeline->frames_per_chunk,
               pipeline->expected_in_channels, pipeline->multithreaded ? 1 : 0);
 
-  // Create the implicit master volume filter
+  // 1. Create the implicit master volume filter
   volume_config_t vol_params = {
       .ramp_time_ms = config->devices.has_volume_ramp_time_ms
                           ? config->devices.volume_ramp_time_ms
@@ -478,8 +800,8 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
       .has_ramp_time_ms = true,
       .limit = config->devices.has_volume_limit ? config->devices.volume_limit
                                                 : 50.0,
-      .has_limit = true};
-  vol_params.fader = FADER_MAIN;
+      .has_limit = true,
+      .fader = FADER_MAIN};
 
   filter_config_t vcfg = {.type = FILTER_TYPE_VOLUME,
                           .parameters.volume = vol_params};
@@ -492,10 +814,11 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
         "Failed to create master volume filter (rate=%d, chunk=%zu): %s",
         pipeline->rate, pipeline->frames_per_chunk,
         err ? err->message : "unknown error");
-    goto cleanup_fail;
+    pipeline_free(pipeline);
+    return NULL;
   }
 
-  // Pre-allocate the input scratch sized for the capture-side channel count.
+  // 2. Pre-allocate the capture scratch buffer
   pipeline->capture_scratch = audio_chunk_create(
       pipeline->frames_per_chunk, pipeline->expected_in_channels);
   if (!pipeline->capture_scratch) {
@@ -505,39 +828,18 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
         pipeline->frames_per_chunk, pipeline->expected_in_channels);
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate capture scratch buffer");
-    goto cleanup_fail;
+    pipeline_free(pipeline);
+    return NULL;
   }
 
+  // 3. Count steps and allocate step & mixer scratch arrays
   size_t total_exec_steps = 0;
   size_t num_mixers = 0;
-  // Track current channel count as we walk pipeline steps. Channel count can
-  // change after passing through a mixer.
-  size_t current_channels = pipeline->expected_in_channels;
-
-  // First pass: Calculate the exact number of execution steps and mixers
-  // needed.
-  if (config->pipeline && config->pipeline_count > 0) {
-    for (size_t i = 0; i < config->pipeline_count; i++) {
-      const pipeline_step_config_t* step = &config->pipeline[i];
-      if (step->bypassed) continue;
-      if (step->type == PIPELINE_STEP_TYPE_FILTER) {
-        total_exec_steps += 1;
-      } else if (step->type == PIPELINE_STEP_TYPE_MIXER) {
-        total_exec_steps += 1;
-        num_mixers += 1;
-        const mixer_config_t* m_cfg = dsp_config_get_mixer(config, step->name);
-        if (m_cfg) {
-          current_channels = m_cfg->channels_out;
-        }
-      } else if (step->type == PIPELINE_STEP_TYPE_PROCESSOR) {
-        total_exec_steps += 1;
-      }
-    }
-  }
+  count_pipeline_requirements(config, &total_exec_steps, &num_mixers);
 
   if (total_exec_steps == 0) {
     pipeline->steps_count = 0;
-    pipeline->expected_out_channels = current_channels;
+    pipeline->expected_out_channels = pipeline->expected_in_channels;
     return pipeline;
   }
 
@@ -545,20 +847,24 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
                                                   sizeof(pipeline_exec_step_t));
   if (!pipeline->steps) {
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
-    goto cleanup_fail;
+    pipeline_free(pipeline);
+    return NULL;
   }
   pipeline->steps_count = total_exec_steps;
+
   if (num_mixers > 0) {
     pipeline->scratches_for_mixers =
         (audio_chunk_t**)calloc(num_mixers, sizeof(audio_chunk_t*));
     if (!pipeline->scratches_for_mixers) {
       config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
-      goto cleanup_fail;
+      pipeline_free(pipeline);
+      return NULL;
     }
     pipeline->scratches_for_mixers_count = num_mixers;
   }
 
-  current_channels = pipeline->expected_in_channels;
+  // 4. Build execution steps sequentially
+  size_t current_channels = pipeline->expected_in_channels;
   size_t exec_idx = 0;
   size_t mixer_idx = 0;
 
@@ -566,269 +872,41 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
     for (size_t i = 0; i < config->pipeline_count; i++) {
       const pipeline_step_config_t* step = &config->pipeline[i];
       if (step->bypassed) continue;
+
+      bool ok = false;
       switch (step->type) {
-        case PIPELINE_STEP_TYPE_FILTER: {
-          if (!step->names || step->names_count == 0) {
-            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Filter step missing names");
-            goto cleanup_fail;
-          }
-          size_t* channels_to_apply = NULL;
-          size_t channels_count = 0;
-          size_t single_ch = 0;
-
-          if (step->channels && step->channels_count > 0) {
-            channels_to_apply = step->channels;
-            channels_count = step->channels_count;
-          } else if (step->has_channel) {
-            single_ch = step->channel;
-            channels_to_apply = &single_ch;
-            channels_count = 1;
-          } else {
-            if (current_channels > SIZE_MAX / sizeof(size_t)) {
-              config_error_set(err, CONFIG_ERR_PARSE,
-                               "Integer overflow in channels count");
-              goto cleanup_fail;
-            }
-            all_chs = (size_t*)calloc(current_channels, sizeof(size_t));
-            if (!all_chs) {
-              config_error_set(err, CONFIG_ERR_PARSE,
-                               "Memory allocation failure");
-              goto cleanup_fail;
-            }
-            for (size_t c = 0; c < current_channels; c++) all_chs[c] = c;
-            channels_to_apply = all_chs;
-            channels_count = current_channels;
-          }
-
-          // Create chains for this filter step
-          new_chains_count = channels_count;
-          new_chains = (parallel_filter_chain_t*)calloc(
-              new_chains_count, sizeof(parallel_filter_chain_t));
-          if (!new_chains) {
-            config_error_set(err, CONFIG_ERR_PARSE,
-                             "Memory allocation failure");
-            goto cleanup_fail;
-          }
-
-          for (size_t c = 0; c < channels_count; c++) {
-            size_t ch = channels_to_apply[c];
-            parallel_filter_chain_t* chain = &new_chains[c];
-            chain->channel = ch;
-            chain->filters_count = step->names_count;
-            chain->filters =
-                (filter_t**)calloc(step->names_count, sizeof(filter_t*));
-            if (!chain->filters) {
-              config_error_set(err, CONFIG_ERR_PARSE,
-                               "Memory allocation failure");
-              goto cleanup_fail;
-            }
-
-            for (size_t j = 0; j < step->names_count; j++) {
-              const filter_config_t* f_cfg =
-                  dsp_config_get_filter(config, step->names[j]);
-              if (!f_cfg) {
-                config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                                 "Filter '%s' not defined", step->names[j]);
-                goto cleanup_fail;
-              }
-              filter_t* f =
-                  filter_create(step->names[j], f_cfg, pipeline->rate,
-                                pipeline->frames_per_chunk, proc_params, err);
-              if (!f) {
-                goto cleanup_fail;
-              }
-              chain->filters[j] = f;
-            }
-          }
-          if (all_chs) {
-            free(all_chs);
-            all_chs = NULL;
-          }
-
-          // Merge adjacent parallel filters, combining filter lists for the
-          // same channels
-          if (exec_idx > 0 && pipeline->steps[exec_idx - 1].type ==
-                                  EXEC_STEP_PARALLEL_FILTERS) {
-            pipeline_exec_step_t* last = &pipeline->steps[exec_idx - 1];
-            bool alloc_failed = false;
-
-            for (size_t c = 0; c < new_chains_count; c++) {
-              parallel_filter_chain_t* new_chain = &new_chains[c];
-              int found_idx = -1;
-              for (size_t k = 0; k < last->chains_count; k++) {
-                if (last->chains[k].channel == new_chain->channel) {
-                  found_idx = (int)k;
-                  break;
-                }
-              }
-
-              if (found_idx != -1) {
-                // Channel exists. Combine filters.
-                parallel_filter_chain_t* old_chain = &last->chains[found_idx];
-                size_t combined_count =
-                    old_chain->filters_count + new_chain->filters_count;
-                filter_t** combined_filters = realloc(
-                    old_chain->filters, combined_count * sizeof(filter_t*));
-                if (!combined_filters) {
-                  alloc_failed = true;
-                  break;
-                }
-                memcpy(combined_filters + old_chain->filters_count,
-                       new_chain->filters,
-                       new_chain->filters_count * sizeof(filter_t*));
-                old_chain->filters = combined_filters;
-                old_chain->filters_count = combined_count;
-                free(new_chain->filters);
-                new_chain->filters = NULL;
-              } else {
-                // Channel does not exist. Append the new chain.
-                parallel_filter_chain_t* merged =
-                    realloc(last->chains, (last->chains_count + 1) *
-                                              sizeof(parallel_filter_chain_t));
-                if (!merged) {
-                  alloc_failed = true;
-                  break;
-                }
-                merged[last->chains_count] = *new_chain;
-                last->chains = merged;
-                last->chains_count += 1;
-                new_chain->filters = NULL;
-              }
-            }
-
-            if (alloc_failed) {
-              config_error_set(err, CONFIG_ERR_PARSE,
-                               "Memory allocation failure");
-              goto cleanup_fail;
-            }
-            free(new_chains);
-            new_chains = NULL;
-            new_chains_count = 0;
-          } else {
-            for (size_t c = 0; c < new_chains_count; c++) {
-              for (size_t k = 0; k < c; k++) {
-                if (new_chains[c].channel == new_chains[k].channel) {
-                  int dup_channel = new_chains[c].channel;
-                  config_error_set(
-                      err, CONFIG_ERR_INVALID_PIPELINE,
-                      "Duplicate channel %d in parallel filter step",
-                      dup_channel);
-                  goto cleanup_fail;
-                }
-              }
-            }
-            pipeline_exec_step_t* exec = &pipeline->steps[exec_idx++];
-            exec->type = EXEC_STEP_PARALLEL_FILTERS;
-            exec->chains = new_chains;
-            exec->chains_count = new_chains_count;
-            new_chains = NULL;
-            new_chains_count = 0;
-          }
+        case PIPELINE_STEP_TYPE_FILTER:
+          ok = build_filter_step(step, config, pipeline, proc_params,
+                                 current_channels, &exec_idx, err);
           break;
-        }
-        case PIPELINE_STEP_TYPE_MIXER: {
-          if (!step->has_name || step->name[0] == '\0') {
-            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Mixer step missing name or config");
-            goto cleanup_fail;
-          }
-          const mixer_config_t* m_cfg =
-              dsp_config_get_mixer(config, step->name);
-          if (!m_cfg) {
-            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Mixer step missing name or config");
-            goto cleanup_fail;
-          }
-          mixer_t* m =
-              mixer_create(step->name, m_cfg, pipeline->frames_per_chunk, err);
-          if (!m) {
-            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Failed to create mixer '%s'", step->name);
-            goto cleanup_fail;
-          }
-          current_channels = m_cfg->channels_out;
-          audio_chunk_t* scratch =
-              audio_chunk_create(pipeline->frames_per_chunk, current_channels);
-          if (!scratch) {
-            mixer_free(m);
-            config_error_set(err, CONFIG_ERR_PARSE,
-                             "Failed to allocate mixer scratch buffer");
-            goto cleanup_fail;
-          }
-          pipeline->scratches_for_mixers[mixer_idx++] = scratch;
-
-          pipeline_exec_step_t* exec = &pipeline->steps[exec_idx++];
-          exec->type = EXEC_STEP_MIXER;
-          exec->mixer = m;
-          logger_debug(&g_logger, "Mixer '%s' added to pipeline",
-                       mixer_get_name(m));
+        case PIPELINE_STEP_TYPE_MIXER:
+          ok = build_mixer_step(step, config, pipeline, &current_channels,
+                                &exec_idx, &mixer_idx, err);
           break;
-        }
-        case PIPELINE_STEP_TYPE_PROCESSOR: {
-          if (!step->has_name || step->name[0] == '\0') {
-            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Processor step missing name or config");
-            goto cleanup_fail;
-          }
-          const processor_config_t* p_cfg =
-              dsp_config_get_processor(config, step->name);
-          if (!p_cfg) {
-            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Processor step missing name or config");
-            goto cleanup_fail;
-          }
-          dsp_processor_t* p =
-              dsp_processor_create(step->name, p_cfg, pipeline->rate,
-                                   pipeline->frames_per_chunk, err);
-          if (!p) {
-            goto cleanup_fail;
-          }
-          pipeline_exec_step_t* exec = &pipeline->steps[exec_idx++];
-          exec->type = EXEC_STEP_PROCESSOR;
-          exec->processor = p;
+        case PIPELINE_STEP_TYPE_PROCESSOR:
+          ok = build_processor_step(step, config, pipeline, &exec_idx, err);
           break;
-        }
+      }
+      if (!ok) {
+        pipeline_free(pipeline);
+        return NULL;
       }
     }
   }
 
-  // Lower biquad sections of parallel filter steps into biquad processors
-  // by splitting chains into positional runs (matching upstream
-  // split_into_runs).
-  for (size_t s = 0; s < exec_idx; s++) {
-    pipeline_exec_step_t* step = &pipeline->steps[s];
-    if (step->type == EXEC_STEP_PARALLEL_FILTERS && step->chains &&
-        step->chains_count > 0) {
-      if (!split_and_lower_step(step, s, &lowered_steps, &lowered_count,
-                                &lowered_cap)) {
-        goto cleanup_fail;
-      }
-    } else {
-      if (!append_exec_step(&lowered_steps, &lowered_count, &lowered_cap,
-                            *step)) {
-        goto cleanup_fail;
-      }
-      step->chains = NULL;
-      step->chains_count = 0;
-      step->mixer = NULL;
-      step->processor = NULL;
-    }
+  // 5. Lower biquad sections of parallel filter steps into biquad processors
+  if (!lower_pipeline_steps(pipeline, exec_idx, err)) {
+    pipeline_free(pipeline);
+    return NULL;
   }
 
-  free(pipeline->steps);
-  pipeline->steps = lowered_steps;
-  pipeline->steps_count = lowered_count;
   pipeline->expected_out_channels = current_channels;
   return pipeline;
-
-cleanup_fail:
-  if (all_chs) free(all_chs);
-  if (new_chains) free_filter_chains(new_chains, new_chains_count);
-  if (lowered_steps) free_exec_steps(lowered_steps, lowered_count);
-  if (pipeline) pipeline_free(pipeline);
-  return NULL;
 }
+
+// ============================================================================
+// Audio Processing Loop
+// ============================================================================
 
 #if defined(ENABLE_LIBDISPATCH)
 typedef struct {
@@ -841,8 +919,9 @@ typedef struct {
 static void parallel_filter_worker(void* context, size_t idx) {
   dispatch_ctx_t* ctx = (dispatch_ctx_t*)context;
   parallel_filter_chain_t* chain = &ctx->chains[idx];
-  if ((size_t)chain->channel >= audio_chunk_get_channels(ctx->current_chunk))
+  if ((size_t)chain->channel >= audio_chunk_get_channels(ctx->current_chunk)) {
     return;
+  }
   mutable_waveform_t buf =
       audio_chunk_get_channel(ctx->current_chunk, chain->channel);
   if (!buf) return;
@@ -854,7 +933,102 @@ static void parallel_filter_worker(void* context, size_t idx) {
 }
 #endif
 
-/// Process an input audio chunk into an output audio chunk.
+static void execute_parallel_filters(const pipeline_t* pipeline,
+                                     const pipeline_exec_step_t* step,
+                                     audio_chunk_t* current_chunk,
+                                     size_t valid_frames) {
+  bool use_multithreading = false;
+#if defined(ENABLE_LIBDISPATCH) || defined(ENABLE_OPENMP)
+  if (pipeline->multithreaded && step->chains_count > 1) {
+    use_multithreading = true;
+  }
+#endif
+
+  if (use_multithreading) {
+#if defined(ENABLE_LIBDISPATCH)
+    dispatch_ctx_t dctx = {current_chunk, valid_frames, step->chains,
+                           pipeline->rate};
+    dispatch_queue_t queue =
+        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
+    dispatch_apply_f(step->chains_count, queue, &dctx, parallel_filter_worker);
+#elif defined(ENABLE_OPENMP)
+#pragma omp parallel num_threads(step->chains_count)
+    {
+#pragma omp for
+      for (size_t idx = 0; idx < step->chains_count; idx++) {
+        parallel_filter_chain_t* chain = &step->chains[idx];
+        if ((size_t)chain->channel >= audio_chunk_get_channels(current_chunk))
+          continue;
+        mutable_waveform_t buf =
+            audio_chunk_get_channel(current_chunk, chain->channel);
+        if (!buf) continue;
+        for (size_t j = 0; j < chain->filters_count; j++) {
+          if (chain->filters[j] && valid_frames > 0) {
+            filter_process(chain->filters[j], buf, valid_frames);
+          }
+        }
+      }
+    }
+#endif
+  } else {
+    for (size_t idx = 0; idx < step->chains_count; idx++) {
+      parallel_filter_chain_t* chain = &step->chains[idx];
+      if ((size_t)chain->channel >= audio_chunk_get_channels(current_chunk))
+        continue;
+      mutable_waveform_t buf =
+          audio_chunk_get_channel(current_chunk, chain->channel);
+      if (!buf) continue;
+      for (size_t j = 0; j < chain->filters_count; j++) {
+        if (chain->filters[j] && valid_frames > 0) {
+          filter_process(chain->filters[j], buf, valid_frames);
+        }
+      }
+    }
+  }
+}
+
+static pipeline_error_t execute_mixer_step(pipeline_t* pipeline,
+                                           const pipeline_exec_step_t* step,
+                                           audio_chunk_t** inout_current_chunk,
+                                           size_t* inout_mixer_idx,
+                                           size_t valid_frames) {
+  size_t mixer_idx = *inout_mixer_idx;
+  if (mixer_idx >= pipeline->scratches_for_mixers_count) {
+    logger_warn(&g_logger,
+                "Mixer scratch buffer index out of bounds: %zu >= %zu",
+                mixer_idx, pipeline->scratches_for_mixers_count);
+    return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
+  }
+  audio_chunk_t* current_chunk = *inout_current_chunk;
+  audio_chunk_t* scratch = pipeline->scratches_for_mixers[mixer_idx];
+  mixer_error_t err = mixer_process(step->mixer, current_chunk, scratch);
+  if (err != MIXER_OK) {
+    if (err == MIXER_ERR_INPUT_SIZE_MISMATCH) {
+      pipeline->last_error_needed = pipeline->frames_per_chunk;
+      pipeline->last_error_got = valid_frames;
+      return PIPELINE_ERR_INPUT_SIZE_MISMATCH;
+    }
+    if (err == MIXER_ERR_OUTPUT_BUFFER_TOO_SMALL) {
+      pipeline->last_error_needed = valid_frames;
+      pipeline->last_error_got = audio_chunk_get_frames(scratch);
+      return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
+    }
+    size_t current_in_ch = audio_chunk_get_channels(current_chunk);
+    size_t mixer_in_ch = mixer_get_channels_in(step->mixer);
+    if (current_in_ch != mixer_in_ch) {
+      pipeline->last_error_needed = mixer_in_ch;
+      pipeline->last_error_got = current_in_ch;
+    } else {
+      pipeline->last_error_needed = mixer_get_channels_out(step->mixer);
+      pipeline->last_error_got = audio_chunk_get_channels(scratch);
+    }
+    return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
+  }
+  *inout_current_chunk = scratch;
+  *inout_mixer_idx = mixer_idx + 1;
+  return PIPELINE_OK;
+}
+
 pipeline_error_t pipeline_process(pipeline_t* pipeline,
                                   const audio_chunk_t* input,
                                   audio_chunk_t* output) {
@@ -908,6 +1082,7 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
   audio_chunk_set_valid_frames(pipeline->capture_scratch, valid_frames);
 
   audio_chunk_t* current_chunk = pipeline->capture_scratch;
+
   // 3. Implicit main volume with smooth ramp.
   volume_filter_prepare_chunk(pipeline->master_volume);
   for (size_t ch = 0; ch < audio_chunk_get_channels(current_chunk); ch++) {
@@ -923,101 +1098,22 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
   for (size_t i = 0; i < pipeline->steps_count; i++) {
     pipeline_exec_step_t* step = &pipeline->steps[i];
     switch (step->type) {
-      case EXEC_STEP_PARALLEL_FILTERS: {
-        bool use_multithreading = false;
-#if defined(ENABLE_LIBDISPATCH) || defined(ENABLE_OPENMP)
-        if (pipeline->multithreaded && step->chains_count > 1) {
-          use_multithreading = true;
-        }
-#endif
-
-        if (use_multithreading) {
-#if defined(ENABLE_LIBDISPATCH)
-          dispatch_ctx_t dctx = {current_chunk, valid_frames, step->chains,
-                                 pipeline->rate};
-          dispatch_queue_t queue =
-              dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
-          dispatch_apply_f(step->chains_count, queue, &dctx,
-                           parallel_filter_worker);
-#elif defined(ENABLE_OPENMP)
-#pragma omp parallel num_threads(step->chains_count)
-          {
-#pragma omp for
-            for (size_t idx = 0; idx < step->chains_count; idx++) {
-              parallel_filter_chain_t* chain = &step->chains[idx];
-              if ((size_t)chain->channel >=
-                  audio_chunk_get_channels(current_chunk))
-                continue;
-              mutable_waveform_t buf =
-                  audio_chunk_get_channel(current_chunk, chain->channel);
-              if (!buf) continue;
-              for (size_t j = 0; j < chain->filters_count; j++) {
-                if (chain->filters[j] && valid_frames > 0) {
-                  filter_process(chain->filters[j], buf, valid_frames);
-                }
-              }
-            }
-          }
-#endif
-        } else {
-          for (size_t idx = 0; idx < step->chains_count; idx++) {
-            parallel_filter_chain_t* chain = &step->chains[idx];
-            if ((size_t)chain->channel >=
-                audio_chunk_get_channels(current_chunk))
-              continue;
-            mutable_waveform_t buf =
-                audio_chunk_get_channel(current_chunk, chain->channel);
-            if (!buf) continue;
-            for (size_t j = 0; j < chain->filters_count; j++) {
-              if (chain->filters[j] && valid_frames > 0) {
-                filter_process(chain->filters[j], buf, valid_frames);
-              }
-            }
-          }
-        }
+      case EXEC_STEP_PARALLEL_FILTERS:
+        execute_parallel_filters(pipeline, step, current_chunk, valid_frames);
         break;
-      }
       case EXEC_STEP_MIXER: {
-        if (mixer_idx >= pipeline->scratches_for_mixers_count) {
-          logger_warn(&g_logger,
-                      "Mixer scratch buffer index out of bounds: %zu >= %zu",
-                      mixer_idx, pipeline->scratches_for_mixers_count);
-          return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
+        pipeline_error_t err = execute_mixer_step(
+            pipeline, step, &current_chunk, &mixer_idx, valid_frames);
+        if (err != PIPELINE_OK) {
+          return err;
         }
-        audio_chunk_t* scratch = pipeline->scratches_for_mixers[mixer_idx];
-        mixer_error_t err = mixer_process(step->mixer, current_chunk, scratch);
-        if (err != MIXER_OK) {
-          if (err == MIXER_ERR_INPUT_SIZE_MISMATCH) {
-            pipeline->last_error_needed = pipeline->frames_per_chunk;
-            pipeline->last_error_got = valid_frames;
-            return PIPELINE_ERR_INPUT_SIZE_MISMATCH;
-          }
-          if (err == MIXER_ERR_OUTPUT_BUFFER_TOO_SMALL) {
-            pipeline->last_error_needed = valid_frames;
-            pipeline->last_error_got = audio_chunk_get_frames(scratch);
-            return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
-          }
-          size_t current_in_ch = audio_chunk_get_channels(current_chunk);
-          size_t mixer_in_ch = mixer_get_channels_in(step->mixer);
-          if (current_in_ch != mixer_in_ch) {
-            pipeline->last_error_needed = mixer_in_ch;
-            pipeline->last_error_got = current_in_ch;
-          } else {
-            pipeline->last_error_needed = mixer_get_channels_out(step->mixer);
-            pipeline->last_error_got = audio_chunk_get_channels(scratch);
-          }
-          return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
-        }
-        current_chunk = scratch;
-        mixer_idx++;
         break;
       }
-      case EXEC_STEP_PROCESSOR: {
+      case EXEC_STEP_PROCESSOR:
         if (step->processor) {
           dsp_processor_process(step->processor, current_chunk);
         }
         break;
-      }
     }
   }
 
@@ -1050,6 +1146,136 @@ size_t pipeline_get_last_error_got(const pipeline_t* pipeline) {
   return pipeline ? pipeline->last_error_got : 0;
 }
 
+// ============================================================================
+// Configuration Validation
+// ============================================================================
+
+static bool validate_filter_step(const pipeline_step_config_t* step,
+                                 size_t step_idx, size_t num_channels,
+                                 const dsp_config_t* config,
+                                 config_error_t* err) {
+  if (!step->names || step->names_count == 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Filter step %zu must have 'names'", step_idx);
+    return false;
+  }
+  for (size_t j = 0; j < step->names_count; j++) {
+    if (!step->names[j] || step->names[j][0] == '\0') {
+      config_error_set(
+          err, CONFIG_ERR_INVALID_PIPELINE,
+          "Filter step %zu has invalid/empty filter name at index %zu",
+          step_idx, j);
+      return false;
+    }
+    if (!dsp_config_get_filter(config, step->names[j])) {
+      config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                       "Filter '%s' referenced in pipeline but not defined",
+                       step->names[j]);
+      return false;
+    }
+  }
+  if (step->has_channel) {
+    if (step->channel >= num_channels) {
+      config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                       "Filter step %zu references channel %zu but "
+                       "pipeline only has %zu channel(s) at this point",
+                       step_idx, step->channel, num_channels);
+      return false;
+    }
+  }
+  for (size_t j = 0; j < step->channels_count; j++) {
+    if (step->channels[j] >= num_channels) {
+      config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                       "Filter step %zu references channel %zu but "
+                       "pipeline only has %zu channel(s) at this point",
+                       step_idx, step->channels[j], num_channels);
+      return false;
+    }
+    for (size_t k = 0; k < j; k++) {
+      if (step->channels[j] == step->channels[k]) {
+        config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                         "Filter step %zu references duplicated channel %zu",
+                         step_idx, step->channels[j]);
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+static bool validate_mixer_step(const pipeline_step_config_t* step,
+                                size_t step_idx, size_t* inout_channels,
+                                const dsp_config_t* config,
+                                config_error_t* err) {
+  if (!step->has_name || step->name[0] == '\0') {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Mixer step %zu must have 'name'", step_idx);
+    return false;
+  }
+  const mixer_config_t* mixer = dsp_config_get_mixer(config, step->name);
+  if (!mixer) {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Mixer '%s' referenced in pipeline but not defined",
+                     step->name);
+    return false;
+  }
+  if (mixer->channels_in != *inout_channels) {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Mixer '%s' expects %zu input channel(s) but "
+                     "pipeline has %zu at this point",
+                     step->name, mixer->channels_in, *inout_channels);
+    return false;
+  }
+  *inout_channels = mixer->channels_out;
+  return true;
+}
+
+static bool validate_processor_step(const pipeline_step_config_t* step,
+                                    size_t step_idx, size_t num_channels,
+                                    const dsp_config_t* config,
+                                    config_error_t* err) {
+  if (!step->has_name || step->name[0] == '\0') {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Processor step %zu must have 'name'", step_idx);
+    return false;
+  }
+  const processor_config_t* proc = dsp_config_get_processor(config, step->name);
+  if (!proc) {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Processor '%s' referenced in pipeline but not defined",
+                     step->name);
+    return false;
+  }
+  size_t expected_channels = 0;
+  switch (proc->type) {
+    case PROCESSOR_TYPE_COMPRESSOR:
+      expected_channels = proc->parameters.compressor.channels;
+      break;
+    case PROCESSOR_TYPE_NOISE_GATE:
+      expected_channels = proc->parameters.noise_gate.channels;
+      break;
+    case PROCESSOR_TYPE_RACE:
+      expected_channels = proc->parameters.race.channels;
+      break;
+    case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
+      expected_channels = proc->parameters.lookahead_limiter.channels;
+      break;
+    case PROCESSOR_TYPE_BIQUAD:
+      expected_channels = proc->parameters.biquad.channels_count;
+      break;
+    case PROCESSOR_TYPE_INVALID:
+      break;
+  }
+  if (expected_channels != num_channels) {
+    config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                     "Processor '%s' expects %zu channel(s) but pipeline "
+                     "has %zu at this point",
+                     step->name, expected_channels, num_channels);
+    return false;
+  }
+  return true;
+}
+
 int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
   if (!config) {
     config_error_set(err, CONFIG_ERR_PARSE, "Configuration is null");
@@ -1071,129 +1297,25 @@ int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
     }
     return -1;
   }
+
   for (size_t i = 0; i < config->pipeline_count; i++) {
     const pipeline_step_config_t* step = &config->pipeline[i];
     if (step->bypassed) continue;
 
+    bool ok = false;
     switch (step->type) {
-      case PIPELINE_STEP_TYPE_FILTER: {
-        if (!step->names || step->names_count == 0) {
-          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                           "Filter step %zu must have 'names'", i);
-          return -1;
-        }
-        for (size_t j = 0; j < step->names_count; j++) {
-          if (!step->names[j] || step->names[j][0] == '\0') {
-            config_error_set(
-                err, CONFIG_ERR_INVALID_PIPELINE,
-                "Filter step %zu has invalid/empty filter name at index %zu", i,
-                j);
-            return -1;
-          }
-          if (!dsp_config_get_filter(config, step->names[j])) {
-            config_error_set(
-                err, CONFIG_ERR_INVALID_PIPELINE,
-                "Filter '%s' referenced in pipeline but not defined",
-                step->names[j]);
-            return -1;
-          }
-        }
-        if (step->has_channel) {
-          if (step->channel >= num_channels) {
-            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Filter step %zu references channel %zu but "
-                             "pipeline only has %zu channel(s) at this point",
-                             i, step->channel, num_channels);
-            return -1;
-          }
-        }
-        for (size_t j = 0; j < step->channels_count; j++) {
-          if (step->channels[j] >= num_channels) {
-            config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                             "Filter step %zu references channel %zu but "
-                             "pipeline only has %zu channel(s) at this point",
-                             i, step->channels[j], num_channels);
-            return -1;
-          }
-          for (size_t k = 0; k < j; k++) {
-            if (step->channels[j] == step->channels[k]) {
-              config_error_set(
-                  err, CONFIG_ERR_INVALID_PIPELINE,
-                  "Filter step %zu references duplicated channel %zu", i,
-                  step->channels[j]);
-              return -1;
-            }
-          }
-        }
+      case PIPELINE_STEP_TYPE_FILTER:
+        ok = validate_filter_step(step, i, num_channels, config, err);
         break;
-      }
-      case PIPELINE_STEP_TYPE_MIXER: {
-        if (!step->has_name || step->name[0] == '\0') {
-          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                           "Mixer step %zu must have 'name'", i);
-          return -1;
-        }
-        const mixer_config_t* mixer = dsp_config_get_mixer(config, step->name);
-        if (!mixer) {
-          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                           "Mixer '%s' referenced in pipeline but not defined",
-                           step->name);
-          return -1;
-        }
-        if (mixer->channels_in != num_channels) {
-          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                           "Mixer '%s' expects %zu input channel(s) but "
-                           "pipeline has %zu at this point",
-                           step->name, mixer->channels_in, num_channels);
-          return -1;
-        }
-        num_channels = mixer->channels_out;
+      case PIPELINE_STEP_TYPE_MIXER:
+        ok = validate_mixer_step(step, i, &num_channels, config, err);
         break;
-      }
-      case PIPELINE_STEP_TYPE_PROCESSOR: {
-        if (!step->has_name || step->name[0] == '\0') {
-          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                           "Processor step %zu must have 'name'", i);
-          return -1;
-        }
-        const processor_config_t* proc =
-            dsp_config_get_processor(config, step->name);
-        if (!proc) {
-          config_error_set(
-              err, CONFIG_ERR_INVALID_PIPELINE,
-              "Processor '%s' referenced in pipeline but not defined",
-              step->name);
-          return -1;
-        }
-        size_t expected_channels = 0;
-        switch (proc->type) {
-          case PROCESSOR_TYPE_COMPRESSOR:
-            expected_channels = proc->parameters.compressor.channels;
-            break;
-          case PROCESSOR_TYPE_NOISE_GATE:
-            expected_channels = proc->parameters.noise_gate.channels;
-            break;
-          case PROCESSOR_TYPE_RACE:
-            expected_channels = proc->parameters.race.channels;
-            break;
-          case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
-            expected_channels = proc->parameters.lookahead_limiter.channels;
-            break;
-          case PROCESSOR_TYPE_BIQUAD:
-            expected_channels = proc->parameters.biquad.channels_count;
-            break;
-          case PROCESSOR_TYPE_INVALID:
-            break;
-        }
-        if (expected_channels != num_channels) {
-          config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                           "Processor '%s' expects %zu channel(s) but pipeline "
-                           "has %zu at this point",
-                           step->name, expected_channels, num_channels);
-          return -1;
-        }
+      case PIPELINE_STEP_TYPE_PROCESSOR:
+        ok = validate_processor_step(step, i, num_channels, config, err);
         break;
-      }
+    }
+    if (!ok) {
+      return -1;
     }
   }
 
