@@ -116,17 +116,31 @@ static void free_filter_chains(parallel_filter_chain_t* chains, size_t count) {
   free(chains);
 }
 
+static void free_filter_chains_shallow(parallel_filter_chain_t* chains,
+                                       size_t count) {
+  if (!chains) return;
+  for (size_t i = 0; i < count; i++) {
+    if (chains[i].filters) {
+      free(chains[i].filters);
+    }
+  }
+  free(chains);
+}
+
 /// Transfer filter states between two filter chains matching the same channel.
 static void transfer_chain_filters(const parallel_filter_chain_t* dest_chain,
                                    const parallel_filter_chain_t* src_chain,
-                                   bool* dest_used) {
-  if (!dest_chain || !src_chain || src_chain->filters_count == 0) return;
-  bool src_used[512] = {0};
+                                   bool* dest_used, size_t dest_count) {
+  if (!dest_chain || !src_chain || src_chain->filters_count == 0 ||
+      dest_chain->filters_count == 0)
+    return;
+
+  bool src_used[512] = {false};
   size_t max_src =
       src_chain->filters_count < 512 ? src_chain->filters_count : 512;
 
   for (size_t i = 0; i < dest_chain->filters_count; i++) {
-    if (i < 512 && dest_used[i]) continue;
+    if (dest_used && i < dest_count && dest_used[i]) continue;
     filter_t* dest_f = dest_chain->filters[i];
     const char* dname = filter_get_name(dest_f);
     if (!dname || dname[0] == '\0') continue;
@@ -138,7 +152,7 @@ static void transfer_chain_filters(const parallel_filter_chain_t* dest_chain,
       if (sname && strcmp(dname, sname) == 0) {
         filter_transfer_state(dest_f, src_f);
         src_used[j] = true;
-        if (i < 512) dest_used[i] = true;
+        if (dest_used && i < dest_count) dest_used[i] = true;
         break;
       }
     }
@@ -196,7 +210,7 @@ void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
 
     for (size_t dc = 0; dc < d_step->chains_count; dc++) {
       const parallel_filter_chain_t* d_chain = &d_step->chains[dc];
-      bool dest_used[512] = {0};
+      bool dest_used[512] = {false};
 
       for (size_t si = 0; si < src->steps_count; si++) {
         const pipeline_exec_step_t* s_step = &src->steps[si];
@@ -205,7 +219,7 @@ void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
         for (size_t sc = 0; sc < s_step->chains_count; sc++) {
           const parallel_filter_chain_t* s_chain = &s_step->chains[sc];
           if (s_chain->channel == d_chain->channel) {
-            transfer_chain_filters(d_chain, s_chain, dest_used);
+            transfer_chain_filters(d_chain, s_chain, dest_used, 512);
           }
         }
       }
@@ -217,6 +231,23 @@ void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src) {
   transfer_named_processors_state(dest, src);
 
   logger_info(&g_logger, "Completed pipeline state transfer");
+}
+
+static void free_exec_steps(pipeline_exec_step_t* steps, size_t count) {
+  if (!steps) return;
+  for (size_t i = 0; i < count; i++) {
+    pipeline_exec_step_t* step = &steps[i];
+    if (step->chains) {
+      free_filter_chains(step->chains, step->chains_count);
+    }
+    if (step->mixer) {
+      mixer_free(step->mixer);
+    }
+    if (step->processor) {
+      dsp_processor_free(step->processor);
+    }
+  }
+  free(steps);
 }
 
 /// Destroy and free the pipeline.
@@ -237,19 +268,7 @@ void pipeline_free(pipeline_t* pipeline) {
     free(pipeline->scratches_for_mixers);
   }
   if (pipeline->steps) {
-    for (size_t i = 0; i < pipeline->steps_count; i++) {
-      pipeline_exec_step_t* step = &pipeline->steps[i];
-      if (step->chains) {
-        free_filter_chains(step->chains, step->chains_count);
-      }
-      if (step->mixer) {
-        mixer_free(step->mixer);
-      }
-      if (step->processor) {
-        dsp_processor_free(step->processor);
-      }
-    }
-    free(pipeline->steps);
+    free_exec_steps(pipeline->steps, pipeline->steps_count);
   }
   free(pipeline);
 }
@@ -321,7 +340,7 @@ static parallel_filter_chain_t* slice_chains(const parallel_filter_chain_t* src,
       if (take > 0) {
         out[c].filters = (filter_t**)calloc(take, sizeof(filter_t*));
         if (!out[c].filters) {
-          free_filter_chains(out, chains_count);
+          free_filter_chains_shallow(out, chains_count);
           return NULL;
         }
         memcpy(out[c].filters, src[c].filters + start,
@@ -433,6 +452,9 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   size_t* all_chs = NULL;
   parallel_filter_chain_t* new_chains = NULL;
   size_t new_chains_count = 0;
+  pipeline_exec_step_t* lowered_steps = NULL;
+  size_t lowered_count = 0;
+  size_t lowered_cap = 0;
 
   pipeline->frames_per_chunk =
       explicit_chunk_size > 0 ? explicit_chunk_size : config->devices.chunksize;
@@ -774,10 +796,6 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   // Lower biquad sections of parallel filter steps into biquad processors
   // by splitting chains into positional runs (matching upstream
   // split_into_runs).
-  pipeline_exec_step_t* lowered_steps = NULL;
-  size_t lowered_count = 0;
-  size_t lowered_cap = 0;
-
   for (size_t s = 0; s < exec_idx; s++) {
     pipeline_exec_step_t* step = &pipeline->steps[s];
     if (step->type == EXEC_STEP_PARALLEL_FILTERS && step->chains &&
@@ -791,6 +809,10 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
                             *step)) {
         goto cleanup_fail;
       }
+      step->chains = NULL;
+      step->chains_count = 0;
+      step->mixer = NULL;
+      step->processor = NULL;
     }
   }
 
@@ -803,6 +825,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
 cleanup_fail:
   if (all_chs) free(all_chs);
   if (new_chains) free_filter_chains(new_chains, new_chains_count);
+  if (lowered_steps) free_exec_steps(lowered_steps, lowered_count);
   if (pipeline) pipeline_free(pipeline);
   return NULL;
 }
@@ -955,7 +978,12 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
         break;
       }
       case EXEC_STEP_MIXER: {
-        if (mixer_idx >= pipeline->scratches_for_mixers_count) continue;
+        if (mixer_idx >= pipeline->scratches_for_mixers_count) {
+          logger_warn(&g_logger,
+                      "Mixer scratch buffer index out of bounds: %zu >= %zu",
+                      mixer_idx, pipeline->scratches_for_mixers_count);
+          return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
+        }
         audio_chunk_t* scratch = pipeline->scratches_for_mixers[mixer_idx];
         mixer_error_t err = mixer_process(step->mixer, current_chunk, scratch);
         if (err != MIXER_OK) {
@@ -969,8 +997,15 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
             pipeline->last_error_got = audio_chunk_get_frames(scratch);
             return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
           }
-          pipeline->last_error_needed = mixer_get_channels_out(step->mixer);
-          pipeline->last_error_got = audio_chunk_get_channels(scratch);
+          size_t current_in_ch = audio_chunk_get_channels(current_chunk);
+          size_t mixer_in_ch = mixer_get_channels_in(step->mixer);
+          if (current_in_ch != mixer_in_ch) {
+            pipeline->last_error_needed = mixer_in_ch;
+            pipeline->last_error_got = current_in_ch;
+          } else {
+            pipeline->last_error_needed = mixer_get_channels_out(step->mixer);
+            pipeline->last_error_got = audio_chunk_get_channels(scratch);
+          }
           return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
         }
         current_chunk = scratch;
@@ -986,15 +1021,22 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
     }
   }
 
-  // 5. Copy the final computed samples from workingChunk to caller-supplied
+  // 5. Copy the final computed samples from current_chunk to caller-supplied
   // output buffer.
   audio_chunk_set_valid_frames(output, valid_frames);
+  size_t current_channels = audio_chunk_get_channels(current_chunk);
   for (size_t ch = 0; ch < pipeline->expected_out_channels; ch++) {
-    if (ch >= audio_chunk_get_channels(current_chunk)) break;
-    waveform_t src = audio_chunk_get_channel(current_chunk, ch);
     mutable_waveform_t dst = audio_chunk_get_channel(output, ch);
-    if (src && dst && valid_frames > 0) {
-      memcpy(dst, src, valid_frames * sizeof(double));
+    if (!dst || valid_frames == 0) continue;
+    if (ch < current_channels) {
+      waveform_t src = audio_chunk_get_channel(current_chunk, ch);
+      if (src) {
+        memcpy(dst, src, valid_frames * sizeof(double));
+      } else {
+        dsp_ops_clear(dst, valid_frames);
+      }
+    } else {
+      dsp_ops_clear(dst, valid_frames);
     }
   }
   return PIPELINE_OK;
@@ -1009,7 +1051,10 @@ size_t pipeline_get_last_error_got(const pipeline_t* pipeline) {
 }
 
 int pipeline_config_validate(const dsp_config_t* config, config_error_t* err) {
-  if (!config) return 0;
+  if (!config) {
+    config_error_set(err, CONFIG_ERR_PARSE, "Configuration is null");
+    return -1;
+  }
 
   size_t num_channels =
       capture_device_config_get_channels(&config->devices.capture);
