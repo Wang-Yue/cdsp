@@ -391,8 +391,8 @@ double BiquadCoefficients::gainDB(double f, int sampleRate) const {
     double w = 2.0 * M_PI * f / static_cast<double>(sampleRate);
     double cosW = std::cos(w);
     double sinW = std::sin(w);
-    double cos2W = std::cos(2.0 * w);
-    double sin2W = std::sin(2.0 * w);
+    double cos2W = 2.0 * cosW * cosW - 1.0;
+    double sin2W = 2.0 * sinW * cosW;
 
     double numRe = b0 + b1 * cosW + b2 * cos2W;
     double numIm = -b1 * sinW - b2 * sin2W;
@@ -413,8 +413,8 @@ double BiquadCoefficients::phaseRad(double f, int sampleRate) const {
     double w = 2.0 * M_PI * f / static_cast<double>(sampleRate);
     double cosW = std::cos(w);
     double sinW = std::sin(w);
-    double cos2W = std::cos(2.0 * w);
-    double sin2W = std::sin(2.0 * w);
+    double cos2W = 2.0 * cosW * cosW - 1.0;
+    double sin2W = 2.0 * sinW * cosW;
 
     double numRe = b0 + b1 * cosW + b2 * cos2W;
     double numIm = -b1 * sinW - b2 * sin2W;

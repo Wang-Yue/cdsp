@@ -16,6 +16,7 @@
 #include <QTabWidget>     // for QTabWidget
 #include <QTableWidget>   // for QTableWidget
 #include <QTextEdit>      // for QTextEdit
+#include <QTimer>         // for QTimer
 #include <QWidget>        // for QWidget
 #include <memory>         // for shared_ptr
 
@@ -71,6 +72,7 @@ private:
 
     void setupUi();
     void updateBandChipsBar();
+    void updateBandChipText(int bandIdx);
     void applyConfig();
 };
 

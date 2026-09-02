@@ -230,7 +230,7 @@ void EQPresetDetailView::setupUi() {
 
             m_diagramWidget->setPreset(m_preset);
             applyConfig();
-            updateBandChipsBar();
+            updateBandChipText(idx);
         }
     };
     m_diagramWidget->onBandQChanged = [this](int idx, double val) {
@@ -245,7 +245,7 @@ void EQPresetDetailView::setupUi() {
             }
             m_diagramWidget->setPreset(m_preset);
             applyConfig();
-            updateBandChipsBar();
+            updateBandChipText(idx);
         }
     };
     m_diagramWidget->onBandSelected = [this](int idx) {
@@ -716,6 +716,7 @@ void EQPresetDetailView::updateBandChipsBar() {
         bool isEnabled = b.isEnabled;
 
         auto chip = new QFrame(m_bandChipsWidget);
+        chip->setObjectName(QString("bandChip_%1").arg(bandIdx));
         chip->setFrameShape(isSelected ? QFrame::Box : QFrame::StyledPanel);
         chip->setFrameShadow(isSelected ? QFrame::Plain : QFrame::Raised);
         chip->setLineWidth(isSelected ? 2 : 1);
@@ -784,6 +785,7 @@ void EQPresetDetailView::updateBandChipsBar() {
             }
 
             auto valLbl = new QLabel(valText, chip);
+            valLbl->setObjectName("valLbl");
             valLbl->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
             valLbl->setEnabled(isEnabled);
             valLbl->setAttribute(Qt::WA_TransparentForMouseEvents, true);
@@ -914,6 +916,45 @@ void EQPresetDetailView::onCopyCSV() {
         if (m_csvCopyBtn)
             m_csvCopyBtn->setText("Copy Text");
     });
+}
+
+void EQPresetDetailView::updateBandChipText(int bandIdx) {
+    if (bandIdx < 0 || bandIdx >= static_cast<int>(m_preset.bands.size()) || !m_bandChipsWidget)
+        return;
+    const auto& b = m_preset.bands[bandIdx];
+    if (b.type == EQBandType::Free)
+        return;
+
+    auto chip = m_bandChipsWidget->findChild<QFrame*>(QString("bandChip_%1").arg(bandIdx));
+    if (!chip)
+        return;
+    auto valLbl = chip->findChild<QLabel*>("valLbl");
+    if (!valLbl)
+        return;
+
+    double displayFreq = b.freq;
+    if (b.type == EQBandType::GeneralNotch)
+        displayFreq = b.freqNotch;
+    else if (b.type == EQBandType::LinkwitzTransform)
+        displayFreq = b.freqTarget;
+
+    QString valText = QString("%1Hz").arg(static_cast<int>(std::round(displayFreq)));
+    if (eqBandTypeHasGain(b.type)) {
+        valText += QString(" %1%2dB").arg(b.gain >= 0 ? "+" : "").arg(b.gain, 0, 'f', 1);
+    }
+    if (eqBandTypeHasQ(b.type)) {
+        if (b.type == EQBandType::GeneralNotch)
+            valText += QString(" Qp:%1").arg(b.qPole, 0, 'f', 2);
+        else if (b.type == EQBandType::LinkwitzTransform)
+            valText += QString(" Qt:%1").arg(b.qTarget, 0, 'f', 2);
+        else if (b.useSlope)
+            valText += QString(" S:%1").arg(b.slope, 0, 'f', 1);
+        else if (b.useBandwidth)
+            valText += QString(" BW:%1").arg(b.bandwidth, 0, 'f', 2);
+        else
+            valText += QString(" Q:%1").arg(b.q, 0, 'f', 2);
+    }
+    valLbl->setText(valText);
 }
 
 void EQPresetDetailView::applyConfig() {

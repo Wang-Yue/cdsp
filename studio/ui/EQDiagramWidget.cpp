@@ -31,6 +31,9 @@
 
 EQDiagramWidget::EQDiagramWidget(QWidget* parent) : QWidget(parent) {
     setMouseTracking(true);
+    m_gridFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    m_gridFont.setPointSize(9);
+    m_readoutFont = QFont("sans-serif", 9, QFont::Medium);
 }
 
 EQDiagramWidget::~EQDiagramWidget() {
@@ -135,30 +138,29 @@ QColor EQDiagramWidget::bandColor(int index) {
 double EQDiagramWidget::freqToX(double f, double width) const {
     if (width <= 0.0)
         return 0.0;
-    double minLog = std::log10(std::max(1.0, fMin));
-    double maxLog = std::log10(std::max(fMin + 1.0, fMax));
     double logF = std::log10(std::max(fMin, f));
-    return width * (logF - minLog) / (maxLog - minLog);
+    return width * (logF - minLog) / logDiff;
 }
 
 double EQDiagramWidget::xToFreq(double x, double width) const {
-    double minLog = std::log10(std::max(1.0, fMin));
-    double maxLog = std::log10(std::max(fMin + 1.0, fMax));
-    double ratio = std::max(0.0, std::min(1.0, width > 0.0 ? (x / width) : 0.0));
-    return std::pow(10.0, minLog + ratio * (maxLog - minLog));
+    if (width <= 0.0)
+        return fMin;
+    double ratio = std::max(0.0, std::min(1.0, x / width));
+    return std::pow(10.0, minLog + ratio * logDiff);
 }
 
 double EQDiagramWidget::dbToY(double db, double height) const {
     if (height <= 0.0)
         return 0.0;
-    double denom = (dbMax > dbMin) ? (dbMax - dbMin) : 1.0;
-    double ratio = (db - dbMin) / denom;
+    double ratio = (db - dbMin) / dbRange;
     return height * (1.0 - ratio);
 }
 
 double EQDiagramWidget::yToDb(double y, double height) const {
-    double ratio = 1.0 - (height > 0.0 ? (y / height) : 0.0);
-    return dbMin + ratio * (dbMax - dbMin);
+    if (height <= 0.0)
+        return 0.0;
+    double ratio = 1.0 - (y / height);
+    return dbMin + ratio * dbRange;
 }
 
 void EQDiagramWidget::paintEvent(QPaintEvent* event) {
@@ -224,9 +226,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     }
 
     // Grid Lines
-    QFont gridMono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    gridMono.setPointSize(9);
-    painter.setFont(gridMono);
+    painter.setFont(m_gridFont);
     QColor gridPenColor = palette().color(QPalette::Mid);
     for (double db = -18.0; db <= 18.0; db += 6.0) {
         if (db == 0.0)
@@ -253,6 +253,23 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     painter.drawLine(0, zeroY, w, zeroY);
     painter.setPen(palette().color(QPalette::PlaceholderText));
     painter.drawText(28, zeroY - 4, "0 dB");
+
+    // Precompute active band biquad coefficients once for the frame
+    struct ActiveBandCoeffs {
+        size_t index;
+        BiquadCoefficients coeffs;
+    };
+    std::vector<ActiveBandCoeffs> activeBands;
+    activeBands.reserve(m_preset.bands.size());
+    for (size_t i = 0; i < m_preset.bands.size(); ++i) {
+        const auto& band = m_preset.bands[i];
+        if (!band.isEnabled)
+            continue;
+        auto coeffs = band.coefficients(sampleRate);
+        if (coeffs.has_value()) {
+            activeBands.push_back({i, coeffs.value()});
+        }
+    }
 
     // Reference Target & Measured Frequency Response Curves Overlay
     if (m_overlay.active) {
@@ -313,8 +330,11 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
                 QPainterPath correctedPath;
                 for (size_t i = 0; i < m_overlay.frequencies.size(); ++i) {
                     double f = m_overlay.frequencies[i];
-                    double db = std::max(-30.0, std::min(30.0, m_overlay.measuredMagDB[i] - normDB +
-                                                                   m_preset.combinedResponse(f, sampleRate)));
+                    double eqGain = m_preset.preampGain;
+                    for (const auto& ab : activeBands) {
+                        eqGain += ab.coeffs.gainDB(f, sampleRate);
+                    }
+                    double db = std::max(-30.0, std::min(30.0, m_overlay.measuredMagDB[i] - normDB + eqGain));
                     double x = freqToX(f, w);
                     double y = dbToY(db, h);
                     if (i == 0)
@@ -328,27 +348,38 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
         }
     }
 
-    // Individual Band Curves
-    for (size_t i = 0; i < m_preset.bands.size(); ++i) {
-        const auto& band = m_preset.bands[i];
-        if (!band.isEnabled)
-            continue;
+    // Evaluate individual band curves and combined response in a single pass
+    std::vector<QPainterPath> bandPaths(m_preset.bands.size());
+    QPainterPath totalPath;
 
-        QPainterPath path;
-        for (int x = 0; x <= w; x += 2) {
-            double f = xToFreq(x, w);
-            double db = band.response(f, sampleRate);
+    for (int x = 0; x <= w; x += 2) {
+        double f = xToFreq(x, w);
+        double totalDb = m_preset.preampGain;
+
+        for (const auto& ab : activeBands) {
+            double db = ab.coeffs.gainDB(f, sampleRate);
+            totalDb += db;
             double y = dbToY(db, h);
             if (x == 0)
-                path.moveTo(x, y);
+                bandPaths[ab.index].moveTo(x, y);
             else
-                path.lineTo(x, y);
+                bandPaths[ab.index].lineTo(x, y);
         }
-        QColor c = bandColor(static_cast<int>(i));
-        bool isSelected = (static_cast<int>(i) == m_selectedIndex);
-        bool isHovered = (static_cast<int>(i) == m_hoveredIndex);
+
+        double totalY = dbToY(totalDb, h);
+        if (x == 0)
+            totalPath.moveTo(x, totalY);
+        else
+            totalPath.lineTo(x, totalY);
+    }
+
+    // Draw Individual Band Curves
+    for (const auto& ab : activeBands) {
+        QColor c = bandColor(static_cast<int>(ab.index));
+        bool isSelected = (static_cast<int>(ab.index) == m_selectedIndex);
+        bool isHovered = (static_cast<int>(ab.index) == m_hoveredIndex);
         painter.setPen(QPen(c, isSelected ? 2.0 : (isHovered ? 1.5 : 1.0)));
-        painter.drawPath(path);
+        painter.drawPath(bandPaths[ab.index]);
     }
 
     // Equal-Loudness Contour Reference Curve Overlay (after individual band curves)
@@ -395,17 +426,6 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
     }
 
     // Combined Response Curve Line Stroke (no fill)
-    QPainterPath totalPath;
-    for (int x = 0; x <= w; x += 2) {
-        double f = xToFreq(x, w);
-        double db = m_preset.combinedResponse(f, sampleRate);
-        double y = dbToY(db, h);
-        if (x == 0) {
-            totalPath.moveTo(x, y);
-        } else {
-            totalPath.lineTo(x, y);
-        }
-    }
     painter.setPen(QPen(palette().color(QPalette::Highlight), 2.5));
     painter.drawPath(totalPath);
 
@@ -524,9 +544,8 @@ void EQDiagramWidget::drawOverlayReadout(QPainter& painter, int w, int h) {
                    .arg(m_preset.bands.size());
     }
 
-    QFont font("sans-serif", 9, QFont::Medium);
-    painter.setFont(font);
-    QFontMetrics fm(font);
+    painter.setFont(m_readoutFont);
+    QFontMetrics fm(m_readoutFont);
     int textW = fm.horizontalAdvance(text) + 20;
     int maxCardW = std::max(60, w - 24);
     int cardW = std::min(textW, maxCardW);

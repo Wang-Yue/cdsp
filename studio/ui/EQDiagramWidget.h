@@ -80,8 +80,15 @@ private:
 
     double fMin = 20.0;
     double fMax = 20000.0;
+    double minLog = 1.3010299956639812; // std::log10(20.0)
+    double maxLog = 4.301029995663981;  // std::log10(20000.0)
+    double logDiff = 3.0;               // maxLog - minLog
     double dbMin = -24.0;
     double dbMax = 24.0;
+    double dbRange = 48.0;
+
+    QFont m_gridFont;
+    QFont m_readoutFont;
 
     double freqToX(double f, double width) const;
     double xToFreq(double x, double width) const;
