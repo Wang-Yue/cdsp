@@ -26,9 +26,7 @@ Rather than introducing platform-specific forks or breaking modifications into t
 - **WebSocket API Compatibility**: The control protocol implements the identical WebSocket interface, including format querying, volume control, level-meter streaming, and live pipeline reloading.
 
 ### 1.3 Novel Codebase & Licensing
-It is critical to note that this project is a **complete architectural rewrite**, not a line-by-line translation of the Rust codebase. The underlying technology—ranging from custom wait-free SPSC primitives to GCD/thread pool dynamic scheduling, Accelerate vectorization, and deferred control-thread garbage collection—is entirely distinct. 
-
-Consequently, the C engine does not inherit or utilize any source code from CamillaDSP, allowing the monitor backend and its integrated engines to be distributed under a custom, permissive license distinct from CamillaDSP's original GPLv3/MPL2.0 licenses.
+The engine links against and utilizes FFTW for high-performance FFT and convolution routines. Consequently, CDSP is licensed and distributed under the GNU General Public License (GPLv3).
 
 ### 1.4 Design Safety and C Portability
 The alternative codebase focuses entirely on the C engine (`CDSP`) to achieve maximum cross-platform portability across macOS, Linux, and Windows. To ensure design safety and correctness during the initial development:
