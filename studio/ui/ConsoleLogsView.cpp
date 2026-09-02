@@ -31,6 +31,7 @@
 #include <QTableView>           // for QTableView
 #include <QTextLayout>          // for QTextLayout, QTextLine
 #include <QTextOption>          // for QTextOption
+#include <QTimer>               // for QTimer
 #include <QVBoxLayout>          // for QVBoxLayout
 #include <QVariant>             // for QVariant
 #include <Qt>                   // for AlignmentFlag, ContextMenuPolicy, ItemDataRole, TextElideMode, operator|
@@ -41,9 +42,45 @@
 
 namespace {
 
+static int calculateMessageHeight(const QString& text, const QFont& font, int availableWidth) {
+    QFontMetrics fm(font);
+    if (text.isEmpty()) {
+        return std::max(24, fm.lineSpacing() + 8);
+    }
+    availableWidth = std::max(40, availableWidth);
+
+    if (!text.contains('\n') && fm.horizontalAdvance(text) <= availableWidth) {
+        return std::max(24, fm.lineSpacing() + 8);
+    }
+
+    QTextLayout textLayout(text, font);
+    QTextOption opt;
+    opt.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    opt.setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    textLayout.setTextOption(opt);
+
+    textLayout.beginLayout();
+    qreal height = 0;
+    while (true) {
+        QTextLine line = textLayout.createLine();
+        if (!line.isValid()) {
+            break;
+        }
+        line.setLineWidth(availableWidth);
+        height += line.height();
+    }
+    textLayout.endLayout();
+
+    int minSingleLine = fm.lineSpacing();
+    int h = static_cast<int>(std::ceil(height)) + 8;
+    return std::max(24, std::max(h, minSingleLine + 8));
+}
+
 class LogMessageDelegate : public QStyledItemDelegate {
+    QTableView* m_view = nullptr;
+
 public:
-    using QStyledItemDelegate::QStyledItemDelegate;
+    explicit LogMessageDelegate(QTableView* view) : QStyledItemDelegate(view), m_view(view) {}
 
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override {
         QStyleOptionViewItem opt = option;
@@ -76,9 +113,12 @@ public:
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
         QStyleOptionViewItem opt = option;
         initStyleOption(&opt, index);
-        QFontMetrics fm(opt.font);
-        int h = fm.lineSpacing() + 8;
-        return QSize(100, std::max(24, h));
+        int colWidth = (m_view && m_view->columnWidth(index.column()) > 20)
+                           ? m_view->columnWidth(index.column())
+                           : (opt.rect.width() > 20 ? opt.rect.width() : 200);
+        int availableWidth = std::max(40, colWidth - 12);
+        int h = calculateMessageHeight(opt.text, opt.font, availableWidth);
+        return QSize(colWidth, h);
     }
 };
 
@@ -90,19 +130,23 @@ ConsoleLogsView::ConsoleLogsView(QWidget* parent) : QWidget(parent) {
 
 void ConsoleLogsView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    updateAllRowHeights();
-    if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model && m_model->rowCount() > 0) {
-        m_table->scrollToBottom();
-    }
+    QTimer::singleShot(0, this, [this]() {
+        updateAllRowHeights();
+        if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model && m_model->rowCount() > 0) {
+            m_table->scrollToBottom();
+        }
+    });
 }
 
 void ConsoleLogsView::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
-    int colWidth = m_table ? m_table->columnWidth(2) : 0;
-    if (colWidth > 0 && colWidth != m_lastColWidth) {
-        m_lastColWidth = colWidth;
-        updateAllRowHeights();
-    }
+    QTimer::singleShot(0, this, [this]() {
+        int colWidth = m_table ? m_table->columnWidth(2) : 0;
+        if (colWidth > 0 && colWidth != m_lastColWidth) {
+            m_lastColWidth = colWidth;
+            updateAllRowHeights();
+        }
+    });
 }
 
 void ConsoleLogsView::updateRowHeight(int row) {
@@ -112,22 +156,19 @@ void ConsoleLogsView::updateRowHeight(int row) {
     if (colWidth <= 40 && m_table->viewport()) {
         colWidth = m_table->viewport()->width() - m_table->columnWidth(0) - m_table->columnWidth(1);
     }
-    int availableWidth = std::max(40, colWidth - 14);
+    if (colWidth <= 40 && width() > 0) {
+        colWidth = width() - 32 - m_table->columnWidth(0) - m_table->columnWidth(1);
+    }
+    if (colWidth <= 40) {
+        colWidth = 400;
+    }
+    int availableWidth = std::max(40, colWidth - 12);
 
     QModelIndex idx = m_model->index(row, 2);
     QString text = m_model->data(idx, Qt::DisplayRole).toString();
     QFont font = m_model->data(idx, Qt::FontRole).value<QFont>();
 
-    int h = 26;
-    if (!text.isEmpty()) {
-        QFontMetrics fm(font);
-        if (!text.contains('\n') && fm.horizontalAdvance(text) < availableWidth) {
-            h = std::max(24, fm.lineSpacing() + 8);
-        } else {
-            QRect bounds = fm.boundingRect(QRect(0, 0, availableWidth, 0), Qt::TextWordWrap | Qt::AlignLeft, text);
-            h = std::max(24, bounds.height() + 8);
-        }
-    }
+    int h = calculateMessageHeight(text, font, availableWidth);
     m_table->setRowHeight(row, h);
 }
 
@@ -247,10 +288,17 @@ void ConsoleLogsView::setupUi() {
     m_table->horizontalHeader()->setVisible(true);
     m_table->horizontalHeader()->setStretchLastSection(true);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
-    m_table->setColumnWidth(0, 95);
+    m_table->setColumnWidth(0, 115);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
-    m_table->setColumnWidth(1, 60);
+    m_table->setColumnWidth(1, 70);
     m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    connect(m_table->horizontalHeader(), &QHeaderView::sectionResized, this,
+            [this](int logicalIndex, int /*oldSize*/, int newSize) {
+                if (logicalIndex == 2 && newSize > 0 && newSize != m_lastColWidth) {
+                    m_lastColWidth = newSize;
+                    updateAllRowHeights();
+                }
+            });
     m_table->setShowGrid(false);
     m_table->setAlternatingRowColors(true);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -262,13 +310,15 @@ void ConsoleLogsView::setupUi() {
 
     connect(m_model, &QAbstractItemModel::rowsInserted, this, [this](const QModelIndex& parent, int first, int last) {
         Q_UNUSED(parent);
-        for (int r = first; r <= last; ++r) {
-            updateRowHeight(r);
+        if (isVisible()) {
+            for (int r = first; r <= last; ++r) {
+                updateRowHeight(r);
+            }
+            if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model->rowCount() > 0) {
+                m_table->scrollToBottom();
+            }
         }
         updateCountLabel();
-        if (m_autoScrollCheck && m_autoScrollCheck->isChecked() && m_model->rowCount() > 0) {
-            m_table->scrollToBottom();
-        }
     });
     connect(m_model, &QAbstractItemModel::modelReset, this, [this]() {
         updateAllRowHeights();
