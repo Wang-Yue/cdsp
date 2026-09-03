@@ -6,6 +6,7 @@
 #ifndef CLIB_UTILS_FLOAT_HELPERS_H
 #define CLIB_UTILS_FLOAT_HELPERS_H
 
+#include <complex.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -267,10 +268,28 @@ static inline void dsp_ops_float_zvabs(const float* real, const float* imag,
 }
 
 /**
+ * @brief Compute the absolute magnitude of an interleaved float complex array.
+ *
+ * @param spec Interleaved complex input vector (length count).
+ * @param magnitudes Output float array (length count).
+ * @param count Number of complex elements.
+ */
+static inline void dsp_ops_float_complex_abs(const float complex* spec,
+                                             float* magnitudes, size_t count) {
+  const float* ptr = (const float*)spec;
+  PRAGMA_VECTORIZE_LOOP
+  for (size_t i = 0; i < count; i++) {
+    float re = ptr[2 * i];
+    float im = ptr[2 * i + 1];
+    magnitudes[i] = sqrtf(re * re + im * im);
+  }
+}
+
+/**
  * @brief Convert linear amplitude values to decibels (dBFS).
  */
 static inline void dsp_ops_float_vdbcon(const float* vector, float reference,
-                                         float* result, size_t count) {
+                                        float* result, size_t count) {
 #if defined(ENABLE_ACCELERATE)
   vDSP_vdbcon(vector, 1, &reference, result, 1, count, 1);
 #else

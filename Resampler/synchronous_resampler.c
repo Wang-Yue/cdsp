@@ -121,8 +121,7 @@ struct synchronous_resampler {
   size_t shared_bins;
   // Anti-aliasing filter, pre-FFT'd at init. `sub_fft_in + 1`
   // unique bins. Stored as raw pointer to bypass overhead.
-  double* filter_spec_re;
-  double* filter_spec_im;
+  complex_t* filter_spec;
   // Real-input FFT engines. The forward engine handles the zero-padded
   // input block (length `2 · sub_fft_in`); the inverse engine
   // reconstructs the output block (length `2 · sub_fft_out`).
@@ -135,11 +134,10 @@ struct synchronous_resampler {
   // cache footprint and avoid intermediate allocations.
   //   `workingTime`: holds the 2N zero-padded input block for forward FFT,
   //                  and the 2P overlap-add output block from inverse FFT.
-  //   `workingSpecRe`/`Im`: holds the shared low-frequency bins during
+  //   `working_spec`: holds the shared low-frequency bins during
   //   filtering.
   double* working_time;
-  double* working_spec_re;
-  double* working_spec_im;
+  complex_t* working_spec;
 };
 
 #include <math.h>
@@ -176,8 +174,7 @@ static void synchronous_resampler_free(void* impl) {
   if (!resampler) return;
   if (resampler->input_fft) real_fft_free(resampler->input_fft);
   if (resampler->output_fft) real_fft_free(resampler->output_fft);
-  if (resampler->filter_spec_re) cdsp_aligned_free(resampler->filter_spec_re);
-  if (resampler->filter_spec_im) cdsp_aligned_free(resampler->filter_spec_im);
+  if (resampler->filter_spec) cdsp_aligned_free(resampler->filter_spec);
   if (resampler->carries) {
     for (size_t ch = 0; ch < resampler->channels; ch++) {
       if (resampler->carries[ch]) cdsp_aligned_free(resampler->carries[ch]);
@@ -185,8 +182,7 @@ static void synchronous_resampler_free(void* impl) {
     free(resampler->carries);
   }
   if (resampler->working_time) cdsp_aligned_free(resampler->working_time);
-  if (resampler->working_spec_re) cdsp_aligned_free(resampler->working_spec_re);
-  if (resampler->working_spec_im) cdsp_aligned_free(resampler->working_spec_im);
+  if (resampler->working_spec) cdsp_aligned_free(resampler->working_spec);
   free(resampler);
 }
 
@@ -280,17 +276,15 @@ static resampler_error_t synchronous_resampler_process(
 
       // Step 2. Forward 2N-point real FFT.
       real_fft_forward(resampler->input_fft, resampler->working_time,
-                       resampler->working_spec_re, resampler->working_spec_im);
+                       resampler->working_spec);
 
       // Step 3. Pointwise multiply input spectrum by the pre-FFT'd
       // filter. Only the `sharedBins` matter since bins above are
       // dropped on the output side; doing the multiply in place over
       // that span avoids touching the upper half.
-      dsp_ops_complex_multiply(
-          resampler->working_spec_re, resampler->working_spec_im,
-          resampler->filter_spec_re, resampler->filter_spec_im,
-          resampler->working_spec_re, resampler->working_spec_im,
-          resampler->shared_bins);
+      dsp_ops_complex_multiply_interleaved(
+          resampler->working_spec, resampler->filter_spec,
+          resampler->working_spec, resampler->shared_bins);
 
       // Step 4. Build the output spectrum of length `2·outputBlockLen`:
       // copy the filtered low bins and zero the rest. For upsampling
@@ -300,15 +294,13 @@ static resampler_error_t synchronous_resampler_process(
       // the band-limiting step.
       if (resampler->sub_fft_out + 1 > resampler->shared_bins) {
         size_t zero_count = resampler->sub_fft_out + 1 - resampler->shared_bins;
-        memset(resampler->working_spec_re + resampler->shared_bins, 0,
-               zero_count * sizeof(double));
-        memset(resampler->working_spec_im + resampler->shared_bins, 0,
-               zero_count * sizeof(double));
+        memset(resampler->working_spec + resampler->shared_bins, 0,
+               zero_count * sizeof(complex_t));
       }
 
       // Step 5. Inverse 2P-point real FFT to time domain (P = outputBlockLen).
-      real_fft_inverse(resampler->output_fft, resampler->working_spec_re,
-                       resampler->working_spec_im, resampler->working_time);
+      real_fft_inverse(resampler->output_fft, resampler->working_spec,
+                       resampler->working_time);
 
       // Step 6. Overlap-add: write `result[0..P) + carry` as the chunk's
       // output samples, and save `result[P..2P)` for the next chunk's
@@ -434,11 +426,9 @@ static void* synchronous_resampler_create_impl(size_t channels,
     return NULL;
   }
 
-  resampler->filter_spec_re =
-      (double*)cdsp_aligned_alloc(64, (sub_fft_in + 1) * sizeof(double));
-  resampler->filter_spec_im =
-      (double*)cdsp_aligned_alloc(64, (sub_fft_in + 1) * sizeof(double));
-  if (!resampler->filter_spec_re || !resampler->filter_spec_im) {
+  resampler->filter_spec =
+      (complex_t*)cdsp_aligned_alloc(64, (sub_fft_in + 1) * sizeof(complex_t));
+  if (!resampler->filter_spec) {
     config_error_set(
         err, CONFIG_ERR_PARSE,
         "SynchronousResampler: Failed to allocate filter spectrum buffer");
@@ -446,10 +436,8 @@ static void* synchronous_resampler_create_impl(size_t channels,
     synchronous_resampler_free(resampler);
     return NULL;
   }
-  memset(resampler->filter_spec_re, 0, (sub_fft_in + 1) * sizeof(double));
-  memset(resampler->filter_spec_im, 0, (sub_fft_in + 1) * sizeof(double));
-  real_fft_forward(resampler->input_fft, filter_time, resampler->filter_spec_re,
-                   resampler->filter_spec_im);
+  memset(resampler->filter_spec, 0, (sub_fft_in + 1) * sizeof(complex_t));
+  real_fft_forward(resampler->input_fft, filter_time, resampler->filter_spec);
   free(filter_time);
 
   resampler->carries = (double**)calloc(channels, sizeof(double*));
@@ -477,12 +465,9 @@ static void* synchronous_resampler_create_impl(size_t channels,
   size_t max_len = sub_fft_in > sub_fft_out ? sub_fft_in : sub_fft_out;
   resampler->working_time =
       (double*)cdsp_aligned_alloc(64, 2 * max_len * sizeof(double));
-  resampler->working_spec_re =
-      (double*)cdsp_aligned_alloc(64, (max_len + 1) * sizeof(double));
-  resampler->working_spec_im =
-      (double*)cdsp_aligned_alloc(64, (max_len + 1) * sizeof(double));
-  if (!resampler->working_time || !resampler->working_spec_re ||
-      !resampler->working_spec_im) {
+  resampler->working_spec =
+      (complex_t*)cdsp_aligned_alloc(64, (max_len + 1) * sizeof(complex_t));
+  if (!resampler->working_time || !resampler->working_spec) {
     config_error_set(
         err, CONFIG_ERR_PARSE,
         "SynchronousResampler: Failed to allocate working buffers");
@@ -490,8 +475,7 @@ static void* synchronous_resampler_create_impl(size_t channels,
     return NULL;
   }
   memset(resampler->working_time, 0, 2 * max_len * sizeof(double));
-  memset(resampler->working_spec_re, 0, (max_len + 1) * sizeof(double));
-  memset(resampler->working_spec_im, 0, (max_len + 1) * sizeof(double));
+  memset(resampler->working_spec, 0, (max_len + 1) * sizeof(complex_t));
 
   return resampler;
 }

@@ -31,8 +31,7 @@ struct spectrum_analyzer {
   // Preallocated reusable scratch buffers to eliminate frame-by-frame
   // allocations
   float* data;
-  float* realp;
-  float* imagp;
+  complexf_t* spec;
   float* magnitudes;
   float* db_magnitudes;
 
@@ -62,8 +61,8 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
   analyzer->fft_setup = real_fftf_create(4096);
   analyzer->window = (float*)calloc(analyzer->fft_n, sizeof(float));
   analyzer->data = (float*)calloc(analyzer->fft_n, sizeof(float));
-  analyzer->realp = (float*)calloc(analyzer->fft_n / 2 + 1, sizeof(float));
-  analyzer->imagp = (float*)calloc(analyzer->fft_n / 2 + 1, sizeof(float));
+  analyzer->spec =
+      (complexf_t*)calloc(analyzer->fft_n / 2 + 1, sizeof(complexf_t));
   analyzer->magnitudes = (float*)calloc(analyzer->fft_n / 2 + 1, sizeof(float));
   analyzer->db_magnitudes =
       (float*)calloc(analyzer->fft_n / 2 + 1, sizeof(float));
@@ -87,9 +86,9 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
       (float*)calloc(analyzer->out_capacity, sizeof(float));
 
   if (!analyzer->fft_setup || !analyzer->window || !analyzer->data ||
-      !analyzer->realp || !analyzer->imagp || !analyzer->magnitudes ||
-      !analyzer->db_magnitudes || !analyzer->plan.frequencies ||
-      !analyzer->plan.ranges || !analyzer->out_magnitudes) {
+      !analyzer->spec || !analyzer->magnitudes || !analyzer->db_magnitudes ||
+      !analyzer->plan.frequencies || !analyzer->plan.ranges ||
+      !analyzer->out_magnitudes) {
     logger_error(&g_logger,
                  "Failed to allocate memory buffers for spectrum analyzer");
     spectrum_analyzer_free(analyzer);
@@ -107,8 +106,7 @@ void spectrum_analyzer_free(spectrum_analyzer_t* analyzer) {
   if (analyzer->fft_setup) real_fftf_free(analyzer->fft_setup);
   if (analyzer->window) free(analyzer->window);
   if (analyzer->data) free(analyzer->data);
-  if (analyzer->realp) free(analyzer->realp);
-  if (analyzer->imagp) free(analyzer->imagp);
+  if (analyzer->spec) free(analyzer->spec);
   if (analyzer->magnitudes) free(analyzer->magnitudes);
   if (analyzer->db_magnitudes) free(analyzer->db_magnitudes);
   if (analyzer->plan.frequencies) free(analyzer->plan.frequencies);
@@ -154,14 +152,12 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
 
   // 2. Perform FFT using unified real_fftf
   size_t half_n = analyzer->fft_n / 2;
-  real_fftf_forward(analyzer->fft_setup, analyzer->data, analyzer->realp,
-                    analyzer->imagp);
+  real_fftf_forward(analyzer->fft_setup, analyzer->data, analyzer->spec);
 
   // 3. Compute magnitudes in dBFS directly into preallocated arrays
   float scale = 2.0f / analyzer->window_sum;
 
-  dsp_ops_float_zvabs(analyzer->realp, analyzer->imagp, analyzer->magnitudes,
-                      half_n + 1);
+  dsp_ops_float_complex_abs(analyzer->spec, analyzer->magnitudes, half_n + 1);
   dsp_ops_float_scalar_multiply(analyzer->magnitudes, scale, half_n + 1);
 
   // Correct scaling for DC and Nyquist (they are not doubled, so scale by 1.0/N

@@ -266,13 +266,11 @@ static double measure_realfft_roundtrip_ns(size_t length, size_t iters) {
 
   size_t spec_len = real_fft_get_spectrum_length(fft);
   double* in_real = (double*)calloc(length, sizeof(double));
-  double* spec_re = (double*)calloc(spec_len, sizeof(double));
-  double* spec_im = (double*)calloc(spec_len, sizeof(double));
+  complex_t* spec = (complex_t*)calloc(spec_len, sizeof(complex_t));
   double* out_real = (double*)calloc(length, sizeof(double));
-  if (!in_real || !spec_re || !spec_im || !out_real) {
+  if (!in_real || !spec || !out_real) {
     if (in_real) free(in_real);
-    if (spec_re) free(spec_re);
-    if (spec_im) free(spec_im);
+    if (spec) free(spec);
     if (out_real) free(out_real);
     real_fft_free(fft);
     return NAN;
@@ -284,16 +282,16 @@ static double measure_realfft_roundtrip_ns(size_t length, size_t iters) {
 
   // Warm-up
   for (size_t i = 0; i < 50; i++) {
-    real_fft_forward(fft, in_real, spec_re, spec_im);
-    real_fft_inverse(fft, spec_re, spec_im, out_real);
+    real_fft_forward(fft, in_real, spec);
+    real_fft_inverse(fft, spec, out_real);
   }
 
   double trials[NUM_TRIALS];
   for (int t = 0; t < NUM_TRIALS; t++) {
     uint64_t t0 = get_time_ns();
     for (size_t i = 0; i < iters; i++) {
-      real_fft_forward(fft, in_real, spec_re, spec_im);
-      real_fft_inverse(fft, spec_re, spec_im, out_real);
+      real_fft_forward(fft, in_real, spec);
+      real_fft_inverse(fft, spec, out_real);
       do_not_optimize(out_real);
     }
     uint64_t t1 = get_time_ns();
@@ -301,8 +299,7 @@ static double measure_realfft_roundtrip_ns(size_t length, size_t iters) {
   }
 
   free(in_real);
-  free(spec_re);
-  free(spec_im);
+  free(spec);
   free(out_real);
   real_fft_free(fft);
 

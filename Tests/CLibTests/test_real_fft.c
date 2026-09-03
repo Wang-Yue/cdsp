@@ -17,19 +17,17 @@ TEST(RealFFTFallbackForPrimeFactors) {
 
   double* input = (double*)calloc(length, sizeof(double));
   input[0] = 1.0;
-  double* spec_re =
-      (double*)calloc(real_fft_get_spectrum_length(real_fft), sizeof(double));
-  double* spec_im =
-      (double*)calloc(real_fft_get_spectrum_length(real_fft), sizeof(double));
+  complex_t* spec = (complex_t*)calloc(real_fft_get_spectrum_length(real_fft),
+                                       sizeof(complex_t));
 
-  real_fft_forward(real_fft, input, spec_re, spec_im);
+  real_fft_forward(real_fft, input, spec);
   for (size_t k = 0; k < real_fft_get_spectrum_length(real_fft); k++) {
-    double mag = sqrt(spec_re[k] * spec_re[k] + spec_im[k] * spec_im[k]);
+    double mag = cabs(spec[k]);
     ASSERT_NEAR(1.0, mag, 1e-12);
   }
 
   double* recovered = (double*)calloc(length, sizeof(double));
-  real_fft_inverse(real_fft, spec_re, spec_im, recovered);
+  real_fft_inverse(real_fft, spec, recovered);
   ASSERT_NEAR((double)length, recovered[0], 1e-10);
   for (size_t k = 1; k < length; k++) {
     ASSERT_NEAR(0.0, recovered[k], 1e-10);
@@ -37,8 +35,7 @@ TEST(RealFFTFallbackForPrimeFactors) {
 
   real_fft_free(real_fft);
   free(input);
-  free(spec_re);
-  free(spec_im);
+  free(spec);
   free(recovered);
 }
 
@@ -52,19 +49,17 @@ TEST(RealFFTVDSPDFTInnerRoundtrip) {
 
     double* input = (double*)calloc(length, sizeof(double));
     input[0] = 1.0;
-    double* spec_re =
-        (double*)calloc(real_fft_get_spectrum_length(real_fft), sizeof(double));
-    double* spec_im =
-        (double*)calloc(real_fft_get_spectrum_length(real_fft), sizeof(double));
+    complex_t* spec = (complex_t*)calloc(real_fft_get_spectrum_length(real_fft),
+                                         sizeof(complex_t));
 
-    real_fft_forward(real_fft, input, spec_re, spec_im);
+    real_fft_forward(real_fft, input, spec);
     for (size_t k = 0; k < real_fft_get_spectrum_length(real_fft); k++) {
-      double mag = sqrt(spec_re[k] * spec_re[k] + spec_im[k] * spec_im[k]);
+      double mag = cabs(spec[k]);
       ASSERT_NEAR(1.0, mag, 1e-12);
     }
 
     double* recovered = (double*)calloc(length, sizeof(double));
-    real_fft_inverse(real_fft, spec_re, spec_im, recovered);
+    real_fft_inverse(real_fft, spec, recovered);
     ASSERT_NEAR((double)length, recovered[0], 1e-9);
     for (size_t k = 1; k < length; k++) {
       ASSERT_NEAR(0.0, recovered[k], 1e-9);
@@ -72,8 +67,7 @@ TEST(RealFFTVDSPDFTInnerRoundtrip) {
 
     real_fft_free(real_fft);
     free(input);
-    free(spec_re);
-    free(spec_im);
+    free(spec);
     free(recovered);
   }
 }
@@ -88,52 +82,38 @@ TEST(RealFFTPow2VDSPRoundtrip) {
 
     double* input = (double*)calloc(length, sizeof(double));
     input[0] = 1.0;
-    double* spec_re =
-        (double*)calloc(real_fft_get_spectrum_length(real_fft), sizeof(double));
-    double* spec_im =
-        (double*)calloc(real_fft_get_spectrum_length(real_fft), sizeof(double));
+    complex_t* spec = (complex_t*)calloc(real_fft_get_spectrum_length(real_fft),
+                                         sizeof(complex_t));
 
-    real_fft_forward(real_fft, input, spec_re, spec_im);
+    real_fft_forward(real_fft, input, spec);
     for (size_t k = 0; k < real_fft_get_spectrum_length(real_fft); k++) {
-      double mag = sqrt(spec_re[k] * spec_re[k] + spec_im[k] * spec_im[k]);
+      double mag = cabs(spec[k]);
       ASSERT_NEAR(1.0, mag, 1e-12);
     }
-    ASSERT_DOUBLE_EQ(0.0, spec_im[0]);
-    ASSERT_DOUBLE_EQ(0.0, spec_im[real_fft_get_spectrum_length(real_fft) - 1]);
-
-    size_t spec_len = real_fft_get_spectrum_length(real_fft);
-    double* spec_re_copy = (double*)malloc(spec_len * sizeof(double));
-    double* spec_im_copy = (double*)malloc(spec_len * sizeof(double));
-    memcpy(spec_re_copy, spec_re, spec_len * sizeof(double));
-    memcpy(spec_im_copy, spec_im, spec_len * sizeof(double));
+    ASSERT_DOUBLE_EQ(0.0, cimag(spec[0]));
+    ASSERT_DOUBLE_EQ(0.0,
+                     cimag(spec[real_fft_get_spectrum_length(real_fft) - 1]));
 
     double* recovered = (double*)calloc(length, sizeof(double));
-    real_fft_inverse(real_fft, spec_re, spec_im, recovered);
+    real_fft_inverse(real_fft, spec, recovered);
     ASSERT_NEAR((double)length, recovered[0], 1e-10);
     for (size_t k = 1; k < length; k++) {
       ASSERT_NEAR(0.0, recovered[k], 1e-10);
     }
-    for (size_t k = 0; k < spec_len; k++) {
-      ASSERT_DOUBLE_EQ(spec_re_copy[k], spec_re[k]);
-      ASSERT_DOUBLE_EQ(spec_im_copy[k], spec_im[k]);
-    }
-    free(spec_re_copy);
-    free(spec_im_copy);
 
     size_t k_bin = length / 4;
     if (k_bin < 1) k_bin = 1;
     for (size_t n = 0; n < length; n++) {
       input[n] = cos(2.0 * M_PI * (double)k_bin * (double)n / (double)length);
     }
-    real_fft_forward(real_fft, input, spec_re, spec_im);
+    real_fft_forward(real_fft, input, spec);
     double expected_re = (double)length / 2.0;
-    ASSERT_NEAR(expected_re, spec_re[k_bin], 1e-9);
-    ASSERT_NEAR(0.0, spec_im[k_bin], 1e-9);
+    ASSERT_NEAR(expected_re, creal(spec[k_bin]), 1e-9);
+    ASSERT_NEAR(0.0, cimag(spec[k_bin]), 1e-9);
 
     real_fft_free(real_fft);
     free(input);
-    free(spec_re);
-    free(spec_im);
+    free(spec);
     free(recovered);
   }
 }
@@ -149,17 +129,16 @@ TEST(RealFFTSinglePrecisionRoundtrip) {
 
     float* input = (float*)calloc(length, sizeof(float));
     input[0] = 1.0f;
-    float* spec_re = (float*)calloc(spec_len, sizeof(float));
-    float* spec_im = (float*)calloc(spec_len, sizeof(float));
+    complexf_t* spec = (complexf_t*)calloc(spec_len, sizeof(complexf_t));
 
-    real_fftf_forward(fft, input, spec_re, spec_im);
+    real_fftf_forward(fft, input, spec);
     for (size_t k = 0; k < spec_len; k++) {
-      float mag = sqrtf(spec_re[k] * spec_re[k] + spec_im[k] * spec_im[k]);
+      float mag = cabsf(spec[k]);
       ASSERT_NEAR(1.0f, mag, 1e-5f);
     }
 
     float* recovered = (float*)calloc(length, sizeof(float));
-    real_fftf_inverse(fft, spec_re, spec_im, recovered);
+    real_fftf_inverse(fft, spec, recovered);
     ASSERT_NEAR((float)length, recovered[0], 1e-4f);
     for (size_t k = 1; k < length; k++) {
       ASSERT_NEAR(0.0f, recovered[k], 1e-4f);
@@ -167,8 +146,7 @@ TEST(RealFFTSinglePrecisionRoundtrip) {
 
     real_fftf_free(fft);
     free(input);
-    free(spec_re);
-    free(spec_im);
+    free(spec);
     free(recovered);
   }
 }

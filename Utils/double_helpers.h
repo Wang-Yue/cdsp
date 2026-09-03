@@ -8,6 +8,7 @@
 #ifndef CLIB_UTILS_DOUBLE_HELPERS_H
 #define CLIB_UTILS_DOUBLE_HELPERS_H
 
+#include <complex.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -338,6 +339,282 @@ ALWAYS_INLINE void dsp_ops_complex_multiply(const double* a_re,
     out_im[i] = re * fim + im * fre;
   }
 }
+
+/**
+ * @brief Pointwise complex multiplication of interleaved complex vectors:
+ * `out[i] = a[i] * b[i]` for count complex elements (2 * count doubles).
+ * Supports in-place multiplication (out may alias a or b).
+ */
+#if defined(__aarch64__) || defined(__ARM_NEON)
+#include <arm_neon.h>
+
+ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(
+    const double complex* a, const double complex* b, double complex* out,
+    size_t count) {
+  float64x2_t sign = {-1.0, 1.0};
+  size_t chunks_4 = count / 4;
+  double* r_ptr = (double*)out;
+  const double* a_ptr = (const double*)a;
+  const double* b_ptr = (const double*)b;
+
+  for (size_t i = 0; i < chunks_4; i++) {
+    size_t off = i * 8;
+    float64x2_t a0 = vld1q_f64(a_ptr + off);
+    float64x2_t b0 = vld1q_f64(b_ptr + off);
+    float64x2_t a1 = vld1q_f64(a_ptr + off + 2);
+    float64x2_t b1 = vld1q_f64(b_ptr + off + 2);
+    float64x2_t a2 = vld1q_f64(a_ptr + off + 4);
+    float64x2_t b2 = vld1q_f64(b_ptr + off + 4);
+    float64x2_t a3 = vld1q_f64(a_ptr + off + 6);
+    float64x2_t b3 = vld1q_f64(b_ptr + off + 6);
+
+    float64x2_t a_re0 = vdupq_laneq_f64(a0, 0);
+    float64x2_t a_im0 = vdupq_laneq_f64(a0, 1);
+    float64x2_t a_re1 = vdupq_laneq_f64(a1, 0);
+    float64x2_t a_im1 = vdupq_laneq_f64(a1, 1);
+    float64x2_t a_re2 = vdupq_laneq_f64(a2, 0);
+    float64x2_t a_im2 = vdupq_laneq_f64(a2, 1);
+    float64x2_t a_re3 = vdupq_laneq_f64(a3, 0);
+    float64x2_t a_im3 = vdupq_laneq_f64(a3, 1);
+
+    float64x2_t b_sw0 = vmulq_f64(vextq_f64(b0, b0, 1), sign);
+    float64x2_t b_sw1 = vmulq_f64(vextq_f64(b1, b1, 1), sign);
+    float64x2_t b_sw2 = vmulq_f64(vextq_f64(b2, b2, 1), sign);
+    float64x2_t b_sw3 = vmulq_f64(vextq_f64(b3, b3, 1), sign);
+
+    vst1q_f64(r_ptr + off, vfmaq_f64(vmulq_f64(a_re0, b0), a_im0, b_sw0));
+    vst1q_f64(r_ptr + off + 2, vfmaq_f64(vmulq_f64(a_re1, b1), a_im1, b_sw1));
+    vst1q_f64(r_ptr + off + 4, vfmaq_f64(vmulq_f64(a_re2, b2), a_im2, b_sw2));
+    vst1q_f64(r_ptr + off + 6, vfmaq_f64(vmulq_f64(a_re3, b3), a_im3, b_sw3));
+  }
+  for (size_t j = chunks_4 * 4; j < count; j++) {
+    size_t off = j * 2;
+    float64x2_t a0 = vld1q_f64(a_ptr + off);
+    float64x2_t b0 = vld1q_f64(b_ptr + off);
+    float64x2_t a_re0 = vdupq_laneq_f64(a0, 0);
+    float64x2_t a_im0 = vdupq_laneq_f64(a0, 1);
+    float64x2_t b_sw0 = vmulq_f64(vextq_f64(b0, b0, 1), sign);
+    vst1q_f64(r_ptr + off, vfmaq_f64(vmulq_f64(a_re0, b0), a_im0, b_sw0));
+  }
+}
+
+ALWAYS_INLINE void dsp_ops_complex_fma_interleaved(
+    double complex* restrict accum, const double complex* restrict a,
+    const double complex* restrict b, size_t count) {
+  float64x2_t sign = {-1.0, 1.0};
+  size_t chunks_4 = count / 4;
+  double* r_ptr = (double*)accum;
+  const double* a_ptr = (const double*)a;
+  const double* b_ptr = (const double*)b;
+
+  for (size_t i = 0; i < chunks_4; i++) {
+    size_t off = i * 8;
+    float64x2_t acc0 = vld1q_f64(r_ptr + off);
+    float64x2_t acc1 = vld1q_f64(r_ptr + off + 2);
+    float64x2_t acc2 = vld1q_f64(r_ptr + off + 4);
+    float64x2_t acc3 = vld1q_f64(r_ptr + off + 6);
+
+    float64x2_t a0 = vld1q_f64(a_ptr + off);
+    float64x2_t b0 = vld1q_f64(b_ptr + off);
+    float64x2_t a1 = vld1q_f64(a_ptr + off + 2);
+    float64x2_t b1 = vld1q_f64(b_ptr + off + 2);
+    float64x2_t a2 = vld1q_f64(a_ptr + off + 4);
+    float64x2_t b2 = vld1q_f64(b_ptr + off + 4);
+    float64x2_t a3 = vld1q_f64(a_ptr + off + 6);
+    float64x2_t b3 = vld1q_f64(b_ptr + off + 6);
+
+    float64x2_t a_re0 = vdupq_laneq_f64(a0, 0);
+    float64x2_t a_im0 = vdupq_laneq_f64(a0, 1);
+    float64x2_t a_re1 = vdupq_laneq_f64(a1, 0);
+    float64x2_t a_im1 = vdupq_laneq_f64(a1, 1);
+    float64x2_t a_re2 = vdupq_laneq_f64(a2, 0);
+    float64x2_t a_im2 = vdupq_laneq_f64(a2, 1);
+    float64x2_t a_re3 = vdupq_laneq_f64(a3, 0);
+    float64x2_t a_im3 = vdupq_laneq_f64(a3, 1);
+
+    float64x2_t b_sw0 = vmulq_f64(vextq_f64(b0, b0, 1), sign);
+    float64x2_t b_sw1 = vmulq_f64(vextq_f64(b1, b1, 1), sign);
+    float64x2_t b_sw2 = vmulq_f64(vextq_f64(b2, b2, 1), sign);
+    float64x2_t b_sw3 = vmulq_f64(vextq_f64(b3, b3, 1), sign);
+
+    float64x2_t prod0 = vfmaq_f64(vmulq_f64(a_re0, b0), a_im0, b_sw0);
+    float64x2_t prod1 = vfmaq_f64(vmulq_f64(a_re1, b1), a_im1, b_sw1);
+    float64x2_t prod2 = vfmaq_f64(vmulq_f64(a_re2, b2), a_im2, b_sw2);
+    float64x2_t prod3 = vfmaq_f64(vmulq_f64(a_re3, b3), a_im3, b_sw3);
+
+    vst1q_f64(r_ptr + off, vaddq_f64(acc0, prod0));
+    vst1q_f64(r_ptr + off + 2, vaddq_f64(acc1, prod1));
+    vst1q_f64(r_ptr + off + 4, vaddq_f64(acc2, prod2));
+    vst1q_f64(r_ptr + off + 6, vaddq_f64(acc3, prod3));
+  }
+  for (size_t j = chunks_4 * 4; j < count; j++) {
+    size_t off = j * 2;
+    float64x2_t acc0 = vld1q_f64(r_ptr + off);
+    float64x2_t a0 = vld1q_f64(a_ptr + off);
+    float64x2_t b0 = vld1q_f64(b_ptr + off);
+    float64x2_t a_re0 = vdupq_laneq_f64(a0, 0);
+    float64x2_t a_im0 = vdupq_laneq_f64(a0, 1);
+    float64x2_t b_sw0 = vmulq_f64(vextq_f64(b0, b0, 1), sign);
+    float64x2_t prod0 = vfmaq_f64(vmulq_f64(a_re0, b0), a_im0, b_sw0);
+    vst1q_f64(r_ptr + off, vaddq_f64(acc0, prod0));
+  }
+}
+#elif (defined(__x86_64__) || defined(_M_X64)) && defined(__AVX2__) && \
+    defined(__FMA__)
+#include <immintrin.h>
+
+ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(
+    const double complex* a, const double complex* b, double complex* out,
+    size_t count) {
+  size_t chunks_8 = count / 8;
+  double* r_ptr = (double*)out;
+  const double* a_ptr = (const double*)a;
+  const double* b_ptr = (const double*)b;
+
+  for (size_t i = 0; i < chunks_8; i++) {
+    size_t off = i * 16;
+    __m256d a0 = _mm256_loadu_pd(a_ptr + off);
+    __m256d b0 = _mm256_loadu_pd(b_ptr + off);
+    __m256d a1 = _mm256_loadu_pd(a_ptr + off + 4);
+    __m256d b1 = _mm256_loadu_pd(b_ptr + off + 4);
+    __m256d a2 = _mm256_loadu_pd(a_ptr + off + 8);
+    __m256d b2 = _mm256_loadu_pd(b_ptr + off + 8);
+    __m256d a3 = _mm256_loadu_pd(a_ptr + off + 12);
+    __m256d b3 = _mm256_loadu_pd(b_ptr + off + 12);
+
+    __m256d a_re0 = _mm256_movedup_pd(a0);
+    __m256d a_im0 = _mm256_permute_pd(a0, 0xF);
+    __m256d a_re1 = _mm256_movedup_pd(a1);
+    __m256d a_im1 = _mm256_permute_pd(a1, 0xF);
+    __m256d a_re2 = _mm256_movedup_pd(a2);
+    __m256d a_im2 = _mm256_permute_pd(a2, 0xF);
+    __m256d a_re3 = _mm256_movedup_pd(a3);
+    __m256d a_im3 = _mm256_permute_pd(a3, 0xF);
+
+    __m256d b_sw0 = _mm256_permute_pd(b0, 0x5);
+    __m256d b_sw1 = _mm256_permute_pd(b1, 0x5);
+    __m256d b_sw2 = _mm256_permute_pd(b2, 0x5);
+    __m256d b_sw3 = _mm256_permute_pd(b3, 0x5);
+
+    _mm256_storeu_pd(r_ptr + off, _mm256_fmaddsub_pd(
+                                      a_re0, b0, _mm256_mul_pd(a_im0, b_sw0)));
+    _mm256_storeu_pd(
+        r_ptr + off + 4,
+        _mm256_fmaddsub_pd(a_re1, b1, _mm256_mul_pd(a_im1, b_sw1)));
+    _mm256_storeu_pd(
+        r_ptr + off + 8,
+        _mm256_fmaddsub_pd(a_re2, b2, _mm256_mul_pd(a_im2, b_sw2)));
+    _mm256_storeu_pd(
+        r_ptr + off + 12,
+        _mm256_fmaddsub_pd(a_re3, b3, _mm256_mul_pd(a_im3, b_sw3)));
+  }
+  for (size_t j = chunks_8 * 8; j < count; j++) {
+    size_t off = j * 2;
+    double re = a_ptr[off];
+    double im = a_ptr[off + 1];
+    double bre = b_ptr[off];
+    double bim = b_ptr[off + 1];
+    r_ptr[off] = re * bre - im * bim;
+    r_ptr[off + 1] = re * bim + im * bre;
+  }
+}
+
+ALWAYS_INLINE void dsp_ops_complex_fma_interleaved(
+    double complex* restrict accum, const double complex* restrict a,
+    const double complex* restrict b, size_t count) {
+  size_t chunks_8 = count / 8;
+  double* r_ptr = (double*)accum;
+  const double* a_ptr = (const double*)a;
+  const double* b_ptr = (const double*)b;
+
+  for (size_t i = 0; i < chunks_8; i++) {
+    size_t off = i * 16;
+    __m256d acc0 = _mm256_loadu_pd(r_ptr + off);
+    __m256d acc1 = _mm256_loadu_pd(r_ptr + off + 4);
+    __m256d acc2 = _mm256_loadu_pd(r_ptr + off + 8);
+    __m256d acc3 = _mm256_loadu_pd(r_ptr + off + 12);
+
+    __m256d a0 = _mm256_loadu_pd(a_ptr + off);
+    __m256d b0 = _mm256_loadu_pd(b_ptr + off);
+    __m256d a1 = _mm256_loadu_pd(a_ptr + off + 4);
+    __m256d b1 = _mm256_loadu_pd(b_ptr + off + 4);
+    __m256d a2 = _mm256_loadu_pd(a_ptr + off + 8);
+    __m256d b2 = _mm256_loadu_pd(b_ptr + off + 8);
+    __m256d a3 = _mm256_loadu_pd(a_ptr + off + 12);
+    __m256d b3 = _mm256_loadu_pd(b_ptr + off + 12);
+
+    __m256d a_re0 = _mm256_movedup_pd(a0);
+    __m256d a_im0 = _mm256_permute_pd(a0, 0xF);
+    __m256d a_re1 = _mm256_movedup_pd(a1);
+    __m256d a_im1 = _mm256_permute_pd(a1, 0xF);
+    __m256d a_re2 = _mm256_movedup_pd(a2);
+    __m256d a_im2 = _mm256_permute_pd(a2, 0xF);
+    __m256d a_re3 = _mm256_movedup_pd(a3);
+    __m256d a_im3 = _mm256_permute_pd(a3, 0xF);
+
+    __m256d b_sw0 = _mm256_permute_pd(b0, 0x5);
+    __m256d b_sw1 = _mm256_permute_pd(b1, 0x5);
+    __m256d b_sw2 = _mm256_permute_pd(b2, 0x5);
+    __m256d b_sw3 = _mm256_permute_pd(b3, 0x5);
+
+    __m256d prod0 = _mm256_fmaddsub_pd(a_re0, b0, _mm256_mul_pd(a_im0, b_sw0));
+    __m256d prod1 = _mm256_fmaddsub_pd(a_re1, b1, _mm256_mul_pd(a_im1, b_sw1));
+    __m256d prod2 = _mm256_fmaddsub_pd(a_re2, b2, _mm256_mul_pd(a_im2, b_sw2));
+    __m256d prod3 = _mm256_fmaddsub_pd(a_re3, b3, _mm256_mul_pd(a_im3, b_sw3));
+
+    _mm256_storeu_pd(r_ptr + off, _mm256_add_pd(acc0, prod0));
+    _mm256_storeu_pd(r_ptr + off + 4, _mm256_add_pd(acc1, prod1));
+    _mm256_storeu_pd(r_ptr + off + 8, _mm256_add_pd(acc2, prod2));
+    _mm256_storeu_pd(r_ptr + off + 12, _mm256_add_pd(acc3, prod3));
+  }
+
+  for (size_t j = chunks_8 * 8; j < count; j++) {
+    size_t off = j * 2;
+    double re = a_ptr[off];
+    double im = a_ptr[off + 1];
+    double bre = b_ptr[off];
+    double bim = b_ptr[off + 1];
+    r_ptr[off] += re * bre - im * bim;
+    r_ptr[off + 1] += re * bim + im * bre;
+  }
+}
+#else
+ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(
+    const double complex* a, const double complex* b, double complex* out,
+    size_t count) {
+  const double* a_ptr = (const double*)a;
+  const double* b_ptr = (const double*)b;
+  double* r_ptr = (double*)out;
+  PRAGMA_VECTORIZE_LOOP
+  for (size_t i = 0; i < count; i++) {
+    size_t off = i * 2;
+    double re = a_ptr[off];
+    double im = a_ptr[off + 1];
+    double bre = b_ptr[off];
+    double bim = b_ptr[off + 1];
+    r_ptr[off] = re * bre - im * bim;
+    r_ptr[off + 1] = re * bim + im * bre;
+  }
+}
+
+ALWAYS_INLINE void dsp_ops_complex_fma_interleaved(
+    double complex* restrict accum, const double complex* restrict a,
+    const double complex* restrict b, size_t count) {
+  const double* a_ptr = (const double*)a;
+  const double* b_ptr = (const double*)b;
+  double* r_ptr = (double*)accum;
+  PRAGMA_VECTORIZE_LOOP
+  for (size_t i = 0; i < count; i++) {
+    size_t off = i * 2;
+    double re = a_ptr[off];
+    double im = a_ptr[off + 1];
+    double bre = b_ptr[off];
+    double bim = b_ptr[off + 1];
+    r_ptr[off] += re * bre - im * bim;
+    r_ptr[off + 1] += re * bim + im * bre;
+  }
+}
+#endif
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC pop_options

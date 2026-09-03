@@ -13,11 +13,24 @@
  *   - Inverse = unscaled IFFT, producing `length * signal`.
  */
 
+#include <complex.h>
 #include <stdbool.h>
 #include <stddef.h>
 
 #include "Config/config_error.h"
 #include "Utils/double_helpers.h"
+
+#ifndef CDSP_COMPLEX_TYPES_DEFINED
+#define CDSP_COMPLEX_TYPES_DEFINED
+typedef double complex complex_t;
+typedef float complex complexf_t;
+#endif
+
+typedef const complex_t* complex_waveform_t;
+typedef complex_t* mutable_complex_waveform_t;
+
+typedef const complexf_t* complex_waveformf_t;
+typedef complexf_t* mutable_complex_waveformf_t;
 
 // MARK: - Double-Precision Real FFT (real_fft_t)
 
@@ -56,33 +69,32 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err);
 /**
  * @brief Computes the forward 2N-point real FFT.
  *
- * Produces the `N + 1` unique complex bins.
+ * Produces the `N + 1` unique complex bins in interleaved format.
  *
  * @param fft The real FFT context.
  * @param real_in Input buffer of real samples (length >= fft->length).
- * @param spec_re Output buffer for the real parts of the spectrum (length >=
+ * @param spec_out Output buffer for interleaved complex spectrum (length >=
  * fft->spectrum_length).
- * @param spec_im Output buffer for the imaginary parts of the spectrum (length
- * >= fft->spectrum_length).
  */
 void real_fft_forward(real_fft_t* fft, waveform_t real_in,
-                      mutable_waveform_t spec_re, mutable_waveform_t spec_im);
+                      mutable_complex_waveform_t spec_out);
 
 /**
  * @brief Computes the inverse 2N-point real FFT.
  *
- * Reads the `N + 1` unique complex bins from `spec_re`/`spec_im` and writes
+ * Reads the `N + 1` unique interleaved complex bins from `spec_in` and writes
  * `length` real samples into `real_out`. Output is scaled by `length`.
  *
+ * Note: Like standard FFTW c2r and RustFFT, the input buffer `spec_in` is used
+ * as scratch space during the transform and its contents will be overwritten.
+ *
  * @param fft The real FFT context.
- * @param spec_re Input buffer for the real parts of the spectrum (length >=
- * fft->spectrum_length).
- * @param spec_im Input buffer for the imaginary parts of the spectrum (length
- * >= fft->spectrum_length).
+ * @param spec_in Input buffer for interleaved complex spectrum (length >=
+ * fft->spectrum_length). Contents are destroyed during transform.
  * @param real_out Output buffer for the reconstructed real samples (length >=
  * fft->length).
  */
-void real_fft_inverse(real_fft_t* fft, waveform_t spec_re, waveform_t spec_im,
+void real_fft_inverse(real_fft_t* fft, mutable_complex_waveform_t spec_in,
                       mutable_waveform_t real_out);
 
 /**
@@ -125,22 +137,25 @@ real_fftf_t* real_fftf_create(size_t length);
  * @brief Computes the forward single-precision real FFT.
  * @param fft The float real FFT context.
  * @param real_in Input buffer of float real samples.
- * @param spec_re Output buffer for the real parts of the spectrum.
- * @param spec_im Output buffer for the imaginary parts of the spectrum.
+ * @param spec_out Output buffer for interleaved float complex spectrum.
  */
-void real_fftf_forward(real_fftf_t* fft, const float* real_in, float* spec_re,
-                       float* spec_im);
+void real_fftf_forward(real_fftf_t* fft, const float* real_in,
+                       mutable_complex_waveformf_t spec_out);
 
 /**
  * @brief Computes the inverse single-precision real FFT.
+ *
+ * Note: Like standard FFTW c2r and RustFFT, the input buffer `spec_in` is used
+ * as scratch space during the transform and its contents will be overwritten.
+ *
  * @param fft The float real FFT context.
- * @param spec_re Input buffer for the real parts of the spectrum.
- * @param spec_im Input buffer for the imaginary parts of the spectrum.
+ * @param spec_in Input buffer for interleaved float complex spectrum. Contents
+ * are destroyed during transform.
  * @param real_out Output buffer for reconstructed real float samples. Output is
  * scaled by length.
  */
-void real_fftf_inverse(real_fftf_t* fft, const float* spec_re,
-                       const float* spec_im, float* real_out);
+void real_fftf_inverse(real_fftf_t* fft, mutable_complex_waveformf_t spec_in,
+                       float* real_out);
 
 /**
  * @brief Frees the single-precision real FFT context and its backend.

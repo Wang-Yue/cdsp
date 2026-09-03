@@ -1,7 +1,6 @@
 #include "Filters/convolution.h"
 
 #include <complex.h>
-#include <fftw3.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -13,7 +12,9 @@
 #include "Config/config_error.h"
 #include "Config/engine_config_types.h"
 #include "Config/filter_config_types.h"
+#include "FFT/real_fft.h"
 #include "Filters/filter.h"
+#include "Utils/cdsp_memory.h"
 #include "Utils/cdsp_path.h"
 #include "Utils/double_helpers.h"
 
@@ -23,7 +24,7 @@ typedef struct conv_coeffs_s {
   size_t num_segments;
   size_t spec_len;
   int ref_count;
-  fftw_complex* data;
+  complex_t* data;
   struct conv_coeffs_s* next;
 } conv_coeffs_t;
 
@@ -32,11 +33,10 @@ struct convolution_filter {
   size_t chunk_size;
   size_t num_segments;
   size_t spec_len;
-  fftw_plan plan_forward;
-  fftw_plan plan_inverse;
+  real_fft_t* fft;
   conv_coeffs_t* coeffs;
-  fftw_complex* hist_f;
-  fftw_complex* temp_buf;
+  complex_t* hist_f;
+  complex_t* temp_buf;
   size_t write_idx;
   double* overlap_buffer;
   double* time_buf;
@@ -47,285 +47,6 @@ struct convolution_filter {
 };
 
 typedef struct convolution_filter convolution_filter_t;
-
-#if defined(__aarch64__) || defined(__ARM_NEON)
-#include <arm_neon.h>
-
-static inline void complex_mul_simd(fftw_complex* restrict result,
-                                    const fftw_complex* restrict slice_a,
-                                    const fftw_complex* restrict slice_b,
-                                    size_t len) {
-  float64x2_t sign = {-1.0, 1.0};
-  size_t chunks_4 = len / 4;
-  double* r_ptr = (double*)result;
-  const double* a_ptr = (const double*)slice_a;
-  const double* b_ptr = (const double*)slice_b;
-
-  for (size_t i = 0; i < chunks_4; i++) {
-    size_t off = i * 8;
-    float64x2_t a0 = vld1q_f64(a_ptr + off);
-    float64x2_t b0 = vld1q_f64(b_ptr + off);
-    float64x2_t a1 = vld1q_f64(a_ptr + off + 2);
-    float64x2_t b1 = vld1q_f64(b_ptr + off + 2);
-    float64x2_t a2 = vld1q_f64(a_ptr + off + 4);
-    float64x2_t b2 = vld1q_f64(b_ptr + off + 4);
-    float64x2_t a3 = vld1q_f64(a_ptr + off + 6);
-    float64x2_t b3 = vld1q_f64(b_ptr + off + 6);
-
-    float64x2_t a_re0 = vdupq_laneq_f64(a0, 0);
-    float64x2_t a_im0 = vdupq_laneq_f64(a0, 1);
-    float64x2_t a_re1 = vdupq_laneq_f64(a1, 0);
-    float64x2_t a_im1 = vdupq_laneq_f64(a1, 1);
-    float64x2_t a_re2 = vdupq_laneq_f64(a2, 0);
-    float64x2_t a_im2 = vdupq_laneq_f64(a2, 1);
-    float64x2_t a_re3 = vdupq_laneq_f64(a3, 0);
-    float64x2_t a_im3 = vdupq_laneq_f64(a3, 1);
-
-    float64x2_t b_sw0 = vmulq_f64(vextq_f64(b0, b0, 1), sign);
-    float64x2_t b_sw1 = vmulq_f64(vextq_f64(b1, b1, 1), sign);
-    float64x2_t b_sw2 = vmulq_f64(vextq_f64(b2, b2, 1), sign);
-    float64x2_t b_sw3 = vmulq_f64(vextq_f64(b3, b3, 1), sign);
-
-    vst1q_f64(r_ptr + off, vfmaq_f64(vmulq_f64(a_re0, b0), a_im0, b_sw0));
-    vst1q_f64(r_ptr + off + 2, vfmaq_f64(vmulq_f64(a_re1, b1), a_im1, b_sw1));
-    vst1q_f64(r_ptr + off + 4, vfmaq_f64(vmulq_f64(a_re2, b2), a_im2, b_sw2));
-    vst1q_f64(r_ptr + off + 6, vfmaq_f64(vmulq_f64(a_re3, b3), a_im3, b_sw3));
-  }
-  for (size_t j = chunks_4 * 4; j < len; j++) {
-    size_t off = j * 2;
-    float64x2_t a0 = vld1q_f64(a_ptr + off);
-    float64x2_t b0 = vld1q_f64(b_ptr + off);
-    float64x2_t a_re0 = vdupq_laneq_f64(a0, 0);
-    float64x2_t a_im0 = vdupq_laneq_f64(a0, 1);
-    float64x2_t b_sw0 = vmulq_f64(vextq_f64(b0, b0, 1), sign);
-    vst1q_f64(r_ptr + off, vfmaq_f64(vmulq_f64(a_re0, b0), a_im0, b_sw0));
-  }
-}
-
-static inline void complex_fma_simd(fftw_complex* restrict result,
-                                    const fftw_complex* restrict slice_a,
-                                    const fftw_complex* restrict slice_b,
-                                    size_t len) {
-  float64x2_t sign = {-1.0, 1.0};
-  size_t chunks_4 = len / 4;
-  double* r_ptr = (double*)result;
-  const double* a_ptr = (const double*)slice_a;
-  const double* b_ptr = (const double*)slice_b;
-
-  for (size_t i = 0; i < chunks_4; i++) {
-    size_t off = i * 8;
-    float64x2_t acc0 = vld1q_f64(r_ptr + off);
-    float64x2_t acc1 = vld1q_f64(r_ptr + off + 2);
-    float64x2_t acc2 = vld1q_f64(r_ptr + off + 4);
-    float64x2_t acc3 = vld1q_f64(r_ptr + off + 6);
-
-    float64x2_t a0 = vld1q_f64(a_ptr + off);
-    float64x2_t b0 = vld1q_f64(b_ptr + off);
-    float64x2_t a1 = vld1q_f64(a_ptr + off + 2);
-    float64x2_t b1 = vld1q_f64(b_ptr + off + 2);
-    float64x2_t a2 = vld1q_f64(a_ptr + off + 4);
-    float64x2_t b2 = vld1q_f64(b_ptr + off + 4);
-    float64x2_t a3 = vld1q_f64(a_ptr + off + 6);
-    float64x2_t b3 = vld1q_f64(b_ptr + off + 6);
-
-    float64x2_t a_re0 = vdupq_laneq_f64(a0, 0);
-    float64x2_t a_im0 = vdupq_laneq_f64(a0, 1);
-    float64x2_t a_re1 = vdupq_laneq_f64(a1, 0);
-    float64x2_t a_im1 = vdupq_laneq_f64(a1, 1);
-    float64x2_t a_re2 = vdupq_laneq_f64(a2, 0);
-    float64x2_t a_im2 = vdupq_laneq_f64(a2, 1);
-    float64x2_t a_re3 = vdupq_laneq_f64(a3, 0);
-    float64x2_t a_im3 = vdupq_laneq_f64(a3, 1);
-
-    float64x2_t b_sw0 = vmulq_f64(vextq_f64(b0, b0, 1), sign);
-    float64x2_t b_sw1 = vmulq_f64(vextq_f64(b1, b1, 1), sign);
-    float64x2_t b_sw2 = vmulq_f64(vextq_f64(b2, b2, 1), sign);
-    float64x2_t b_sw3 = vmulq_f64(vextq_f64(b3, b3, 1), sign);
-
-    float64x2_t prod0 = vfmaq_f64(vmulq_f64(a_re0, b0), a_im0, b_sw0);
-    float64x2_t prod1 = vfmaq_f64(vmulq_f64(a_re1, b1), a_im1, b_sw1);
-    float64x2_t prod2 = vfmaq_f64(vmulq_f64(a_re2, b2), a_im2, b_sw2);
-    float64x2_t prod3 = vfmaq_f64(vmulq_f64(a_re3, b3), a_im3, b_sw3);
-
-    vst1q_f64(r_ptr + off, vaddq_f64(acc0, prod0));
-    vst1q_f64(r_ptr + off + 2, vaddq_f64(acc1, prod1));
-    vst1q_f64(r_ptr + off + 4, vaddq_f64(acc2, prod2));
-    vst1q_f64(r_ptr + off + 6, vaddq_f64(acc3, prod3));
-  }
-  for (size_t j = chunks_4 * 4; j < len; j++) {
-    size_t off = j * 2;
-    float64x2_t acc0 = vld1q_f64(r_ptr + off);
-    float64x2_t a0 = vld1q_f64(a_ptr + off);
-    float64x2_t b0 = vld1q_f64(b_ptr + off);
-    float64x2_t a_re0 = vdupq_laneq_f64(a0, 0);
-    float64x2_t a_im0 = vdupq_laneq_f64(a0, 1);
-    float64x2_t b_sw0 = vmulq_f64(vextq_f64(b0, b0, 1), sign);
-    float64x2_t prod0 = vfmaq_f64(vmulq_f64(a_re0, b0), a_im0, b_sw0);
-    vst1q_f64(r_ptr + off, vaddq_f64(acc0, prod0));
-  }
-}
-
-#elif (defined(__x86_64__) || defined(_M_X64)) && defined(__AVX2__) && \
-    defined(__FMA__)
-#include <immintrin.h>
-
-static inline void complex_mul_simd(fftw_complex* restrict result,
-                                    const fftw_complex* restrict slice_a,
-                                    const fftw_complex* restrict slice_b,
-                                    size_t len) {
-  size_t chunks_8 = len / 8;
-  double* r_ptr = (double*)result;
-  const double* a_ptr = (const double*)slice_a;
-  const double* b_ptr = (const double*)slice_b;
-
-  for (size_t i = 0; i < chunks_8; i++) {
-    size_t off = i * 16;
-    __m256d a0 = _mm256_loadu_pd(a_ptr + off);
-    __m256d b0 = _mm256_loadu_pd(b_ptr + off);
-    __m256d a1 = _mm256_loadu_pd(a_ptr + off + 4);
-    __m256d b1 = _mm256_loadu_pd(b_ptr + off + 4);
-    __m256d a2 = _mm256_loadu_pd(a_ptr + off + 8);
-    __m256d b2 = _mm256_loadu_pd(b_ptr + off + 8);
-    __m256d a3 = _mm256_loadu_pd(a_ptr + off + 12);
-    __m256d b3 = _mm256_loadu_pd(b_ptr + off + 12);
-
-    __m256d a_re0 = _mm256_movedup_pd(a0);
-    __m256d a_im0 = _mm256_permute_pd(a0, 0xF);
-    __m256d a_re1 = _mm256_movedup_pd(a1);
-    __m256d a_im1 = _mm256_permute_pd(a1, 0xF);
-    __m256d a_re2 = _mm256_movedup_pd(a2);
-    __m256d a_im2 = _mm256_permute_pd(a2, 0xF);
-    __m256d a_re3 = _mm256_movedup_pd(a3);
-    __m256d a_im3 = _mm256_permute_pd(a3, 0xF);
-
-    __m256d b_sw0 = _mm256_permute_pd(b0, 0x5);
-    __m256d b_sw1 = _mm256_permute_pd(b1, 0x5);
-    __m256d b_sw2 = _mm256_permute_pd(b2, 0x5);
-    __m256d b_sw3 = _mm256_permute_pd(b3, 0x5);
-
-    _mm256_storeu_pd(r_ptr + off, _mm256_fmaddsub_pd(
-                                      a_re0, b0, _mm256_mul_pd(a_im0, b_sw0)));
-    _mm256_storeu_pd(
-        r_ptr + off + 4,
-        _mm256_fmaddsub_pd(a_re1, b1, _mm256_mul_pd(a_im1, b_sw1)));
-    _mm256_storeu_pd(
-        r_ptr + off + 8,
-        _mm256_fmaddsub_pd(a_re2, b2, _mm256_mul_pd(a_im2, b_sw2)));
-    _mm256_storeu_pd(
-        r_ptr + off + 12,
-        _mm256_fmaddsub_pd(a_re3, b3, _mm256_mul_pd(a_im3, b_sw3)));
-  }
-
-  size_t tail_start = chunks_8 * 8;
-  for (size_t i = tail_start; i < len; i++) {
-    double a_re = ((const double*)slice_a)[2 * i];
-    double a_im = ((const double*)slice_a)[2 * i + 1];
-    double b_re = ((const double*)slice_b)[2 * i];
-    double b_im = ((const double*)slice_b)[2 * i + 1];
-    ((double*)result)[2 * i] = a_re * b_re - a_im * b_im;
-    ((double*)result)[2 * i + 1] = a_re * b_im + a_im * b_re;
-  }
-}
-
-static inline void complex_fma_simd(fftw_complex* restrict result,
-                                    const fftw_complex* restrict slice_a,
-                                    const fftw_complex* restrict slice_b,
-                                    size_t len) {
-  size_t chunks_8 = len / 8;
-  double* r_ptr = (double*)result;
-  const double* a_ptr = (const double*)slice_a;
-  const double* b_ptr = (const double*)slice_b;
-
-  for (size_t i = 0; i < chunks_8; i++) {
-    size_t off = i * 16;
-    __m256d acc0 = _mm256_loadu_pd(r_ptr + off);
-    __m256d acc1 = _mm256_loadu_pd(r_ptr + off + 4);
-    __m256d acc2 = _mm256_loadu_pd(r_ptr + off + 8);
-    __m256d acc3 = _mm256_loadu_pd(r_ptr + off + 12);
-
-    __m256d a0 = _mm256_loadu_pd(a_ptr + off);
-    __m256d b0 = _mm256_loadu_pd(b_ptr + off);
-    __m256d a1 = _mm256_loadu_pd(a_ptr + off + 4);
-    __m256d b1 = _mm256_loadu_pd(b_ptr + off + 4);
-    __m256d a2 = _mm256_loadu_pd(a_ptr + off + 8);
-    __m256d b2 = _mm256_loadu_pd(b_ptr + off + 8);
-    __m256d a3 = _mm256_loadu_pd(a_ptr + off + 12);
-    __m256d b3 = _mm256_loadu_pd(b_ptr + off + 12);
-
-    __m256d a_re0 = _mm256_movedup_pd(a0);
-    __m256d a_im0 = _mm256_permute_pd(a0, 0xF);
-    __m256d a_re1 = _mm256_movedup_pd(a1);
-    __m256d a_im1 = _mm256_permute_pd(a1, 0xF);
-    __m256d a_re2 = _mm256_movedup_pd(a2);
-    __m256d a_im2 = _mm256_permute_pd(a2, 0xF);
-    __m256d a_re3 = _mm256_movedup_pd(a3);
-    __m256d a_im3 = _mm256_permute_pd(a3, 0xF);
-
-    __m256d b_sw0 = _mm256_permute_pd(b0, 0x5);
-    __m256d b_sw1 = _mm256_permute_pd(b1, 0x5);
-    __m256d b_sw2 = _mm256_permute_pd(b2, 0x5);
-    __m256d b_sw3 = _mm256_permute_pd(b3, 0x5);
-
-    __m256d prod0 = _mm256_fmaddsub_pd(a_re0, b0, _mm256_mul_pd(a_im0, b_sw0));
-    __m256d prod1 = _mm256_fmaddsub_pd(a_re1, b1, _mm256_mul_pd(a_im1, b_sw1));
-    __m256d prod2 = _mm256_fmaddsub_pd(a_re2, b2, _mm256_mul_pd(a_im2, b_sw2));
-    __m256d prod3 = _mm256_fmaddsub_pd(a_re3, b3, _mm256_mul_pd(a_im3, b_sw3));
-
-    _mm256_storeu_pd(r_ptr + off, _mm256_add_pd(acc0, prod0));
-    _mm256_storeu_pd(r_ptr + off + 4, _mm256_add_pd(acc1, prod1));
-    _mm256_storeu_pd(r_ptr + off + 8, _mm256_add_pd(acc2, prod2));
-    _mm256_storeu_pd(r_ptr + off + 12, _mm256_add_pd(acc3, prod3));
-  }
-
-  size_t tail_start = chunks_8 * 8;
-  for (size_t i = tail_start; i < len; i++) {
-    double a_re = ((const double*)slice_a)[2 * i];
-    double a_im = ((const double*)slice_a)[2 * i + 1];
-    double b_re = ((const double*)slice_b)[2 * i];
-    double b_im = ((const double*)slice_b)[2 * i + 1];
-    ((double*)result)[2 * i] += a_re * b_re - a_im * b_im;
-    ((double*)result)[2 * i + 1] += a_re * b_im + a_im * b_re;
-  }
-}
-
-#else
-
-static inline void complex_mul_simd(fftw_complex* restrict result,
-                                    const fftw_complex* restrict slice_a,
-                                    const fftw_complex* restrict slice_b,
-                                    size_t len) {
-  PRAGMA_VECTORIZE_LOOP
-  for (size_t i = 0; i < len; i++) {
-    double a_re = ((const double*)slice_a)[2 * i];
-    double a_im = ((const double*)slice_a)[2 * i + 1];
-    double b_re = ((const double*)slice_b)[2 * i];
-    double b_im = ((const double*)slice_b)[2 * i + 1];
-    ((double*)result)[2 * i] = a_re * b_re - a_im * b_im;
-    ((double*)result)[2 * i + 1] = a_re * b_im + a_im * b_re;
-  }
-}
-
-static inline void complex_fma_simd(fftw_complex* restrict result,
-                                    const fftw_complex* restrict slice_a,
-                                    const fftw_complex* restrict slice_b,
-                                    size_t len) {
-  PRAGMA_VECTORIZE_LOOP
-  for (size_t i = 0; i < len; i++) {
-    double a_re = ((const double*)slice_a)[2 * i];
-    double a_im = ((const double*)slice_a)[2 * i + 1];
-    double b_re = ((const double*)slice_b)[2 * i];
-    double b_im = ((const double*)slice_b)[2 * i + 1];
-    ((double*)result)[2 * i] += a_re * b_re - a_im * b_im;
-    ((double*)result)[2 * i + 1] += a_re * b_im + a_im * b_re;
-  }
-}
-#endif
-
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "Config/engine_config_types.h"
 // Uniform-partitioned overlap-add FIR convolution.
@@ -650,10 +371,13 @@ static double* load_raw_file(const char* path, const char* format_str,
 
 static conv_coeffs_t* g_conv_coeffs_cache = NULL;
 
-static conv_coeffs_t* conv_coeffs_cache_find(const char* name, size_t chunk_size) {
+static conv_coeffs_t* conv_coeffs_cache_find(const char* name,
+                                             size_t chunk_size) {
   const char* lookup_name = name ? name : "convolution";
-  for (conv_coeffs_t* curr = g_conv_coeffs_cache; curr != NULL; curr = curr->next) {
-    if (strcmp(curr->name, lookup_name) == 0 && curr->chunk_size == chunk_size) {
+  for (conv_coeffs_t* curr = g_conv_coeffs_cache; curr != NULL;
+       curr = curr->next) {
+    if (strcmp(curr->name, lookup_name) == 0 &&
+        curr->chunk_size == chunk_size) {
       curr->ref_count++;
       return curr;
     }
@@ -663,11 +387,14 @@ static conv_coeffs_t* conv_coeffs_cache_find(const char* name, size_t chunk_size
 
 static conv_coeffs_t* conv_coeffs_create(const char* name, size_t chunk_size,
                                          size_t num_seg, size_t spec_len,
-                                         const double* coeffs, size_t coeffs_count,
-                                         fftw_plan plan_forward, size_t fft_len) {
+                                         const double* coeffs,
+                                         size_t coeffs_count, real_fft_t* fft,
+                                         size_t fft_len) {
   const char* lookup_name = name ? name : "convolution";
-  for (conv_coeffs_t* curr = g_conv_coeffs_cache; curr != NULL; curr = curr->next) {
-    if (strcmp(curr->name, lookup_name) == 0 && curr->chunk_size == chunk_size) {
+  for (conv_coeffs_t* curr = g_conv_coeffs_cache; curr != NULL;
+       curr = curr->next) {
+    if (strcmp(curr->name, lookup_name) == 0 &&
+        curr->chunk_size == chunk_size) {
       curr->ref_count++;
       return curr;
     }
@@ -683,15 +410,16 @@ static conv_coeffs_t* conv_coeffs_create(const char* name, size_t chunk_size,
   entry->num_segments = num_seg;
   entry->spec_len = spec_len;
   entry->ref_count = 1;
-  entry->data = (fftw_complex*)fftw_malloc(num_seg * spec_len * sizeof(fftw_complex));
+  entry->data = (complex_t*)cdsp_aligned_alloc(
+      64, num_seg * spec_len * sizeof(complex_t));
   if (!entry->data) {
     free(entry);
     return NULL;
   }
 
-  double* scratch = (double*)fftw_malloc(fft_len * sizeof(double));
+  double* scratch = (double*)cdsp_aligned_alloc(64, fft_len * sizeof(double));
   if (!scratch) {
-    fftw_free(entry->data);
+    cdsp_aligned_free(entry->data);
     free(entry);
     return NULL;
   }
@@ -707,9 +435,9 @@ static conv_coeffs_t* conv_coeffs_create(const char* name, size_t chunk_size,
         scratch[k] = coeffs[offset + k] * inv_scale;
       }
     }
-    fftw_execute_dft_r2c(plan_forward, scratch, entry->data + s * spec_len);
+    real_fft_forward(fft, scratch, entry->data + s * spec_len);
   }
-  fftw_free(scratch);
+  cdsp_aligned_free(scratch);
 
   entry->next = g_conv_coeffs_cache;
   g_conv_coeffs_cache = entry;
@@ -732,7 +460,7 @@ static void conv_coeffs_release(conv_coeffs_t* entry) {
       }
     }
     if (entry->data) {
-      fftw_free(entry->data);
+      cdsp_aligned_free(entry->data);
     }
     free(entry);
   }
@@ -750,13 +478,12 @@ static void convolution_filter_free(void* instance) {
     conv_coeffs_release(filter->coeffs);
     filter->coeffs = NULL;
   }
-  if (filter->hist_f) fftw_free(filter->hist_f);
-  if (filter->temp_buf) fftw_free(filter->temp_buf);
-  if (filter->plan_forward) fftw_destroy_plan(filter->plan_forward);
-  if (filter->plan_inverse) fftw_destroy_plan(filter->plan_inverse);
+  if (filter->hist_f) cdsp_aligned_free(filter->hist_f);
+  if (filter->temp_buf) cdsp_aligned_free(filter->temp_buf);
+  if (filter->fft) real_fft_free(filter->fft);
   if (filter->overlap_buffer) free(filter->overlap_buffer);
-  if (filter->time_buf) fftw_free(filter->time_buf);
-  if (filter->out_buf) fftw_free(filter->out_buf);
+  if (filter->time_buf) cdsp_aligned_free(filter->time_buf);
+  if (filter->out_buf) cdsp_aligned_free(filter->out_buf);
   if (filter->input_buffer) free(filter->input_buffer);
   if (filter->output_buffer) free(filter->output_buffer);
   free(filter);
@@ -873,7 +600,8 @@ static void* convolution_filter_create(const char* name,
   filter->spec_len = spec_len;
 
   // Check cache for shared coefficients
-  conv_coeffs_t* cached_coeffs = conv_coeffs_cache_find(filter->name, chunk_size);
+  conv_coeffs_t* cached_coeffs =
+      conv_coeffs_cache_find(filter->name, chunk_size);
   if (cached_coeffs) {
     filter->coeffs = cached_coeffs;
     filter->num_segments = cached_coeffs->num_segments;
@@ -917,16 +645,17 @@ static void* convolution_filter_create(const char* name,
   }
 
   size_t num_seg = filter->num_segments;
-  filter->hist_f = (fftw_complex*)fftw_malloc(num_seg * spec_len * sizeof(fftw_complex));
+  filter->hist_f = (complex_t*)cdsp_aligned_alloc(
+      64, num_seg * spec_len * sizeof(complex_t));
   if (!filter->hist_f) {
     goto fail;
   }
-  memset(filter->hist_f, 0, num_seg * spec_len * sizeof(fftw_complex));
+  memset(filter->hist_f, 0, num_seg * spec_len * sizeof(complex_t));
 
   filter->temp_buf =
-      (fftw_complex*)fftw_malloc(spec_len * sizeof(fftw_complex));
-  filter->time_buf = (double*)fftw_malloc(fft_len * sizeof(double));
-  filter->out_buf = (double*)fftw_malloc(fft_len * sizeof(double));
+      (complex_t*)cdsp_aligned_alloc(64, spec_len * sizeof(complex_t));
+  filter->time_buf = (double*)cdsp_aligned_alloc(64, fft_len * sizeof(double));
+  filter->out_buf = (double*)cdsp_aligned_alloc(64, fft_len * sizeof(double));
   filter->overlap_buffer = (double*)calloc(chunk_size, sizeof(double));
   filter->input_buffer = (double*)calloc(chunk_size, sizeof(double));
   filter->output_buffer = (double*)calloc(chunk_size, sizeof(double));
@@ -941,26 +670,23 @@ static void* convolution_filter_create(const char* name,
     goto fail;
   }
 
-  filter->plan_forward = fftw_plan_dft_r2c_1d((int)fft_len, filter->time_buf,
-                                              filter->hist_f, FFTW_PATIENT);
-  filter->plan_inverse = fftw_plan_dft_c2r_1d((int)fft_len, filter->temp_buf,
-                                              filter->out_buf, FFTW_PATIENT);
-
-  if (!filter->plan_forward || !filter->plan_inverse) {
-    config_error_set(err, CONFIG_ERR_PARSE, "Failed to create FFTW plan");
+  filter->fft = real_fft_create(fft_len, err);
+  if (!filter->fft) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to create real FFT context");
     goto fail;
   }
 
-  // Clear buffers that might have been overwritten during FFTW planning
-  memset(filter->hist_f, 0, num_seg * spec_len * sizeof(fftw_complex));
-  memset(filter->temp_buf, 0, spec_len * sizeof(fftw_complex));
+  // Clear buffers that might have been overwritten during FFT planning
+  memset(filter->hist_f, 0, num_seg * spec_len * sizeof(complex_t));
+  memset(filter->temp_buf, 0, spec_len * sizeof(complex_t));
   memset(filter->time_buf, 0, fft_len * sizeof(double));
   memset(filter->out_buf, 0, fft_len * sizeof(double));
 
   if (!filter->coeffs) {
-    filter->coeffs = conv_coeffs_create(filter->name, chunk_size, num_seg,
-                                        spec_len, coeffs, coeffs_count,
-                                        filter->plan_forward, fft_len);
+    filter->coeffs =
+        conv_coeffs_create(filter->name, chunk_size, num_seg, spec_len, coeffs,
+                           coeffs_count, filter->fft, fft_len);
     if (!filter->coeffs) {
       goto fail;
     }
@@ -1016,25 +742,26 @@ static void process_chunk(convolution_filter_t* filter,
   memset(filter->time_buf + cs, 0, cs * sizeof(double));
 
   // 2. Advance the history index and FFT the new block directly into that slot.
-  fftw_complex* dest_slot = filter->hist_f + widx * spec_len;
-  fftw_execute_dft_r2c(filter->plan_forward, filter->time_buf, dest_slot);
+  complex_t* dest_slot = filter->hist_f + widx * spec_len;
+  real_fft_forward(filter->fft, filter->time_buf, dest_slot);
 
   // 3. Spectrum-domain multiply-accumulate across the segment history.
   //    seg=0 pairs the newest input with coeff[0]; seg=k pairs the input from
   //    `k` blocks ago with coeff[k].
-  const fftw_complex* coeffs_data = filter->coeffs->data;
+  const complex_t* coeffs_data = filter->coeffs->data;
   size_t hidx0 = widx;
-  complex_mul_simd(filter->temp_buf, filter->hist_f + hidx0 * spec_len,
-                   coeffs_data, spec_len);
+  dsp_ops_complex_multiply_interleaved(filter->hist_f + hidx0 * spec_len,
+                                       coeffs_data, filter->temp_buf, spec_len);
 
   for (size_t s = 1; s < num_seg; s++) {
     size_t hidx = (widx + num_seg - s) % num_seg;
-    complex_fma_simd(filter->temp_buf, filter->hist_f + hidx * spec_len,
-                     coeffs_data + s * spec_len, spec_len);
+    dsp_ops_complex_fma_interleaved(filter->temp_buf,
+                                    filter->hist_f + hidx * spec_len,
+                                    coeffs_data + s * spec_len, spec_len);
   }
 
   // 4. Inverse FFT directly into out_buf.
-  fftw_execute_dft_c2r(filter->plan_inverse, filter->temp_buf, filter->out_buf);
+  real_fft_inverse(filter->fft, filter->temp_buf, filter->out_buf);
 
   // 5. Overlap-add output: out[i] = ifft[i] + overlap_prev[i] for
   //    i in 0..<N; overlap_next = ifft[N..2N].
@@ -1112,7 +839,7 @@ static void convolution_filter_transfer_state(void* dest_ptr,
            dest->chunk_size * sizeof(double));
 
     // Copy history segments in a single contiguous block
-    memcpy(dest->hist_f, src->hist_f, num_seg * spec_len * sizeof(fftw_complex));
+    memcpy(dest->hist_f, src->hist_f, num_seg * spec_len * sizeof(complex_t));
     dest->write_idx = src->write_idx;
     memcpy(dest->input_buffer, src->input_buffer,
            dest->chunk_size * sizeof(double));
