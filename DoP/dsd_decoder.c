@@ -45,6 +45,7 @@
 #include "Audio/sample_conversion.h"
 #include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_memory.h"
 
 static const logger_t g_logger = {"dsp.dsd.decoder"};
 
@@ -70,7 +71,7 @@ typedef struct {
   uint8_t fifo[DOP_FIFO_SIZE * 2]; /**< Ring buffer for DSD bytes (duplicated
                                       for unmasked reads). */
   int fifo_pos;                    /**< Current position in the FIFO. */
-} dsd_decoder_channel_state_t;
+} __attribute__((aligned(64))) dsd_decoder_channel_state_t;
 
 struct dsd_decoder {
   int channels;    /**< Number of audio channels. */
@@ -263,14 +264,16 @@ dsd_decoder_t* dsd_decoder_create(int channels, double sample_rate,
   dec->last_seen_active = dec->is_dsd_active;
   dec->chunks_at_seen_state = 0;
 
-  dec->channel_states = (dsd_decoder_channel_state_t*)calloc(
-      channels, sizeof(dsd_decoder_channel_state_t));
+  size_t alloc_size = (size_t)channels * sizeof(dsd_decoder_channel_state_t);
+  dec->channel_states =
+      (dsd_decoder_channel_state_t*)cdsp_aligned_alloc(64, alloc_size);
   if (!dec->channel_states) {
     logger_error(&g_logger,
                  "Memory allocation failed for DSD decoder channel states");
     dsd_decoder_free(dec);
     return NULL;
   }
+  memset(dec->channel_states, 0, alloc_size);
   for (int ch = 0; ch < channels; ch++) {
     memset(dec->channel_states[ch].fifo, DOP_SILENCE_BYTE, DOP_FIFO_SIZE * 2);
     dec->channel_states[ch].is_active =
@@ -592,7 +595,7 @@ bool dsd_decoder_detect_and_process(dsd_decoder_t* decoder,
 
 void dsd_decoder_free(dsd_decoder_t* decoder) {
   if (!decoder) return;
-  if (decoder->channel_states) free(decoder->channel_states);
+  if (decoder->channel_states) cdsp_aligned_free(decoder->channel_states);
   if (decoder->ctables) free(decoder->ctables);
   free(decoder);
 }
