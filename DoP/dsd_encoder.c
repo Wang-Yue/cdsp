@@ -36,6 +36,7 @@
 
 #include "Audio/sample_conversion.h"
 #include "Logging/app_logger.h"
+#include "Utils/cdsp_memory.h"
 
 static const logger_t g_logger = {"dsp.dsd.encoder"};
 #include <stdint.h>
@@ -55,7 +56,7 @@ typedef struct {
   uint8_t marker;
   /** Sigma-delta modulator instance for this channel. */
   sigma_delta_modulator_t* modulator;
-} dsd_encoder_channel_state_t;
+} __attribute__((aligned(64))) dsd_encoder_channel_state_t;
 
 struct dsd_encoder {
   /** Number of audio channels. */
@@ -251,14 +252,16 @@ dsd_encoder_t* dsd_encoder_create(int channels, size_t sample_rate,
     return enc;
   }
 
-  enc->channel_states = (dsd_encoder_channel_state_t*)calloc(
-      channels, sizeof(dsd_encoder_channel_state_t));
+  size_t alloc_size = (size_t)channels * sizeof(dsd_encoder_channel_state_t);
+  enc->channel_states =
+      (dsd_encoder_channel_state_t*)cdsp_aligned_alloc(64, alloc_size);
   if (!enc->channel_states) {
     logger_error(&g_logger,
                  "Memory allocation failed for DSD encoder channel states");
     dsd_encoder_free(enc);
     return NULL;
   }
+  memset(enc->channel_states, 0, alloc_size);
 
   double dsd_rate = (double)sample_rate * (double)dsd_bit_depth;
   uint32_t freq = (uint32_t)round(dsd_rate);
@@ -497,7 +500,7 @@ void dsd_encoder_free(dsd_encoder_t* encoder) {
     for (int ch = 0; ch < encoder->channels; ch++) {
       sigma_delta_modulator_free(encoder->channel_states[ch].modulator);
     }
-    free(encoder->channel_states);
+    cdsp_aligned_free(encoder->channel_states);
   }
   if (encoder->coeffs) free(encoder->coeffs);
   free(encoder);
