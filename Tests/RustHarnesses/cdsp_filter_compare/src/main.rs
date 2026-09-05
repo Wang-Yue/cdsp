@@ -516,6 +516,10 @@ fn main() {
                 reference_level,
                 high_boost: Some(high_boost),
                 low_boost: Some(low_boost),
+                high_freq: None,
+                low_freq: None,
+                high_q: None,
+                low_q: None,
                 fader: Some(LoudnessFader::Main),
                 attenuate_mid: Some(attenuate_mid),
             };
@@ -608,39 +612,21 @@ fn main() {
                     let gain: f64 = args[3].parse().unwrap();
                     camillalib::config::BiquadComboParameters::Tilt { gain }
                 }
-                "five_point_peq" => {
-                    let fls: f64 = args[3].parse().unwrap();
-                    let qls: f64 = args[4].parse().unwrap();
-                    let gls: f64 = args[5].parse().unwrap();
-                    let fp1: f64 = args[6].parse().unwrap();
-                    let qp1: f64 = args[7].parse().unwrap();
-                    let gp1: f64 = args[8].parse().unwrap();
-                    let fp2: f64 = args[9].parse().unwrap();
-                    let qp2: f64 = args[10].parse().unwrap();
-                    let gp2: f64 = args[11].parse().unwrap();
-                    let fp3: f64 = args[12].parse().unwrap();
-                    let qp3: f64 = args[13].parse().unwrap();
-                    let gp3: f64 = args[14].parse().unwrap();
-                    let fhs: f64 = args[15].parse().unwrap();
-                    let qhs: f64 = args[16].parse().unwrap();
-                    let ghs: f64 = args[17].parse().unwrap();
-                    camillalib::config::BiquadComboParameters::FivePointPeq {
-                        fls,
-                        qls,
-                        gls,
-                        fp1,
-                        qp1,
-                        gp1,
-                        fp2,
-                        qp2,
-                        gp2,
-                        fp3,
-                        qp3,
-                        gp3,
-                        fhs,
-                        qhs,
-                        ghs,
-                    }
+                "n_point_peq" => {
+                    let bands_str = &args[3];
+                    let bands: Vec<camillalib::config::PeqBand> = bands_str
+                        .split(',')
+                        .map(|b| {
+                            let parts: Vec<&str> = b.split(':').collect();
+                            assert_eq!(parts.len(), 3, "each band must be freq:q:gain");
+                            camillalib::config::PeqBand {
+                                freq: parts[0].parse().unwrap(),
+                                q: parts[1].parse().unwrap(),
+                                gain: parts[2].parse().unwrap(),
+                            }
+                        })
+                        .collect();
+                    camillalib::config::BiquadComboParameters::NPointPeq { bands }
                 }
                 "graphic_equalizer" => {
                     let freq_min: f32 = args[3].parse().unwrap();
@@ -660,8 +646,9 @@ fn main() {
             let chunk_size: usize = args[last_args_start + 1].parse().unwrap();
             let in_path = &args[last_args_start + 2];
             let out_path = &args[last_args_start + 3];
-            let mut filter = camillalib::filters::biquadcombo::BiquadCombo::from_config(
-                "test", samplerate, conf,
+            let stages = camillalib::filters::biquadcombo::stages(samplerate, conf);
+            let mut filter = camillalib::filters::biquadcombo::Combo::new(
+                "test", samplerate, stages,
             );
             let input = read_f64(in_path);
             let output = run_filter(&mut filter, input, chunk_size);

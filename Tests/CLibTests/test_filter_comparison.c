@@ -971,12 +971,9 @@ static void compare_biquad_combo_geq(double freq_min, double freq_max,
   free(swift_out);
 }
 
-static void compare_biquad_combo_peq5(double fls, double qls, double gls,
-                                      double fp1, double qp1, double gp1,
-                                      double fp2, double qp2, double gp2,
-                                      double fp3, double qp3, double gp3,
-                                      double fhs, double qhs, double ghs,
-                                      const char* label) {
+static void compare_biquad_combo_n_point_peq(const peq_band_t* bands,
+                                             size_t bands_count,
+                                             const char* label) {
   double* input = (double*)malloc(NBR_FRAMES * sizeof(double));
   make_test_signal(input, NBR_FRAMES);
   char in_path[256], ref_path[256];
@@ -984,34 +981,23 @@ static void compare_biquad_combo_peq5(double fls, double qls, double gls,
   snprintf(ref_path, sizeof(ref_path), "/tmp/cdsp_combo_%s_ref.raw", label);
   write_raw(input, NBR_FRAMES, in_path);
 
-  char fls_s[64], qls_s[64], gls_s[64];
-  char fp1_s[64], qp1_s[64], gp1_s[64];
-  char fp2_s[64], qp2_s[64], gp2_s[64];
-  char fp3_s[64], qp3_s[64], gp3_s[64];
-  char fhs_s[64], qhs_s[64], ghs_s[64];
-  char sr_s[64], cs_s[64];
+  char bands_str[1024] = {0};
+  size_t offset = 0;
+  for (size_t i = 0; i < bands_count; i++) {
+    int written = snprintf(bands_str + offset, sizeof(bands_str) - offset,
+                           "%s%.17g:%.17g:%.17g", i > 0 ? "," : "",
+                           bands[i].freq, bands[i].q, bands[i].gain);
+    if (written > 0) {
+      offset += (size_t)written;
+    }
+  }
 
-  snprintf(fls_s, sizeof(fls_s), "%.17g", fls);
-  snprintf(qls_s, sizeof(qls_s), "%.17g", qls);
-  snprintf(gls_s, sizeof(gls_s), "%.17g", gls);
-  snprintf(fp1_s, sizeof(fp1_s), "%.17g", fp1);
-  snprintf(qp1_s, sizeof(qp1_s), "%.17g", qp1);
-  snprintf(gp1_s, sizeof(gp1_s), "%.17g", gp1);
-  snprintf(fp2_s, sizeof(fp2_s), "%.17g", fp2);
-  snprintf(qp2_s, sizeof(qp2_s), "%.17g", qp2);
-  snprintf(gp2_s, sizeof(gp2_s), "%.17g", gp2);
-  snprintf(fp3_s, sizeof(fp3_s), "%.17g", fp3);
-  snprintf(qp3_s, sizeof(qp3_s), "%.17g", qp3);
-  snprintf(gp3_s, sizeof(gp3_s), "%.17g", gp3);
-  snprintf(fhs_s, sizeof(fhs_s), "%.17g", fhs);
-  snprintf(qhs_s, sizeof(qhs_s), "%.17g", qhs);
-  snprintf(ghs_s, sizeof(ghs_s), "%.17g", ghs);
+  char sr_s[64], cs_s[64];
   snprintf(sr_s, sizeof(sr_s), "%d", SAMPLE_RATE);
   snprintf(cs_s, sizeof(cs_s), "%d", CHUNK_SIZE);
 
-  if (!RUN_HARNESS("biquad_combo", "five_point_peq", fls_s, qls_s, gls_s, fp1_s,
-                   qp1_s, gp1_s, fp2_s, qp2_s, gp2_s, fp3_s, qp3_s, gp3_s,
-                   fhs_s, qhs_s, ghs_s, sr_s, cs_s, in_path, ref_path)) {
+  if (!RUN_HARNESS("biquad_combo", "n_point_peq", bands_str, sr_s, cs_s,
+                   in_path, ref_path)) {
     free(input);
     return;
   }
@@ -1020,21 +1006,14 @@ static void compare_biquad_combo_peq5(double fls, double qls, double gls,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  peq_band_t bands[5] = {
-      {.freq = fls, .q = qls, .gain = gls},
-      {.freq = fp1, .q = qp1, .gain = gp1},
-      {.freq = fp2, .q = qp2, .gain = gp2},
-      {.freq = fp3, .q = qp3, .gain = gp3},
-      {.freq = fhs, .q = qhs, .gain = ghs},
-  };
   biquad_combo_config_t params = {0};
   params.type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
-  params.bands = bands;
-  params.bands_count = 5;
+  params.bands = (peq_band_t*)bands;
+  params.bands_count = bands_count;
 
   filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD_COMBO,
                          .parameters.biquad_combo = params};
-  void* filter = g_biquad_combo_vtable.create("test_peq5", &cfg, SAMPLE_RATE, 0,
+  void* filter = g_biquad_combo_vtable.create("test_npeq", &cfg, SAMPLE_RATE, 0,
                                               NULL, NULL);
   ASSERT_TRUE(filter != NULL);
 
@@ -1089,9 +1068,14 @@ TEST(BiquadCombo_GraphicEqualizer) {
 }
 
 TEST(BiquadCombo_NPointPeq) {
-  compare_biquad_combo_peq5(80.0, 0.707, 3.0, 250.0, 1.5, -2.0, 1000.0, 2.0,
-                            1.5, 4000.0, 1.0, -1.0, 12000.0, 0.707, 2.5,
-                            "peq5");
+  peq_band_t bands[5] = {
+      {.freq = 80.0, .q = 0.707, .gain = 3.0},
+      {.freq = 250.0, .q = 1.5, .gain = -2.0},
+      {.freq = 1000.0, .q = 2.0, .gain = 4.0},
+      {.freq = 4000.0, .q = 1.0, .gain = -1.0},
+      {.freq = 12000.0, .q = 0.707, .gain = 2.5},
+  };
+  compare_biquad_combo_n_point_peq(bands, 5, "n_point_peq");
 }
 
 // MARK: - DiffEq
