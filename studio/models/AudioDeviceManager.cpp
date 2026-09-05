@@ -479,6 +479,9 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
             if (version != m_capabilityRequestVersion)
                 return;
 
+            DeviceConfig oldCap = captureConfig;
+            DeviceConfig oldPb = playbackConfig;
+
             updateCapabilitiesFromDescriptor(captureConfig, true, capDesc);
             updateCapabilitiesFromDescriptor(playbackConfig, false, pbDesc);
 
@@ -492,10 +495,12 @@ void AudioDeviceManager::refreshDeviceCapabilities() {
 
             bool rateChanged = validateSampleRates();
             if (!rateChanged) {
-                saveConfigs();
-                emit configChanged();
-                if (onConfigChanged)
-                    onConfigChanged();
+                if (captureConfig != oldCap || playbackConfig != oldPb) {
+                    saveConfigs();
+                    emit configChanged();
+                    if (onConfigChanged)
+                        onConfigChanged();
+                }
             }
         });
     }));
