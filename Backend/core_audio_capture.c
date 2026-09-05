@@ -331,9 +331,6 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
     if (!physical_format_set) {
       core_audio_device_set_nominal_sample_rate(dev_id, capture->sample_rate);
     }
-    // Set device buffer frame size matching target chunk size.
-    core_audio_device_set_buffer_frame_size(
-        dev_id, (uint32_t)capture->chunk_size, CORE_AUDIO_SCOPE_INPUT);
 
     core_audio_device_add_alive_watcher(dev_id, &capture->is_device_alive);
   }
@@ -376,10 +373,10 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
   }
   if (!capture->read_scratch ||
       capture->read_scratch_cap <
-          capture->blockalign * (size_t)capture->chunk_size * 2) {
+          capture->blockalign * (size_t)capture->chunk_size * 4) {
     if (capture->read_scratch) free(capture->read_scratch);
     capture->read_scratch_cap =
-        capture->blockalign * (size_t)capture->chunk_size * 2;
+        capture->blockalign * (size_t)capture->chunk_size * 4;
     capture->read_scratch = (uint8_t*)malloc(capture->read_scratch_cap);
   }
   if (!capture->read_scratch) {
@@ -615,7 +612,9 @@ static capture_backend_t* core_audio_capture_create(
 
   capture->bytes_per_sample = sizeof(float);
   capture->blockalign = config_channels * sizeof(float);
-  size_t ring_size = capture->blockalign * (2 * (size_t)chunk_size + 2048);
+  const size_t callback_frames = 512;
+  size_t ring_size =
+      capture->blockalign * (2 * (size_t)chunk_size + 2 * callback_frames);
   capture->ring_buffer = spsc_byte_ring_buffer_create(ring_size);
   if (!capture->ring_buffer) {
     if (err)
@@ -625,7 +624,7 @@ static capture_backend_t* core_audio_capture_create(
     return NULL;
   }
 
-  capture->read_scratch_cap = capture->blockalign * (size_t)chunk_size * 2;
+  capture->read_scratch_cap = capture->blockalign * (size_t)chunk_size * 4;
   capture->read_scratch = NULL;
 
   atomic_init(&capture->is_device_alive, true);
@@ -636,8 +635,7 @@ static capture_backend_t* core_audio_capture_create(
   AudioDeviceID dev_id = core_audio_device_id_for_name(
       capture->device_name[0] ? capture->device_name : NULL,
       CORE_AUDIO_SCOPE_INPUT);
-  if (dev_id != 0 &&
-      core_audio_device_has_nominal_sample_rate_property(dev_id)) {
+  if (dev_id != 0) {
     pitch_active = core_audio_device_select_adjustable_clock_source(dev_id);
   }
   atomic_init(&capture->pitch_control_active, pitch_active);

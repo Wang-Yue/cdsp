@@ -308,8 +308,6 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
     core_audio_device_set_nominal_sample_rate(dev_id, playback->sample_rate);
     logger_trace(&g_logger, "Set playback device sample rate.");
   }
-  core_audio_device_set_buffer_frame_size(
-      dev_id, (uint32_t)playback->chunk_size, CORE_AUDIO_SCOPE_OUTPUT);
 
   core_audio_device_add_alive_watcher(dev_id, &playback->is_device_alive);
 

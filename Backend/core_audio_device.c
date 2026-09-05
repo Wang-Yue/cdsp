@@ -69,19 +69,32 @@ bool core_audio_device_name(AudioDeviceID device_id, char* out_name,
   return false;
 }
 
-/// True if the device exposes any streams in the given direction.
-static bool core_audio_device_has_stream(AudioDeviceID device_id,
-                                         core_audio_scope_t scope) {
+/// Check if device supports the given scope using
+/// kAudioDevicePropertyStreamConfiguration matching CamillaDSP
+/// device_supports_scope.
+bool core_audio_device_supports_scope(AudioDeviceID device_id,
+                                      core_audio_scope_t scope) {
   AudioObjectPropertyAddress addr = {
-      .mSelector = kAudioDevicePropertyStreams,
+      .mSelector = kAudioDevicePropertyStreamConfiguration,
       .mScope = (scope == CORE_AUDIO_SCOPE_INPUT)
                     ? kAudioDevicePropertyScopeInput
                     : kAudioDevicePropertyScopeOutput,
-      .mElement = kAudioObjectPropertyElementMain};
+      .mElement = kAudioObjectPropertyElementWildcard};
   uint32_t size = 0;
   OSStatus status =
       AudioObjectGetPropertyDataSize(device_id, &addr, 0, NULL, &size);
-  return (status == noErr && size >= sizeof(AudioStreamID));
+  if (status != noErr || size <= sizeof(UInt32)) {
+    return false;
+  }
+  uint32_t nbr_buffers =
+      (size - (uint32_t)sizeof(UInt32)) / (uint32_t)sizeof(AudioBuffer);
+  return (nbr_buffers > 0);
+}
+
+/// True if the device exposes any streams/buffers in the given direction.
+static bool core_audio_device_has_stream(AudioDeviceID device_id,
+                                         core_audio_scope_t scope) {
+  return core_audio_device_supports_scope(device_id, scope);
 }
 
 /// HAL stream IDs for the given device + direction.
@@ -232,22 +245,6 @@ bool core_audio_device_set_nominal_sample_rate(AudioDeviceID device_id,
 }
 
 // MARK: - Buffer frame size control
-
-/// Set the device's buffer frame size for a given scope. Returns `true` on
-/// success.
-bool core_audio_device_set_buffer_frame_size(AudioDeviceID device_id,
-                                             uint32_t frames,
-                                             core_audio_scope_t scope) {
-  AudioObjectPropertyAddress addr = {
-      .mSelector = kAudioDevicePropertyBufferFrameSize,
-      .mScope = (scope == CORE_AUDIO_SCOPE_INPUT)
-                    ? kAudioDevicePropertyScopeInput
-                    : kAudioDevicePropertyScopeOutput,
-      .mElement = kAudioObjectPropertyElementMain};
-  uint32_t value = frames;
-  return (AudioObjectSetPropertyData(device_id, &addr, 0, NULL,
-                                     sizeof(uint32_t), &value) == noErr);
-}
 
 bool core_audio_device_get_buffer_frame_size(AudioDeviceID device_id,
                                              core_audio_scope_t scope,
@@ -864,7 +861,28 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
     OSStatus status = AudioObjectSetPropertyData(
         best_stream_id, &addr, 0, NULL, sizeof(AudioStreamBasicDescription),
         &best_asbd);
-    return (status == noErr);
+    if (status != noErr) {
+      return false;
+    }
+
+    // Wait for the reported format to change (up to 2 seconds, checking every
+    // 5ms). Matches coreaudio-rs set_device_physical_stream_format settling
+    // loop.
+    for (int iter = 0; iter < 400; iter++) {
+      AudioStreamBasicDescription reported = {0};
+      uint32_t size = sizeof(AudioStreamBasicDescription);
+      if (AudioObjectGetPropertyData(best_stream_id, &addr, 0, NULL, &size,
+                                     &reported) == noErr) {
+        if (fabs(reported.mSampleRate - best_asbd.mSampleRate) < 0.5 &&
+            reported.mFormatID == best_asbd.mFormatID &&
+            reported.mBitsPerChannel == best_asbd.mBitsPerChannel &&
+            reported.mChannelsPerFrame == best_asbd.mChannelsPerFrame) {
+          return true;
+        }
+      }
+      cdsp_sleep_us(5000);
+    }
+    return true;
   }
 
   return false;
@@ -999,47 +1017,6 @@ void core_audio_device_remove_alive_watcher(AudioDeviceID device_id,
 }
 
 // MARK: - Stream Configuration & Lifecycle Helpers
-
-bool core_audio_device_configure_stream(
-    AudioDeviceID device_id, core_audio_scope_t scope, double sample_rate,
-    const char* format_str, bool has_format, size_t channels, size_t chunk_size,
-    binary_sample_format_t* out_binary_format, size_t* out_bytes_per_sample,
-    size_t* out_blockalign) {
-  if (device_id == 0 || channels == 0) return false;
-
-  if (has_format && format_str && format_str[0]) {
-    core_audio_device_set_matching_physical_format(
-        device_id, scope, sample_rate, format_str, channels);
-    AudioStreamBasicDescription actual_asbd;
-    core_audio_device_set_matching_virtual_format(
-        device_id, scope, sample_rate, format_str, channels, &actual_asbd);
-  }
-  core_audio_device_set_nominal_sample_rate(device_id, sample_rate);
-  core_audio_device_set_buffer_frame_size(device_id, (uint32_t)chunk_size,
-                                          scope);
-
-  binary_sample_format_t bin_fmt = BINARY_SAMPLE_FORMAT_F32_LE;
-  AudioStreamBasicDescription current_asbd;
-  if (core_audio_device_get_virtual_format(device_id, scope, &current_asbd)) {
-    binary_sample_format_t parsed_fmt =
-        core_audio_device_asbd_to_binary_format(&current_asbd);
-    if (parsed_fmt != BINARY_SAMPLE_FORMAT_INVALID) {
-      bin_fmt = parsed_fmt;
-    }
-  }
-
-  size_t bytes_per_samp = sample_format_bytes_per_sample(bin_fmt);
-  if (bytes_per_samp == 0) {
-    bytes_per_samp = sizeof(float);
-    bin_fmt = BINARY_SAMPLE_FORMAT_F32_LE;
-  }
-  size_t blkalign = (size_t)channels * bytes_per_samp;
-
-  if (out_binary_format) *out_binary_format = bin_fmt;
-  if (out_bytes_per_sample) *out_bytes_per_sample = bytes_per_samp;
-  if (out_blockalign) *out_blockalign = blkalign;
-  return true;
-}
 
 void core_audio_device_stop_and_destroy_ioproc(
     AudioDeviceID device_id, AudioDeviceIOProcID io_proc_id,

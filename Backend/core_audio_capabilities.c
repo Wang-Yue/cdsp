@@ -216,21 +216,6 @@ audio_device_descriptor_t* core_audio_capabilities_describe(
               rates_to_add[rate_cnt++] = (int)STANDARD_RATES[r];
             }
           }
-          // Also check if the current nominal format sample rate is inside
-          // the range and not already in our list.
-          int hint = (int)round(asbd.mSampleRate);
-          if (hint > 0) {
-            bool found = false;
-            for (size_t k = 0; k < rate_cnt; k++) {
-              if (rates_to_add[k] == hint) {
-                found = true;
-                break;
-              }
-            }
-            if (!found && rate_cnt < 32) {
-              rates_to_add[rate_cnt++] = hint;
-            }
-          }
         }
 
         // Store combinations in the flat array.

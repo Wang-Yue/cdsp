@@ -60,6 +60,16 @@ bool core_audio_device_name(AudioDeviceID device_id, char* out_name,
                             size_t max_len);
 
 /**
+ * @brief Check if a device supports the given scope (input/output).
+ *
+ * @param device_id The HAL Device ID.
+ * @param scope CORE_AUDIO_SCOPE_INPUT or CORE_AUDIO_SCOPE_OUTPUT.
+ * @return true if supported, false otherwise.
+ */
+bool core_audio_device_supports_scope(AudioDeviceID device_id,
+                                      core_audio_scope_t scope);
+
+/**
  * @brief Retrieve HAL stream IDs for the given device and direction.
  *
  * @param device_id The HAL Device ID.
@@ -131,18 +141,6 @@ bool core_audio_device_get_nominal_sample_rate(AudioDeviceID device_id,
                                                double* out_rate);
 
 // MARK: - Buffer frame size control
-
-/**
- * @brief Set the device's buffer frame size for a given scope.
- *
- * @param device_id The HAL Device ID.
- * @param frames The target buffer size in frames.
- * @param scope The direction scope.
- * @return true on success, false otherwise.
- */
-bool core_audio_device_set_buffer_frame_size(AudioDeviceID device_id,
-                                             uint32_t frames,
-                                             core_audio_scope_t scope);
 
 /**
  * @brief Read the device's current buffer frame size for a given scope.
@@ -316,28 +314,6 @@ void core_audio_device_remove_alive_watcher(AudioDeviceID device_id,
                                             _Atomic bool* is_alive_flag);
 
 // MARK: - Stream Configuration & Lifecycle Helpers
-
-/**
- * @brief Configure physical & virtual stream formats, buffer size, and compute
- * binary sample format.
- *
- * @param device_id The HAL Device ID.
- * @param scope Direction scope (input/output).
- * @param sample_rate Target sample rate in Hz.
- * @param format_str Format string (e.g. "S16", "S24", "S32", "F32").
- * @param has_format true if a specific format was requested.
- * @param channels Channel count.
- * @param chunk_size Buffer frame size.
- * @param out_binary_format Pointer to receive determined binary sample format.
- * @param out_bytes_per_sample Pointer to receive bytes per sample.
- * @param out_blockalign Pointer to receive block alignment in bytes.
- * @return true on success.
- */
-bool core_audio_device_configure_stream(
-    AudioDeviceID device_id, core_audio_scope_t scope, double sample_rate,
-    const char* format_str, bool has_format, size_t channels, size_t chunk_size,
-    binary_sample_format_t* out_binary_format, size_t* out_bytes_per_sample,
-    size_t* out_blockalign);
 
 /**
  * @brief Stop an Audio HAL IOProc, wait for all active callbacks to complete,
