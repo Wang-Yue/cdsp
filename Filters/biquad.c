@@ -603,10 +603,10 @@ static void biquad_filter_process(void* instance, mutable_waveform_t waveform,
   for (size_t i = 0; i < count; i++) {
     double in = waveform[i];
     double out = b0 * in + z1;
+    waveform[i] = out;
     double tmp = b1 * in + z2;
     z1 = neg_a1 * out + tmp;
-    z2 = b2 * in + neg_a2 * out;
-    waveform[i] = out;
+    z2 = neg_a2 * out + b2 * in;
   }
   if (fpclassify(z1) == FP_SUBNORMAL) z1 = 0.0;
   if (fpclassify(z2) == FP_SUBNORMAL) z2 = 0.0;
@@ -663,20 +663,28 @@ static void biquad_choose_split(size_t channels, size_t depth,
   if (out_stages) *out_stages = stages;
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+#define CDSP_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define CDSP_NOINLINE __declspec(noinline)
+#else
+#define CDSP_NOINLINE
+#endif
+
 #define CANON_STAGE(c, k, in_val)                    \
   do {                                               \
     double _in = (in_val);                           \
     double _out = b0[c][k] * _in + s1[c][k];         \
+    pipe[c][k] = _out;                               \
     double _tmp = b1[c][k] * _in + s2[c][k];         \
     s1[c][k] = neg_a1[c][k] * _out + _tmp;           \
-    s2[c][k] = b2[c][k] * _in + neg_a2[c][k] * _out; \
-    pipe[c][k] = _out;                               \
+    s2[c][k] = neg_a2[c][k] * _out + b2[c][k] * _in; \
   } while (0)
 
 #define DEFINE_2D_CANON_KERNEL(C, S)                                     \
   _Static_assert((S) >= 1, "biquad cascade depth S must be at least 1"); \
   _Static_assert((C) >= 1, "channel count C must be at least 1");        \
-  static void biquad_canon_kernel_##C##_##S(                             \
+  static CDSP_NOINLINE void biquad_canon_kernel_##C##_##S(               \
       biquad_filter_t*** cascades, double** waveforms,                   \
       const size_t* channel_of, const size_t* members, size_t start,     \
       size_t n) {                                                        \
