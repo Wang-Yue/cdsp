@@ -119,8 +119,9 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
         }
         case FILTER_TYPE_LOUDNESS: {
           static const char* const allowed[] = {
-              "reference_level", "high_boost", "low_boost",
-              "attenuate_mid",   "fader",      NULL};
+              "reference_level", "high_boost", "low_boost", "attenuate_mid",
+              "fader",           "high_freq",  "low_freq",  "high_q",
+              "low_q",           NULL};
           if (validate_unknown_fields(params, allowed,
                                       "Loudness filter parameters", err) != 0)
             return -1;
@@ -132,6 +133,12 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           lp->has_low_boost =
               parse_json_double(params, "low_boost", &lp->low_boost);
           parse_json_bool(params, "attenuate_mid", &lp->attenuate_mid);
+          lp->has_high_freq =
+              parse_json_double(params, "high_freq", &lp->high_freq);
+          lp->has_low_freq =
+              parse_json_double(params, "low_freq", &lp->low_freq);
+          lp->has_high_q = parse_json_double(params, "high_q", &lp->high_q);
+          lp->has_low_q = parse_json_double(params, "low_q", &lp->low_q);
           item = cJSON_GetObjectItemCaseSensitive(params, "fader");
           if (item) {
             if (cJSON_IsString(item) && item->valuestring) {
@@ -292,11 +299,9 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           break;
         }
         case FILTER_TYPE_BIQUAD_COMBO: {
-          static const char* const allowed[] = {
-              "type", "freq",     "order",    "gain",  "fls", "qls",
-              "gls",  "fp1",      "qp1",      "gp1",   "fp2", "qp2",
-              "gp2",  "fp3",      "qp3",      "gp3",   "fhs", "qhs",
-              "ghs",  "freq_min", "freq_max", "gains", NULL};
+          static const char* const allowed[] = {"type",     "freq",  "order",
+                                                "gain",     "bands", "freq_min",
+                                                "freq_max", "gains", NULL};
           if (validate_unknown_fields(
                   params, allowed, "BiquadCombo filter parameters", err) != 0)
             return -1;
@@ -313,8 +318,8 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               bcp->type = BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS;
             else if (strcmp(item->valuestring, "Tilt") == 0)
               bcp->type = BIQUAD_COMBO_TYPE_TILT;
-            else if (strcmp(item->valuestring, "FivePointPeq") == 0)
-              bcp->type = BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ;
+            else if (strcmp(item->valuestring, "NPointPeq") == 0)
+              bcp->type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
             else if (strcmp(item->valuestring, "GraphicEqualizer") == 0)
               bcp->type = BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER;
           }
@@ -335,28 +340,28 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           }
           bcp->has_order = parse_json_int(params, "order", &bcp->order);
           bcp->has_gain = parse_json_double(params, "gain", &bcp->gain);
-#define PARSE_COMBO_DOUBLE(name, field)                   \
-  item = cJSON_GetObjectItemCaseSensitive(params, #name); \
-  if (cJSON_IsNumber(item)) {                             \
-    bcp->field = item->valuedouble;                       \
-    bcp->has_##field = true;                              \
-  }
-          PARSE_COMBO_DOUBLE(fls, fls)
-          PARSE_COMBO_DOUBLE(qls, qls)
-          PARSE_COMBO_DOUBLE(gls, gls)
-          PARSE_COMBO_DOUBLE(fp1, fp1)
-          PARSE_COMBO_DOUBLE(qp1, qp1)
-          PARSE_COMBO_DOUBLE(gp1, gp1)
-          PARSE_COMBO_DOUBLE(fp2, fp2)
-          PARSE_COMBO_DOUBLE(qp2, qp2)
-          PARSE_COMBO_DOUBLE(gp2, gp2)
-          PARSE_COMBO_DOUBLE(fp3, fp3)
-          PARSE_COMBO_DOUBLE(qp3, qp3)
-          PARSE_COMBO_DOUBLE(gp3, gp3)
-          PARSE_COMBO_DOUBLE(fhs, fhs)
-          PARSE_COMBO_DOUBLE(qhs, qhs)
-          PARSE_COMBO_DOUBLE(ghs, ghs)
-#undef PARSE_COMBO_DOUBLE
+
+          cJSON* bands_arr = cJSON_GetObjectItemCaseSensitive(params, "bands");
+          if (cJSON_IsArray(bands_arr)) {
+            int n_bands = cJSON_GetArraySize(bands_arr);
+            if (n_bands > 0) {
+              bcp->bands =
+                  (peq_band_t*)calloc((size_t)n_bands, sizeof(peq_band_t));
+              if (bcp->bands) {
+                bcp->bands_count = (size_t)n_bands;
+                for (int b_idx = 0; b_idx < n_bands; b_idx++) {
+                  cJSON* band_obj = cJSON_GetArrayItem(bands_arr, b_idx);
+                  if (cJSON_IsObject(band_obj)) {
+                    parse_json_double(band_obj, "freq",
+                                      &bcp->bands[b_idx].freq);
+                    parse_json_double(band_obj, "q", &bcp->bands[b_idx].q);
+                    parse_json_double(band_obj, "gain",
+                                      &bcp->bands[b_idx].gain);
+                  }
+                }
+              }
+            }
+          }
 
           cJSON* gains_arr = cJSON_GetObjectItemCaseSensitive(params, "gains");
           bcp->gains = parse_double_array(gains_arr, &bcp->gains_count);

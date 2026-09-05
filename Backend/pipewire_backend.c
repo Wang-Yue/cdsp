@@ -58,6 +58,7 @@ struct pipewire_capture {
   bool has_node_description;
   bool has_node_group_name;
   bool has_autoconnect_to;
+  bool loopback;
 
   struct pw_thread_loop* loop;
   struct pw_context* context;
@@ -380,6 +381,11 @@ static bool pipewire_capture_open(void* ctx, backend_error_t* err) {
     } else if (capture->has_autoconnect_to &&
                capture->autoconnect_to[0] != '\0') {
       pw_properties_set(props, "target.object", capture->autoconnect_to);
+      pw_properties_set(props, "node.dont-fallback", "true");
+      pw_properties_set(props, "node.linger", "true");
+    }
+    if (capture->loopback) {
+      pw_properties_set(props, "stream.capture.sink", "true");
     }
   }
 
@@ -655,6 +661,7 @@ static capture_backend_t* pipewire_capture_create(
              config->cfg.pipewire.autoconnect_to);
     capture->has_autoconnect_to = true;
   }
+  capture->loopback = config->cfg.pipewire.loopback;
 
   capture_backend_t* backend =
       (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
@@ -798,6 +805,8 @@ static bool pipewire_playback_open(void* ctx, backend_error_t* err) {
     } else if (playback->has_autoconnect_to &&
                playback->autoconnect_to[0] != '\0') {
       pw_properties_set(props, "target.object", playback->autoconnect_to);
+      pw_properties_set(props, "node.dont-fallback", "true");
+      pw_properties_set(props, "node.linger", "true");
     }
   }
 

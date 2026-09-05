@@ -161,9 +161,11 @@ TEST(LoudnessCanonMatchesShelvesRunOneAtATime) {
   config_error_init(&err);
 
   processing_parameters_t* proc_params = processing_parameters_create(1, 1);
-  processing_parameters_set_current_volume_for_fader(proc_params, -30.0, FADER_MAIN);
+  processing_parameters_set_current_volume_for_fader(proc_params, -30.0,
+                                                     FADER_MAIN);
 
-  filter_t* loudness = filter_create("loudness", &config, 44100, 400, proc_params, &err);
+  filter_t* loudness =
+      filter_create("loudness", &config, 44100, 400, proc_params, &err);
   ASSERT_TRUE(loudness != NULL);
 
   size_t len = 400;
@@ -188,6 +190,110 @@ TEST(LoudnessCanonMatchesShelvesRunOneAtATime) {
 
   filter_free(loudness);
   processing_parameters_free(proc_params);
+}
+
+TEST(LoudnessValidationDefaultsAreValid) {
+  filter_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.type = FILTER_TYPE_LOUDNESS;
+  config.parameters.loudness.reference_level = -25.0;
+  config.parameters.loudness.has_reference_level = true;
+  config_error_t err;
+  config_error_init(&err);
+  ASSERT_EQ(filter_config_validate(&config, 44100, &err), 0);
+}
+
+TEST(LoudnessValidationShelvesMustNotCross) {
+  filter_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.type = FILTER_TYPE_LOUDNESS;
+  config.parameters.loudness.reference_level = -25.0;
+  config.parameters.loudness.has_reference_level = true;
+  config.parameters.loudness.low_freq = 4000.0;
+  config.parameters.loudness.has_low_freq = true;
+  config_error_t err;
+  config_error_init(&err);
+  ASSERT_NE(filter_config_validate(&config, 44100, &err), 0);
+
+  config.parameters.loudness.high_freq = 8000.0;
+  config.parameters.loudness.has_high_freq = true;
+  ASSERT_EQ(filter_config_validate(&config, 44100, &err), 0);
+}
+
+TEST(LoudnessValidationFreqMustBeBelowNyquist) {
+  filter_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.type = FILTER_TYPE_LOUDNESS;
+  config.parameters.loudness.reference_level = -25.0;
+  config.parameters.loudness.has_reference_level = true;
+  config.parameters.loudness.high_freq = 9000.0;
+  config.parameters.loudness.has_high_freq = true;
+  config_error_t err;
+  config_error_init(&err);
+  ASSERT_EQ(filter_config_validate(&config, 44100, &err), 0);
+  ASSERT_NE(filter_config_validate(&config, 16000, &err), 0);
+}
+
+TEST(LoudnessValidationFreqMustBePositive) {
+  filter_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.type = FILTER_TYPE_LOUDNESS;
+  config.parameters.loudness.reference_level = -25.0;
+  config.parameters.loudness.has_reference_level = true;
+  config.parameters.loudness.low_freq = 0.0;
+  config.parameters.loudness.has_low_freq = true;
+  config_error_t err;
+  config_error_init(&err);
+  ASSERT_NE(filter_config_validate(&config, 44100, &err), 0);
+}
+
+TEST(LoudnessValidationQMustBeWithinLimits) {
+  filter_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.type = FILTER_TYPE_LOUDNESS;
+  config.parameters.loudness.reference_level = -25.0;
+  config.parameters.loudness.has_reference_level = true;
+  config.parameters.loudness.high_q = 0.0;
+  config.parameters.loudness.has_high_q = true;
+  config_error_t err;
+  config_error_init(&err);
+  ASSERT_NE(filter_config_validate(&config, 44100, &err), 0);
+
+  config.parameters.loudness.high_q = 1e10;
+  ASSERT_NE(filter_config_validate(&config, 44100, &err), 0);
+
+  config.parameters.loudness.high_q = 1.5;
+  ASSERT_EQ(filter_config_validate(&config, 44100, &err), 0);
+}
+
+TEST(LoudnessValidationBoostMustBeWithinLimits) {
+  filter_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.type = FILTER_TYPE_LOUDNESS;
+  config.parameters.loudness.reference_level = -25.0;
+  config.parameters.loudness.has_reference_level = true;
+  config_error_t err;
+  config_error_init(&err);
+
+  config.parameters.loudness.low_boost = 25.0;
+  config.parameters.loudness.has_low_boost = true;
+  ASSERT_NE(filter_config_validate(&config, 44100, &err), 0);
+
+  config.parameters.loudness.low_boost = -1.0;
+  ASSERT_NE(filter_config_validate(&config, 44100, &err), 0);
+
+  config.parameters.loudness.low_boost = 15.0;
+  ASSERT_EQ(filter_config_validate(&config, 44100, &err), 0);
+
+  config.parameters.loudness.high_boost = 25.0;
+  config.parameters.loudness.has_high_boost = true;
+  ASSERT_NE(filter_config_validate(&config, 44100, &err), 0);
+
+  config.parameters.loudness.high_boost = -1.0;
+  ASSERT_NE(filter_config_validate(&config, 44100, &err), 0);
+
+  config.parameters.loudness.high_boost = 15.0;
+  ASSERT_EQ(filter_config_validate(&config, 44100, &err), 0);
 }
 
 TEST_MAIN()

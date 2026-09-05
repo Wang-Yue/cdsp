@@ -135,6 +135,14 @@ static bool loudness_config_equal(const loudness_config_t* a,
   if (a->has_high_boost && a->high_boost != b->high_boost) return false;
   if (a->has_low_boost != b->has_low_boost) return false;
   if (a->has_low_boost && a->low_boost != b->low_boost) return false;
+  if (a->has_high_freq != b->has_high_freq) return false;
+  if (a->has_high_freq && a->high_freq != b->high_freq) return false;
+  if (a->has_low_freq != b->has_low_freq) return false;
+  if (a->has_low_freq && a->low_freq != b->low_freq) return false;
+  if (a->has_high_q != b->has_high_q) return false;
+  if (a->has_high_q && a->high_q != b->high_q) return false;
+  if (a->has_low_q != b->has_low_q) return false;
+  if (a->has_low_q && a->low_q != b->low_q) return false;
   if (a->attenuate_mid != b->attenuate_mid) return false;
   if (a->fader != b->fader) return false;
   return true;
@@ -172,31 +180,6 @@ static bool biquad_combo_config_equal(const biquad_combo_config_t* a,
   if (a->has_order && a->order != b->order) return false;
   if (a->has_gain != b->has_gain) return false;
   if (a->has_gain && a->gain != b->gain) return false;
-  if (a->has_fls != b->has_fls || a->has_qls != b->has_qls ||
-      a->has_gls != b->has_gls)
-    return false;
-  if (a->has_fls && (a->fls != b->fls || a->qls != b->qls || a->gls != b->gls))
-    return false;
-  if (a->has_fp1 != b->has_fp1 || a->has_qp1 != b->has_qp1 ||
-      a->has_gp1 != b->has_gp1)
-    return false;
-  if (a->has_fp1 && (a->fp1 != b->fp1 || a->qp1 != b->qp1 || a->gp1 != b->gp1))
-    return false;
-  if (a->has_fp2 != b->has_fp2 || a->has_qp2 != b->has_qp2 ||
-      a->has_gp2 != b->has_gp2)
-    return false;
-  if (a->has_fp2 && (a->fp2 != b->fp2 || a->qp2 != b->qp2 || a->gp2 != b->gp2))
-    return false;
-  if (a->has_fp3 != b->has_fp3 || a->has_qp3 != b->has_qp3 ||
-      a->has_gp3 != b->has_gp3)
-    return false;
-  if (a->has_fp3 && (a->fp3 != b->fp3 || a->qp3 != b->qp3 || a->gp3 != b->gp3))
-    return false;
-  if (a->has_fhs != b->has_fhs || a->has_qhs != b->has_qhs ||
-      a->has_ghs != b->has_ghs)
-    return false;
-  if (a->has_fhs && (a->fhs != b->fhs || a->qhs != b->qhs || a->ghs != b->ghs))
-    return false;
   if (a->has_freq_min != b->has_freq_min || a->has_freq_max != b->has_freq_max)
     return false;
   if (a->has_freq_min &&
@@ -204,6 +187,13 @@ static bool biquad_combo_config_equal(const biquad_combo_config_t* a,
     return false;
   if (!double_arrays_equal(a->gains, a->gains_count, b->gains, b->gains_count))
     return false;
+  if (a->bands_count != b->bands_count) return false;
+  if (a->bands_count > 0 && (!a->bands || !b->bands)) return false;
+  for (size_t i = 0; i < a->bands_count; i++) {
+    if (a->bands[i].freq != b->bands[i].freq ||
+        a->bands[i].q != b->bands[i].q || a->bands[i].gain != b->bands[i].gain)
+      return false;
+  }
   return true;
 }
 
@@ -612,6 +602,8 @@ bool devices_config_equal(const devices_config_t* a,
         return false;
       if (!safe_streq(a->capture.cfg.pipewire.autoconnect_to,
                       b->capture.cfg.pipewire.autoconnect_to))
+        return false;
+      if (a->capture.cfg.pipewire.loopback != b->capture.cfg.pipewire.loopback)
         return false;
       break;
 #endif

@@ -59,7 +59,7 @@ typedef enum {
   FILTER_TYPE_DITHER,       /**< Dither filter. */
   FILTER_TYPE_CLIPPER,      /**< Clipper filter. */
   FILTER_TYPE_LOOKAHEAD_LIMITER, /**< Lookahead limiter filter. */
-  FILTER_TYPE_BIQUAD_CANON  /**< Biquad canon cascade filter. */
+  FILTER_TYPE_BIQUAD_CANON       /**< Biquad canon cascade filter. */
 } filter_type_t;
 
 /**
@@ -106,6 +106,14 @@ typedef struct {
   double low_boost;         /**< Maximum boost for low frequencies. */
   bool has_low_boost;       /**< True if `low_boost` is specified. */
   bool attenuate_mid;       /**< True to attenuate mid frequencies. */
+  double high_freq;         /**< Corner frequency for high shelf (Hz). */
+  bool has_high_freq;       /**< True if `high_freq` is specified. */
+  double low_freq;          /**< Corner frequency for low shelf (Hz). */
+  bool has_low_freq;        /**< True if `low_freq` is specified. */
+  double high_q;            /**< Q for high shelf. */
+  bool has_high_q;          /**< True if `high_q` is specified. */
+  double low_q;             /**< Q for low shelf. */
+  bool has_low_q;           /**< True if `low_q` is specified. */
   fader_t fader;            /**< Fader associated with this loudness filter. */
 } loudness_config_t;
 
@@ -178,7 +186,7 @@ typedef struct biquad_filter biquad_filter_t;
 typedef struct {
   biquad_filter_t** sections; /**< Array of biquad filter sections. */
   size_t num_sections;        /**< Number of biquad filter sections. */
-  bool owns_sections;         /**< Whether the canon filter owns the sections. */
+  bool owns_sections; /**< Whether the canon filter owns the sections. */
 } biquad_canon_config_t;
 
 /**
@@ -248,9 +256,18 @@ typedef enum {
   BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS, /**< Linkwitz-Riley low-pass filter.
                                              */
   BIQUAD_COMBO_TYPE_TILT,                   /**< Tilt equalizer. */
-  BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ,         /**< 5-band parametric EQ. */
+  BIQUAD_COMBO_TYPE_N_POINT_PEQ,            /**< N-band parametric EQ. */
   BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER       /**< Graphic equalizer. */
 } biquad_combo_type_t;
+
+/**
+ * @brief One band of an NPointPeq parametric equalizer.
+ */
+typedef struct {
+  double freq; /**< Center or corner frequency. */
+  double q;    /**< Quality factor. */
+  double gain; /**< Gain in dB. */
+} peq_band_t;
 
 /**
  * @brief Parameters for a Biquad Combo filter.
@@ -263,17 +280,9 @@ typedef struct {
   bool has_order;           /**< True if `order` is specified. */
   double gain;              /**< Overall gain or tilt gain. */
   bool has_gain;            /**< True if `gain` is specified. */
-  // PEQ parameters
-  double fls, qls, gls; /**< Low shelf: freq, Q, gain. */
-  bool has_fls, has_qls, has_gls;
-  double fp1, qp1, gp1; /**< Peak 1: freq, Q, gain. */
-  bool has_fp1, has_qp1, has_gp1;
-  double fp2, qp2, gp2; /**< Peak 2: freq, Q, gain. */
-  bool has_fp2, has_qp2, has_gp2;
-  double fp3, qp3, gp3; /**< Peak 3: freq, Q, gain. */
-  bool has_fp3, has_qp3, has_gp3;
-  double fhs, qhs, ghs; /**< High shelf: freq, Q, gain. */
-  bool has_fhs, has_qhs, has_ghs;
+  // NPointPeq parameters
+  peq_band_t* bands;  /**< Array of PEQ bands. */
+  size_t bands_count; /**< Number of PEQ bands. */
   // Graphic EQ parameters
   double freq_min; /**< Minimum frequency. */
   double freq_max; /**< Maximum frequency. */

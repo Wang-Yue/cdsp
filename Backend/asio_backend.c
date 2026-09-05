@@ -62,9 +62,21 @@ static struct {
  * Safe to call more than once per thread; COM keeps a per-thread reference
  * count.
  */
-void asio_com_init_this_thread(void) {
+bool asio_com_init_this_thread(backend_error_t* err) {
   HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   logger_trace(&g_logger, "CoInitializeEx returned 0x%08lX", (unsigned long)hr);
+  if (FAILED(hr)) {
+    if (err) {
+      char msg[256];
+      snprintf(msg, sizeof(msg),
+               "Failed to initialise COM as a single-threaded apartment, "
+               "CoInitializeEx returned 0x%08lX",
+               (unsigned long)hr);
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+    }
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -355,7 +367,9 @@ bool asio_driver_load_by_name(const char* name, IASIO** out_iasio,
                               backend_error_t* err) {
   logger_trace(&g_logger, "asio_driver_load_by_name: loading '%s'", name);
   asio_driver_teardown(name);
-  asio_com_init_this_thread();
+  if (!asio_com_init_this_thread(err)) {
+    return false;
+  }
 
   CLSID clsid;
   if (!find_asio_driver_clsid(name, &clsid)) {
@@ -1856,7 +1870,9 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
   asio_playback_t* playback = (asio_playback_t*)ctx;
   if (!playback) return false;
 
-  asio_com_init_this_thread();
+  if (!asio_com_init_this_thread(err)) {
+    return false;
+  }
   playback->com_initialized = true;
 
   asio_sample_format_t resolved_format = ASIO_SAMPLE_FORMAT_S32_LE;
@@ -2243,7 +2259,9 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
   asio_capture_t* capture = (asio_capture_t*)ctx;
   if (!capture) return false;
 
-  asio_com_init_this_thread();
+  if (!asio_com_init_this_thread(err)) {
+    return false;
+  }
   capture->com_initialized = true;
 
   asio_sample_format_t resolved_format = ASIO_SAMPLE_FORMAT_S32_LE;

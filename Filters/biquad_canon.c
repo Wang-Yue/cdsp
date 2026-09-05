@@ -187,8 +187,9 @@ static int biquad_canon_filter_validate(const filter_config_t* config,
     return -1;
   }
   const biquad_canon_config_t* cfg = &config->parameters.biquad_canon;
-  if (!cfg->sections || cfg->num_sections == 0) {
-    if (err) config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Empty sections");
+  if (cfg->num_sections > 0 && !cfg->sections) {
+    if (err)
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Null sections array");
     return -1;
   }
   return 0;
@@ -223,15 +224,17 @@ static void* biquad_canon_filter_create(const char* name,
   canon->num_sections = cfg->num_sections;
   canon->owns_sections = cfg->owns_sections;
 
-  canon->sections =
-      (biquad_filter_t**)calloc(cfg->num_sections, sizeof(biquad_filter_t*));
-  if (!canon->sections) {
-    if (err) config_error_set(err, CONFIG_ERR_PARSE, "Allocation failure");
-    free(canon);
-    return NULL;
-  }
-  for (size_t i = 0; i < cfg->num_sections; i++) {
-    canon->sections[i] = cfg->sections[i];
+  if (cfg->num_sections > 0) {
+    canon->sections =
+        (biquad_filter_t**)calloc(cfg->num_sections, sizeof(biquad_filter_t*));
+    if (!canon->sections) {
+      if (err) config_error_set(err, CONFIG_ERR_PARSE, "Allocation failure");
+      free(canon);
+      return NULL;
+    }
+    for (size_t i = 0; i < cfg->num_sections; i++) {
+      canon->sections[i] = cfg->sections[i];
+    }
   }
 
   return canon;

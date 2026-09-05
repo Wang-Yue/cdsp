@@ -197,29 +197,38 @@ static int biquad_combo_config_validate(const filter_config_t* config,
         return -1;
       }
       break;
-    case BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ:
-      if (params->qls <= 0.0 || params->qhs <= 0.0 || params->qp1 <= 0.0 ||
-          params->qp2 <= 0.0 || params->qp3 <= 0.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "FivePointPeq: all Q-values must be positive");
-        return -1;
-      }
-      if (params->fls >= nyquist || params->fhs >= nyquist ||
-          params->fp1 >= nyquist || params->fp2 >= nyquist ||
-          params->fp3 >= nyquist) {
+    case BIQUAD_COMBO_TYPE_N_POINT_PEQ: {
+      if (params->bands_count < 2 || !params->bands) {
         config_error_set(
             err, CONFIG_ERR_INVALID_FILTER,
-            "FivePointPeq: all frequencies must be less than Nyquist (%g)",
-            nyquist);
+            "At least two bands are needed, for the low and high shelves");
         return -1;
       }
-      if (params->fls < 0.0 || params->fhs < 0.0 || params->fp1 < 0.0 ||
-          params->fp2 < 0.0 || params->fp3 < 0.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "FivePointPeq: all frequencies must be >= 0");
-        return -1;
+      for (size_t i = 0; i < params->bands_count; i++) {
+        const peq_band_t* b = &params->bands[i];
+        if (b->freq <= 0.0) {
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                           "Frequency must be > 0");
+          return -1;
+        }
+        if (b->freq >= nyquist) {
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                           "Frequency must be < samplerate/2");
+          return -1;
+        }
+        if (b->q <= 0.0) {
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                           "Q-value must be > 0");
+          return -1;
+        }
+        if (i > 0 && b->freq < params->bands[i - 1].freq) {
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                           "Band frequencies must not decrease along the list");
+          return -1;
+        }
       }
       break;
+    }
     case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER: {
       if (!params->gains || params->gains_count <= 0) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
@@ -328,8 +337,8 @@ static void* biquad_combo_filter_create(const char* name,
              params->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS ||
              params->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS) {
     max_secs = (params->order + 1) / 2 + 1;
-  } else if (params->type == BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ) {
-    max_secs = 5;
+  } else if (params->type == BIQUAD_COMBO_TYPE_N_POINT_PEQ) {
+    max_secs = params->bands_count > 0 ? params->bands_count : 1;
   } else if (params->type == BIQUAD_COMBO_TYPE_TILT) {
     max_secs = 2;
   }
@@ -410,40 +419,25 @@ static void* biquad_combo_filter_create(const char* name,
       }
       break;
     }
-    // MARK: - Five Point PEQ
-    case BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ: {
-      // Low shelf
-      if (params->qls > 0.001 && fabs(params->gls) > 0.001) {
-        filter->sections[filter->num_sections++] = create_section(
-            "ls", BIQUAD_TYPE_LOWSHELF, params->fls > 0 ? params->fls : 80.0,
-            params->qls, params->gls, 0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate,
-            err);
-      }
-      // Mid bands
-      if (params->qp1 > 0.001 && fabs(params->gp1) > 0.001) {
-        filter->sections[filter->num_sections++] = create_section(
-            "p1", BIQUAD_TYPE_PEAKING, params->fp1 > 0 ? params->fp1 : 250.0,
-            params->qp1, params->gp1, 0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate,
-            err);
-      }
-      if (params->qp2 > 0.001 && fabs(params->gp2) > 0.001) {
-        filter->sections[filter->num_sections++] = create_section(
-            "p2", BIQUAD_TYPE_PEAKING, params->fp2 > 0 ? params->fp2 : 1000.0,
-            params->qp2, params->gp2, 0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate,
-            err);
-      }
-      if (params->qp3 > 0.001 && fabs(params->gp3) > 0.001) {
-        filter->sections[filter->num_sections++] = create_section(
-            "p3", BIQUAD_TYPE_PEAKING, params->fp3 > 0 ? params->fp3 : 4000.0,
-            params->qp3, params->gp3, 0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate,
-            err);
-      }
-      // High shelf
-      if (params->qhs > 0.001 && fabs(params->ghs) > 0.001) {
-        filter->sections[filter->num_sections++] = create_section(
-            "hs", BIQUAD_TYPE_HIGHSHELF,
-            params->fhs > 0 ? params->fhs : 12000.0, params->qhs, params->ghs,
-            0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+    // MARK: - N-Point PEQ
+    case BIQUAD_COMBO_TYPE_N_POINT_PEQ: {
+      size_t last = params->bands_count > 0 ? params->bands_count - 1 : 0;
+      for (size_t i = 0; i < params->bands_count; i++) {
+        const peq_band_t* band = &params->bands[i];
+        if (fabs(band->gain) <= 0.001) continue;
+        biquad_type_t btype;
+        if (i == 0) {
+          btype = BIQUAD_TYPE_LOWSHELF;
+        } else if (i == last) {
+          btype = BIQUAD_TYPE_HIGHSHELF;
+        } else {
+          btype = BIQUAD_TYPE_PEAKING;
+        }
+        char name_buf[32];
+        snprintf(name_buf, sizeof(name_buf), "peq_%zu", i);
+        filter->sections[filter->num_sections++] =
+            create_section(name_buf, btype, band->freq, band->q, band->gain,
+                           0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
       }
       break;
     }
@@ -459,14 +453,15 @@ static void* biquad_combo_filter_create(const char* name,
 
   filter_config_t canon_cfg = {
       .type = FILTER_TYPE_BIQUAD_CANON,
-      .parameters.biquad_canon = {
-          .sections = filter->sections,
-          .num_sections = filter->num_sections,
-          .owns_sections = false,
-      },
+      .parameters.biquad_canon =
+          {
+              .sections = filter->sections,
+              .num_sections = filter->num_sections,
+              .owns_sections = false,
+          },
   };
-  filter->canon_filter = g_biquad_canon_vtable.create(
-      name, &canon_cfg, sample_rate, 0, NULL, err);
+  filter->canon_filter =
+      g_biquad_canon_vtable.create(name, &canon_cfg, sample_rate, 0, NULL, err);
   if (!filter->canon_filter) {
     biquad_combo_filter_free(filter);
     return NULL;
@@ -505,7 +500,6 @@ static void biquad_combo_filter_transfer_state(void* dest_ptr,
     g_biquad_canon_vtable.transfer_state(dest->canon_filter, src->canon_filter);
   }
 }
-
 
 const filter_vtable_t g_biquad_combo_vtable = {
     .validate = biquad_combo_config_validate,

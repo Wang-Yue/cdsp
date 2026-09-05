@@ -210,7 +210,8 @@ TEST(ComboCanonMatchesStagesRunOneAtATime) {
         .q = qvals[s],
         .steepness_type = STEEPNESS_TYPE_Q,
     };
-    filter_config_t bcfg = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = bp};
+    filter_config_t bcfg = {.type = FILTER_TYPE_BIQUAD,
+                            .parameters.biquad = bp};
     void* bq = g_biquad_vtable.create("seq_bq", &bcfg, fs, 0, NULL, NULL);
     ASSERT_TRUE(bq != NULL);
     g_biquad_vtable.process(bq, wave_split, len);
@@ -233,6 +234,200 @@ TEST(ComboCanonMatchesStagesRunOneAtATime) {
   ASSERT_TRUE(changed);
 
   g_biquad_combo_vtable.free(combo_canon);
+}
+
+TEST(check_npeq_band_count) {
+  int fs = 44100;
+  filter_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.type = FILTER_TYPE_BIQUAD_COMBO;
+  cfg.parameters.biquad_combo.type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
+
+  // Empty bands
+  cfg.parameters.biquad_combo.bands = NULL;
+  cfg.parameters.biquad_combo.bands_count = 0;
+  ASSERT_NE(0, g_biquad_combo_vtable.validate(&cfg, fs, NULL));
+
+  // 1 band
+  peq_band_t one_band = {.freq = 1000.0, .q = 0.7, .gain = 1.0};
+  cfg.parameters.biquad_combo.bands = &one_band;
+  cfg.parameters.biquad_combo.bands_count = 1;
+  ASSERT_NE(0, g_biquad_combo_vtable.validate(&cfg, fs, NULL));
+
+  // 2 bands
+  peq_band_t two_bands[2] = {
+      {.freq = 100.0, .q = 0.7, .gain = 1.0},
+      {.freq = 8000.0, .q = 0.7, .gain = 1.0},
+  };
+  cfg.parameters.biquad_combo.bands = two_bands;
+  cfg.parameters.biquad_combo.bands_count = 2;
+  ASSERT_EQ(0, g_biquad_combo_vtable.validate(&cfg, fs, NULL));
+}
+
+TEST(check_npeq_frequency_order) {
+  int fs = 44100;
+  filter_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.type = FILTER_TYPE_BIQUAD_COMBO;
+  cfg.parameters.biquad_combo.type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
+
+  peq_band_t rising[4] = {
+      {.freq = 100.0, .q = 0.7, .gain = 1.0},
+      {.freq = 400.0, .q = 0.7, .gain = 1.0},
+      {.freq = 1000.0, .q = 0.7, .gain = 1.0},
+      {.freq = 8000.0, .q = 0.7, .gain = 1.0},
+  };
+  cfg.parameters.biquad_combo.bands = rising;
+  cfg.parameters.biquad_combo.bands_count = 4;
+  ASSERT_EQ(0, g_biquad_combo_vtable.validate(&cfg, fs, NULL));
+
+  // Equal frequencies are allowed
+  peq_band_t equal[3] = {
+      {.freq = 400.0, .q = 0.7, .gain = 1.0},
+      {.freq = 400.0, .q = 0.7, .gain = 1.0},
+      {.freq = 400.0, .q = 0.7, .gain = 1.0},
+  };
+  cfg.parameters.biquad_combo.bands = equal;
+  cfg.parameters.biquad_combo.bands_count = 3;
+  ASSERT_EQ(0, g_biquad_combo_vtable.validate(&cfg, fs, NULL));
+
+  // Falling frequencies
+  peq_band_t falling[3] = {
+      {.freq = 100.0, .q = 0.7, .gain = 1.0},
+      {.freq = 2000.0, .q = 0.7, .gain = 1.0},
+      {.freq = 500.0, .q = 0.7, .gain = 1.0},
+  };
+  cfg.parameters.biquad_combo.bands = falling;
+  cfg.parameters.biquad_combo.bands_count = 3;
+  ASSERT_NE(0, g_biquad_combo_vtable.validate(&cfg, fs, NULL));
+
+  // Shelves swapped
+  peq_band_t shelves_swapped[2] = {
+      {.freq = 8000.0, .q = 0.7, .gain = 1.0},
+      {.freq = 100.0, .q = 0.7, .gain = 1.0},
+  };
+  cfg.parameters.biquad_combo.bands = shelves_swapped;
+  cfg.parameters.biquad_combo.bands_count = 2;
+  ASSERT_NE(0, g_biquad_combo_vtable.validate(&cfg, fs, NULL));
+}
+
+TEST(check_npeq_bands) {
+  int fs = 44100;
+  filter_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.type = FILTER_TYPE_BIQUAD_COMBO;
+  cfg.parameters.biquad_combo.type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
+
+  peq_band_t bad_freq[2] = {
+      {.freq = -5.0, .q = 0.7, .gain = 0.0},
+      {.freq = 8000.0, .q = 0.7, .gain = 1.0},
+  };
+  cfg.parameters.biquad_combo.bands = bad_freq;
+  cfg.parameters.biquad_combo.bands_count = 2;
+  ASSERT_NE(0, g_biquad_combo_vtable.validate(&cfg, fs, NULL));
+
+  peq_band_t bad_q[3] = {
+      {.freq = 100.0, .q = 0.7, .gain = 1.0},
+      {.freq = 1000.0, .q = 0.0, .gain = 1.0},
+      {.freq = 8000.0, .q = 0.7, .gain = 1.0},
+  };
+  cfg.parameters.biquad_combo.bands = bad_q;
+  cfg.parameters.biquad_combo.bands_count = 3;
+  ASSERT_NE(0, g_biquad_combo_vtable.validate(&cfg, fs, NULL));
+
+  peq_band_t above_nyquist[2] = {
+      {.freq = 100.0, .q = 0.7, .gain = 1.0},
+      {.freq = 30000.0, .q = 0.7, .gain = 1.0},
+  };
+  cfg.parameters.biquad_combo.bands = above_nyquist;
+  cfg.parameters.biquad_combo.bands_count = 2;
+  ASSERT_NE(0, g_biquad_combo_vtable.validate(&cfg, fs, NULL));
+}
+
+TEST(npeq_all_zero_gain_is_passthrough) {
+  int fs = 44100;
+  peq_band_t bands[3] = {
+      {.freq = 100.0, .q = 0.7, .gain = 0.0},
+      {.freq = 1000.0, .q = 0.7, .gain = -0.0},
+      {.freq = 8000.0, .q = 0.7, .gain = 0.0},
+  };
+  filter_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.type = FILTER_TYPE_BIQUAD_COMBO;
+  cfg.parameters.biquad_combo.type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
+  cfg.parameters.biquad_combo.bands = bands;
+  cfg.parameters.biquad_combo.bands_count = 3;
+
+  void* combo =
+      g_biquad_combo_vtable.create("test_npeq_zero", &cfg, fs, 0, NULL, NULL);
+  ASSERT_TRUE(combo != NULL);
+
+  double wave[4] = {1.0, 0.5, -0.25, 0.0};
+  double expected[4] = {1.0, 0.5, -0.25, 0.0};
+  g_biquad_combo_vtable.process(combo, wave, 4);
+  for (size_t i = 0; i < 4; i++) {
+    ASSERT_NEAR(wave[i], expected[i], 1e-12);
+  }
+
+  g_biquad_combo_vtable.free(combo);
+}
+
+TEST(npeq_matches_separate_biquads) {
+  int fs = 44100;
+  peq_band_t bands[5] = {
+      {.freq = 125.0, .q = 0.7, .gain = 1.0},
+      {.freq = 400.0, .q = 0.7, .gain = -0.5},
+      {.freq = 1000.0, .q = 0.7, .gain = 1.5},
+      {.freq = 2500.0, .q = 0.7, .gain = -0.25},
+      {.freq = 8000.0, .q = 0.7, .gain = 0.5},
+  };
+  filter_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.type = FILTER_TYPE_BIQUAD_COMBO;
+  cfg.parameters.biquad_combo.type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
+  cfg.parameters.biquad_combo.bands = bands;
+  cfg.parameters.biquad_combo.bands_count = 5;
+
+  void* combo =
+      g_biquad_combo_vtable.create("test_npeq", &cfg, fs, 0, NULL, NULL);
+  ASSERT_TRUE(combo != NULL);
+
+  // Impulse
+  double wave_combo[1024];
+  double wave_separate[1024];
+  memset(wave_combo, 0, sizeof(wave_combo));
+  memset(wave_separate, 0, sizeof(wave_separate));
+  wave_combo[0] = 1.0;
+  wave_separate[0] = 1.0;
+
+  g_biquad_combo_vtable.process(combo, wave_combo, 1024);
+
+  // Process 5 separate biquads sequentially
+  biquad_type_t types[5] = {
+      BIQUAD_TYPE_LOWSHELF, BIQUAD_TYPE_PEAKING,   BIQUAD_TYPE_PEAKING,
+      BIQUAD_TYPE_PEAKING,  BIQUAD_TYPE_HIGHSHELF,
+  };
+  for (size_t s = 0; s < 5; s++) {
+    biquad_config_t bp = {
+        .type = types[s],
+        .freq = bands[s].freq,
+        .q = bands[s].q,
+        .gain = bands[s].gain,
+        .steepness_type = STEEPNESS_TYPE_Q,
+    };
+    filter_config_t bcfg = {.type = FILTER_TYPE_BIQUAD,
+                            .parameters.biquad = bp};
+    void* bq = g_biquad_vtable.create("sep_bq", &bcfg, fs, 0, NULL, NULL);
+    ASSERT_TRUE(bq != NULL);
+    g_biquad_vtable.process(bq, wave_separate, 1024);
+    g_biquad_vtable.free(bq);
+  }
+
+  for (size_t i = 0; i < 1024; i++) {
+    ASSERT_NEAR(wave_combo[i], wave_separate[i], 1e-12);
+  }
+
+  g_biquad_combo_vtable.free(combo);
 }
 
 TEST_MAIN()

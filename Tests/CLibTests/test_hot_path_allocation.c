@@ -685,22 +685,18 @@ TEST(Delay_AllocationFree) {
 }
 
 TEST(BiquadCombo_AllocationFree) {
-  biquad_combo_config_t params = {.type = BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ,
-                                  .fls = 80.0,
-                                  .qls = 0.707,
-                                  .gls = 3.0,
-                                  .fp1 = 250.0,
-                                  .qp1 = 1.5,
-                                  .gp1 = -2.0,
-                                  .fp2 = 1000.0,
-                                  .qp2 = 2.0,
-                                  .gp2 = 1.5,
-                                  .fp3 = 4000.0,
-                                  .qp3 = 1.0,
-                                  .gp3 = -1.0,
-                                  .fhs = 12000.0,
-                                  .qhs = 0.707,
-                                  .ghs = 2.5};
+  peq_band_t bands[5] = {
+      {.freq = 80.0, .q = 0.707, .gain = 3.0},
+      {.freq = 250.0, .q = 1.5, .gain = -2.0},
+      {.freq = 1000.0, .q = 2.0, .gain = 1.5},
+      {.freq = 4000.0, .q = 1.0, .gain = -1.0},
+      {.freq = 12000.0, .q = 0.707, .gain = 2.5},
+  };
+  biquad_combo_config_t params = {
+      .type = BIQUAD_COMBO_TYPE_N_POINT_PEQ,
+      .bands = bands,
+      .bands_count = 5,
+  };
   filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD_COMBO,
                          .parameters.biquad_combo = params};
   void* filter =

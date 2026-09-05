@@ -653,6 +653,8 @@ typedef struct {
   bool has_node_group_name;   /**< True if node_group_name is specified. */
   char autoconnect_to[256];   /**< Node to automatically connect to. */
   bool has_autoconnect_to;    /**< True if autoconnect_to is specified. */
+  bool loopback;     /**< Capture from monitor of a sink instead of a source. */
+  bool has_loopback; /**< True if loopback is specified. */
 } pipewire_capture_config_t;
 
 /**

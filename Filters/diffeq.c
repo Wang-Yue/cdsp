@@ -8,33 +8,73 @@
 
 struct diffeq_filter {
   char name[64];
-  double* x;
-  double* y;
-  double* a;
-  double* b;
-  size_t a_count;
-  size_t b_count;
-  size_t idx_x;
-  size_t idx_y;
+  double* s;    /**< Filter state, size = order */
+  double* a;    /**< Feedback coefficients, a[0]=1.0, size = len */
+  double* b;    /**< Feedforward coefficients, size = len */
+  size_t order; /**< Filter order (len - 1) */
+  size_t len;   /**< Maximum of a_count and b_count */
 };
 
 typedef struct diffeq_filter diffeq_filter_t;
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+
+/**
+ * @brief Check that the poles of the filter are inside the unit circle.
+ *
+ * Implements the Schur-Cohn step-down recursion test.
+ * The denominator polynomial is peeled down one order at a time, and the
+ * reflection coefficient of each step is the highest order coefficient of the
+ * polynomial at that step. All poles are inside the unit circle if and only if
+ * |reflection| < 1.0 at every step.
+ *
+ * @param a Array of scaled denominator coefficients with a[0] == 1.0.
+ * @param count Number of coefficients in array a.
+ * @return true if all poles are inside the unit circle, false otherwise.
+ */
+static bool poles_inside_unit_circle(const double* a, size_t count) {
+  if (count <= 1) return true;
+  double* coeffs = (double*)malloc(count * sizeof(double));
+  if (!coeffs) return false;
+  memcpy(coeffs, a, count * sizeof(double));
+  double* prev = (double*)malloc(count * sizeof(double));
+  if (!prev) {
+    free(coeffs);
+    return false;
+  }
+
+  bool stable = true;
+  for (size_t order = count - 1; order >= 1; order--) {
+    double reflection = coeffs[order];
+    if (fabs(reflection) >= 1.0) {
+      stable = false;
+      break;
+    }
+    double scale = 1.0 - reflection * reflection;
+    memcpy(prev, coeffs, (order + 1) * sizeof(double));
+    for (size_t n = 1; n < order; n++) {
+      coeffs[n] = (prev[n] - reflection * prev[order - n]) / scale;
+    }
+  }
+
+  free(prev);
+  free(coeffs);
+  return stable;
+}
 
 /**
  * @brief Free the difference equation filter instance and its associated
  * resources.
  *
- * @param filter The difference equation filter instance to free.
+ * @param instance Pointer to diffeq_filter_t instance.
  */
 static void diffeq_filter_free(void* instance) {
   diffeq_filter_t* filter = (diffeq_filter_t*)instance;
   if (!filter) return;
-  if (filter->x) free(filter->x);
-  if (filter->y) free(filter->y);
+  if (filter->s) free(filter->s);
   if (filter->a) free(filter->a);
   if (filter->b) free(filter->b);
   free(filter);
@@ -44,7 +84,7 @@ static void diffeq_filter_free(void* instance) {
  * @brief Validates difference equation filter parameters.
  *
  * @param config Pointer to the difference equation configuration to validate.
- * @param sample_rate The sample rate.
+ * @param sample_rate The sample rate (unused).
  * @param err Pointer to a config error struct to populate on failure.
  * @return 0 on success, -1 on failure.
  */
@@ -53,13 +93,59 @@ static int diffeq_config_validate(const filter_config_t* config,
   (void)sample_rate;
   if (!config || config->type != FILTER_TYPE_DIFF_EQ) return -1;
   const diffeq_config_t* params = &config->parameters.diff_eq;
-  if (params && params->a && params->a_count > 0) {
-    if (params->a[0] == 0.0 || !isfinite(params->a[0])) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "DiffEq filter a[0] must be non-zero and finite");
-      return -1;
+  if (!params) return 0;
+
+  if (params->a && params->a_count > 0) {
+    for (size_t i = 0; i < params->a_count; i++) {
+      if (!isfinite(params->a[i])) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "All coefficients must be finite numbers");
+        return -1;
+      }
     }
   }
+  if (params->b && params->b_count > 0) {
+    for (size_t i = 0; i < params->b_count; i++) {
+      if (!isfinite(params->b[i])) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "All coefficients must be finite numbers");
+        return -1;
+      }
+    }
+  }
+
+  if (!params->a || params->a_count == 0) {
+    // Defaults to a single unity coefficient, which gives a stable FIR filter.
+    return 0;
+  }
+
+  if (params->a[0] == 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "The first 'a' coefficient must not be zero");
+    return -1;
+  }
+
+  double a0 = params->a[0];
+  double* scaled = (double*)malloc(params->a_count * sizeof(double));
+  if (!scaled) {
+    config_error_set(err, CONFIG_ERR_PARSE, "Allocation failure");
+    return -1;
+  }
+  for (size_t i = 0; i < params->a_count; i++) {
+    scaled[i] = params->a[i] / a0;
+  }
+
+  bool stable = poles_inside_unit_circle(scaled, params->a_count);
+  free(scaled);
+
+  if (!stable) {
+    config_error_set(
+        err, CONFIG_ERR_INVALID_FILTER,
+        "Unstable filter, the 'a' coefficients give poles on or outside the "
+        "unit circle");
+    return -1;
+  }
+
   return 0;
 }
 
@@ -68,9 +154,9 @@ static int diffeq_config_validate(const filter_config_t* config,
  *
  * @param name The name of the filter.
  * @param config The difference equation configuration.
- * @param sample_rate The sample rate.
- * @param chunk_size Maximum number of frames per processing chunk.
- * @param proc_params Processing parameters.
+ * @param sample_rate The sample rate (unused).
+ * @param chunk_size Maximum number of frames per processing chunk (unused).
+ * @param proc_params Processing parameters (unused).
  * @param err Optional pointer to receive configuration error detail on failure.
  * @return A pointer to the created difference equation filter, or NULL on
  * failure.
@@ -86,6 +172,7 @@ static void* diffeq_filter_create(const char* name,
   if (!config || config->type != FILTER_TYPE_DIFF_EQ) return NULL;
   const diffeq_config_t* params = &config->parameters.diff_eq;
   if (diffeq_config_validate(config, 0, err) != 0) return NULL;
+
   diffeq_filter_t* filter =
       (diffeq_filter_t*)calloc(1, sizeof(diffeq_filter_t));
   if (!filter) return NULL;
@@ -100,16 +187,18 @@ static void* diffeq_filter_create(const char* name,
       (params && params->a && params->a_count > 0) ? params->a_count : 1;
   size_t b_cnt =
       (params && params->b && params->b_count > 0) ? params->b_count : 1;
+  size_t len = a_cnt > b_cnt ? a_cnt : b_cnt;
 
-  filter->a_count = a_cnt;
-  filter->b_count = b_cnt;
+  filter->len = len;
+  filter->order = (len > 0) ? len - 1 : 0;
 
-  filter->a = (double*)calloc(a_cnt, sizeof(double));
-  filter->b = (double*)calloc(b_cnt, sizeof(double));
-  filter->x = (double*)calloc(b_cnt, sizeof(double));
-  filter->y = (double*)calloc(a_cnt, sizeof(double));
+  filter->a = (double*)calloc(len, sizeof(double));
+  filter->b = (double*)calloc(len, sizeof(double));
+  if (filter->order > 0) {
+    filter->s = (double*)calloc(filter->order, sizeof(double));
+  }
 
-  if (!filter->a || !filter->b || !filter->x || !filter->y) {
+  if (!filter->a || !filter->b || (filter->order > 0 && !filter->s)) {
     diffeq_filter_free(filter);
     return NULL;
   }
@@ -119,28 +208,78 @@ static void* diffeq_filter_create(const char* name,
   } else {
     filter->a[0] = 1.0;
   }
+
   if (params && params->b && params->b_count > 0) {
     memcpy(filter->b, params->b, b_cnt * sizeof(double));
   } else {
     filter->b[0] = 1.0;
   }
 
-  // Normalize by a[0]
-  if (filter->a[0] != 0.0 && filter->a[0] != 1.0) {
-    double scale = 1.0 / filter->a[0];
-    for (size_t i = 0; i < a_cnt; i++) filter->a[i] *= scale;
-    for (size_t i = 0; i < b_cnt; i++) filter->b[i] *= scale;
+  // Normalize coefficients by a[0] so a[0] becomes 1.0
+  double a0 = filter->a[0];
+  if (isfinite(a0) && a0 != 0.0 && a0 != 1.0) {
+    double scale = 1.0 / a0;
+    for (size_t i = 0; i < len; i++) {
+      filter->a[i] *= scale;
+      filter->b[i] *= scale;
+    }
   }
 
-  filter->idx_x = 0;
-  filter->idx_y = 0;
   return filter;
 }
 
+#define DEFINE_DIFFEQ_ORDER_KERNEL(ORDER)                                   \
+  static void diffeq_process_block_##ORDER(                                 \
+      diffeq_filter_t* filter, mutable_waveform_t waveform, size_t count) { \
+    double s[ORDER];                                                        \
+    memcpy(s, filter->s, ORDER * sizeof(double));                           \
+    const double* a = &filter->a[1];                                        \
+    const double* b = &filter->b[1];                                        \
+    double b0 = filter->b[0];                                               \
+    for (size_t i = 0; i < count; i++) {                                    \
+      double input = waveform[i];                                           \
+      double out = b0 * input + s[0];                                       \
+      for (size_t n = 0; n < ORDER - 1; n++) {                              \
+        s[n] = b[n] * input - a[n] * out + s[n + 1];                        \
+      }                                                                     \
+      s[ORDER - 1] = b[ORDER - 1] * input - a[ORDER - 1] * out;             \
+      waveform[i] = out;                                                    \
+    }                                                                       \
+    memcpy(filter->s, s, ORDER * sizeof(double));                           \
+  }
+
+DEFINE_DIFFEQ_ORDER_KERNEL(1)
+DEFINE_DIFFEQ_ORDER_KERNEL(2)
+DEFINE_DIFFEQ_ORDER_KERNEL(3)
+DEFINE_DIFFEQ_ORDER_KERNEL(4)
+DEFINE_DIFFEQ_ORDER_KERNEL(5)
+DEFINE_DIFFEQ_ORDER_KERNEL(6)
+DEFINE_DIFFEQ_ORDER_KERNEL(7)
+DEFINE_DIFFEQ_ORDER_KERNEL(8)
+
+static void diffeq_process_block_any(diffeq_filter_t* filter,
+                                     mutable_waveform_t waveform,
+                                     size_t count) {
+  size_t order = filter->order;
+  double* s = filter->s;
+  const double* a = &filter->a[1];
+  const double* b = &filter->b[1];
+  double b0 = filter->b[0];
+  for (size_t i = 0; i < count; i++) {
+    double input = waveform[i];
+    double out = b0 * input + s[0];
+    for (size_t n = 0; n < order - 1; n++) {
+      s[n] = b[n] * input - a[n] * out + s[n + 1];
+    }
+    s[order - 1] = b[order - 1] * input - a[order - 1] * out;
+    waveform[i] = out;
+  }
+}
+
 /**
- * @brief Process a block of samples in-place.
+ * @brief Process a block of samples in-place using Direct Form 2 Transposed.
  *
- * @param filter The difference equation filter instance.
+ * @param instance The difference equation filter instance.
  * @param waveform The input/output waveform buffer.
  * @param count The number of samples to process.
  */
@@ -148,65 +287,50 @@ static void diffeq_filter_process(void* instance, mutable_waveform_t waveform,
                                   size_t count) {
   diffeq_filter_t* filter = (diffeq_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
-  size_t nb = filter->b_count;
-  size_t na = filter->a_count;
-  double* x = filter->x;
-  double* y = filter->y;
-  const double* a = filter->a;
-  const double* b = filter->b;
-  size_t idx_x = filter->idx_x;
-  size_t idx_y = filter->idx_y;
 
-  // Process each sample through the difference equation:
-  // y[n] = b[0]*x[n] + b[1]*x[n-1] + ... + b[N]*x[n-N] - a[1]*y[n-1] - ... -
-  // a[M]*y[n-M] x and y are implemented as circular buffers to store historical
-  // samples.
-  for (size_t i = 0; i < count; i++) {
-    // Advance circular buffer write indices
-    idx_x++;
-    if (idx_x >= nb) idx_x = 0;
-    idx_y++;
-    if (idx_y >= na) idx_y = 0;
-
-    // Store current input sample
-    x[idx_x] = waveform[i];
-
-    double out = 0.0;
-    // Compute feedforward part: sum(b[n] * x[n-i])
-    size_t ptr_x = idx_x;
-    for (size_t n = 0; n < nb; n++) {
-      out += b[n] * x[ptr_x];
-      if (ptr_x == 0) {
-        ptr_x = nb - 1;
-      } else {
-        ptr_x--;
+  switch (filter->order) {
+    case 0: {
+      double b0 = filter->b[0];
+      for (size_t i = 0; i < count; i++) {
+        waveform[i] *= b0;
       }
+      break;
     }
-    // Compute feedback part: sum(a[p] * y[p-j])
-    size_t ptr_y = (idx_y == 0) ? (na - 1) : (idx_y - 1);
-    for (size_t p = 1; p < na; p++) {
-      out -= a[p] * y[ptr_y];
-      if (ptr_y == 0) {
-        ptr_y = na - 1;
-      } else {
-        ptr_y--;
-      }
+    case 1:
+      diffeq_process_block_1(filter, waveform, count);
+      break;
+    case 2:
+      diffeq_process_block_2(filter, waveform, count);
+      break;
+    case 3:
+      diffeq_process_block_3(filter, waveform, count);
+      break;
+    case 4:
+      diffeq_process_block_4(filter, waveform, count);
+      break;
+    case 5:
+      diffeq_process_block_5(filter, waveform, count);
+      break;
+    case 6:
+      diffeq_process_block_6(filter, waveform, count);
+      break;
+    case 7:
+      diffeq_process_block_7(filter, waveform, count);
+      break;
+    case 8:
+      diffeq_process_block_8(filter, waveform, count);
+      break;
+    default:
+      diffeq_process_block_any(filter, waveform, count);
+      break;
+  }
+
+  // Flush subnormals
+  for (size_t k = 0; k < filter->order; k++) {
+    if (fpclassify(filter->s[k]) == FP_SUBNORMAL) {
+      filter->s[k] = 0.0;
     }
-
-    // Store current output sample and update waveform
-    y[idx_y] = out;
-    waveform[i] = out;
   }
-
-  for (size_t k = 0; k < nb; k++) {
-    if (fpclassify(x[k]) == FP_SUBNORMAL) x[k] = 0.0;
-  }
-  for (size_t k = 0; k < na; k++) {
-    if (fpclassify(y[k]) == FP_SUBNORMAL) y[k] = 0.0;
-  }
-
-  filter->idx_x = idx_x;
-  filter->idx_y = idx_y;
 }
 
 static void diffeq_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
@@ -214,42 +338,12 @@ static void diffeq_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   const diffeq_filter_t* src = (const diffeq_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
 
-  // Transfer input history x
-  if (dest->x && dest->b_count > 0 && src->x && src->b_count > 0) {
-    size_t dest_bc = dest->b_count;
-    size_t src_bc = src->b_count;
-    size_t copy_len = dest_bc < src_bc ? dest_bc : src_bc;
-
-    memset(dest->x, 0, dest_bc * sizeof(double));
-
-    size_t src_start_idx = (src->idx_x + src_bc - copy_len + 1) % src_bc;
-    size_t dest_start_idx = dest_bc - copy_len;
-
-    for (size_t i = 0; i < copy_len; i++) {
-      size_t src_idx = (src_start_idx + i) % src_bc;
-      size_t dest_idx = dest_start_idx + i;
-      dest->x[dest_idx] = src->x[src_idx];
+  if (dest->s && src->s && dest->order > 0 && src->order > 0) {
+    size_t copy_len = dest->order < src->order ? dest->order : src->order;
+    memcpy(dest->s, src->s, copy_len * sizeof(double));
+    if (dest->order > copy_len) {
+      memset(&dest->s[copy_len], 0, (dest->order - copy_len) * sizeof(double));
     }
-    dest->idx_x = dest_bc - 1;
-  }
-
-  // Transfer output history y
-  if (dest->y && dest->a_count > 0 && src->y && src->a_count > 0) {
-    size_t dest_ac = dest->a_count;
-    size_t src_ac = src->a_count;
-    size_t copy_len = dest_ac < src_ac ? dest_ac : src_ac;
-
-    memset(dest->y, 0, dest_ac * sizeof(double));
-
-    size_t src_start_idx = (src->idx_y + src_ac - copy_len + 1) % src_ac;
-    size_t dest_start_idx = dest_ac - copy_len;
-
-    for (size_t i = 0; i < copy_len; i++) {
-      size_t src_idx = (src_start_idx + i) % src_ac;
-      size_t dest_idx = dest_start_idx + i;
-      dest->y[dest_idx] = src->y[src_idx];
-    }
-    dest->idx_y = dest_ac - 1;
   }
 }
 

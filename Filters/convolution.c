@@ -430,7 +430,7 @@ static conv_coeffs_t* conv_coeffs_create(const char* name, size_t chunk_size,
     size_t offset = s * chunk_size;
     size_t copy_len = (coeffs_count > offset) ? (coeffs_count - offset) : 0;
     if (copy_len > chunk_size) copy_len = chunk_size;
-    if (copy_len > 0) {
+    if (copy_len > 0 && coeffs) {
       for (size_t k = 0; k < copy_len; k++) {
         scratch[k] = coeffs[offset + k] * inv_scale;
       }
@@ -639,9 +639,11 @@ static void* convolution_filter_create(const char* name,
     }
 
     if (!coeffs || coeffs_count == 0) {
-      goto fail;
+      filter->num_segments = 1;
+    } else {
+      filter->num_segments = (coeffs_count + chunk_size - 1) / chunk_size;
+      if (filter->num_segments == 0) filter->num_segments = 1;
     }
-    filter->num_segments = (coeffs_count + chunk_size - 1) / chunk_size;
   }
 
   size_t num_seg = filter->num_segments;

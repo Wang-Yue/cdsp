@@ -513,6 +513,8 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
                sizeof(final_cap->cfg.pipewire.autoconnect_to), "%s",
                temp.autoconnect_to);
       final_cap->cfg.pipewire.has_autoconnect_to = temp.has_autoconnect_to;
+      final_cap->cfg.pipewire.loopback = temp.loopback;
+      final_cap->cfg.pipewire.has_loopback = temp.has_loopback;
       break;
 #endif
 

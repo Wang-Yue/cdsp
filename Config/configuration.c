@@ -81,6 +81,13 @@ int dsp_config_apply_overrides(dsp_config_t* config,
           size_t divisor = (size_t)round((double)cfg_rate / (double)rate);
           if (divisor > 0) scaled_chunksize = cfg_chunksize / divisor;
         }
+        if (scaled_chunksize == 0) {
+          logger_warn(&g_logger,
+                      "Overriding the samplerate to %zu scales chunksize %zu "
+                      "below one frame, using 1",
+                      rate, cfg_chunksize);
+          scaled_chunksize = 1;
+        }
         logger_debug(&g_logger,
                      "Samplerate changed, adjusting chunksize: %zu -> %zu",
                      cfg_chunksize, scaled_chunksize);
@@ -535,6 +542,7 @@ void dsp_config_free(dsp_config_t* config) {
         free(config->filters[i].filter.parameters.conv.values);
       } else if (config->filters[i].filter.type == FILTER_TYPE_BIQUAD_COMBO) {
         free(config->filters[i].filter.parameters.biquad_combo.gains);
+        free(config->filters[i].filter.parameters.biquad_combo.bands);
       } else if (config->filters[i].filter.type == FILTER_TYPE_DIFF_EQ) {
         free(config->filters[i].filter.parameters.diff_eq.a);
         free(config->filters[i].filter.parameters.diff_eq.b);

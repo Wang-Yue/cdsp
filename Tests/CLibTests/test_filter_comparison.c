@@ -1020,38 +1020,17 @@ static void compare_biquad_combo_peq5(double fls, double qls, double gls,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
+  peq_band_t bands[5] = {
+      {.freq = fls, .q = qls, .gain = gls},
+      {.freq = fp1, .q = qp1, .gain = gp1},
+      {.freq = fp2, .q = qp2, .gain = gp2},
+      {.freq = fp3, .q = qp3, .gain = gp3},
+      {.freq = fhs, .q = qhs, .gain = ghs},
+  };
   biquad_combo_config_t params = {0};
-  params.type = BIQUAD_COMBO_TYPE_FIVE_POINT_PEQ;
-  params.fls = fls;
-  params.qls = qls;
-  params.gls = gls;
-  params.has_fls = true;
-  params.has_qls = true;
-  params.has_gls = true;
-  params.fp1 = fp1;
-  params.qp1 = qp1;
-  params.gp1 = gp1;
-  params.has_fp1 = true;
-  params.has_qp1 = true;
-  params.has_gp1 = true;
-  params.fp2 = fp2;
-  params.qp2 = qp2;
-  params.gp2 = gp2;
-  params.has_fp2 = true;
-  params.has_qp2 = true;
-  params.has_gp2 = true;
-  params.fp3 = fp3;
-  params.qp3 = qp3;
-  params.gp3 = gp3;
-  params.has_fp3 = true;
-  params.has_qp3 = true;
-  params.has_gp3 = true;
-  params.fhs = fhs;
-  params.qhs = qhs;
-  params.ghs = ghs;
-  params.has_fhs = true;
-  params.has_qhs = true;
-  params.has_ghs = true;
+  params.type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
+  params.bands = bands;
+  params.bands_count = 5;
 
   filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD_COMBO,
                          .parameters.biquad_combo = params};
@@ -1109,7 +1088,7 @@ TEST(BiquadCombo_GraphicEqualizer) {
   compare_biquad_combo_geq(20.0, 20000.0, gains, 5, 1e-7, "geq");
 }
 
-TEST(BiquadCombo_FivePointPeq) {
+TEST(BiquadCombo_NPointPeq) {
   compare_biquad_combo_peq5(80.0, 0.707, 3.0, 250.0, 1.5, -2.0, 1000.0, 2.0,
                             1.5, 4000.0, 1.0, -1.0, 12000.0, 0.707, 2.5,
                             "peq5");

@@ -76,27 +76,36 @@ static void recompute_shelves(loudness_filter_t* filter, double volume) {
     filter->midband_attenuation_db = 0.0;
   }
 
-  // Low shelf at 70 Hz, 12 dB/oct slope
+  double low_freq =
+      filter->params.has_low_freq ? filter->params.low_freq : 70.0;
+  double high_freq =
+      filter->params.has_high_freq ? filter->params.high_freq : 3500.0;
+  double low_q =
+      filter->params.has_low_q ? filter->params.low_q : (1.0 / M_SQRT2);
+  double high_q =
+      filter->params.has_high_q ? filter->params.high_q : (1.0 / M_SQRT2);
+
+  // Low shelf at low_freq Hz, Q steepness
   // Update coefficients in-place to preserve biquad delay-line state (no
   // clicks)
   filter_config_t lp_cfg = {
       .type = FILTER_TYPE_BIQUAD,
       .parameters.biquad = {.type = BIQUAD_TYPE_LOWSHELF,
-                            .freq = 70.0,
+                            .freq = low_freq,
                             .gain = low_boost,
-                            .slope = 12.0,
-                            .steepness_type = STEEPNESS_TYPE_SLOPE}};
+                            .q = low_q,
+                            .steepness_type = STEEPNESS_TYPE_Q}};
   biquad_filter_update_parameters(filter->low_shelf_filter, &lp_cfg,
                                   filter->sample_rate);
 
-  // High shelf at 3500 Hz, 12 dB/oct slope
+  // High shelf at high_freq Hz, Q steepness
   filter_config_t hp_cfg = {
       .type = FILTER_TYPE_BIQUAD,
       .parameters.biquad = {.type = BIQUAD_TYPE_HIGHSHELF,
-                            .freq = 3500.0,
+                            .freq = high_freq,
                             .gain = high_boost,
-                            .slope = 12.0,
-                            .steepness_type = STEEPNESS_TYPE_SLOPE}};
+                            .q = high_q,
+                            .steepness_type = STEEPNESS_TYPE_Q}};
   biquad_filter_update_parameters(filter->high_shelf_filter, &hp_cfg,
                                   filter->sample_rate);
 }
@@ -182,6 +191,45 @@ static int loudness_config_validate(const filter_config_t* config,
     }
     return -1;
   }
+  double low_freq = params->has_low_freq ? params->low_freq : 70.0;
+  double high_freq = params->has_high_freq ? params->high_freq : 3500.0;
+  double low_q = params->has_low_q ? params->low_q : (1.0 / M_SQRT2);
+  double high_q = params->has_high_q ? params->high_q : (1.0 / M_SQRT2);
+
+  if (low_freq <= 0.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Low freq must be > 0");
+    }
+    return -1;
+  }
+  if (sample_rate > 0 && high_freq >= (double)sample_rate / 2.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "High freq must be < samplerate/2");
+    }
+    return -1;
+  }
+  if (high_freq <= low_freq) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "High freq must be higher than low freq");
+    }
+    return -1;
+  }
+  if (high_q < 0.1 || high_q > 2.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "High Q must be between 0.1 and 2.0");
+    }
+    return -1;
+  }
+  if (low_q < 0.1 || low_q > 2.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Low Q must be between 0.1 and 2.0");
+    }
+    return -1;
+  }
   return 0;
 }
 
@@ -239,11 +287,12 @@ static void* loudness_filter_create(const char* name,
                                  filter->low_shelf_filter};
   filter_config_t canon_cfg = {
       .type = FILTER_TYPE_BIQUAD_CANON,
-      .parameters.biquad_canon = {
-          .sections = shelves,
-          .num_sections = 2,
-          .owns_sections = false,
-      },
+      .parameters.biquad_canon =
+          {
+              .sections = shelves,
+              .num_sections = 2,
+              .owns_sections = false,
+          },
   };
   filter->canon_filter = g_biquad_canon_vtable.create(
       "loudness_shelves", &canon_cfg, sample_rate, 0, NULL, err);
