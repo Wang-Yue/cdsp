@@ -100,6 +100,7 @@ private:
     QLineEdit* m_capPwNodeDescEdit = nullptr;
     QLineEdit* m_capPwNodeGroupEdit = nullptr;
     QLineEdit* m_capPwAutoconnectEdit = nullptr;
+    QCheckBox* m_capPwLoopbackCheck = nullptr;
 
     // Capture File (RawFile & WavFile)
     QFormLayout* m_capRawFileForm = nullptr;

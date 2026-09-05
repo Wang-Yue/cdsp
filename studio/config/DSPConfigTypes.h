@@ -481,6 +481,7 @@ struct PipeWireCaptureConfig {
     std::optional<std::string> nodeDescription;
     std::optional<std::string> nodeGroupName;
     std::optional<std::string> autoconnectTo;
+    std::optional<bool> loopback;
     std::vector<std::string> channelLabels;
     QJsonObject toJson() const;
     static PipeWireCaptureConfig fromJson(const QJsonObject& json);
@@ -488,7 +489,7 @@ struct PipeWireCaptureConfig {
     bool operator==(const PipeWireCaptureConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && nodeName == o.nodeName &&
                nodeDescription == o.nodeDescription && nodeGroupName == o.nodeGroupName &&
-               autoconnectTo == o.autoconnectTo && channelLabels == o.channelLabels;
+               autoconnectTo == o.autoconnectTo && loopback == o.loopback && channelLabels == o.channelLabels;
     }
     bool operator!=(const PipeWireCaptureConfig& o) const { return !(*this == o); }
 };
@@ -834,12 +835,17 @@ struct LoudnessParameters {
     std::optional<double> lowBoost;
     std::optional<bool> attenuateMid;
     std::optional<Fader> fader;
+    std::optional<double> highFreq;
+    std::optional<double> lowFreq;
+    std::optional<double> highQ;
+    std::optional<double> lowQ;
     QJsonObject toJson() const;
     static LoudnessParameters fromJson(const QJsonObject& json);
 
     bool operator==(const LoudnessParameters& o) const {
         return referenceLevel == o.referenceLevel && highBoost == o.highBoost && lowBoost == o.lowBoost &&
-               attenuateMid == o.attenuateMid && fader == o.fader;
+               attenuateMid == o.attenuateMid && fader == o.fader && highFreq == o.highFreq && lowFreq == o.lowFreq &&
+               highQ == o.highQ && lowQ == o.lowQ;
     }
     bool operator!=(const LoudnessParameters& o) const { return !(*this == o); }
 };
@@ -880,13 +886,24 @@ struct DelayParameters {
     bool operator!=(const DelayParameters& o) const { return !(*this == o); }
 };
 
+struct PeqBand {
+    double freq = 1000.0;
+    double q = 1.0;
+    double gain = 0.0;
+    QJsonObject toJson() const;
+    static PeqBand fromJson(const QJsonObject& json);
+
+    bool operator==(const PeqBand& o) const { return freq == o.freq && q == o.q && gain == o.gain; }
+    bool operator!=(const PeqBand& o) const { return !(*this == o); }
+};
+
 enum class BiquadComboType {
     ButterworthHighpass,
     ButterworthLowpass,
     LinkwitzRileyHighpass,
     LinkwitzRileyLowpass,
     Tilt,
-    FivePointPeq,
+    NPointPeq,
     GraphicEqualizer
 };
 std::string biquadComboTypeToString(BiquadComboType t);
@@ -897,21 +914,15 @@ struct BiquadComboParameters {
     std::optional<double> freq;
     std::optional<int> order;
     std::optional<double> gain;
-    std::optional<double> fls, qls, gls;
-    std::optional<double> fp1, qp1, gp1;
-    std::optional<double> fp2, qp2, gp2;
-    std::optional<double> fp3, qp3, gp3;
-    std::optional<double> fhs, qhs, ghs;
+    std::vector<PeqBand> bands;
     std::optional<double> freqMin, freqMax;
     std::vector<double> gains;
     QJsonObject toJson() const;
     static BiquadComboParameters fromJson(const QJsonObject& json);
 
     bool operator==(const BiquadComboParameters& o) const {
-        return type == o.type && freq == o.freq && order == o.order && gain == o.gain && fls == o.fls && qls == o.qls &&
-               gls == o.gls && fp1 == o.fp1 && qp1 == o.qp1 && gp1 == o.gp1 && fp2 == o.fp2 && qp2 == o.qp2 &&
-               gp2 == o.gp2 && fp3 == o.fp3 && qp3 == o.qp3 && gp3 == o.gp3 && fhs == o.fhs && qhs == o.qhs &&
-               ghs == o.ghs && freqMin == o.freqMin && freqMax == o.freqMax && gains == o.gains;
+        return type == o.type && freq == o.freq && order == o.order && gain == o.gain && bands == o.bands &&
+               freqMin == o.freqMin && freqMax == o.freqMax && gains == o.gains;
     }
     bool operator!=(const BiquadComboParameters& o) const { return !(*this == o); }
 };

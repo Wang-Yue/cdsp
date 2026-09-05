@@ -165,10 +165,9 @@ void PipelineOverviewWidget::buildAddStageMenu() {
         }
     };
 
-    addCategorySubMenu("Filters",
-                       {StageType::EQ, StageType::GraphicEQ, StageType::Convolution, StageType::BiquadCombo,
-                        StageType::DiffEq, StageType::Gain, StageType::Delay, StageType::Volume, StageType::Clipper,
-                        StageType::LookaheadLimiter, StageType::Dither, StageType::Loudness});
+    addCategorySubMenu("Filters", {StageType::EQ, StageType::Convolution, StageType::BiquadCombo, StageType::DiffEq,
+                                   StageType::Gain, StageType::Delay, StageType::Volume, StageType::Clipper,
+                                   StageType::LookaheadLimiter, StageType::Dither, StageType::Loudness});
 
     addCategorySubMenu("Mixer", {StageType::MatrixMixer});
 
@@ -389,8 +388,6 @@ QString PipelineOverviewWidget::readableFilterName(const std::string& rawName, c
         return QString("Biquad Combo (%1)").arg(QString::fromStdString(biquadComboTypeToString(stage.comboType)));
     if (suffix == "clipper")
         return QString("Clipper (%1 dB)").arg(QString::asprintf("%+.1f", stage.clipperLimit));
-    if (suffix == "geq")
-        return QString("Graphic EQ (%1 Bands)").arg(stage.graphicEQBandCount);
 
     bool isNum = false;
     int bandNum = suffix.toInt(&isNum);

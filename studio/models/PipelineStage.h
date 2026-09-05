@@ -22,7 +22,6 @@ enum class StageType {
     Crossfeed,
     SplitWidth,
     EQ,
-    GraphicEQ,
     Convolution,
     Loudness,
     Emphasis,
@@ -92,10 +91,14 @@ public:
     std::optional<QUuid> convPresetId;
     EmphasisMode emphasisMode = EmphasisMode::DeEmphasis;
     double loudnessReference = -25.0;
-    double loudnessHighBoost = 7.0;
-    double loudnessLowBoost = 7.0;
+    double loudnessHighBoost = 10.0;
+    double loudnessLowBoost = 10.0;
     Fader loudnessFader = Fader::Main;
     bool loudnessAttenuateMid = false;
+    double loudnessHighFreq = 3500.0;
+    double loudnessLowFreq = 70.0;
+    double loudnessHighQ = 0.707;
+    double loudnessLowQ = 0.707;
 
     double gainValue = 0.0;
     bool gainInverted = false;
@@ -153,25 +156,11 @@ public:
     double comboFreq = 1000.0;
     int comboOrder = 2;
     double comboGain = 0.0;
-    std::string comboGains = "0.0, 0.0, 0.0, 0.0, 0.0";
+    std::vector<PeqBand> comboBands = {
+        {80.0, 0.707, 0.0}, {200.0, 0.707, 0.0}, {1000.0, 0.707, 0.0}, {4000.0, 0.707, 0.0}, {12000.0, 0.707, 0.0}};
     double comboFreqMin = 20.0;
     double comboFreqMax = 20000.0;
-
-    double peqFls = 80.0;
-    double peqGls = 0.0;
-    double peqQls = 0.707;
-    double peqF1 = 200.0;
-    double peqG1 = 0.0;
-    double peqQ1 = 0.707;
-    double peqF2 = 1000.0;
-    double peqG2 = 0.0;
-    double peqQ2 = 0.707;
-    double peqF3 = 4000.0;
-    double peqG3 = 0.0;
-    double peqQ3 = 0.707;
-    double peqFhs = 12000.0;
-    double peqGhs = 0.0;
-    double peqQhs = 0.707;
+    std::vector<double> comboGains = std::vector<double>(31, 0.0);
 
     double clipperLimit = 0.0;
     bool clipperSoftClip = false;
@@ -179,18 +168,10 @@ public:
     double splitWidthCrossover = 150.0;
     double splitWidthAmount = 1.5;
 
-    double graphicEQFreqMin = 20.0;
-    double graphicEQFreqMax = 20000.0;
-    int graphicEQBandCount = 31;
-    std::vector<double> graphicEQGains = std::vector<double>(31, 0.0);
-
     PipelineStage();
     explicit PipelineStage(StageType type, const std::string& name = "", bool isEnabled = false,
                            const std::vector<int>& channels = {0, 1});
 
-    void setGraphicEQBandCount(int count);
-    double getGraphicEQGain(int index) const;
-    void setGraphicEQGain(int index, double gain);
     double getMixerSourceGain(int mappingIndex, int sourceIndex) const;
     void setMixerSourceGain(int mappingIndex, int sourceIndex, double gain);
 

@@ -1167,6 +1167,9 @@ void StageDetailView::buildStageOptionsUi() {
             }
             containerLayout->addWidget(convGroup);
         }
+        break;
+    }
+
     case StageType::Loudness: {
         auto loudGroup = new QGroupBox("Loudness Compensation", m_optionsContainer);
         auto loudForm = new QFormLayout(loudGroup);
@@ -1198,6 +1201,28 @@ void StageDetailView::buildStageOptionsUi() {
         });
         addSliderRow(loudForm, "&Low Boost:", lowSlider, lowLbl, loudGroup);
 
+        auto lowFreqSlider = new QSlider(Qt::Horizontal, loudGroup);
+        lowFreqSlider->setRange(20, 1000);
+        lowFreqSlider->setValue(static_cast<int>(stage.loudnessLowFreq));
+        auto lowFreqLbl = new QLabel(QString("%1 Hz").arg(static_cast<int>(stage.loudnessLowFreq)), loudGroup);
+        connect(lowFreqSlider, &QSlider::valueChanged, [this, &stage, lowFreqLbl](int val) {
+            stage.loudnessLowFreq = val;
+            lowFreqLbl->setText(QString("%1 Hz").arg(val));
+            applyConfig();
+        });
+        addSliderRow(loudForm, "Low Shelf &Freq:", lowFreqSlider, lowFreqLbl, loudGroup);
+
+        auto lowQSpin = new QDoubleSpinBox(loudGroup);
+        lowQSpin->setRange(0.1, 2.0);
+        lowQSpin->setSingleStep(0.05);
+        lowQSpin->setDecimals(3);
+        lowQSpin->setValue(stage.loudnessLowQ);
+        connect(lowQSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.loudnessLowQ = val;
+            applyConfig();
+        });
+        addWidgetRow(loudForm, "Low Shelf &Q:", lowQSpin, loudGroup);
+
         auto highSlider = new QSlider(Qt::Horizontal, loudGroup);
         highSlider->setRange(0, 40);
         highSlider->setSingleStep(1);
@@ -1210,6 +1235,28 @@ void StageDetailView::buildStageOptionsUi() {
             applyConfig();
         });
         addSliderRow(loudForm, "&High Boost:", highSlider, highLbl, loudGroup);
+
+        auto highFreqSlider = new QSlider(Qt::Horizontal, loudGroup);
+        highFreqSlider->setRange(1000, 20000);
+        highFreqSlider->setValue(static_cast<int>(stage.loudnessHighFreq));
+        auto highFreqLbl = new QLabel(QString("%1 Hz").arg(static_cast<int>(stage.loudnessHighFreq)), loudGroup);
+        connect(highFreqSlider, &QSlider::valueChanged, [this, &stage, highFreqLbl](int val) {
+            stage.loudnessHighFreq = val;
+            highFreqLbl->setText(QString("%1 Hz").arg(val));
+            applyConfig();
+        });
+        addSliderRow(loudForm, "High Shelf &Freq:", highFreqSlider, highFreqLbl, loudGroup);
+
+        auto highQSpin = new QDoubleSpinBox(loudGroup);
+        highQSpin->setRange(0.1, 2.0);
+        highQSpin->setSingleStep(0.05);
+        highQSpin->setDecimals(3);
+        highQSpin->setValue(stage.loudnessHighQ);
+        connect(highQSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, &stage](double val) {
+            stage.loudnessHighQ = val;
+            applyConfig();
+        });
+        addWidgetRow(loudForm, "High Shelf &Q:", highQSpin, loudGroup);
 
         auto faderCombo = new QComboBox(loudGroup);
         faderCombo->addItems({"Main", "Aux 1", "Aux 2", "Aux 3", "Aux 4"});
@@ -2160,7 +2207,8 @@ void StageDetailView::buildStageOptionsUi() {
         typeCombo->addItem("Linkwitz-Riley Lowpass", static_cast<int>(BiquadComboType::LinkwitzRileyLowpass));
         typeCombo->addItem("Linkwitz-Riley Highpass", static_cast<int>(BiquadComboType::LinkwitzRileyHighpass));
         typeCombo->addItem("Tilt", static_cast<int>(BiquadComboType::Tilt));
-        typeCombo->addItem("Five-Point PEQ", static_cast<int>(BiquadComboType::FivePointPeq));
+        typeCombo->addItem("Parametric EQ (N-Point PEQ)", static_cast<int>(BiquadComboType::NPointPeq));
+        typeCombo->addItem("Graphic Equalizer", static_cast<int>(BiquadComboType::GraphicEqualizer));
 
         int curTypeIdx = typeCombo->findData(static_cast<int>(stage.comboType));
         typeCombo->setCurrentIndex(curTypeIdx >= 0 ? curTypeIdx : 0);
@@ -2174,7 +2222,7 @@ void StageDetailView::buildStageOptionsUi() {
         });
         addWidgetRow(comboForm, "Combo &Type:", typeCombo, comboGroup);
 
-        if (stage.comboType != BiquadComboType::FivePointPeq) {
+        if (stage.comboType != BiquadComboType::NPointPeq && stage.comboType != BiquadComboType::GraphicEqualizer) {
             auto freqSlider = new QSlider(Qt::Horizontal, comboGroup);
             freqSlider->setRange(20, 20000);
             freqSlider->setValue(static_cast<int>(stage.comboFreq));
@@ -2232,9 +2280,18 @@ void StageDetailView::buildStageOptionsUi() {
 
         containerLayout->addWidget(comboGroup);
 
-        if (stage.comboType == BiquadComboType::FivePointPeq) {
-            auto peqGroup = new QGroupBox("5-Point Parametric EQ", m_optionsContainer);
-            auto peqGrid = new QGridLayout(peqGroup);
+        if (stage.comboType == BiquadComboType::NPointPeq) {
+            if (stage.comboBands.empty()) {
+                stage.comboBands = {{80.0, 0.707, 0.0},
+                                    {250.0, 1.414, 0.0},
+                                    {1000.0, 1.414, 0.0},
+                                    {4000.0, 1.414, 0.0},
+                                    {12000.0, 0.707, 0.0}};
+            }
+            auto peqGroup =
+                new QGroupBox(QString("Parametric EQ (%1 Bands)").arg(stage.comboBands.size()), m_optionsContainer);
+            auto peqMainLayout = new QVBoxLayout(peqGroup);
+            auto peqGrid = new QGridLayout();
             peqGrid->setHorizontalSpacing(16);
             peqGrid->setVerticalSpacing(8);
 
@@ -2249,227 +2306,253 @@ void StageDetailView::buildStageOptionsUi() {
             hdr3->setFont(hdrFont);
             auto hdr4 = new QLabel("Q Factor", peqGroup);
             hdr4->setFont(hdrFont);
+            auto hdr5 = new QLabel("", peqGroup);
 
             peqGrid->addWidget(hdr1, 0, 0);
             peqGrid->addWidget(hdr2, 0, 1);
             peqGrid->addWidget(hdr3, 0, 2);
             peqGrid->addWidget(hdr4, 0, 3);
+            peqGrid->addWidget(hdr5, 0, 4);
 
-            auto addRow = [this, peqGroup, peqGrid](int r, const QString& name, double initialF, double initialG,
-                                                    double initialQ, std::function<void(PipelineStage*, double)> setF,
-                                                    std::function<void(PipelineStage*, double)> setG,
-                                                    std::function<void(PipelineStage*, double)> setQ) {
+            size_t nBands = stage.comboBands.size();
+            for (size_t bIdx = 0; bIdx < nBands; ++bIdx) {
+                QString name;
+                if (bIdx == 0) {
+                    name = "Low Shelf";
+                } else if (bIdx == nBands - 1) {
+                    name = "High Shelf";
+                } else {
+                    name = QString("Peak %1").arg(bIdx);
+                }
+
                 auto nameLbl = new QLabel(name, peqGroup);
-                peqGrid->addWidget(nameLbl, r, 0);
+                peqGrid->addWidget(nameLbl, static_cast<int>(bIdx + 1), 0);
+
+                const auto& b = stage.comboBands[bIdx];
 
                 auto fSpin = new QDoubleSpinBox(peqGroup);
                 fSpin->setRange(20.0, 20000.0);
                 fSpin->setSingleStep(10.0);
                 fSpin->setDecimals(1);
-                fSpin->setValue(initialF);
+                fSpin->setValue(b.freq);
                 fSpin->setSuffix(" Hz");
-                connect(fSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, setF](double val) {
+                connect(fSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, bIdx](double val) {
                     auto st = currentStage();
-                    if (!st)
+                    if (!st || bIdx >= st->comboBands.size())
                         return;
-                    setF(st, val);
+                    st->comboBands[bIdx].freq = val;
                     applyConfig();
                 });
                 nameLbl->setBuddy(fSpin);
-                peqGrid->addWidget(fSpin, r, 1);
+                peqGrid->addWidget(fSpin, static_cast<int>(bIdx + 1), 1);
 
                 auto gSpin = new QDoubleSpinBox(peqGroup);
                 gSpin->setRange(-40.0, 40.0);
                 gSpin->setSingleStep(0.5);
                 gSpin->setDecimals(1);
-                gSpin->setValue(initialG);
+                gSpin->setValue(b.gain);
                 gSpin->setSuffix(" dB");
-                connect(gSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, setG](double val) {
+                connect(gSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, bIdx](double val) {
                     auto st = currentStage();
-                    if (!st)
+                    if (!st || bIdx >= st->comboBands.size())
                         return;
-                    setG(st, val);
+                    st->comboBands[bIdx].gain = val;
                     applyConfig();
                 });
-                peqGrid->addWidget(gSpin, r, 2);
+                peqGrid->addWidget(gSpin, static_cast<int>(bIdx + 1), 2);
 
                 auto qSpin = new QDoubleSpinBox(peqGroup);
                 qSpin->setRange(0.05, 100.0);
                 qSpin->setSingleStep(0.05);
                 qSpin->setDecimals(3);
-                qSpin->setValue(initialQ);
-                connect(qSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, setQ](double val) {
+                qSpin->setValue(b.q);
+                connect(qSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, bIdx](double val) {
                     auto st = currentStage();
-                    if (!st)
+                    if (!st || bIdx >= st->comboBands.size())
                         return;
-                    setQ(st, val);
+                    st->comboBands[bIdx].q = val;
                     applyConfig();
                 });
-                peqGrid->addWidget(qSpin, r, 3);
-            };
+                peqGrid->addWidget(qSpin, static_cast<int>(bIdx + 1), 3);
 
-            addRow(
-                1, "Low Shelf", stage.peqFls, stage.peqGls, stage.peqQls,
-                [](PipelineStage* st, double v) { st->peqFls = v; },
-                [](PipelineStage* st, double v) { st->peqGls = v; },
-                [](PipelineStage* st, double v) { st->peqQls = v; });
-            addRow(
-                2, "PEQ 1", stage.peqF1, stage.peqG1, stage.peqQ1, [](PipelineStage* st, double v) { st->peqF1 = v; },
-                [](PipelineStage* st, double v) { st->peqG1 = v; }, [](PipelineStage* st, double v) { st->peqQ1 = v; });
-            addRow(
-                3, "PEQ 2", stage.peqF2, stage.peqG2, stage.peqQ2, [](PipelineStage* st, double v) { st->peqF2 = v; },
-                [](PipelineStage* st, double v) { st->peqG2 = v; }, [](PipelineStage* st, double v) { st->peqQ2 = v; });
-            addRow(
-                4, "PEQ 3", stage.peqF3, stage.peqG3, stage.peqQ3, [](PipelineStage* st, double v) { st->peqF3 = v; },
-                [](PipelineStage* st, double v) { st->peqG3 = v; }, [](PipelineStage* st, double v) { st->peqQ3 = v; });
-            addRow(
-                5, "High Shelf", stage.peqFhs, stage.peqGhs, stage.peqQhs,
-                [](PipelineStage* st, double v) { st->peqFhs = v; },
-                [](PipelineStage* st, double v) { st->peqGhs = v; },
-                [](PipelineStage* st, double v) { st->peqQhs = v; });
+                if (bIdx > 0 && bIdx < nBands - 1 && nBands > 2) {
+                    auto delBtn = new QPushButton("✕", peqGroup);
+                    delBtn->setFixedWidth(28);
+                    delBtn->setToolTip("Remove this band");
+                    connect(delBtn, &QPushButton::clicked, [this, bIdx]() {
+                        auto st = currentStage();
+                        if (!st || st->comboBands.size() <= 2 || bIdx >= st->comboBands.size())
+                            return;
+                        st->comboBands.erase(st->comboBands.begin() + bIdx);
+                        applyConfig();
+                        refreshUi();
+                    });
+                    peqGrid->addWidget(delBtn, static_cast<int>(bIdx + 1), 4);
+                }
+            }
+
+            peqMainLayout->addLayout(peqGrid);
+
+            auto addBandBtn = new QPushButton("+ Add PEQ Band", peqGroup);
+            connect(addBandBtn, &QPushButton::clicked, [this]() {
+                auto st = currentStage();
+                if (!st)
+                    return;
+                if (st->comboBands.size() < 2) {
+                    st->comboBands = {{80.0, 0.707, 0.0}, {12000.0, 0.707, 0.0}};
+                }
+                double newFreq = 1000.0;
+                if (st->comboBands.size() >= 2) {
+                    double prevF = st->comboBands[st->comboBands.size() - 2].freq;
+                    double nextF = st->comboBands.back().freq;
+                    newFreq = std::sqrt(prevF * nextF);
+                }
+                st->comboBands.insert(st->comboBands.end() - 1, PeqBand{newFreq, 0.707, 0.0});
+                applyConfig();
+                refreshUi();
+            });
+            peqMainLayout->addWidget(addBandBtn, 0, Qt::AlignLeft);
 
             containerLayout->addWidget(peqGroup);
         }
-        break;
-    }
 
-    case StageType::GraphicEQ: {
-        auto geqGroup = new QGroupBox("Graphic Equalizer Settings", m_optionsContainer);
-        auto geqVBox = new QVBoxLayout(geqGroup);
-        geqVBox->setSpacing(12);
+        if (stage.comboType == BiquadComboType::GraphicEqualizer) {
+            auto geqGroup = new QGroupBox("Graphic Equalizer Settings", m_optionsContainer);
+            auto geqVBox = new QVBoxLayout(geqGroup);
+            geqVBox->setSpacing(12);
 
-        auto geqForm = new QFormLayout();
-        geqForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+            auto geqForm = new QFormLayout();
+            geqForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
-        auto rangeWidget = new QWidget(geqGroup);
-        auto rangeHBox = new QHBoxLayout(rangeWidget);
-        rangeHBox->setContentsMargins(0, 0, 0, 0);
-        rangeHBox->setSpacing(8);
+            auto rangeWidget = new QWidget(geqGroup);
+            auto rangeHBox = new QHBoxLayout(rangeWidget);
+            rangeHBox->setContentsMargins(0, 0, 0, 0);
+            rangeHBox->setSpacing(8);
 
-        auto minEdit = new QLineEdit(QString::number(stage.graphicEQFreqMin), rangeWidget);
-        minEdit->setFixedWidth(80);
-        connect(minEdit, &QLineEdit::editingFinished, [this, &stage, minEdit]() {
-            stage.graphicEQFreqMin = minEdit->text().toDouble();
-            applyConfig();
-            refreshUi();
-        });
-        rangeHBox->addWidget(minEdit);
-        rangeHBox->addWidget(new QLabel("to", rangeWidget));
-        auto maxEdit = new QLineEdit(QString::number(stage.graphicEQFreqMax), rangeWidget);
-        maxEdit->setFixedWidth(80);
-        connect(maxEdit, &QLineEdit::editingFinished, [this, &stage, maxEdit]() {
-            stage.graphicEQFreqMax = maxEdit->text().toDouble();
-            applyConfig();
-            refreshUi();
-        });
-        rangeHBox->addWidget(maxEdit);
-        rangeHBox->addWidget(new QLabel("Hz", rangeWidget));
-        rangeHBox->addStretch();
-
-        auto rangeLbl = new QLabel("Frequency &Range:", geqGroup);
-        rangeLbl->setBuddy(minEdit);
-        geqForm->addRow(rangeLbl, rangeWidget);
-
-        auto spinBands = new QSpinBox(geqGroup);
-        spinBands->setRange(2, 64);
-        spinBands->setValue(stage.graphicEQBandCount);
-        connect(spinBands, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
-            stage.graphicEQBandCount = val;
-            if (static_cast<int>(stage.graphicEQGains.size()) != val) {
-                stage.graphicEQGains.resize(val, 0.0);
-            }
-            applyConfig();
-            refreshUi();
-        });
-        addWidgetRow(geqForm, "&Bands:", spinBands, geqGroup);
-
-        geqVBox->addLayout(geqForm);
-
-        // Scrollable Slider Bank
-        auto scrollBank = new QScrollArea(geqGroup);
-        scrollBank->setWidgetResizable(true);
-        scrollBank->setFrameShape(QFrame::NoFrame);
-        scrollBank->setFixedHeight(240);
-
-        auto bankContainer = new QWidget(scrollBank);
-        auto bankLayout = new QHBoxLayout(bankContainer);
-        bankLayout->setSpacing(14);
-        bankLayout->setContentsMargins(4, 4, 4, 4);
-
-        int totalBands = stage.graphicEQBandCount;
-        if (static_cast<int>(stage.graphicEQGains.size()) != totalBands) {
-            stage.graphicEQGains.resize(totalBands, 0.0);
-        }
-
-        auto bandFrequency = [](int index, int total, double fMin, double fMax) -> double {
-            if (total <= 1)
-                return fMin;
-            double ratio = fMax / fMin;
-            double exponent = static_cast<double>(index) / (total - 1);
-            return fMin * std::pow(ratio, exponent);
-        };
-
-        auto freqLabelText = [](double hz) -> QString {
-            if (hz >= 1000.0) {
-                double khz = hz / 1000.0;
-                if (khz == std::floor(khz))
-                    return QString("%1k").arg(static_cast<int>(khz));
-                else
-                    return QString("%1k").arg(khz, 0, 'f', 1);
-            } else {
-                if (hz == std::floor(hz))
-                    return QString("%1").arg(static_cast<int>(hz));
-                else
-                    return QString("%1").arg(hz, 0, 'f', 1);
-            }
-        };
-
-        for (int b = 0; b < totalBands; ++b) {
-            double freq = bandFrequency(b, totalBands, stage.graphicEQFreqMin, stage.graphicEQFreqMax);
-            QString fText = freqLabelText(freq);
-
-            auto bVBox = new QVBoxLayout();
-            bVBox->setSpacing(8);
-            bVBox->setAlignment(Qt::AlignCenter);
-
-            auto gainValLbl = new QLabel(QString("%1").arg(stage.graphicEQGains[b], 0, 'f', 1), bankContainer);
-            gainValLbl->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-            gainValLbl->setFixedWidth(35);
-            gainValLbl->setAlignment(Qt::AlignCenter);
-            bVBox->addWidget(gainValLbl);
-
-            auto slider = new VSliderWidget(stage.graphicEQGains[b], -40.0, 40.0, bankContainer);
-            connect(slider, &VSliderWidget::valueChanged, [this, &stage, b, gainValLbl](double val) {
-                stage.graphicEQGains[b] = val;
-                gainValLbl->setText(QString("%1").arg(val, 0, 'f', 1));
+            auto minEdit = new QLineEdit(QString::number(stage.comboFreqMin), rangeWidget);
+            minEdit->setFixedWidth(80);
+            connect(minEdit, &QLineEdit::editingFinished, [this, &stage, minEdit]() {
+                stage.comboFreqMin = minEdit->text().toDouble();
                 applyConfig();
+                refreshUi();
             });
-            bVBox->addWidget(slider, 0, Qt::AlignCenter);
+            rangeHBox->addWidget(minEdit);
+            rangeHBox->addWidget(new QLabel("to", rangeWidget));
+            auto maxEdit = new QLineEdit(QString::number(stage.comboFreqMax), rangeWidget);
+            maxEdit->setFixedWidth(80);
+            connect(maxEdit, &QLineEdit::editingFinished, [this, &stage, maxEdit]() {
+                stage.comboFreqMax = maxEdit->text().toDouble();
+                applyConfig();
+                refreshUi();
+            });
+            rangeHBox->addWidget(maxEdit);
+            rangeHBox->addWidget(new QLabel("Hz", rangeWidget));
+            rangeHBox->addStretch();
 
-            auto fLbl = new RotatedLabel(fText, bankContainer);
-            bVBox->addWidget(fLbl, 0, Qt::AlignCenter);
+            auto rangeLbl = new QLabel("Frequency &Range:", geqGroup);
+            rangeLbl->setBuddy(minEdit);
+            geqForm->addRow(rangeLbl, rangeWidget);
 
-            bankLayout->addLayout(bVBox);
+            int totalBands = static_cast<int>(stage.comboGains.size());
+            if (totalBands < 2) {
+                totalBands = 31;
+                stage.comboGains.resize(31, 0.0);
+            }
+
+            auto spinBands = new QSpinBox(geqGroup);
+            spinBands->setRange(2, 64);
+            spinBands->setValue(totalBands);
+            connect(spinBands, QOverload<int>::of(&QSpinBox::valueChanged), [this, &stage](int val) {
+                if (static_cast<int>(stage.comboGains.size()) != val) {
+                    stage.comboGains.resize(val, 0.0);
+                }
+                applyConfig();
+                refreshUi();
+            });
+            addWidgetRow(geqForm, "&Bands:", spinBands, geqGroup);
+
+            geqVBox->addLayout(geqForm);
+
+            // Scrollable Slider Bank
+            auto scrollBank = new QScrollArea(geqGroup);
+            scrollBank->setWidgetResizable(true);
+            scrollBank->setFrameShape(QFrame::NoFrame);
+            scrollBank->setFixedHeight(240);
+
+            auto bankContainer = new QWidget(scrollBank);
+            auto bankLayout = new QHBoxLayout(bankContainer);
+            bankLayout->setSpacing(14);
+            bankLayout->setContentsMargins(4, 4, 4, 4);
+
+            auto bandFrequency = [](int index, int total, double fMin, double fMax) -> double {
+                if (total <= 1)
+                    return fMin;
+                double ratio = fMax / fMin;
+                double exponent = static_cast<double>(index) / (total - 1);
+                return fMin * std::pow(ratio, exponent);
+            };
+
+            auto freqLabelText = [](double hz) -> QString {
+                if (hz >= 1000.0) {
+                    double khz = hz / 1000.0;
+                    if (khz == std::floor(khz))
+                        return QString("%1k").arg(static_cast<int>(khz));
+                    else
+                        return QString("%1k").arg(khz, 0, 'f', 1);
+                } else {
+                    if (hz == std::floor(hz))
+                        return QString("%1").arg(static_cast<int>(hz));
+                    else
+                        return QString("%1").arg(hz, 0, 'f', 1);
+                }
+            };
+
+            for (int b = 0; b < totalBands; ++b) {
+                double freq = bandFrequency(b, totalBands, stage.comboFreqMin, stage.comboFreqMax);
+                QString fText = freqLabelText(freq);
+
+                auto bVBox = new QVBoxLayout();
+                bVBox->setSpacing(8);
+                bVBox->setAlignment(Qt::AlignCenter);
+
+                auto gainValLbl = new QLabel(QString("%1").arg(stage.comboGains[b], 0, 'f', 1), bankContainer);
+                gainValLbl->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+                gainValLbl->setFixedWidth(35);
+                gainValLbl->setAlignment(Qt::AlignCenter);
+                bVBox->addWidget(gainValLbl);
+
+                auto slider = new VSliderWidget(stage.comboGains[b], -40.0, 40.0, bankContainer);
+                connect(slider, &VSliderWidget::valueChanged, [this, &stage, b, gainValLbl](double val) {
+                    stage.comboGains[b] = val;
+                    gainValLbl->setText(QString("%1").arg(val, 0, 'f', 1));
+                    applyConfig();
+                });
+                bVBox->addWidget(slider, 0, Qt::AlignCenter);
+
+                auto fLbl = new RotatedLabel(fText, bankContainer);
+                bVBox->addWidget(fLbl, 0, Qt::AlignCenter);
+
+                bankLayout->addLayout(bVBox);
+            }
+
+            scrollBank->setWidget(bankContainer);
+            geqVBox->addWidget(scrollBank);
+
+            auto resetGainsBtn = new QPushButton("Reset All to 0 dB", geqGroup);
+            connect(resetGainsBtn, &QPushButton::clicked, [this, &stage]() {
+                stage.comboGains.assign(stage.comboGains.size(), 0.0);
+                applyConfig();
+                refreshUi();
+            });
+            geqVBox->addWidget(resetGainsBtn, 0, Qt::AlignLeft);
+
+            containerLayout->addWidget(geqGroup);
         }
-
-        scrollBank->setWidget(bankContainer);
-        geqVBox->addWidget(scrollBank);
-
-        auto resetGainsBtn = new QPushButton("Reset All to 0 dB", geqGroup);
-        connect(resetGainsBtn, &QPushButton::clicked, [this, &stage]() {
-            stage.graphicEQGains.assign(stage.graphicEQBandCount, 0.0);
-            applyConfig();
-            refreshUi();
-        });
-        geqVBox->addWidget(resetGainsBtn, 0, Qt::AlignLeft);
-
-        containerLayout->addWidget(geqGroup);
         break;
     }
 
     default:
         break;
-    }
     }
 
     containerLayout->addStretch();

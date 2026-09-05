@@ -41,8 +41,6 @@ std::string stageTypeToString(StageType type) {
         return "Split Width";
     case StageType::EQ:
         return "EQ";
-    case StageType::GraphicEQ:
-        return "Graphic EQ";
     case StageType::Convolution:
         return "Convolution";
     case StageType::Loudness:
@@ -96,8 +94,6 @@ StageType stringToStageType(const std::string& str) {
         return StageType::SplitWidth;
     if (str == "EQ" || str == "eq")
         return StageType::EQ;
-    if (str == "Graphic EQ" || str == "graphicEQ" || str == "graphiceq")
-        return StageType::GraphicEQ;
     if (str == "Convolution" || str == "convolution")
         return StageType::Convolution;
     if (str == "Loudness" || str == "loudness")
@@ -141,7 +137,6 @@ StageType stringToStageType(const std::string& str) {
                          StageType::Crossfeed,
                          StageType::SplitWidth,
                          StageType::EQ,
-                         StageType::GraphicEQ,
                          StageType::Convolution,
                          StageType::Loudness,
                          StageType::Emphasis,
@@ -170,7 +165,6 @@ StageType stringToStageType(const std::string& str) {
 StageCategory stageTypeToCategory(StageType type) {
     switch (type) {
     case StageType::EQ:
-    case StageType::GraphicEQ:
     case StageType::Convolution:
     case StageType::BiquadCombo:
     case StageType::DiffEq:
@@ -288,12 +282,11 @@ std::string emphasisModeDescription(EmphasisMode m) {
     return "";
 }
 
-PipelineStage::PipelineStage()
-    : id(QUuid::createUuid()), type(StageType::Gain), name("Gain"), isEnabled(false), graphicEQGains(31, 0.0) {}
+PipelineStage::PipelineStage() : id(QUuid::createUuid()), type(StageType::Gain), name("Gain"), isEnabled(false) {}
 
 PipelineStage::PipelineStage(StageType type, const std::string& name, bool isEnabled, const std::vector<int>& channels)
     : id(QUuid::createUuid()), type(type), name(name.empty() ? stageTypeToString(type) : name), isEnabled(isEnabled),
-      channels(channels), monitorChannels(channels), graphicEQGains(31, 0.0) {
+      channels(channels), monitorChannels(channels) {
     if (type == StageType::Balance || type == StageType::Width || type == StageType::MSProc ||
         type == StageType::Crossfeed || type == StageType::RACE || type == StageType::SplitWidth) {
         leftChannel = 0;
@@ -310,26 +303,6 @@ PipelineStage::PipelineStage(StageType type, const std::string& name, bool isEna
         m1.dest = 1;
         m1.sources.push_back(MixerSource{1, 0.0, false});
         mixerMappings = {m0, m1};
-    }
-}
-
-void PipelineStage::setGraphicEQBandCount(int count) {
-    graphicEQBandCount = count;
-    if (graphicEQGains.size() != static_cast<size_t>(graphicEQBandCount)) {
-        graphicEQGains.resize(graphicEQBandCount, 0.0);
-    }
-}
-
-double PipelineStage::getGraphicEQGain(int index) const {
-    if (index < 0 || index >= static_cast<int>(graphicEQGains.size())) {
-        return 0.0;
-    }
-    return graphicEQGains[index];
-}
-
-void PipelineStage::setGraphicEQGain(int index, double gain) {
-    if (index >= 0 && index < static_cast<int>(graphicEQGains.size())) {
-        graphicEQGains[index] = gain;
     }
 }
 
@@ -480,6 +453,10 @@ QJsonObject PipelineStage::toJson() const {
     obj["loudnessLowBoost"] = loudnessLowBoost;
     obj["loudnessFader"] = static_cast<int>(loudnessFader);
     obj["loudnessAttenuateMid"] = loudnessAttenuateMid;
+    obj["loudnessHighFreq"] = loudnessHighFreq;
+    obj["loudnessLowFreq"] = loudnessLowFreq;
+    obj["loudnessHighQ"] = loudnessHighQ;
+    obj["loudnessLowQ"] = loudnessLowQ;
 
     obj["gainValue"] = gainValue;
     obj["gainInverted"] = gainInverted;
@@ -540,39 +517,26 @@ QJsonObject PipelineStage::toJson() const {
     obj["comboFreq"] = comboFreq;
     obj["comboOrder"] = comboOrder;
     obj["comboGain"] = comboGain;
-    obj["comboGains"] = QString::fromStdString(comboGains);
     obj["comboFreqMin"] = comboFreqMin;
     obj["comboFreqMax"] = comboFreqMax;
-
-    obj["peqFls"] = peqFls;
-    obj["peqGls"] = peqGls;
-    obj["peqQls"] = peqQls;
-    obj["peqF1"] = peqF1;
-    obj["peqG1"] = peqG1;
-    obj["peqQ1"] = peqQ1;
-    obj["peqF2"] = peqF2;
-    obj["peqG2"] = peqG2;
-    obj["peqQ2"] = peqQ2;
-    obj["peqF3"] = peqF3;
-    obj["peqG3"] = peqG3;
-    obj["peqQ3"] = peqQ3;
-    obj["peqFhs"] = peqFhs;
-    obj["peqGhs"] = peqGhs;
-    obj["peqQhs"] = peqQhs;
+    if (!comboGains.empty()) {
+        QJsonArray gainsArr;
+        for (double g : comboGains)
+            gainsArr.append(g);
+        obj["comboGains"] = gainsArr;
+    }
+    if (!comboBands.empty()) {
+        QJsonArray bandsArr;
+        for (const auto& b : comboBands)
+            bandsArr.append(b.toJson());
+        obj["comboBands"] = bandsArr;
+    }
 
     obj["clipperLimit"] = clipperLimit;
     obj["clipperSoftClip"] = clipperSoftClip;
 
     obj["splitWidthCrossover"] = splitWidthCrossover;
     obj["splitWidthAmount"] = splitWidthAmount;
-
-    obj["graphicEQFreqMin"] = graphicEQFreqMin;
-    obj["graphicEQFreqMax"] = graphicEQFreqMax;
-    obj["graphicEQBandCount"] = graphicEQBandCount;
-    QJsonArray geqArr;
-    for (double g : graphicEQGains)
-        geqArr.append(g);
-    obj["graphicEQGains"] = geqArr;
 
     return obj;
 }
@@ -646,6 +610,14 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
     }
     if (json.contains("loudnessAttenuateMid"))
         s.loudnessAttenuateMid = json["loudnessAttenuateMid"].toBool();
+    if (json.contains("loudnessHighFreq"))
+        s.loudnessHighFreq = json["loudnessHighFreq"].toDouble();
+    if (json.contains("loudnessLowFreq"))
+        s.loudnessLowFreq = json["loudnessLowFreq"].toDouble();
+    if (json.contains("loudnessHighQ"))
+        s.loudnessHighQ = json["loudnessHighQ"].toDouble();
+    if (json.contains("loudnessLowQ"))
+        s.loudnessLowQ = json["loudnessLowQ"].toDouble();
 
     if (json.contains("gainValue"))
         s.gainValue = json["gainValue"].toDouble();
@@ -757,43 +729,23 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
         s.comboOrder = json["comboOrder"].toInt();
     if (json.contains("comboGain"))
         s.comboGain = json["comboGain"].toDouble();
-    if (json.contains("comboGains"))
-        s.comboGains = json["comboGains"].toString().toStdString();
     if (json.contains("comboFreqMin"))
         s.comboFreqMin = json["comboFreqMin"].toDouble();
     if (json.contains("comboFreqMax"))
         s.comboFreqMax = json["comboFreqMax"].toDouble();
+    if (json.contains("comboGains") && json["comboGains"].isArray()) {
+        s.comboGains.clear();
+        for (const auto& g : json["comboGains"].toArray())
+            s.comboGains.push_back(g.toDouble());
+    }
 
-    if (json.contains("peqFls"))
-        s.peqFls = json["peqFls"].toDouble();
-    if (json.contains("peqGls"))
-        s.peqGls = json["peqGls"].toDouble();
-    if (json.contains("peqQls"))
-        s.peqQls = json["peqQls"].toDouble();
-    if (json.contains("peqF1"))
-        s.peqF1 = json["peqF1"].toDouble();
-    if (json.contains("peqG1"))
-        s.peqG1 = json["peqG1"].toDouble();
-    if (json.contains("peqQ1"))
-        s.peqQ1 = json["peqQ1"].toDouble();
-    if (json.contains("peqF2"))
-        s.peqF2 = json["peqF2"].toDouble();
-    if (json.contains("peqG2"))
-        s.peqG2 = json["peqG2"].toDouble();
-    if (json.contains("peqQ2"))
-        s.peqQ2 = json["peqQ2"].toDouble();
-    if (json.contains("peqF3"))
-        s.peqF3 = json["peqF3"].toDouble();
-    if (json.contains("peqG3"))
-        s.peqG3 = json["peqG3"].toDouble();
-    if (json.contains("peqQ3"))
-        s.peqQ3 = json["peqQ3"].toDouble();
-    if (json.contains("peqFhs"))
-        s.peqFhs = json["peqFhs"].toDouble();
-    if (json.contains("peqGhs"))
-        s.peqGhs = json["peqGhs"].toDouble();
-    if (json.contains("peqQhs"))
-        s.peqQhs = json["peqQhs"].toDouble();
+    if (json.contains("comboBands")) {
+        s.comboBands.clear();
+        for (const auto& v : json["comboBands"].toArray()) {
+            if (v.isObject())
+                s.comboBands.push_back(PeqBand::fromJson(v.toObject()));
+        }
+    }
 
     if (json.contains("clipperLimit"))
         s.clipperLimit = json["clipperLimit"].toDouble();
@@ -804,21 +756,6 @@ PipelineStage PipelineStage::fromJson(const QJsonObject& json) {
         s.splitWidthCrossover = json["splitWidthCrossover"].toDouble();
     if (json.contains("splitWidthAmount"))
         s.splitWidthAmount = json["splitWidthAmount"].toDouble();
-
-    if (json.contains("graphicEQFreqMin"))
-        s.graphicEQFreqMin = json["graphicEQFreqMin"].toDouble();
-    if (json.contains("graphicEQFreqMax"))
-        s.graphicEQFreqMax = json["graphicEQFreqMax"].toDouble();
-    if (json.contains("graphicEQBandCount"))
-        s.graphicEQBandCount = json["graphicEQBandCount"].toInt();
-    if (json.contains("graphicEQGains")) {
-        s.graphicEQGains.clear();
-        for (const auto& g : json["graphicEQGains"].toArray())
-            s.graphicEQGains.push_back(g.toDouble());
-    }
-    if (s.graphicEQGains.size() != static_cast<size_t>(s.graphicEQBandCount)) {
-        s.graphicEQGains.resize(s.graphicEQBandCount, 0.0);
-    }
 
     return s;
 }
@@ -1245,6 +1182,10 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
         f.loudnessParams.lowBoost = stage.loudnessLowBoost;
         f.loudnessParams.attenuateMid = stage.loudnessAttenuateMid;
         f.loudnessParams.fader = stage.loudnessFader;
+        f.loudnessParams.highFreq = stage.loudnessHighFreq;
+        f.loudnessParams.lowFreq = stage.loudnessLowFreq;
+        f.loudnessParams.highQ = stage.loudnessHighQ;
+        f.loudnessParams.lowQ = stage.loudnessLowQ;
         res.filters[prefix + "_loudness"] = f;
 
         res.steps.push_back(PipelineStep{
@@ -1525,22 +1466,13 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
             f.comboParams.freq = stage.comboFreq;
             f.comboParams.gain = stage.comboGain;
             break;
-        case BiquadComboType::FivePointPeq:
-            f.comboParams.fls = stage.peqFls;
-            f.comboParams.gls = stage.peqGls;
-            f.comboParams.qls = stage.peqQls;
-            f.comboParams.fp1 = stage.peqF1;
-            f.comboParams.gp1 = stage.peqG1;
-            f.comboParams.qp1 = stage.peqQ1;
-            f.comboParams.fp2 = stage.peqF2;
-            f.comboParams.gp2 = stage.peqG2;
-            f.comboParams.qp2 = stage.peqQ2;
-            f.comboParams.fp3 = stage.peqF3;
-            f.comboParams.gp3 = stage.peqG3;
-            f.comboParams.qp3 = stage.peqQ3;
-            f.comboParams.fhs = stage.peqFhs;
-            f.comboParams.ghs = stage.peqGhs;
-            f.comboParams.qhs = stage.peqQhs;
+        case BiquadComboType::NPointPeq:
+            f.comboParams.bands = stage.comboBands;
+            break;
+        case BiquadComboType::GraphicEqualizer:
+            f.comboParams.freqMin = stage.comboFreqMin;
+            f.comboParams.freqMax = stage.comboFreqMax;
+            f.comboParams.gains = stage.comboGains;
             break;
         default:
             break;
@@ -1563,22 +1495,6 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
 
         res.steps.push_back(PipelineStep{
             PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_clipper"}, std::nullopt});
-        break;
-    }
-
-    case StageType::GraphicEQ: {
-        if (chList.empty())
-            break;
-        FilterConfig f;
-        f.type = FilterType::BiquadCombo;
-        f.comboParams.type = BiquadComboType::GraphicEqualizer;
-        f.comboParams.freqMin = stage.graphicEQFreqMin;
-        f.comboParams.freqMax = stage.graphicEQFreqMax;
-        f.comboParams.gains = stage.graphicEQGains;
-        res.filters[prefix + "_geq"] = f;
-
-        res.steps.push_back(PipelineStep{
-            PipelineStepType::Filter, std::nullopt, chList, std::nullopt, {prefix + "_geq"}, std::nullopt});
         break;
     }
     }

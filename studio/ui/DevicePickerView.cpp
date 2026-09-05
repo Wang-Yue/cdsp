@@ -625,6 +625,13 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
     m_capCoreAudioForm->addRow(tr("Autoconnect To:"), m_capPwAutoconnectEdit);
 
+    m_capPwLoopbackCheck = new QCheckBox(tr("PipeWire Loopback (Capture Monitor of Sink)"), w);
+    connect(m_capPwLoopbackCheck, &QCheckBox::toggled, [this](bool) {
+        if (!m_isRefreshing)
+            applySettings();
+    });
+    m_capCoreAudioForm->addRow(m_capPwLoopbackCheck);
+
     return w;
 }
 
@@ -1435,6 +1442,7 @@ void DevicePickerView::refreshUi() {
         m_capCoreAudioForm->setRowVisible(m_capPwNodeDescEdit, isCapPw);
         m_capCoreAudioForm->setRowVisible(m_capPwNodeGroupEdit, isCapPw);
         m_capCoreAudioForm->setRowVisible(m_capPwAutoconnectEdit, isCapPw);
+        m_capCoreAudioForm->setRowVisible(m_capPwLoopbackCheck, isCapPw);
     }
 
     if (m_capAlsaLinkVolumeEdit->text().toStdString() != m_devices->captureConfig.linkVolumeControl) {
@@ -1446,6 +1454,12 @@ void DevicePickerView::refreshUi() {
         m_capAlsaLinkMuteEdit->blockSignals(true);
         m_capAlsaLinkMuteEdit->setText(QString::fromStdString(m_devices->captureConfig.linkMuteControl));
         m_capAlsaLinkMuteEdit->blockSignals(false);
+    }
+
+    if (m_capPwLoopbackCheck) {
+        m_capPwLoopbackCheck->blockSignals(true);
+        m_capPwLoopbackCheck->setChecked(m_devices->captureConfig.loopback);
+        m_capPwLoopbackCheck->blockSignals(false);
     }
 
     if (m_capPwNodeNameEdit->text().toStdString() != m_devices->captureConfig.nodeName) {
@@ -1871,8 +1885,12 @@ void DevicePickerView::applySettings() {
         if (m_dopCutoffCombo->currentIndex() >= 0) {
             capCfg.dopCutoffHz = m_dopCutoffCombo->currentData().toDouble();
         }
-        capCfg.loopback = m_capWasapiLoopbackCheck->isChecked();
-        capCfg.exclusive = capCfg.loopback ? false : m_capWasapiExclusiveCheck->isChecked();
+        if (m_capWasapiLoopbackCheck && m_capWasapiLoopbackCheck->isVisible()) {
+            capCfg.loopback = m_capWasapiLoopbackCheck->isChecked();
+            capCfg.exclusive = capCfg.loopback ? false : m_capWasapiExclusiveCheck->isChecked();
+        } else if (m_capPwLoopbackCheck && m_capPwLoopbackCheck->isVisible()) {
+            capCfg.loopback = m_capPwLoopbackCheck->isChecked();
+        }
         capCfg.polling = m_capWasapiPollingCheck->isChecked();
         capCfg.stopOnInactive = m_capAlsaStopInactiveCheck->isChecked();
         capCfg.threaded = m_capAlsaThreadedCheck->isChecked();

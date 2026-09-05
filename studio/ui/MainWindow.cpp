@@ -1132,7 +1132,6 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
                                  StageType::Crossfeed,
                                  StageType::SplitWidth,
                                  StageType::EQ,
-                                 StageType::GraphicEQ,
                                  StageType::Convolution,
                                  StageType::Loudness,
                                  StageType::Emphasis,

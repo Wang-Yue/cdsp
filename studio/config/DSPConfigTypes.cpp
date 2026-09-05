@@ -527,8 +527,8 @@ std::string biquadComboTypeToString(BiquadComboType t) {
         return "LinkwitzRileyLowpass";
     case BiquadComboType::Tilt:
         return "Tilt";
-    case BiquadComboType::FivePointPeq:
-        return "FivePointPeq";
+    case BiquadComboType::NPointPeq:
+        return "NPointPeq";
     case BiquadComboType::GraphicEqualizer:
         return "GraphicEqualizer";
     }
@@ -546,8 +546,8 @@ BiquadComboType stringToBiquadComboType(const std::string& str) {
         return BiquadComboType::LinkwitzRileyLowpass;
     if (str == "Tilt")
         return BiquadComboType::Tilt;
-    if (str == "FivePointPeq")
-        return BiquadComboType::FivePointPeq;
+    if (str == "NPointPeq")
+        return BiquadComboType::NPointPeq;
     if (str == "GraphicEqualizer")
         return BiquadComboType::GraphicEqualizer;
     return BiquadComboType::ButterworthLowpass;
@@ -1306,6 +1306,8 @@ PipeWireCaptureConfig PipeWireCaptureConfig::fromJson(const QJsonObject& json) {
         for (const auto& val : json["channel_labels"].toArray())
             cfg.channelLabels.push_back(val.toString().toStdString());
     }
+    if (json.contains("loopback"))
+        cfg.loopback = json["loopback"].toBool();
     return cfg;
 }
 
@@ -1321,6 +1323,8 @@ QJsonObject PipeWireCaptureConfig::toJson() const {
         obj["node_group_name"] = QString::fromStdString(nodeGroupName.value());
     if (autoconnectTo.has_value())
         obj["autoconnect_to"] = QString::fromStdString(autoconnectTo.value());
+    if (loopback.has_value())
+        obj["loopback"] = loopback.value();
     if (!channelLabels.empty()) {
         QJsonArray arr;
         for (const auto& l : channelLabels)
@@ -1681,6 +1685,14 @@ LoudnessParameters LoudnessParameters::fromJson(const QJsonObject& json) {
         else
             p.fader = stringToFader(json["fader"].toString().toStdString());
     }
+    if (json.contains("high_freq"))
+        p.highFreq = json["high_freq"].toDouble();
+    if (json.contains("low_freq"))
+        p.lowFreq = json["low_freq"].toDouble();
+    if (json.contains("high_q"))
+        p.highQ = json["high_q"].toDouble();
+    if (json.contains("low_q"))
+        p.lowQ = json["low_q"].toDouble();
     return p;
 }
 
@@ -1696,6 +1708,14 @@ QJsonObject LoudnessParameters::toJson() const {
         obj["attenuate_mid"] = attenuateMid.value();
     if (fader.has_value())
         obj["fader"] = QString::fromStdString(faderToString(fader.value()));
+    if (highFreq.has_value())
+        obj["high_freq"] = highFreq.value();
+    if (lowFreq.has_value())
+        obj["low_freq"] = lowFreq.value();
+    if (highQ.has_value())
+        obj["high_q"] = highQ.value();
+    if (lowQ.has_value())
+        obj["low_q"] = lowQ.value();
     return obj;
 }
 
@@ -1795,6 +1815,25 @@ QJsonObject DelayParameters::toJson() const {
     return obj;
 }
 
+QJsonObject PeqBand::toJson() const {
+    QJsonObject obj;
+    obj["freq"] = freq;
+    obj["q"] = q;
+    obj["gain"] = gain;
+    return obj;
+}
+
+PeqBand PeqBand::fromJson(const QJsonObject& json) {
+    PeqBand b;
+    if (json.contains("freq"))
+        b.freq = json["freq"].toDouble();
+    if (json.contains("q"))
+        b.q = json["q"].toDouble();
+    if (json.contains("gain"))
+        b.gain = json["gain"].toDouble();
+    return b;
+}
+
 BiquadComboParameters BiquadComboParameters::fromJson(const QJsonObject& json) {
     BiquadComboParameters p;
     if (json.contains("type"))
@@ -1805,36 +1844,13 @@ BiquadComboParameters BiquadComboParameters::fromJson(const QJsonObject& json) {
         p.order = json["order"].toInt();
     if (json.contains("gain"))
         p.gain = json["gain"].toDouble();
-    if (json.contains("fls"))
-        p.fls = json["fls"].toDouble();
-    if (json.contains("qls"))
-        p.qls = json["qls"].toDouble();
-    if (json.contains("gls"))
-        p.gls = json["gls"].toDouble();
-    if (json.contains("fp1"))
-        p.fp1 = json["fp1"].toDouble();
-    if (json.contains("qp1"))
-        p.qp1 = json["qp1"].toDouble();
-    if (json.contains("gp1"))
-        p.gp1 = json["gp1"].toDouble();
-    if (json.contains("fp2"))
-        p.fp2 = json["fp2"].toDouble();
-    if (json.contains("qp2"))
-        p.qp2 = json["qp2"].toDouble();
-    if (json.contains("gp2"))
-        p.gp2 = json["gp2"].toDouble();
-    if (json.contains("fp3"))
-        p.fp3 = json["fp3"].toDouble();
-    if (json.contains("qp3"))
-        p.qp3 = json["qp3"].toDouble();
-    if (json.contains("gp3"))
-        p.gp3 = json["gp3"].toDouble();
-    if (json.contains("fhs"))
-        p.fhs = json["fhs"].toDouble();
-    if (json.contains("qhs"))
-        p.qhs = json["qhs"].toDouble();
-    if (json.contains("ghs"))
-        p.ghs = json["ghs"].toDouble();
+    if (json.contains("bands")) {
+        QJsonArray arr = json["bands"].toArray();
+        for (const auto& v : arr) {
+            if (v.isObject())
+                p.bands.push_back(PeqBand::fromJson(v.toObject()));
+        }
+    }
     if (json.contains("freq_min"))
         p.freqMin = json["freq_min"].toDouble();
     if (json.contains("freq_max"))
@@ -1856,36 +1872,12 @@ QJsonObject BiquadComboParameters::toJson() const {
         obj["order"] = order.value();
     if (gain.has_value())
         obj["gain"] = gain.value();
-    if (fls.has_value())
-        obj["fls"] = fls.value();
-    if (qls.has_value())
-        obj["qls"] = qls.value();
-    if (gls.has_value())
-        obj["gls"] = gls.value();
-    if (fp1.has_value())
-        obj["fp1"] = fp1.value();
-    if (qp1.has_value())
-        obj["qp1"] = qp1.value();
-    if (gp1.has_value())
-        obj["gp1"] = gp1.value();
-    if (fp2.has_value())
-        obj["fp2"] = fp2.value();
-    if (qp2.has_value())
-        obj["qp2"] = qp2.value();
-    if (gp2.has_value())
-        obj["gp2"] = gp2.value();
-    if (fp3.has_value())
-        obj["fp3"] = fp3.value();
-    if (qp3.has_value())
-        obj["qp3"] = qp3.value();
-    if (gp3.has_value())
-        obj["gp3"] = gp3.value();
-    if (fhs.has_value())
-        obj["fhs"] = fhs.value();
-    if (qhs.has_value())
-        obj["qhs"] = qhs.value();
-    if (ghs.has_value())
-        obj["ghs"] = ghs.value();
+    if (type == BiquadComboType::NPointPeq) {
+        QJsonArray arr;
+        for (const auto& b : bands)
+            arr.append(b.toJson());
+        obj["bands"] = arr;
+    }
     if (freqMin.has_value())
         obj["freq_min"] = freqMin.value();
     if (freqMax.has_value())

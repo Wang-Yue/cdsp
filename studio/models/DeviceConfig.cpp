@@ -340,6 +340,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
             cap.pipeWire.nodeGroupName = nodeGroupName;
         if (!autoconnectTo.empty())
             cap.pipeWire.autoconnectTo = autoconnectTo;
+        cap.pipeWire.loopback = loopback;
         break;
 #endif
     case AudioBackendType::WavFile:
