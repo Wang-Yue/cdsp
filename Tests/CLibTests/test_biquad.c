@@ -4,7 +4,6 @@
 
 #include "Config/filter_config_types.h"
 #include "Filters/biquad.h"
-#include "Filters/biquad_canon.h"
 #include "Filters/filter.h"
 #include "Utils/double_helpers.h"
 #include "test_support.h"
@@ -427,12 +426,11 @@ TEST(BiquadCanonMatchesSequential) {
     biquad_filter_t* can_filters[20];
 
     for (size_t k = 0; k < num_stages; k++) {
-      biquad_config_t p = {
-          .type = BIQUAD_TYPE_PEAKING,
-          .freq = 200.0 * (double)(k + 1),
-          .q = 0.707 + 0.1 * (double)k,
-          .gain = 2.0 - 0.2 * (double)k,
-          .steepness_type = STEEPNESS_TYPE_Q};
+      biquad_config_t p = {.type = BIQUAD_TYPE_PEAKING,
+                           .freq = 200.0 * (double)(k + 1),
+                           .q = 0.707 + 0.1 * (double)k,
+                           .gain = 2.0 - 0.2 * (double)k,
+                           .steepness_type = STEEPNESS_TYPE_Q};
       filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
                              .parameters.biquad = p};
       seq_filters[k] = (biquad_filter_t*)g_biquad_vtable.create(
@@ -455,19 +453,7 @@ TEST(BiquadCanonMatchesSequential) {
     for (size_t k = 0; k < num_stages; k++) {
       g_biquad_vtable.process(seq_filters[k], seq_wave, count);
     }
-    filter_config_t canon_cfg = {
-        .type = FILTER_TYPE_BIQUAD_CANON,
-        .parameters.biquad_canon = {
-            .sections = can_filters,
-            .num_sections = num_stages,
-            .owns_sections = false,
-        },
-    };
-    void* canon = g_biquad_canon_vtable.create(
-        "can_f", &canon_cfg, sample_rate, 0, NULL, NULL);
-    ASSERT_TRUE(canon != NULL);
-    g_biquad_canon_vtable.process(canon, can_wave, count);
-    g_biquad_canon_vtable.free(canon);
+    biquad_process_mono_cascade(can_filters, num_stages, can_wave, count);
 
     for (size_t i = 0; i < count; i++) {
       ASSERT_TRUE(fabs(seq_wave[i] - can_wave[i]) < 1e-12);
@@ -488,10 +474,9 @@ TEST(BiquadCanonShortWaveforms) {
       biquad_filter_t* can_filters[10];
 
       for (size_t k = 0; k < num_stages; k++) {
-        biquad_config_t p = {
-            .type = BIQUAD_TYPE_LOWPASS,
-            .freq = 1000.0 + 100.0 * (double)k,
-            .q = 0.5 + 0.1 * (double)k};
+        biquad_config_t p = {.type = BIQUAD_TYPE_LOWPASS,
+                             .freq = 1000.0 + 100.0 * (double)k,
+                             .q = 0.5 + 0.1 * (double)k};
         filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
                                .parameters.biquad = p};
         seq_filters[k] = (biquad_filter_t*)g_biquad_vtable.create(
@@ -512,19 +497,7 @@ TEST(BiquadCanonShortWaveforms) {
         for (size_t k = 0; k < num_stages; k++) {
           g_biquad_vtable.process(seq_filters[k], seq_wave, len);
         }
-        filter_config_t canon_cfg = {
-            .type = FILTER_TYPE_BIQUAD_CANON,
-            .parameters.biquad_canon = {
-                .sections = can_filters,
-                .num_sections = num_stages,
-                .owns_sections = false,
-            },
-        };
-        void* canon = g_biquad_canon_vtable.create(
-            "can_f", &canon_cfg, sample_rate, 0, NULL, NULL);
-        ASSERT_TRUE(canon != NULL);
-        g_biquad_canon_vtable.process(canon, can_wave, len);
-        g_biquad_canon_vtable.free(canon);
+        biquad_process_mono_cascade(can_filters, num_stages, can_wave, len);
 
         for (size_t i = 0; i < len; i++) {
           ASSERT_TRUE(fabs(seq_wave[i] - can_wave[i]) < 1e-12);
@@ -545,29 +518,16 @@ TEST(BiquadCanonHandlesEmptyAndTinyWaveforms) {
     for (size_t len = 0; len <= 1; len++) {
       biquad_filter_t* filters[16];
       for (size_t k = 0; k < num_stages; k++) {
-        biquad_config_t p = {
-            .type = BIQUAD_TYPE_LOWPASS,
-            .freq = 1000.0 + 50.0 * (double)k,
-            .q = 0.707};
+        biquad_config_t p = {.type = BIQUAD_TYPE_LOWPASS,
+                             .freq = 1000.0 + 50.0 * (double)k,
+                             .q = 0.707};
         filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
                                .parameters.biquad = p};
         filters[k] = (biquad_filter_t*)g_biquad_vtable.create(
             "bq", &cfg, sample_rate, 0, NULL, NULL);
       }
       double wave[2] = {1.0, 0.0};
-      filter_config_t canon_cfg = {
-          .type = FILTER_TYPE_BIQUAD_CANON,
-          .parameters.biquad_canon = {
-              .sections = filters,
-              .num_sections = num_stages,
-              .owns_sections = false,
-          },
-      };
-      void* canon = g_biquad_canon_vtable.create(
-          "can_f", &canon_cfg, sample_rate, 0, NULL, NULL);
-      ASSERT_TRUE(canon != NULL);
-      g_biquad_canon_vtable.process(canon, wave, len);
-      g_biquad_canon_vtable.free(canon);
+      biquad_process_mono_cascade(filters, num_stages, wave, len);
       for (size_t k = 0; k < num_stages; k++) {
         g_biquad_vtable.free(filters[k]);
       }
@@ -590,11 +550,10 @@ TEST(BiquadCanonMatchesSequentialAcrossChunks) {
       biquad_filter_t* seq_filters[20];
       biquad_filter_t* can_filters[20];
       for (size_t k = 0; k < num_stages; k++) {
-        biquad_config_t p = {
-            .type = BIQUAD_TYPE_PEAKING,
-            .freq = 500.0 + 100.0 * (double)k,
-            .q = 1.0 + 0.1 * (double)k,
-            .gain = (k % 2 == 0) ? 3.0 : -3.0};
+        biquad_config_t p = {.type = BIQUAD_TYPE_PEAKING,
+                             .freq = 500.0 + 100.0 * (double)k,
+                             .q = 1.0 + 0.1 * (double)k,
+                             .gain = (k % 2 == 0) ? 3.0 : -3.0};
         filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
                                .parameters.biquad = p};
         seq_filters[k] = (biquad_filter_t*)g_biquad_vtable.create(
@@ -608,18 +567,6 @@ TEST(BiquadCanonMatchesSequentialAcrossChunks) {
         full_signal[i] = sin(0.013 * (double)i) * 0.5;
       }
 
-      filter_config_t canon_cfg = {
-          .type = FILTER_TYPE_BIQUAD_CANON,
-          .parameters.biquad_canon = {
-              .sections = can_filters,
-              .num_sections = num_stages,
-              .owns_sections = false,
-          },
-      };
-      void* canon = g_biquad_canon_vtable.create(
-          "can_f", &canon_cfg, sample_rate, 0, NULL, NULL);
-      ASSERT_TRUE(canon != NULL);
-
       for (size_t chunk = 0; chunk < num_chunks; chunk++) {
         double seq_chunk[64];
         double can_chunk[64];
@@ -631,14 +578,13 @@ TEST(BiquadCanonMatchesSequentialAcrossChunks) {
         for (size_t k = 0; k < num_stages; k++) {
           g_biquad_vtable.process(seq_filters[k], seq_chunk, chunk_size);
         }
-        g_biquad_canon_vtable.process(canon, can_chunk, chunk_size);
+        biquad_process_mono_cascade(can_filters, num_stages, can_chunk,
+                                    chunk_size);
 
         for (size_t i = 0; i < chunk_size; i++) {
           ASSERT_TRUE(fabs(seq_chunk[i] - can_chunk[i]) < 1e-12);
         }
       }
-
-      g_biquad_canon_vtable.free(canon);
 
       for (size_t k = 0; k < num_stages; k++) {
         g_biquad_vtable.free(seq_filters[k]);
@@ -648,67 +594,73 @@ TEST(BiquadCanonMatchesSequentialAcrossChunks) {
   }
 }
 
-TEST(BiquadCanonFakeFilterPolymorphic) {
+TEST(BiquadCascadesMultiChannel) {
   int sample_rate = 48000;
   size_t count = 256;
-  size_t stages = 4;
+  size_t channels = 4;
+  size_t stages = 3;
 
-  biquad_filter_t* sections[4];
-  filter_t* ref_filters[4];
+  biquad_filter_t* ch0[3];
+  biquad_filter_t* ch1[3];
+  biquad_filter_t* ch2[3];
+  biquad_filter_t* ch3[3];
+  biquad_filter_t** cascades[4] = {ch0, ch1, ch2, ch3};
+  filter_t* ref_filters[4][3];
 
-  for (size_t s = 0; s < stages; s++) {
-    char name[32];
-    snprintf(name, sizeof(name), "stg_%zu", s);
-    filter_config_t cfg = {
-        .type = FILTER_TYPE_BIQUAD,
-        .parameters.biquad = {
-            .type = BIQUAD_TYPE_PEAKING,
-            .freq = 400.0 + 100.0 * (double)s,
-            .q = 1.0,
-            .gain = (s % 2 == 0) ? 3.0 : -3.0}};
-    sections[s] = (biquad_filter_t*)g_biquad_vtable.create(
-        name, &cfg, sample_rate, 0, NULL, NULL);
-    ref_filters[s] = filter_create(name, &cfg, sample_rate, count, NULL, NULL);
-    ASSERT_TRUE(sections[s] != NULL);
-    ASSERT_TRUE(ref_filters[s] != NULL);
+  for (size_t c = 0; c < channels; c++) {
+    for (size_t s = 0; s < stages; s++) {
+      char name[32];
+      snprintf(name, sizeof(name), "bq_%zu_%zu", c, s);
+      filter_config_t cfg = {
+          .type = FILTER_TYPE_BIQUAD,
+          .parameters.biquad = {.type = BIQUAD_TYPE_PEAKING,
+                                .freq = 400.0 + 50.0 * (double)(s + c),
+                                .q = 1.0,
+                                .gain = (s % 2 == 0) ? 2.5 : -2.5}};
+      cascades[c][s] = (biquad_filter_t*)g_biquad_vtable.create(
+          name, &cfg, sample_rate, 0, NULL, NULL);
+      ref_filters[c][s] =
+          filter_create(name, &cfg, sample_rate, count, NULL, NULL);
+      ASSERT_TRUE(cascades[c][s] != NULL);
+      ASSERT_TRUE(ref_filters[c][s] != NULL);
+    }
   }
 
-  filter_config_t canon_cfg = {
-      .type = FILTER_TYPE_BIQUAD_CANON,
-      .parameters.biquad_canon = {
-          .sections = sections,
-          .num_sections = stages,
-          .owns_sections = true,
-      },
-  };
-  void* canon = g_biquad_canon_vtable.create(
-      "canon_4", &canon_cfg, sample_rate, 0, NULL, NULL);
-  ASSERT_TRUE(canon != NULL);
+  double wave_canon[4][256];
+  double wave_ref[4][256];
+  double* waveforms[4];
+  size_t channel_of[4] = {0, 1, 2, 3};
+  size_t live[4] = {0, 1, 2, 3};
 
-  double wave_canon[256];
-  double wave_ref[256];
-  for (size_t i = 0; i < count; i++) {
-    double v = 0.3 * sin(0.015 * (double)i);
-    wave_canon[i] = v;
-    wave_ref[i] = v;
+  for (size_t c = 0; c < channels; c++) {
+    waveforms[c] = wave_canon[c];
+    for (size_t i = 0; i < count; i++) {
+      double v = 0.3 * sin(0.015 * (double)(i + c * 10));
+      wave_canon[c][i] = v;
+      wave_ref[c][i] = v;
+    }
   }
 
-  // Process via canon filter vtable
-  g_biquad_canon_vtable.process(canon, wave_canon, count);
+  // Process via 2D systolic biquad canon
+  biquad_process_cascades(cascades, waveforms, channel_of, live, channels,
+                          stages, count);
 
   // Process sequentially via reference filters
-  for (size_t s = 0; s < stages; s++) {
-    filter_process(ref_filters[s], wave_ref, count);
+  for (size_t c = 0; c < channels; c++) {
+    for (size_t s = 0; s < stages; s++) {
+      filter_process(ref_filters[c][s], wave_ref[c], count);
+      filter_free(ref_filters[c][s]);
+    }
   }
 
-  for (size_t i = 0; i < count; i++) {
-    ASSERT_NEAR(wave_ref[i], wave_canon[i], 1e-12);
+  for (size_t c = 0; c < channels; c++) {
+    for (size_t i = 0; i < count; i++) {
+      ASSERT_NEAR(wave_ref[c][i], wave_canon[c][i], 1e-12);
+    }
+    for (size_t s = 0; s < stages; s++) {
+      g_biquad_vtable.free(cascades[c][s]);
+    }
   }
-
-  for (size_t s = 0; s < stages; s++) {
-    filter_free(ref_filters[s]);
-  }
-  g_biquad_canon_vtable.free(canon);
 }
 
 TEST_MAIN()

@@ -6,7 +6,6 @@
 #include "Audio/processing_parameters.h"
 #include "Config/filter_config_types.h"
 #include "Filters/biquad.h"
-#include "Filters/biquad_canon.h"
 #include "Filters/biquad_combo.h"
 #include "Filters/clipper.h"
 #include "Filters/convolution.h"
@@ -46,8 +45,6 @@ static const filter_vtable_t* filter_vtable_from_type(filter_type_t type) {
       return &g_loudness_vtable;
     case FILTER_TYPE_VOLUME:
       return &g_volume_vtable;
-    case FILTER_TYPE_BIQUAD_CANON:
-      return &g_biquad_canon_vtable;
     default:
       return NULL;
   }
@@ -78,8 +75,6 @@ static filter_instance_type_t filter_instance_type_from_config(
       return FILTER_INSTANCE_LOUDNESS;
     case FILTER_TYPE_VOLUME:
       return FILTER_INSTANCE_VOLUME;
-    case FILTER_TYPE_BIQUAD_CANON:
-      return FILTER_INSTANCE_BIQUAD_CANON;
     case FILTER_TYPE_INVALID:
       break;
   }
@@ -135,10 +130,51 @@ void filter_process(filter_t* filter, mutable_waveform_t waveform,
   filter->vtable->process(filter->instance, waveform, count);
 }
 
+static const char* filter_instance_type_to_string(filter_instance_type_t type) {
+  switch (type) {
+    case FILTER_INSTANCE_BIQUAD:
+      return "Biquad";
+    case FILTER_INSTANCE_BIQUAD_COMBO:
+      return "BiquadCombo";
+    case FILTER_INSTANCE_CONVOLUTION:
+      return "Conv";
+    case FILTER_INSTANCE_DELAY:
+      return "Delay";
+    case FILTER_INSTANCE_DIFF_EQ:
+      return "DiffEq";
+    case FILTER_INSTANCE_DITHER:
+      return "Dither";
+    case FILTER_INSTANCE_GAIN:
+      return "Gain";
+    case FILTER_INSTANCE_CLIPPER:
+      return "Clipper";
+    case FILTER_INSTANCE_LOOKAHEAD_LIMITER:
+      return "Limiter";
+    case FILTER_INSTANCE_LOUDNESS:
+      return "Loudness";
+    case FILTER_INSTANCE_VOLUME:
+      return "Volume";
+    default:
+      return "Unknown";
+  }
+}
+
 void filter_transfer_state(filter_t* dest, const filter_t* src) {
-  if (!dest || !src || dest->type != src->type || !dest->instance ||
-      !dest->vtable || !dest->vtable->transfer_state)
+  if (!dest || !src) return;
+  if (dest->type != src->type) {
+    logger_debug(&g_logger, "Filter '%s' type changed (%s -> %s), state reset",
+                 filter_get_name(dest),
+                 filter_instance_type_to_string(src->type),
+                 filter_instance_type_to_string(dest->type));
     return;
+  }
+  if (!dest->instance || !dest->vtable) return;
+  if (!dest->vtable->transfer_state) {
+    logger_debug(
+        &g_logger, "Filter '%s' (type=%s) is stateless, no state to transfer",
+        filter_get_name(dest), filter_instance_type_to_string(dest->type));
+    return;
+  }
   dest->vtable->transfer_state(dest->instance, src->instance);
   logger_info(&g_logger, "Transferred filter state for '%s'",
               filter_get_name(dest));
@@ -162,6 +198,37 @@ int filter_config_validate(const filter_config_t* filter, int sample_rate,
   const filter_vtable_t* vtable = filter_vtable_from_type(filter->type);
   if (vtable && vtable->validate) {
     return vtable->validate(filter, sample_rate, err);
+  }
+  return 0;
+}
+
+bool filter_config_is_biquad(const filter_config_t* config) {
+  if (!config) return false;
+  return config->type == FILTER_TYPE_BIQUAD ||
+         config->type == FILTER_TYPE_BIQUAD_COMBO;
+}
+
+size_t filter_get_biquad_stage_count(const filter_t* filter) {
+  if (!filter || !filter->instance) return 0;
+  if (filter->type == FILTER_INSTANCE_BIQUAD) {
+    return 1;
+  }
+  if (filter->type == FILTER_INSTANCE_BIQUAD_COMBO) {
+    return biquad_combo_get_stage_count(filter->instance);
+  }
+  return 0;
+}
+
+size_t filter_get_biquad_stages(const filter_t* filter,
+                                biquad_filter_t** out_stages,
+                                size_t max_stages) {
+  if (!filter || !filter->instance || !out_stages || max_stages == 0) return 0;
+  if (filter->type == FILTER_INSTANCE_BIQUAD) {
+    out_stages[0] = (biquad_filter_t*)filter->instance;
+    return 1;
+  }
+  if (filter->type == FILTER_INSTANCE_BIQUAD_COMBO) {
+    return biquad_combo_get_stages(filter->instance, out_stages, max_stages);
   }
   return 0;
 }

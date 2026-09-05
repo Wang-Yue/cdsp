@@ -3,10 +3,9 @@
 #include "Audio/processing_parameters.h"
 #include "Config/config_error.h"
 #include "Config/filter_config_types.h"
+#include "Filters/biquad_internal.h"
 #include "Filters/filter.h"
 #include "Utils/double_helpers.h"
-
-#include "Filters/biquad_internal.h"
 
 /**
  * @brief Returns coefficients for a passthrough filter (identity / no effect).
@@ -626,6 +625,257 @@ double biquad_filter_process_single(biquad_filter_t* filter, double sample) {
   filter->z1 = filter->neg_a1 * out + tmp;
   filter->z2 = b2 * sample + filter->neg_a2 * out;
   return out;
+}
+
+biquad_filter_t* biquad_filter_clone(const biquad_filter_t* src) {
+  if (!src) return NULL;
+  biquad_filter_t* dst = (biquad_filter_t*)calloc(1, sizeof(biquad_filter_t));
+  if (!dst) return NULL;
+  memcpy(dst, src, sizeof(biquad_filter_t));
+  dst->z1 = 0.0;
+  dst->z2 = 0.0;
+  return dst;
+}
+
+// ============================================================================
+// 2D Systolic Biquad Canon
+// ============================================================================
+
+#define BIQUAD_MAX_CHANNELS 4
+#define BIQUAD_MAX_DEPTH 8
+#define BIQUAD_WIDTH_BUDGET 8
+
+static void biquad_choose_split(size_t channels, size_t depth,
+                                size_t* out_group, size_t* out_stages) {
+  size_t stages = depth;
+  if (stages < 1) stages = 1;
+  if (stages > BIQUAD_MAX_DEPTH) stages = BIQUAD_MAX_DEPTH;
+
+  size_t group = channels;
+  if (group < 1) group = 1;
+  if (group > BIQUAD_MAX_CHANNELS) group = BIQUAD_MAX_CHANNELS;
+
+  size_t budget_cap = BIQUAD_WIDTH_BUDGET / stages;
+  if (budget_cap < 1) budget_cap = 1;
+  if (group > budget_cap) group = budget_cap;
+
+  if (out_group) *out_group = group;
+  if (out_stages) *out_stages = stages;
+}
+
+#define CANON_STAGE(c, k, in_val)                    \
+  do {                                               \
+    double _in = (in_val);                           \
+    double _out = b0[c][k] * _in + s1[c][k];         \
+    double _tmp = b1[c][k] * _in + s2[c][k];         \
+    s1[c][k] = neg_a1[c][k] * _out + _tmp;           \
+    s2[c][k] = b2[c][k] * _in + neg_a2[c][k] * _out; \
+    pipe[c][k] = _out;                               \
+  } while (0)
+
+#define DEFINE_2D_CANON_KERNEL(C, S)                                 \
+  static void biquad_canon_kernel_##C##_##S(                         \
+      biquad_filter_t*** cascades, double** waveforms,               \
+      const size_t* channel_of, const size_t* members, size_t start, \
+      size_t n) {                                                    \
+    double b0[C][S], b1[C][S], b2[C][S], neg_a1[C][S], neg_a2[C][S]; \
+    double s1[C][S], s2[C][S];                                       \
+    double* waves[C];                                                \
+    for (size_t c = 0; c < C; c++) {                                 \
+      size_t mem = members[c];                                       \
+      waves[c] = waveforms[channel_of[mem]];                         \
+      for (size_t k = 0; k < S; k++) {                               \
+        biquad_filter_t* f = cascades[mem][start + k];               \
+        b0[c][k] = f->coeffs.b0;                                     \
+        b1[c][k] = f->coeffs.b1;                                     \
+        b2[c][k] = f->coeffs.b2;                                     \
+        neg_a1[c][k] = f->neg_a1;                                    \
+        neg_a2[c][k] = f->neg_a2;                                    \
+        s1[c][k] = f->z1;                                            \
+        s2[c][k] = f->z2;                                            \
+      }                                                              \
+    }                                                                \
+    double pipe[C][S];                                               \
+    memset(pipe, 0, sizeof(pipe));                                   \
+    size_t ramp = (S - 1 < n) ? (S - 1) : n;                         \
+    for (size_t i = 0; i < ramp; i++) {                              \
+      for (size_t k = i; k >= 1; k--) {                              \
+        for (size_t c = 0; c < C; c++) {                             \
+          CANON_STAGE(c, k, pipe[c][k - 1]);                         \
+        }                                                            \
+      }                                                              \
+      for (size_t c = 0; c < C; c++) {                               \
+        CANON_STAGE(c, 0, waves[c][i]);                              \
+      }                                                              \
+    }                                                                \
+    for (size_t i = S - 1; i < n; i++) {                             \
+      for (size_t k = S - 1; k >= 1; k--) {                          \
+        for (size_t c = 0; c < C; c++) {                             \
+          CANON_STAGE(c, k, pipe[c][k - 1]);                         \
+        }                                                            \
+      }                                                              \
+      for (size_t c = 0; c < C; c++) {                               \
+        CANON_STAGE(c, 0, waves[c][i]);                              \
+      }                                                              \
+      for (size_t c = 0; c < C; c++) {                               \
+        waves[c][i - (S - 1)] = pipe[c][S - 1];                      \
+      }                                                              \
+    }                                                                \
+    for (size_t i = n; i < n + S - 1; i++) {                         \
+      size_t first = i - n + 1;                                      \
+      size_t last = (S - 1 < i) ? (S - 1) : i;                       \
+      for (size_t k = last; k >= first; k--) {                       \
+        for (size_t c = 0; c < C; c++) {                             \
+          CANON_STAGE(c, k, pipe[c][k - 1]);                         \
+        }                                                            \
+      }                                                              \
+      if (i >= S - 1) {                                              \
+        for (size_t c = 0; c < C; c++) {                             \
+          waves[c][i - (S - 1)] = pipe[c][S - 1];                    \
+        }                                                            \
+      }                                                              \
+    }                                                                \
+    for (size_t c = 0; c < C; c++) {                                 \
+      size_t mem = members[c];                                       \
+      for (size_t k = 0; k < S; k++) {                               \
+        if (fpclassify(s1[c][k]) == FP_SUBNORMAL) s1[c][k] = 0.0;    \
+        if (fpclassify(s2[c][k]) == FP_SUBNORMAL) s2[c][k] = 0.0;    \
+        cascades[mem][start + k]->z1 = s1[c][k];                     \
+        cascades[mem][start + k]->z2 = s2[c][k];                     \
+      }                                                              \
+    }                                                                \
+  }
+
+#define DEFINE_ALL_DEPTHS(C)   \
+  DEFINE_2D_CANON_KERNEL(C, 1) \
+  DEFINE_2D_CANON_KERNEL(C, 2) \
+  DEFINE_2D_CANON_KERNEL(C, 3) \
+  DEFINE_2D_CANON_KERNEL(C, 4) \
+  DEFINE_2D_CANON_KERNEL(C, 5) \
+  DEFINE_2D_CANON_KERNEL(C, 6) \
+  DEFINE_2D_CANON_KERNEL(C, 7) \
+  DEFINE_2D_CANON_KERNEL(C, 8)
+
+DEFINE_ALL_DEPTHS(1)
+DEFINE_ALL_DEPTHS(2)
+DEFINE_ALL_DEPTHS(3)
+DEFINE_ALL_DEPTHS(4)
+
+#undef DEFINE_ALL_DEPTHS
+
+static void dispatch_pass(biquad_filter_t*** cascades, double** waveforms,
+                          const size_t* channel_of, const size_t* members,
+                          size_t members_count, size_t start, size_t depth,
+                          size_t n_frames) {
+#define DISPATCH_DEPTH(C)                                                   \
+  switch (depth) {                                                          \
+    case 1:                                                                 \
+      biquad_canon_kernel_##C##_1(cascades, waveforms, channel_of, members, \
+                                  start, n_frames);                         \
+      break;                                                                \
+    case 2:                                                                 \
+      biquad_canon_kernel_##C##_2(cascades, waveforms, channel_of, members, \
+                                  start, n_frames);                         \
+      break;                                                                \
+    case 3:                                                                 \
+      biquad_canon_kernel_##C##_3(cascades, waveforms, channel_of, members, \
+                                  start, n_frames);                         \
+      break;                                                                \
+    case 4:                                                                 \
+      biquad_canon_kernel_##C##_4(cascades, waveforms, channel_of, members, \
+                                  start, n_frames);                         \
+      break;                                                                \
+    case 5:                                                                 \
+      biquad_canon_kernel_##C##_5(cascades, waveforms, channel_of, members, \
+                                  start, n_frames);                         \
+      break;                                                                \
+    case 6:                                                                 \
+      biquad_canon_kernel_##C##_6(cascades, waveforms, channel_of, members, \
+                                  start, n_frames);                         \
+      break;                                                                \
+    case 7:                                                                 \
+      biquad_canon_kernel_##C##_7(cascades, waveforms, channel_of, members, \
+                                  start, n_frames);                         \
+      break;                                                                \
+    case 8:                                                                 \
+      biquad_canon_kernel_##C##_8(cascades, waveforms, channel_of, members, \
+                                  start, n_frames);                         \
+      break;                                                                \
+    default:                                                                \
+      break;                                                                \
+  }
+
+  switch (members_count) {
+    case 1:
+      DISPATCH_DEPTH(1);
+      break;
+    case 2:
+      DISPATCH_DEPTH(2);
+      break;
+    case 3:
+      DISPATCH_DEPTH(3);
+      break;
+    case 4:
+      DISPATCH_DEPTH(4);
+      break;
+    default:
+      break;
+  }
+#undef DISPATCH_DEPTH
+}
+
+void biquad_process_cascades(biquad_filter_t*** cascades, double** waveforms,
+                             const size_t* channel_of, const size_t* live,
+                             size_t live_count, size_t cascade_depth,
+                             size_t n_frames) {
+  if (!cascades || !waveforms || !channel_of || !live || live_count == 0 ||
+      cascade_depth == 0 || n_frames == 0)
+    return;
+
+  size_t depth = cascade_depth;
+  size_t max_group, max_stages;
+  biquad_choose_split(live_count, depth, &max_group, &max_stages);
+
+  size_t start = 0;
+  while (start < depth) {
+    size_t take = depth - start;
+    if (take > max_stages) take = max_stages;
+    size_t group, dummy;
+    biquad_choose_split(live_count, take, &group, &dummy);
+
+    for (size_t m = 0; m < live_count; m += group) {
+      size_t chunk_len = live_count - m;
+      if (chunk_len > group) chunk_len = group;
+      dispatch_pass(cascades, waveforms, channel_of, &live[m], chunk_len, start,
+                    take, n_frames);
+    }
+    start += take;
+  }
+}
+
+void biquad_process_mono_cascade(biquad_filter_t** stages, size_t num_stages,
+                                 double* waveform, size_t n_frames) {
+  if (!stages || num_stages == 0 || !waveform || n_frames == 0) return;
+
+  size_t max_group, max_stages;
+  biquad_choose_split(1, num_stages, &max_group, &max_stages);
+  (void)max_group;
+
+  biquad_filter_t** cascade_ptr = stages;
+  biquad_filter_t*** cascades_wrap = &cascade_ptr;
+  double* waveform_ptr = waveform;
+  double** waveforms_wrap = &waveform_ptr;
+  size_t channel_of[1] = {0};
+  size_t members[1] = {0};
+
+  size_t start = 0;
+  while (start < num_stages) {
+    size_t take = num_stages - start;
+    if (take > max_stages) take = max_stages;
+    dispatch_pass(cascades_wrap, waveforms_wrap, channel_of, members, 1, start,
+                  take, n_frames);
+    start += take;
+  }
 }
 
 void biquad_filter_update_parameters(biquad_filter_t* filter,

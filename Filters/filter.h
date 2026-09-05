@@ -9,11 +9,13 @@
 #ifndef CLIB_FILTERS_FILTER_H
 #define CLIB_FILTERS_FILTER_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "Audio/processing_parameters.h"
 #include "Config/config_error.h"
 #include "Config/filter_config_types.h"
+#include "Filters/biquad.h"
 #include "Utils/double_helpers.h"
 
 /**
@@ -30,8 +32,7 @@ typedef enum {
   FILTER_INSTANCE_CLIPPER,           /**< Clipper filter. */
   FILTER_INSTANCE_LOOKAHEAD_LIMITER, /**< Lookahead limiter filter. */
   FILTER_INSTANCE_LOUDNESS,          /**< Loudness filter. */
-  FILTER_INSTANCE_VOLUME,            /**< Volume filter. */
-  FILTER_INSTANCE_BIQUAD_CANON       /**< Internal biquad canon cascade filter. */
+  FILTER_INSTANCE_VOLUME             /**< Volume filter. */
 } filter_instance_type_t;
 
 /**
@@ -134,5 +135,38 @@ void filter_free(filter_t* filter);
  */
 int filter_config_validate(const filter_config_t* filter, int sample_rate,
                            config_error_t* err);
+
+/**
+ * @brief Checks if a filter configuration represents a biquad-based filter.
+ *
+ * @param config Pointer to the filter configuration.
+ * @return true if the filter is biquad or biquad combo, false otherwise.
+ */
+bool filter_config_is_biquad(const filter_config_t* config);
+
+/**
+ * @brief Returns the number of biquad stages in a biquad-based filter.
+ *
+ * Applicable to FILTER_INSTANCE_BIQUAD and FILTER_INSTANCE_BIQUAD_COMBO.
+ *
+ * @param filter Pointer to the filter instance.
+ * @return Number of biquad stages (1 for biquad, N for combo, 0 if not biquad).
+ */
+size_t filter_get_biquad_stage_count(const filter_t* filter);
+
+/**
+ * @brief Retrieves underlying biquad filter stages from a biquad-based filter.
+ *
+ * Applicable to FILTER_INSTANCE_BIQUAD and FILTER_INSTANCE_BIQUAD_COMBO.
+ *
+ * @param filter Pointer to the filter instance.
+ * @param[out] out_stages Destination array to receive biquad filter pointers.
+ * @param max_stages Maximum number of pointers that can be stored in
+ * out_stages.
+ * @return Number of biquad stage pointers written.
+ */
+size_t filter_get_biquad_stages(const filter_t* filter,
+                                biquad_filter_t** out_stages,
+                                size_t max_stages);
 
 #endif  // CLIB_FILTERS_FILTER_H

@@ -4,7 +4,6 @@
 #include "Config/config_error.h"
 #include "Config/filter_config_types.h"
 #include "Filters/biquad.h"
-#include "Filters/biquad_canon.h"
 #include "Filters/filter.h"
 #include "Utils/double_helpers.h"
 
@@ -14,7 +13,6 @@ struct loudness_filter {
   loudness_config_t params;
   biquad_filter_t* low_shelf_filter;
   biquad_filter_t* high_shelf_filter;
-  void* canon_filter;
   double last_volume;
   bool is_processing_active;
   double midband_attenuation_db;
@@ -118,7 +116,6 @@ static void recompute_shelves(loudness_filter_t* filter, double volume) {
 static void loudness_filter_free(void* instance) {
   loudness_filter_t* filter = (loudness_filter_t*)instance;
   if (!filter) return;
-  if (filter->canon_filter) g_biquad_canon_vtable.free(filter->canon_filter);
   if (filter->low_shelf_filter) g_biquad_vtable.free(filter->low_shelf_filter);
   if (filter->high_shelf_filter)
     g_biquad_vtable.free(filter->high_shelf_filter);
@@ -283,24 +280,6 @@ static void* loudness_filter_create(const char* name,
     return NULL;
   }
 
-  biquad_filter_t* shelves[2] = {filter->high_shelf_filter,
-                                 filter->low_shelf_filter};
-  filter_config_t canon_cfg = {
-      .type = FILTER_TYPE_BIQUAD_CANON,
-      .parameters.biquad_canon =
-          {
-              .sections = shelves,
-              .num_sections = 2,
-              .owns_sections = false,
-          },
-  };
-  filter->canon_filter = g_biquad_canon_vtable.create(
-      "loudness_shelves", &canon_cfg, sample_rate, 0, NULL, err);
-  if (!filter->canon_filter) {
-    loudness_filter_free(filter);
-    return NULL;
-  }
-
   double init_vol = processing_parameters_get_current_volume_for_fader(
       filter->processing_parameters, filter->params.fader);
   filter->last_volume = init_vol;
@@ -335,8 +314,10 @@ static void loudness_filter_process(void* instance, mutable_waveform_t waveform,
   // bypass processing.
   if (!filter->is_processing_active) return;
 
-  // Apply high-shelf and low-shelf filters as a 2-stage canon filter.
-  g_biquad_canon_vtable.process(filter->canon_filter, waveform, count);
+  // Apply high-shelf and low-shelf filters as a 2-stage cascade.
+  biquad_filter_t* shelves[2] = {filter->high_shelf_filter,
+                                 filter->low_shelf_filter};
+  biquad_process_mono_cascade(shelves, 2, waveform, count);
 
   // Apply midband attenuation if enabled to simulate bass/treble boost
   // without exceeding 0 dBFS peak gain.
