@@ -239,7 +239,7 @@ static void* diffeq_filter_create(const char* name,
     for (size_t i = 0; i < count; i++) {                                    \
       double input = waveform[i];                                           \
       double out = b0 * input + s[0];                                       \
-      for (size_t n = 0; n < ORDER - 1; n++) {                              \
+      for (size_t n = 0; n + 1 < ORDER; n++) {                              \
         s[n] = b[n] * input - a[n] * out + s[n + 1];                        \
       }                                                                     \
       s[ORDER - 1] = b[ORDER - 1] * input - a[ORDER - 1] * out;             \

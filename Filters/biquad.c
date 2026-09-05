@@ -673,77 +673,79 @@ static void biquad_choose_split(size_t channels, size_t depth,
     pipe[c][k] = _out;                               \
   } while (0)
 
-#define DEFINE_2D_CANON_KERNEL(C, S)                                 \
-  static void biquad_canon_kernel_##C##_##S(                         \
-      biquad_filter_t*** cascades, double** waveforms,               \
-      const size_t* channel_of, const size_t* members, size_t start, \
-      size_t n) {                                                    \
-    double b0[C][S], b1[C][S], b2[C][S], neg_a1[C][S], neg_a2[C][S]; \
-    double s1[C][S], s2[C][S];                                       \
-    double* waves[C];                                                \
-    for (size_t c = 0; c < C; c++) {                                 \
-      size_t mem = members[c];                                       \
-      waves[c] = waveforms[channel_of[mem]];                         \
-      for (size_t k = 0; k < S; k++) {                               \
-        biquad_filter_t* f = cascades[mem][start + k];               \
-        b0[c][k] = f->coeffs.b0;                                     \
-        b1[c][k] = f->coeffs.b1;                                     \
-        b2[c][k] = f->coeffs.b2;                                     \
-        neg_a1[c][k] = f->neg_a1;                                    \
-        neg_a2[c][k] = f->neg_a2;                                    \
-        s1[c][k] = f->z1;                                            \
-        s2[c][k] = f->z2;                                            \
-      }                                                              \
-    }                                                                \
-    double pipe[C][S];                                               \
-    memset(pipe, 0, sizeof(pipe));                                   \
-    size_t ramp = (S - 1 < n) ? (S - 1) : n;                         \
-    for (size_t i = 0; i < ramp; i++) {                              \
-      for (size_t k = i; k >= 1; k--) {                              \
-        for (size_t c = 0; c < C; c++) {                             \
-          CANON_STAGE(c, k, pipe[c][k - 1]);                         \
-        }                                                            \
-      }                                                              \
-      for (size_t c = 0; c < C; c++) {                               \
-        CANON_STAGE(c, 0, waves[c][i]);                              \
-      }                                                              \
-    }                                                                \
-    for (size_t i = S - 1; i < n; i++) {                             \
-      for (size_t k = S - 1; k >= 1; k--) {                          \
-        for (size_t c = 0; c < C; c++) {                             \
-          CANON_STAGE(c, k, pipe[c][k - 1]);                         \
-        }                                                            \
-      }                                                              \
-      for (size_t c = 0; c < C; c++) {                               \
-        CANON_STAGE(c, 0, waves[c][i]);                              \
-      }                                                              \
-      for (size_t c = 0; c < C; c++) {                               \
-        waves[c][i - (S - 1)] = pipe[c][S - 1];                      \
-      }                                                              \
-    }                                                                \
-    for (size_t i = n; i < n + S - 1; i++) {                         \
-      size_t first = i - n + 1;                                      \
-      size_t last = (S - 1 < i) ? (S - 1) : i;                       \
-      for (size_t k = last; k >= first; k--) {                       \
-        for (size_t c = 0; c < C; c++) {                             \
-          CANON_STAGE(c, k, pipe[c][k - 1]);                         \
-        }                                                            \
-      }                                                              \
-      if (i >= S - 1) {                                              \
-        for (size_t c = 0; c < C; c++) {                             \
-          waves[c][i - (S - 1)] = pipe[c][S - 1];                    \
-        }                                                            \
-      }                                                              \
-    }                                                                \
-    for (size_t c = 0; c < C; c++) {                                 \
-      size_t mem = members[c];                                       \
-      for (size_t k = 0; k < S; k++) {                               \
-        if (fpclassify(s1[c][k]) == FP_SUBNORMAL) s1[c][k] = 0.0;    \
-        if (fpclassify(s2[c][k]) == FP_SUBNORMAL) s2[c][k] = 0.0;    \
-        cascades[mem][start + k]->z1 = s1[c][k];                     \
-        cascades[mem][start + k]->z2 = s2[c][k];                     \
-      }                                                              \
-    }                                                                \
+#define DEFINE_2D_CANON_KERNEL(C, S)                                     \
+  _Static_assert((S) >= 1, "biquad cascade depth S must be at least 1"); \
+  _Static_assert((C) >= 1, "channel count C must be at least 1");        \
+  static void biquad_canon_kernel_##C##_##S(                             \
+      biquad_filter_t*** cascades, double** waveforms,                   \
+      const size_t* channel_of, const size_t* members, size_t start,     \
+      size_t n) {                                                        \
+    double b0[C][S], b1[C][S], b2[C][S], neg_a1[C][S], neg_a2[C][S];     \
+    double s1[C][S], s2[C][S];                                           \
+    double* waves[C];                                                    \
+    for (size_t c = 0; c < C; c++) {                                     \
+      size_t mem = members[c];                                           \
+      waves[c] = waveforms[channel_of[mem]];                             \
+      for (size_t k = 0; k < S; k++) {                                   \
+        biquad_filter_t* f = cascades[mem][start + k];                   \
+        b0[c][k] = f->coeffs.b0;                                         \
+        b1[c][k] = f->coeffs.b1;                                         \
+        b2[c][k] = f->coeffs.b2;                                         \
+        neg_a1[c][k] = f->neg_a1;                                        \
+        neg_a2[c][k] = f->neg_a2;                                        \
+        s1[c][k] = f->z1;                                                \
+        s2[c][k] = f->z2;                                                \
+      }                                                                  \
+    }                                                                    \
+    double pipe[C][S];                                                   \
+    memset(pipe, 0, sizeof(pipe));                                       \
+    size_t ramp = (S - 1 < n) ? (S - 1) : n;                             \
+    for (size_t i = 0; i < ramp; i++) {                                  \
+      for (size_t k = i; k >= 1; k--) {                                  \
+        for (size_t c = 0; c < C; c++) {                                 \
+          CANON_STAGE(c, k, pipe[c][k - 1]);                             \
+        }                                                                \
+      }                                                                  \
+      for (size_t c = 0; c < C; c++) {                                   \
+        CANON_STAGE(c, 0, waves[c][i]);                                  \
+      }                                                                  \
+    }                                                                    \
+    for (size_t i = S - 1; i < n; i++) {                                 \
+      for (size_t k = S - 1; k >= 1; k--) {                              \
+        for (size_t c = 0; c < C; c++) {                                 \
+          CANON_STAGE(c, k, pipe[c][k - 1]);                             \
+        }                                                                \
+      }                                                                  \
+      for (size_t c = 0; c < C; c++) {                                   \
+        CANON_STAGE(c, 0, waves[c][i]);                                  \
+      }                                                                  \
+      for (size_t c = 0; c < C; c++) {                                   \
+        waves[c][i - (S - 1)] = pipe[c][S - 1];                          \
+      }                                                                  \
+    }                                                                    \
+    for (size_t i = n; i < n + S - 1; i++) {                             \
+      size_t first = i - n + 1;                                          \
+      size_t last = (S - 1 < i) ? (S - 1) : i;                           \
+      for (size_t k = last; k >= first; k--) {                           \
+        for (size_t c = 0; c < C; c++) {                                 \
+          CANON_STAGE(c, k, pipe[c][k - 1]);                             \
+        }                                                                \
+      }                                                                  \
+      if (i + 1 >= S) {                                                  \
+        for (size_t c = 0; c < C; c++) {                                 \
+          waves[c][i + 1 - S] = pipe[c][S - 1];                          \
+        }                                                                \
+      }                                                                  \
+    }                                                                    \
+    for (size_t c = 0; c < C; c++) {                                     \
+      size_t mem = members[c];                                           \
+      for (size_t k = 0; k < S; k++) {                                   \
+        if (fpclassify(s1[c][k]) == FP_SUBNORMAL) s1[c][k] = 0.0;        \
+        if (fpclassify(s2[c][k]) == FP_SUBNORMAL) s2[c][k] = 0.0;        \
+        cascades[mem][start + k]->z1 = s1[c][k];                         \
+        cascades[mem][start + k]->z2 = s2[c][k];                         \
+      }                                                                  \
+    }                                                                    \
   }
 
 #define DEFINE_ALL_DEPTHS(C)   \

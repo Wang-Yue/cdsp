@@ -103,7 +103,7 @@ const char* asio_format_to_str(asio_sample_format_t fmt);
  * @brief Initialize COM on calling thread as Single-Threaded Apartment (STA).
  * Matches CamillaDSP driver.rs:com_init_this_thread.
  */
-void asio_com_init_this_thread(void);
+bool asio_com_init_this_thread(backend_error_t* err);
 
 #endif  // ENABLE_ASIO
 
