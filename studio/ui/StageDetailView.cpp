@@ -135,7 +135,7 @@ void VSliderWidget::updateValueFromMouse(int y) {
 }
 
 RotatedLabel::RotatedLabel(const QString& text, QWidget* parent) : QWidget(parent), m_text(text) {
-    setFixedSize(35, 30);
+    setFixedSize(36, 50);
 }
 
 void RotatedLabel::setText(const QString& text) {
@@ -160,7 +160,7 @@ void RotatedLabel::paintEvent(QPaintEvent* event) {
 }
 
 QSize RotatedLabel::sizeHint() const {
-    return QSize(35, 30);
+    return QSize(36, 50);
 }
 
 namespace {
@@ -2477,7 +2477,8 @@ void StageDetailView::buildStageOptionsUi() {
             auto scrollBank = new QScrollArea(geqGroup);
             scrollBank->setWidgetResizable(true);
             scrollBank->setFrameShape(QFrame::NoFrame);
-            scrollBank->setFixedHeight(240);
+            scrollBank->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+            scrollBank->setFixedHeight(275);
 
             auto bankContainer = new QWidget(scrollBank);
             auto bankLayout = new QHBoxLayout(bankContainer);
@@ -2495,13 +2496,17 @@ void StageDetailView::buildStageOptionsUi() {
             auto freqLabelText = [](double hz) -> QString {
                 if (hz >= 1000.0) {
                     double khz = hz / 1000.0;
-                    if (khz == std::floor(khz))
-                        return QString("%1k").arg(static_cast<int>(khz));
-                    else
+                    if (std::abs(khz - std::round(khz)) < 0.05)
+                        return QString("%1k").arg(static_cast<int>(std::round(khz)));
+                    else if (khz < 10.0)
                         return QString("%1k").arg(khz, 0, 'f', 1);
+                    else
+                        return QString("%1k").arg(static_cast<int>(std::round(khz)));
+                } else if (hz >= 100.0) {
+                    return QString("%1").arg(static_cast<int>(std::round(hz)));
                 } else {
-                    if (hz == std::floor(hz))
-                        return QString("%1").arg(static_cast<int>(hz));
+                    if (std::abs(hz - std::round(hz)) < 0.05)
+                        return QString("%1").arg(static_cast<int>(std::round(hz)));
                     else
                         return QString("%1").arg(hz, 0, 'f', 1);
                 }
