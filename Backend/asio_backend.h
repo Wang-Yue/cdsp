@@ -76,8 +76,15 @@ IASIO* asio_driver_lookup(const char* devname);
 bool asio_needs_rate_reload(const char* devname);
 
 /**
+ * @brief Whether this driver is refused outright.
+ * Matches CamillaDSP driver.rs:is_unsupported_driver.
+ */
+bool asio_is_unsupported_driver(const char* devname);
+
+/**
  * @brief Whether only one instance of this driver may be created per process.
  * Matches CamillaDSP driver.rs:is_single_instance_driver.
+ * @deprecated Use asio_is_unsupported_driver instead.
  */
 bool asio_is_single_instance_driver(const char* devname);
 

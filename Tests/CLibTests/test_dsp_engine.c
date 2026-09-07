@@ -2023,11 +2023,50 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
 #include <objbase.h>
 #include <unknwn.h>
 #include <windows.h>
+#include "Backend/asio_backend.h"
 
 static bool wasapi_set_both_rates(int sample_rate);
 static bool wasapi_change_capture_rate_only(int sample_rate);
 static bool wasapi_change_playback_rate_only(int sample_rate);
 static bool wasapi_complete_rate_change(int sample_rate);
+
+TEST(DSPEngineASIOUnsupportedDriverRefused) {
+  ASSERT_TRUE(asio_is_unsupported_driver("ASIO4ALL"));
+  ASSERT_TRUE(asio_is_unsupported_driver("ASIO4ALL v2"));
+  ASSERT_TRUE(asio_is_unsupported_driver("asio4all USB"));
+  ASSERT_FALSE(asio_is_unsupported_driver("Realtek ASIO"));
+  ASSERT_FALSE(asio_is_unsupported_driver("FlexASIO"));
+
+  dsp_engine_t* engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"Asio\",\n"
+      "            \"device\": \"ASIO4ALL v2\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"Asio\",\n"
+      "            \"device\": \"ASIO4ALL v2\",\n"
+      "            \"channels\": 2\n"
+      "        }\n"
+      "    }\n"
+      "}";
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  bool success = engine->set_config_json(engine->ctx, json, &err);
+  ASSERT_FALSE(success);
+  ASSERT_TRUE(strstr(err.message, "is not supported, use the Wasapi backend") != NULL);
+
+  cdsp_stop(engine);
+  if (engine && engine->free) engine->free(engine->ctx);
+}
 
 TEST(DSPEngineASIOSetConfigAndReload) {
   dsp_engine_t* engine = dsp_engine_create();
@@ -2285,7 +2324,7 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
            "        \"stop_on_rate_change\": true,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"ASIO4ALL v2\",\n"
+           "            \"device\": \"FlexASIO\",\n"
            "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -2371,7 +2410,7 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"ASIO4ALL v2\",\n"
+           "            \"device\": \"FlexASIO\",\n"
            "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -2429,7 +2468,7 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"ASIO4ALL v2\",\n"
+           "            \"device\": \"FlexASIO\",\n"
            "            \"channels\": 2\n"
            "        }\n"
            "    }\n"
@@ -2510,7 +2549,7 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"ASIO4ALL v2\",\n"
+           "            \"device\": \"FlexASIO\",\n"
            "            \"channels\": 2\n"
            "        }\n"
            "    }\n"

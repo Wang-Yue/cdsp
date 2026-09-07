@@ -2,6 +2,8 @@
 
 #if defined(ENABLE_ASIO)
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,42 +32,8 @@ bool asio_capabilities_default_device_name(bool is_capture, char* out_name,
   return false;
 }
 
-audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
-                                                      bool is_capture,
-                                                      device_error_t* err) {
-  char target_dev_name[256] = {0};
-  if (device_name && device_name[0] != '\0') {
-    snprintf(target_dev_name, sizeof(target_dev_name), "%s", device_name);
-  } else {
-    if (!asio_capabilities_default_device_name(is_capture, target_dev_name,
-                                               sizeof(target_dev_name))) {
-      if (err) {
-        device_error_init(err, DEVICE_ERROR_NOT_FOUND,
-                          "No ASIO driver available");
-      }
-      return NULL;
-    }
-  }
-
-  // Refuse to probe drivers that tolerate only one instance per process.
-  // Probing loads an instance and releases it again, which leaves such a driver
-  // holding the device. Every later instance in this process then deadlocks or
-  // takes the process down, so a probe would break the device for the rest of
-  // the session. Probing ASIO4ALL twice was enough to kill the process
-  // outright.
-  if (asio_is_single_instance_driver(target_dev_name)) {
-    if (err) {
-      char msg[512];
-      snprintf(
-          msg, sizeof(msg),
-          "ASIO driver '%s' cannot be probed, it tolerates only one instance "
-          "per process.",
-          target_dev_name);
-      device_error_init(err, DEVICE_ERROR_OTHER, msg);
-    }
-    return NULL;
-  }
-
+static audio_device_descriptor_t* probe_device_capabilities(
+    const char* target_dev_name, bool is_capture, device_error_t* err) {
   // Refuse to probe if an in-process ASIO driver is already loaded for this
   // device (live stream). Matches CamillaDSP device.rs lines 990-997.
   if (asio_driver_is_loaded(target_dev_name)) {
@@ -272,6 +240,75 @@ error_cleanup:
     desc = NULL;
   }
   return NULL;
+}
+
+typedef struct asio_probe_thread_ctx {
+  char target_dev_name[256];
+  bool is_capture;
+  device_error_t err;
+  audio_device_descriptor_t* desc;
+} asio_probe_thread_ctx_t;
+
+static DWORD WINAPI asio_probe_thread_proc(LPVOID param) {
+  asio_probe_thread_ctx_t* ctx = (asio_probe_thread_ctx_t*)param;
+  ctx->desc =
+      probe_device_capabilities(ctx->target_dev_name, ctx->is_capture, &ctx->err);
+  return 0;
+}
+
+/**
+ * @brief Probe an ASIO device for its capabilities on a dedicated thread.
+ * Matches CamillaDSP device.rs:get_device_capabilities.
+ *
+ * The work runs on a thread of its own so that it always starts from a clean COM
+ * apartment. Capability requests arrive on the websocket connection thread, which is
+ * shared with the other backends, and Wasapi probing puts that thread in an MTA. An ASIO
+ * instance cannot be created from there: COM would have to marshal the interface back to
+ * the caller's apartment, ASIO interfaces cannot be marshalled at all, and the creation
+ * fails with E_NOINTERFACE. A fresh thread gets the STA the driver expects.
+ *
+ * The driver is loaded and released within the probe, so no instance outlives the thread.
+ */
+audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
+                                                      bool is_capture,
+                                                      device_error_t* err) {
+  char target_dev_name[256] = {0};
+  if (device_name && device_name[0] != '\0') {
+    snprintf(target_dev_name, sizeof(target_dev_name), "%s", device_name);
+  } else {
+    if (!asio_capabilities_default_device_name(is_capture, target_dev_name,
+                                               sizeof(target_dev_name))) {
+      if (err) {
+        device_error_init(err, DEVICE_ERROR_NOT_FOUND,
+                          "No ASIO driver available");
+      }
+      return NULL;
+    }
+  }
+
+  asio_probe_thread_ctx_t ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  snprintf(ctx.target_dev_name, sizeof(ctx.target_dev_name), "%s",
+           target_dev_name);
+  ctx.is_capture = is_capture;
+
+  HANDLE h_thread =
+      CreateThread(NULL, 0, asio_probe_thread_proc, &ctx, 0, NULL);
+  if (!h_thread) {
+    if (err) {
+      device_error_init(err, DEVICE_ERROR_OTHER,
+                        "Failed to start the ASIO probe thread");
+    }
+    return NULL;
+  }
+
+  WaitForSingleObject(h_thread, INFINITE);
+  CloseHandle(h_thread);
+
+  if (!ctx.desc && err) {
+    *err = ctx.err;
+  }
+  return ctx.desc;
 }
 
 #endif  // ENABLE_ASIO
