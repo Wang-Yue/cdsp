@@ -198,6 +198,7 @@ static void execute_parallel_filters(const pipeline_t* pipeline,
     use_multithreading = true;
   }
 #endif
+  (void)pipeline;
 
   if (use_multithreading) {
 #if defined(ENABLE_LIBDISPATCH)

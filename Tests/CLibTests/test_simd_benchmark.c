@@ -55,10 +55,10 @@ static inline void do_not_optimize(void* p) {
 }
 
 static void* alloc_aligned(size_t bytes) {
-  void* ptr = NULL;
 #if defined(_WIN32)
   return _aligned_malloc(bytes, 64);
 #elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
+  void* ptr = NULL;
   if (posix_memalign(&ptr, 64, bytes) != 0) {
     return malloc(bytes);
   }
@@ -192,6 +192,7 @@ static double g_speedup_blas[OP_COUNT][NUM_BENCH_SIZES];
 static void benchmark_op_at_size(bench_op_id_t op_id, size_t size_idx) {
   size_t count = BENCH_SIZES[size_idx];
   bench_op_info_t info = OP_INFOS[op_id];
+  (void)info;
 
   // Allocate aligned test buffers
   double* da1 = (double*)alloc_aligned(count * sizeof(double));
@@ -311,10 +312,13 @@ static void benchmark_op_at_size(bench_op_id_t op_id, size_t size_idx) {
     uint64_t end = get_time_ns();
     do_not_optimize(da_out_c);
     do_not_optimize(fa_out_c);
+    do_not_optimize((void*)&scalar_res_f);
+    do_not_optimize((void*)&scalar_res_d);
     trials_c[t] = (double)(end - start) / (double)iters;
   }
   qsort(trials_c, NUM_TRIALS, sizeof(double), compare_doubles);
   double time_c_ns = trials_c[NUM_TRIALS / 2];
+  (void)time_c_ns;
 
   // 2. Measure vDSP (if platform supports it and op has vDSP implementation)
 #if HAS_VDSP
