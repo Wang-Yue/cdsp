@@ -972,9 +972,12 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_pbCoreAudioForm->addRow(tr("Format:"), m_pbFormatRow);
 
     m_exclusiveModeCheck = new QCheckBox(tr("Exclusive Mode (Hog)"), w);
-    connect(m_exclusiveModeCheck, &QCheckBox::toggled, [this](bool) {
+    connect(m_exclusiveModeCheck, &QCheckBox::toggled, [this](bool checked) {
         if (m_isRefreshing)
             return;
+        if (!checked && m_outputDoPCheck && m_outputDoPCheck->isChecked()) {
+            m_outputDoPCheck->setChecked(false);
+        }
         applySettings();
     });
     m_pbCoreAudioForm->addRow(m_exclusiveModeCheck);
@@ -1033,9 +1036,13 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     m_pbCoreAudioForm->addRow(tr("Autoconnect To:"), m_pbPwAutoconnectEdit);
 
     m_outputDoPCheck = new QCheckBox(tr("Output DoP (DSD-over-PCM)"), w);
-    connect(m_outputDoPCheck, &QCheckBox::toggled, [this](bool) {
+    connect(m_outputDoPCheck, &QCheckBox::toggled, [this](bool checked) {
         if (m_isRefreshing)
             return;
+        if (checked && m_exclusiveModeCheck && m_exclusiveModeCheck->isVisible() &&
+            !m_exclusiveModeCheck->isChecked()) {
+            m_exclusiveModeCheck->setChecked(true);
+        }
         applySettings();
         updateDoPCapability();
     });
@@ -1618,7 +1625,7 @@ void DevicePickerView::refreshUi() {
         }
     }
 
-    bool pbExclusiveVisible = isPbWasapi || isPbCoreAudio;
+    bool pbExclusiveVisible = backendSupportsExclusive(m_devices->playbackConfig.backend);
     m_exclusiveModeCheck->setChecked(m_devices->playbackConfig.exclusive);
 
     m_pbWasapiPollingCheck->setChecked(m_devices->playbackConfig.polling);
@@ -1793,7 +1800,9 @@ void DevicePickerView::applySettings() {
             }
         }
 
-        pbCfg.exclusive = m_exclusiveModeCheck->isChecked();
+        if (backendSupportsExclusive(pbCfg.backend)) {
+            pbCfg.exclusive = m_exclusiveModeCheck->isChecked();
+        }
         pbCfg.polling = m_pbWasapiPollingCheck->isChecked();
         pbCfg.threaded = m_pbAlsaThreadedCheck->isChecked();
         if (m_pbPwNodeNameEdit)
@@ -1930,7 +1939,9 @@ void DevicePickerView::applySettings() {
     }
     m_devices->setCaptureConfig(capCfg);
 
-    m_devices->setExclusiveMode(m_exclusiveModeCheck->isChecked());
+    if (backendSupportsExclusive(pbCfg.backend)) {
+        m_devices->setExclusiveMode(m_exclusiveModeCheck->isChecked());
+    }
     if (m_devices->onConfigChanged) {
         m_devices->onConfigChanged();
     }

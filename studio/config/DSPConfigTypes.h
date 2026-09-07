@@ -236,6 +236,21 @@ inline bool backendHasDeviceList(AudioBackendType type) {
     }
 }
 
+inline bool backendSupportsExclusive(AudioBackendType type) {
+    switch (type) {
+#if defined(ENABLE_COREAUDIO)
+    case AudioBackendType::CoreAudio:
+        return true;
+#endif
+#if defined(ENABLE_WASAPI)
+    case AudioBackendType::WASAPI:
+        return true;
+#endif
+    default:
+        return false;
+    }
+}
+
 inline bool backendHasDeviceCapabilities(AudioBackendType type) {
     switch (type) {
 #if defined(ENABLE_COREAUDIO)

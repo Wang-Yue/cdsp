@@ -243,7 +243,7 @@ void AudioDeviceManager::setExclusiveMode(bool exclusive) {
     exclusiveMode = exclusive;
     saveConfigs();
     AppLogger::info("AudioDeviceManager", QString("Exclusive mode set to %1").arg(exclusive ? "enabled" : "disabled"));
-    if (!exclusiveMode && playbackConfig.outputDoP) {
+    if (backendSupportsExclusive(playbackConfig.backend) && !exclusiveMode && playbackConfig.outputDoP) {
         DeviceConfig newPb = playbackConfig;
         newPb.outputDoP = false;
         setPlaybackConfig(newPb);
