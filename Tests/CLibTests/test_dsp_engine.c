@@ -2023,6 +2023,7 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
 #include <objbase.h>
 #include <unknwn.h>
 #include <windows.h>
+
 #include "Backend/asio_backend.h"
 
 static bool wasapi_set_both_rates(int sample_rate);
@@ -2061,8 +2062,26 @@ TEST(DSPEngineASIOUnsupportedDriverRefused) {
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
   bool success = engine->set_config_json(engine->ctx, json, &err);
-  ASSERT_FALSE(success);
-  ASSERT_TRUE(strstr(err.message, "is not supported, use the Wasapi backend") != NULL);
+  ASSERT_TRUE(success);
+
+  // Wait for the capture thread to open the device, fail because the driver is
+  // unsupported, and transition engine state to INACTIVE
+  bool inactive = false;
+  for (int i = 0; i < 100; i++) {
+    cdsp_sleep_ms(10);
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
+      inactive = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(inactive);
+
+  cdsp_stop_reason_t stop_reason;
+  cdsp_get_stop_reason(engine, &stop_reason);
+  ASSERT_EQ(stop_reason.type, CDSP_STOP_REASON_CAPTURE_ERROR);
+  ASSERT_TRUE(strstr(stop_reason.message,
+                     "is not supported, use the Wasapi backend") != NULL);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
