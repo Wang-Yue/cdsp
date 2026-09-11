@@ -28,6 +28,16 @@ CDSP_API bool cdsp_get_vu_levels(const dsp_engine_t* engine,
                                  cdsp_vu_levels_t* out_vu);
 
 /**
+ * @brief Get the chunk generation counter for capture or playback.
+ *
+ * @param engine Pointer to the engine.
+ * @param is_capture true for capture stream, false for playback stream.
+ * @return Monotonically increasing chunk generation sequence number.
+ */
+CDSP_API uint64_t cdsp_get_chunk_generation(const dsp_engine_t* engine,
+                                            bool is_capture);
+
+/**
  * @brief Get signal peak or RMS levels since a given timestamp across all
  * channels.
  *

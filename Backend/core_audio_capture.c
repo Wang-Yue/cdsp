@@ -51,7 +51,8 @@ struct core_audio_capture {
   AudioBufferList* prealloc_buffer_list;
   void** prealloc_channel_data_pointers;
   int prealloc_bytes_per_channel_buffer;
-  int callback_error_count;
+  _Atomic int callback_error_count;
+  _Atomic int last_callback_error;
 
   AudioDeviceID opened_device_id;
   rate_change_watcher_t* rate_watcher;
@@ -94,12 +95,34 @@ static OSStatus capture_callback(void* inRefCon,
     return noErr;
   }
 
-  // Restore the size of the preallocated buffer list's buffers, since
-  // AudioUnitRender may modify mDataByteSize during invocation to report actual
-  // bytes written.
+  // Restore the size of the preallocated buffer list's buffers, resizing if
+  // HAL delivers a slice larger than our preallocated capacity.
   AudioBufferList* buffer_list = capture->prealloc_buffer_list;
+  UInt32 required_bytes =
+      inNumberFrames * (UInt32)capture->channels * (UInt32)sizeof(float);
+  if (required_bytes > (UInt32)capture->prealloc_bytes_per_channel_buffer) {
+    void* new_buf =
+        realloc(capture->prealloc_channel_data_pointers[0], required_bytes);
+    if (!new_buf) {
+      atomic_fetch_add_explicit(&capture->callback_error_count, 1,
+                                memory_order_relaxed);
+      atomic_store_explicit(&capture->last_callback_error, -1,
+                            memory_order_relaxed);
+      if (capture->semaphore) {
+        cdsp_sem_signal(capture->semaphore);
+      }
+      atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
+                                memory_order_release);
+      return noErr;
+    }
+    capture->prealloc_channel_data_pointers[0] = new_buf;
+    capture->prealloc_buffer_list->mBuffers[0].mData = new_buf;
+    capture->prealloc_bytes_per_channel_buffer = (int)required_bytes;
+  }
+
   uint32_t prealloc_size = (uint32_t)capture->prealloc_bytes_per_channel_buffer;
   for (UInt32 i = 0; i < buffer_list->mNumberBuffers; i++) {
+    buffer_list->mBuffers[i].mData = capture->prealloc_channel_data_pointers[i];
     buffer_list->mBuffers[i].mDataByteSize = prealloc_size;
   }
 
@@ -108,13 +131,24 @@ static OSStatus capture_callback(void* inRefCon,
       AudioUnitRender(capture->audio_unit, ioActionFlags, inTimeStamp, 1,
                       inNumberFrames, buffer_list);
   if (status != noErr) {
-    if (capture->callback_error_count < 3) {
-      capture->callback_error_count++;
+    atomic_fetch_add_explicit(&capture->callback_error_count, 1,
+                              memory_order_relaxed);
+    atomic_store_explicit(&capture->last_callback_error, (int)status,
+                          memory_order_relaxed);
+    if (capture->semaphore) {
+      cdsp_sem_signal(capture->semaphore);
     }
     atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
                               memory_order_relaxed);
     return noErr;
   }
+
+  // A successful render clears the streak: only *consecutive* failures
+  // indicate a dead device. Without this reset the counter is cumulative, so
+  // three isolated transient glitches spread over a long session would
+  // permanently fail an otherwise healthy capture stream.
+  atomic_store_explicit(&capture->callback_error_count, 0,
+                        memory_order_relaxed);
 
   size_t bytes_to_write = (size_t)buffer_list->mBuffers[0].mDataByteSize;
   const uint8_t* byte_ptr =
@@ -165,6 +199,9 @@ static bool allocate_render_buffers(core_audio_capture_t* capture) {
             capture->opened_device_id, CORE_AUDIO_SCOPE_INPUT, &actual_size)) {
       if ((int)actual_size > buffer_frames) buffer_frames = (int)actual_size;
     }
+  }
+  if (buffer_frames < 4096) {
+    buffer_frames = 4096;
   }
 
   int bytes_per_buffer =
@@ -248,6 +285,9 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
   if (capture->ring_buffer) {
     spsc_byte_ring_buffer_drain(capture->ring_buffer);
   }
+  atomic_store_explicit(&capture->callback_error_count, 0,
+                        memory_order_relaxed);
+  atomic_store_explicit(&capture->last_callback_error, 0, memory_order_relaxed);
 
   // Set up component query for HAL Output Audio Unit.
   AudioComponentDescription desc = {
@@ -311,9 +351,19 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
   capture->opened_device_id = dev_id;
   if (dev_id != 0) {
     // Bind the AudioUnit to the discovered HAL Device ID.
-    AudioUnitSetProperty(capture->audio_unit,
-                         kAudioOutputUnitProperty_CurrentDevice,
-                         kAudioUnitScope_Global, 0, &dev_id, sizeof(dev_id));
+    status = AudioUnitSetProperty(
+        capture->audio_unit, kAudioOutputUnitProperty_CurrentDevice,
+        kAudioUnitScope_Global, 0, &dev_id, sizeof(dev_id));
+    if (status != noErr) {
+      logger_error(
+          &g_logger,
+          "Failed to set current device on capture AudioUnit: status=%d",
+          status);
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                           "Failed to set capture device on AudioUnit");
+      goto cleanup;
+    }
     bool physical_format_set = false;
     if (capture->has_sample_format) {
       if (core_audio_device_set_matching_physical_format(
@@ -329,7 +379,16 @@ static bool core_audio_capture_open(void* ctx, backend_error_t* err) {
       }
     }
     if (!physical_format_set) {
-      core_audio_device_set_nominal_sample_rate(dev_id, capture->sample_rate);
+      if (!core_audio_device_set_nominal_sample_rate(dev_id,
+                                                     capture->sample_rate)) {
+        logger_error(&g_logger,
+                     "Failed to set capture device sample rate: %.1f",
+                     capture->sample_rate);
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                             "Failed to set capture device sample rate");
+        goto cleanup;
+      }
     }
 
     core_audio_device_add_alive_watcher(dev_id, &capture->is_device_alive);
@@ -451,6 +510,23 @@ static bool core_audio_capture_read(void* ctx, size_t frames,
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                          "Capture device disconnected");
+    return false;
+  }
+  // Check if AudioUnitRender repeatedly failed in the callback.
+  if (atomic_load_explicit(&capture->callback_error_count,
+                           memory_order_relaxed) >= 3) {
+    int last_err = atomic_load_explicit(&capture->last_callback_error,
+                                        memory_order_relaxed);
+    logger_error(&g_logger,
+                 "CoreAudio capture read failed: AudioUnitRender failed with "
+                 "error %d",
+                 last_err);
+    if (err) {
+      char msg[128];
+      snprintf(msg, sizeof(msg), "AudioUnitRender failed with error %d",
+               last_err);
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR, msg);
+    }
     return false;
   }
   size_t frames_to_read = (frames > (size_t)capture->chunk_size)

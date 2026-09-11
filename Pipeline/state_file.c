@@ -50,6 +50,51 @@ static void trim_trailing(char* str) {
   }
 }
 
+/**
+ * @brief Parse a YAML boolean scalar.
+ *
+ * @param val   The scalar text, already stripped of surrounding whitespace.
+ * @param out   Receives the parsed value on success.
+ * @return true if @p val is a recognised boolean, false otherwise.
+ */
+static bool parse_bool_scalar(const char* val, bool* out) {
+  if (strcmp(val, "true") == 0 || strcmp(val, "True") == 0 ||
+      strcmp(val, "TRUE") == 0) {
+    *out = true;
+    return true;
+  }
+  if (strcmp(val, "false") == 0 || strcmp(val, "False") == 0 ||
+      strcmp(val, "FALSE") == 0) {
+    *out = false;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * @brief Parse a YAML floating point scalar, rejecting trailing garbage.
+ *
+ * @param val   The scalar text, already stripped of surrounding whitespace.
+ * @param out   Receives the parsed value on success.
+ * @return true if @p val is entirely consumed as a number, false otherwise.
+ */
+static bool parse_double_scalar(const char* val, double* out) {
+  char* end = NULL;
+  double parsed = strtod(val, &end);
+  if (end == val || !end || *end != '\0') {
+    return false;
+  }
+  *out = parsed;
+  return true;
+}
+
+/**
+ * @brief Test whether a trimmed line begins a YAML block sequence entry.
+ */
+static bool is_sequence_item(const char* trimmed) {
+  return trimmed[0] == '-' && (trimmed[1] == ' ' || trimmed[1] == '\t');
+}
+
 bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
   if (!filename || !out_state) return false;
   FILE* fp = cdsp_fopen(filename, "r");
@@ -68,6 +113,10 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
   int mode = 0;
   int mute_idx = 0;
   int vol_idx = 0;
+  bool seen_config_path = false;
+  bool seen_mute = false;
+  bool seen_volume = false;
+  bool valid = true;
 
   while (fgets(line, sizeof(line), fp)) {
     trim_trailing(line);
@@ -77,77 +126,109 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
       continue;
     }
 
-    // YAML-like parser: Check indentation to determine if we exited a list.
-    // List elements are expected to be indented (e.g. by 2 spaces).
-    // If indentation is less than 2 spaces, we assume we have returned to the
-    // root level.
-    int indent = 0;
-    while (line[indent] == ' ' || line[indent] == '\t') {
-      indent++;
+    // Indentation is deliberately ignored. A YAML block sequence nested under
+    // a mapping key may be written either at the key's own indentation (which
+    // is what upstream's libyaml-based writer emits) or indented under it;
+    // both forms are the same document. A sequence therefore ends at the next
+    // mapping key, not at a particular column.
+    char* trimmed = line;
+    while (*trimmed == ' ' || *trimmed == '\t') {
+      trimmed++;
     }
 
-    if (indent < 2) {
-      mode = 0;
+    if (mode != 0 && is_sequence_item(trimmed)) {
+      char* val = trimmed + 2;
+      while (*val == ' ' || *val == '\t') val++;
+      if (mode == 1) {  // mute list
+        bool parsed = false;
+        if (mute_idx >= 5 || !parse_bool_scalar(val, &parsed)) {
+          valid = false;
+          break;
+        }
+        out_state->mute[mute_idx++] = parsed;
+      } else {  // volume list
+        double parsed = 0.0;
+        if (vol_idx >= 5 || !parse_double_scalar(val, &parsed)) {
+          valid = false;
+          break;
+        }
+        out_state->volume[vol_idx++] = parsed;
+      }
+      continue;
     }
 
-    char* trimmed = line + indent;
+    // Anything that is not a sequence entry is a root-level mapping key, which
+    // closes any sequence currently being read.
+    mode = 0;
 
-    if (mode == 0) {
-      if (strncmp(trimmed, "config_path:", 12) == 0) {
-        char* val = trimmed + 12;
-        while (*val == ' ' || *val == '\t') val++;
-        if (strcmp(val, "null") != 0 && strcmp(val, "~") != 0 &&
-            val[0] != '\0') {
-          // strip quotes if any
-          if (val[0] == '"' || val[0] == '\'') {
-            size_t vlen = strlen(val);
-            if (vlen >= 2 && val[vlen - 1] == val[0]) {
-              size_t copylen = vlen - 2;
-              if (copylen >= sizeof(out_state->config_path)) {
-                copylen = sizeof(out_state->config_path) - 1;
-              }
-              strncpy(out_state->config_path, val + 1, copylen);
-              out_state->config_path[copylen] = '\0';
-            } else {
-              strncpy(out_state->config_path, val + 1,
-                      sizeof(out_state->config_path) - 1);
-              out_state->config_path[sizeof(out_state->config_path) - 1] = '\0';
+    if (strncmp(trimmed, "config_path:", 12) == 0) {
+      if (seen_config_path) {
+        valid = false;
+        break;
+      }
+      seen_config_path = true;
+      char* val = trimmed + 12;
+      while (*val == ' ' || *val == '\t') val++;
+      if (strcmp(val, "null") != 0 && strcmp(val, "~") != 0 && val[0] != '\0') {
+        // strip quotes if any
+        if (val[0] == '"' || val[0] == '\'') {
+          size_t vlen = strlen(val);
+          if (vlen >= 2 && val[vlen - 1] == val[0]) {
+            size_t copylen = vlen - 2;
+            if (copylen >= sizeof(out_state->config_path)) {
+              copylen = sizeof(out_state->config_path) - 1;
             }
+            strncpy(out_state->config_path, val + 1, copylen);
+            out_state->config_path[copylen] = '\0';
           } else {
-            strncpy(out_state->config_path, val,
+            strncpy(out_state->config_path, val + 1,
                     sizeof(out_state->config_path) - 1);
             out_state->config_path[sizeof(out_state->config_path) - 1] = '\0';
           }
-          out_state->has_config_path = true;
+        } else {
+          strncpy(out_state->config_path, val,
+                  sizeof(out_state->config_path) - 1);
+          out_state->config_path[sizeof(out_state->config_path) - 1] = '\0';
         }
-      } else if (strncmp(trimmed, "mute:", 5) == 0) {
-        mode = 1;
-        mute_idx = 0;
-      } else if (strncmp(trimmed, "volume:", 7) == 0) {
-        mode = 2;
-        vol_idx = 0;
+        out_state->has_config_path = true;
       }
-    } else if (mode == 1) {  // mute list
-      if (trimmed[0] == '-' && (trimmed[1] == ' ' || trimmed[1] == '\t')) {
-        char* val = trimmed + 2;
-        while (*val == ' ' || *val == '\t') val++;
-        if (mute_idx < 5) {
-          out_state->mute[mute_idx++] =
-              (strcmp(val, "true") == 0 || strcmp(val, "True") == 0);
-        }
+    } else if (strncmp(trimmed, "mute:", 5) == 0) {
+      if (seen_mute) {
+        valid = false;
+        break;
       }
-    } else if (mode == 2) {  // volume list
-      if (trimmed[0] == '-' && (trimmed[1] == ' ' || trimmed[1] == '\t')) {
-        char* val = trimmed + 2;
-        while (*val == ' ' || *val == '\t') val++;
-        if (vol_idx < 5) {
-          out_state->volume[vol_idx++] = atof(val);
-        }
+      seen_mute = true;
+      mode = 1;
+      mute_idx = 0;
+    } else if (strncmp(trimmed, "volume:", 7) == 0) {
+      if (seen_volume) {
+        valid = false;
+        break;
       }
+      seen_volume = true;
+      mode = 2;
+      vol_idx = 0;
+    } else {
+      // Upstream deserializes with `deny_unknown_fields`, so an unrecognised
+      // key invalidates the whole file.
+      valid = false;
+      break;
     }
   }
 
   fclose(fp);
+
+  // Upstream's `load_state` returns None on any deserialization error and the
+  // caller then uses nothing from the file. Partially parsed state must not be
+  // reported as success: doing so used to adopt `config_path` while resetting
+  // every fader to 0 dB and unmuted.
+  if (!valid || !seen_config_path || !seen_mute || !seen_volume ||
+      mute_idx != 5 || vol_idx != 5) {
+    logger_warn(&g_logger, "Invalid statefile, ignoring: %s", filename);
+    memset(out_state, 0, sizeof(dsp_state_t));
+    return false;
+  }
+
   return true;
 }
 
@@ -178,14 +259,17 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
     fprintf(fp, "config_path: null\n");
   }
 
+  // Upstream's libyaml-based writer emits a block sequence at the same
+  // indentation as its mapping key, so match that byte-for-byte. The parser
+  // accepts either form.
   fprintf(fp, "mute:\n");
   for (int i = 0; i < 5; i++) {
-    fprintf(fp, "  - %s\n", state->mute[i] ? "true" : "false");
+    fprintf(fp, "- %s\n", state->mute[i] ? "true" : "false");
   }
 
   fprintf(fp, "volume:\n");
   for (int i = 0; i < 5; i++) {
-    fprintf(fp, "  - %.6f\n", state->volume[i]);
+    fprintf(fp, "- %.6f\n", state->volume[i]);
   }
 
   fflush(fp);

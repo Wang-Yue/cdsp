@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "Config/config_error.h"
@@ -21,6 +22,9 @@
 
 static void set_test_channels(dsp_config_t* config, int cap_chs, int play_chs) {
   config->devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  snprintf(config->devices.capture.cfg.raw_file.filename,
+           sizeof(config->devices.capture.cfg.raw_file.filename), "/dev/null");
+  config->devices.capture.cfg.raw_file.has_filename = true;
   config->devices.capture.cfg.raw_file.channels = cap_chs;
   config->devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
   config->devices.playback.cfg.raw_file.channels = play_chs;
@@ -216,6 +220,27 @@ TEST(ValidateChannels) {
   ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
   ASSERT_TRUE(strstr(err.message, "Playback channels must be positive") !=
               NULL);
+}
+
+TEST(ValidateRawFileCapture_NonexistentFile) {
+  dsp_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.devices.samplerate = 44100;
+  config.devices.chunksize = 1024;
+  config.devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  snprintf(config.devices.capture.cfg.raw_file.filename,
+           sizeof(config.devices.capture.cfg.raw_file.filename),
+           "/nonexistent/file/path/that/does/not/exist.raw");
+  config.devices.capture.cfg.raw_file.has_filename = true;
+  config.devices.capture.cfg.raw_file.channels = 2;
+  config.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  config.devices.playback.cfg.raw_file.channels = 2;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_validate(&config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
+  ASSERT_TRUE(strstr(err.message, "Could not open input file") != NULL);
 }
 
 TEST(ValidatePipelineFilterMissingNames) {
@@ -557,7 +582,11 @@ TEST(MixerValidatorSourceOutOfRange) {
               NULL);
 }
 
-TEST(MixerValidatorDuplicateSource) {
+// Upstream's duplicate-source check in validate_mixer is dead code (it never
+// pushes to `input_channels`), while `Mixer::from_config` pushes both sources
+// and sums them. A config that lists an input channel twice therefore loads
+// and plays in real CamillaDSP, so the port must accept it too.
+TEST(MixerValidatorDuplicateSourceAccepted) {
   mixer_source_t srcs[2];
   memset(srcs, 0, sizeof(srcs));
   srcs[0].channel = 0;
@@ -578,13 +607,8 @@ TEST(MixerValidatorDuplicateSource) {
 
   config_error_t err;
   config_error_init(&err);
-  int res = mixer_config_validate(&mixer, &err);
-  ASSERT_NE(0, res);
-  ASSERT_EQ(CONFIG_ERR_INVALID_MIXER, err.type);
-  ASSERT_TRUE(
-      strstr(err.message,
-             "mixer source channel 0 listed more than once for dest 0") !=
-      NULL);
+  ASSERT_EQ(0, mixer_config_validate(&mixer, &err));
+  ASSERT_EQ(CONFIG_ERR_NONE, err.type);
 }
 
 TEST(ValidateInvalidFilterConfig) {
@@ -605,10 +629,37 @@ TEST(ValidateInvalidFilterConfig) {
 
   config_error_t err;
   config_error_init(&err);
+
+  // 1. Unused invalid filter in config is ignored during validation (matches
+  // upstream)
   int res = dsp_config_validate(&config, &err);
+  ASSERT_EQ(0, res);
+
+  // 2. Active filter step referencing invalid filter fails validation
+  char* filter_name = strdup("mygain");
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_FILTER;
+  step.channel = 0;
+  step.has_channel = true;
+  step.names = &filter_name;
+  step.names_count = 1;
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  config_error_init(&err);
+  res = dsp_config_validate(&config, &err);
   ASSERT_NE(0, res);
   ASSERT_EQ(CONFIG_ERR_INVALID_FILTER, err.type);
   ASSERT_TRUE(strstr(err.message, "Gain must be less than +150 dB") != NULL);
+
+  // 3. Bypassed filter step referencing invalid filter succeeds
+  step.bypassed = true;
+  config_error_init(&err);
+  res = dsp_config_validate(&config, &err);
+  ASSERT_EQ(0, res);
+
+  free(filter_name);
 }
 
 TEST(ValidateInvalidMixerConfig) {
@@ -634,10 +685,31 @@ TEST(ValidateInvalidMixerConfig) {
 
   config_error_t err;
   config_error_init(&err);
+
+  // 1. Unused invalid mixer is ignored during validation (matches upstream)
   int res = dsp_config_validate(&config, &err);
+  ASSERT_EQ(0, res);
+
+  // 2. Active mixer step referencing invalid mixer fails validation
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_MIXER;
+  strcpy(step.name, "mymixer");
+  step.has_name = true;
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  config_error_init(&err);
+  res = dsp_config_validate(&config, &err);
   ASSERT_NE(0, res);
   ASSERT_EQ(CONFIG_ERR_INVALID_MIXER, err.type);
   ASSERT_TRUE(strstr(err.message, "mixer dest 5 >= channels_out 2") != NULL);
+
+  // 3. Bypassed mixer step referencing invalid mixer succeeds
+  step.bypassed = true;
+  config_error_init(&err);
+  res = dsp_config_validate(&config, &err);
+  ASSERT_EQ(0, res);
 }
 
 TEST(ParseFullConfigWithMixerAndFilter) {
@@ -812,6 +884,36 @@ TEST(RejectWavS24_4_RJ) {
       "        \"playback\": {\n"
       "            \"type\": \"File\",\n"
       "            \"filename\": \"/dev/null\",\n"
+      "            \"channels\": 2,\n"
+      "            \"format\": \"S24_4_RJ_LE\",\n"
+      "            \"wav_header\": true\n"
+      "        }\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_EQ(-1, res);
+  ASSERT_STR_EQ("Wav files do not support the S24_4_RJ_LE sample format",
+                err.message);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(RejectStdoutWavHeaderS24_4_RJ_LE) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 48000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\n"
+      "            \"type\": \"RawFile\",\n"
+      "            \"filename\": \"/dev/null\",\n"
+      "            \"format\": \"S16_LE\",\n"
+      "            \"channels\": 2\n"
+      "        },\n"
+      "        \"playback\": {\n"
+      "            \"type\": \"Stdout\",\n"
       "            \"channels\": 2,\n"
       "            \"format\": \"S24_4_RJ_LE\",\n"
       "            \"wav_header\": true\n"
@@ -1325,6 +1427,751 @@ TEST(StrictValidationRejectUnknownPipelineField) {
   ASSERT_TRUE(strstr(err.message, "unknown field 'invalid_pipe_field'") !=
               NULL);
   ASSERT_TRUE(config == NULL);
+}
+
+/* --- Strict tagged-enum parsing of filter parameters (audit 01-1, 09-5) --- */
+
+/**
+ * @brief Builds a config with a single filter definition spliced in.
+ */
+static void build_filter_config_json(char* buf, size_t buf_len,
+                                     const char* filter_json) {
+  snprintf(buf, buf_len,
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 1024,\n"
+           "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+           "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+           "        \"playback\": {\"type\": \"File\", \"filename\": "
+           "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2}\n"
+           "    },\n"
+           "    \"filters\": {\"f1\": %s}\n"
+           "}",
+           filter_json);
+}
+
+/**
+ * @brief Parses a filter definition and returns the parse result.
+ */
+static int parse_filter_json(const char* filter_json, config_error_t* err) {
+  char json[1024];
+  build_filter_config_json(json, sizeof(json), filter_json);
+  dsp_config_t* config = NULL;
+  config_error_init(err);
+  int res = dsp_config_parse_json(json, &config, err);
+  if (config) dsp_config_free(config);
+  return res;
+}
+
+TEST(FilterRejectsUnknownBiquadType) {
+  config_error_t err;
+  int res = parse_filter_json(
+      "{\"type\": \"Biquad\", \"parameters\": {\"type\": \"Lowpas\", "
+      "\"freq\": 1000, \"q\": 0.7}}",
+      &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "unknown variant 'Lowpas'") != NULL);
+}
+
+TEST(FilterRejectsMissingBiquadType) {
+  config_error_t err;
+  int res = parse_filter_json(
+      "{\"type\": \"Biquad\", \"parameters\": {\"freq\": 1000, \"q\": 0.7}}",
+      &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing field 'type'") != NULL);
+}
+
+TEST(FilterRejectsMissingBiquadFreq) {
+  config_error_t err;
+  int res = parse_filter_json(
+      "{\"type\": \"Biquad\", \"parameters\": {\"type\": \"Lowpass\", "
+      "\"q\": 0.7}}",
+      &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing field 'freq'") != NULL);
+}
+
+TEST(FilterRejectsPeakingWithoutWidth) {
+  config_error_t err;
+  int res = parse_filter_json(
+      "{\"type\": \"Biquad\", \"parameters\": {\"type\": \"Peaking\", "
+      "\"freq\": 1000, \"gain\": 3.0}}",
+      &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "'q' or 'bandwidth'") != NULL);
+}
+
+TEST(FilterAcceptsPeakingWithBandwidth) {
+  config_error_t err;
+  int res = parse_filter_json(
+      "{\"type\": \"Biquad\", \"parameters\": {\"type\": \"Peaking\", "
+      "\"freq\": 1000, \"gain\": 3.0, \"bandwidth\": 1.0}}",
+      &err);
+  ASSERT_EQ(0, res);
+}
+
+TEST(FilterRejectsMissingParameters) {
+  config_error_t err;
+  int res = parse_filter_json("{\"type\": \"Gain\"}", &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing 'parameters'") != NULL);
+}
+
+TEST(FilterRejectsMissingFilterType) {
+  config_error_t err;
+  int res = parse_filter_json("{\"parameters\": {\"gain\": 0.0}}", &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing or non-string 'type'") != NULL);
+}
+
+TEST(FilterRejectsDitherWithoutBits) {
+  config_error_t err;
+  int res = parse_filter_json(
+      "{\"type\": \"Dither\", \"parameters\": {\"type\": \"Shibata441\"}}",
+      &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing field 'bits'") != NULL);
+}
+
+TEST(FilterRejectsConvWithoutFilename) {
+  config_error_t err;
+  int res = parse_filter_json(
+      "{\"type\": \"Conv\", \"parameters\": {\"type\": \"Wav\"}}", &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing field 'filename'") != NULL);
+}
+
+TEST(FilterRejectsBiquadComboWithoutOrder) {
+  config_error_t err;
+  int res = parse_filter_json(
+      "{\"type\": \"BiquadCombo\", \"parameters\": {\"type\": "
+      "\"ButterworthHighpass\", \"freq\": 100}}",
+      &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing field 'order'") != NULL);
+}
+
+/* --- Strict resampler configuration (audit 09-4) --- */
+
+/**
+ * @brief Parses a config whose devices section carries the given resampler.
+ */
+static int parse_resampler_json(const char* resampler_json,
+                                config_error_t* err) {
+  char json[1024];
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 44100,\n"
+           "        \"chunksize\": 1024,\n"
+           "        \"resampler\": %s,\n"
+           "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+           "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+           "        \"playback\": {\"type\": \"File\", \"filename\": "
+           "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2}\n"
+           "    }\n"
+           "}",
+           resampler_json);
+  dsp_config_t* config = NULL;
+  config_error_init(err);
+  int res = dsp_config_parse_json(json, &config, err);
+  if (config) dsp_config_free(config);
+  return res;
+}
+
+TEST(ResamplerRejectsUnknownType) {
+  config_error_t err;
+  int res = parse_resampler_json("{\"type\": \"AsyncSync\"}", &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "unknown variant 'AsyncSync'") != NULL);
+}
+
+TEST(ResamplerRejectsUnknownProfile) {
+  config_error_t err;
+  int res = parse_resampler_json(
+      "{\"type\": \"AsyncSinc\", \"profile\": \"Balenced\"}", &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "unknown variant 'Balenced'") != NULL);
+}
+
+TEST(ResamplerRejectsAsyncPolyWithoutInterpolation) {
+  config_error_t err;
+  int res = parse_resampler_json("{\"type\": \"AsyncPoly\"}", &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing field 'interpolation'") != NULL);
+}
+
+TEST(ResamplerRejectsIncompleteAsyncSinc) {
+  config_error_t err;
+  int res = parse_resampler_json(
+      "{\"type\": \"AsyncSinc\", \"sinc_len\": 128, \"interpolation\": "
+      "\"Cubic\"}",
+      &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "missing field 'window'") != NULL);
+}
+
+TEST(ResamplerAcceptsAsyncSincProfile) {
+  config_error_t err;
+  int res = parse_resampler_json(
+      "{\"type\": \"AsyncSinc\", \"profile\": \"Balanced\"}", &err);
+  ASSERT_EQ(0, res);
+}
+
+/* --- Channel indices must be non-negative integers (audit 09-9) --- */
+
+TEST(PipelineRejectsNegativeChannelInList) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\"g1\": {\"type\": \"Gain\", \"parameters\": "
+      "{\"gain\": 0.0}}},\n"
+      "    \"pipeline\": [{\"type\": \"Filter\", \"names\": [\"g1\"], "
+      "\"channels\": [-1, 1]}]\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "must be a non-negative integer") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(PipelineRejectsFractionalChannel) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\"g1\": {\"type\": \"Gain\", \"parameters\": "
+      "{\"gain\": 0.0}}},\n"
+      "    \"pipeline\": [{\"type\": \"Filter\", \"name\": \"g1\", "
+      "\"channel\": 1.5}]\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "must be a non-negative integer") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(MixerRejectsNegativeSourceChannel) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"mixers\": {\"m1\": {\"channels\": {\"in\": 2, \"out\": 2}, "
+      "\"mapping\": [{\"dest\": 0, \"sources\": [{\"channel\": -1}]}]}}\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(strstr(err.message, "must be a non-negative integer") != NULL);
+  ASSERT_TRUE(config == NULL);
+}
+
+TEST(WavFileUnconditionallyUpdatesOverrides) {
+  char wav_filename[256];
+  snprintf(wav_filename, sizeof(wav_filename),
+           "/tmp/test_config_wav_override_%d.wav", getpid());
+  remove(wav_filename);
+
+  FILE* f = fopen(wav_filename, "wb");
+  ASSERT_TRUE(f != NULL);
+  uint8_t wav_header[44] = {'R',  'I',  'F',  'F',  36,   0,   0,    0,    'W',
+                            'A',  'V',  'E',  'f',  'm',  't', ' ',  16,   0,
+                            0,    0,    1,    0,    2,    0,   0x44, 0xAC, 0x00,
+                            0x00, 0x10, 0xB1, 0x02, 0x00, 4,   0,    16,   0,
+                            'd',  'a',  't',  'a',  0,    0,   0,    0};
+  fwrite(wav_header, 1, sizeof(wav_header), f);
+  fclose(f);
+
+  char json[1024];
+  snprintf(
+      json, sizeof(json),
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 96000,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"WavFile\", \"filename\": \"%s\"},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    }\n"
+      "}",
+      wav_filename);
+
+  dsp_config_overrides_t overrides;
+  memset(&overrides, 0, sizeof(overrides));
+  overrides.samplerate = 88200;
+  overrides.channels = 4;
+  overrides.sample_format = BINARY_SAMPLE_FORMAT_S32_LE;
+  overrides.has_sample_format = true;
+
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json_with_dir_and_overrides(json, NULL, &overrides,
+                                                         &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  // WAV header has 44100 Hz, 2 channels, S16_LE. It should override the input
+  // overrides!
+  ASSERT_EQ(44100, config->devices.samplerate);
+  dsp_config_free(config);
+
+  remove(wav_filename);
+}
+
+#if defined(ENABLE_COREAUDIO)
+TEST(UnmappableSampleFormatOverrideFailsCoreAudio) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"CoreAudio\", \"channels\": 2, "
+      "\"format\": \"S16\"},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    }\n"
+      "}";
+
+  dsp_config_overrides_t overrides;
+  memset(&overrides, 0, sizeof(overrides));
+  overrides.samplerate = -1;
+  overrides.channels = -1;
+  overrides.extra_samples = -1;
+  overrides.has_sample_format = true;
+  overrides.sample_format = BINARY_SAMPLE_FORMAT_F64_LE;
+
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json_with_dir_and_overrides(json, NULL, &overrides,
+                                                         &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_EQ(CONFIG_ERR_PARSE, err.type);
+  ASSERT_TRUE(
+      strstr(
+          err.message,
+          "CoreAudio does not have a sample format corresponding to F64_LE") !=
+      NULL);
+  ASSERT_TRUE(config == NULL);
+}
+#endif
+
+TEST(RelativePathResolvedAfterTokenSubstitution) {
+  char test_dir[256];
+  snprintf(test_dir, sizeof(test_dir), "/tmp/cdsp_test_token_path_%d",
+           getpid());
+  mkdir(test_dir, 0755);
+
+  char coeff_file[512];
+  snprintf(coeff_file, sizeof(coeff_file), "%s/coeffs_44100.raw", test_dir);
+  FILE* f = fopen(coeff_file, "wb");
+  ASSERT_TRUE(f != NULL);
+  float val = 1.0f;
+  fwrite(&val, sizeof(float), 1, f);
+  fclose(f);
+
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"conv1\": {\n"
+      "            \"type\": \"Conv\",\n"
+      "            \"parameters\": {\n"
+      "                \"type\": \"Raw\",\n"
+      "                \"filename\": \"coeffs_$samplerate$.raw\",\n"
+      "                \"format\": \"F32_LE\"\n"
+      "            }\n"
+      "        }\n"
+      "    }\n"
+      "}";
+
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json_with_dir(json, test_dir, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_EQ(1, config->filters_count);
+  ASSERT_STR_EQ(coeff_file, config->filters[0].filter.parameters.conv.filename);
+  dsp_config_free(config);
+
+  remove(coeff_file);
+  rmdir(test_dir);
+}
+
+TEST(VolumeFaderParsingAndValidation) {
+  // 1. Valid Volume with Aux1
+  const char* json_ok =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"v1\": {\"type\": \"Volume\", \"parameters\": {\"fader\": "
+      "\"Aux1\"}}\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json_ok, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_EQ(FADER_AUX1, config->filters[0].filter.parameters.volume.fader);
+  dsp_config_free(config);
+
+  // 2. Volume missing fader -> rejected
+  const char* json_no_fader =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"v1\": {\"type\": \"Volume\", \"parameters\": "
+      "{\"ramp_time_ms\": 200.0}}\n"
+      "    }\n"
+      "}";
+  config_error_init(&err);
+  res = dsp_config_parse_json(json_no_fader, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_TRUE(strstr(err.message, "missing field 'fader'") != NULL);
+
+  // 3. Volume with fader Main -> rejected (Main is not valid for Volume)
+  const char* json_main =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"v1\": {\"type\": \"Volume\", \"parameters\": {\"fader\": "
+      "\"Main\"}}\n"
+      "    }\n"
+      "}";
+  config_error_init(&err);
+  res = dsp_config_parse_json(json_main, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_TRUE(strstr(err.message, "unknown variant 'Main'") != NULL);
+
+  // 4. Volume with invalid fader -> rejected
+  const char* json_invalid =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"v1\": {\"type\": \"Volume\", \"parameters\": {\"fader\": "
+      "\"Aux5\"}}\n"
+      "    }\n"
+      "}";
+  config_error_init(&err);
+  res = dsp_config_parse_json(json_invalid, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_TRUE(strstr(err.message, "unknown variant 'Aux5'") != NULL);
+}
+
+TEST(LoudnessFaderParsingAndValidation) {
+  // 1. Loudness without fader -> defaults to Main
+  const char* json_def =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"loud\": {\"type\": \"Loudness\", \"parameters\": "
+      "{\"reference_level\": -20.0}}\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json_def, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_EQ(FADER_MAIN, config->filters[0].filter.parameters.loudness.fader);
+  dsp_config_free(config);
+
+  // 2. Loudness with fader Aux2 -> accepted
+  const char* json_aux =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"loud\": {\"type\": \"Loudness\", \"parameters\": "
+      "{\"reference_level\": -20.0, \"fader\": \"Aux2\"}}\n"
+      "    }\n"
+      "}";
+  config_error_init(&err);
+  res = dsp_config_parse_json(json_aux, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_EQ(FADER_AUX2, config->filters[0].filter.parameters.loudness.fader);
+  dsp_config_free(config);
+
+  // 3. Loudness with invalid fader -> rejected
+  const char* json_bad =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"loud\": {\"type\": \"Loudness\", \"parameters\": "
+      "{\"reference_level\": -20.0, \"fader\": \"Aux9\"}}\n"
+      "    }\n"
+      "}";
+  config_error_init(&err);
+  res = dsp_config_parse_json(json_bad, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_TRUE(strstr(err.message, "unknown variant 'Aux9'") != NULL);
+}
+
+TEST(Biquad_WidthFieldPrecedence_QOverSlope) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"filters\": {\n"
+      "        \"shelf\": {\"type\": \"Biquad\", \"parameters\": {\"type\": "
+      "\"Highshelf\", \"freq\": 1000.0, \"gain\": 3.0, \"q\": 0.707, "
+      "\"slope\": 1.5}}\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_EQ(1, config->filters_count);
+  ASSERT_EQ(STEEPNESS_TYPE_Q,
+            config->filters[0].filter.parameters.biquad.steepness_type);
+  ASSERT_NEAR(0.707, config->filters[0].filter.parameters.biquad.q, 1e-4);
+  dsp_config_free(config);
+}
+
+TEST(Pipeline_EmptyNamesList_AcceptedAsNoOp) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"pipeline\": [\n"
+      "        {\"type\": \"Filter\", \"channels\": [0, 1], \"names\": []}\n"
+      "    ]\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_EQ(1, config->pipeline_count);
+  ASSERT_TRUE(config->pipeline[0].has_names);
+  ASSERT_EQ(0, config->pipeline[0].names_count);
+
+  // Validation must pass (no-op filter step matching upstream)
+  res = dsp_config_validate(config, &err);
+  ASSERT_EQ(0, res);
+  dsp_config_free(config);
+}
+
+TEST(Devices_TargetLevelZero_PreservedAndNegativeRejected) {
+  // 1. target_level: 0 is explicitly preserved
+  const char* json_zero =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"target_level\": 0,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json_zero, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_TRUE(config->devices.has_target_level);
+  ASSERT_EQ(0, config->devices.target_level);
+  dsp_config_free(config);
+
+  // 2. target_level: -10 is strictly rejected
+  const char* json_neg =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"target_level\": -10,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    }\n"
+      "}";
+  config_error_init(&err);
+  res = dsp_config_parse_json(json_neg, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_TRUE(strstr(err.message, "must be a non-negative integer") != NULL);
+}
+
+TEST(Processor_Definition_Requires_Type_And_Params) {
+  // Missing 'type' field in processor definition
+  const char* json_no_type =
+      "{\n"
+      "    \"devices\": {\"samplerate\": 44100, \"chunksize\": 1024, "
+      "\"capture\": {\"type\": \"RawFile\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}, "
+      "\"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}},\n"
+      "    \"processors\": {\"my_proc\": {\"parameters\": {}}}\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json_no_type, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_TRUE(strstr(err.message, "missing or non-string 'type'") != NULL);
+
+  // Missing 'parameters' field in processor definition
+  const char* json_no_params =
+      "{\n"
+      "    \"devices\": {\"samplerate\": 44100, \"chunksize\": 1024, "
+      "\"capture\": {\"type\": \"RawFile\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}, "
+      "\"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}},\n"
+      "    \"processors\": {\"my_proc\": {\"type\": \"Compressor\"}}\n"
+      "}";
+  config_error_init(&err);
+  res = dsp_config_parse_json(json_no_params, &config, &err);
+  ASSERT_NE(0, res);
+  ASSERT_TRUE(strstr(err.message, "missing 'parameters' object") != NULL);
+}
+
+TEST(Devices_Queuelimit_LargeValuesAccepted) {
+  const char* json =
+      "{\n"
+      "    \"devices\": {\n"
+      "        \"samplerate\": 44100,\n"
+      "        \"chunksize\": 1024,\n"
+      "        \"queuelimit\": 2000,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    }\n"
+      "}";
+  dsp_config_t* config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json, &config, &err);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  ASSERT_TRUE(config->devices.has_queuelimit);
+  ASSERT_EQ(2000, config->devices.queuelimit);
+  dsp_config_free(config);
 }
 
 TEST_MAIN()

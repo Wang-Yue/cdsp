@@ -3,11 +3,11 @@
 #if defined(ENABLE_ASIO)
 
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <windows.h>
 
 #include "Backend/asio_backend.h"
 #include "Backend/asio_types.h"
@@ -93,14 +93,20 @@ static audio_device_descriptor_t* probe_device_capabilities(
   chan_info.channel = 0;
   chan_info.isInput = is_capture ? ASIOTrue : ASIOFalse;
   if (iasio->lpVtbl->getChannelInfo(iasio, &chan_info) != 0) {
-    chan_info.isInput = is_capture ? ASIOFalse : ASIOTrue;
-    chan_info.channel = 0;
-    iasio->lpVtbl->getChannelInfo(iasio, &chan_info);
+    if (err) {
+      const char* direction_name = is_capture ? "capture" : "playback";
+      char msg[512];
+      snprintf(msg, sizeof(msg),
+               "Failed to get %s channel info for ASIO device '%s'",
+               direction_name, target_dev_name);
+      device_error_init(err, DEVICE_ERROR_OTHER, msg);
+    }
+    asio_driver_teardown(target_dev_name);
+    return NULL;
   }
 
   asio_sample_format_t sample_fmt = asio_sample_type_to_format(chan_info.type);
-  const char* fmt_str = asio_format_to_str(sample_fmt);
-  if (!fmt_str) {
+  if (sample_fmt == ASIO_SAMPLE_FORMAT_INVALID) {
     if (err) {
       const char* direction_name = is_capture ? "capture" : "playback";
       char msg[512];
@@ -112,6 +118,7 @@ static audio_device_descriptor_t* probe_device_capabilities(
     asio_driver_teardown(target_dev_name);
     return NULL;
   }
+  const char* fmt_str = asio_format_to_str(sample_fmt);
 
   // 3. Check whether Native DSD is supported by the ASIO driver and probe DSD
   // rates in DSD mode
@@ -251,8 +258,8 @@ typedef struct asio_probe_thread_ctx {
 
 static DWORD WINAPI asio_probe_thread_proc(LPVOID param) {
   asio_probe_thread_ctx_t* ctx = (asio_probe_thread_ctx_t*)param;
-  ctx->desc =
-      probe_device_capabilities(ctx->target_dev_name, ctx->is_capture, &ctx->err);
+  ctx->desc = probe_device_capabilities(ctx->target_dev_name, ctx->is_capture,
+                                        &ctx->err);
   return 0;
 }
 
@@ -260,14 +267,16 @@ static DWORD WINAPI asio_probe_thread_proc(LPVOID param) {
  * @brief Probe an ASIO device for its capabilities on a dedicated thread.
  * Matches CamillaDSP device.rs:get_device_capabilities.
  *
- * The work runs on a thread of its own so that it always starts from a clean COM
- * apartment. Capability requests arrive on the websocket connection thread, which is
- * shared with the other backends, and Wasapi probing puts that thread in an MTA. An ASIO
- * instance cannot be created from there: COM would have to marshal the interface back to
- * the caller's apartment, ASIO interfaces cannot be marshalled at all, and the creation
- * fails with E_NOINTERFACE. A fresh thread gets the STA the driver expects.
+ * The work runs on a thread of its own so that it always starts from a clean
+ * COM apartment. Capability requests arrive on the websocket connection thread,
+ * which is shared with the other backends, and Wasapi probing puts that thread
+ * in an MTA. An ASIO instance cannot be created from there: COM would have to
+ * marshal the interface back to the caller's apartment, ASIO interfaces cannot
+ * be marshalled at all, and the creation fails with E_NOINTERFACE. A fresh
+ * thread gets the STA the driver expects.
  *
- * The driver is loaded and released within the probe, so no instance outlives the thread.
+ * The driver is loaded and released within the probe, so no instance outlives
+ * the thread.
  */
 audio_device_descriptor_t* asio_capabilities_describe(const char* device_name,
                                                       bool is_capture,

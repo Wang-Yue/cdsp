@@ -124,11 +124,7 @@ static void calculate_envelope(lookahead_gain_t* lg, const double* detection,
   }
 
   for (size_t i = 0; i < len; i++) {
-    if (lg->release_gain <= 1e-12 || !isfinite(lg->release_gain)) {
-      lg->release_gain = 1e-12;
-    }
     lg->release_gain = pow(lg->release_gain, lg->release_coeff);
-    if (lg->release_gain > 1.0) lg->release_gain = 1.0;
 
     if (lg->gain[i] < lg->release_gain) {
       lg->release_gain = lg->gain[i];
@@ -159,10 +155,10 @@ static int lookahead_limiter_config_validate(const filter_config_t* config,
       &config->parameters.lookahead_limiter;
   if (!params) return 0;
 
-  if (!isfinite(params->limit)) {
+  if (isnan(params->limit) || params->limit == INFINITY) {
     if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Limit must be a finite decibel value.");
+                       "Limit must not be NaN or +inf.");
     }
     return -1;
   }
@@ -273,6 +269,15 @@ static void lookahead_gain_free_common(void* instance) {
  * @brief Transfers running envelope states and circular history buffers from
  * src to dest.
  *
+ * The lookahead window is then padded with `attack_samples` of silence, exactly
+ * as upstream does in `LookaheadGain::set_parameters`
+ * (camilladsp/src/filters/lookahead_limiter.rs). The retained samples were
+ * captured under the previous attack time, so a longer window would otherwise
+ * pull in stale peaks and duck audio that no longer needs it. The older tail of
+ * the ring is still carried over; it is behind the window and only becomes
+ * relevant if the ring is re-read, but keeping it mirrors upstream's
+ * `push_overwrite` semantics.
+ *
  * @param dest_ptr Pointer to destination lookahead gain instance.
  * @param src_ptr Pointer to source lookahead gain instance.
  */
@@ -305,6 +310,15 @@ static void lookahead_gain_transfer_state_common(void* dest_ptr,
     }
     dest->history_read_idx = 0;
     dest->history_write_idx = 0;
+
+    // Flush the lookahead window with silence. `lookahead_window_get` reads
+    // exactly the newest `attack_samples` entries, so pushing that many zeros
+    // clears the whole window. `attack_samples` is validated to be at most one
+    // second and the capacity is at least the sample rate, so this cannot wrap
+    // past the start of the ring.
+    for (int i = 0; i < dest->attack_samples; i++) {
+      history_push(dest, 0.0);
+    }
   }
 }
 

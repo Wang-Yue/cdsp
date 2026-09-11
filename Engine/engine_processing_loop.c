@@ -71,6 +71,7 @@ struct engine_processing_loop {
   void* on_chunk_processed_ctx;
   bool is_realtime;
   uint64_t processed_drop_counter;
+  size_t overloaded_chunks;
 };
 
 #include "Engine/thread_priority.h"
@@ -247,6 +248,17 @@ static void processing_loop_record_metrics(engine_processing_loop_t* loop,
           ((double)(pipe_end - pipe_start) / (double)chunk_duration_ns) * 100.0;
       processing_parameters_set_processing_load(loop->processing_params,
                                                 p_load);
+
+      if (p_load > 100.0) {
+        loop->overloaded_chunks++;
+        if (loop->overloaded_chunks == 10) {
+          logger_warn(&g_logger,
+                      "DSP pipeline is overloaded (load > 100%% for 10 "
+                      "consecutive chunks)");
+        }
+      } else {
+        loop->overloaded_chunks = 0;
+      }
 
       if (loop->resampler) {
         double r_load =

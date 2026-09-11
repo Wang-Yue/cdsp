@@ -56,7 +56,9 @@ typedef struct {
   uint64_t last_pb_peak_time;
   uint64_t last_pb_rms_time;
 
+  bool is_websocket;
   bool state_subscribed;
+  char last_state[64];
   bool vu_subscribed;
   bool signal_levels_subscribed;
   char signal_levels_side[16];
@@ -80,6 +82,17 @@ typedef struct {
   float* vu_cap_peak;
   size_t vu_pb_channels;
   size_t vu_cap_channels;
+
+  uint64_t last_pb_generation;
+  uint64_t last_cap_generation;
+  bool vu_pending_publish;
+  uint64_t last_sig_pb_generation;
+  uint64_t last_sig_cap_generation;
+
+  char* frag_buf;
+  size_t frag_len;
+  size_t frag_cap;
+  uint8_t frag_opcode;
 } client_session_t;
 
 struct websocket_server {

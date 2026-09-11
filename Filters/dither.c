@@ -15,6 +15,7 @@ struct noise_shaper {
   double* buffer;
   size_t filter_count;
   size_t write_index;
+  size_t num_items;
 };
 
 struct dither_filter {
@@ -24,7 +25,7 @@ struct dither_filter {
   double amplitude;
   noise_shaper_t* shaper;
   double previous_sample;
-  uint32_t rng_state;
+  uint64_t rng_state[4];
 };
 
 typedef struct dither_filter dither_filter_t;
@@ -56,6 +57,7 @@ static noise_shaper_t* noise_shaper_create(const double* filter_coeffs,
   memcpy(shaper->filter, filter_coeffs, count * sizeof(double));
   shaper->filter_count = count;
   shaper->write_index = 0;
+  shaper->num_items = 0;
   return shaper;
 }
 
@@ -64,11 +66,12 @@ static double noise_shaper_process(noise_shaper_t* shaper, double scaled,
   if (!shaper || shaper->filter_count == 0) return round(scaled + dither);
   double filt_buf = 0.0;
   size_t count = shaper->filter_count;
+  size_t n = shaper->num_items;
   // Apply feedback filter to past quantization errors stored in the circular
-  // buffer. The buffer stores [error[n-count], ..., error[n-1]]. The filter
-  // coefficients are applied in reverse order.
-  for (size_t i = 0; i < count; i++) {
-    size_t buf_idx = (shaper->write_index + i) % count;
+  // buffer. Upstream's LocalRb starts empty, pairing the first n stored errors
+  // with filter[count-1] down to filter[count-n] as the ring buffer fills.
+  for (size_t i = 0; i < n; i++) {
+    size_t buf_idx = (shaper->write_index + count - n + i) % count;
     size_t coeff_idx = count - 1 - i;
     filt_buf += shaper->filter[coeff_idx] * shaper->buffer[buf_idx];
   }
@@ -85,6 +88,9 @@ static double noise_shaper_process(noise_shaper_t* shaper, double scaled,
   // Save error in circular buffer and advance write index.
   shaper->buffer[shaper->write_index] = error;
   shaper->write_index = (shaper->write_index + 1) % count;
+  if (shaper->num_items < count) {
+    shaper->num_items++;
+  }
   return result_r;
 }
 
@@ -351,35 +357,35 @@ static noise_shaper_t* noise_shaper_create_for_type(dither_type_t type) {
 
 // MARK: - Ditherers
 /**
- * @brief Generates a pseudo-random 32-bit unsigned integer using XORShift.
- *
- * XORShift is a class of pseudorandom number generators that are simple and
- * fast.
- *
- * @param state Pointer to the 32-bit seed state.
- * @return A pseudo-random 32-bit integer.
+ * @brief Left rotate 64-bit unsigned integer.
  */
-static inline uint32_t xorshift32(uint32_t* state) {
-  uint32_t x = *state;
-  x ^= x << 13;
-  x ^= x >> 17;
-  x ^= x << 5;
-  *state = x;
-  return x;
+static inline uint64_t xoshiro_rotl(const uint64_t x, int k) {
+  return (x << k) | (x >> (64 - k));
+}
+
+/**
+ * @brief Generates a pseudo-random 64-bit integer using Xoshiro256++.
+ * Matches upstream CamillaDSP SmallRng (xoshiro256++).
+ */
+static inline uint64_t xoshiro256plusplus(uint64_t s[4]) {
+  const uint64_t result = xoshiro_rotl(s[0] + s[3], 23) + s[0];
+  const uint64_t t = s[1] << 17;
+  s[2] ^= s[0];
+  s[3] ^= s[1];
+  s[1] ^= s[2];
+  s[0] ^= s[3];
+  s[2] ^= t;
+  s[3] = xoshiro_rotl(s[3], 45);
+  return result;
 }
 
 /**
  * @brief Generates a pseudo-random double value uniformly distributed in [0,
- * 1].
- *
- * Uses xorshift32 and scales the output.
- *
- * @param state Pointer to the RNG state.
- * @return A double between 0.0 and 1.0.
+ * 1). Uses upper 53 bits for standard IEEE 754 double precision floating point.
  */
-static inline double sample_rng_0_1(uint32_t* state) {
-  uint32_t val = xorshift32(state);
-  return (double)val / (double)4294967295.0;  // 2^32 - 1
+static inline double sample_rng_0_1(uint64_t state[4]) {
+  uint64_t val = xoshiro256plusplus(state);
+  return (double)(val >> 11) * (1.0 / 9007199254740992.0);
 }
 
 /**
@@ -404,7 +410,7 @@ static double sample_dither(dither_filter_t* filter) {
   if (filter->type == DITHER_TYPE_HIGHPASS) {
     // Generate high-pass TPDF dither by subtracting previous rectangular dither
     // sample from the current rectangular dither sample.
-    double u = sample_rng_0_1(&filter->rng_state);
+    double u = sample_rng_0_1(filter->rng_state);
     double new_sample = (2.0 * u - 1.0) * half_amp;
     double high_passed = new_sample - filter->previous_sample;
     filter->previous_sample = new_sample;
@@ -413,7 +419,7 @@ static double sample_dither(dither_filter_t* filter) {
     // FLAT and all noise-shaping types use flat TPDF dither.
     // Generate TPDF dither using inverse transform sampling on [a, b] with peak
     // at c.
-    double u = sample_rng_0_1(&filter->rng_state);
+    double u = sample_rng_0_1(filter->rng_state);
     double a = -half_amp;
     double b = half_amp;
     double c = 0.0;
@@ -461,7 +467,14 @@ static int dither_config_validate(const filter_config_t* config,
     return -1;
   }
 
-  if (params->type == DITHER_TYPE_FLAT && params->has_amplitude) {
+  if (params->type == DITHER_TYPE_FLAT) {
+    if (!params->has_amplitude) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Dither amplitude is required for Flat dither");
+      }
+      return -1;
+    }
     if (params->amplitude < 0.0) {
       if (err) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
@@ -513,30 +526,41 @@ static void* dither_filter_create(const char* name,
     strcpy(filter->name, "dither");
   }
 
-  uint32_t seed = 0;
+  bool seeded = false;
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
-  seed = arc4random();
+  arc4random_buf(filter->rng_state, sizeof(filter->rng_state));
+  seeded = (filter->rng_state[0] | filter->rng_state[1] | filter->rng_state[2] |
+            filter->rng_state[3]) != 0;
 #else
   FILE* urandom = fopen("/dev/urandom", "rb");
   if (urandom) {
-    if (fread(&seed, sizeof(seed), 1, urandom) != 1) {
-      seed = 0;
+    if (fread(filter->rng_state, sizeof(uint64_t), 4, urandom) == 4) {
+      seeded = (filter->rng_state[0] | filter->rng_state[1] |
+                filter->rng_state[2] | filter->rng_state[3]) != 0;
     }
     fclose(urandom);
   }
 #endif
-  if (seed == 0) {
-    uint32_t hash = 5381;
+  if (!seeded) {
+    uint64_t sm_seed = 0x853c49e6748fea9bULL;
     if (name) {
       for (const char* p = name; *p; p++) {
-        hash = (hash * 33u) + (uint8_t)*p;
+        sm_seed = (sm_seed * 1099511628211ULL) ^ (uint8_t)*p;
       }
     }
-    uintptr_t addr = (uintptr_t)filter;
-    hash ^= (uint32_t)(addr ^ (addr >> 32));
-    seed = (hash != 0) ? hash : 123456789U;
+    sm_seed ^= (uintptr_t)filter;
+    if (sm_seed == 0) sm_seed = 0x123456789abcdef0ULL;
+    for (int i = 0; i < 4; i++) {
+      uint64_t z = (sm_seed += 0x9e3779b97f4a7c15ULL);
+      z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+      z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+      filter->rng_state[i] = z ^ (z >> 31);
+    }
+    if ((filter->rng_state[0] | filter->rng_state[1] | filter->rng_state[2] |
+         filter->rng_state[3]) == 0) {
+      filter->rng_state[0] = 1;
+    }
   }
-  filter->rng_state = seed;
 
   int bits = params ? params->bits : 16;
   dither_type_t dither_type = params ? params->type : DITHER_TYPE_NONE;
@@ -593,38 +617,57 @@ static void dither_filter_process(void* instance, mutable_waveform_t waveform,
   }
 }
 
+/**
+ * @brief Transfers the quantization error history between two noise shapers.
+ *
+ * Resize invariant: the buffer holds past quantization errors that the feedback
+ * kernel weights by age, so a kernel of a different length re-interprets every
+ * tap. Callers gate on the dither type (which fixes both the length and the
+ * coefficients); this length check is the defensive backstop.
+ *
+ * @param dest The destination noise shaper.
+ * @param src The source noise shaper.
+ */
 static void noise_shaper_transfer_state(noise_shaper_t* dest,
                                         const noise_shaper_t* src) {
   if (!dest || !src || dest == src) return;
-  if (dest->buffer && dest->filter_count > 0 && src->buffer &&
-      src->filter_count > 0) {
-    size_t dest_fc = dest->filter_count;
-    size_t src_fc = src->filter_count;
-    size_t copy_len = dest_fc < src_fc ? dest_fc : src_fc;
+  if (!dest->buffer || !src->buffer || dest->filter_count == 0) return;
+  if (dest->filter_count != src->filter_count) return;
 
-    memset(dest->buffer, 0, dest_fc * sizeof(double));
-
-    size_t src_start_idx = src->write_index;
-    if (src_fc > copy_len) {
-      src_start_idx = (src->write_index + src_fc - copy_len) % src_fc;
-    }
-    size_t dest_start_idx = dest_fc - copy_len;
-
-    for (size_t i = 0; i < copy_len; i++) {
-      size_t src_idx = (src_start_idx + i) % src_fc;
-      size_t dest_idx = dest_start_idx + i;
-      dest->buffer[dest_idx] = src->buffer[src_idx];
-    }
-    dest->write_index = 0;
-  }
+  memcpy(dest->buffer, src->buffer, dest->filter_count * sizeof(double));
+  dest->write_index = src->write_index;
+  dest->num_items = src->num_items;
 }
 
+/**
+ * @brief Transfers dither state from src to dest.
+ *
+ * The RNG is a stream position rather than a signal state, so it is always
+ * carried: reseeding on every reload would restart the noise sequence. The
+ * error-feedback history and the highpass dither's previous sample are both
+ * expressed in LSB units of one specific bit depth and shaped by one specific
+ * kernel, so they are carried only while the dither type and the quantization
+ * scale are unchanged. Otherwise dest keeps the zeroed state it was created
+ * with, which costs at most a few samples of unshaped dither.
+ *
+ * @param dest_ptr Pointer to the destination dither filter instance.
+ * @param src_ptr Pointer to the source dither filter instance.
+ */
 static void dither_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   dither_filter_t* dest = (dither_filter_t*)dest_ptr;
   const dither_filter_t* src = (const dither_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
+
+  memcpy(dest->rng_state, src->rng_state, sizeof(dest->rng_state));
+
+  // Exact comparison is intended: both sides are recomputed from the same
+  // config expression, so any difference at all means the scale changed.
+  if (dest->type != src->type || dest->scalefact != src->scalefact ||
+      dest->amplitude != src->amplitude) {
+    return;
+  }
+
   dest->previous_sample = src->previous_sample;
-  dest->rng_state = src->rng_state;
   if (dest->shaper && src->shaper) {
     noise_shaper_transfer_state(dest->shaper, src->shaper);
   }

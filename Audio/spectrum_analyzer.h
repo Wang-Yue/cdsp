@@ -64,6 +64,14 @@ spectrum_analyzer_t* spectrum_analyzer_create(void);
 void spectrum_analyzer_free(spectrum_analyzer_t* analyzer);
 
 /**
+ * @brief Get the current FFT length of the spectrum analyzer.
+ *
+ * @param analyzer Pointer to the spectrum analyzer.
+ * @return Current FFT size in samples, or 0 if analyzer is NULL.
+ */
+size_t spectrum_analyzer_get_fft_n(const spectrum_analyzer_t* analyzer);
+
+/**
  * @brief Compute a spectrum on demand (consumer side).
  *
  * This function extracts audio data from the provided history buffer for the

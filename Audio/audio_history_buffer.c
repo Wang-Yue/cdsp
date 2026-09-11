@@ -15,6 +15,7 @@
 struct audio_history_buffer {
   size_t channels;
   size_t capacity;
+  _Atomic bool enabled;
   _Atomic uint64_t write_pos __attribute__((aligned(64)));
   _Atomic uint64_t total_written __attribute__((aligned(64)));
   _Atomic uint64_t write_seq __attribute__((aligned(64)));
@@ -116,11 +117,24 @@ audio_history_buffer_t* audio_history_buffer_create(void) {
   if (history) {
     memset(history, 0, sizeof(audio_history_buffer_t));
     history->capacity = AUDIO_HISTORY_BUFFER_CAPACITY;
+    atomic_init(&history->enabled, true);
     atomic_init(&history->write_pos, 0);
     atomic_init(&history->total_written, 0);
     atomic_init(&history->write_seq, 0);
   }
   return history;
+}
+
+void audio_history_buffer_set_enabled(audio_history_buffer_t* history,
+                                      bool enabled) {
+  if (history) {
+    atomic_store_explicit(&history->enabled, enabled, memory_order_relaxed);
+  }
+}
+
+bool audio_history_buffer_is_enabled(const audio_history_buffer_t* history) {
+  return history ? atomic_load_explicit(&history->enabled, memory_order_relaxed)
+                 : false;
 }
 
 static void audio_history_buffer_clear_internal(
@@ -168,6 +182,7 @@ void audio_history_buffer_free(audio_history_buffer_t* history) {
 void audio_history_buffer_append(audio_history_buffer_t* history,
                                  const audio_chunk_t* chunk) {
   if (!history || !chunk) return;
+  if (!atomic_load_explicit(&history->enabled, memory_order_relaxed)) return;
   size_t n_frames = audio_chunk_get_valid_frames(chunk);
   size_t n_ch = audio_chunk_get_channels(chunk);
   if (n_frames == 0 || n_ch == 0) return;
@@ -214,7 +229,8 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
     const audio_history_buffer_t* history, float* dest, size_t count,
     const size_t* channel, bool* enough_data) {
   if (enough_data) *enough_data = false;
-  if (!history || history->channels == 0 || !history->data) {
+  if (!history) return AUDIO_HISTORY_BUFFER_ERROR_EMPTY;
+  if (history->channels == 0 || !history->data) {
     return AUDIO_HISTORY_BUFFER_ERROR_EMPTY;
   }
   if (channel && *channel >= history->channels) {

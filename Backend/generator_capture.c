@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "Audio/audio_chunk.h"
@@ -284,6 +285,7 @@ static void generator_capture_set_is_paused(void* ctx, bool paused) {
 static capture_backend_t* generator_capture_create(
     const capture_device_config_t* config, int sample_rate, int chunk_size,
     bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+  (void)chunk_size;
   (void)full_duplex;
   (void)params;
   (void)err;
@@ -306,8 +308,19 @@ static capture_backend_t* generator_capture_create(
 
   capture->sample_rate = sample_rate;
   capture->channels = config->cfg.generator.channels;
-  capture->chunk_size = chunk_size;
-  capture->rand_seed = (unsigned int)(get_time_ns() & 0xFFFFFFFF);
+  unsigned int seed = (unsigned int)(get_time_ns() & 0xFFFFFFFF);
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+  seed = (unsigned int)arc4random();
+#elif !defined(_WIN32)
+  FILE* urandom = fopen("/dev/urandom", "rb");
+  if (urandom) {
+    if (fread(&seed, sizeof(seed), 1, urandom) != 1) {
+      // Keep get_time_ns fallback
+    }
+    fclose(urandom);
+  }
+#endif
+  capture->rand_seed = seed;
 
   capture_backend_t* backend =
       (capture_backend_t*)calloc(1, sizeof(capture_backend_t));

@@ -251,6 +251,14 @@ struct dsp_engine {
   bool (*get_vu_levels)(void* ctx, vu_levels_t* out_vu);
 
   /**
+   * @brief Query chunk generation counter for capture or playback.
+   * @param ctx Pointer to internal engine context.
+   * @param is_capture true for capture, false for playback.
+   * @return Chunk generation sequence number.
+   */
+  uint64_t (*get_chunk_generation)(void* ctx, bool is_capture);
+
+  /**
    * @brief Fetch active RMS or peak signal levels since a timestamp cutoff
    * (WebSocket: GetCaptureSignalPeakSince, GetPlaybackSignalRmsSince, etc.).
    * @param ctx Pointer to internal engine context.

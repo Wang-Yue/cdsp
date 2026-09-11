@@ -62,18 +62,45 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
       return -1;
     }
 
+    if (step->type == PIPELINE_STEP_TYPE_MIXER ||
+        step->type == PIPELINE_STEP_TYPE_PROCESSOR) {
+      static const char* const allowed_named_step_keys[] = {
+          "type", "name", "bypassed", "description", NULL};
+      if (validate_unknown_fields(step_obj, allowed_named_step_keys,
+                                  step->type == PIPELINE_STEP_TYPE_MIXER
+                                      ? "Mixer pipeline step"
+                                      : "Processor pipeline step",
+                                  err) != 0) {
+        return -1;
+      }
+    }
+
     step->has_name =
         parse_json_str(step_obj, "name", step->name, sizeof(step->name));
-    step->has_channel = parse_json_size_t(step_obj, "channel", &step->channel);
+    if (parse_json_size_t_strict(step_obj, "channel", "pipeline step",
+                                 &step->channel, &step->has_channel,
+                                 err) != 0) {
+      return -1;
+    }
     parse_json_bool(step_obj, "bypassed", &step->bypassed);
 
     cJSON* names_arr = cJSON_GetObjectItemCaseSensitive(step_obj, "names");
+    if (names_arr && cJSON_IsArray(names_arr)) {
+      step->has_names = true;
+    }
     bool dummy;
     parse_labels_array(names_arr, &step->names, &step->names_count, &dummy);
 
     cJSON* channels_arr =
         cJSON_GetObjectItemCaseSensitive(step_obj, "channels");
-    step->channels = parse_size_t_array(channels_arr, &step->channels_count);
+    if (channels_arr) {
+      step->has_channels = true;
+      if (parse_size_t_array_strict(channels_arr, "channels", "pipeline step",
+                                    &step->channels, &step->channels_count,
+                                    err) != 0) {
+        return -1;
+      }
+    }
   }
   return 0;
 }

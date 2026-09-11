@@ -138,6 +138,56 @@ TEST(SampleConversion_Utilities) {
   ASSERT_NEAR(0.0, pcm_clamp_sample(NAN), 1e-15);
 }
 
+TEST(SampleConversion_ExplicitLittleEndianBytes) {
+  // S16 Little-Endian
+  uint8_t s16_buf[2];
+  pcm_sample_encode_s16_bytes(1.0, s16_buf);
+  ASSERT_EQ(0xFF, s16_buf[0]);
+  ASSERT_EQ(0x7F, s16_buf[1]);
+  ASSERT_NEAR(32767.0 / 32768.0, pcm_sample_decode_s16_bytes(s16_buf), 1e-6);
+
+  pcm_sample_encode_s16_bytes(-1.0, s16_buf);
+  ASSERT_EQ(0x00, s16_buf[0]);
+  ASSERT_EQ(0x80, s16_buf[1]);
+  ASSERT_NEAR(-1.0, pcm_sample_decode_s16_bytes(s16_buf), 1e-6);
+
+  // S32 Little-Endian
+  uint8_t s32_buf[4];
+  pcm_sample_encode_s32_bytes(1.0, s32_buf);
+  ASSERT_EQ(0xFF, s32_buf[0]);
+  ASSERT_EQ(0xFF, s32_buf[1]);
+  ASSERT_EQ(0xFF, s32_buf[2]);
+  ASSERT_EQ(0x7F, s32_buf[3]);
+  ASSERT_NEAR(2147483647.0 / 2147483648.0, pcm_sample_decode_s32_bytes(s32_buf),
+              1e-9);
+
+  pcm_sample_encode_s32_bytes(-1.0, s32_buf);
+  ASSERT_EQ(0x00, s32_buf[0]);
+  ASSERT_EQ(0x00, s32_buf[1]);
+  ASSERT_EQ(0x00, s32_buf[2]);
+  ASSERT_EQ(0x80, s32_buf[3]);
+  ASSERT_NEAR(-1.0, pcm_sample_decode_s32_bytes(s32_buf), 1e-9);
+
+  // F32 Little-Endian (1.0f = 0x3F800000)
+  uint8_t f32_buf[4];
+  pcm_sample_encode_f32_bytes(1.0, f32_buf);
+  ASSERT_EQ(0x00, f32_buf[0]);
+  ASSERT_EQ(0x00, f32_buf[1]);
+  ASSERT_EQ(0x80, f32_buf[2]);
+  ASSERT_EQ(0x3F, f32_buf[3]);
+  ASSERT_NEAR(1.0, pcm_sample_decode_f32_bytes(f32_buf), 1e-7);
+
+  // F64 Little-Endian (1.0 = 0x3FF0000000000000)
+  uint8_t f64_buf[8];
+  pcm_sample_encode_f64_bytes(1.0, f64_buf);
+  for (int i = 0; i < 6; i++) {
+    ASSERT_EQ(0x00, f64_buf[i]);
+  }
+  ASSERT_EQ(0xF0, f64_buf[6]);
+  ASSERT_EQ(0x3F, f64_buf[7]);
+  ASSERT_NEAR(1.0, pcm_sample_decode_f64_bytes(f64_buf), 1e-15);
+}
+
 TEST(SampleConversion_DSD_U8_RoundTrip) {
   double samples[] = {-0.5, 0.0, 0.5};
   for (size_t i = 0; i < 3; i++) {
@@ -249,6 +299,70 @@ TEST(AudioChunk_InterleavedRoundTrip) {
 
   audio_chunk_free(src_chunk);
   audio_chunk_free(dst_chunk);
+}
+
+// Bit-exact vectors taken from upstream CamillaDSP's own unit tests in
+// src/utils/conversions.rs (to_buffer_int16, to_buffer_int24_3,
+// to_buffer_int24_4). Integer encoding truncates toward zero (S16/S32) and
+// floors (S24), so 0.1 must land on 0x0CCC and not on 0x0CCD.
+TEST(SampleConversion_UpstreamVectors_S16) {
+  ASSERT_EQ((int16_t)0x0CCC, pcm_sample_encode_s16(0.1));
+
+  uint8_t buf[2];
+  pcm_sample_encode_s16_bytes(0.1, buf);
+  ASSERT_EQ(0xCC, buf[0]);
+  ASSERT_EQ(0x0C, buf[1]);
+}
+
+TEST(SampleConversion_UpstreamVectors_S24) {
+  ASSERT_EQ(838860, pcm_sample_encode_s24(0.1));
+  ASSERT_EQ(-838861, pcm_sample_encode_s24(-0.1));
+
+  uint8_t buf3[3];
+  pcm_sample_encode_s24_3bytes(0.1, buf3);
+  ASSERT_EQ(0xCC, buf3[0]);
+  ASSERT_EQ(0xCC, buf3[1]);
+  ASSERT_EQ(0x0C, buf3[2]);
+  pcm_sample_encode_s24_3bytes(-0.1, buf3);
+  ASSERT_EQ(0x33, buf3[0]);
+  ASSERT_EQ(0x33, buf3[1]);
+  ASSERT_EQ(0xF3, buf3[2]);
+
+  uint8_t buf4[4];
+  pcm_sample_encode_s24_4_rj_bytes(0.1, buf4);
+  ASSERT_EQ(0xCC, buf4[0]);
+  ASSERT_EQ(0xCC, buf4[1]);
+  ASSERT_EQ(0x0C, buf4[2]);
+  ASSERT_EQ(0x00, buf4[3]);
+  pcm_sample_encode_s24_4_rj_bytes(-0.1, buf4);
+  ASSERT_EQ(0x33, buf4[0]);
+  ASSERT_EQ(0x33, buf4[1]);
+  ASSERT_EQ(0xF3, buf4[2]);
+  ASSERT_EQ(0x00, buf4[3]);
+}
+
+TEST(SampleConversion_UpstreamVectors_S32) {
+  ASSERT_EQ(0x0CCCCCCC, pcm_sample_encode_s32(0.1));
+  // Truncation is toward zero, so the negative side has the same magnitude
+  // (unlike the S24 path, which floors).
+  ASSERT_EQ(-0x0CCCCCCC, pcm_sample_encode_s32(-0.1));
+}
+
+// Truncation toward zero for S16/S32 is asymmetric around zero, while the S24
+// path floors. Pin both, since round-to-nearest would give different answers.
+TEST(SampleConversion_RoundingDirection) {
+  // 1.4 LSB: truncation keeps 1, round-to-nearest would also give 1.
+  ASSERT_EQ(1, pcm_sample_encode_s16(1.4 / 32768.0));
+  // 1.6 LSB: truncation keeps 1, round-to-nearest would give 2.
+  ASSERT_EQ(1, pcm_sample_encode_s16(1.6 / 32768.0));
+  // Negative side truncates toward zero, not down.
+  ASSERT_EQ(-1, pcm_sample_encode_s16(-1.6 / 32768.0));
+  ASSERT_EQ(1, pcm_sample_encode_s32(1.6 / 2147483648.0));
+  ASSERT_EQ(-1, pcm_sample_encode_s32(-1.6 / 2147483648.0));
+  // S24 is derived from the left-justified 32-bit value by an arithmetic
+  // shift, so it floors: negative values round away from zero.
+  ASSERT_EQ(1, pcm_sample_encode_s24(1.6 / 8388608.0));
+  ASSERT_EQ(-2, pcm_sample_encode_s24(-1.6 / 8388608.0));
 }
 
 TEST_MAIN()

@@ -246,6 +246,12 @@ typedef struct {
   void (*set_pitch)(void* ctx, double multiplier);
 
   /**
+   * @brief Drain remaining audio in the playback device upon end-of-stream.
+   * @param ctx Pointer to the backend instance context.
+   */
+  void (*drain)(void* ctx);
+
+  /**
    * @brief Stop the playback device immediately.
    * @param ctx Pointer to the backend instance context.
    */
@@ -466,6 +472,13 @@ bool playback_backend_pitch_control_supported(playback_backend_t* backend);
  * @param multiplier The pitch multiplier.
  */
 void playback_backend_set_pitch(playback_backend_t* backend, double multiplier);
+
+/**
+ * @brief Notify the playback backend to drain remaining audio upon
+ * end-of-stream.
+ * @param backend Pointer to the playback backend.
+ */
+void playback_backend_drain(playback_backend_t* backend);
 
 /**
  * @brief Stop the playback device via wrapper.

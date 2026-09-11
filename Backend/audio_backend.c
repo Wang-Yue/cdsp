@@ -287,6 +287,11 @@ void playback_backend_set_pitch(playback_backend_t* backend,
   backend->vtable->set_pitch(backend->ctx, multiplier);
 }
 
+void playback_backend_drain(playback_backend_t* backend) {
+  if (!backend || !backend->vtable || !backend->vtable->drain) return;
+  backend->vtable->drain(backend->ctx);
+}
+
 void playback_backend_stop(playback_backend_t* backend) {
   if (!backend || !backend->vtable || !backend->vtable->stop) return;
   backend->vtable->stop(backend->ctx);

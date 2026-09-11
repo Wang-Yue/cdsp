@@ -594,6 +594,14 @@ bool wasapi_initialize_stream(IAudioClient* client,
                               backend_error_t* err) {
   if (!client || !wfx) return false;
 
+  if (loopback && exclusive) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Loopback is not supported in exclusive mode");
+    }
+    return false;
+  }
+
   REFERENCE_TIME def_time = 0, min_time = 0;
   IAudioClient_GetDevicePeriod(client, &def_time, &min_time);
   if (out_def_period) {

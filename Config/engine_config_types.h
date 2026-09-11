@@ -139,9 +139,10 @@ typedef struct {
  * @brief Frequency spectrum data.
  */
 typedef struct {
-  float* frequencies; /**< Caller-allocated array of frequencies. */
-  float* magnitudes;  /**< Caller-allocated array of magnitudes. */
-  size_t count;       /**< Number of bins computed. */
+  float* frequencies;      /**< Caller-allocated array of frequencies. */
+  float* magnitudes;       /**< Caller-allocated array of magnitudes. */
+  size_t count;            /**< Number of bins computed. */
+  char error_message[128]; /**< Error message on failure. */
 } spectrum_t;
 
 /**
@@ -599,6 +600,8 @@ typedef struct {
   bool has_format;                  /**< True if format is specified. */
   bool exclusive;                   /**< Use exclusive mode. */
   bool has_exclusive;               /**< True if exclusive is specified. */
+  int target_level;                 /**< Target buffer level in frames. */
+  bool has_target_level;            /**< True if target_level is specified. */
 } coreaudio_playback_config_t;
 #endif
 
@@ -672,6 +675,8 @@ typedef struct {
   bool has_node_group_name;   /**< True if node_group_name is specified. */
   char autoconnect_to[256];   /**< Node to automatically connect to. */
   bool has_autoconnect_to;    /**< True if autoconnect_to is specified. */
+  int target_level;           /**< Target buffer level in frames. */
+  bool has_target_level;      /**< True if target_level is specified. */
 } pipewire_playback_config_t;
 #endif
 

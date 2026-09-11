@@ -283,7 +283,7 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
   snd_pcm_stream_t stream =
       is_capture ? SND_PCM_STREAM_CAPTURE : SND_PCM_STREAM_PLAYBACK;
   snd_pcm_t* pcm = NULL;
-  int open_res = snd_pcm_open(&pcm, clean_dev, stream, SND_PCM_NONBLOCK);
+  int open_res = snd_pcm_open(&pcm, clean_dev, stream, 0);
   if (open_res < 0) {
     if (err) {
       if (open_res == -EBUSY) {

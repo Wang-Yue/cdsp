@@ -157,6 +157,28 @@ TEST(CoreAudioCapabilitiesUnified) {
   }
 }
 
+TEST(CoreAudioDeviceSampleRateValidation) {
+  ASSERT_FALSE(core_audio_device_is_sample_rate_supported(0, 48000.0));
+  ASSERT_FALSE(core_audio_device_is_sample_rate_supported(0, -48000.0));
+  ASSERT_FALSE(core_audio_device_is_sample_rate_supported(0, 0.0));
+
+  AudioDeviceID dev_id = core_audio_device_default_id(CORE_AUDIO_SCOPE_OUTPUT);
+  if (dev_id != kAudioObjectUnknown) {
+    // Outrageous sample rate should be rejected by device available ranges
+    ASSERT_FALSE(core_audio_device_is_sample_rate_supported(dev_id, 9999999.0));
+  }
+}
+
+TEST(CoreAudioHogModeAndFormatSettle) {
+  // device_id == 0 should safely no-op / return false without crashing
+  core_audio_device_release_hog_mode(0);
+  ASSERT_FALSE(core_audio_device_acquire_hog_mode(0));
+
+  // Requesting an impossible physical format on device 0 should fail cleanly
+  ASSERT_FALSE(core_audio_device_set_matching_physical_format(
+      0, CORE_AUDIO_SCOPE_OUTPUT, 48000.0, "S32", 2));
+}
+
 #elif defined(ENABLE_ALSA)
 #include <alsa/asoundlib.h>
 
@@ -312,6 +334,15 @@ TEST(AllCases) {
     }
   }
   ASSERT_EQ(7, count);
+}
+
+#include "Backend/asio_capabilities.h"
+
+TEST(ASIOCapabilitiesNonExistentDevice) {
+  device_error_t err;
+  audio_device_descriptor_t* desc =
+      asio_capabilities_describe("NonExistentAsioDevice12345", false, &err);
+  ASSERT_TRUE(desc == NULL);
 }
 
 #endif

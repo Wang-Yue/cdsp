@@ -105,7 +105,7 @@ bool cdsp_get_device_capabilities(const char* backend, const char* device,
   }
 
   snprintf(pub->name, sizeof(pub->name), "%s", desc->name);
-  pub->description[0] = '\0';  // Not used internally in C port
+  snprintf(pub->description, sizeof(pub->description), "%s", desc->name);
 
   pub->capability_sets_count = desc->capability_sets_count;
   if (desc->capability_sets_count > 0 && desc->capability_sets) {

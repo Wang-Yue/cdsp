@@ -51,6 +51,8 @@ struct file_capture {
   uint64_t total_bytes_read;
   size_t extra_samples;
   size_t extra_samples_generated;
+  int playback_sample_rate;
+  double resampling_ratio;
   uint8_t* raw_buf;
   size_t raw_buf_capacity;
   uint64_t last_read_time_ns;
@@ -109,10 +111,10 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
   }
 
   bool is_rf64 = false;
-  if (memcmp(header, "RF64", 4) == 0) {
+  if (memcmp(header, "RF64", 4) == 0 || memcmp(header, "BW64", 4) == 0) {
     is_rf64 = true;
   } else if (memcmp(header, "RIFF", 4) != 0) {
-    snprintf(err_msg, err_msg_len, "Not a RIFF or RF64 file");
+    snprintf(err_msg, err_msg_len, "Not a RIFF, RF64 or BW64 file");
     return false;
   }
 
@@ -134,15 +136,23 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
   uint32_t chunk_size;
 
   while (fread(chunk_id, 1, 4, f) == 4) {
-    if (fread(&chunk_size, 4, 1, f) != 1) {
+    uint8_t size_bytes[4];
+    if (fread(size_bytes, 1, 4, f) != 4) {
       break;
     }
+    chunk_size = (uint32_t)size_bytes[0] | ((uint32_t)size_bytes[1] << 8) |
+                 ((uint32_t)size_bytes[2] << 16) |
+                 ((uint32_t)size_bytes[3] << 24);
 
     if (memcmp(chunk_id, "ds64", 4) == 0) {
       if (chunk_size < 24) {
-        snprintf(err_msg, err_msg_len, "Invalid ds64 chunk size %u",
-                 chunk_size);
-        return false;
+        uint32_t skip = (chunk_size + 1) & ~1;
+        if (fseek_64(f, skip, SEEK_CUR) != 0) {
+          snprintf(err_msg, err_msg_len,
+                   "Failed to seek past short ds64 chunk");
+          return false;
+        }
+        continue;
       }
       uint8_t ds64_payload[24];
       if (fread(ds64_payload, 1, 24, f) != 24) {
@@ -158,15 +168,19 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
                        ((uint64_t)ds64_payload[15] << 56);
 
       if (chunk_size > 24) {
-        if (fseek_64(f, chunk_size - 24, SEEK_CUR) != 0) {
+        uint32_t remaining = chunk_size - 24;
+        uint32_t pad = (chunk_size & 1);
+        if (fseek_64(f, remaining + pad, SEEK_CUR) != 0) {
           snprintf(err_msg, err_msg_len, "Failed to seek past ds64 chunk");
           return false;
         }
       }
     } else if (memcmp(chunk_id, "fmt ", 4) == 0) {
       found_fmt = true;
-      if (chunk_size < 16) {
-        snprintf(err_msg, err_msg_len, "Invalid fmt chunk size %u", chunk_size);
+      if (chunk_size != 16 && chunk_size != 18 && chunk_size != 40) {
+        snprintf(err_msg, err_msg_len,
+                 "Invalid fmt chunk size %u (must be 16, 18, or 40)",
+                 chunk_size);
         return false;
       }
       uint8_t fmt_payload[40];
@@ -179,6 +193,7 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
       channels = fmt_payload[2] | (fmt_payload[3] << 8);
       sample_rate = fmt_payload[4] | (fmt_payload[5] << 8) |
                     (fmt_payload[6] << 16) | (fmt_payload[7] << 24);
+      uint16_t block_align = fmt_payload[12] | (fmt_payload[13] << 8);
       uint16_t bits_per_sample = fmt_payload[14] | (fmt_payload[15] << 8);
 
       if (audio_format != 1 && audio_format != 3 && audio_format != 0xFFFE) {
@@ -189,9 +204,17 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
       }
 
       if (audio_format == 0xFFFE) {
-        if (to_read < 26) {
+        if (chunk_size != 40) {
           snprintf(err_msg, err_msg_len,
-                   "fmt chunk too short for EXTENSIBLE format");
+                   "extended fmt chunk must be 40 bytes, got %u", chunk_size);
+          return false;
+        }
+        static const uint8_t guid_suffix[14] = {0x00, 0x00, 0x00, 0x00, 0x10,
+                                                0x00, 0x80, 0x00, 0x00, 0xAA,
+                                                0x00, 0x38, 0x9B, 0x71};
+        if (memcmp(&fmt_payload[26], guid_suffix, 14) != 0) {
+          snprintf(err_msg, err_msg_len,
+                   "Unsupported sub-format GUID in EXTENSIBLE");
           return false;
         }
         uint16_t sub_format = fmt_payload[24] | (fmt_payload[25] << 8);
@@ -206,24 +229,53 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
         }
       }
 
+      // The container size is decided by nBlockAlign, not by wBitsPerSample:
+      // 24 bits may be stored in either 3 or 4 bytes. Upstream (waveadapter's
+      // `look_up_format`) matches on the full
+      // (format code, bits, bytes per sample) tuple and rejects anything else,
+      // so inferring the stride from the bit depth alone silently mis-decodes
+      // 24-in-4 files.
+      if (channels == 0) {
+        snprintf(err_msg, err_msg_len, "Invalid channel count 0 in fmt chunk");
+        return false;
+      }
+      if (block_align == 0 || (block_align % channels) != 0) {
+        snprintf(err_msg, err_msg_len, "Invalid block align %d for %d channels",
+                 block_align, channels);
+        return false;
+      }
+      uint16_t bytes_per_sample = (uint16_t)(block_align / channels);
+      uint16_t valid_bits = (to_read >= 20)
+                                ? (fmt_payload[18] | (fmt_payload[19] << 8))
+                                : bits_per_sample;
+      if (valid_bits == 0) valid_bits = bits_per_sample;
+
       if (audio_format == 1) {
-        if (bits_per_sample == 16)
+        if (bits_per_sample == 16 && bytes_per_sample == 2)
           format = BINARY_SAMPLE_FORMAT_S16_LE;
-        else if (bits_per_sample == 24)
+        else if (bits_per_sample == 24 && bytes_per_sample == 3)
           format = BINARY_SAMPLE_FORMAT_S24_3_LE;
-        else if (bits_per_sample == 32)
-          format = BINARY_SAMPLE_FORMAT_S32_LE;
+        else if (bits_per_sample == 24 && bytes_per_sample == 4)
+          format = BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
+        else if (bits_per_sample == 32 && bytes_per_sample == 4) {
+          if (valid_bits == 24) {
+            format = BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
+          } else {
+            format = BINARY_SAMPLE_FORMAT_S32_LE;
+          }
+        }
       } else if (audio_format == 3) {
-        if (bits_per_sample == 32)
+        if (bits_per_sample == 32 && bytes_per_sample == 4)
           format = BINARY_SAMPLE_FORMAT_F32_LE;
-        else if (bits_per_sample == 64)
+        else if (bits_per_sample == 64 && bytes_per_sample == 8)
           format = BINARY_SAMPLE_FORMAT_F64_LE;
       }
 
       if (format == BINARY_SAMPLE_FORMAT_INVALID) {
         snprintf(err_msg, err_msg_len,
-                 "Unsupported bits per sample %d for format %d",
-                 bits_per_sample, audio_format);
+                 "Unsupported WAV sample format: format %d, %d bits in %d "
+                 "bytes per sample",
+                 audio_format, bits_per_sample, bytes_per_sample);
         return false;
       }
 
@@ -234,14 +286,25 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
         }
       }
     } else if (memcmp(chunk_id, "data", 4) == 0) {
-      found_data = true;
-      data_start_offset = (uint64_t)ftell_64(f);
-      if (is_rf64 && chunk_size == 0xFFFFFFFF) {
-        data_bytes = rf64_data_size;
-      } else {
-        data_bytes = chunk_size;
+      if (!found_data) {
+        found_data = true;
+        data_start_offset = (uint64_t)ftell_64(f);
+        if (is_rf64 && chunk_size == 0xFFFFFFFF) {
+          data_bytes = rf64_data_size;
+        } else {
+          data_bytes = chunk_size;
+        }
       }
-      break;
+      if (!is_rf64 && chunk_size == 0xFFFFFFFF) {
+        // Plain RIFF streaming placeholder: break early because audio follows
+        // until EOF.
+        break;
+      }
+      uint32_t pad = chunk_size & 1;
+      if (fseek_64(f, (int64_t)chunk_size + pad, SEEK_CUR) != 0) {
+        // Reached EOF or unseekable, stop chunk walking
+        break;
+      }
     } else {
       uint32_t pad = chunk_size & 1;
       if (fseek_64(f, (int64_t)chunk_size + pad, SEEK_CUR) != 0) {
@@ -308,136 +371,287 @@ static void write_wav_header_to_file(FILE* f, size_t channels,
                                      binary_sample_format_t format,
                                      uint32_t sample_rate, uint32_t data_bytes,
                                      bool is_seekable) {
-  uint8_t header[44];
-  memset(header, 0, 44);
-  memcpy(header, "RIFF", 4);
-  uint32_t file_size =
-      (data_bytes >= 0xFFFFFFDC) ? 0xFFFFFFFF : (data_bytes + 36);
-  header[4] = file_size & 0xFF;
-  header[5] = (file_size >> 8) & 0xFF;
-  header[6] = (file_size >> 16) & 0xFF;
-  header[7] = (file_size >> 24) & 0xFF;
-  memcpy(header + 8, "WAVE", 4);
-  memcpy(header + 12, "fmt ", 4);
-  header[16] = 16;
-  uint16_t format_tag = (format == BINARY_SAMPLE_FORMAT_F32_LE ||
-                         format == BINARY_SAMPLE_FORMAT_F64_LE)
-                            ? 3
-                            : 1;
-  header[20] = format_tag & 0xFF;
-  header[21] = (format_tag >> 8) & 0xFF;
-  header[22] = channels & 0xFF;
-  header[23] = (channels >> 8) & 0xFF;
-  header[24] = sample_rate & 0xFF;
-  header[25] = (sample_rate >> 8) & 0xFF;
-  header[26] = (sample_rate >> 16) & 0xFF;
-  header[27] = (sample_rate >> 24) & 0xFF;
+  bool extensible =
+      (format == BINARY_SAMPLE_FORMAT_S24_4_LJ_LE ||
+       format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE || channels > 2);
+  bool is_float = (format == BINARY_SAMPLE_FORMAT_F32_LE ||
+                   format == BINARY_SAMPLE_FORMAT_F64_LE);
+  bool needs_fact = is_float || extensible;
+  size_t fmt_size = extensible ? 40 : 16;
+  size_t header_size = 12 + (8 + fmt_size) + (needs_fact ? 12 : 0) + 8;
+  uint8_t header[128];
+  memset(header, 0, sizeof(header));
+
+  uint8_t* p = header;
+  memcpy(p, "RIFF", 4);
+  p += 4;
+  uint32_t file_size = (data_bytes >= (0xFFFFFFFF - header_size + 8))
+                           ? 0xFFFFFFFF
+                           : (uint32_t)(data_bytes + header_size - 8);
+  p[0] = file_size & 0xFF;
+  p[1] = (file_size >> 8) & 0xFF;
+  p[2] = (file_size >> 16) & 0xFF;
+  p[3] = (file_size >> 24) & 0xFF;
+  p += 4;
+  memcpy(p, "WAVE", 4);
+  p += 4;
+
+  // fmt chunk
+  memcpy(p, "fmt ", 4);
+  p += 4;
+  p[0] = (uint8_t)(fmt_size & 0xFF);
+  p[1] = (uint8_t)((fmt_size >> 8) & 0xFF);
+  p[2] = (uint8_t)((fmt_size >> 16) & 0xFF);
+  p[3] = (uint8_t)((fmt_size >> 24) & 0xFF);
+  p += 4;
+
   size_t sample_size = sample_format_bytes_per_sample(format);
-  uint32_t byte_rate = sample_rate * channels * sample_size;
-  header[28] = byte_rate & 0xFF;
-  header[29] = (byte_rate >> 8) & 0xFF;
-  header[30] = (byte_rate >> 16) & 0xFF;
-  header[31] = (byte_rate >> 24) & 0xFF;
-  uint16_t block_align = channels * sample_size;
-  header[32] = block_align & 0xFF;
-  header[33] = (block_align >> 8) & 0xFF;
-  uint16_t bits_per_sample = sample_size * 8;
-  header[34] = bits_per_sample & 0xFF;
-  header[35] = (bits_per_sample >> 8) & 0xFF;
-  memcpy(header + 36, "data", 4);
-  header[40] = data_bytes & 0xFF;
-  header[41] = (data_bytes >> 8) & 0xFF;
-  header[42] = (data_bytes >> 16) & 0xFF;
-  header[43] = (data_bytes >> 24) & 0xFF;
+  uint32_t byte_rate = sample_rate * (uint32_t)channels * (uint32_t)sample_size;
+  uint16_t block_align = (uint16_t)(channels * sample_size);
+  uint16_t bits_per_sample = (uint16_t)(sample_size * 8);
+
+  if (extensible) {
+    uint16_t format_tag = 0xFFFE;
+    p[0] = format_tag & 0xFF;
+    p[1] = (format_tag >> 8) & 0xFF;
+    p[2] = channels & 0xFF;
+    p[3] = (channels >> 8) & 0xFF;
+    p[4] = sample_rate & 0xFF;
+    p[5] = (sample_rate >> 8) & 0xFF;
+    p[6] = (sample_rate >> 16) & 0xFF;
+    p[7] = (sample_rate >> 24) & 0xFF;
+    p[8] = byte_rate & 0xFF;
+    p[9] = (byte_rate >> 8) & 0xFF;
+    p[10] = (byte_rate >> 16) & 0xFF;
+    p[11] = (byte_rate >> 24) & 0xFF;
+    p[12] = block_align & 0xFF;
+    p[13] = (block_align >> 8) & 0xFF;
+    p[14] = bits_per_sample & 0xFF;
+    p[15] = (bits_per_sample >> 8) & 0xFF;
+    // cbSize = 22
+    p[16] = 22;
+    p[17] = 0;
+    // ValidBitsPerSample
+    uint16_t valid_bits = (format == BINARY_SAMPLE_FORMAT_S24_4_LJ_LE ||
+                           format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE)
+                              ? 24
+                              : bits_per_sample;
+    p[18] = valid_bits & 0xFF;
+    p[19] = (valid_bits >> 8) & 0xFF;
+    // dwChannelMask = 0
+    p[20] = 0;
+    p[21] = 0;
+    p[22] = 0;
+    p[23] = 0;
+    // SubFormat GUID
+    static const uint8_t guid_suffix[14] = {0x00, 0x00, 0x10, 0x00, 0x80, 0x00,
+                                            0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
+    uint16_t sub_format = is_float ? 3 : 1;
+    p[24] = sub_format & 0xFF;
+    p[25] = (sub_format >> 8) & 0xFF;
+    memcpy(p + 26, guid_suffix, 14);
+    p += 40;
+  } else {
+    uint16_t format_tag = is_float ? 3 : 1;
+    p[0] = format_tag & 0xFF;
+    p[1] = (format_tag >> 8) & 0xFF;
+    p[2] = channels & 0xFF;
+    p[3] = (channels >> 8) & 0xFF;
+    p[4] = sample_rate & 0xFF;
+    p[5] = (sample_rate >> 8) & 0xFF;
+    p[6] = (sample_rate >> 16) & 0xFF;
+    p[7] = (sample_rate >> 24) & 0xFF;
+    p[8] = byte_rate & 0xFF;
+    p[9] = (byte_rate >> 8) & 0xFF;
+    p[10] = (byte_rate >> 16) & 0xFF;
+    p[11] = (byte_rate >> 24) & 0xFF;
+    p[12] = block_align & 0xFF;
+    p[13] = (block_align >> 8) & 0xFF;
+    p[14] = bits_per_sample & 0xFF;
+    p[15] = (bits_per_sample >> 8) & 0xFF;
+    p += 16;
+  }
+
+  // fact chunk
+  if (needs_fact) {
+    memcpy(p, "fact", 4);
+    p += 4;
+    p[0] = 4;
+    p[1] = 0;
+    p[2] = 0;
+    p[3] = 0;
+    p += 4;
+    uint32_t sample_frames = 0xFFFFFFFF;
+    if (data_bytes != 0xFFFFFFFF && channels > 0 && sample_size > 0) {
+      sample_frames = (uint32_t)(data_bytes / (channels * sample_size));
+    }
+    p[0] = sample_frames & 0xFF;
+    p[1] = (sample_frames >> 8) & 0xFF;
+    p[2] = (sample_frames >> 16) & 0xFF;
+    p[3] = (sample_frames >> 24) & 0xFF;
+    p += 4;
+  }
+
+  // data chunk header
+  memcpy(p, "data", 4);
+  p += 4;
+  p[0] = data_bytes & 0xFF;
+  p[1] = (data_bytes >> 8) & 0xFF;
+  p[2] = (data_bytes >> 16) & 0xFF;
+  p[3] = (data_bytes >> 24) & 0xFF;
+  p += 4;
+
   if (is_seekable) {
     fseek_64(f, 0, SEEK_SET);
   }
-  fwrite(header, 1, 44, f);
+  fwrite(header, 1, header_size, f);
 }
 
 /**
- * @brief Write an 80-byte RF64 WAV header to the file.
+ * @brief Write RF64 WAV header to the file.
  */
 static void write_rf64_header_to_file(FILE* f, size_t channels,
                                       binary_sample_format_t format,
                                       uint32_t sample_rate,
                                       uint64_t data_bytes) {
-  uint8_t header[80];
-  memset(header, 0, 80);
-  memcpy(header, "RF64", 4);
-  // RIFF size placeholder
-  header[4] = 0xFF;
-  header[5] = 0xFF;
-  header[6] = 0xFF;
-  header[7] = 0xFF;
-  memcpy(header + 8, "WAVE", 4);
+  bool extensible =
+      (format == BINARY_SAMPLE_FORMAT_S24_4_LJ_LE ||
+       format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE || channels > 2);
+  bool is_float = (format == BINARY_SAMPLE_FORMAT_F32_LE ||
+                   format == BINARY_SAMPLE_FORMAT_F64_LE);
+  size_t fmt_size = extensible ? 40 : 16;
+  size_t header_size = 12 + 36 + (8 + fmt_size) + 8;
+  uint8_t header[128];
+  memset(header, 0, sizeof(header));
+  uint8_t* p = header;
 
-  // ds64 chunk
-  memcpy(header + 12, "ds64", 4);
-  uint32_t ds64_size = 28;
-  header[16] = ds64_size & 0xFF;
-  header[17] = (ds64_size >> 8) & 0xFF;
-  header[18] = (ds64_size >> 16) & 0xFF;
-  header[19] = (ds64_size >> 24) & 0xFF;
+  memcpy(p, "RF64", 4);
+  p += 4;
+  p[0] = 0xFF;
+  p[1] = 0xFF;
+  p[2] = 0xFF;
+  p[3] = 0xFF;
+  p += 4;
+  memcpy(p, "WAVE", 4);
+  p += 4;
 
-  // 64-bit RIFF size (36 + 8 + 28 + 8 + 8 + 16 + data_bytes)
-  uint64_t riff_size = data_bytes + 72;
+  // ds64 chunk (4 bytes id, 4 bytes size=28, 28 bytes body)
+  memcpy(p, "ds64", 4);
+  p += 4;
+  p[0] = 28;
+  p[1] = 0;
+  p[2] = 0;
+  p[3] = 0;
+  p += 4;
+
+  uint64_t riff_size = data_bytes + header_size - 8;
   for (int i = 0; i < 8; i++) {
-    header[20 + i] = (riff_size >> (i * 8)) & 0xFF;
+    p[i] = (riff_size >> (i * 8)) & 0xFF;
   }
+  p += 8;
 
-  // 64-bit Data size
   for (int i = 0; i < 8; i++) {
-    header[28 + i] = (data_bytes >> (i * 8)) & 0xFF;
+    p[i] = (data_bytes >> (i * 8)) & 0xFF;
   }
+  p += 8;
 
-  // 64-bit Sample count
   size_t sample_size = sample_format_bytes_per_sample(format);
-  uint64_t sample_count = data_bytes / (channels * sample_size);
+  uint64_t sample_count = (channels > 0 && sample_size > 0)
+                              ? (data_bytes / (channels * sample_size))
+                              : 0;
   for (int i = 0; i < 8; i++) {
-    header[36 + i] = (sample_count >> (i * 8)) & 0xFF;
+    p[i] = (sample_count >> (i * 8)) & 0xFF;
   }
-
-  // table entry count is 0 (header[44..47])
+  p += 8;
+  // table length = 0
+  p[0] = 0;
+  p[1] = 0;
+  p[2] = 0;
+  p[3] = 0;
+  p += 4;
 
   // fmt chunk
-  memcpy(header + 48, "fmt ", 4);
-  header[52] = 16;  // fmt chunk size
-  uint16_t format_tag = (format == BINARY_SAMPLE_FORMAT_F32_LE ||
-                         format == BINARY_SAMPLE_FORMAT_F64_LE)
-                            ? 3
-                            : 1;
-  header[56] = format_tag & 0xFF;
-  header[57] = (format_tag >> 8) & 0xFF;
-  header[58] = channels & 0xFF;
-  header[59] = (channels >> 8) & 0xFF;
-  header[60] = sample_rate & 0xFF;
-  header[61] = (sample_rate >> 8) & 0xFF;
-  header[62] = (sample_rate >> 16) & 0xFF;
-  header[63] = (sample_rate >> 24) & 0xFF;
+  memcpy(p, "fmt ", 4);
+  p += 4;
+  p[0] = (uint8_t)(fmt_size & 0xFF);
+  p[1] = (uint8_t)((fmt_size >> 8) & 0xFF);
+  p[2] = (uint8_t)((fmt_size >> 16) & 0xFF);
+  p[3] = (uint8_t)((fmt_size >> 24) & 0xFF);
+  p += 4;
 
-  uint32_t byte_rate = sample_rate * channels * sample_size;
-  header[64] = byte_rate & 0xFF;
-  header[65] = (byte_rate >> 8) & 0xFF;
-  header[66] = (byte_rate >> 16) & 0xFF;
-  header[67] = (byte_rate >> 24) & 0xFF;
+  uint32_t byte_rate = sample_rate * (uint32_t)channels * (uint32_t)sample_size;
+  uint16_t block_align = (uint16_t)(channels * sample_size);
+  uint16_t bits_per_sample = (uint16_t)(sample_size * 8);
 
-  uint16_t block_align = channels * sample_size;
-  header[68] = block_align & 0xFF;
-  header[69] = (block_align >> 8) & 0xFF;
-  uint16_t bits_per_sample = sample_size * 8;
-  header[70] = bits_per_sample & 0xFF;
-  header[71] = (bits_per_sample >> 8) & 0xFF;
+  if (extensible) {
+    uint16_t format_tag = 0xFFFE;
+    p[0] = format_tag & 0xFF;
+    p[1] = (format_tag >> 8) & 0xFF;
+    p[2] = channels & 0xFF;
+    p[3] = (channels >> 8) & 0xFF;
+    p[4] = sample_rate & 0xFF;
+    p[5] = (sample_rate >> 8) & 0xFF;
+    p[6] = (sample_rate >> 16) & 0xFF;
+    p[7] = (sample_rate >> 24) & 0xFF;
+    p[8] = byte_rate & 0xFF;
+    p[9] = (byte_rate >> 8) & 0xFF;
+    p[10] = (byte_rate >> 16) & 0xFF;
+    p[11] = (byte_rate >> 24) & 0xFF;
+    p[12] = block_align & 0xFF;
+    p[13] = (block_align >> 8) & 0xFF;
+    p[14] = bits_per_sample & 0xFF;
+    p[15] = (bits_per_sample >> 8) & 0xFF;
+    p[16] = 22;
+    p[17] = 0;
+    uint16_t valid_bits = (format == BINARY_SAMPLE_FORMAT_S24_4_LJ_LE ||
+                           format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE)
+                              ? 24
+                              : bits_per_sample;
+    p[18] = valid_bits & 0xFF;
+    p[19] = (valid_bits >> 8) & 0xFF;
+    p[20] = 0;
+    p[21] = 0;
+    p[22] = 0;
+    p[23] = 0;
+    static const uint8_t guid_suffix[14] = {0x00, 0x00, 0x10, 0x00, 0x80, 0x00,
+                                            0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
+    uint16_t sub_format = is_float ? 3 : 1;
+    p[24] = sub_format & 0xFF;
+    p[25] = (sub_format >> 8) & 0xFF;
+    memcpy(p + 26, guid_suffix, 14);
+    p += 40;
+  } else {
+    uint16_t format_tag = is_float ? 3 : 1;
+    p[0] = format_tag & 0xFF;
+    p[1] = (format_tag >> 8) & 0xFF;
+    p[2] = channels & 0xFF;
+    p[3] = (channels >> 8) & 0xFF;
+    p[4] = sample_rate & 0xFF;
+    p[5] = (sample_rate >> 8) & 0xFF;
+    p[6] = (sample_rate >> 16) & 0xFF;
+    p[7] = (sample_rate >> 24) & 0xFF;
+    p[8] = byte_rate & 0xFF;
+    p[9] = (byte_rate >> 8) & 0xFF;
+    p[10] = (byte_rate >> 16) & 0xFF;
+    p[11] = (byte_rate >> 24) & 0xFF;
+    p[12] = block_align & 0xFF;
+    p[13] = (block_align >> 8) & 0xFF;
+    p[14] = bits_per_sample & 0xFF;
+    p[15] = (bits_per_sample >> 8) & 0xFF;
+    p += 16;
+  }
 
   // data chunk header
-  memcpy(header + 72, "data", 4);
-  header[76] = 0xFF;
-  header[77] = 0xFF;
-  header[78] = 0xFF;
-  header[79] = 0xFF;
+  memcpy(p, "data", 4);
+  p += 4;
+  p[0] = 0xFF;
+  p[1] = 0xFF;
+  p[2] = 0xFF;
+  p[3] = 0xFF;
+  p += 4;
 
   fseek_64(f, 0, SEEK_SET);
-  fwrite(header, 1, 80, f);
+  fwrite(header, 1, header_size, f);
 }
 
 // MARK: - File Capture Backend implementation
@@ -481,6 +695,10 @@ static bool file_capture_open(void* ctx, backend_error_t* err) {
     capture->channels = info.channels;
     capture->format = info.format;
     capture->read_bytes = info.data_bytes;
+    if (info.sample_rate > 0 && capture->playback_sample_rate > 0) {
+      capture->resampling_ratio =
+          (double)capture->playback_sample_rate / (double)info.sample_rate;
+    }
 
     logger_info(&g_logger,
                 "Parsed input WAV file: rate=%d Hz, channels=%d, format=%s",
@@ -489,10 +707,22 @@ static bool file_capture_open(void* ctx, backend_error_t* err) {
 
     fseek_64(capture->f, info.data_start_offset, SEEK_SET);
   } else {
-    if (capture->skip_bytes > 0 && !capture->is_stdin) {
+    if (capture->skip_bytes > 0) {
       logger_debug(&g_logger, "skipping the first %llu bytes",
                    (unsigned long long)capture->skip_bytes);
-      fseek_64(capture->f, capture->skip_bytes, SEEK_SET);
+      if (capture->is_stdin ||
+          fseek_64(capture->f, (int64_t)capture->skip_bytes, SEEK_SET) != 0) {
+        uint64_t remaining = capture->skip_bytes;
+        uint8_t discard_buf[4096];
+        while (remaining > 0) {
+          size_t to_read = remaining < sizeof(discard_buf)
+                               ? (size_t)remaining
+                               : sizeof(discard_buf);
+          size_t n = fread(discard_buf, 1, to_read, capture->f);
+          if (n == 0) break;
+          remaining -= n;
+        }
+      }
     }
   }
 
@@ -629,10 +859,20 @@ static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
 
   if (frames_read < frames) {
     size_t remaining_frames = frames - frames_read;
-    size_t extra_to_generate =
-        capture->extra_samples - capture->extra_samples_generated;
-    if (extra_to_generate > remaining_frames) {
+    double ratio =
+        capture->resampling_ratio > 0.0 ? capture->resampling_ratio : 1.0;
+    size_t missing = (size_t)((double)remaining_frames * ratio);
+    size_t extra_left =
+        capture->extra_samples > capture->extra_samples_generated
+            ? capture->extra_samples - capture->extra_samples_generated
+            : 0;
+    size_t extra_to_generate = 0;
+    if (extra_left > missing) {
       extra_to_generate = remaining_frames;
+      capture->extra_samples_generated += missing;
+    } else {
+      extra_to_generate = (size_t)((double)extra_left / ratio);
+      capture->extra_samples_generated = capture->extra_samples;
     }
 
     if (extra_to_generate > 0) {
@@ -642,7 +882,6 @@ static bool file_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           memset(ch_data + frames_read, 0, extra_to_generate * sizeof(double));
         }
       }
-      capture->extra_samples_generated += extra_to_generate;
       frames_read += extra_to_generate;
     }
   }
@@ -857,6 +1096,8 @@ static capture_backend_t* file_capture_create(
   }
 
   capture->sample_rate = sample_rate;
+  capture->playback_sample_rate = sample_rate;
+  capture->resampling_ratio = 1.0;
   capture->chunk_size = chunk_size;
 
   capture_backend_t* backend =
@@ -1023,6 +1264,15 @@ static bool file_playback_write(void* ctx, const audio_chunk_t* chunk,
 
   size_t required_bytes = frames * playback->channels * sample_size;
 
+  // Parity with CamillaDSP FilePlayback::write:
+  // Standard RIFF WAV format headers use 32-bit unsigned integers for chunk
+  // sizes, imposing a hard 4 GB (0xFFFFFFFF bytes) ceiling on total file size.
+  // When use_rf64 is false and adding the next chunk would exceed this limit,
+  // we stop writing to preserve a valid, well-formed WAV file header rather
+  // than producing an invalid or truncated file. We return false with
+  // BACKEND_ERROR_NONE so the engine playback loop treats this as clean
+  // End-Of-Stream (EOS) instead of an I/O hardware failure (Ref:
+  // engine_state_management.md §4.2).
   if (playback->is_wav && playback->is_seekable && !playback->use_rf64) {
     uint64_t max_bytes = 0xFFFFFFFFULL - 256;
     if (playback->total_bytes_written > max_bytes ||
@@ -1031,7 +1281,7 @@ static bool file_playback_write(void* ctx, const audio_chunk_t* chunk,
                   "Wav file reached the maximum size of a plain wav file. "
                   "Stopping playback to avoid writing an invalid file.");
       if (err) {
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+        backend_error_init(err, BACKEND_ERROR_NONE,
                            "Plain WAV 4 GB limit reached");
       }
       return false;
@@ -1220,9 +1470,16 @@ static playback_backend_t* file_playback_create(
   (void)full_duplex;
   (void)params;
   (void)err;
-  if (config->type == AUDIO_BACKEND_TYPE_FILE &&
-      config->cfg.raw_file.wav_header &&
-      config->cfg.raw_file.format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
+  bool has_wav_header = false;
+  binary_sample_format_t fmt = BINARY_SAMPLE_FORMAT_INVALID;
+  if (config->type == AUDIO_BACKEND_TYPE_FILE) {
+    has_wav_header = config->cfg.raw_file.wav_header;
+    fmt = config->cfg.raw_file.format;
+  } else if (config->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
+    has_wav_header = config->cfg.stdout_out.wav_header;
+    fmt = config->cfg.stdout_out.format;
+  }
+  if (has_wav_header && fmt == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
     if (err) {
       backend_error_init(
           err, BACKEND_ERROR_INITIALIZATION_FAILED,

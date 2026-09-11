@@ -39,38 +39,42 @@ void cdsp_get_stop_reason(const dsp_engine_t* engine,
 }
 
 int cdsp_get_capture_rate(const dsp_engine_t* engine) {
-  if (engine && engine->get_status && engine->get_capture_rate) {
-    state_update_t status = {0};
-    if (engine->get_status(engine->ctx, &status) &&
-        status.state == PROCESSING_STATE_RUNNING) {
-      return engine->get_capture_rate(engine->ctx);
-    }
+  if (engine && engine->get_capture_rate) {
+    return engine->get_capture_rate(engine->ctx);
   }
   return 0;
 }
 
 double cdsp_get_signal_range(const dsp_engine_t* engine) {
   if (engine && engine->get_vu_levels) {
-    vu_levels_t vu = {0};
-    if (engine->get_vu_levels(engine->ctx, &vu)) {
-      size_t count = vu.playback_channels;
-      if (count == 0 || !vu.playback_peak) {
-        if (vu.playback_peak) free(vu.playback_peak);
-        if (vu.playback_rms) free(vu.playback_rms);
-        if (vu.capture_peak) free(vu.capture_peak);
-        if (vu.capture_rms) free(vu.capture_rms);
-        return 0.0;
+    vu_levels_t vu_query = {0};
+    if (engine->get_vu_levels(engine->ctx, &vu_query)) {
+      size_t cap_ch = vu_query.capture_channels;
+      size_t pb_ch = vu_query.playback_channels;
+      size_t count = cap_ch > 0 ? cap_ch : pb_ch;
+      if (count == 0) return 0.0;
+
+      float* pk_buf = (float*)malloc(count * sizeof(float));
+      if (!pk_buf) return 0.0;
+
+      vu_levels_t vu = {0};
+      if (cap_ch > 0) {
+        vu.capture_peak = pk_buf;
+      } else {
+        vu.playback_peak = pk_buf;
       }
-      double max_peak = -INFINITY;
-      for (size_t i = 0; i < count; i++) {
-        double pk = vu.playback_peak[i];
-        if (pk > max_peak) max_peak = pk;
+
+      if (engine->get_vu_levels(engine->ctx, &vu)) {
+        double max_peak = -INFINITY;
+        for (size_t i = 0; i < count; i++) {
+          double pk = (double)pk_buf[i];
+          if (pk > max_peak) max_peak = pk;
+        }
+        free(pk_buf);
+        if (!isfinite(max_peak) || max_peak <= -200.0) return 0.0;
+        return 2.0 * double_from_db(max_peak);
       }
-      if (vu.playback_peak) free(vu.playback_peak);
-      if (vu.playback_rms) free(vu.playback_rms);
-      if (vu.capture_peak) free(vu.capture_peak);
-      if (vu.capture_rms) free(vu.capture_rms);
-      return 2.0 * double_from_db(max_peak);
+      free(pk_buf);
     }
   }
   return 0.0;

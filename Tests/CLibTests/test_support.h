@@ -56,6 +56,9 @@ static inline int custom_snprintf(char* str, size_t size, const char* format,
       } else if (dot && strcmp(dot, ".yaml") == 0) {
         *dot = '\0';
         ret = (snprintf)(str, size, "%s_%d.yaml", temp, getpid());
+      } else if (dot && strcmp(dot, ".wav") == 0) {
+        *dot = '\0';
+        ret = (snprintf)(str, size, "%s_%d.wav", temp, getpid());
       } else {
         ret = (snprintf)(str, size, "%s_%d", temp, getpid());
       }

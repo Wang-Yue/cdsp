@@ -85,6 +85,32 @@ ALWAYS_INLINE float dsp_ops_peak_absolute(const double* buffer, size_t count) {
 }
 
 /**
+ * @brief Find minimum and maximum sample values in buffer.
+ *
+ * @param buffer Input vector.
+ * @param count Number of elements to process.
+ * @param[out] out_min Pointer to receive minimum value.
+ * @param[out] out_max Pointer to receive maximum value.
+ */
+ALWAYS_INLINE void dsp_ops_min_max(const double* buffer, size_t count,
+                                   double* out_min, double* out_max) {
+  if (count == 0) {
+    if (out_min) *out_min = 0.0;
+    if (out_max) *out_max = 0.0;
+    return;
+  }
+  double min_val = 0.0;
+  double max_val = 0.0;
+  for (size_t i = 0; i < count; i++) {
+    double val = buffer[i];
+    if (val < min_val) min_val = val;
+    if (val > max_val) max_val = val;
+  }
+  if (out_min) *out_min = min_val;
+  if (out_max) *out_max = max_val;
+}
+
+/**
  * @brief Compute root-mean-square over the first `count` samples of the buffer.
  *
  * Uses vectorization pragmas to achieve fast single-pass float accumulation

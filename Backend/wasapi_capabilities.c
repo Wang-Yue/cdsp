@@ -333,19 +333,18 @@ static rate_probe_result_t probe_and_store_rate_with_candidates(
             &g_wasapi_logger,
             "WASAPI capability probe: supported %d Hz, %d ch, format %s.",
             samplerate, channels, wasapi_format_to_str(fmt));
-        if (!out_is_std) {
-          uint32_t prev_mask = pref_mask;
-          bool prev_has = has_pref;
-          cached_masks[channels] = out_wfx.dwChannelMask;
-          has_cached_masks[channels] = true;
-          pref_mask = out_wfx.dwChannelMask;
-          has_pref = true;
-          if (!prev_has || prev_mask != out_wfx.dwChannelMask) {
-            logger_trace(&g_wasapi_logger,
-                         "WASAPI capability probe: channel count %d will use "
-                         "channel mask 0x%08x for subsequent probes.",
-                         channels, (unsigned int)out_wfx.dwChannelMask);
-          }
+        uint32_t mask_to_cache = out_is_std ? 0 : out_wfx.dwChannelMask;
+        uint32_t prev_mask = pref_mask;
+        bool prev_has = has_pref;
+        cached_masks[channels] = mask_to_cache;
+        has_cached_masks[channels] = true;
+        pref_mask = mask_to_cache;
+        has_pref = true;
+        if (!prev_has || prev_mask != mask_to_cache) {
+          logger_trace(&g_wasapi_logger,
+                       "WASAPI capability probe: channel count %d will use "
+                       "channel mask 0x%08x for subsequent probes.",
+                       channels, (unsigned int)mask_to_cache);
         }
         supported_for_channel[supported_for_channel_count++] = fmt;
       } else {
@@ -744,83 +743,86 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
 
   if (total_sets == 0) {
     if (mix_wfx) CoTaskMemFree(mix_wfx);
-    free_audio_device_descriptor(desc);
-    desc = NULL;
-    goto error_cleanup;
-  }
+    mix_wfx = NULL;
+    desc->capability_sets_count = 0;
+    desc->capability_sets = NULL;
+  } else {
+    desc->capability_sets_count = total_sets;
+    desc->capability_sets = (device_capability_set_t*)calloc(
+        total_sets, sizeof(device_capability_set_t));
+    if (!desc->capability_sets) {
+      if (mix_wfx) CoTaskMemFree(mix_wfx);
+      free_audio_device_descriptor(desc);
+      desc = NULL;
+      goto error_cleanup;
+    }
 
-  desc->capability_sets_count = total_sets;
-  desc->capability_sets = (device_capability_set_t*)calloc(
-      total_sets, sizeof(device_capability_set_t));
-  if (!desc->capability_sets) {
-    if (mix_wfx) CoTaskMemFree(mix_wfx);
-    free_audio_device_descriptor(desc);
-    desc = NULL;
-    goto error_cleanup;
-  }
-
-  size_t current_set = 0;
-  if (has_shared) {
-    device_capability_set_t* shared_set = &desc->capability_sets[current_set++];
-    snprintf(shared_set->mode, sizeof(shared_set->mode), "Shared");
-    shared_set->capabilities_count = 1;
-    shared_set->capabilities =
-        (channel_capability_t*)calloc(1, sizeof(channel_capability_t));
-    if (shared_set->capabilities) {
-      shared_set->capabilities[0].channels = (int)mix_wfx->nChannels;
-      shared_set->capabilities[0].samplerates_count = 1;
-      shared_set->capabilities[0].samplerates =
-          (samplerate_capability_t*)calloc(1, sizeof(samplerate_capability_t));
-      if (shared_set->capabilities[0].samplerates) {
-        shared_set->capabilities[0].samplerates[0].samplerate =
-            (int)mix_wfx->nSamplesPerSec;
-        shared_set->capabilities[0].samplerates[0].formats_count = 1;
-        shared_set->capabilities[0].samplerates[0].formats =
-            (char**)calloc(1, sizeof(char*));
-        if (shared_set->capabilities[0].samplerates[0].formats) {
-          shared_set->capabilities[0].samplerates[0].formats[0] = strdup("F32");
+    size_t current_set = 0;
+    if (has_shared) {
+      device_capability_set_t* shared_set =
+          &desc->capability_sets[current_set++];
+      snprintf(shared_set->mode, sizeof(shared_set->mode), "Shared");
+      shared_set->capabilities_count = 1;
+      shared_set->capabilities =
+          (channel_capability_t*)calloc(1, sizeof(channel_capability_t));
+      if (shared_set->capabilities) {
+        shared_set->capabilities[0].channels = (int)mix_wfx->nChannels;
+        shared_set->capabilities[0].samplerates_count = 1;
+        shared_set->capabilities[0].samplerates =
+            (samplerate_capability_t*)calloc(1,
+                                             sizeof(samplerate_capability_t));
+        if (shared_set->capabilities[0].samplerates) {
+          shared_set->capabilities[0].samplerates[0].samplerate =
+              (int)mix_wfx->nSamplesPerSec;
+          shared_set->capabilities[0].samplerates[0].formats_count = 1;
+          shared_set->capabilities[0].samplerates[0].formats =
+              (char**)calloc(1, sizeof(char*));
+          if (shared_set->capabilities[0].samplerates[0].formats) {
+            shared_set->capabilities[0].samplerates[0].formats[0] =
+                strdup("F32");
+          }
         }
       }
+      CoTaskMemFree(mix_wfx);
+      mix_wfx = NULL;
     }
-    CoTaskMemFree(mix_wfx);
-    mix_wfx = NULL;
-  }
 
-  if (exclusive_map.channels_count > 0) {
-    device_capability_set_t* excl_set = &desc->capability_sets[current_set++];
-    snprintf(excl_set->mode, sizeof(excl_set->mode), "Exclusive");
-    excl_set->capabilities_count = exclusive_map.channels_count;
-    excl_set->capabilities = (channel_capability_t*)calloc(
-        exclusive_map.channels_count, sizeof(channel_capability_t));
-    if (excl_set->capabilities) {
-      for (size_t c = 0; c < exclusive_map.channels_count; c++) {
-        temp_channel_cap_t* t_chan = &exclusive_map.channels[c];
-        channel_capability_t* d_chan = &excl_set->capabilities[c];
-        d_chan->channels = t_chan->channels;
-        d_chan->samplerates_count = t_chan->samplerates_count;
-        d_chan->samplerates = (samplerate_capability_t*)calloc(
-            t_chan->samplerates_count, sizeof(samplerate_capability_t));
-        if (d_chan->samplerates) {
-          for (size_t r = 0; r < t_chan->samplerates_count; r++) {
-            temp_samplerate_cap_t* t_rate = &t_chan->samplerates[r];
-            samplerate_capability_t* d_rate = &d_chan->samplerates[r];
-            d_rate->samplerate = t_rate->samplerate;
-            d_rate->formats_count = t_rate->formats_count;
-            d_rate->formats =
-                (char**)calloc(t_rate->formats_count, sizeof(char*));
-            if (d_rate->formats) {
-              for (size_t f = 0; f < t_rate->formats_count; f++) {
-                d_rate->formats[f] = t_rate->formats[f];
-                t_rate->formats[f] = NULL;
+    if (exclusive_map.channels_count > 0) {
+      device_capability_set_t* excl_set = &desc->capability_sets[current_set++];
+      snprintf(excl_set->mode, sizeof(excl_set->mode), "Exclusive");
+      excl_set->capabilities_count = exclusive_map.channels_count;
+      excl_set->capabilities = (channel_capability_t*)calloc(
+          exclusive_map.channels_count, sizeof(channel_capability_t));
+      if (excl_set->capabilities) {
+        for (size_t c = 0; c < exclusive_map.channels_count; c++) {
+          temp_channel_cap_t* t_chan = &exclusive_map.channels[c];
+          channel_capability_t* d_chan = &excl_set->capabilities[c];
+          d_chan->channels = t_chan->channels;
+          d_chan->samplerates_count = t_chan->samplerates_count;
+          d_chan->samplerates = (samplerate_capability_t*)calloc(
+              t_chan->samplerates_count, sizeof(samplerate_capability_t));
+          if (d_chan->samplerates) {
+            for (size_t r = 0; r < t_chan->samplerates_count; r++) {
+              temp_samplerate_cap_t* t_rate = &t_chan->samplerates[r];
+              samplerate_capability_t* d_rate = &d_chan->samplerates[r];
+              d_rate->samplerate = t_rate->samplerate;
+              d_rate->formats_count = t_rate->formats_count;
+              d_rate->formats =
+                  (char**)calloc(t_rate->formats_count, sizeof(char*));
+              if (d_rate->formats) {
+                for (size_t f = 0; f < t_rate->formats_count; f++) {
+                  d_rate->formats[f] = t_rate->formats[f];
+                  t_rate->formats[f] = NULL;
+                }
               }
             }
+            qsort(d_chan->samplerates, d_chan->samplerates_count,
+                  sizeof(samplerate_capability_t), compare_samplerates);
           }
-          qsort(d_chan->samplerates, d_chan->samplerates_count,
-                sizeof(samplerate_capability_t), compare_samplerates);
         }
+        qsort(excl_set->capabilities, excl_set->capabilities_count,
+              sizeof(channel_capability_t), compare_channels);
       }
-      qsort(excl_set->capabilities, excl_set->capabilities_count,
-            sizeof(channel_capability_t), compare_channels);
     }
   }
 

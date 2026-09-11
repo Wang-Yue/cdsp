@@ -397,6 +397,19 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
     bool ok = playback_backend_write(loop->playback, chunk, &err);
     if (!ok || err.type != BACKEND_ERROR_NONE) {
+      // Clean EOF on Plain-WAV 4 GB Limit (Ref: engine_state_management.md
+      // §4.2) When writing to a standard 32-bit RIFF WAV file without RF64
+      // extensions, reaching the 4 GB (2^32 bytes) address limit causes
+      // playback_backend_write to stop accepting data and return false with
+      // err.type == BACKEND_ERROR_NONE. This represents a normal, expected
+      // file-boundary completion (End-Of-Stream) rather than an unrecoverable
+      // device failure. We set reached_eos = true and break out cleanly,
+      // allowing the supervisor to transition to STOP_REASON_DONE rather than
+      // logging a false-alarm hardware error.
+      if (err.type == BACKEND_ERROR_NONE) {
+        reached_eos = true;
+        break;
+      }
       // Ref: engine_state_management.md - Section 4.1: Prevention of
       // False-Alarm Shutdown Errors (Loop Guards)
       if (engine_shared_state_should_stop(loop->shared)) {
@@ -444,6 +457,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown
     // (Queue Drain) Step 3: Playback loop runs
     // playback_loop_drain_hardware_buffer to wait for the DAC buffer to hit 0.
+    playback_backend_drain(loop->playback);
     playback_loop_drain_hardware_buffer(loop);
   } else {
     logger_info(&g_logger,

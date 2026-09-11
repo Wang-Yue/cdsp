@@ -6,8 +6,12 @@
 #include "Config/configuration.h"
 #include "Config/engine_config_types.h"
 #include "Config/filter_config_types.h"
+#include "Config/mixer_config_types.h"
 #include "Config/processor_config_types.h"
+#include "Filters/filter.h"
+#include "Mixer/mixer.h"
 #include "Pipeline/pipeline.h"
+#include "Processors/processor.h"
 
 // ============================================================================
 // Configuration Validation
@@ -17,25 +21,10 @@ static bool validate_filter_step(const pipeline_step_config_t* step,
                                  size_t step_idx, size_t num_channels,
                                  const dsp_config_t* config,
                                  config_error_t* err) {
-  if (!step->names || step->names_count == 0) {
+  if (!step->names && !step->has_names) {
     config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                      "Filter step %zu must have 'names'", step_idx);
     return false;
-  }
-  for (size_t j = 0; j < step->names_count; j++) {
-    if (!step->names[j] || step->names[j][0] == '\0') {
-      config_error_set(
-          err, CONFIG_ERR_INVALID_PIPELINE,
-          "Filter step %zu has invalid/empty filter name at index %zu",
-          step_idx, j);
-      return false;
-    }
-    if (!dsp_config_get_filter(config, step->names[j])) {
-      config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
-                       "Filter '%s' referenced in pipeline but not defined",
-                       step->names[j]);
-      return false;
-    }
   }
   if (step->has_channel) {
     if (step->channel >= num_channels) {
@@ -61,6 +50,30 @@ static bool validate_filter_step(const pipeline_step_config_t* step,
                          step_idx, step->channels[j]);
         return false;
       }
+    }
+  }
+  for (size_t j = 0; j < step->names_count; j++) {
+    if (!step->names[j] || step->names[j][0] == '\0') {
+      config_error_set(
+          err, CONFIG_ERR_INVALID_PIPELINE,
+          "Filter step %zu has invalid/empty filter name at index %zu",
+          step_idx, j);
+      return false;
+    }
+    const filter_config_t* filt = dsp_config_get_filter(config, step->names[j]);
+    if (!filt) {
+      config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
+                       "Filter '%s' referenced in pipeline but not defined",
+                       step->names[j]);
+      return false;
+    }
+    config_error_t sub_err;
+    config_error_init(&sub_err);
+    if (filter_config_validate(filt, config->devices.samplerate, &sub_err) !=
+        0) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Filter '%s': %s",
+                       step->names[j], sub_err.message);
+      return false;
     }
   }
   return true;
@@ -90,6 +103,13 @@ static bool validate_mixer_step(const pipeline_step_config_t* step,
     return false;
   }
   *inout_channels = mixer->channels_out;
+  config_error_t sub_err;
+  config_error_init(&sub_err);
+  if (mixer_config_validate(mixer, &sub_err) != 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_MIXER, "Mixer '%s': %s",
+                     step->name, sub_err.message);
+    return false;
+  }
   return true;
 }
 
@@ -131,6 +151,14 @@ static bool validate_processor_step(const pipeline_step_config_t* step,
                      "Processor '%s' expects %zu channel(s) but pipeline "
                      "has %zu at this point",
                      step->name, expected_channels, num_channels);
+    return false;
+  }
+  config_error_t sub_err;
+  config_error_init(&sub_err);
+  if (processor_config_validate(proc, (int)config->devices.samplerate,
+                                &sub_err) != 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR, "Processor '%s': %s",
+                     step->name, sub_err.message);
     return false;
   }
   return true;

@@ -9,7 +9,7 @@
 TEST(PublicGeneralAndDeviceTypes) {
   const char* ver = cdsp_get_version();
   ASSERT_TRUE(ver != NULL);
-  ASSERT_TRUE(strlen(ver) > 0);
+  ASSERT_STR_EQ("4.2.0", ver);
 
   char** playback_types = NULL;
   char** capture_types = NULL;

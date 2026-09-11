@@ -502,4 +502,15 @@ void processing_parameters_get_playback_signal_rms_since(
     const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
     size_t count);
 
+/**
+ * @brief Gets the chunk generation counter for capture or playback.
+ * Increments each time a chunk's levels are updated.
+ *
+ * @param params Pointer to the processing parameters.
+ * @param is_capture true for capture, false for playback.
+ * @return Monotonically increasing chunk generation sequence number.
+ */
+uint64_t processing_parameters_get_chunk_generation(
+    const processing_parameters_t* params, bool is_capture);
+
 #endif  // CLIB_AUDIO_PROCESSING_PARAMETERS_H

@@ -79,7 +79,9 @@ struct alsa_capture {
   spsc_byte_ring_buffer_t* ring_buffer;
   cdsp_sem_t semaphore;
   pthread_t inner_thread;
+  bool inner_thread_created;
   _Atomic bool inner_running;
+  bool device_stalled;
 };
 
 // Dedicated real-time capture inner thread matching AlsaCaptureInner in
@@ -104,15 +106,30 @@ static void* alsa_capture_inner_thread_func(void* arg) {
 
   while (!atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
     snd_pcm_state_t capture_state = snd_pcm_state(capture->pcm);
+    if ((int)capture_state < 0) {
+      logger_error(&g_logger, "Capture device error state: %s",
+                   snd_strerror((int)capture_state));
+      break;
+    }
     if (capture_state == SND_PCM_STATE_XRUN) {
       logger_warn(&g_logger, "Prepare capture device");
-      snd_pcm_prepare(capture->pcm);
-      snd_pcm_start(capture->pcm);
+      if (snd_pcm_prepare(capture->pcm) < 0 ||
+          snd_pcm_start(capture->pcm) < 0) {
+        logger_error(&g_logger, "Failed to restart capture device after XRUN");
+        break;
+      }
     } else if (capture_state == SND_PCM_STATE_SUSPENDED) {
-      alsa_recover_suspended_pcm(capture->pcm, "Capture");
-      snd_pcm_start(capture->pcm);
+      if (alsa_recover_suspended_pcm(capture->pcm, "Capture") < 0 ||
+          snd_pcm_start(capture->pcm) < 0) {
+        logger_error(&g_logger,
+                     "Failed to restart capture device after suspension");
+        break;
+      }
     } else if (capture_state == SND_PCM_STATE_PREPARED) {
-      snd_pcm_start(capture->pcm);
+      if (snd_pcm_start(capture->pcm) < 0) {
+        logger_error(&g_logger, "Failed to start prepared capture device");
+        break;
+      }
     }
 
     int wait_rc = snd_pcm_wait(capture->pcm, (int)timeout_millis);
@@ -120,6 +137,9 @@ static void* alsa_capture_inner_thread_func(void* arg) {
       snd_pcm_sframes_t frames_read = snd_pcm_readi(
           capture->pcm, local_buf, (snd_pcm_uframes_t)capture->chunk_size);
       if (frames_read > 0) {
+        if (capture->device_stalled) {
+          capture->device_stalled = false;
+        }
         size_t bytes_read = (size_t)frames_read * bytes_per_frame;
         spsc_byte_ring_buffer_write(capture->ring_buffer, local_buf,
                                     bytes_read);
@@ -128,15 +148,51 @@ static void* alsa_capture_inner_thread_func(void* arg) {
         }
       } else if (frames_read == -EPIPE) {
         logger_warn(&g_logger, "Capture buffer underrun/overrun");
-        snd_pcm_prepare(capture->pcm);
-        snd_pcm_start(capture->pcm);
+        if (snd_pcm_prepare(capture->pcm) < 0 ||
+            snd_pcm_start(capture->pcm) < 0) {
+          break;
+        }
       } else if (frames_read == -ESTRPIPE) {
-        alsa_recover_suspended_pcm(capture->pcm, "Capture");
-        snd_pcm_start(capture->pcm);
+        if (alsa_recover_suspended_pcm(capture->pcm, "Capture") < 0 ||
+            snd_pcm_start(capture->pcm) < 0) {
+          break;
+        }
+      } else if (frames_read == 0) {
+        if (!capture->device_stalled) {
+          logger_info(&g_logger,
+                      "Capture device is stalled, processing is stalled");
+          capture->device_stalled = true;
+          snd_pcm_drop(capture->pcm);
+          snd_pcm_prepare(capture->pcm);
+        }
+      } else if (frames_read == -EAGAIN || frames_read == -EINTR) {
+        // Upstream's capture_buffer reports -EAGAIN/-EINTR as
+        // ordinary transient conditions. Keep polling.
+      } else {
+        logger_error(&g_logger, "Capture read fatal error: %s",
+                     snd_strerror((int)frames_read));
+        break;
       }
+    } else if (wait_rc == 0) {
+      if (!capture->device_stalled) {
+        logger_info(&g_logger,
+                    "Capture device is stalled, processing is stalled");
+        capture->device_stalled = true;
+        snd_pcm_drop(capture->pcm);
+        snd_pcm_prepare(capture->pcm);
+      }
+    } else if (wait_rc < 0 && wait_rc != -EPIPE && wait_rc != -ESTRPIPE &&
+               wait_rc != -EINTR) {
+      logger_error(&g_logger, "Capture wait fatal error: %s",
+                   snd_strerror(wait_rc));
+      break;
     }
   }
 
+  atomic_store_explicit(&capture->inner_running, false, memory_order_release);
+  if (capture->semaphore) {
+    cdsp_sem_signal(capture->semaphore);
+  }
   if (local_buf) free(local_buf);
   if (rt_handle) {
     demote_current_thread_from_realtime(rt_handle);
@@ -261,11 +317,8 @@ static void alsa_capture_sync_linked_controls(alsa_capture_t* capture) {
       logger_debug(&g_logger, "Updating linked volume control to %.2f dB",
                    target_vol);
     }
-    if (capture->linked_volume_value != target_vol) {
-      alsa_elem_write_volume_in_db(capture->ctl, capture->hctl_volume_elem,
-                                   target_vol);
-      capture->linked_volume_value = target_vol;
-    }
+    alsa_elem_write_volume_in_db(capture->ctl, capture->hctl_volume_elem,
+                                 target_vol);
   }
 
   if (capture->hctl_mute_elem && capture->has_linked_mute_value) {
@@ -273,9 +326,8 @@ static void alsa_capture_sync_linked_controls(alsa_capture_t* capture) {
     if (capture->linked_mute_value != target_mute) {
       logger_debug(&g_logger, "Updating linked switch control to %d",
                    !target_mute);
-      alsa_elem_write_as_bool(capture->hctl_mute_elem, !target_mute);
-      capture->linked_mute_value = target_mute;
     }
+    alsa_elem_write_as_bool(capture->hctl_mute_elem, !target_mute);
   }
 
   pthread_mutex_unlock(&capture->mixer_mutex);
@@ -432,8 +484,16 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
 
-  // Set software parameters (src/alsa_backend/device.rs:483-491)
-  // immediate start after pcmdev.prepare (buffermanager.rs:194)
+  // Set software parameters (src/alsa_backend/device.rs:483-491,
+  // threaded_buffermanager.rs:106-122) immediate start after pcmdev.prepare
+  // (buffermanager.rs:194)
+  if (capture->threaded) {
+    capture_avail_min =
+        capture->period > 0 ? (snd_pcm_uframes_t)capture->period : 1;
+    if (capture_avail_min > (snd_pcm_uframes_t)capture->bufsize) {
+      capture_avail_min = (snd_pcm_uframes_t)capture->bufsize;
+    }
+  }
   capture->last_avail_min = (size_t)capture_avail_min;
   alsa_device_configure_sw(capture->pcm, capture_avail_min, 0);
 
@@ -490,6 +550,7 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
       }
       goto error_cleanup;
     }
+    capture->inner_thread_created = true;
   }
 
   pthread_mutex_unlock(&g_alsa_mutex);
@@ -588,6 +649,9 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     snd_pcm_prepare(capture->pcm);
   } else if (capture_state == SND_PCM_STATE_SUSPENDED) {
     alsa_recover_suspended_pcm(capture->pcm, "Capture");
+    if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
+      snd_pcm_start(capture->pcm);
+    }
   } else if ((int)capture_state < 0) {
     logger_error(&g_logger,
                  "Alsa snd_pcm_state() of capture device returned an "
@@ -597,11 +661,9 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                          snd_strerror((int)capture_state));
     return false;
-  }
-
-  if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
+  } else if (capture_state != SND_PCM_STATE_RUNNING) {
     logger_debug(&g_logger, "Starting capture from state: %s",
-                 alsa_state_desc(snd_pcm_state(capture->pcm)));
+                 alsa_state_desc(capture_state));
     snd_pcm_start(capture->pcm);
   }
 
@@ -671,8 +733,13 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           logger_trace(&g_logger,
                        "Wait timed out, capture device takes too long to "
                        "capture frames");
-          snd_pcm_drop(capture->pcm);
-          snd_pcm_prepare(capture->pcm);
+          if (!capture->device_stalled) {
+            logger_info(&g_logger,
+                        "Capture device is stalled, processing is stalled");
+            capture->device_stalled = true;
+            snd_pcm_drop(capture->pcm);
+            snd_pcm_prepare(capture->pcm);
+          }
           if (err) {
             backend_error_init(err, BACKEND_ERROR_NONE,
                                "Capture device wait timeout");
@@ -801,6 +868,9 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     size_t frames_req = buffer_len_bytes / bytes_per_frame;
     snd_pcm_sframes_t rc = snd_pcm_readi(capture->pcm, buffer, frames_req);
     if (rc > 0) {
+      if (capture->device_stalled) {
+        capture->device_stalled = false;
+      }
       size_t frames_read = (size_t)rc;
       if (frames_read == frames_req) {
         break;
@@ -821,7 +891,16 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                              snd_strerror(err_read));
         return false;
-      } else if (err_read == 0 || err_read == -EAGAIN) {
+      } else if (err_read == 0) {
+        if (!capture->device_stalled) {
+          logger_info(&g_logger,
+                      "Capture device is stalled, processing is stalled");
+          capture->device_stalled = true;
+          snd_pcm_drop(capture->pcm);
+          snd_pcm_prepare(capture->pcm);
+        }
+        continue;
+      } else if (err_read == -EAGAIN) {
         logger_trace(&g_logger,
                      "Capture: encountered EAGAIN error on read, trying again");
         continue;
@@ -870,8 +949,9 @@ static void alsa_capture_close(void* ctx) {
     if (capture->semaphore) {
       cdsp_sem_signal(capture->semaphore);
     }
-    if (atomic_load_explicit(&capture->inner_running, memory_order_acquire)) {
+    if (capture->inner_thread_created) {
       pthread_join(capture->inner_thread, NULL);
+      capture->inner_thread_created = false;
       atomic_store_explicit(&capture->inner_running, false,
                             memory_order_release);
     }

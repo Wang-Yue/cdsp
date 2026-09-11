@@ -14,6 +14,7 @@
 #include "Filters/filter.h"
 #include "Pipeline/config_loader.h"
 #include "Pipeline/pipeline.h"
+#include "Pipeline/pipeline_internal.h"
 #include "Utils/double_helpers.h"
 #include "test_support.h"
 
@@ -42,6 +43,9 @@ static void init_default_config(dsp_config_t* config) {
   config->devices.playback.cfg.wasapi.channels = 2;
 #else
   config->devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  snprintf(config->devices.capture.cfg.raw_file.filename,
+           sizeof(config->devices.capture.cfg.raw_file.filename), "/dev/null");
+  config->devices.capture.cfg.raw_file.has_filename = true;
   config->devices.capture.cfg.raw_file.channels = 2;
   config->devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
   config->devices.playback.cfg.raw_file.channels = 2;
@@ -301,6 +305,95 @@ TEST(PipelineWithMixer) {
   processing_parameters_free(params);
 }
 
+// DELIBERATE DIVERGENCE FROM UPSTREAM (audit finding 04-4).
+//
+// Upstream's `Mixer::update_parameters` (mixer.rs:80-101) is a copy of
+// `from_config` with the two `is_mute()` checks missing, and it is what the
+// hot-reload path calls (pipeline.rs:598-601). So in CamillaDSP, any config
+// change touching a mixer silently un-mutes every muted mapping and source of
+// that mixer until the process restarts.
+//
+// That is a copy-paste omission, not a design choice, and its failure mode is
+// unsafe: audio appears on a channel the user deliberately muted. The port has
+// no in-place mixer update at all -- it always rebuilds through mixer_create --
+// so matching upstream would mean writing the bug into a code path that does
+// not otherwise exist. This test pins the port's (correct) behaviour so the
+// divergence is intentional and visible rather than accidental.
+TEST(PipelineMixerMuteSurvivesReload) {
+  dsp_config_t config;
+  init_default_config(&config);
+
+  mixer_source_t src0 = {.channel = 0,
+                         .gain = 0.0,
+                         .has_gain = true,
+                         .scale = GAIN_SCALE_DB,
+                         .mute = false};
+  mixer_source_t src1 = {.channel = 1,
+                         .gain = 0.0,
+                         .has_gain = true,
+                         .scale = GAIN_SCALE_DB,
+                         .mute = false};
+  // Destination 1 is muted; destination 0 passes through.
+  mixer_mapping_t maps[2] = {
+      {.dest = 0, .sources_count = 1, .sources = &src0, .mute = false},
+      {.dest = 1, .sources_count = 1, .sources = &src1, .mute = true}};
+  named_mixer_config_t mixer_cfg;
+  memset(&mixer_cfg, 0, sizeof(mixer_cfg));
+  strcpy(mixer_cfg.name, "muted");
+  mixer_cfg.mixer.channels_in = 2;
+  mixer_cfg.mixer.channels_out = 2;
+  mixer_cfg.mixer.mapping_count = 2;
+  mixer_cfg.mixer.mapping = maps;
+  config.mixers = &mixer_cfg;
+  config.mixers_count = 1;
+
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_MIXER;
+  strcpy(step.name, "muted");
+  step.has_name = true;
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+
+  audio_chunk_t* chunk = audio_chunk_create(1024, 2);
+  mutable_waveform_t in0 = audio_chunk_get_channel(chunk, 0);
+  mutable_waveform_t in1 = audio_chunk_get_channel(chunk, 1);
+  for (size_t t = 0; t < 1024; t++) {
+    in0[t] = 1.0;
+    in1[t] = 1.0;
+  }
+  audio_chunk_set_valid_frames(chunk, 1024);
+
+  pipeline_t* pipeline1 = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(pipeline1 != NULL);
+  audio_chunk_t* out1 = audio_chunk_create(1024, 2);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(pipeline1, chunk, out1));
+  ASSERT_NEAR(1.0, audio_chunk_get_channel(out1, 0)[0], 1e-9);
+  ASSERT_NEAR(0.0, audio_chunk_get_channel(out1, 1)[0], 1e-9);
+
+  // Reload with the mixer changed (dest 0 attenuated) but dest 1 still muted.
+  src0.gain = -6.020600;
+  pipeline_t* pipeline2 = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(pipeline2 != NULL);
+  audio_chunk_t* out2 = audio_chunk_create(1024, 2);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(pipeline2, chunk, out2));
+
+  // The gain change took effect...
+  ASSERT_NEAR(0.5, audio_chunk_get_channel(out2, 0)[0], 1e-5);
+  // ...and the mute did NOT get dropped along the way (upstream would
+  // emit 1.0).
+  ASSERT_NEAR(0.0, audio_chunk_get_channel(out2, 1)[0], 1e-9);
+
+  audio_chunk_free(chunk);
+  audio_chunk_free(out1);
+  audio_chunk_free(out2);
+  pipeline_free(pipeline1);
+  pipeline_free(pipeline2);
+  processing_parameters_free(params);
+}
+
 TEST(PipelineBypassedFilter) {
   dsp_config_t config;
   init_default_config(&config);
@@ -352,6 +445,66 @@ TEST(PipelineBypassedFilter) {
   audio_chunk_free(output);
   pipeline_free(pipeline);
   processing_parameters_free(params);
+}
+
+TEST(PipelineEmptyChannelsListIsNoOp) {
+  const char* json =
+      "{\n"
+      "  \"devices\": {\n"
+      "    \"samplerate\": 44100,\n"
+      "    \"chunksize\": 1024,\n"
+      "    \"capture\": {\"type\": \"RawFile\", \"channels\": 2, \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\"},\n"
+      "    \"playback\": {\"type\": \"File\", \"channels\": 2, \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\"}\n"
+      "  },\n"
+      "  \"filters\": {\n"
+      "    \"mygain\": {\"type\": \"Gain\", \"parameters\": {\"gain\": -6.0}}\n"
+      "  },\n"
+      "  \"pipeline\": [\n"
+      "    {\"type\": \"Filter\", \"channels\": [], \"names\": [\"mygain\"]}\n"
+      "  ]\n"
+      "}";
+
+  dsp_config_t* config = NULL;
+  config_error_t cfg_err;
+  config_error_init(&cfg_err);
+  ASSERT_EQ(0, dsp_config_parse_json(json, &config, &cfg_err));
+  ASSERT_TRUE(config != NULL);
+  ASSERT_TRUE(config->pipeline[0].has_channels);
+  ASSERT_EQ(0, config->pipeline[0].channels_count);
+
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  pipeline_t* pipeline = pipeline_create(config, params, 0, &cfg_err);
+  ASSERT_TRUE(pipeline != NULL);
+  ASSERT_EQ(0, pipeline->steps_count);
+
+  audio_chunk_t* chunk = audio_chunk_create(1024, 2);
+  for (size_t ch = 0; ch < 2; ch++) {
+    mutable_waveform_t buf = audio_chunk_get_channel(chunk, ch);
+    for (size_t t = 0; t < 1024; t++) {
+      buf[t] = 1.0;
+    }
+  }
+  audio_chunk_set_valid_frames(chunk, 1024);
+
+  audio_chunk_t* output = audio_chunk_create(1024, 2);
+  pipeline_error_t err = pipeline_process(pipeline, chunk, output);
+  ASSERT_EQ(PIPELINE_OK, err);
+
+  // Both channels must NOT have gain applied (remains 1.0)
+  for (size_t ch = 0; ch < 2; ch++) {
+    waveform_t buf = audio_chunk_get_channel(output, ch);
+    for (size_t t = 0; t < 1024; t++) {
+      ASSERT_NEAR(1.0, buf[t], 1e-6);
+    }
+  }
+
+  audio_chunk_free(chunk);
+  audio_chunk_free(output);
+  pipeline_free(pipeline);
+  processing_parameters_free(params);
+  dsp_config_free(config);
 }
 
 TEST(PipelineFilterChannelOutOfBounds) {
@@ -1057,7 +1210,8 @@ TEST(Pipeline_TransferState_ParallelStepToBiquadProcessor) {
   audio_chunk_t* dummy = audio_chunk_create(1024, 2);
   pipeline_process(pipe_a_fresh, impulse, dummy);
 
-  // Transfer state from unlowered parallel step in pipe_a_fresh to lowered biquad processor in pipe_b
+  // Transfer state from unlowered parallel step in pipe_a_fresh to lowered
+  // biquad processor in pipe_b
   pipeline_transfer_state(pipe_b, pipe_a_fresh);
 
   audio_chunk_t* out_b = audio_chunk_create(1024, 2);
@@ -1229,7 +1383,8 @@ TEST(RaggedPipelineMatchesFiltersRunOneAtATime) {
   config.filters_count = 6;
 
   char* step0_names[] = {filters[0].name, filters[1].name};
-  char* step1_names[] = {filters[2].name, filters[3].name, filters[4].name, filters[5].name};
+  char* step1_names[] = {filters[2].name, filters[3].name, filters[4].name,
+                         filters[5].name};
 
   pipeline_step_config_t steps[2];
   memset(steps, 0, sizeof(steps));
@@ -1255,11 +1410,13 @@ TEST(RaggedPipelineMatchesFiltersRunOneAtATime) {
   // Standalone filter references
   filter_t* ref_ch0[2];
   for (int i = 0; i < 2; i++) {
-    ref_ch0[i] = filter_create(filters[i].name, &filters[i].filter, 48000, 256, params, NULL);
+    ref_ch0[i] = filter_create(filters[i].name, &filters[i].filter, 48000, 256,
+                               params, NULL);
   }
   filter_t* ref_ch1[4];
   for (int i = 0; i < 4; i++) {
-    ref_ch1[i] = filter_create(filters[2 + i].name, &filters[2 + i].filter, 48000, 256, params, NULL);
+    ref_ch1[i] = filter_create(filters[2 + i].name, &filters[2 + i].filter,
+                               48000, 256, params, NULL);
   }
 
   audio_chunk_t* in_chunk = audio_chunk_create(256, 2);
@@ -1350,8 +1507,10 @@ TEST(InterleavedPipelineMatchesParallelPipeline) {
   ASSERT_EQ(PIPELINE_OK, perr);
 
   // Standalone reference
-  filter_t* ref_filter0 = filter_create(filter.name, &filter.filter, 48000, 256, params, NULL);
-  filter_t* ref_filter1 = filter_create(filter.name, &filter.filter, 48000, 256, params, NULL);
+  filter_t* ref_filter0 =
+      filter_create(filter.name, &filter.filter, 48000, 256, params, NULL);
+  filter_t* ref_filter1 =
+      filter_create(filter.name, &filter.filter, 48000, 256, params, NULL);
 
   double ref_wave0[256];
   double ref_wave1[256];
@@ -1428,10 +1587,11 @@ TEST(Pipeline_ArbitraryChannels_Biquad) {
   ASSERT_EQ(PIPELINE_OK, perr);
 
   for (size_t ch = 0; ch < num_chans; ch++) {
-    filter_t* ref_filter = filter_create(filter.name, &filter.filter, 48000, 256,
-                                         params, NULL);
+    filter_t* ref_filter =
+        filter_create(filter.name, &filter.filter, 48000, 256, params, NULL);
     double ref_wave[256];
-    memcpy(ref_wave, audio_chunk_get_channel(in_chunk, ch), 256 * sizeof(double));
+    memcpy(ref_wave, audio_chunk_get_channel(in_chunk, ch),
+           256 * sizeof(double));
     filter_process(ref_filter, ref_wave, 256);
 
     waveform_t out_w = audio_chunk_get_channel(out_chunk, ch);
@@ -1457,7 +1617,8 @@ TEST(Pipeline_ArbitraryCascade_Biquad) {
   config.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
   config.devices.playback.cfg.raw_file.channels = 2;
 
-  named_filter_config_t* filters = calloc(num_filters, sizeof(named_filter_config_t));
+  named_filter_config_t* filters =
+      calloc(num_filters, sizeof(named_filter_config_t));
   char** step_names = calloc(num_filters, sizeof(char*));
 
   for (size_t i = 0; i < num_filters; i++) {
@@ -1466,7 +1627,8 @@ TEST(Pipeline_ArbitraryCascade_Biquad) {
     filters[i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
     filters[i].filter.parameters.biquad.freq = 500.0 + (double)(i % 20) * 50.0;
     filters[i].filter.parameters.biquad.q = 0.707;
-    filters[i].filter.parameters.biquad.gain = 0.05 * (double)((int)(i % 5) - 2);
+    filters[i].filter.parameters.biquad.gain =
+        0.05 * (double)((int)(i % 5) - 2);
     step_names[i] = filters[i].name;
   }
 
@@ -1521,6 +1683,149 @@ TEST(Pipeline_ArbitraryCascade_Biquad) {
   processing_parameters_free(params);
   free(filters);
   free(step_names);
+}
+
+TEST(PipelineFiltersWithMoreThan64Runs) {
+  const size_t num_filters =
+      70;  // 70 alternating runs (biquad, gain, biquad, gain...)
+  dsp_config_t config;
+  init_default_config(&config);
+  config.devices.samplerate = 48000;
+  config.devices.chunksize = 128;
+  config.devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  config.devices.capture.cfg.raw_file.channels = 2;
+  config.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  config.devices.playback.cfg.raw_file.channels = 2;
+
+  named_filter_config_t* filters =
+      calloc(num_filters, sizeof(named_filter_config_t));
+  char** step_names = calloc(num_filters, sizeof(char*));
+
+  for (size_t i = 0; i < num_filters; i++) {
+    snprintf(filters[i].name, sizeof(filters[i].name), "f_%zu", i);
+    if (i % 2 == 0) {
+      filters[i].filter.type = FILTER_TYPE_BIQUAD;
+      filters[i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
+      filters[i].filter.parameters.biquad.freq = 1000.0;
+      filters[i].filter.parameters.biquad.q = 0.707;
+      filters[i].filter.parameters.biquad.gain = 0.0;
+    } else {
+      filters[i].filter.type = FILTER_TYPE_GAIN;
+      filters[i].filter.parameters.gain.gain = 0.0;
+      filters[i].filter.parameters.gain.has_gain = true;
+      filters[i].filter.parameters.gain.inverted = false;
+      filters[i].filter.parameters.gain.mute = false;
+    }
+    step_names[i] = filters[i].name;
+  }
+
+  config.filters = filters;
+  config.filters_count = num_filters;
+
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_FILTER;
+  step.names = step_names;
+  step.names_count = num_filters;
+
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  processing_parameters_t* params = processing_parameters_create(2, 2);
+  config_error_t err;
+  config_error_init(&err);
+  pipeline_t* pipe = pipeline_create(&config, params, 128, &err);
+  ASSERT_TRUE(pipe != NULL);
+  ASSERT_EQ(CONFIG_ERR_NONE, err.type);
+
+  audio_chunk_t* in_chunk = audio_chunk_create(128, 2);
+  audio_chunk_t* out_chunk = audio_chunk_create(128, 2);
+  for (size_t ch = 0; ch < 2; ch++) {
+    mutable_waveform_t w = audio_chunk_get_channel(in_chunk, ch);
+    for (size_t i = 0; i < 128; i++) {
+      w[i] = 1.0;
+    }
+  }
+  audio_chunk_set_valid_frames(in_chunk, 128);
+
+  pipeline_error_t perr = pipeline_process(pipe, in_chunk, out_chunk);
+  ASSERT_EQ(PIPELINE_OK, perr);
+
+  waveform_t out_w0 = audio_chunk_get_channel(out_chunk, 0);
+  for (size_t i = 0; i < 128; i++) {
+    ASSERT_NEAR(1.0, out_w0[i], 1e-6);
+  }
+
+  audio_chunk_free(in_chunk);
+  audio_chunk_free(out_chunk);
+  pipeline_free(pipe);
+  processing_parameters_free(params);
+  free(filters);
+  free(step_names);
+}
+
+TEST(PipelineSingleThreadedPreservesFilterSteps) {
+  dsp_config_t config;
+  init_default_config(&config);
+  config.devices.samplerate = 48000;
+  config.devices.chunksize = 256;
+
+  named_filter_config_t filters[2];
+  memset(filters, 0, sizeof(filters));
+  strncpy(filters[0].name, "gain1", sizeof(filters[0].name) - 1);
+  filters[0].filter.type = FILTER_TYPE_GAIN;
+  filters[0].filter.parameters.gain.gain = -1.0;
+  filters[0].filter.parameters.gain.has_gain = true;
+  filters[0].filter.parameters.gain.scale = GAIN_SCALE_DB;
+
+  strncpy(filters[1].name, "gain2", sizeof(filters[1].name) - 1);
+  filters[1].filter.type = FILTER_TYPE_GAIN;
+  filters[1].filter.parameters.gain.gain = -2.0;
+  filters[1].filter.parameters.gain.has_gain = true;
+  filters[1].filter.parameters.gain.scale = GAIN_SCALE_DB;
+
+  config.filters = filters;
+  config.filters_count = 2;
+
+  char* step1_names[] = {filters[0].name};
+  char* step2_names[] = {filters[1].name};
+  pipeline_step_config_t steps[2];
+  memset(steps, 0, sizeof(steps));
+  steps[0].type = PIPELINE_STEP_TYPE_FILTER;
+  steps[0].names = step1_names;
+  steps[0].names_count = 1;
+  steps[0].has_names = true;
+  steps[0].has_channel = true;
+  steps[0].channel = 0;
+
+  steps[1].type = PIPELINE_STEP_TYPE_FILTER;
+  steps[1].names = step2_names;
+  steps[1].names_count = 1;
+  steps[1].has_names = true;
+  steps[1].has_channel = true;
+  steps[1].channel = 0;
+
+  config.pipeline = steps;
+  config.pipeline_count = 2;
+
+  // Single-threaded: steps are not merged (remains 2 steps)
+  config.devices.has_multithreaded = true;
+  config.devices.multithreaded = false;
+  processing_parameters_t* params1 = processing_parameters_create(2, 2);
+  pipeline_t* pipe_st = pipeline_create(&config, params1, 256, NULL);
+  ASSERT_TRUE(pipe_st != NULL);
+  ASSERT_EQ(2, pipe_st->steps_count);
+  pipeline_free(pipe_st);
+  processing_parameters_free(params1);
+
+  // Multithreaded: adjacent parallel filter steps are merged into 1 step
+  config.devices.multithreaded = true;
+  processing_parameters_t* params2 = processing_parameters_create(2, 2);
+  pipeline_t* pipe_mt = pipeline_create(&config, params2, 256, NULL);
+  ASSERT_TRUE(pipe_mt != NULL);
+  ASSERT_EQ(1, pipe_mt->steps_count);
+  pipeline_free(pipe_mt);
+  processing_parameters_free(params2);
 }
 
 TEST_MAIN()

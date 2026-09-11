@@ -23,6 +23,20 @@
 
 struct filter_vtable;
 
+/**
+ * @brief Opens a new coefficient-cache build pass.
+ *
+ * Conv filters share their (expensive) pre-transformed coefficients through a
+ * process-wide cache keyed on filter name and chunk size. Upstream scopes the
+ * equivalent `ConvCoeffCache` to a single build/update pass, since reusing it
+ * across passes risks handing out coefficients from a stale config.
+ *
+ * Call this once before building or updating a pipeline. Entries created in
+ * earlier passes stay alive for as long as the filters that reference them,
+ * but are never handed out again.
+ */
+void convolution_coeff_cache_begin_build_pass(void);
+
 extern const struct filter_vtable g_convolution_vtable;
 
 #endif  // CLIB_FILTERS_CONVOLUTION_H

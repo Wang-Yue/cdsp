@@ -233,11 +233,11 @@ sequenceDiagram
 ```
 
 1. **Staging & Lock-Free Status Indicator**:
-   - `dsp_engine_set_config_json()` sets `config_in_progress` to `true` (see [dsp_engine.c](file:///Users/wangyue/cdsp/Engine/dsp_engine.c)). This allows client WebSocket/HTTP poll queries to immediately return `PROCESSING_STATE_STARTING` lock-free without blocking on `state_mutex`.
+   - `dsp_engine_set_config_json()` sets `config_in_progress` to `true` (see [Engine/dsp_engine.c](Engine/dsp_engine.c)). This allows client WebSocket/HTTP poll queries to immediately return `PROCESSING_STATE_STARTING` lock-free without blocking on `state_mutex`.
    - **Configuration Change Decision Tree**: `dsp_engine_set_config_struct_locked()` evaluates `devices_config_equal(&cur_cfg->devices, &config->devices)`. If device backends, sample rates, or channels match, it triggers non-blocking pipeline hot-reload via `dsp_session_reload_config()`. If device settings differ, it triggers a full session teardown and rebuild.
 
 2. **Allocating Session Core & Mutex**:
-   - `engine_session_build_and_start()` allocates the `dsp_session_t` container and initializes `config_mutex` (see [engine_session_builder.c](file:///Users/wangyue/cdsp/Engine/engine_session_builder.c)).
+   - `engine_session_build_and_start()` allocates the `dsp_session_t` container and initializes `config_mutex` (see [Engine/engine_session_builder.c](Engine/engine_session_builder.c)).
 
 3. **Shared State, Processing Parameters & DSD/DoP Helpers Setup**:
    - `engine_session_build_shared_state_and_dop()` allocates `engine_shared_state_t` (initializing SPSC queues `captured_queue` and `processed_queue`, and `state_raw` to `PROCESSING_STATE_STARTING`) and `processing_parameters_t`.
@@ -525,6 +525,21 @@ if (engine_shared_state_should_stop(loop->shared)) {
 }
 ```
 If `should_stop()` is already `true`, the threads exit their loops silently, bypassing the CAS safety gate entirely.
+
+### 4.2. Clean EOF Handling for Plain-WAV 4 GB Limit
+Standard RIFF WAV headers store chunk and file sizes using 32-bit unsigned integers (`uint32_t`), limiting the maximum playable or recordable stream length to $2^{32} - 1$ bytes (~4 GB).
+
+When an active playback backend writes to a standard WAV file without RF64 extensions (`use_rf64: false`) and the next audio chunk would breach the 4 GB limit:
+1. `file_playback_write` in [`Backend/file_backend.c`](Backend/file_backend.c) intercepts the write, logs a warning, and returns `false` with `err->type = BACKEND_ERROR_NONE` (signaling a clean file boundary rather than an operating system I/O fault).
+2. The playback loop in [`Engine/engine_playback_loop.c`](Engine/engine_playback_loop.c) inspects `err.type`:
+   ```c
+   if (err.type == BACKEND_ERROR_NONE) {
+       reached_eos = true;
+       break;
+   }
+   ```
+3. Instead of invoking `engine_shared_state_request_stop` with an unrecoverable hardware error, the playback loop treats the condition as clean End-Of-Stream (`reached_eos = true`). The playback thread exits its loop cleanly and the engine transitions to `STOP_REASON_DONE`.
+4. The file header is cleanly finalized with the exact 32-bit chunk size of bytes written, leaving a compliant, well-formed WAV file readable by standard DAWs.
 
 ---
 

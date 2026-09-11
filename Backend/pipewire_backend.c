@@ -80,6 +80,7 @@ struct pipewire_playback {
   int sample_rate;
   size_t channels;
   int chunk_size;
+  int target_level;
 
   char node_name[256];
   char node_description[256];
@@ -860,7 +861,12 @@ static bool pipewire_playback_open(void* ctx, backend_error_t* err) {
 
   playback->blockalign = (size_t)playback->channels * sizeof(float);
   size_t pb_min_frames = (size_t)ceil((double)playback->sample_rate * 0.025);
-  size_t pb_prefill_frames = (size_t)(3 * playback->chunk_size);
+  size_t target_level = playback->target_level > 0
+                            ? (size_t)playback->target_level
+                            : (size_t)playback->chunk_size;
+  size_t pb_prefill_frames = target_level > (size_t)(3 * playback->chunk_size)
+                                 ? target_level
+                                 : (size_t)(3 * playback->chunk_size);
   size_t pb_frames_needed =
       pb_prefill_frames + (size_t)(4 * playback->chunk_size);
   if (pb_frames_needed < pb_min_frames) pb_frames_needed = pb_min_frames;
@@ -1116,6 +1122,9 @@ static playback_backend_t* pipewire_playback_create(
   playback->sample_rate = sample_rate;
   playback->channels = config->cfg.pipewire.channels;
   playback->chunk_size = chunk_size;
+  playback->target_level = config->cfg.pipewire.has_target_level
+                               ? config->cfg.pipewire.target_level
+                               : chunk_size;
 
   if (config->cfg.pipewire.has_node_name) {
     snprintf(playback->node_name, sizeof(playback->node_name), "%s",

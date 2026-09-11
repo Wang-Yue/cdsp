@@ -38,8 +38,10 @@ double biquad_filter_process_single(biquad_filter_t* filter, double sample);
 
 /**
  * @brief Updates the filter parameters from a new configuration.
+ * @return True if parameters were successfully updated, false if invalid or
+ * unstable.
  */
-void biquad_filter_update_parameters(biquad_filter_t* filter,
+bool biquad_filter_update_parameters(biquad_filter_t* filter,
                                      const filter_config_t* config,
                                      int sample_rate);
 

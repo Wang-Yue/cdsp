@@ -155,7 +155,7 @@ static void async_poly_resampler_free(void* impl) {
 static void async_poly_resampler_set_relative_ratio(void* impl,
                                                     double multiplier) {
   async_poly_resampler_t* resampler = (async_poly_resampler_t*)impl;
-  if (!resampler) return;
+  if (!resampler || isnan(multiplier) || isinf(multiplier)) return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
   if (multiplier < min_ratio) multiplier = min_ratio;
   if (multiplier > resampler->max_relative_ratio)
@@ -365,6 +365,9 @@ static resampler_error_t async_poly_resampler_process(
       resampler->needed_input_size > resampler->max_input_frames) {
     return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
   }
+  if (valid_frames > resampler->needed_input_size) {
+    valid_frames = resampler->needed_input_size;
+  }
   if (audio_chunk_get_channels(input) != resampler->channels) {
     return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
   }
@@ -373,7 +376,7 @@ static resampler_error_t async_poly_resampler_process(
   }
   size_t output_frames = resampler->needed_output_size;
   if (output_frames > resampler->max_output_frames) {
-    output_frames = resampler->max_output_frames;
+    return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
 
   size_t n_len = resampler->interpolator_len;
@@ -484,7 +487,11 @@ static void* async_poly_resampler_create_impl(
                      "AsyncPolyResampler: rates must be positive");
     return NULL;
   }
-  if (max_relative_ratio < 1.0) max_relative_ratio = 1.1;
+  if (max_relative_ratio < 1.0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncPolyResampler: max_relative_ratio must be >= 1.0");
+    return NULL;
+  }
 
   async_poly_resampler_t* resampler =
       (async_poly_resampler_t*)calloc(1, sizeof(async_poly_resampler_t));
@@ -539,12 +546,8 @@ static void* async_poly_resampler_create_impl(
   if (fixed == FIXED_ASYNC_OUTPUT) {
     resampler->max_output_frames = chunk_size;
   } else {
-    double most_neg_last_index = -((double)resampler->interpolator_len / 2.0);
-    double max_ratio_abs = resampler->base_ratio * max_relative_ratio;
     double raw_max =
-        ((double)chunk_size - (double)(resampler->interpolator_len + 1) -
-         most_neg_last_index) *
-        max_ratio_abs;
+        (double)chunk_size * resampler->base_ratio * max_relative_ratio + 10.0;
 
     if (isnan(raw_max) || isinf(raw_max) || raw_max < 0.0 ||
         raw_max > (double)(SIZE_MAX - 32)) {
@@ -676,6 +679,7 @@ static void async_poly_resampler_reset(void* impl) {
   resampler->last_index = -((double)resampler->interpolator_len / 2.0);
   resampler->resample_ratio = resampler->base_ratio;
   resampler->target_ratio = resampler->base_ratio;
+  async_poly_resampler_update_lengths(resampler);
 }
 
 const resampler_vtable_t g_async_poly_resampler_vtable = {

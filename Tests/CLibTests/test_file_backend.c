@@ -1191,4 +1191,124 @@ TEST(FileBackendGetChannelsRF64) {
   remove(rf64_filename);
 }
 
+TEST(FileBackendBW64) {
+  char bw64_filename[256];
+  snprintf(bw64_filename, sizeof(bw64_filename),
+           "/tmp/test_file_backend_bw64_%d.wav", getpid());
+  remove(bw64_filename);
+
+  FILE* f = fopen(bw64_filename, "wb");
+  ASSERT_TRUE(f != NULL);
+  uint8_t bw64_header[80] = {
+      'B',  'W',  '6', '4', 0xFF, 0xFF, 0xFF, 0xFF, 'W',  'A', 'V', 'E', 'd',
+      's',  '6',  '4', 28,  0,    0,    0,    100,  0,    0,   0,   0,   0,
+      0,    0,    100, 0,   0,    0,    0,    0,    0,    0,   50,  0,   0,
+      0,    0,    0,   0,   0,    0,    0,    0,    0,    'f', 'm', 't', ' ',
+      16,   0,    0,   0,   1,    0,    2,    0,  // channels: 2
+      0x44, 0xAC, 0,   0,   0x10, 0xB1, 0x02, 0,    4,
+      0,  // 44100 Hz, 176400 B/s, align 4
+      16,   0,    'd', 'a', 't',  'a',  0xFF, 0xFF, 0xFF, 0xFF};
+  fwrite(bw64_header, 1, sizeof(bw64_header), f);
+  fclose(f);
+
+  cdsp_wav_info_t info;
+  char wav_err[256];
+  ASSERT_TRUE(
+      cdsp_wav_file_read_info(bw64_filename, &info, wav_err, sizeof(wav_err)));
+  ASSERT_EQ(2, (int)info.channels);
+  ASSERT_EQ(44100, (int)info.sample_rate);
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S16_LE, info.format);
+
+  remove(bw64_filename);
+}
+
+TEST(FileBackendDataBeforeFmt) {
+  char wav_filename[256];
+  snprintf(wav_filename, sizeof(wav_filename),
+           "/tmp/test_file_backend_data_before_fmt_%d.wav", getpid());
+  remove(wav_filename);
+
+  FILE* f = fopen(wav_filename, "wb");
+  ASSERT_TRUE(f != NULL);
+
+  uint8_t header[52] = {
+      // RIFF header
+      'R', 'I', 'F', 'F', 44, 0, 0, 0, 'W', 'A', 'V', 'E',
+      // data chunk comes first: size 8
+      'd', 'a', 't', 'a', 8, 0, 0, 0, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04,
+      0x00,  // 8 bytes audio
+      // fmt chunk comes second: size 16
+      'f', 'm', 't', ' ', 16, 0, 0, 0, 1, 0,  // audio format: 1 (PCM)
+      2, 0,                                   // channels: 2
+      0x44, 0xAC, 0, 0,                       // sample rate: 44100
+      0x10, 0xB1, 0x02, 0,                    // byte rate: 176400
+      4, 0,                                   // block align: 4
+      16, 0                                   // bits per sample: 16
+  };
+  fwrite(header, 1, sizeof(header), f);
+  fclose(f);
+
+  cdsp_wav_info_t info;
+  char wav_err[256];
+  ASSERT_TRUE(
+      cdsp_wav_file_read_info(wav_filename, &info, wav_err, sizeof(wav_err)));
+  ASSERT_EQ(2, (int)info.channels);
+  ASSERT_EQ(44100, (int)info.sample_rate);
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S16_LE, info.format);
+  ASSERT_EQ(20, (int)info.data_start_offset);
+  ASSERT_EQ(8, (int)info.data_bytes);
+
+  remove(wav_filename);
+}
+
+TEST(FileBackendStdinSkipBytes) {
+  int pipefd[2];
+  ASSERT_EQ(0, pipe(pipefd));
+
+  int saved_stdin = dup(STDIN_FILENO);
+
+  // Write 4 bytes to skip, then 2 frames of 16-bit stereo (4 bytes per frame)
+  uint8_t to_write[] = {
+      0xFF, 0xFF, 0xEE, 0xEE,  // 4 bytes to skip
+      0x00, 0x00, 0x00, 0x00,  // frame 0: ch0 = 0, ch1 = 0
+      0x00, 0x40, 0x00, 0x20   // frame 1: ch0 = 16384 (0.5), ch1 = 8192 (0.25)
+  };
+  ASSERT_EQ((ssize_t)sizeof(to_write),
+            write(pipefd[1], to_write, sizeof(to_write)));
+  close(pipefd[1]);
+
+  dup2(pipefd[0], STDIN_FILENO);
+  close(pipefd[0]);
+
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_STDIN_OUT;
+  cap_cfg.cfg.stdin_in.channels = 2;
+  cap_cfg.cfg.stdin_in.format = BINARY_SAMPLE_FORMAT_S16_LE;
+  cap_cfg.cfg.stdin_in.skip_bytes = 4;
+  cap_cfg.cfg.stdin_in.has_skip_bytes = true;
+
+  backend_error_t err;
+  capture_backend_t* capture =
+      create_capture_backend(&cap_cfg, 44100, 2, false, NULL, &err);
+  ASSERT_TRUE(capture != NULL);
+  ASSERT_TRUE(capture_backend_open(capture, &err));
+
+  audio_chunk_t* chunk = audio_chunk_create(2, 2);
+  ASSERT_TRUE(capture_backend_read(capture, 2, chunk, &err));
+  ASSERT_EQ(2, (int)audio_chunk_get_valid_frames(chunk));
+
+  ASSERT_NEAR(0.0, audio_chunk_get_channel(chunk, 0)[0], 1e-4);
+  ASSERT_NEAR(0.0, audio_chunk_get_channel(chunk, 1)[0], 1e-4);
+  ASSERT_NEAR(0.5, audio_chunk_get_channel(chunk, 0)[1], 1e-4);
+  ASSERT_NEAR(0.25, audio_chunk_get_channel(chunk, 1)[1], 1e-4);
+
+  capture_backend_close(capture);
+  capture_backend_free(capture);
+  audio_chunk_free(chunk);
+
+  dup2(saved_stdin, STDIN_FILENO);
+  close(saved_stdin);
+}
+
 TEST_MAIN()

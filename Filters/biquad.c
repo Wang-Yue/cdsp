@@ -590,7 +590,12 @@ static void* biquad_filter_create(const char* name,
 static void biquad_filter_process(void* instance, mutable_waveform_t waveform,
                                   size_t count) {
   biquad_filter_t* filter = (biquad_filter_t*)instance;
-  if (!filter || !waveform || count == 0) return;
+  if (!filter) return;
+  if (!waveform || count == 0) {
+    if (fpclassify(filter->z1) == FP_SUBNORMAL) filter->z1 = 0.0;
+    if (fpclassify(filter->z2) == FP_SUBNORMAL) filter->z2 = 0.0;
+    return;
+  }
 
   // Direct Form II Transposed (DF2T) implementation, optimized with FMA.
   double b0 = filter->coeffs.b0;
@@ -880,18 +885,20 @@ void biquad_process_mono_cascade(biquad_filter_t** stages, size_t num_stages,
   }
 }
 
-void biquad_filter_update_parameters(biquad_filter_t* filter,
+bool biquad_filter_update_parameters(biquad_filter_t* filter,
                                      const filter_config_t* config,
                                      int sample_rate) {
-  if (!filter || !config) return;
-  if (config->type != FILTER_TYPE_BIQUAD) return;
+  if (!filter || !config) return false;
+  if (config->type != FILTER_TYPE_BIQUAD) return false;
   biquad_coefficients_t new_coeffs;
   if (biquad_coefficients_compute(&config->parameters.biquad, sample_rate,
                                   &new_coeffs)) {
     filter->coeffs = new_coeffs;
     filter->neg_a1 = -new_coeffs.a1;
     filter->neg_a2 = -new_coeffs.a2;
+    return true;
   }
+  return false;
 }
 
 /**

@@ -430,4 +430,97 @@ TEST(npeq_matches_separate_biquads) {
   g_biquad_combo_vtable.free(combo);
 }
 
+// Section `i` is only the same stage of the same cascade while the cascade has
+// the same length, so an equal-length reload must carry every section.
+TEST(combo_transfer_state_carries_state_for_equal_section_count) {
+  int fs = 44100;
+  peq_band_t bands[3] = {
+      {.freq = 125.0, .q = 0.7, .gain = 12.0},
+      {.freq = 1000.0, .q = 0.7, .gain = -9.0},
+      {.freq = 8000.0, .q = 0.7, .gain = 6.0},
+  };
+  filter_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.type = FILTER_TYPE_BIQUAD_COMBO;
+  cfg.parameters.biquad_combo.type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
+  cfg.parameters.biquad_combo.bands = bands;
+  cfg.parameters.biquad_combo.bands_count = 3;
+
+  void* src =
+      g_biquad_combo_vtable.create("combo_src", &cfg, fs, 0, NULL, NULL);
+  void* dest =
+      g_biquad_combo_vtable.create("combo_dest", &cfg, fs, 0, NULL, NULL);
+  ASSERT_TRUE(src != NULL);
+  ASSERT_TRUE(dest != NULL);
+
+  double impulse[8] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  g_biquad_combo_vtable.process(src, impulse, 8);
+
+  g_biquad_combo_vtable.transfer_state(dest, src);
+
+  double src_tail[8] = {0.0};
+  double dest_tail[8] = {0.0};
+  g_biquad_combo_vtable.process(src, src_tail, 8);
+  g_biquad_combo_vtable.process(dest, dest_tail, 8);
+
+  // The ringing must continue seamlessly, which also proves it is not zero.
+  ASSERT_TRUE(fabs(dest_tail[0]) > 1e-9);
+  for (size_t i = 0; i < 8; i++) {
+    ASSERT_DOUBLE_EQ(src_tail[i], dest_tail[i]);
+  }
+
+  g_biquad_combo_vtable.free(src);
+  g_biquad_combo_vtable.free(dest);
+}
+
+// Resize invariant: a different section count means the combo was rebuilt into
+// a different filter, and the old per-section histories describe no part of it.
+TEST(combo_transfer_state_drops_state_when_section_count_changes) {
+  int fs = 44100;
+  peq_band_t bands3[3] = {
+      {.freq = 125.0, .q = 0.7, .gain = 12.0},
+      {.freq = 1000.0, .q = 0.7, .gain = -9.0},
+      {.freq = 8000.0, .q = 0.7, .gain = 6.0},
+  };
+  peq_band_t bands5[5] = {
+      {.freq = 125.0, .q = 0.7, .gain = 12.0},
+      {.freq = 400.0, .q = 0.7, .gain = -3.0},
+      {.freq = 1000.0, .q = 0.7, .gain = -9.0},
+      {.freq = 2500.0, .q = 0.7, .gain = 3.0},
+      {.freq = 8000.0, .q = 0.7, .gain = 6.0},
+  };
+  filter_config_t cfg3;
+  memset(&cfg3, 0, sizeof(cfg3));
+  cfg3.type = FILTER_TYPE_BIQUAD_COMBO;
+  cfg3.parameters.biquad_combo.type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
+  cfg3.parameters.biquad_combo.bands = bands3;
+  cfg3.parameters.biquad_combo.bands_count = 3;
+
+  filter_config_t cfg5 = cfg3;
+  cfg5.parameters.biquad_combo.bands = bands5;
+  cfg5.parameters.biquad_combo.bands_count = 5;
+
+  void* src =
+      g_biquad_combo_vtable.create("combo_src", &cfg3, fs, 0, NULL, NULL);
+  void* dest =
+      g_biquad_combo_vtable.create("combo_dest", &cfg5, fs, 0, NULL, NULL);
+  ASSERT_TRUE(src != NULL);
+  ASSERT_TRUE(dest != NULL);
+
+  double impulse[8] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  g_biquad_combo_vtable.process(src, impulse, 8);
+
+  g_biquad_combo_vtable.transfer_state(dest, src);
+
+  // A filter that carried nothing turns silence into silence, exactly.
+  double tail[8] = {0.0};
+  g_biquad_combo_vtable.process(dest, tail, 8);
+  for (size_t i = 0; i < 8; i++) {
+    ASSERT_DOUBLE_EQ(0.0, tail[i]);
+  }
+
+  g_biquad_combo_vtable.free(src);
+  g_biquad_combo_vtable.free(dest);
+}
+
 TEST_MAIN()

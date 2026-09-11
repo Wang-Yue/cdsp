@@ -13,6 +13,7 @@
 #include "Config/processor_config_types.h"
 #include "Filters/biquad.h"
 #include "Filters/biquad_combo.h"
+#include "Filters/convolution.h"
 #include "Filters/filter.h"
 #include "Filters/volume.h"
 #include "Logging/app_logger.h"
@@ -45,8 +46,8 @@ typedef struct {
 
 static size_t find_biquad_runs(const char* const* names, size_t names_count,
                                const dsp_config_t* config,
-                               filter_run_t* out_runs, size_t max_runs) {
-  if (names_count == 0) return 0;
+                               filter_run_t* out_runs) {
+  if (names_count == 0 || !out_runs) return 0;
   size_t runs_count = 0;
   for (size_t i = 0; i < names_count; i++) {
     const filter_config_t* f_cfg = dsp_config_get_filter(config, names[i]);
@@ -54,23 +55,19 @@ static size_t find_biquad_runs(const char* const* names, size_t names_count,
     if (runs_count > 0 && out_runs[runs_count - 1].is_biquads == is_bq) {
       out_runs[runs_count - 1].len += 1;
     } else {
-      if (runs_count < max_runs) {
-        out_runs[runs_count].is_biquads = is_bq;
-        out_runs[runs_count].start = i;
-        out_runs[runs_count].len = 1;
-        runs_count++;
-      }
+      out_runs[runs_count].is_biquads = is_bq;
+      out_runs[runs_count].start = i;
+      out_runs[runs_count].len = 1;
+      runs_count++;
     }
   }
   return runs_count;
 }
 
-static biquad_step_t* build_biquad_step(const char* const* names,
-                                        size_t names_count,
-                                        const dsp_config_t* config, int rate,
-                                        const size_t* channels,
-                                        size_t channels_count,
-                                        config_error_t* err) {
+static biquad_step_t* build_biquad_step(
+    const char* const* names, size_t names_count, const dsp_config_t* config,
+    int rate, const size_t* channels, size_t channels_count,
+    size_t chunk_channels, config_error_t* err) {
   biquad_step_t* step = (biquad_step_t*)calloc(1, sizeof(biquad_step_t));
   if (!step) {
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
@@ -169,7 +166,15 @@ static biquad_step_t* build_biquad_step(const char* const* names,
     return NULL;
   }
   step->live_count = 0;
-  size_t init_wf_cap = channels_count > 16 ? channels_count : 16;
+  // `waveforms` is indexed by *absolute* channel index, so it has to cover the
+  // whole chunk, not just the channels this step selects. Sizing it from
+  // channels_count made execute_biquad_step() bail out (silently skipping the
+  // whole step) whenever a channel-selecting step appeared in a pipeline wider
+  // than the 16-entry floor. Growing it lazily is not an option: that would
+  // allocate on the audio thread.
+  size_t init_wf_cap =
+      chunk_channels > channels_count ? chunk_channels : channels_count;
+  if (init_wf_cap < 16) init_wf_cap = 16;
   step->waveforms = (double**)calloc(init_wf_cap, sizeof(double*));
   if (!step->waveforms) {
     config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
@@ -192,6 +197,8 @@ static void count_pipeline_requirements(const dsp_config_t* config,
     const pipeline_step_config_t* step = &config->pipeline[i];
     if (step->bypassed) continue;
     if (step->type == PIPELINE_STEP_TYPE_FILTER) {
+      if (step->has_channels && step->channels_count == 0) continue;
+      if (step->has_names && step->names_count == 0) continue;
       (*out_total_steps)++;
     } else if (step->type == PIPELINE_STEP_TYPE_MIXER) {
       (*out_total_steps)++;
@@ -207,6 +214,11 @@ static bool resolve_filter_step_channels(
     size_t** out_channels, size_t* out_count, size_t* out_single_ch,
     bool* out_is_allocated, config_error_t* err) {
   *out_is_allocated = false;
+  if (step->has_channels) {
+    *out_channels = step->channels;
+    *out_count = step->channels_count;
+    return true;
+  }
   if (step->channels && step->channels_count > 0) {
     *out_channels = step->channels;
     *out_count = step->channels_count;
@@ -332,6 +344,9 @@ static bool build_filter_step(const pipeline_step_config_t* step,
                               processing_parameters_t* proc_params,
                               size_t current_channels, size_t* inout_cap,
                               config_error_t* err) {
+  if (step->has_names && step->names_count == 0) {
+    return true;
+  }
   if (!step->names || step->names_count == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_PIPELINE,
                      "Filter step missing names");
@@ -366,9 +381,20 @@ static bool build_filter_step(const pipeline_step_config_t* step,
     }
   }
 
-  filter_run_t runs[64];
+  bool success = false;
+  filter_run_t stack_runs[64];
+  filter_run_t* runs = stack_runs;
+  bool runs_allocated = false;
+  if (step->names_count > 64) {
+    runs = (filter_run_t*)malloc(step->names_count * sizeof(filter_run_t));
+    if (!runs) {
+      config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
+      goto cleanup;
+    }
+    runs_allocated = true;
+  }
   size_t num_runs = find_biquad_runs((const char* const*)step->names,
-                                     step->names_count, config, runs, 64);
+                                     step->names_count, config, runs);
 
   for (size_t r = 0; r < num_runs; r++) {
     const char* const* run_names =
@@ -378,18 +404,16 @@ static bool build_filter_step(const pipeline_step_config_t* step,
     if (runs[r].is_biquads) {
       biquad_step_t* bq =
           build_biquad_step(run_names, run_len, config, pipeline->rate,
-                            channels, channels_count, err);
+                            channels, channels_count, current_channels, err);
       if (!bq) {
-        if (is_allocated) free(channels);
-        return false;
+        goto cleanup;
       }
       pipeline_exec_step_t exec = {.type = EXEC_STEP_BIQUAD, .biquad_step = bq};
       if (!append_exec_step(&pipeline->steps, &pipeline->steps_count, inout_cap,
                             exec)) {
         biquad_step_free(bq);
-        if (is_allocated) free(channels);
         config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
-        return false;
+        goto cleanup;
       }
     } else {
       parallel_filter_chain_t* chains =
@@ -397,18 +421,16 @@ static bool build_filter_step(const pipeline_step_config_t* step,
                                     pipeline->frames_per_chunk, proc_params,
                                     channels, channels_count, err);
       if (!chains) {
-        if (is_allocated) free(channels);
-        return false;
+        goto cleanup;
       }
 
       size_t count = pipeline->steps_count;
-      if (count > 0 &&
+      if (pipeline->multithreaded && count > 0 &&
           pipeline->steps[count - 1].type == EXEC_STEP_PARALLEL_FILTERS) {
         if (!merge_parallel_filter_chains(&pipeline->steps[count - 1], chains,
                                           channels_count, err)) {
           free_filter_chains(chains, channels_count);
-          if (is_allocated) free(channels);
-          return false;
+          goto cleanup;
         }
       } else {
         pipeline_exec_step_t exec = {.type = EXEC_STEP_PARALLEL_FILTERS,
@@ -417,16 +439,19 @@ static bool build_filter_step(const pipeline_step_config_t* step,
         if (!append_exec_step(&pipeline->steps, &pipeline->steps_count,
                               inout_cap, exec)) {
           free_filter_chains(chains, channels_count);
-          if (is_allocated) free(channels);
           config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
-          return false;
+          goto cleanup;
         }
       }
     }
   }
 
+  success = true;
+
+cleanup:
+  if (runs_allocated) free(runs);
   if (is_allocated) free(channels);
-  return true;
+  return success;
 }
 
 static bool build_mixer_step(const pipeline_step_config_t* step,
@@ -511,6 +536,12 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
                             processing_parameters_t* proc_params,
                             size_t explicit_chunk_size, config_error_t* err) {
   if (pipeline_config_validate(config, err) != 0) return NULL;
+
+  // Conv coefficients are shared within one build pass only. Without this the
+  // cache would hand this pipeline the impulse responses of the previous one,
+  // which is still running while we build.
+  convolution_coeff_cache_begin_build_pass();
+
   pipeline_t* pipeline = (pipeline_t*)calloc(1, sizeof(pipeline_t));
   if (!pipeline) {
     logger_error(&g_logger,
@@ -558,6 +589,11 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
     pipeline_free(pipeline);
     return NULL;
   }
+  // The master volume is a single instance shared by every channel, so
+  // pipeline_process() drives its ramp explicitly (prepare once, process per
+  // channel, advance once). Volume filters built from a pipeline step get one
+  // instance per channel and drive themselves instead.
+  volume_filter_set_externally_driven(pipeline->master_volume, true);
 
   // 2. Pre-allocate the capture scratch buffer
   pipeline->capture_scratch = audio_chunk_create(

@@ -19,10 +19,11 @@ extern "C" {
  * with size >= `n_bins` floats).
  */
 typedef struct {
-  float* frequencies; /**< Center frequencies of output bins in Hz
-                         (caller-allocated). */
-  float* magnitudes;  /**< Peak magnitude in dBFS (caller-allocated). */
-  size_t count;       /**< Actual number of bins populated. */
+  float* frequencies;      /**< Center frequencies of output bins in Hz
+                              (caller-allocated). */
+  float* magnitudes;       /**< Peak magnitude in dBFS (caller-allocated). */
+  size_t count;            /**< Actual number of bins populated. */
+  char error_message[128]; /**< Error message on failure. */
 } cdsp_spectrum_t;
 
 /**

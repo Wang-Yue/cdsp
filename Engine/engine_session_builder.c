@@ -201,13 +201,14 @@ static bool engine_session_build_backends(
   }
 #endif
 
+  size_t actual_capture_rate = full_duplex ? pipeline_rate : capture_rate;
   core->capture = audio_backend_factory_create_capture(
-      &config->devices.capture, (int)capture_rate, (int)capture_chunk_size,
+      &config->devices.capture, actual_capture_rate, capture_chunk_size,
       full_duplex, core->processing_params, err);
   if (!core->capture) return false;
 
   core->playback = audio_backend_factory_create_playback(
-      &config->devices.playback, (int)pipeline_rate, (int)playback_chunk_size,
+      &config->devices.playback, pipeline_rate, playback_chunk_size,
       full_duplex, core->processing_params, err);
   if (!core->playback) return false;
 
@@ -315,7 +316,7 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
                                  : config->devices.samplerate),
       .silence_threshold_db = config->devices.has_silence_threshold
                                   ? config->devices.silence_threshold
-                                  : -90.0,
+                                  : 0.0,
       .silence_timeout_seconds = config->devices.has_silence_timeout_s
                                      ? config->devices.silence_timeout_s
                                      : 0.0,
@@ -348,6 +349,20 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   bool rate_adjust_enabled = config->devices.has_enable_rate_adjust
                                  ? config->devices.enable_rate_adjust
                                  : false;
+#if defined(ENABLE_ASIO)
+  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_ASIO &&
+      config->devices.playback.type == AUDIO_BACKEND_TYPE_ASIO &&
+      strcmp(capture_device_config_get_device(&config->devices.capture),
+             playback_device_config_get_device(&config->devices.playback)) ==
+          0) {
+    if (rate_adjust_enabled) {
+      logger_warn(
+          &g_logger,
+          "Rate adjust is not supported for full-duplex ASIO, disabling.");
+      rate_adjust_enabled = false;
+    }
+  }
+#endif
   double adjust_period = config->devices.has_adjust_interval_s
                              ? config->devices.adjust_interval_s
                              : 10.0;

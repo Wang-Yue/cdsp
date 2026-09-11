@@ -29,8 +29,10 @@ typedef int socket_t;
 #include "Engine/dsp_engine.h"  // IWYU pragma: keep
 #include "Public/cdsp_pub_types.h"
 #include "Public/general.h"
+#include "Public/processing.h"
 #include "Server/websocket_server.h"
 #include "Server/websocket_server_internal.h"
+#include "Server/ws_framing.h"
 #include "Utils/cdsp_time.h"
 
 static void test_handle_command(websocket_server_t* server, int client_idx,
@@ -244,6 +246,41 @@ static bool mock_get_signal_levels_since(void* ctx, bool is_capture,
   }
   return true;
 }
+
+static bool mock_spectrum_should_fail = false;
+static const char* mock_spectrum_error = NULL;
+
+static bool mock_get_spectrum(void* ctx, bool is_capture, const size_t* channel,
+                              float min_freq, float max_freq, uint32_t n_bins,
+                              spectrum_t* out_spec) {
+  (void)ctx;
+  (void)is_capture;
+  (void)channel;
+  (void)min_freq;
+  (void)max_freq;
+  if (mock_spectrum_should_fail) {
+    if (out_spec && mock_spectrum_error) {
+      snprintf(out_spec->error_message, sizeof(out_spec->error_message), "%s",
+               mock_spectrum_error);
+    }
+    return false;
+  }
+  if (out_spec) {
+    out_spec->count = n_bins;
+    for (uint32_t i = 0; i < n_bins; i++) {
+      if (out_spec->frequencies) out_spec->frequencies[i] = (float)(i * 10);
+      if (out_spec->magnitudes) out_spec->magnitudes[i] = -20.0f;
+    }
+  }
+  return true;
+}
+
+static uint64_t mock_get_chunk_generation(void* ctx, bool is_capture) {
+  (void)ctx;
+  if (!mock_params) return 0;
+  return processing_parameters_get_chunk_generation(mock_params, is_capture);
+}
+
 static dsp_engine_t mock_engine = {
     .ctx = NULL,
     .get_status = mock_get_status,
@@ -251,7 +288,9 @@ static dsp_engine_t mock_engine = {
     .get_processing_status = mock_get_processing_status,
     .reset_clipped_samples = mock_reset_clipped_samples,
     .get_vu_levels = mock_get_vu_levels,
+    .get_chunk_generation = mock_get_chunk_generation,
     .get_signal_levels_since = mock_get_signal_levels_since,
+    .get_spectrum = mock_get_spectrum,
     .get_fader_volume = mock_get_fader_volume,
     .get_fader_mute = mock_is_fader_muted,
     .set_config_json = mock_set_config_json,
@@ -364,6 +403,16 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_STR_EQ("Inactive", cJSON_GetObjectItem(root, "value")->valuestring);
   cJSON_Delete(root);
 
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetCaptureRate\"}",
+                                  resp, sizeof(resp));
+  root = cJSON_Parse(resp);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("GetCaptureRate",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_EQ(44100, cJSON_GetObjectItem(root, "value")->valueint);
+  cJSON_Delete(root);
+
   websocket_server_handle_command(
       server, 0, "{\"command\":\"GetConfigFilePath\"}", resp, sizeof(resp));
   root = cJSON_Parse(resp);
@@ -396,7 +445,8 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_FLOAT_EQ(-6.0f, target_vol);
   ASSERT_FLOAT_EQ(-6.0f, current_vol);
 
-  // Test GetChannelLabels
+  // Test GetChannelLabels (no mixer in pipeline -> playback falls back to
+  // capture labels)
   mock_active_config = strdup(
       "{\"devices\":{\"playback\":{\"labels\":[\"Left\",\"Right\"]},"
       "\"capture\":{\"labels\":[\"Mic\"]}}}");
@@ -411,9 +461,8 @@ TEST(test_websocket_handle_command_direct) {
   ASSERT_TRUE(val != NULL);
   cJSON* pb = cJSON_GetObjectItem(val, "playback");
   ASSERT_TRUE(pb != NULL);
-  ASSERT_EQ(2, cJSON_GetArraySize(pb));
-  ASSERT_STR_EQ("Left", cJSON_GetArrayItem(pb, 0)->valuestring);
-  ASSERT_STR_EQ("Right", cJSON_GetArrayItem(pb, 1)->valuestring);
+  ASSERT_EQ(1, cJSON_GetArraySize(pb));
+  ASSERT_STR_EQ("Mic", cJSON_GetArrayItem(pb, 0)->valuestring);
   cJSON* cap = cJSON_GetObjectItem(val, "capture");
   ASSERT_TRUE(cap != NULL);
   ASSERT_EQ(1, cJSON_GetArraySize(cap));
@@ -831,6 +880,1556 @@ TEST(WebSocket_SignalLevelsSinceRPC) {
   ASSERT_NEAR(-8.0f, (float)cJSON_GetArrayItem(val, 0)->valuedouble, 1e-3);
   ASSERT_NEAR(-9.0f, (float)cJSON_GetArrayItem(val, 1)->valuedouble, 1e-3);
   cJSON_Delete(res);
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_NoAudioSignalLevelsReturnsEmptyArrays) {
+  // Server without engine attached (e.g. idle/inactive or no audio flowing)
+  websocket_server_t* server = websocket_server_create(8098, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+
+  char resp[1024] = {0};
+
+  // 1. GetCaptureSignalRms should return "value": []
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetCaptureSignalRms\"}", resp, sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON* val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL);
+  ASSERT_TRUE(cJSON_IsArray(val));
+  ASSERT_EQ(0, cJSON_GetArraySize(val));
+  cJSON_Delete(res);
+
+  // 2. GetSignalLevels should return all 4 keys as empty arrays []
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetSignalLevels\"}", resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL);
+  ASSERT_TRUE(cJSON_IsObject(val));
+
+  cJSON* pb_rms = cJSON_GetObjectItem(val, "playback_rms");
+  ASSERT_TRUE(pb_rms != NULL);
+  ASSERT_TRUE(cJSON_IsArray(pb_rms));
+  ASSERT_EQ(0, cJSON_GetArraySize(pb_rms));
+
+  cJSON* pb_peak = cJSON_GetObjectItem(val, "playback_peak");
+  ASSERT_TRUE(pb_peak != NULL);
+  ASSERT_TRUE(cJSON_IsArray(pb_peak));
+  ASSERT_EQ(0, cJSON_GetArraySize(pb_peak));
+
+  cJSON* cap_rms = cJSON_GetObjectItem(val, "capture_rms");
+  ASSERT_TRUE(cap_rms != NULL);
+  ASSERT_TRUE(cJSON_IsArray(cap_rms));
+  ASSERT_EQ(0, cJSON_GetArraySize(cap_rms));
+
+  cJSON* cap_peak = cJSON_GetObjectItem(val, "capture_peak");
+  ASSERT_TRUE(cap_peak != NULL);
+  ASSERT_TRUE(cJSON_IsArray(cap_peak));
+  ASSERT_EQ(0, cJSON_GetArraySize(cap_peak));
+
+  cJSON_Delete(res);
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_StopSubscription) {
+  websocket_server_t* server = websocket_server_create(8099, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+
+  char resp[1024] = {0};
+
+  // 1. With no active subscription, should return
+  // {"reply":"Invalid","error":"No active subscription"}
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"StopSubscription\"}", resp, sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("Invalid", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("No active subscription",
+                cJSON_GetObjectItem(res, "error")->valuestring);
+  cJSON_Delete(res);
+
+  // 2. Start a subscription (e.g. SubscribeState)
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"SubscribeState\"}",
+                                  resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON_Delete(res);
+
+  // 3. Now StopSubscription should succeed with Ok
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"StopSubscription\"}", resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("StopSubscription",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON_Delete(res);
+
+  // 4. Calling StopSubscription again should return Invalid
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"StopSubscription\"}", resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("Invalid", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("No active subscription",
+                cJSON_GetObjectItem(res, "error")->valuestring);
+  cJSON_Delete(res);
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_ReloadErrors) {
+  websocket_server_t* server = websocket_server_create(8100, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char resp[1024] = {0};
+
+  // 1. Without config path set, should return InvalidRequestError "Config path
+  // not given, cannot reload"
+  if (mock_config_path) {
+    free(mock_config_path);
+    mock_config_path = NULL;
+  }
+  websocket_server_handle_command(server, 0, "{\"command\":\"Reload\"}", resp,
+                                  sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("Reload", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("InvalidRequestError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("Config path not given, cannot reload",
+                cJSON_GetObjectItem(res, "message")->valuestring);
+  cJSON_Delete(res);
+
+  // 2. Set an invalid non-existent config path -> read error maps to
+  // ConfigValidationError
+  mock_config_path = strdup("/nonexistent/file/path.yml");
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"Reload\"}", resp,
+                                  sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("Reload", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("ConfigValidationError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON_Delete(res);
+
+  if (mock_config_path) {
+    free(mock_config_path);
+    mock_config_path = NULL;
+  }
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_SetConfigFilePath) {
+  websocket_server_t* server = websocket_server_create(8105, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char resp[1024] = {0};
+
+  if (mock_config_path) {
+    free(mock_config_path);
+    mock_config_path = NULL;
+  }
+
+  // 1. Non-existent file path returns InvalidValueError and does not set path
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"SetConfigFilePath\",\"value\":\"/tmp/"
+      "nonexistent_cfg_12345.yml\"}",
+      resp, sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("SetConfigFilePath",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("InvalidValueError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_TRUE(cJSON_GetObjectItem(res, "message") != NULL);
+  cJSON_Delete(res);
+  ASSERT_TRUE(mock_config_path == NULL);
+
+  // 2. Valid file path returns Ok and sets path
+  char json_path[256];
+  snprintf(json_path, sizeof(json_path), "/tmp/test_set_config_%d.json",
+           (int)getpid());
+  const char* json_config =
+      "{\n"
+      "  \"devices\": {\n"
+      "    \"samplerate\": 44100,\n"
+      "    \"chunksize\": 1024,\n"
+      "    \"capture\": {\"type\": \"RawFile\", \"channels\": 2, \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\"},\n"
+      "    \"playback\": {\"type\": \"File\", \"channels\": 2, \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\"}\n"
+      "  }\n"
+      "}";
+  FILE* f = fopen(json_path, "w");
+  ASSERT_TRUE(f != NULL);
+  fputs(json_config, f);
+  fclose(f);
+
+  char req[512];
+  snprintf(req, sizeof(req),
+           "{\"command\":\"SetConfigFilePath\",\"value\":\"%s\"}", json_path);
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, req, resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("SetConfigFilePath",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON_Delete(res);
+  ASSERT_TRUE(mock_config_path != NULL);
+  ASSERT_STR_EQ(json_path, mock_config_path);
+
+  remove(json_path);
+  if (mock_config_path) {
+    free(mock_config_path);
+    mock_config_path = NULL;
+  }
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_GetConfigEmptyReturnsNullString) {
+  websocket_server_t* server = websocket_server_create(8101, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char resp[1024] = {0};
+
+  if (mock_active_config) {
+    free(mock_active_config);
+    mock_active_config = NULL;
+  }
+  if (mock_prev_config) {
+    free(mock_prev_config);
+    mock_prev_config = NULL;
+  }
+
+  // 1. GetConfig with no config loaded -> Ok, value: "null\n"
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetConfig\"}",
+                                  resp, sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("GetConfig", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("null\n", cJSON_GetObjectItem(res, "value")->valuestring);
+  cJSON_Delete(res);
+
+  // 2. GetConfigJson with no config loaded -> Ok, value: "null"
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetConfigJson\"}",
+                                  resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("GetConfigJson",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("null", cJSON_GetObjectItem(res, "value")->valuestring);
+  cJSON_Delete(res);
+
+  // 3. GetPreviousConfig with no previous config -> Ok, value: "null\n"
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetPreviousConfig\"}", resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("GetPreviousConfig",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("null\n", cJSON_GetObjectItem(res, "value")->valuestring);
+  cJSON_Delete(res);
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_FaderVolumeErrorResponsesWithValue) {
+  websocket_server_t* server = websocket_server_create(8102, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  mock_params = processing_parameters_create(2, 2);
+  processing_parameters_set_current_volume_for_fader(mock_params, -12.5, 0);
+  processing_parameters_set_target_volume_for_fader(mock_params, -12.5, 0);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char resp[1024] = {0};
+  cJSON* res;
+  cJSON* val;
+
+  // 1. GetFaderVolume with invalid fader -> InvalidFaderError, value: [10, 0.0]
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetFaderVolume\",\"fader\":10}", resp,
+      sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("GetFaderVolume",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("InvalidFaderError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL && cJSON_IsArray(val));
+  ASSERT_EQ(10, cJSON_GetArrayItem(val, 0)->valueint);
+  ASSERT_NEAR(0.0, cJSON_GetArrayItem(val, 1)->valuedouble, 1e-4);
+  cJSON_Delete(res);
+
+  // 2. GetFaderMute with invalid fader -> InvalidFaderError, value: [10, false]
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0,
+                                  "{\"command\":\"GetFaderMute\",\"fader\":10}",
+                                  resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("GetFaderMute", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("InvalidFaderError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL && cJSON_IsArray(val));
+  ASSERT_EQ(10, cJSON_GetArrayItem(val, 0)->valueint);
+  ASSERT_FALSE(cJSON_IsTrue(cJSON_GetArrayItem(val, 1)));
+  cJSON_Delete(res);
+
+  // 3. ToggleFaderMute with invalid fader -> InvalidFaderError, value: [10,
+  // false]
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"ToggleFaderMute\",\"fader\":10}", resp,
+      sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("ToggleFaderMute",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("InvalidFaderError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL && cJSON_IsArray(val));
+  ASSERT_EQ(10, cJSON_GetArrayItem(val, 0)->valueint);
+  ASSERT_FALSE(cJSON_IsTrue(cJSON_GetArrayItem(val, 1)));
+  cJSON_Delete(res);
+
+  // 4. AdjustFaderVolume with invalid fader -> InvalidFaderError, value:
+  // [10, 2.0]
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"AdjustFaderVolume\",\"fader\":10,\"value\":2.0}", resp,
+      sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("AdjustFaderVolume",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("InvalidFaderError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL && cJSON_IsArray(val));
+  ASSERT_EQ(10, cJSON_GetArrayItem(val, 0)->valueint);
+  ASSERT_NEAR(2.0, cJSON_GetArrayItem(val, 1)->valuedouble, 1e-4);
+  cJSON_Delete(res);
+
+  // 5. AdjustVolume with max < min -> InvalidValueError, value: current volume
+  // (-12.5)
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"AdjustVolume\",\"value\":1.0,\"min\":10.0,\"max\":0.0}",
+      resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("AdjustVolume", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("InvalidValueError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("Max volume must be bigger than min volume",
+                cJSON_GetObjectItem(res, "message")->valuestring);
+  val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL && cJSON_IsNumber(val));
+  ASSERT_NEAR(-12.5, val->valuedouble, 1e-4);
+  cJSON_Delete(res);
+
+  processing_parameters_free(mock_params);
+  mock_params = NULL;
+  websocket_server_free(server);
+}
+
+TEST(test_websocket_signal_peaks_since_start) {
+  websocket_server_t* server = websocket_server_create(54329, "127.0.0.1");
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  mock_params = processing_parameters_create(2, 2);
+  float cap_peaks[2] = {-6.0205999f, -20.0f};  // ~0.5, ~0.1 linear
+  float pb_peaks[2] = {0.0f, -6.0205999f};     // 1.0, ~0.5 linear
+  processing_parameters_set_capture_signal_peak(mock_params, cap_peaks, 2);
+  processing_parameters_set_playback_signal_peak(mock_params, pb_peaks, 2);
+
+  char resp[1024];
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0,
+                                  "{\"command\":\"GetSignalPeaksSinceStart\"}",
+                                  resp, sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("GetSignalPeaksSinceStart",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON* val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL && cJSON_IsObject(val));
+
+  cJSON* cap = cJSON_GetObjectItem(val, "capture");
+  ASSERT_TRUE(cap != NULL && cJSON_IsArray(cap));
+  ASSERT_EQ(2, cJSON_GetArraySize(cap));
+  ASSERT_FALSE(cJSON_IsNull(cJSON_GetArrayItem(cap, 0)));
+  ASSERT_NEAR(0.5, cJSON_GetArrayItem(cap, 0)->valuedouble, 1e-3);
+  ASSERT_NEAR(0.1, cJSON_GetArrayItem(cap, 1)->valuedouble, 1e-3);
+
+  cJSON* pb = cJSON_GetObjectItem(val, "playback");
+  ASSERT_TRUE(pb != NULL && cJSON_IsArray(pb));
+  ASSERT_EQ(2, cJSON_GetArraySize(pb));
+  ASSERT_FALSE(cJSON_IsNull(cJSON_GetArrayItem(pb, 0)));
+  ASSERT_NEAR(1.0, cJSON_GetArrayItem(pb, 0)->valuedouble, 1e-3);
+  ASSERT_NEAR(0.5, cJSON_GetArrayItem(pb, 1)->valuedouble, 1e-3);
+  cJSON_Delete(res);
+
+  // Reset signal peaks
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"ResetSignalPeaksSinceStart\"}", resp,
+      sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("ResetSignalPeaksSinceStart",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON_Delete(res);
+
+  // Set peaks to -inf (silence) and query again: values should be 0.0, NOT null
+  float silence[2] = {-INFINITY, -INFINITY};
+  processing_parameters_set_capture_signal_peak(mock_params, silence, 2);
+  processing_parameters_set_playback_signal_peak(mock_params, silence, 2);
+
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0,
+                                  "{\"command\":\"GetSignalPeaksSinceStart\"}",
+                                  resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL && cJSON_IsObject(val));
+  cap = cJSON_GetObjectItem(val, "capture");
+  ASSERT_TRUE(cap != NULL && cJSON_IsArray(cap));
+  ASSERT_EQ(2, cJSON_GetArraySize(cap));
+  ASSERT_FALSE(cJSON_IsNull(cJSON_GetArrayItem(cap, 0)));
+  ASSERT_NEAR(0.0, cJSON_GetArrayItem(cap, 0)->valuedouble, 1e-6);
+  ASSERT_NEAR(0.0, cJSON_GetArrayItem(cap, 1)->valuedouble, 1e-6);
+
+  pb = cJSON_GetObjectItem(val, "playback");
+  ASSERT_TRUE(pb != NULL && cJSON_IsArray(pb));
+  ASSERT_EQ(2, cJSON_GetArraySize(pb));
+  ASSERT_FALSE(cJSON_IsNull(cJSON_GetArrayItem(pb, 0)));
+  ASSERT_NEAR(0.0, cJSON_GetArrayItem(pb, 0)->valuedouble, 1e-6);
+  ASSERT_NEAR(0.0, cJSON_GetArrayItem(pb, 1)->valuedouble, 1e-6);
+  cJSON_Delete(res);
+
+  processing_parameters_free(mock_params);
+  mock_params = NULL;
+  websocket_server_free(server);
+}
+
+TEST(test_websocket_get_signal_range) {
+  websocket_server_t* server = websocket_server_create(54330, "127.0.0.1");
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  mock_params = processing_parameters_create(2, 2);
+  // Capture peak -6.0206 dB (linear ~0.5), playback peak 0.0 dB (linear 1.0)
+  float cap_peaks[2] = {-6.0205999f, -20.0f};
+  float pb_peaks[2] = {0.0f, 0.0f};
+  processing_parameters_set_capture_signal_peak(mock_params, cap_peaks, 2);
+  processing_parameters_set_playback_signal_peak(mock_params, pb_peaks, 2);
+
+  char resp[512];
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetSignalRange\"}",
+                                  resp, sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("GetSignalRange",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON* val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL && cJSON_IsNumber(val));
+  // Range should be 2.0 * 0.5 = 1.0 from capture side, not 2.0 * 1.0 = 2.0 from
+  // playback
+  ASSERT_NEAR(1.0, val->valuedouble, 1e-3);
+  cJSON_Delete(res);
+
+  // Test Public API function directly
+  double pub_range = cdsp_get_signal_range((dsp_engine_t*)&mock_engine);
+  ASSERT_NEAR(1.0, pub_range, 1e-3);
+
+  // When capture is silent (-INFINITY), range should be 0.0
+  float silence[2] = {-INFINITY, -INFINITY};
+  processing_parameters_set_capture_signal_peak(mock_params, silence, 2);
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetSignalRange\"}",
+                                  resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL && cJSON_IsNumber(val));
+  ASSERT_NEAR(0.0, val->valuedouble, 1e-6);
+  cJSON_Delete(res);
+
+  processing_parameters_free(mock_params);
+  mock_params = NULL;
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_ChannelLabelsMixerAndFallback) {
+  websocket_server_t* server = websocket_server_create(8106, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char resp[1024];
+
+  // 1. Pipeline with multiple mixers: playback gets labels from the LAST mixer
+  // in pipeline
+  mock_active_config = strdup(
+      "{\n"
+      "  \"devices\": {\"capture\": {\"labels\": [\"Cap0\", \"Cap1\"]}},\n"
+      "  \"mixers\": {\n"
+      "    \"m1\": {\"labels\": [\"M1_0\", \"M1_1\"]},\n"
+      "    \"m2\": {\"labels\": [\"M2_0\", \"M2_1\", \"M2_2\"]}\n"
+      "  },\n"
+      "  \"pipeline\": [\n"
+      "    {\"type\": \"Mixer\", \"name\": \"m1\"},\n"
+      "    {\"type\": \"Filter\", \"channel\": 0, \"names\": [\"gain\"]},\n"
+      "    {\"type\": \"Mixer\", \"name\": \"m2\"}\n"
+      "  ]\n"
+      "}");
+
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetChannelLabels\"}", resp, sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  cJSON* val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL);
+  cJSON* pb = cJSON_GetObjectItem(val, "playback");
+  ASSERT_TRUE(pb != NULL && cJSON_IsArray(pb));
+  ASSERT_EQ(3, cJSON_GetArraySize(pb));
+  ASSERT_STR_EQ("M2_0", cJSON_GetArrayItem(pb, 0)->valuestring);
+  ASSERT_STR_EQ("M2_1", cJSON_GetArrayItem(pb, 1)->valuestring);
+  ASSERT_STR_EQ("M2_2", cJSON_GetArrayItem(pb, 2)->valuestring);
+  cJSON_Delete(res);
+  free(mock_active_config);
+
+  // 2. Last mixer has no labels: playback is null even if earlier mixer has
+  // labels
+  mock_active_config = strdup(
+      "{\n"
+      "  \"devices\": {\"capture\": {\"labels\": [\"Cap0\"]}},\n"
+      "  \"mixers\": {\n"
+      "    \"m1\": {\"labels\": [\"M1_0\"]},\n"
+      "    \"m2\": {}\n"
+      "  },\n"
+      "  \"pipeline\": [\n"
+      "    {\"type\": \"Mixer\", \"name\": \"m1\"},\n"
+      "    {\"type\": \"Mixer\", \"name\": \"m2\"}\n"
+      "  ]\n"
+      "}");
+
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetChannelLabels\"}", resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL);
+  pb = cJSON_GetObjectItem(val, "playback");
+  ASSERT_TRUE(pb != NULL && cJSON_IsNull(pb));
+  cJSON_Delete(res);
+  free(mock_active_config);
+
+  // 3. Mixer has empty array labels: [] -> returns []
+  mock_active_config = strdup(
+      "{\n"
+      "  \"mixers\": {\"m\": {\"labels\": []}},\n"
+      "  \"pipeline\": [{\"type\": \"Mixer\", \"name\": \"m\"}]\n"
+      "}");
+
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetChannelLabels\"}", resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  val = cJSON_GetObjectItem(res, "value");
+  ASSERT_TRUE(val != NULL);
+  pb = cJSON_GetObjectItem(val, "playback");
+  ASSERT_TRUE(pb != NULL && cJSON_IsArray(pb));
+  ASSERT_EQ(0, cJSON_GetArraySize(pb));
+  cJSON_Delete(res);
+  free(mock_active_config);
+  mock_active_config = NULL;
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_SpectrumValidationOrderAndErrors) {
+  websocket_server_t* server = websocket_server_create(8107, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char resp[1024];
+
+  // 1. When processing is inactive (mock_params == NULL):
+  // Arguments are validated FIRST before reporting ProcessingNotRunningError
+
+  // 1a. n_bins < 2 fails with InvalidRequestError
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"GetSpectrum\",\"value\":{\"side\":\"capture\",\"min_"
+      "freq\":20,\"max_freq\":20000,\"n_bins\":1}}",
+      resp, sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("GetSpectrum", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("InvalidRequestError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("n_bins must be at least 2",
+                cJSON_GetObjectItem(res, "message")->valuestring);
+  cJSON_Delete(res);
+
+  // 1b. min_freq >= max_freq fails with InvalidRequestError
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"GetSpectrum\",\"value\":{\"side\":\"capture\",\"min_"
+      "freq\":500,\"max_freq\":100,\"n_bins\":1024}}",
+      resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("InvalidRequestError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("Invalid frequency range: min_freq must be > 0 and < max_freq",
+                cJSON_GetObjectItem(res, "message")->valuestring);
+  cJSON_Delete(res);
+
+  // 1c. Valid arguments but processing inactive -> ProcessingNotRunningError
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"GetSpectrum\",\"value\":{\"side\":\"capture\",\"min_"
+      "freq\":20,\"max_freq\":20000,\"n_bins\":1024}}",
+      resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("ProcessingNotRunningError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON_Delete(res);
+
+  // 2. SubscribeSpectrum validation order and max_rate check
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"SubscribeSpectrum\",\"value\":{\"side\":\"capture\","
+      "\"min_freq\":20,\"max_freq\":20000,\"n_bins\":1}}",
+      resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("InvalidRequestError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("n_bins must be at least 2",
+                cJSON_GetObjectItem(res, "message")->valuestring);
+  cJSON_Delete(res);
+
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"SubscribeSpectrum\",\"value\":{\"side\":\"capture\","
+      "\"min_freq\":20,\"max_freq\":20000,\"n_bins\":1024,\"max_rate\":-1.0}}",
+      resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("InvalidRequestError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("max_rate must be > 0",
+                cJSON_GetObjectItem(res, "message")->valuestring);
+  cJSON_Delete(res);
+
+  // 3. When processing is running, backend error message is propagated as
+  // InvalidRequestError
+  mock_params = processing_parameters_create(2, 2);
+  mock_spectrum_should_fail = true;
+  mock_spectrum_error = "Insufficient data in buffer";
+
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"GetSpectrum\",\"value\":{\"side\":\"capture\",\"min_"
+      "freq\":20,\"max_freq\":20000,\"n_bins\":1024}}",
+      resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("InvalidRequestError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("Insufficient data in buffer",
+                cJSON_GetObjectItem(res, "message")->valuestring);
+  cJSON_Delete(res);
+
+  mock_spectrum_error = "Channel 3 out of range (2 channels available)";
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"GetSpectrum\",\"value\":{\"side\":\"capture\","
+      "\"channel\":3,\"min_freq\":20,\"max_freq\":20000,\"n_bins\":1024}}",
+      resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("InvalidRequestError",
+                cJSON_GetObjectItem(res, "result")->valuestring);
+  ASSERT_STR_EQ("Channel 3 out of range (2 channels available)",
+                cJSON_GetObjectItem(res, "message")->valuestring);
+  cJSON_Delete(res);
+
+  mock_spectrum_should_fail = false;
+  mock_spectrum_error = NULL;
+  processing_parameters_free(mock_params);
+  mock_params = NULL;
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_StreamingExclusivity) {
+  websocket_server_t* server = websocket_server_create(8108, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char resp[1024];
+
+  // 1. Subscribe to State
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"SubscribeState\"}",
+                                  resp, sizeof(resp));
+  cJSON* res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("SubscribeState",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON_Delete(res);
+
+  // 2. While streaming, non-StopSubscription commands are rejected with Invalid
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetVersion\"}",
+                                  resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("Invalid", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Only StopSubscription is accepted while streaming is active",
+                cJSON_GetObjectItem(res, "error")->valuestring);
+  cJSON_Delete(res);
+
+  // 3. Second subscription while streaming is also rejected
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"SubscribeVuLevels\"}", resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("Invalid", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Only StopSubscription is accepted while streaming is active",
+                cJSON_GetObjectItem(res, "error")->valuestring);
+  cJSON_Delete(res);
+
+  // 4. StopSubscription ends streaming
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"StopSubscription\"}", resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("StopSubscription",
+                cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON_Delete(res);
+
+  // 5. Commands now work again
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetVersion\"}",
+                                  resp, sizeof(resp));
+  res = cJSON_Parse(resp);
+  ASSERT_TRUE(res != NULL);
+  ASSERT_STR_EQ("GetVersion", cJSON_GetObjectItem(res, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(res, "result")->valuestring);
+  cJSON_Delete(res);
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_ReadAndValidateConfigDefaultsAndValidation) {
+  websocket_server_t* server = websocket_server_create(8109, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char resp[2048];
+
+  // 1. Valid config with ReadConfigJson: should expand optional fields to null
+  // defaults
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"ReadConfigJson\",\"value\":\""
+      "{\\\"devices\\\":{\\\"samplerate\\\":44100,\\\"chunksize\\\":1024,"
+      "\\\"capture\\\":{\\\"type\\\":\\\"RawFile\\\",\\\"channels\\\":2,"
+      "\\\"filename\\\":\\\"/dev/null\\\",\\\"format\\\":\\\"S16_LE\\\"},"
+      "\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2,"
+      "\\\"filename\\\":\\\"/dev/null\\\",\\\"format\\\":\\\"S16_LE\\\"}}}\"}",
+      resp, sizeof(resp));
+  cJSON* root = cJSON_Parse(resp);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("ReadConfigJson",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON* val_str = cJSON_GetObjectItem(root, "value");
+  ASSERT_TRUE(val_str != NULL && cJSON_IsString(val_str));
+  cJSON* expanded = cJSON_Parse(val_str->valuestring);
+  ASSERT_TRUE(expanded != NULL);
+  // Verify defaults expanded
+  ASSERT_TRUE(cJSON_HasObjectItem(expanded, "title"));
+  ASSERT_TRUE(cJSON_IsNull(cJSON_GetObjectItem(expanded, "title")));
+  ASSERT_TRUE(cJSON_HasObjectItem(expanded, "filters"));
+  ASSERT_TRUE(cJSON_IsNull(cJSON_GetObjectItem(expanded, "filters")));
+  cJSON* dev = cJSON_GetObjectItem(expanded, "devices");
+  ASSERT_TRUE(dev != NULL);
+  ASSERT_TRUE(cJSON_HasObjectItem(dev, "queuelimit"));
+  ASSERT_TRUE(cJSON_IsNull(cJSON_GetObjectItem(dev, "queuelimit")));
+  cJSON_Delete(expanded);
+  cJSON_Delete(root);
+
+  // 2. Config with invalid pipeline channel index:
+  // ReadConfigJson succeeds with Ok (it only parses without pipeline
+  // validation)
+  const char* invalid_pipe_cfg =
+      "{\"command\":\"ReadConfigJson\",\"value\":\""
+      "{\\\"devices\\\":{\\\"samplerate\\\":44100,\\\"chunksize\\\":1024,"
+      "\\\"capture\\\":{\\\"type\\\":\\\"RawFile\\\",\\\"channels\\\":2,"
+      "\\\"filename\\\":\\\"/dev/null\\\",\\\"format\\\":\\\"S16_LE\\\"},"
+      "\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2,"
+      "\\\"filename\\\":\\\"/dev/null\\\",\\\"format\\\":\\\"S16_LE\\\"}},"
+      "\\\"pipeline\\\":[{\\\"type\\\":\\\"Filter\\\",\\\"channel\\\":99,"
+      "\\\"names\\\":[]}]}\"}";
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, invalid_pipe_cfg, resp,
+                                  sizeof(resp));
+  root = cJSON_Parse(resp);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("ReadConfigJson",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON_Delete(root);
+
+  // 3. Same invalid pipeline config with ValidateConfigJson: fails with
+  // ConfigValidationError
+  const char* validate_cmd =
+      "{\"command\":\"ValidateConfigJson\",\"value\":\""
+      "{\\\"devices\\\":{\\\"samplerate\\\":44100,\\\"chunksize\\\":1024,"
+      "\\\"capture\\\":{\\\"type\\\":\\\"RawFile\\\",\\\"channels\\\":2,"
+      "\\\"filename\\\":\\\"/dev/null\\\",\\\"format\\\":\\\"S16_LE\\\"},"
+      "\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2,"
+      "\\\"filename\\\":\\\"/dev/null\\\",\\\"format\\\":\\\"S16_LE\\\"}},"
+      "\\\"pipeline\\\":[{\\\"type\\\":\\\"Filter\\\",\\\"channel\\\":99,"
+      "\\\"names\\\":[]}]}\"}";
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0, validate_cmd, resp, sizeof(resp));
+  root = cJSON_Parse(resp);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("ValidateConfigJson",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("ConfigValidationError",
+                cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_TRUE(cJSON_GetObjectItem(root, "value") != NULL);
+  cJSON_Delete(root);
+
+  // 4. Syntax error with ReadConfigJson: fails with ConfigReadError
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"ReadConfigJson\",\"value\":\"{invalid_json\"}",
+      resp, sizeof(resp));
+  root = cJSON_Parse(resp);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("ReadConfigJson",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("ConfigReadError",
+                cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_TRUE(cJSON_GetObjectItem(root, "value") != NULL);
+  cJSON_Delete(root);
+
+  websocket_server_free(server);
+}
+
+TEST(test_websocket_frame_parsing) {
+  size_t payload_len = 0;
+  size_t header_len = 0;
+  unsigned char* mask = NULL;
+  uint8_t opcode = 0;
+  bool fin = false;
+
+  // 1. Unfragmented unmasked text frame
+  const unsigned char frame1[] = {0x81, 0x05, 'h', 'e', 'l', 'l', 'o'};
+  bool ok = ws_parse_frame_header_ext(frame1, sizeof(frame1), &payload_len,
+                                      &header_len, &mask, &opcode, &fin);
+  ASSERT_TRUE(ok);
+  ASSERT_TRUE(fin);
+  ASSERT_EQ(1, (int)opcode);
+  ASSERT_EQ(5, (int)payload_len);
+  ASSERT_EQ(2, (int)header_len);
+  ASSERT_TRUE(mask == NULL);
+
+  // 2. Fragmented initial text frame (fin = false)
+  const unsigned char frame2[] = {0x01, 0x03, 'a', 'b', 'c'};
+  ok = ws_parse_frame_header_ext(frame2, sizeof(frame2), &payload_len,
+                                 &header_len, &mask, &opcode, &fin);
+  ASSERT_TRUE(ok);
+  ASSERT_FALSE(fin);
+  ASSERT_EQ(1, (int)opcode);
+  ASSERT_EQ(3, (int)payload_len);
+  ASSERT_EQ(2, (int)header_len);
+
+  // 3. Continuation frame (fin = false, opcode = 0)
+  const unsigned char frame3[] = {0x00, 0x02, 'd', 'e'};
+  ok = ws_parse_frame_header_ext(frame3, sizeof(frame3), &payload_len,
+                                 &header_len, &mask, &opcode, &fin);
+  ASSERT_TRUE(ok);
+  ASSERT_FALSE(fin);
+  ASSERT_EQ(0, (int)opcode);
+  ASSERT_EQ(2, (int)payload_len);
+
+  // 4. Final continuation frame (fin = true, opcode = 0)
+  const unsigned char frame4[] = {0x80, 0x01, 'f'};
+  ok = ws_parse_frame_header_ext(frame4, sizeof(frame4), &payload_len,
+                                 &header_len, &mask, &opcode, &fin);
+  ASSERT_TRUE(ok);
+  ASSERT_TRUE(fin);
+  ASSERT_EQ(0, (int)opcode);
+  ASSERT_EQ(1, (int)payload_len);
+
+  // 5. Masked frame
+  const unsigned char frame5[] = {0x81, 0x85, 0x11, 0x22, 0x33, 0x44,
+                                  0x00, 0x00, 0x00, 0x00, 0x00};
+  ok = ws_parse_frame_header_ext(frame5, sizeof(frame5), &payload_len,
+                                 &header_len, &mask, &opcode, &fin);
+  ASSERT_TRUE(ok);
+  ASSERT_TRUE(fin);
+  ASSERT_EQ(1, (int)opcode);
+  ASSERT_EQ(5, (int)payload_len);
+  ASSERT_EQ(6, (int)header_len);
+  ASSERT_TRUE(mask != NULL);
+  ASSERT_EQ(0x11, mask[0]);
+  ASSERT_EQ(0x22, mask[1]);
+
+  // 6. Extended 16-bit payload length (126)
+  const unsigned char frame6[] = {0x82, 126, 0x01, 0x00};
+  ok = ws_parse_frame_header_ext(frame6, sizeof(frame6), &payload_len,
+                                 &header_len, &mask, &opcode, &fin);
+  ASSERT_TRUE(ok);
+  ASSERT_EQ(256, (int)payload_len);
+  ASSERT_EQ(4, (int)header_len);
+
+  // 7. Extended 64-bit payload length (127)
+  const unsigned char frame7[] = {0x82, 127, 0, 0, 0, 0, 0, 1, 0, 0};
+  ok = ws_parse_frame_header_ext(frame7, sizeof(frame7), &payload_len,
+                                 &header_len, &mask, &opcode, &fin);
+  ASSERT_TRUE(ok);
+  ASSERT_EQ(65536, (int)payload_len);
+  ASSERT_EQ(10, (int)header_len);
+
+  // 8. Incomplete buffers
+  ok = ws_parse_frame_header_ext(frame1, 1, &payload_len, &header_len, &mask,
+                                 &opcode, &fin);
+  ASSERT_FALSE(ok);
+  ok = ws_parse_frame_header_ext(frame6, 3, &payload_len, &header_len, &mask,
+                                 &opcode, &fin);
+  ASSERT_FALSE(ok);
+
+  // 9. Invalid opcode (e.g., 0x03)
+  const unsigned char frame_bad[] = {0x83, 0x00};
+  ok = ws_parse_frame_header_ext(frame_bad, sizeof(frame_bad), &payload_len,
+                                 &header_len, &mask, &opcode, &fin);
+  ASSERT_FALSE(ok);
+}
+
+static void test_send_ws_client_frame(socket_t sock, uint8_t opcode, bool fin,
+                                      const char* payload, size_t len) {
+  uint8_t header[14];
+  size_t header_len = 0;
+  header[0] = (fin ? 0x80 : 0x00) | (opcode & 0x0F);
+  uint8_t mask_key[4] = {0x12, 0x34, 0x56, 0x78};
+
+  if (len < 126) {
+    header[1] = 0x80 | (uint8_t)len;
+    memcpy(&header[2], mask_key, 4);
+    header_len = 6;
+  } else if (len <= 65535) {
+    header[1] = 0x80 | 126;
+    header[2] = (uint8_t)((len >> 8) & 0xFF);
+    header[3] = (uint8_t)(len & 0xFF);
+    memcpy(&header[4], mask_key, 4);
+    header_len = 8;
+  } else {
+    header[1] = 0x80 | 127;
+    for (int i = 0; i < 8; i++) {
+      header[2 + i] = (uint8_t)(((uint64_t)len >> ((7 - i) * 8)) & 0xFF);
+    }
+    memcpy(&header[10], mask_key, 4);
+    header_len = 14;
+  }
+
+  send(sock, (const char*)header, (int)header_len, 0);
+  if (len > 0 && payload) {
+    char* masked = (char*)malloc(len);
+    for (size_t i = 0; i < len; i++) {
+      masked[i] = payload[i] ^ mask_key[i % 4];
+    }
+    send(sock, masked, (int)len, 0);
+    free(masked);
+  }
+}
+
+static char* test_recv_ws_frame(socket_t sock, uint8_t* out_opcode,
+                                size_t* out_len) {
+  unsigned char hdr[10];
+  ssize_t n = recv(sock, (char*)hdr, 2, 0);
+  if (n < 2) return NULL;
+  uint8_t opcode = hdr[0] & 0x0F;
+  if (out_opcode) *out_opcode = opcode;
+  size_t payload_len = hdr[1] & 0x7F;
+  if (payload_len == 126) {
+    n = recv(sock, (char*)&hdr[2], 2, 0);
+    if (n < 2) return NULL;
+    payload_len = ((size_t)hdr[2] << 8) | hdr[3];
+  } else if (payload_len == 127) {
+    n = recv(sock, (char*)&hdr[2], 8, 0);
+    if (n < 8) return NULL;
+    uint64_t len64 = 0;
+    for (int i = 0; i < 8; i++) {
+      len64 = (len64 << 8) | hdr[2 + i];
+    }
+    payload_len = (size_t)len64;
+  }
+  if (out_len) *out_len = payload_len;
+  char* payload = (char*)malloc(payload_len + 1);
+  if (!payload) return NULL;
+  size_t total = 0;
+  while (total < payload_len) {
+    n = recv(sock, payload + total, (int)(payload_len - total), 0);
+    if (n <= 0) {
+      free(payload);
+      return NULL;
+    }
+    total += (size_t)n;
+  }
+  payload[payload_len] = '\0';
+  return payload;
+}
+
+TEST(test_websocket_fragmentation_and_limits) {
+  websocket_server_t* server = websocket_server_create(54325, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  bool started = websocket_server_start(server);
+  ASSERT_TRUE(started);
+
+  struct sockaddr_in addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(54325);
+  inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+  socket_t sock = -1;
+  int conn_res = -1;
+  for (int retry = 0; retry < 50; retry++) {
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (!IS_INVALID_SOCKET(sock)) {
+      conn_res = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
+      if (conn_res == 0) break;
+      CLOSE_SOCKET(sock);
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_EQ(0, conn_res);
+
+  // 1. Perform WebSocket Handshake
+  const char* handshake =
+      "GET / HTTP/1.1\r\n"
+      "Host: 127.0.0.1:54325\r\n"
+      "Upgrade: websocket\r\n"
+      "Connection: Upgrade\r\n"
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+      "Sec-WebSocket-Version: 13\r\n\r\n";
+  send(sock, handshake, (int)strlen(handshake), 0);
+
+  char hs_resp[1024];
+  size_t hs_len = 0;
+  while (hs_len < sizeof(hs_resp) - 1) {
+    ssize_t n = recv(sock, hs_resp + hs_len, 1, 0);
+    if (n <= 0) break;
+    hs_len++;
+    hs_resp[hs_len] = '\0';
+    if (strstr(hs_resp, "\r\n\r\n")) break;
+  }
+  ASSERT_TRUE(strstr(hs_resp, "101 Switching Protocols") != NULL);
+
+  // 2. Send fragmented command in two frames:
+  // Frame 1: FIN=0, opcode=0x01 (Text), payload='{"command":'
+  const char* part1 = "{\"command\":";
+  test_send_ws_client_frame(sock, 0x01, false, part1, strlen(part1));
+
+  // Frame 2: FIN=1, opcode=0x00 (Continuation), payload='"GetVersion"}'
+  const char* part2 = "\"GetVersion\"}";
+  test_send_ws_client_frame(sock, 0x00, true, part2, strlen(part2));
+
+  // Read response frame
+  uint8_t resp_opcode = 0;
+  size_t resp_len = 0;
+  char* resp_text = test_recv_ws_frame(sock, &resp_opcode, &resp_len);
+  ASSERT_TRUE(resp_text != NULL);
+  ASSERT_EQ(0x01, (int)resp_opcode);
+
+  cJSON* root = cJSON_Parse(resp_text);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("GetVersion", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_STR_EQ(cdsp_get_version(),
+                cJSON_GetObjectItem(root, "value")->valuestring);
+  cJSON_Delete(root);
+  free(resp_text);
+
+  // 3. Test frame exceeding 16 MiB limit triggers close code 1009
+  uint8_t bad_hdr[14];
+  bad_hdr[0] = 0x81;                        // FIN=1, Text
+  bad_hdr[1] = 0x80 | 127;                  // Masked, 64-bit length
+  uint64_t huge_len = 20ULL * 1024 * 1024;  // 20 MiB > 16 MiB limit
+  for (int i = 0; i < 8; i++) {
+    bad_hdr[2 + i] = (uint8_t)((huge_len >> ((7 - i) * 8)) & 0xFF);
+  }
+  bad_hdr[10] = 0;
+  bad_hdr[11] = 0;
+  bad_hdr[12] = 0;
+  bad_hdr[13] = 0;
+  send(sock, (const char*)bad_hdr, 14, 0);
+
+  // Expect Close frame with code 1009
+  char* close_payload = test_recv_ws_frame(sock, &resp_opcode, &resp_len);
+  ASSERT_TRUE(close_payload != NULL);
+  ASSERT_EQ(0x08, (int)resp_opcode);
+  ASSERT_EQ(2, (int)resp_len);
+  uint16_t close_code =
+      ((uint8_t)close_payload[0] << 8) | (uint8_t)close_payload[1];
+  ASSERT_EQ(1009, (int)close_code);
+  free(close_payload);
+
+  CLOSE_SOCKET(sock);
+  websocket_server_stop(server);
+  websocket_server_free(server);
+}
+
+TEST(test_websocket_event_cadence_and_generations) {
+  mock_params = processing_parameters_create(2, 2);
+  ASSERT_TRUE(mock_params != NULL);
+
+  websocket_server_t* server = websocket_server_create(54326, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  bool started = websocket_server_start(server);
+  ASSERT_TRUE(started);
+
+  struct sockaddr_in addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(54326);
+  inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+  socket_t sock = -1;
+  int conn_res = -1;
+  for (int retry = 0; retry < 50; retry++) {
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (!IS_INVALID_SOCKET(sock)) {
+      conn_res = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
+      if (conn_res == 0) break;
+      CLOSE_SOCKET(sock);
+    }
+    cdsp_sleep_ms(10);
+  }
+  ASSERT_EQ(0, conn_res);
+
+#ifdef _WIN32
+  DWORD timeout_ms = 2000;
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout_ms,
+             sizeof(timeout_ms));
+#else
+  struct timeval tv = {.tv_sec = 2, .tv_usec = 0};
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
+
+  // Perform Handshake
+  const char* handshake =
+      "GET / HTTP/1.1\r\n"
+      "Host: 127.0.0.1:54326\r\n"
+      "Upgrade: websocket\r\n"
+      "Connection: Upgrade\r\n"
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+      "Sec-WebSocket-Version: 13\r\n\r\n";
+  send(sock, handshake, (int)strlen(handshake), 0);
+
+  char hs_resp[1024];
+  size_t hs_len = 0;
+  while (hs_len < sizeof(hs_resp) - 1) {
+    ssize_t n = recv(sock, hs_resp + hs_len, 1, 0);
+    if (n <= 0) break;
+    hs_len++;
+    hs_resp[hs_len] = '\0';
+    if (strstr(hs_resp, "\r\n\r\n")) break;
+  }
+  ASSERT_TRUE(strstr(hs_resp, "101 Switching Protocols") != NULL);
+
+  // 1. Subscribe to State
+  const char* sub_state = "{\"command\":\"SubscribeState\"}";
+  test_send_ws_client_frame(sock, 0x01, true, sub_state, strlen(sub_state));
+
+  uint8_t opcode = 0;
+  size_t len = 0;
+  char* frame = test_recv_ws_frame(sock, &opcode, &len);
+  ASSERT_TRUE(frame != NULL);
+  cJSON* root = cJSON_Parse(frame);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("SubscribeState",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON_Delete(root);
+  free(frame);
+
+  // Transition state: make mock_params NULL so mock_get_status returns INACTIVE
+  processing_parameters_free(mock_params);
+  mock_params = NULL;
+
+  // Immediate StateEvent should arrive promptly
+  frame = test_recv_ws_frame(sock, &opcode, &len);
+  ASSERT_TRUE(frame != NULL);
+  root = cJSON_Parse(frame);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("StateEvent", cJSON_GetObjectItem(root, "reply")->valuestring);
+  cJSON* val = cJSON_GetObjectItem(root, "value");
+  ASSERT_TRUE(val != NULL);
+  ASSERT_STR_EQ("Inactive", cJSON_GetObjectItem(val, "state")->valuestring);
+  cJSON_Delete(root);
+  free(frame);
+
+  // Stop state subscription
+  const char* stop_sub = "{\"command\":\"StopSubscription\"}";
+  test_send_ws_client_frame(sock, 0x01, true, stop_sub, strlen(stop_sub));
+  frame = test_recv_ws_frame(sock, &opcode, &len);
+  ASSERT_TRUE(frame != NULL);
+  root = cJSON_Parse(frame);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("StopSubscription",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON_Delete(root);
+  free(frame);
+
+  // 2. Subscribe to SignalLevels (playback)
+  mock_params = processing_parameters_create(2, 2);
+  const char* sub_sig =
+      "{\"command\":\"SubscribeSignalLevels\",\"value\":\"playback\"}";
+  test_send_ws_client_frame(sock, 0x01, true, sub_sig, strlen(sub_sig));
+
+  frame = test_recv_ws_frame(sock, &opcode, &len);
+  ASSERT_TRUE(frame != NULL);
+  root = cJSON_Parse(frame);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("SubscribeSignalLevels",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON_Delete(root);
+  free(frame);
+
+  // Update playback levels with a new chunk to bump playback generation
+  audio_chunk_t* chunk = audio_chunk_create(64, 2);
+  ASSERT_TRUE(chunk != NULL);
+  for (size_t ch = 0; ch < 2; ch++) {
+    mutable_waveform_t w = audio_chunk_get_channel(chunk, ch);
+    for (size_t s = 0; s < 64; s++) w[s] = 0.5f;
+  }
+  audio_chunk_set_valid_frames(chunk, 64);
+  processing_parameters_update_playback_levels(mock_params, chunk);
+
+  // Read SignalLevelsEvent triggered by generation increment
+  frame = test_recv_ws_frame(sock, &opcode, &len);
+  ASSERT_TRUE(frame != NULL);
+  root = cJSON_Parse(frame);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("SignalLevelsEvent",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  val = cJSON_GetObjectItem(root, "value");
+  ASSERT_TRUE(val != NULL);
+  ASSERT_STR_EQ("playback", cJSON_GetObjectItem(val, "side")->valuestring);
+  cJSON* pb_rms = cJSON_GetObjectItem(val, "rms");
+  ASSERT_TRUE(pb_rms != NULL && cJSON_GetArraySize(pb_rms) == 2);
+  cJSON_Delete(root);
+  free(frame);
+  audio_chunk_free(chunk);
+
+  // Stop SignalLevels subscription
+  test_send_ws_client_frame(sock, 0x01, true, stop_sub, strlen(stop_sub));
+  frame = test_recv_ws_frame(sock, &opcode, &len);
+  ASSERT_TRUE(frame != NULL);
+  root = cJSON_Parse(frame);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("StopSubscription",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  cJSON_Delete(root);
+  free(frame);
+
+  // 3. VU subscription with capture-only pipeline (pb_channels == 0,
+  // cap_channels == 2)
+  processing_parameters_free(mock_params);
+  mock_params = processing_parameters_create(2, 0);
+
+  const char* sub_vu =
+      "{\"command\":\"SubscribeVuLevels\",\"value\":{\"max_rate\":100.0}}";
+  test_send_ws_client_frame(sock, 0x01, true, sub_vu, strlen(sub_vu));
+  frame = test_recv_ws_frame(sock, &opcode, &len);
+  ASSERT_TRUE(frame != NULL);
+  root = cJSON_Parse(frame);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("SubscribeVuLevels",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON_Delete(root);
+  free(frame);
+
+  // Update capture levels with a chunk
+  audio_chunk_t* cap_chunk = audio_chunk_create(64, 2);
+  ASSERT_TRUE(cap_chunk != NULL);
+  for (size_t ch = 0; ch < 2; ch++) {
+    mutable_waveform_t w = audio_chunk_get_channel(cap_chunk, ch);
+    for (size_t s = 0; s < 64; s++) w[s] = 0.25f;
+  }
+  audio_chunk_set_valid_frames(cap_chunk, 64);
+  processing_parameters_update_capture_levels(mock_params, cap_chunk);
+
+  // Read VuLevelsEvent: verify capture has 2 channels and playback has 0
+  // channels
+  frame = test_recv_ws_frame(sock, &opcode, &len);
+  ASSERT_TRUE(frame != NULL);
+  root = cJSON_Parse(frame);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("VuLevelsEvent",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  val = cJSON_GetObjectItem(root, "value");
+  ASSERT_TRUE(val != NULL);
+  cJSON* vu_cap_pk = cJSON_GetObjectItem(val, "capture_peak");
+  ASSERT_TRUE(vu_cap_pk != NULL && cJSON_GetArraySize(vu_cap_pk) == 2);
+  cJSON* vu_pb_pk = cJSON_GetObjectItem(val, "playback_peak");
+  ASSERT_TRUE(vu_pb_pk != NULL && cJSON_GetArraySize(vu_pb_pk) == 0);
+  cJSON_Delete(root);
+  free(frame);
+  audio_chunk_free(cap_chunk);
+
+  CLOSE_SOCKET(sock);
+  websocket_server_stop(server);
+  websocket_server_free(server);
+
+  if (mock_params) {
+    processing_parameters_free(mock_params);
+    mock_params = NULL;
+  }
+}
+
+TEST(WebSocket_DefaultUpdateInterval) {
+  websocket_server_t* server = websocket_server_create(54335, "127.0.0.1");
+  ASSERT_TRUE(server != NULL);
+
+  char response[512] = {0};
+  websocket_server_handle_command(server, 0,
+                                  "{\"command\":\"GetUpdateInterval\"}",
+                                  response, sizeof(response));
+
+  cJSON* root = cJSON_Parse(response);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("GetUpdateInterval",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  ASSERT_EQ(1000, cJSON_GetObjectItem(root, "value")->valueint);
+  cJSON_Delete(root);
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_GetSignalLevelsSince_ClampsRange) {
+  websocket_server_t* server = websocket_server_create(54336, "127.0.0.1");
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+  mock_params = processing_parameters_create(2, 2);
+
+  char response[512] = {0};
+
+  // 1. Negative seconds should clamp to 0 without error or overflow
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetCaptureSignalPeakSince\",\"value\":-50.0}",
+      response, sizeof(response));
+  cJSON* root = cJSON_Parse(response);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("GetCaptureSignalPeakSince",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON_Delete(root);
+
+  // 2. Large seconds > 600 should clamp to 600 without underflow
+  memset(response, 0, sizeof(response));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"GetCaptureSignalPeakSince\",\"value\":99999.0}", response,
+      sizeof(response));
+  root = cJSON_Parse(response);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("GetCaptureSignalPeakSince",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON_Delete(root);
+
+  processing_parameters_free(mock_params);
+  mock_params = NULL;
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_SetUpdateInterval_RejectsFloatAndNegative) {
+  websocket_server_t* server = websocket_server_create(54337, "127.0.0.1");
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char response[512] = {0};
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"SetUpdateInterval\",\"value\":1.5}", response,
+      sizeof(response));
+  cJSON* root = cJSON_Parse(response);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("Invalid", cJSON_GetObjectItem(root, "reply")->valuestring);
+  cJSON_Delete(root);
+
+  memset(response, 0, sizeof(response));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"SetUpdateInterval\",\"value\":-10}", response,
+      sizeof(response));
+  root = cJSON_Parse(response);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("Invalid", cJSON_GetObjectItem(root, "reply")->valuestring);
+  cJSON_Delete(root);
+
+  memset(response, 0, sizeof(response));
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"SetUpdateInterval\",\"value\":250}", response,
+      sizeof(response));
+  root = cJSON_Parse(response);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("SetUpdateInterval",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON_Delete(root);
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_SubscribeSignalLevels_RejectsInvalidSide) {
+  websocket_server_t* server = websocket_server_create(54338, "127.0.0.1");
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char response[512] = {0};
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"SubscribeSignalLevels\",\"value\":\"unknown_side\"}",
+      response, sizeof(response));
+  cJSON* root = cJSON_Parse(response);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("Invalid", cJSON_GetObjectItem(root, "reply")->valuestring);
+  cJSON_Delete(root);
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_GetConfigValue_PreservesStringTypes) {
+  websocket_server_t* server = websocket_server_create(54339, "127.0.0.1");
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  mock_active_config = strdup(
+      "{\"title\":\"true\",\"devices\":{\"capture\":{\"device\":\"1\"}}}");
+
+  char response[512] = {0};
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"GetConfigValue\",\"value\":\"/title\"}",
+      response, sizeof(response));
+  cJSON* root = cJSON_Parse(response);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("GetConfigValue",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON* val = cJSON_GetObjectItem(root, "value");
+  ASSERT_TRUE(val != NULL);
+  ASSERT_TRUE(cJSON_IsString(val));
+  ASSERT_STR_EQ("true", val->valuestring);
+  cJSON_Delete(root);
+
+  free(mock_active_config);
+  mock_active_config = NULL;
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_SetVolume_InfinityClamped) {
+  websocket_server_t* server = websocket_server_create(54340, "127.0.0.1");
+  websocket_server_set_engine(server, (dsp_engine_t*)&mock_engine);
+
+  char response[512] = {0};
+  // 1e400 evaluates to +INFINITY in IEEE 754 float
+  websocket_server_handle_command(server, 0,
+                                  "{\"command\":\"SetVolume\",\"value\":1e400}",
+                                  response, sizeof(response));
+  cJSON* root = cJSON_Parse(response);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("SetVolume", cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON_Delete(root);
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_GetRateAdjust_DefaultsToZero) {
+  websocket_server_t* server = websocket_server_create(54341, "127.0.0.1");
+  // Engine is NULL, so query fails and should return 0.0 default matching
+  // upstream
+  websocket_server_set_engine(server, NULL);
+
+  char response[512] = {0};
+  websocket_server_handle_command(server, 0, "{\"command\":\"GetRateAdjust\"}",
+                                  response, sizeof(response));
+  cJSON* root = cJSON_Parse(response);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("GetRateAdjust",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON* val = cJSON_GetObjectItem(root, "value");
+  ASSERT_TRUE(val != NULL);
+  ASSERT_NEAR(0.0, val->valuedouble, 1e-6);
+  cJSON_Delete(root);
 
   websocket_server_free(server);
 }

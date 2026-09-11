@@ -38,6 +38,7 @@ struct core_audio_playback {
   size_t channels;
   double sample_rate;
   size_t chunk_size;
+  size_t target_level;
   bool exclusive;
   char sample_format[16];
   bool has_sample_format;
@@ -56,6 +57,8 @@ struct core_audio_playback {
   _Atomic bool is_paused;
   _Atomic bool stopped;
   _Atomic int active_callbacks;
+  _Atomic bool is_running;
+  _Atomic size_t underrun_silence_frames;
 };
 
 /**
@@ -105,10 +108,80 @@ static OSStatus playback_callback(void* inRefCon,
   uint8_t* dst = (uint8_t*)ioData->mBuffers[0].mData;
   if (dst) {
     size_t bytes_needed = frame_count * playback->blockalign;
-    size_t copied =
-        spsc_byte_ring_buffer_consume(playback->ring_buffer, dst, bytes_needed);
-    if (copied < bytes_needed) {
-      memset(dst + copied, 0, bytes_needed - copied);
+    size_t silence_frames = atomic_load_explicit(
+        &playback->underrun_silence_frames, memory_order_relaxed);
+
+    if (silence_frames > 0) {
+      size_t silence_to_output =
+          (silence_frames < frame_count) ? silence_frames : frame_count;
+      size_t silence_bytes = silence_to_output * playback->blockalign;
+      memset(dst, 0, silence_bytes);
+      atomic_fetch_sub_explicit(&playback->underrun_silence_frames,
+                                silence_to_output, memory_order_relaxed);
+
+      size_t remaining_frames = frame_count - silence_to_output;
+      if (remaining_frames > 0) {
+        size_t rem_bytes = remaining_frames * playback->blockalign;
+        size_t copied = spsc_byte_ring_buffer_consume(
+            playback->ring_buffer, dst + silence_bytes, rem_bytes);
+        if (copied < rem_bytes) {
+          memset(dst + silence_bytes + copied, 0, rem_bytes - copied);
+          atomic_store_explicit(&playback->is_running, false,
+                                memory_order_relaxed);
+          atomic_store_explicit(&playback->underrun_silence_frames,
+                                playback->target_level, memory_order_relaxed);
+        }
+      }
+    } else {
+      size_t avail =
+          spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer);
+      if (!atomic_load_explicit(&playback->is_running, memory_order_relaxed)) {
+        if (avail > 0) {
+          atomic_store_explicit(&playback->is_running, true,
+                                memory_order_relaxed);
+          size_t silence_to_output = (playback->target_level < frame_count)
+                                         ? playback->target_level
+                                         : frame_count;
+          size_t silence_bytes = silence_to_output * playback->blockalign;
+          memset(dst, 0, silence_bytes);
+          size_t rem_silence = playback->target_level - silence_to_output;
+          atomic_store_explicit(&playback->underrun_silence_frames, rem_silence,
+                                memory_order_relaxed);
+
+          size_t remaining_frames = frame_count - silence_to_output;
+          if (remaining_frames > 0) {
+            size_t rem_bytes = remaining_frames * playback->blockalign;
+            size_t copied = spsc_byte_ring_buffer_consume(
+                playback->ring_buffer, dst + silence_bytes, rem_bytes);
+            if (copied < rem_bytes) {
+              memset(dst + silence_bytes + copied, 0, rem_bytes - copied);
+              atomic_store_explicit(&playback->is_running, false,
+                                    memory_order_relaxed);
+              atomic_store_explicit(&playback->underrun_silence_frames,
+                                    playback->target_level,
+                                    memory_order_relaxed);
+            }
+          }
+          atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
+                                    memory_order_release);
+          return noErr;
+        } else {
+          memset(dst, 0, bytes_needed);
+          atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
+                                    memory_order_release);
+          return noErr;
+        }
+      }
+
+      size_t copied = spsc_byte_ring_buffer_consume(playback->ring_buffer, dst,
+                                                    bytes_needed);
+      if (copied < bytes_needed) {
+        memset(dst + copied, 0, bytes_needed - copied);
+        atomic_store_explicit(&playback->is_running, false,
+                              memory_order_relaxed);
+        atomic_store_explicit(&playback->underrun_silence_frames,
+                              playback->target_level, memory_order_relaxed);
+      }
     }
   }
 
@@ -212,6 +285,17 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
     }
   }
 
+  AudioDeviceID dev_id = core_audio_device_id_for_name(
+      playback->device_name[0] ? playback->device_name : NULL,
+      CORE_AUDIO_SCOPE_OUTPUT);
+  if (dev_id == 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
+                         "CoreAudio playback device not found");
+    goto cleanup;
+  }
+  playback->opened_device_id = dev_id;
+
   AudioComponentDescription desc = {
       .componentType = kAudioUnitType_Output,
       .componentSubType = kAudioUnitSubType_HALOutput,
@@ -266,24 +350,35 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
     goto cleanup;
   }
 
-  AudioDeviceID dev_id = core_audio_device_id_for_name(
-      playback->device_name[0] ? playback->device_name : NULL,
-      CORE_AUDIO_SCOPE_OUTPUT);
-  if (dev_id == 0) {
+  status = AudioUnitSetProperty(
+      playback->audio_unit, kAudioOutputUnitProperty_CurrentDevice,
+      kAudioUnitScope_Global, 0, &dev_id, sizeof(dev_id));
+  if (status != noErr) {
+    logger_error(
+        &g_logger,
+        "Failed to set current device on playback AudioUnit: status=%d",
+        status);
     if (err)
-      backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
-                         "CoreAudio playback device not found");
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to set playback device on AudioUnit");
     goto cleanup;
   }
-  playback->opened_device_id = dev_id;
-
-  AudioUnitSetProperty(playback->audio_unit,
-                       kAudioOutputUnitProperty_CurrentDevice,
-                       kAudioUnitScope_Global, 0, &dev_id, sizeof(dev_id));
 
   // Attempt to acquire Hog Mode if exclusive access is requested.
   if (playback->exclusive) {
     playback->did_acquire_hog_mode = core_audio_device_acquire_hog_mode(dev_id);
+    if (!playback->did_acquire_hog_mode) {
+      logger_error(
+          &g_logger,
+          "Failed to acquire exclusive access (hog mode) on playback device");
+      if (err)
+        backend_error_init(
+            err, BACKEND_ERROR_INITIALIZATION_FAILED,
+            "Failed to acquire exclusive access (hog mode) on playback device");
+      goto cleanup;
+    }
+  } else {
+    core_audio_device_release_hog_mode(dev_id);
   }
 
   // Set the device format.
@@ -305,7 +400,15 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
     }
   }
   if (!physical_format_set) {
-    core_audio_device_set_nominal_sample_rate(dev_id, playback->sample_rate);
+    if (!core_audio_device_set_nominal_sample_rate(dev_id,
+                                                   playback->sample_rate)) {
+      logger_error(&g_logger, "Failed to set playback device sample rate: %.1f",
+                   playback->sample_rate);
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                           "Failed to set playback device sample rate");
+      goto cleanup;
+    }
     logger_trace(&g_logger, "Set playback device sample rate.");
   }
 
@@ -397,10 +500,17 @@ static bool core_audio_playback_write(void* ctx, const audio_chunk_t* chunk,
                          "Playback device disconnected");
     return false;
   }
+  uint32_t sleep_ms = 1;
+  if (playback->sample_rate > 0) {
+    sleep_ms =
+        (uint32_t)((playback->chunk_size * 1000) / (playback->sample_rate * 2));
+    if (sleep_ms == 0) sleep_ms = 1;
+  }
+  uint32_t max_retries = 8;
   return audio_backend_ring_buffer_write(
       playback->ring_buffer, playback->write_buf, playback->write_buf_cap,
       playback->blockalign, chunk, BINARY_SAMPLE_FORMAT_F32_LE,
-      playback->channels, 1, 1000, NULL, &playback->stopped,
+      playback->channels, sleep_ms, max_retries, NULL, &playback->stopped,
       &playback->is_paused, NULL, err);
 }
 
@@ -409,8 +519,12 @@ static size_t core_audio_playback_get_buffer_level(void* ctx) {
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   if (!playback || !playback->ring_buffer || playback->blockalign == 0)
     return 0;
-  return spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
-         playback->blockalign;
+  size_t ring_frames =
+      spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
+      playback->blockalign;
+  size_t silence_frames = atomic_load_explicit(
+      &playback->underrun_silence_frames, memory_order_relaxed);
+  return ring_frames + silence_frames;
 }
 
 /// Get any pending sample rate change detected on the playback device.
@@ -429,6 +543,9 @@ static bool core_audio_playback_prefill_silence(void* ctx, size_t frames,
   core_audio_playback_t* playback = (core_audio_playback_t*)ctx;
   (void)err;
   if (!playback || frames == 0 || !playback->ring_buffer) return true;
+  atomic_store_explicit(&playback->is_running, true, memory_order_release);
+  atomic_store_explicit(&playback->underrun_silence_frames, 0,
+                        memory_order_release);
   size_t bytes = frames * playback->blockalign;
   uint8_t zero_buf[512] = {0};
   while (bytes > 0) {
@@ -524,6 +641,13 @@ static playback_backend_t* core_audio_playback_create(
   playback->channels = config_channels;
   playback->sample_rate = (double)sample_rate;
   playback->chunk_size = (size_t)chunk_size;
+  size_t target_level = (config->cfg.coreaudio.has_target_level &&
+                         config->cfg.coreaudio.target_level > 0)
+                            ? (size_t)config->cfg.coreaudio.target_level
+                            : (size_t)chunk_size;
+  playback->target_level = target_level;
+  atomic_init(&playback->is_running, true);
+  atomic_init(&playback->underrun_silence_frames, 0);
   playback->exclusive = playback_device_config_get_exclusive(config);
 
   coreaudio_sample_format_t fmt = playback_device_config_get_format(config);
@@ -536,7 +660,8 @@ static playback_backend_t* core_audio_playback_create(
 
   playback->bytes_per_sample = sizeof(float);
   playback->blockalign = config_channels * sizeof(float);
-  size_t ring_size = playback->blockalign * (2 * (size_t)chunk_size + 2048);
+  size_t ring_size =
+      playback->blockalign * (16 * (size_t)chunk_size + target_level + 2048);
   playback->ring_buffer = spsc_byte_ring_buffer_create(ring_size);
   if (!playback->ring_buffer) {
     if (err)

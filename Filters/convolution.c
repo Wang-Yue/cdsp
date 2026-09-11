@@ -1,6 +1,7 @@
 #include "Filters/convolution.h"
 
 #include <complex.h>
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -23,7 +24,15 @@ typedef struct conv_coeffs_s {
   size_t chunk_size;
   size_t num_segments;
   size_t spec_len;
+  size_t spec_stride;
   int ref_count;
+  /// Build pass that created this entry. Upstream keeps its `ConvCoeffCache`
+  /// alive only for the duration of one build/update pass, because a longer
+  /// lived cache risks handing out coefficients from a stale config. The C
+  /// port cannot drop the whole list at the end of a pass (entries are still
+  /// referenced by the filters of the *previous*, still running pipeline), so
+  /// entries are tagged instead and only reused within their own pass.
+  uint64_t generation;
   complex_t* data;
   struct conv_coeffs_s* next;
 } conv_coeffs_t;
@@ -33,6 +42,7 @@ struct convolution_filter {
   size_t chunk_size;
   size_t num_segments;
   size_t spec_len;
+  size_t spec_stride;
   real_fft_t* fft;
   conv_coeffs_t* coeffs;
   complex_t* hist_f;
@@ -41,9 +51,6 @@ struct convolution_filter {
   double* overlap_buffer;
   double* time_buf;
   double* out_buf;
-  double* input_buffer;
-  double* output_buffer;
-  size_t buf_pos;
 };
 
 typedef struct convolution_filter convolution_filter_t;
@@ -81,7 +88,8 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
   uint16_t bits_per_sample = 0;
   bool fmt_found = false;
   bool data_found = false;
-  uint32_t data_bytes = 0;
+  size_t data_bytes = 0;
+  uint64_t rf64_data_size = 0;
 
   uint8_t riff_header[12];
   if (fread(riff_header, 1, 12, f) != 12) {
@@ -101,7 +109,29 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
   while (fread(chunk_id, 1, 4, f) == 4) {
     if (fread(&chunk_size, 4, 1, f) != 1) break;
 
-    if (memcmp(chunk_id, "fmt ", 4) == 0) {
+    if (memcmp(chunk_id, "ds64", 4) == 0) {
+      if (chunk_size >= 24) {
+        uint8_t ds64_payload[24];
+        if (fread(ds64_payload, 1, 24, f) != 24) {
+          fclose(f);
+          return NULL;
+        }
+        rf64_data_size = (uint64_t)ds64_payload[8] |
+                         ((uint64_t)ds64_payload[9] << 8) |
+                         ((uint64_t)ds64_payload[10] << 16) |
+                         ((uint64_t)ds64_payload[11] << 24) |
+                         ((uint64_t)ds64_payload[12] << 32) |
+                         ((uint64_t)ds64_payload[13] << 40) |
+                         ((uint64_t)ds64_payload[14] << 48) |
+                         ((uint64_t)ds64_payload[15] << 56);
+        size_t remaining = chunk_size - 24;
+        if (remaining > 0) {
+          fseek(f, (remaining + 1) & ~1, SEEK_CUR);
+        }
+      } else {
+        fseek(f, (chunk_size + 1) & ~1, SEEK_CUR);
+      }
+    } else if (memcmp(chunk_id, "fmt ", 4) == 0) {
       if (chunk_size < 16) {
         fclose(f);
         return NULL;
@@ -131,7 +161,15 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
         fseek(f, 1, SEEK_CUR);
       }
     } else if (memcmp(chunk_id, "data", 4) == 0) {
-      data_bytes = chunk_size;
+      if (chunk_size == 0xFFFFFFFF && rf64_data_size > 0) {
+        if (rf64_data_size > (uint64_t)SIZE_MAX) {
+          fclose(f);
+          return NULL;
+        }
+        data_bytes = (size_t)rf64_data_size;
+      } else {
+        data_bytes = chunk_size;
+      }
       data_found = true;
       break;
     } else {
@@ -209,6 +247,38 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
   return result;
 }
 
+static char* read_dynamic_line(FILE* f) {
+  size_t cap = 128;
+  size_t len = 0;
+  char* buf = (char*)malloc(cap);
+  if (!buf) return NULL;
+  int c;
+  while ((c = fgetc(f)) != EOF) {
+    if (len + 2 >= cap) {
+      size_t new_cap = cap * 2;
+      char* new_buf = (char*)realloc(buf, new_cap);
+      if (!new_buf) {
+        free(buf);
+        return NULL;
+      }
+      buf = new_buf;
+      cap = new_cap;
+    }
+    if (c == '\n') {
+      break;
+    }
+    if (c != '\r') {
+      buf[len++] = (char)c;
+    }
+  }
+  if (len == 0 && c == EOF) {
+    free(buf);
+    return NULL;
+  }
+  buf[len] = '\0';
+  return buf;
+}
+
 /**
  * @brief Loads raw PCM or text data from a file and converts it to double.
  *
@@ -229,18 +299,16 @@ static double* load_raw_file(const char* path, const char* format_str,
   if (strcmp(format_str, "TEXT") == 0) {
     FILE* f = cdsp_fopen(path, "r");
     if (!f) return NULL;
-    char line[128];
-    bool skip_failed = false;
+
     for (int i = 0; i < skip_bytes; i++) {
-      if (!fgets(line, sizeof(line), f)) {
-        skip_failed = true;
-        break;
+      char* line = read_dynamic_line(f);
+      if (!line) {
+        fclose(f);
+        return NULL;
       }
+      free(line);
     }
-    if (skip_failed) {
-      fclose(f);
-      return NULL;
-    }
+
     size_t cap = 1024;
     double* result = (double*)calloc(cap, sizeof(double));
     if (!result) {
@@ -248,8 +316,48 @@ static double* load_raw_file(const char* path, const char* format_str,
       return NULL;
     }
     size_t count = 0;
-    while (fgets(line, sizeof(line), f)) {
-      if (read_bytes > 0 && (int)count >= read_bytes) break;
+    size_t lines_read = 0;
+    while (read_bytes <= 0 || lines_read < (size_t)read_bytes) {
+      char* line = read_dynamic_line(f);
+      if (!line) break;
+      lines_read++;
+
+      char* p = line;
+      while (*p != '\0' && isspace((unsigned char)*p)) p++;
+      size_t len = strlen(p);
+      while (len > 0 && isspace((unsigned char)p[len - 1])) {
+        p[--len] = '\0';
+      }
+
+      if (len == 0) {
+        // Empty or whitespace-only lines are invalid
+        free(line);
+        free(result);
+        fclose(f);
+        return NULL;
+      }
+
+      const char* check = p;
+      if (*check == '+' || *check == '-') check++;
+      if (check[0] == '0' && (check[1] == 'x' || check[1] == 'X')) {
+        // Hex floats are rejected by upstream Rust f64::from_str
+        free(line);
+        free(result);
+        fclose(f);
+        return NULL;
+      }
+
+      char* endptr = NULL;
+      double val = strtod(p, &endptr);
+      if (endptr == p || *endptr != '\0') {
+        // Malformed value or trailing characters (comments, multiple values)
+        free(line);
+        free(result);
+        fclose(f);
+        return NULL;
+      }
+      free(line);
+
       if (count >= cap) {
         cap *= 2;
         double* new_res = (double*)realloc(result, cap * sizeof(double));
@@ -260,13 +368,14 @@ static double* load_raw_file(const char* path, const char* format_str,
         }
         result = new_res;
       }
-      char* endptr;
-      double val = strtod(line, &endptr);
-      if (endptr != line) {
-        result[count++] = val;
-      }
+      result[count++] = val;
     }
+
     fclose(f);
+    if (count == 0) {
+      free(result);
+      return NULL;
+    }
     *out_count = count;
     return result;
   }
@@ -299,8 +408,16 @@ static double* load_raw_file(const char* path, const char* format_str,
   }
 
   long max_read = file_size;
-  if (read_bytes > 0 && read_bytes < file_size) {
-    max_read = read_bytes;
+  if (read_bytes > 0) {
+    size_t requested_samples = (size_t)read_bytes / sample_size;
+    if (requested_samples > 0) {
+      long requested_bytes = (long)(requested_samples * sample_size);
+      if (requested_bytes < file_size) {
+        max_read = requested_bytes;
+      }
+    }
+    // If requested_samples == 0 (read_bytes < sample_size), limit is None ->
+    // read entire file
   }
 
   size_t num_samples = max_read / sample_size;
@@ -370,13 +487,19 @@ static double* load_raw_file(const char* path, const char* format_str,
 }
 
 static conv_coeffs_t* g_conv_coeffs_cache = NULL;
+static uint64_t g_conv_cache_generation = 0;
+
+void convolution_coeff_cache_begin_build_pass(void) {
+  g_conv_cache_generation++;
+}
 
 static conv_coeffs_t* conv_coeffs_cache_find(const char* name,
                                              size_t chunk_size) {
   const char* lookup_name = name ? name : "convolution";
   for (conv_coeffs_t* curr = g_conv_coeffs_cache; curr != NULL;
        curr = curr->next) {
-    if (strcmp(curr->name, lookup_name) == 0 &&
+    if (curr->generation == g_conv_cache_generation &&
+        strcmp(curr->name, lookup_name) == 0 &&
         curr->chunk_size == chunk_size) {
       curr->ref_count++;
       return curr;
@@ -393,7 +516,8 @@ static conv_coeffs_t* conv_coeffs_create(const char* name, size_t chunk_size,
   const char* lookup_name = name ? name : "convolution";
   for (conv_coeffs_t* curr = g_conv_coeffs_cache; curr != NULL;
        curr = curr->next) {
-    if (strcmp(curr->name, lookup_name) == 0 &&
+    if (curr->generation == g_conv_cache_generation &&
+        strcmp(curr->name, lookup_name) == 0 &&
         curr->chunk_size == chunk_size) {
       curr->ref_count++;
       return curr;
@@ -409,9 +533,13 @@ static conv_coeffs_t* conv_coeffs_create(const char* name, size_t chunk_size,
   entry->chunk_size = chunk_size;
   entry->num_segments = num_seg;
   entry->spec_len = spec_len;
+  size_t spec_stride = (spec_len + 3) & ~3;
+  entry->spec_stride = spec_stride;
   entry->ref_count = 1;
+  entry->generation = g_conv_cache_generation;
+
   entry->data = (complex_t*)cdsp_aligned_alloc(
-      64, num_seg * spec_len * sizeof(complex_t));
+      64, num_seg * spec_stride * sizeof(complex_t));
   if (!entry->data) {
     free(entry);
     return NULL;
@@ -423,6 +551,7 @@ static conv_coeffs_t* conv_coeffs_create(const char* name, size_t chunk_size,
     free(entry);
     return NULL;
   }
+
   double inv_scale = 1.0 / (double)fft_len;
 
   for (size_t s = 0; s < num_seg; s++) {
@@ -435,7 +564,7 @@ static conv_coeffs_t* conv_coeffs_create(const char* name, size_t chunk_size,
         scratch[k] = coeffs[offset + k] * inv_scale;
       }
     }
-    real_fft_forward(fft, scratch, entry->data + s * spec_len);
+    real_fft_forward(fft, scratch, entry->data + s * spec_stride);
   }
   cdsp_aligned_free(scratch);
 
@@ -484,8 +613,6 @@ static void convolution_filter_free(void* instance) {
   if (filter->overlap_buffer) free(filter->overlap_buffer);
   if (filter->time_buf) cdsp_aligned_free(filter->time_buf);
   if (filter->out_buf) cdsp_aligned_free(filter->out_buf);
-  if (filter->input_buffer) free(filter->input_buffer);
-  if (filter->output_buffer) free(filter->output_buffer);
   free(filter);
 }
 
@@ -535,6 +662,30 @@ static int convolution_config_validate(const filter_config_t* config,
         snprintf(msg, sizeof(msg), "Conv file '%s' is empty or invalid",
                  params->filename);
         config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
+        return -1;
+      }
+      // Upstream's validate_config actually reads the coefficients and errors
+      // on an empty result, so a WAV channel index out of range, an
+      // unsupported encoding, an unparsable text file or a skip past EOF all
+      // reject the configuration. Doing the same here costs one extra read of
+      // the impulse response at config-check time and turns what used to be
+      // silence on the affected channel into a diagnostic.
+      size_t count = 0;
+      double* probe = NULL;
+      if (params->type == CONV_TYPE_WAV) {
+        probe = load_wav_file(params->filename, params->channel, &count);
+      } else {
+        probe = load_raw_file(params->filename, params->format,
+                              params->skip_bytes_lines,
+                              params->read_bytes_lines, &count);
+      }
+      free(probe);
+      if (!probe || count == 0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv coefficients could not be read from '%s' "
+                         "(unsupported encoding, channel out of range, or no "
+                         "usable samples)",
+                         params->filename);
         return -1;
       }
       break;
@@ -639,34 +790,37 @@ static void* convolution_filter_create(const char* name,
     }
 
     if (!coeffs || coeffs_count == 0) {
-      filter->num_segments = 1;
-    } else {
-      filter->num_segments = (coeffs_count + chunk_size - 1) / chunk_size;
-      if (filter->num_segments == 0) filter->num_segments = 1;
+      // Upstream's coeffs_from_config propagates the load error, so the
+      // config is rejected. Producing one all-zero segment here instead
+      // silently muted the channel.
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Conv filter '%s': no coefficients could be loaded",
+                       filter->name);
+      goto fail;
     }
+    filter->num_segments = (coeffs_count + chunk_size - 1) / chunk_size;
+    if (filter->num_segments == 0) filter->num_segments = 1;
   }
 
   size_t num_seg = filter->num_segments;
+  size_t spec_stride = (spec_len + 3) & ~3;
+  filter->spec_stride = spec_stride;
   filter->hist_f = (complex_t*)cdsp_aligned_alloc(
-      64, num_seg * spec_len * sizeof(complex_t));
+      64, num_seg * spec_stride * sizeof(complex_t));
   if (!filter->hist_f) {
     goto fail;
   }
-  memset(filter->hist_f, 0, num_seg * spec_len * sizeof(complex_t));
+  memset(filter->hist_f, 0, num_seg * spec_stride * sizeof(complex_t));
 
   filter->temp_buf =
       (complex_t*)cdsp_aligned_alloc(64, spec_len * sizeof(complex_t));
   filter->time_buf = (double*)cdsp_aligned_alloc(64, fft_len * sizeof(double));
   filter->out_buf = (double*)cdsp_aligned_alloc(64, fft_len * sizeof(double));
   filter->overlap_buffer = (double*)calloc(chunk_size, sizeof(double));
-  filter->input_buffer = (double*)calloc(chunk_size, sizeof(double));
-  filter->output_buffer = (double*)calloc(chunk_size, sizeof(double));
-  filter->buf_pos = 0;
   filter->write_idx = 0;
 
   if (!filter->temp_buf || !filter->time_buf || !filter->out_buf ||
-      !filter->overlap_buffer || !filter->input_buffer ||
-      !filter->output_buffer) {
+      !filter->overlap_buffer) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate convolution scratch buffers");
     goto fail;
@@ -680,7 +834,7 @@ static void* convolution_filter_create(const char* name,
   }
 
   // Clear buffers that might have been overwritten during FFT planning
-  memset(filter->hist_f, 0, num_seg * spec_len * sizeof(complex_t));
+  memset(filter->hist_f, 0, num_seg * spec_stride * sizeof(complex_t));
   memset(filter->temp_buf, 0, spec_len * sizeof(complex_t));
   memset(filter->time_buf, 0, fft_len * sizeof(double));
   memset(filter->out_buf, 0, fft_len * sizeof(double));
@@ -730,21 +884,25 @@ fail:
  * @param waveform In-place buffer containing the input block, which will be
  * overwritten with the output.
  */
-static void process_chunk(convolution_filter_t* filter,
-                          mutable_waveform_t waveform) {
-  if (!filter || filter->num_segments == 0 || !filter->coeffs) return;
+static void process_chunk_internal(convolution_filter_t* filter,
+                                   mutable_waveform_t waveform, size_t len) {
+  if (!filter || filter->num_segments == 0 || !filter->coeffs || len == 0)
+    return;
   size_t cs = filter->chunk_size;
   size_t spec_len = filter->spec_len;
+  size_t spec_stride = filter->spec_stride;
   size_t num_seg = filter->num_segments;
   size_t widx = filter->write_idx;
 
-  // 1. Stage the new block in the first `chunkSize` samples of
-  //    `time_buf`; zero the second half (the FFT zero-pad).
-  memcpy(filter->time_buf, waveform, cs * sizeof(double));
-  memset(filter->time_buf + cs, 0, cs * sizeof(double));
+  // 1. Stage the block in time_buf; zero the remainder up to 2 * cs (the FFT
+  // zero-pad).
+  memcpy(filter->time_buf, waveform, len * sizeof(double));
+  if (2 * cs > len) {
+    memset(filter->time_buf + len, 0, (2 * cs - len) * sizeof(double));
+  }
 
-  // 2. Advance the history index and FFT the new block directly into that slot.
-  complex_t* dest_slot = filter->hist_f + widx * spec_len;
+  // 2. Advance the history index and FFT the block directly into that slot.
+  complex_t* dest_slot = filter->hist_f + widx * spec_stride;
   real_fft_forward(filter->fft, filter->time_buf, dest_slot);
 
   // 3. Spectrum-domain multiply-accumulate across the segment history.
@@ -752,22 +910,22 @@ static void process_chunk(convolution_filter_t* filter,
   //    `k` blocks ago with coeff[k].
   const complex_t* coeffs_data = filter->coeffs->data;
   size_t hidx0 = widx;
-  dsp_ops_complex_multiply_interleaved(filter->hist_f + hidx0 * spec_len,
+  dsp_ops_complex_multiply_interleaved(filter->hist_f + hidx0 * spec_stride,
                                        coeffs_data, filter->temp_buf, spec_len);
 
   for (size_t s = 1; s < num_seg; s++) {
     size_t hidx = (widx + num_seg - s) % num_seg;
     dsp_ops_complex_fma_interleaved(filter->temp_buf,
-                                    filter->hist_f + hidx * spec_len,
-                                    coeffs_data + s * spec_len, spec_len);
+                                    filter->hist_f + hidx * spec_stride,
+                                    coeffs_data + s * spec_stride, spec_len);
   }
 
   // 4. Inverse FFT directly into out_buf.
   real_fft_inverse(filter->fft, filter->temp_buf, filter->out_buf);
 
   // 5. Overlap-add output: out[i] = ifft[i] + overlap_prev[i] for
-  //    i in 0..<N; overlap_next = ifft[N..2N].
-  for (size_t i = 0; i < cs; i++) {
+  //    i in 0..<len; overlap_next = ifft[N..2N].
+  for (size_t i = 0; i < len; i++) {
     waveform[i] = filter->out_buf[i] + filter->overlap_buffer[i];
   }
   memcpy(filter->overlap_buffer, filter->out_buf + cs, cs * sizeof(double));
@@ -775,9 +933,10 @@ static void process_chunk(convolution_filter_t* filter,
   filter->write_idx = (widx + 1) % num_seg;
 }
 
-/// Process one block in-place. The hot path is allocation-free in
-/// steady state; everything below is pointer arithmetic over the
-/// preallocated storage from `init`.
+/// Process audio block in-place. Full blocks are convolved directly;
+/// any trailing partial block is zero-padded and convolved immediately
+/// (matching upstream CamillaDSP) rather than deferred with stale buffer
+/// contents.
 static void convolution_filter_process(void* instance,
                                        mutable_waveform_t waveform,
                                        size_t count) {
@@ -785,43 +944,17 @@ static void convolution_filter_process(void* instance,
   if (!filter || !waveform || count == 0) return;
   size_t cs = filter->chunk_size;
   size_t i = 0;
-  if (filter->buf_pos > 0) {
-    size_t needed = cs - filter->buf_pos;
-    size_t len = (count - i < needed) ? (count - i) : needed;
-    memcpy(filter->input_buffer + filter->buf_pos, waveform + i,
-           len * sizeof(double));
-    filter->buf_pos += len;
 
-    if (filter->buf_pos == cs) {
-      process_chunk(filter, filter->input_buffer);
-      memcpy(filter->output_buffer, filter->input_buffer, cs * sizeof(double));
-      filter->buf_pos = 0;
-      memcpy(waveform + i, filter->output_buffer + (cs - len),
-             len * sizeof(double));
-      i += len;
-    } else {
-      memcpy(waveform + i, filter->output_buffer + filter->buf_pos - len,
-             len * sizeof(double));
-      i += len;
-      return;
-    }
-  }
-
-  // 2. Process any full blocks in-place directly from/to the waveform
+  // Process any full blocks in-place directly from/to the waveform
   while (i + cs <= count) {
-    process_chunk(filter, waveform + i);
+    process_chunk_internal(filter, waveform + i, cs);
     i += cs;
   }
 
-  // 3. Buffer any remaining partial block
+  // Zero-pad and process any remaining partial block immediately
   size_t rem = count - i;
   if (rem > 0) {
-    memcpy(filter->input_buffer + filter->buf_pos, waveform + i,
-           rem * sizeof(double));
-    memcpy(waveform + i, filter->output_buffer + filter->buf_pos,
-           rem * sizeof(double));
-    filter->buf_pos += rem;
-    i += rem;
+    process_chunk_internal(filter, waveform + i, rem);
   }
 }
 
@@ -834,20 +967,16 @@ static void convolution_filter_transfer_state(void* dest_ptr,
   if (dest->chunk_size == src->chunk_size &&
       dest->num_segments == src->num_segments) {
     size_t num_seg = dest->num_segments;
-    size_t spec_len = dest->spec_len;
+    size_t spec_stride = dest->spec_stride;
 
     // Copy overlap buffer
     memcpy(dest->overlap_buffer, src->overlap_buffer,
            dest->chunk_size * sizeof(double));
 
     // Copy history segments in a single contiguous block
-    memcpy(dest->hist_f, src->hist_f, num_seg * spec_len * sizeof(complex_t));
+    memcpy(dest->hist_f, src->hist_f,
+           num_seg * spec_stride * sizeof(complex_t));
     dest->write_idx = src->write_idx;
-    memcpy(dest->input_buffer, src->input_buffer,
-           dest->chunk_size * sizeof(double));
-    memcpy(dest->output_buffer, src->output_buffer,
-           dest->chunk_size * sizeof(double));
-    dest->buf_pos = src->buf_pos;
   }
 }
 

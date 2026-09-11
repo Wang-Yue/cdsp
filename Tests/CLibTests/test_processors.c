@@ -58,6 +58,79 @@ TEST(compressor_basic_compression) {
   dsp_processor_free(comp);
 }
 
+// Upstream puts no constraint on `factor`, and a value below 1.0 makes the
+// curve -(excess * (factor - 1) / factor) positive above the threshold, i.e.
+// upward expansion. The port used to reject the config outright.
+TEST(compressor_upward_expansion_factor_below_one) {
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0};
+  compressor_config_t params = {0};
+  params.channels = 1;
+  params.monitor_channels = mon_ch;
+  params.monitor_channels_count = 1;
+  params.process_channels = proc_ch;
+  params.process_channels_count = 1;
+  params.attack = 0.0001;
+  params.release = 0.0001;
+  params.threshold = -20.0;
+  params.factor = 0.5;
+  params.makeup_gain = 0.0;
+  params.has_makeup_gain = true;
+  params.soft_clip = false;
+  params.has_clip_limit = false;
+
+  processor_config_t config = {.type = PROCESSOR_TYPE_COMPRESSOR,
+                               .parameters.compressor = params};
+
+  config_error_t err;
+  config_error_init(&err);
+  dsp_processor_t* comp =
+      dsp_processor_create("expander", &config, 48000, 1000, &err);
+  ASSERT_TRUE(comp != NULL);
+  ASSERT_EQ(CONFIG_ERR_NONE, err.type);
+
+  audio_chunk_t* chunk = audio_chunk_create(1000, 1);
+  ASSERT_TRUE(chunk != NULL);
+  double* ch0 = audio_chunk_get_channel(chunk, 0);
+  // -6 dB, well above the -20 dB threshold, so the expander should boost it.
+  for (size_t i = 0; i < 1000; i++) ch0[i] = 0.5;
+  audio_chunk_set_valid_frames(chunk, 1000);
+
+  dsp_processor_process(comp, chunk);
+
+  ASSERT_TRUE(ch0[999] > 0.5);
+
+  audio_chunk_free(chunk);
+  dsp_processor_free(comp);
+}
+
+// factor == 0 divides by zero and pins everything above the threshold to full
+// scale. Upstream would do the same; the port rejects it as a deliberate
+// one-value safety divergence.
+TEST(compressor_rejects_zero_factor) {
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0};
+  compressor_config_t params = {0};
+  params.channels = 1;
+  params.monitor_channels = mon_ch;
+  params.monitor_channels_count = 1;
+  params.process_channels = proc_ch;
+  params.process_channels_count = 1;
+  params.attack = 0.0001;
+  params.release = 0.0001;
+  params.threshold = -20.0;
+  params.factor = 0.0;
+  params.has_makeup_gain = true;
+
+  processor_config_t config = {.type = PROCESSOR_TYPE_COMPRESSOR,
+                               .parameters.compressor = params};
+
+  config_error_t err;
+  config_error_init(&err);
+  ASSERT_TRUE(dsp_processor_create("bad", &config, 48000, 1000, &err) == NULL);
+  ASSERT_EQ(CONFIG_ERR_INVALID_PROCESSOR, err.type);
+}
+
 TEST(noisegate_basic_gate) {
   size_t mon_ch[] = {0};
   size_t proc_ch[] = {0};
@@ -664,6 +737,58 @@ TEST(test_lookahead_limiter_processor_validate) {
       .type = PROCESSOR_TYPE_LOOKAHEAD_LIMITER,
       .parameters.lookahead_limiter = params_invalid_attack_neg};
   ASSERT_NE(0, processor_config_validate(&cfg_invalid_attack_neg, 48000, NULL));
+}
+
+TEST(test_compressor_config_validation) {
+  compressor_config_t params_valid = {
+      .channels = 2,
+      .attack = 0.01,
+      .attack_unit = TIME_UNIT_S,
+      .release = 0.1,
+      .release_unit = TIME_UNIT_S,
+      .threshold = -10.0,
+      .factor = 2.0,
+  };
+  processor_config_t cfg = {
+      .type = PROCESSOR_TYPE_COMPRESSOR,
+      .parameters.compressor = params_valid,
+  };
+  ASSERT_EQ(0, processor_config_validate(&cfg, 48000, NULL));
+
+  // Attack == 0.0 must be rejected (04-M1)
+  cfg.parameters.compressor.attack = 0.0;
+  ASSERT_NE(0, processor_config_validate(&cfg, 48000, NULL));
+
+  // Attack < 0.0 must be rejected
+  cfg.parameters.compressor.attack = -0.01;
+  ASSERT_NE(0, processor_config_validate(&cfg, 48000, NULL));
+
+  // Release <= 0.0 must be rejected
+  cfg.parameters.compressor.attack = 0.01;
+  cfg.parameters.compressor.release = 0.0;
+  ASSERT_NE(0, processor_config_validate(&cfg, 48000, NULL));
+  cfg.parameters.compressor.release = -0.1;
+  ASSERT_NE(0, processor_config_validate(&cfg, 48000, NULL));
+}
+
+TEST(test_race_large_attenuation) {
+  race_config_t params = {
+      .channels = 2,
+      .channel_a = 0,
+      .channel_b = 1,
+      .attenuation = 160.0,
+      .delay = 0.0001,
+      .delay_unit = DELAY_UNIT_S,
+      .has_delay_unit = true,
+  };
+  processor_config_t cfg = {
+      .type = PROCESSOR_TYPE_RACE,
+      .parameters.race = params,
+  };
+  ASSERT_EQ(0, processor_config_validate(&cfg, 48000, NULL));
+  dsp_processor_t* race = dsp_processor_create("race", &cfg, 48000, 512, NULL);
+  ASSERT_TRUE(race != NULL);
+  dsp_processor_free(race);
 }
 
 TEST_MAIN()

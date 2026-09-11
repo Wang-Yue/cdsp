@@ -25,8 +25,8 @@
  * @return Allocated capture_backend_t interface pointer, or NULL on error.
  */
 capture_backend_t* audio_backend_factory_create_capture(
-    const capture_device_config_t* config, int sample_rate, int chunk_size,
-    bool full_duplex, processing_parameters_t* params,
+    const capture_device_config_t* config, size_t sample_rate,
+    size_t chunk_size, bool full_duplex, processing_parameters_t* params,
     audio_backend_error_t* out_err);
 
 /**
@@ -42,8 +42,8 @@ capture_backend_t* audio_backend_factory_create_capture(
  * @return Allocated playback_backend_t interface pointer, or NULL on error.
  */
 playback_backend_t* audio_backend_factory_create_playback(
-    const playback_device_config_t* config, int sample_rate, int chunk_size,
-    bool full_duplex, processing_parameters_t* params,
+    const playback_device_config_t* config, size_t sample_rate,
+    size_t chunk_size, bool full_duplex, processing_parameters_t* params,
     audio_backend_error_t* out_err);
 
 #endif  // CLIB_BACKEND_AUDIO_BACKEND_FACTORY_H

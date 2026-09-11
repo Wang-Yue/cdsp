@@ -47,16 +47,10 @@ int dsp_config_apply_overrides(dsp_config_t* config,
           "format: %s, channels: %u",
           wav_info.sample_rate, file_sample_format_to_string(wav_info.format),
           (unsigned int)wav_info.channels);
-      if (overrides.channels <= 0) {
-        overrides.channels = wav_info.channels;
-      }
-      if (!overrides.has_sample_format) {
-        overrides.sample_format = wav_info.format;
-        overrides.has_sample_format = true;
-      }
-      if (overrides.samplerate <= 0) {
-        overrides.samplerate = (int)wav_info.sample_rate;
-      }
+      overrides.channels = (int)wav_info.channels;
+      overrides.sample_format = wav_info.format;
+      overrides.has_sample_format = true;
+      overrides.samplerate = (int)wav_info.sample_rate;
     } else {
       logger_warn(&g_logger, "Failed to read wav header from %s: %s", fname,
                   wav_err);
@@ -94,13 +88,8 @@ int dsp_config_apply_overrides(dsp_config_t* config,
         config->devices.chunksize = scaled_chunksize;
 
         if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE) {
-          if (config->devices.capture.is_wav &&
-              config->devices.capture.cfg.wav_file.has_extra_samples) {
-            config->devices.capture.cfg.wav_file.extra_samples =
-                config->devices.capture.cfg.wav_file.extra_samples * rate /
-                cfg_rate;
-          } else if (!config->devices.capture.is_wav &&
-                     config->devices.capture.cfg.raw_file.has_extra_samples) {
+          if (!config->devices.capture.is_wav &&
+              config->devices.capture.cfg.raw_file.has_extra_samples) {
             config->devices.capture.cfg.raw_file.extra_samples =
                 config->devices.capture.cfg.raw_file.extra_samples * rate /
                 cfg_rate;
@@ -130,11 +119,7 @@ int dsp_config_apply_overrides(dsp_config_t* config,
     logger_debug(&g_logger, "Apply override for extra_samples: %d",
                  overrides.extra_samples);
     if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE) {
-      if (config->devices.capture.is_wav) {
-        config->devices.capture.cfg.wav_file.extra_samples =
-            overrides.extra_samples;
-        config->devices.capture.cfg.wav_file.has_extra_samples = true;
-      } else {
+      if (!config->devices.capture.is_wav) {
         config->devices.capture.cfg.raw_file.extra_samples =
             overrides.extra_samples;
         config->devices.capture.cfg.raw_file.has_extra_samples = true;
@@ -225,6 +210,13 @@ int dsp_config_apply_overrides(dsp_config_t* config,
         break;
       }
 #endif
+#if defined(ENABLE_PIPEWIRE)
+      case AUDIO_BACKEND_TYPE_PIPEWIRE:
+        logger_error(
+            &g_logger,
+            "Not possible to override capture format for PipeWire, ignoring");
+        break;
+#endif
 #if defined(ENABLE_COREAUDIO)
       case AUDIO_BACKEND_TYPE_CORE_AUDIO: {
         coreaudio_sample_format_t ca_fmt =
@@ -235,6 +227,15 @@ int dsp_config_apply_overrides(dsp_config_t* config,
           logger_debug(&g_logger,
                        "Apply override for capture sample format: %s",
                        coreaudio_sample_format_to_string(ca_fmt));
+        } else {
+          char msg[256];
+          snprintf(
+              msg, sizeof(msg),
+              "CoreAudio does not have a sample format corresponding to %s",
+              file_sample_format_to_string(overrides.sample_format));
+          config_error_set(err, CONFIG_ERR_PARSE, "%s", msg);
+          logger_error(&g_logger, "%s", msg);
+          return -1;
         }
         break;
       }
@@ -249,6 +250,14 @@ int dsp_config_apply_overrides(dsp_config_t* config,
           logger_debug(&g_logger,
                        "Apply override for capture sample format: %s",
                        wasapi_sample_format_to_string(wasapi_fmt));
+        } else {
+          char msg[256];
+          snprintf(msg, sizeof(msg),
+                   "Wasapi does not have a sample format corresponding to %s",
+                   file_sample_format_to_string(overrides.sample_format));
+          config_error_set(err, CONFIG_ERR_PARSE, "%s", msg);
+          logger_error(&g_logger, "%s", msg);
+          return -1;
         }
         break;
       }
@@ -263,6 +272,14 @@ int dsp_config_apply_overrides(dsp_config_t* config,
           logger_debug(&g_logger,
                        "Apply override for capture sample format: %s",
                        asio_sample_format_to_string(asio_fmt));
+        } else {
+          char msg[256];
+          snprintf(msg, sizeof(msg),
+                   "ASIO does not have a sample format corresponding to %s",
+                   file_sample_format_to_string(overrides.sample_format));
+          config_error_set(err, CONFIG_ERR_PARSE, "%s", msg);
+          logger_error(&g_logger, "%s", msg);
+          return -1;
         }
         break;
       }
@@ -335,13 +352,32 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
                      "Playback channels must be positive");
     return -1;
   }
-  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_FILE &&
-      config->devices.playback.cfg.raw_file.wav_header &&
-      config->devices.playback.cfg.raw_file.format ==
-          BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
+  bool has_wav_header = false;
+  binary_sample_format_t pb_fmt = BINARY_SAMPLE_FORMAT_INVALID;
+  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_FILE) {
+    has_wav_header = config->devices.playback.cfg.raw_file.wav_header;
+    pb_fmt = config->devices.playback.cfg.raw_file.format;
+  } else if (config->devices.playback.type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
+    has_wav_header = config->devices.playback.cfg.stdout_out.wav_header;
+    pb_fmt = config->devices.playback.cfg.stdout_out.format;
+  }
+  if (has_wav_header && pb_fmt == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "Wav files do not support the S24_4_RJ_LE sample format");
     return -1;
+  }
+
+  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE) {
+    const char* fname = config->devices.capture.is_wav
+                            ? config->devices.capture.cfg.wav_file.filename
+                            : config->devices.capture.cfg.raw_file.filename;
+    FILE* fp = (fname && fname[0] != '\0') ? fopen(fname, "rb") : NULL;
+    if (!fp) {
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "Could not open input file '%s'", fname ? fname : "");
+      return -1;
+    }
+    fclose(fp);
   }
 
 #if defined(ENABLE_WASAPI)
@@ -425,14 +461,14 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
 
   int64_t qlimit_val =
       config->devices.has_queuelimit ? config->devices.queuelimit : 4;
-  if (qlimit_val < 0 || qlimit_val > 1000) {
+  if (qlimit_val < 0) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                     "queuelimit must be between 0 and 1000");
+                     "queuelimit cannot be negative");
     return -1;
   }
-  if (config->devices.chunksize <= 0 || config->devices.chunksize > 1000000) {
+  if (config->devices.chunksize == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                     "chunksize must be between 1 and 1000000");
+                     "chunksize must be positive");
     return -1;
   }
   int64_t target_limit = (2 + qlimit_val) * (int64_t)config->devices.chunksize;
@@ -443,9 +479,9 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
 #endif
   if (config->devices.has_target_level) {
     if ((int64_t)config->devices.target_level > target_limit ||
-        config->devices.target_level <= 0) {
+        config->devices.target_level < 0) {
       char msg[128];
-      snprintf(msg, sizeof(msg), "target_level must be between 1 and %lld",
+      snprintf(msg, sizeof(msg), "target_level cannot be larger than %lld",
                (long long)target_limit);
       config_error_set(err, CONFIG_ERR_INVALID_DEVICE, msg);
       return -1;
@@ -464,42 +500,6 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "adjust_interval_s must be positive and > 0");
     return -1;
-  }
-
-  // Validate filters
-  for (size_t i = 0; i < config->filters_count; i++) {
-    config_error_t sub_err;
-    config_error_init(&sub_err);
-    if (filter_config_validate(&config->filters[i].filter,
-                               config->devices.samplerate, &sub_err) != 0) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Filter '%s': %s",
-                       config->filters[i].name, sub_err.message);
-      return -1;
-    }
-  }
-
-  // Validate mixers
-  for (size_t i = 0; i < config->mixers_count; i++) {
-    config_error_t sub_err;
-    config_error_init(&sub_err);
-    if (mixer_config_validate(&config->mixers[i].mixer, &sub_err) != 0) {
-      config_error_set(err, CONFIG_ERR_INVALID_MIXER, "Mixer '%s': %s",
-                       config->mixers[i].name, sub_err.message);
-      return -1;
-    }
-  }
-
-  // Validate processors
-  for (size_t i = 0; i < config->processors_count; i++) {
-    config_error_t sub_err;
-    config_error_init(&sub_err);
-    if (processor_config_validate(&config->processors[i].processor,
-                                  (int)config->devices.samplerate,
-                                  &sub_err) != 0) {
-      config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR, "Processor '%s': %s",
-                       config->processors[i].name, sub_err.message);
-      return -1;
-    }
   }
 
   if (config->devices.has_resampler) {

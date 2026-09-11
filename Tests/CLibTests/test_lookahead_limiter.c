@@ -123,7 +123,7 @@ TEST(test_lookahead_limiter_zero_attack_matches_compressor) {
       .monitor_channels_count = 0,
       .process_channels = NULL,
       .process_channels_count = 0,
-      .attack = 0.0,
+      .attack = 1e-12,
       .attack_unit = TIME_UNIT_S,
       .release = release_samples / (double)samplerate,
       .release_unit = TIME_UNIT_S,
@@ -226,6 +226,61 @@ TEST(test_lookahead_limiter_chunksize_larger_than_samplerate) {
   double input[] = {1.0, 1.0, 2.0, 1.0, 1.0, -2.0, 1.0, 1.0};
   g_lookahead_limiter_vtable.process(filter, input, 8);
   g_lookahead_limiter_vtable.free(filter);
+}
+
+// Upstream pads the lookahead history with `attack_samples` of silence whenever
+// the parameters change (LookaheadGain::set_parameters). The samples still in
+// the window were captured under the old attack time, so keeping them would
+// both replay stale audio and duck the incoming chunk with a peak that no
+// longer applies.
+TEST(test_lookahead_limiter_transfer_state_flushes_lookahead) {
+  lookahead_limiter_config_t params = {.limit = 0.0,
+                                       .attack = 4.0,
+                                       .attack_unit = TIME_UNIT_SAMPLES,
+                                       .release = 1.0,
+                                       .release_unit = TIME_UNIT_SAMPLES};
+  filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
+                         .parameters.lookahead_limiter = params};
+  void* src = g_lookahead_limiter_vtable.create("limiter_src", &cfg, 48000, 32,
+                                                NULL, NULL);
+  void* dest = g_lookahead_limiter_vtable.create("limiter_dest", &cfg, 48000,
+                                                 32, NULL, NULL);
+  ASSERT_TRUE(src != NULL);
+  ASSERT_TRUE(dest != NULL);
+
+  // Quiet audio ending in a burst that is still inside the lookahead window
+  // when the chunk returns: it has not been emitted or limited yet.
+  double primed[19];
+  for (size_t i = 0; i < 19; i++) {
+    primed[i] = i >= 15 ? 4.0 : 0.5;
+  }
+  g_lookahead_limiter_vtable.process(src, primed, 19);
+
+  g_lookahead_limiter_vtable.transfer_state(dest, src);
+
+  double continued[19];
+  double reloaded[19];
+  for (size_t i = 0; i < 19; i++) {
+    continued[i] = 0.5;
+    reloaded[i] = 0.5;
+  }
+  g_lookahead_limiter_vtable.process(src, continued, 19);
+  g_lookahead_limiter_vtable.process(dest, reloaded, 19);
+
+  // Without a reload the burst comes out of the window, limited to 0 dB, and
+  // holds the gain down behind it.
+  ASSERT_TRUE(is_close(continued[0], 1.0, 1e-9));
+
+  // After a reload the window is silent, so the burst is gone entirely...
+  for (size_t i = 0; i < 4; i++) {
+    ASSERT_DOUBLE_EQ(0.0, reloaded[i]);
+  }
+  // ...and the new audio is no longer ducked by it.
+  ASSERT_TRUE(reloaded[4] > continued[4] + 0.1);
+  ASSERT_TRUE(is_close(reloaded[12], 0.5, 1e-3));
+
+  g_lookahead_limiter_vtable.free(src);
+  g_lookahead_limiter_vtable.free(dest);
 }
 
 TEST_MAIN()

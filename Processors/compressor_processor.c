@@ -92,9 +92,9 @@ static int compressor_config_validate(const processor_config_t* config,
                      "Compressor: channels must be > 0, got 0");
     return -1;
   }
-  if (p->attack < 0.0) {
+  if (p->attack <= 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "Compressor: attack must be >= 0, got %g", p->attack);
+                     "Compressor: attack must be > 0, got %g", p->attack);
     return -1;
   }
   if (p->release <= 0.0) {
@@ -102,9 +102,20 @@ static int compressor_config_validate(const processor_config_t* config,
                      "Compressor: release must be > 0, got %g", p->release);
     return -1;
   }
-  if (p->factor < 1.0) {
+  // Upstream's `validate_compressor` puts no constraint on `factor` at all
+  // (compressor.rs:247-278), and `factor < 1.0` is a meaningful setting there:
+  // the gain curve `-(val - threshold) * (factor - 1) / factor` becomes
+  // positive above the threshold, i.e. upward expansion. Rejecting it made the
+  // port refuse a config that real CamillaDSP loads and plays.
+  //
+  // `factor == 0.0` is the one value that is not merely unusual but broken: it
+  // divides by zero, giving +inf dB and pinning every sample above the
+  // threshold to full scale. Upstream would do the same, but that is a speaker
+  // hazard rather than a feature, so it stays rejected as a deliberate
+  // one-value divergence.
+  if (p->factor == 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "Compressor: factor must be >= 1.0, got %g", p->factor);
+                     "Compressor: factor must not be 0");
     return -1;
   }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {
@@ -336,9 +347,11 @@ static void compressor_processor_process(void* impl, audio_chunk_t* chunk) {
   // the envelope.
   for (size_t i = 0; i < count; i++) {
     double val = processor->scratch[i];
-    if (val > processor->threshold && processor->factor > 1.0) {
-      // Above threshold: attenuate according to compression ratio (factor).
-      // The attenuation in dB is: -(excess_dB * (ratio - 1) / ratio).
+    if (val > processor->threshold) {
+      // Above threshold: apply the compression curve. The gain in dB is
+      // -(excess_dB * (ratio - 1) / ratio). Upstream applies this
+      // unconditionally, so a factor below 1.0 yields a positive gain here
+      // (upward expansion) rather than being skipped.
       val = -(val - processor->threshold) * (processor->factor - 1.0) /
             processor->factor;
     } else {

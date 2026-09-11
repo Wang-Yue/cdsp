@@ -66,17 +66,18 @@ void silence_counter_init(silence_counter_t* counter, double threshold_db,
                           size_t chunksize);
 
 /**
- * @brief Feeds the next chunk's loudest channel peak (dB) to the counter.
+ * @brief Feeds the next chunk's peak-to-peak value range to the counter.
  *
  * Updates the internal silent chunk count and returns the desired processing
  * state.
  *
  * @param counter Pointer to the silence counter.
- * @param signal_peak_db The peak signal level of the current chunk in dB.
+ * @param value_range The peak-to-peak value range of the current chunk (maxval
+ * - minval).
  * @return The desired processing state (RUNNING or PAUSED).
  */
 processing_state_t silence_counter_update(silence_counter_t* counter,
-                                          float signal_peak_db);
+                                          float value_range);
 
 /**
  * @brief Gets the limit of silent chunks before triggering a pause.

@@ -10,6 +10,7 @@
 #include "Audio/audio_buffers.h"
 #include "Audio/sample_conversion.h"
 #include "Utils/double_helpers.h"
+#include "Utils/float_helpers.h"
 
 struct audio_chunk {
   audio_buffers_t* buffers;
@@ -560,4 +561,24 @@ bool audio_chunk_encode_interleaved(const audio_chunk_t* chunk,
   }
 
   return true;
+}
+
+double audio_chunk_get_value_range(const audio_chunk_t* chunk) {
+  if (!chunk) return 0.0;
+  size_t channels = audio_chunk_get_channels(chunk);
+  size_t frames = audio_chunk_get_valid_frames(chunk);
+  if (channels == 0 || frames == 0) return 0.0;
+
+  double overall_min = 0.0;
+  double overall_max = 0.0;
+
+  for (size_t ch = 0; ch < channels; ch++) {
+    const double* data = audio_chunk_get_channel(chunk, ch);
+    if (!data) continue;
+    double ch_min = 0.0, ch_max = 0.0;
+    dsp_ops_min_max(data, frames, &ch_min, &ch_max);
+    if (ch_min < overall_min) overall_min = ch_min;
+    if (ch_max > overall_max) overall_max = ch_max;
+  }
+  return overall_max - overall_min;
 }

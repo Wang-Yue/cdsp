@@ -3461,6 +3461,70 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
 // engine state to INACTIVE.
 TEST(DSPEngineE2E_StartupFailure_Abort) {
   char json[1024];
+#if defined(ENABLE_COREAUDIO)
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"CoreAudio\",\n"
+           "            \"device\": \"__NonExistentDevice__\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           "/tmp/startup_fail_out.raw");
+#elif defined(ENABLE_ALSA)
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"__NonExistentDevice__\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           "/tmp/startup_fail_out.raw");
+#elif defined(ENABLE_WASAPI)
+  snprintf(json, sizeof(json),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": 16000,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 16,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Wasapi\",\n"
+           "            \"device\": \"__NonExistentDevice__\",\n"
+           "            \"channels\": 2\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           "/tmp/startup_fail_out.raw");
+#else
   snprintf(json, sizeof(json),
            "{\n"
            "    \"devices\": {\n"
@@ -3469,9 +3533,7 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
            "        \"queuelimit\": 16,\n"
            "        \"capture\": {\n"
            "            \"type\": \"RawFile\",\n"
-           "            \"filename\": "
-           "\"/nonexistent_directory/nonexistent_file.raw\",\n"  // Invalid file
-                                                                 // path!
+           "            \"filename\": \"/dev/null\",\n"
            "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 2\n"
            "        },\n"
@@ -3484,6 +3546,7 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
            "    }\n"
            "}",
            "/tmp/startup_fail_out.raw");
+#endif
 
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);

@@ -101,24 +101,26 @@ static const size_t NEEDS_RATE_RELOAD_COUNT =
 /**
  * Drivers that are refused outright.
  *
- * ASIO4ALL tolerates only one instance per process. It keeps the audio device open until
- * `ASIOStop` is called or its DLL is unloaded, which its author has confirmed on the
- * ASIO4ALL forum, so releasing an instance that was initialised but never started leaves
- * the device held, and creating the next one either deadlocks in `ASIOInit` or takes the
- * process down. A failed configuration followed by a corrected one reproduces that
- * crash every time, and `ASIOStop` before the release does not reliably help, it worked
- * once in three attempts.
+ * ASIO4ALL tolerates only one instance per process. It keeps the audio device
+ * open until `ASIOStop` is called or its DLL is unloaded, which its author has
+ * confirmed on the ASIO4ALL forum, so releasing an instance that was
+ * initialised but never started leaves the device held, and creating the next
+ * one either deadlocks in `ASIOInit` or takes the process down. A failed
+ * configuration followed by a corrected one reproduces that crash every time,
+ * and `ASIOStop` before the release does not reliably help, it worked once in
+ * three attempts.
  *
- * Keeping the instance around to reuse it does not work either: it belongs to the COM
- * apartment of the device thread that created it, and that thread exits at the end of
- * every session. Making this driver safe would mean owning every ASIO instance on a
- * dedicated thread that lives as long as the process.
+ * Keeping the instance around to reuse it does not work either: it belongs to
+ * the COM apartment of the device thread that created it, and that thread exits
+ * at the end of every session. Making this driver safe would mean owning every
+ * ASIO instance on a dedicated thread that lives as long as the process.
  *
- * That is a lot of machinery for a driver that gives CamillaDSP nothing. All ASIO4ALL does
- * is make an ordinary WDM device reachable from applications that only speak ASIO, and
- * CamillaDSP already speaks Wasapi, where exclusive mode is just as bit-perfect with one
- * emulation layer less. Anyone pointing this backend at ASIO4ALL is better served by the
- * Wasapi backend, so the driver is refused with a message that says so.
+ * That is a lot of machinery for a driver that gives CamillaDSP nothing. All
+ * ASIO4ALL does is make an ordinary WDM device reachable from applications that
+ * only speak ASIO, and CamillaDSP already speaks Wasapi, where exclusive mode
+ * is just as bit-perfect with one emulation layer less. Anyone pointing this
+ * backend at ASIO4ALL is better served by the Wasapi backend, so the driver is
+ * refused with a message that says so.
  */
 static const char* const UNSUPPORTED_DRIVERS[] = {"asio4all"};
 static const size_t UNSUPPORTED_DRIVERS_COUNT =
@@ -267,10 +269,10 @@ static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid) {
             snprintf(drv_name, sizeof(drv_name), "%s", subkey_name);
           }
 
-          if (!driver_name || driver_name[0] == '\0' ||
-              strcasecmp(driver_name, "default") == 0 ||
-              strcasecmp(drv_name, driver_name) == 0 ||
-              strcasecmp(subkey_name, driver_name) == 0) {
+          bool is_default = (!driver_name || driver_name[0] == '\0' ||
+                             strcasecmp(driver_name, "default") == 0);
+          bool matches = is_default || (strcmp(drv_name, driver_name) == 0);
+          if (matches) {
             wchar_t wclsid_str[128];
             mbstowcs(wclsid_str, clsid_str, 128);
             if (SUCCEEDED(CLSIDFromString(wclsid_str, out_clsid))) {
@@ -390,11 +392,11 @@ bool asio_driver_load_by_name(const char* name, IASIO** out_iasio,
   if (asio_is_unsupported_driver(name)) {
     if (err) {
       char msg[256];
-      snprintf(
-          msg, sizeof(msg),
-          "The ASIO driver '%s' is not supported, use the Wasapi backend for this "
-          "device instead",
-          name);
+      snprintf(msg, sizeof(msg),
+               "The ASIO driver '%s' is not supported, use the Wasapi backend "
+               "for this "
+               "device instead",
+               name);
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
     }
     return false;
@@ -428,7 +430,7 @@ bool asio_driver_load_by_name(const char* name, IASIO** out_iasio,
     return false;
   }
 
-  if (!iasio->lpVtbl->init(iasio, GetDesktopWindow())) {
+  if (!iasio->lpVtbl->init(iasio, NULL)) {
     char err_msg[128] = {0};
     iasio->lpVtbl->getErrorMessage(iasio, err_msg);
     SAFE_RELEASE(iasio);
@@ -882,10 +884,10 @@ static _Atomic bool ASIO_CAPTURE_RATE_CHANGED = false;
 
 /// Set when a driver asks for a reset with `kAsioResetRequest`.
 ///
-/// The callback answers yes to that request, which commits the host to tearing the stream
-/// down and starting over. It cannot do that from the driver's own callback thread, so it
-/// raises this instead and the device loop stops the stream, which makes the engine restart
-/// the pipeline and reopen the device.
+/// The callback answers yes to that request, which commits the host to tearing
+/// the stream down and starting over. It cannot do that from the driver's own
+/// callback thread, so it raises this instead and the device loop stops the
+/// stream, which makes the engine restart the pipeline and reopen the device.
 static _Atomic bool ASIO_PLAYBACK_RESET_REQUESTED = false;
 static _Atomic bool ASIO_CAPTURE_RESET_REQUESTED = false;
 
@@ -1179,8 +1181,7 @@ static void sample_rate_changed_combined(ASIOSampleRate s_rate) {
   (void)s_rate;
   atomic_store_explicit(&ASIO_PLAYBACK_RATE_CHANGED, true,
                         memory_order_release);
-  atomic_store_explicit(&ASIO_CAPTURE_RATE_CHANGED, true,
-                        memory_order_release);
+  atomic_store_explicit(&ASIO_CAPTURE_RATE_CHANGED, true, memory_order_release);
   logger_warn(&g_logger, "ASIO sampleRateDidChange callback received.");
 }
 
@@ -1192,8 +1193,9 @@ static void sample_rate_changed_playback(ASIOSampleRate s_rate) {
   (void)s_rate;
   atomic_store_explicit(&ASIO_PLAYBACK_RATE_CHANGED, true,
                         memory_order_release);
-  logger_warn(&g_logger,
-              "ASIO sampleRateDidChange callback received for the playback device.");
+  logger_warn(
+      &g_logger,
+      "ASIO sampleRateDidChange callback received for the playback device.");
 }
 
 /**
@@ -1202,10 +1204,10 @@ static void sample_rate_changed_playback(ASIOSampleRate s_rate) {
  */
 static void sample_rate_changed_capture(ASIOSampleRate s_rate) {
   (void)s_rate;
-  atomic_store_explicit(&ASIO_CAPTURE_RATE_CHANGED, true,
-                        memory_order_release);
-  logger_warn(&g_logger,
-              "ASIO sampleRateDidChange callback received for the capture device.");
+  atomic_store_explicit(&ASIO_CAPTURE_RATE_CHANGED, true, memory_order_release);
+  logger_warn(
+      &g_logger,
+      "ASIO sampleRateDidChange callback received for the capture device.");
 }
 
 /**
@@ -1237,8 +1239,8 @@ static long handle_asio_message(long selector, long value, bool playback,
       return 0;
     case K_ASIO_RESET_REQUEST:
       // Answering 1 commits us to tearing the stream down and starting over, so
-      // raise the flag the device loop watches. Doing the work here is not allowed,
-      // this runs on the driver's own callback thread.
+      // raise the flag the device loop watches. Doing the work here is not
+      // allowed, this runs on the driver's own callback thread.
       logger_warn(&g_logger,
                   "ASIO reset request received, restarting the stream.");
       if (playback) {
@@ -1262,14 +1264,15 @@ static long handle_asio_message(long selector, long value, bool playback,
           "implemented in this backend.");
       return 0;
     case K_ASIO_RESYNC_REQUEST:
-      // Deliberately nothing to do. This selector says the driver's timestamps have
-      // gone invalid and asks the host to resynchronise its transport to them, which
-      // matters to a sequencer. This backend never reads the Time struct, it hands
-      // it straight back, so there is nothing here that can be out of sync. The
-      // selector that asks for the driver to be torn down is RESET_REQUEST, and that
-      // one is acted on above. Answering 1 without acting matches what other hosts
-      // do, and stopping the stream over a notification the driver considers
-      // recoverable would only turn it into a dropout.
+      // Deliberately nothing to do. This selector says the driver's timestamps
+      // have gone invalid and asks the host to resynchronise its transport to
+      // them, which matters to a sequencer. This backend never reads the Time
+      // struct, it hands it straight back, so there is nothing here that can be
+      // out of sync. The selector that asks for the driver to be torn down is
+      // RESET_REQUEST, and that one is acted on above. Answering 1 without
+      // acting matches what other hosts do, and stopping the stream over a
+      // notification the driver considers recoverable would only turn it into a
+      // dropout.
       logger_debug(&g_logger,
                    "ASIO resync request received, nothing to resynchronise.");
       return 1;
@@ -1606,8 +1609,8 @@ static void release_shared_asio(void) {
 }
 
 /**
- * @brief Give up this side's claim on the shared state after a failed full-duplex setup.
- * Matches CamillaDSP device.rs:abort_shared_asio.
+ * @brief Give up this side's claim on the shared state after a failed
+ * full-duplex setup. Matches CamillaDSP device.rs:abort_shared_asio.
  */
 static void abort_shared_asio(const char* msg) {
   AcquireSRWLockExclusive(&g_asio_shared.lock);
@@ -1615,7 +1618,9 @@ static void abort_shared_asio(const char* msg) {
     if (g_asio_shared.state->setup_error[0] == '\0') {
       snprintf(g_asio_shared.state->setup_error,
                sizeof(g_asio_shared.state->setup_error), "%s",
-               (msg && msg[0]) ? msg : "the other side gave up without reporting why");
+               (msg && msg[0])
+                   ? msg
+                   : "the other side gave up without reporting why");
     }
   }
   WakeAllConditionVariable(&g_asio_shared.cond);
@@ -1624,8 +1629,8 @@ static void abort_shared_asio(const char* msg) {
 }
 
 /**
- * @brief Dispose the buffers and release the driver after a failed stream setup.
- * Matches CamillaDSP device.rs:cleanup_failed_setup.
+ * @brief Dispose the buffers and release the driver after a failed stream
+ * setup. Matches CamillaDSP device.rs:cleanup_failed_setup.
  */
 static void cleanup_failed_setup(const char* devname) {
   dispose_asio_buffers(devname);
@@ -1688,7 +1693,8 @@ static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
   backend_error_t load_err = {0};
   IASIO* iasio = NULL;
   if (!asio_driver_load_by_name(devname, &iasio, &load_err)) {
-    // A refused driver is not a missing one, and its message already says what to do.
+    // A refused driver is not a missing one, and its message already says what
+    // to do.
     if (asio_is_unsupported_driver(devname)) {
       if (err) {
         *err = load_err;
@@ -2185,7 +2191,8 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
     if (!register_and_wait(false, playback->channels, &playback->buffer_infos,
                            &playback->actual_buffer_size, err)) {
       atomic_store_explicit(&PLAYBACK_CONTEXT, NULL, memory_order_release);
-      abort_shared_asio(err ? err->message : "Full-duplex playback setup aborted");
+      abort_shared_asio(err ? err->message
+                            : "Full-duplex playback setup aborted");
       playback->shared_claimed = false;
       goto error_cleanup;
     }
@@ -2592,7 +2599,8 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
     if (!register_and_wait(true, capture->channels, &capture->buffer_infos,
                            &capture->actual_buffer_size, err)) {
       atomic_store_explicit(&CAPTURE_CONTEXT, NULL, memory_order_release);
-      abort_shared_asio(err ? err->message : "Full-duplex capture setup aborted");
+      abort_shared_asio(err ? err->message
+                            : "Full-duplex capture setup aborted");
       capture->shared_claimed = false;
       goto error_cleanup;
     }

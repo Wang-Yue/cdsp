@@ -98,6 +98,7 @@ static int cmp_size_t(const void* a, const void* b) {
  */
 static const char* format_string_for_asbd(
     const AudioStreamBasicDescription* asbd) {
+  if (asbd->mFormatID != kAudioFormatLinearPCM) return "";
   AudioFormatFlags flags = asbd->mFormatFlags;
   bool is_float = (flags & kAudioFormatFlagIsFloat) != 0;
   bool is_signed_int = (flags & kAudioFormatFlagIsSignedInteger) != 0;

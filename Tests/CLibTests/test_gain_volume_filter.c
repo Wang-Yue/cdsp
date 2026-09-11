@@ -412,4 +412,59 @@ TEST(VolumeRampsWithTinyChunksize) {
   processing_parameters_free(proc_params);
 }
 
+TEST(VolumeUnrampedMuteAndPublishing) {
+  processing_parameters_t* proc_params = processing_parameters_create(2, 2);
+  processing_parameters_set_target_volume_for_fader(proc_params, -6.0,
+                                                    FADER_MAIN);
+  volume_config_t params = {.ramp_time_ms = 0.0,
+                            .has_ramp_time_ms = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t* filter = (volume_filter_t*)g_volume_vtable.create(
+      "volume", &cfg, 44100, 4, proc_params, NULL);
+  ASSERT_TRUE(filter != NULL);
+
+  double chunk[4] = {1.0, 1.0, 1.0, 1.0};
+  process_vol(filter, chunk, 4);
+
+  // Initial target volume is -6.0 dB. Because ramp_time_ms is 0,
+  // volume_filter_advance_ramp publishes -6.0 dB to proc_params.
+  double cur_vol = processing_parameters_get_current_volume_for_fader(
+      proc_params, FADER_MAIN);
+  ASSERT_NEAR(-6.0, cur_vol, 1e-6);
+
+  // Mute without ramp
+  processing_parameters_set_muted_for_fader(proc_params, true, FADER_MAIN);
+  process_vol(filter, chunk, 4);
+
+  // 02-1: Un-ramped mute sets current_volume to 0.0 dB (not -100 dB)
+  // 02-2: Published unconditionally to proc_params
+  cur_vol = processing_parameters_get_current_volume_for_fader(proc_params,
+                                                               FADER_MAIN);
+  ASSERT_NEAR(0.0, cur_vol, 1e-6);
+
+  // Unmute without ramp
+  processing_parameters_set_muted_for_fader(proc_params, false, FADER_MAIN);
+  process_vol(filter, chunk, 4);
+
+  cur_vol = processing_parameters_get_current_volume_for_fader(proc_params,
+                                                               FADER_MAIN);
+  ASSERT_NEAR(-6.0, cur_vol, 1e-6);
+
+  // Change volume without ramp
+  processing_parameters_set_target_volume_for_fader(proc_params, -12.0,
+                                                    FADER_MAIN);
+  process_vol(filter, chunk, 4);
+
+  cur_vol = processing_parameters_get_current_volume_for_fader(proc_params,
+                                                               FADER_MAIN);
+  ASSERT_NEAR(-12.0, cur_vol, 1e-6);
+
+  g_volume_vtable.free(filter);
+  processing_parameters_free(proc_params);
+}
+
 TEST_MAIN()

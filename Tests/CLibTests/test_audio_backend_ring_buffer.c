@@ -166,4 +166,57 @@ TEST(AudioBackendRingBufferRead_PendingRateChange) {
   spsc_byte_ring_buffer_free(ring);
 }
 
+TEST(AudioBackendRingBufferRead_ThreadRunningFalse_RaisesReadError) {
+  size_t channels = 2;
+  size_t frames = 32;
+  size_t blockalign = channels * sizeof(float);
+  size_t scratch_cap = 1024;
+  uint8_t scratch_buf[1024];
+  spsc_byte_ring_buffer_t* ring = spsc_byte_ring_buffer_create(scratch_cap);
+  audio_chunk_t* chunk = audio_chunk_create(frames, channels);
+
+  _Atomic bool thread_running = false;
+  backend_error_t err;
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+
+  // Read should fail immediately with BACKEND_ERROR_READ_ERROR because
+  // thread_running is false
+  bool ok = audio_backend_ring_buffer_read(
+      ring, scratch_buf, sizeof(scratch_buf), blockalign, frames,
+      BINARY_SAMPLE_FORMAT_F32_LE, channels, &thread_running, NULL, NULL, chunk,
+      &err);
+  ASSERT_FALSE(ok);
+  ASSERT_EQ(err.type, BACKEND_ERROR_READ_ERROR);
+
+  audio_chunk_free(chunk);
+  spsc_byte_ring_buffer_free(ring);
+}
+
+TEST(AudioBackendRingBufferWrite_ThreadRunningFalse_RaisesWriteError) {
+  size_t channels = 2;
+  size_t frames = 32;
+  size_t blockalign = channels * sizeof(float);
+  size_t scratch_cap = 1024;
+  uint8_t scratch_buf[1024];
+  spsc_byte_ring_buffer_t* ring = spsc_byte_ring_buffer_create(scratch_cap);
+  audio_chunk_t* chunk = audio_chunk_create(frames, channels);
+  audio_chunk_set_valid_frames(chunk, frames);
+
+  _Atomic bool thread_running = false;
+  backend_error_t err;
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+
+  // Write should fail immediately with BACKEND_ERROR_WRITE_ERROR because
+  // thread_running is false
+  bool ok = audio_backend_ring_buffer_write(
+      ring, scratch_buf, sizeof(scratch_buf), blockalign, chunk,
+      BINARY_SAMPLE_FORMAT_F32_LE, channels, 1, 10, &thread_running, NULL, NULL,
+      NULL, &err);
+  ASSERT_FALSE(ok);
+  ASSERT_EQ(err.type, BACKEND_ERROR_WRITE_ERROR);
+
+  audio_chunk_free(chunk);
+  spsc_byte_ring_buffer_free(ring);
+}
+
 TEST_MAIN()

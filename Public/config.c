@@ -368,11 +368,29 @@ bool cdsp_engine_set_config_file(dsp_engine_t* engine, const char* path,
 }
 
 char* cdsp_get_config_title(const dsp_engine_t* engine) {
-  return cdsp_get_config_value(engine, "/title");
+  char* json = cdsp_get_config_value(engine, "/title");
+  if (!json) return NULL;
+  cJSON* node = cJSON_Parse(json);
+  free(json);
+  if (!node) return NULL;
+  char* res = (cJSON_IsString(node) && node->valuestring)
+                  ? strdup(node->valuestring)
+                  : NULL;
+  cJSON_Delete(node);
+  return res;
 }
 
 char* cdsp_get_config_description(const dsp_engine_t* engine) {
-  return cdsp_get_config_value(engine, "/description");
+  char* json = cdsp_get_config_value(engine, "/description");
+  if (!json) return NULL;
+  cJSON* node = cJSON_Parse(json);
+  free(json);
+  if (!node) return NULL;
+  char* res = (cJSON_IsString(node) && node->valuestring)
+                  ? strdup(node->valuestring)
+                  : NULL;
+  cJSON_Delete(node);
+  return res;
 }
 
 char* cdsp_get_config_value(const dsp_engine_t* engine, const char* json_ptr) {
@@ -390,12 +408,7 @@ char* cdsp_get_config_value(const dsp_engine_t* engine, const char* json_ptr) {
     return NULL;
   }
 
-  char* val = NULL;
-  if (cJSON_IsString(node) && node->valuestring) {
-    val = strdup(node->valuestring);
-  } else {
-    val = cJSON_PrintUnformatted(node);
-  }
+  char* val = cJSON_PrintUnformatted(node);
 
   cJSON_Delete(root);
   return val;
@@ -521,11 +534,12 @@ bool cdsp_patch_config(dsp_engine_t* engine, const char* patch_json,
 
 bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
   char* path = cdsp_get_config_file_path(engine);
-  if (!path) {
+  if (!path || path[0] == '\0') {
+    if (path) free(path);
     if (out_err) {
       out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
       snprintf(out_err->message, sizeof(out_err->message),
-               "No config file path set");
+               "Config path not given, cannot reload");
     }
     return false;
   }
@@ -534,25 +548,289 @@ bool cdsp_reload_config(dsp_engine_t* engine, cdsp_backend_error_t* out_err) {
   return ok;
 }
 
+static void config_fill_defaults(cJSON* root) {
+  if (!root || !cJSON_IsObject(root)) return;
+
+  if (!cJSON_HasObjectItem(root, "title")) {
+    cJSON_AddNullToObject(root, "title");
+  }
+  if (!cJSON_HasObjectItem(root, "description")) {
+    cJSON_AddNullToObject(root, "description");
+  }
+
+  cJSON* devices = cJSON_GetObjectItemCaseSensitive(root, "devices");
+  if (devices && cJSON_IsObject(devices)) {
+    static const char* const dev_null_fields[] = {"queuelimit",
+                                                  "silence_threshold",
+                                                  "silence_timeout_s",
+                                                  "enable_rate_adjust",
+                                                  "target_level",
+                                                  "adjust_interval_s",
+                                                  "resampler",
+                                                  "capture_samplerate",
+                                                  "stop_on_rate_change",
+                                                  "rate_measure_interval_s",
+                                                  "volume_ramp_time_ms",
+                                                  "volume_limit",
+                                                  "multithreaded",
+                                                  "worker_threads",
+                                                  NULL};
+    for (int i = 0; dev_null_fields[i] != NULL; i++) {
+      if (!cJSON_HasObjectItem(devices, dev_null_fields[i])) {
+        cJSON_AddNullToObject(devices, dev_null_fields[i]);
+      }
+    }
+
+    cJSON* capture = cJSON_GetObjectItemCaseSensitive(devices, "capture");
+    if (capture && cJSON_IsObject(capture)) {
+      if (!cJSON_HasObjectItem(capture, "extra_samples")) {
+        cJSON_AddNullToObject(capture, "extra_samples");
+      }
+      cJSON* type_item = cJSON_GetObjectItemCaseSensitive(capture, "type");
+      if (type_item && cJSON_IsString(type_item) &&
+          strcmp(type_item->valuestring, "RawFile") == 0) {
+        if (!cJSON_HasObjectItem(capture, "skip_bytes")) {
+          cJSON_AddNullToObject(capture, "skip_bytes");
+        }
+        if (!cJSON_HasObjectItem(capture, "read_bytes")) {
+          cJSON_AddNullToObject(capture, "read_bytes");
+        }
+      }
+      if (!cJSON_HasObjectItem(capture, "labels")) {
+        cJSON_AddNullToObject(capture, "labels");
+      }
+    }
+
+    cJSON* playback = cJSON_GetObjectItemCaseSensitive(devices, "playback");
+    if (playback && cJSON_IsObject(playback)) {
+      cJSON* type_item = cJSON_GetObjectItemCaseSensitive(playback, "type");
+      if (type_item && cJSON_IsString(type_item) &&
+          strcmp(type_item->valuestring, "File") == 0) {
+        if (!cJSON_HasObjectItem(playback, "wav_header")) {
+          cJSON_AddNullToObject(playback, "wav_header");
+        }
+        if (!cJSON_HasObjectItem(playback, "use_rf64")) {
+          cJSON_AddNullToObject(playback, "use_rf64");
+        }
+      }
+    }
+  }
+
+  cJSON* mixers = cJSON_GetObjectItemCaseSensitive(root, "mixers");
+  if (!mixers) {
+    cJSON_AddNullToObject(root, "mixers");
+  } else if (cJSON_IsObject(mixers)) {
+    cJSON* mixer = mixers->child;
+    while (mixer) {
+      if (cJSON_IsObject(mixer)) {
+        if (!cJSON_HasObjectItem(mixer, "description")) {
+          cJSON_AddNullToObject(mixer, "description");
+        }
+        if (!cJSON_HasObjectItem(mixer, "labels")) {
+          cJSON_AddNullToObject(mixer, "labels");
+        }
+        cJSON* mapping = cJSON_GetObjectItemCaseSensitive(mixer, "mapping");
+        if (mapping && cJSON_IsArray(mapping)) {
+          cJSON* map_entry = mapping->child;
+          while (map_entry) {
+            if (cJSON_IsObject(map_entry)) {
+              if (!cJSON_HasObjectItem(map_entry, "mute")) {
+                cJSON_AddNullToObject(map_entry, "mute");
+              }
+              cJSON* sources =
+                  cJSON_GetObjectItemCaseSensitive(map_entry, "sources");
+              if (sources && cJSON_IsArray(sources)) {
+                cJSON* src = sources->child;
+                while (src) {
+                  if (cJSON_IsObject(src)) {
+                    if (!cJSON_HasObjectItem(src, "gain")) {
+                      cJSON_AddNullToObject(src, "gain");
+                    }
+                    if (!cJSON_HasObjectItem(src, "inverted")) {
+                      cJSON_AddNullToObject(src, "inverted");
+                    }
+                    if (!cJSON_HasObjectItem(src, "mute")) {
+                      cJSON_AddNullToObject(src, "mute");
+                    }
+                    if (!cJSON_HasObjectItem(src, "scale")) {
+                      cJSON_AddNullToObject(src, "scale");
+                    }
+                  }
+                  src = src->next;
+                }
+              }
+            }
+            map_entry = map_entry->next;
+          }
+        }
+      }
+      mixer = mixer->next;
+    }
+  }
+
+  cJSON* filters = cJSON_GetObjectItemCaseSensitive(root, "filters");
+  if (!filters) {
+    cJSON_AddNullToObject(root, "filters");
+  } else if (cJSON_IsObject(filters)) {
+    cJSON* filter = filters->child;
+    while (filter) {
+      if (cJSON_IsObject(filter)) {
+        if (!cJSON_HasObjectItem(filter, "description")) {
+          cJSON_AddNullToObject(filter, "description");
+        }
+        cJSON* type = cJSON_GetObjectItemCaseSensitive(filter, "type");
+        cJSON* params = cJSON_GetObjectItemCaseSensitive(filter, "parameters");
+        if (type && cJSON_IsString(type) && params && cJSON_IsObject(params)) {
+          if (strcmp(type->valuestring, "Volume") == 0) {
+            if (!cJSON_HasObjectItem(params, "ramp_time_ms")) {
+              cJSON_AddNullToObject(params, "ramp_time_ms");
+            }
+            if (!cJSON_HasObjectItem(params, "limit")) {
+              cJSON_AddNullToObject(params, "limit");
+            }
+          } else if (strcmp(type->valuestring, "Loudness") == 0) {
+            if (!cJSON_HasObjectItem(params, "ramp_time_ms")) {
+              cJSON_AddNullToObject(params, "ramp_time_ms");
+            }
+            if (!cJSON_HasObjectItem(params, "high_boost")) {
+              cJSON_AddNullToObject(params, "high_boost");
+            }
+            if (!cJSON_HasObjectItem(params, "low_boost")) {
+              cJSON_AddNullToObject(params, "low_boost");
+            }
+            if (!cJSON_HasObjectItem(params, "attenuation")) {
+              cJSON_AddNullToObject(params, "attenuation");
+            }
+          }
+        }
+      }
+      filter = filter->next;
+    }
+  }
+
+  cJSON* processors = cJSON_GetObjectItemCaseSensitive(root, "processors");
+  if (!processors) {
+    cJSON_AddNullToObject(root, "processors");
+  } else if (cJSON_IsObject(processors)) {
+    cJSON* proc = processors->child;
+    while (proc) {
+      if (cJSON_IsObject(proc)) {
+        if (!cJSON_HasObjectItem(proc, "description")) {
+          cJSON_AddNullToObject(proc, "description");
+        }
+        cJSON* type = cJSON_GetObjectItemCaseSensitive(proc, "type");
+        cJSON* params = cJSON_GetObjectItemCaseSensitive(proc, "parameters");
+        if (type && cJSON_IsString(type) && params && cJSON_IsObject(params)) {
+          if (strcmp(type->valuestring, "Compressor") == 0) {
+            if (!cJSON_HasObjectItem(params, "monitor_channels")) {
+              cJSON_AddNullToObject(params, "monitor_channels");
+            }
+            if (!cJSON_HasObjectItem(params, "process_channels")) {
+              cJSON_AddNullToObject(params, "process_channels");
+            }
+          }
+        }
+      }
+      proc = proc->next;
+    }
+  }
+
+  if (!cJSON_HasObjectItem(root, "pipeline")) {
+    cJSON_AddNullToObject(root, "pipeline");
+  }
+}
+
+bool cdsp_read_config_json(const char* json_str, char** out_result,
+                           cdsp_config_error_type_t* out_err_type) {
+  if (!json_str || !out_result || !out_err_type) return false;
+  cJSON* root = cJSON_Parse(json_str);
+  if (!root) {
+    *out_result = strdup("Failed to parse JSON (syntax error or invalid JSON)");
+    *out_err_type = CDSP_CONFIG_ERR_PARSE;
+    return false;
+  }
+  dsp_config_t* parsed = NULL;
+  config_error_t cerr = {0};
+  if (dsp_config_parse_json_no_validate(json_str, &parsed, &cerr) != 0 ||
+      !parsed) {
+    cJSON_Delete(root);
+    *out_result =
+        strdup(cerr.message[0] ? cerr.message : "Failed to parse JSON");
+    *out_err_type = CDSP_CONFIG_ERR_PARSE;
+    return false;
+  }
+  dsp_config_free(parsed);
+
+  config_fill_defaults(root);
+  *out_result = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  *out_err_type = CDSP_CONFIG_ERR_NONE;
+  return true;
+}
+
 bool cdsp_validate_config_json(const char* json_str, char** out_result,
                                cdsp_config_error_type_t* out_err_type) {
   if (!json_str || !out_result || !out_err_type) return false;
-  dsp_config_t* parsed = NULL;
-  config_error_t cerr = {0};
-  if (config_loader_parse(json_str, &parsed, &cerr) == 0 && parsed) {
-    *out_result = strdup(json_str);
-    *out_err_type = CDSP_CONFIG_ERR_NONE;
-    dsp_config_free(parsed);
-    return true;
-  } else {
-    *out_result = strdup(cerr.message);
-    if (cerr.type == CONFIG_ERR_PARSE) {
-      *out_err_type = CDSP_CONFIG_ERR_PARSE;
-    } else {
-      *out_err_type = CDSP_CONFIG_ERR_VALIDATION;
-    }
+  cJSON* root = cJSON_Parse(json_str);
+  if (!root) {
+    *out_result = strdup("Failed to parse JSON (syntax error or invalid JSON)");
+    *out_err_type = CDSP_CONFIG_ERR_PARSE;
     return false;
   }
+  dsp_config_t* parsed = NULL;
+  config_error_t cerr = {0};
+  if (dsp_config_parse_json_no_validate(json_str, &parsed, &cerr) != 0 ||
+      !parsed) {
+    cJSON_Delete(root);
+    *out_result =
+        strdup(cerr.message[0] ? cerr.message : "Failed to parse JSON");
+    *out_err_type = CDSP_CONFIG_ERR_PARSE;
+    return false;
+  }
+
+  if (dsp_config_validate(parsed, &cerr) != 0) {
+    dsp_config_free(parsed);
+    cJSON_Delete(root);
+    *out_result =
+        strdup(cerr.message[0] ? cerr.message : "Config validation failed");
+    *out_err_type = CDSP_CONFIG_ERR_VALIDATION;
+    return false;
+  }
+  dsp_config_free(parsed);
+
+  config_fill_defaults(root);
+  *out_result = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  *out_err_type = CDSP_CONFIG_ERR_NONE;
+  return true;
+}
+
+bool cdsp_read_config_yaml(const char* yaml_str, char** out_result,
+                           cdsp_config_error_type_t* out_err_type) {
+  if (!yaml_str || !out_result || !out_err_type) return false;
+  char* err_msg = NULL;
+  char* json_str = yaml_str_to_json_str(yaml_str, &err_msg);
+  if (!json_str) {
+    *out_result = strdup(err_msg ? err_msg : "Invalid YAML syntax");
+    *out_err_type = CDSP_CONFIG_ERR_PARSE;
+    if (err_msg) free(err_msg);
+    return false;
+  }
+  if (err_msg) free(err_msg);
+
+  char* json_res = NULL;
+  bool ok = cdsp_read_config_json(json_str, &json_res, out_err_type);
+  free(json_str);
+  if (ok && json_res && *out_err_type == CDSP_CONFIG_ERR_NONE) {
+    char* yaml_res = json_str_to_yaml_str(json_res);
+    if (yaml_res) {
+      free(json_res);
+      *out_result = yaml_res;
+      return true;
+    }
+  }
+  *out_result = json_res;
+  return ok;
 }
 
 bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
@@ -580,6 +858,35 @@ bool cdsp_validate_config_yaml(const char* yaml_str, char** out_result,
     }
   }
   *out_result = json_res;
+  return ok;
+}
+
+bool cdsp_read_config_file(const char* path, char** out_result,
+                           cdsp_config_error_type_t* out_err_type) {
+  if (!path) return false;
+  char err_msg[256] = {0};
+  bool is_json = false;
+  char* updated_json = read_config_file_as_json_with_overrides(
+      path, 0, 0, NULL, -1, &is_json, err_msg, sizeof(err_msg));
+  if (!updated_json) {
+    if (out_result)
+      *out_result = strdup(err_msg[0] ? err_msg : "Could not read file");
+    if (out_err_type) *out_err_type = CDSP_CONFIG_ERR_PARSE;
+    return false;
+  }
+
+  bool ok = cdsp_read_config_json(updated_json, out_result, out_err_type);
+  free(updated_json);
+
+  if (ok && !is_json && out_result && *out_result &&
+      *out_err_type == CDSP_CONFIG_ERR_NONE) {
+    char* yaml_res = json_str_to_yaml_str(*out_result);
+    if (yaml_res) {
+      free(*out_result);
+      *out_result = yaml_res;
+    }
+  }
+
   return ok;
 }
 

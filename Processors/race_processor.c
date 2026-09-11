@@ -225,9 +225,9 @@ static void* race_processor_create(const char* name,
       "race-DelayB", &dcfg, sample_rate, 0, NULL, err);
 
   gain_config_t gparams = {0};
-  gparams.gain = -params->attenuation;
+  gparams.gain = double_from_db(-params->attenuation);
   gparams.has_gain = true;
-  gparams.scale = GAIN_SCALE_DB;
+  gparams.scale = GAIN_SCALE_LINEAR;
   gparams.inverted = true;
   gparams.mute = false;
 

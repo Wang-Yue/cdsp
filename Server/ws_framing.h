@@ -26,6 +26,14 @@ bool ws_parse_frame_header(const unsigned char* buf, size_t buf_len,
                            unsigned char** out_mask, uint8_t* out_opcode);
 
 /**
+ * @brief Parses a WebSocket frame header with FIN bit extraction.
+ */
+bool ws_parse_frame_header_ext(const unsigned char* buf, size_t buf_len,
+                               size_t* out_payload_len, size_t* out_header_len,
+                               unsigned char** out_mask, uint8_t* out_opcode,
+                               bool* out_fin);
+
+/**
  * @brief Sends a WebSocket text frame to a client file descriptor.
  *
  * @param fd The client socket file descriptor.

@@ -67,8 +67,10 @@ size_t biquad_combo_butterworth_q(int order, double* out_q, size_t max_q) {
  */
 size_t biquad_combo_linkwitz_riley_q(int order, double* out_q, size_t max_q) {
   if (order % 2 != 0 || order < 2 || !out_q || max_q == 0) return 0;
-  double bw_q[16];
-  size_t bw_count = biquad_combo_butterworth_q(order / 2, bw_q, 16);
+  size_t half_order = (size_t)(order / 2);
+  double* bw_q = (double*)malloc((half_order + 1) * sizeof(double));
+  if (!bw_q) return 0;
+  size_t bw_count = biquad_combo_butterworth_q(order / 2, bw_q, half_order + 1);
   if (order % 4 > 0 && bw_count > 0) {
     bw_count--;
   }
@@ -82,6 +84,7 @@ size_t biquad_combo_linkwitz_riley_q(int order, double* out_q, size_t max_q) {
   if (order % 4 > 0 && count < max_q) {
     out_q[count++] = 0.5;
   }
+  free(bw_q);
   return count;
 }
 
@@ -152,9 +155,9 @@ static int biquad_combo_config_validate(const filter_config_t* config,
             params->freq);
         return -1;
       }
-      if (!params->has_order || params->order <= 0 || params->order > 64) {
+      if (!params->has_order || params->order <= 0) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "BiquadCombo: order must be between 1 and 64, got %d",
+                         "BiquadCombo: order must be > 0, got %d",
                          params->order);
         return -1;
       }
@@ -173,12 +176,12 @@ static int biquad_combo_config_validate(const filter_config_t* config,
             params->freq);
         return -1;
       }
-      if (!params->has_order || params->order <= 0 || params->order > 64 ||
+      if (!params->has_order || params->order <= 0 ||
           (params->order % 2) != 0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Linkwitz-Riley order must be an even number between "
-                         "2 and 64, got %d",
-                         params->order);
+        config_error_set(
+            err, CONFIG_ERR_INVALID_FILTER,
+            "Linkwitz-Riley order must be an even positive number, got %d",
+            params->order);
         return -1;
       }
       break;
@@ -228,10 +231,9 @@ static int biquad_combo_config_validate(const filter_config_t* config,
       break;
     }
     case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER: {
-      if (!params->gains || params->gains_count <= 0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "GraphicEqualizer: gains must be non-empty");
-        return -1;
+      if (params->gains_count == 0) {
+        // Empty gains: 0 stages, passthrough (upstream biquadcombo.rs:324-348)
+        break;
       }
       double f_min = params->has_freq_min ? params->freq_min : 20.0;
       double f_max = params->has_freq_max ? params->freq_max : 20000.0;
@@ -350,8 +352,14 @@ static void* biquad_combo_filter_create(const char* name,
     case BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS:
     case BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS: {
       bool hp = (params->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS);
-      double q_vals[32];
-      size_t nq = biquad_combo_butterworth_q(params->order, q_vals, 32);
+      size_t q_capacity = (size_t)params->order + 2;
+      double* q_vals = (double*)malloc(q_capacity * sizeof(double));
+      if (!q_vals) {
+        config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate memory");
+        biquad_combo_filter_free(filter);
+        return NULL;
+      }
+      size_t nq = biquad_combo_butterworth_q(params->order, q_vals, q_capacity);
       for (size_t i = 0; i < nq; i++) {
         biquad_type_t t;
         if (q_vals[i] < 0.0) {
@@ -365,13 +373,21 @@ static void* biquad_combo_filter_create(const char* name,
             name_buf, t, params->freq, q_vals[i] > 0 ? q_vals[i] : 0.707, 0.0,
             0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
       }
+      free(q_vals);
       break;
     }
     case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
     case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS: {
       bool hp = (params->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS);
-      double q_vals[32];
-      size_t nq = biquad_combo_linkwitz_riley_q(params->order, q_vals, 32);
+      size_t q_capacity = (size_t)params->order + 2;
+      double* q_vals = (double*)malloc(q_capacity * sizeof(double));
+      if (!q_vals) {
+        config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate memory");
+        biquad_combo_filter_free(filter);
+        return NULL;
+      }
+      size_t nq =
+          biquad_combo_linkwitz_riley_q(params->order, q_vals, q_capacity);
       for (size_t i = 0; i < nq; i++) {
         biquad_type_t t = hp ? BIQUAD_TYPE_HIGHPASS : BIQUAD_TYPE_LOWPASS;
         char name_buf[32];
@@ -380,6 +396,7 @@ static void* biquad_combo_filter_create(const char* name,
             create_section(name_buf, t, params->freq, q_vals[i], 0.0, 0.0, 0.0,
                            STEEPNESS_TYPE_Q, sample_rate, err);
       }
+      free(q_vals);
       break;
     }
     // MARK: - Tilt EQ
@@ -395,7 +412,10 @@ static void* biquad_combo_filter_create(const char* name,
     }
     // MARK: - Graphic EQ
     case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER: {
-      size_t nb = params->gains_count > 0 ? params->gains_count : 1;
+      if (params->gains_count == 0) {
+        break;
+      }
+      size_t nb = params->gains_count;
       double fmin = params->freq_min > 0 ? params->freq_min : 20.0;
       double fmax = params->freq_max > 0 ? params->freq_max : 20000.0;
       double log_min = log2(fmin);
@@ -468,6 +488,15 @@ static void biquad_combo_filter_process(void* instance,
 /**
  * @brief Transfers history state of nested biquad sections from src to dest.
  *
+ * Resize invariant: the sections form one cascade, so section `i` only refers
+ * to the same stage of the same filter while the cascade has the same length.
+ * A changed section count means the combo was reconfigured into a different
+ * filter (a different order, or a different combo type altogether), and the
+ * per-section histories no longer describe any part of it — so nothing is
+ * carried. Within a cascade of equal length, each section is still gated
+ * individually by `biquad_filter_transfer_state`, which drops the history when
+ * the section's own biquad type changed.
+ *
  * @param dest The destination combo filter instance.
  * @param src The source combo filter instance.
  */
@@ -475,10 +504,9 @@ static void biquad_combo_filter_transfer_state(void* dest_ptr,
                                                const void* src_ptr) {
   biquad_combo_filter_t* dest = (biquad_combo_filter_t*)dest_ptr;
   const biquad_combo_filter_t* src = (const biquad_combo_filter_t*)src_ptr;
-  if (!dest || !src) return;
-  size_t n = (dest->num_sections < src->num_sections) ? dest->num_sections
-                                                      : src->num_sections;
-  for (size_t i = 0; i < n; i++) {
+  if (!dest || !src || dest == src) return;
+  if (dest->num_sections != src->num_sections) return;
+  for (size_t i = 0; i < dest->num_sections; i++) {
     if (dest->sections[i] && src->sections[i] &&
         g_biquad_vtable.transfer_state) {
       g_biquad_vtable.transfer_state(dest->sections[i], src->sections[i]);

@@ -43,10 +43,12 @@ typedef struct {
   bool has_channel;      /**< True if `channel` is valid. */
   size_t* channels;      /**< Array of channels (if multi-channel). */
   size_t channels_count; /**< Number of channels in `channels`. */
+  bool has_channels;     /**< True if `channels` field was present in config. */
   char name[128];        /**< Name of the filter, mixer, or processor. */
   bool has_name;         /**< True if `name` is valid. */
   char** names;          /**< Array of names (if multi-name). */
   size_t names_count;    /**< Number of names in `names`. */
+  bool has_names;        /**< True if `names` field was present in config. */
   bool bypassed;         /**< True if this step is bypassed. */
 } pipeline_step_config_t;
 
@@ -154,6 +156,23 @@ int dsp_config_parse_json_with_dir_and_overrides(
     const char* json, const char* config_dir,
     const dsp_config_overrides_t* overrides, dsp_config_t** out_config,
     config_error_t* err);
+
+/**
+ * @brief Parses a DSP configuration from JSON with directory resolution,
+ * overrides, and optional full pipeline validation.
+ */
+int dsp_config_parse_json_with_dir_and_overrides_ext(
+    const char* json, const char* config_dir,
+    const dsp_config_overrides_t* overrides, dsp_config_t** out_config,
+    bool validate, config_error_t* err);
+
+/**
+ * @brief Parses a DSP configuration from JSON without running full pipeline
+ * and cross-field validation.
+ */
+int dsp_config_parse_json_no_validate(const char* json,
+                                      dsp_config_t** out_config,
+                                      config_error_t* err);
 
 /**
  * @brief Applies WAV file parameters and command-line overrides to a

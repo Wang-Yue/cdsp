@@ -188,8 +188,10 @@ TEST(CacheDoesNotShareAcrossLengths) {
       .type = CONV_TYPE_VALUES, .values = ir, .values_count = 4};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
 
-  void* short_f = g_convolution_vtable.create("size_conv", &cfg, 0, 8, NULL, NULL);
-  void* long_f = g_convolution_vtable.create("size_conv", &cfg, 0, 16, NULL, NULL);
+  void* short_f =
+      g_convolution_vtable.create("size_conv", &cfg, 0, 8, NULL, NULL);
+  void* long_f =
+      g_convolution_vtable.create("size_conv", &cfg, 0, 16, NULL, NULL);
   ASSERT_TRUE(short_f != NULL);
   ASSERT_TRUE(long_f != NULL);
 
@@ -206,6 +208,203 @@ TEST(CacheDoesNotShareAcrossLengths) {
 
   g_convolution_vtable.free(short_f);
   g_convolution_vtable.free(long_f);
+}
+
+/* --- Coefficient-load failures must be fatal (audit 03-1) --- */
+
+/**
+ * @brief Writes @p contents to @p path, returning false on any failure.
+ */
+static bool write_temp_file(const char* path, const void* contents,
+                            size_t len) {
+  FILE* f = fopen(path, "wb");
+  if (!f) return false;
+  bool ok = len == 0 || fwrite(contents, 1, len, f) == len;
+  fclose(f);
+  return ok;
+}
+
+TEST(UnparsableTextCoeffFileIsRejected) {
+  const char* path = "/tmp/cdsp_test_conv_unparsable.txt";
+  const char* body = "# only a comment, no coefficients\n";
+  ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
+
+  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  snprintf(params.filename, sizeof(params.filename), "%s", path);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+
+  config_error_t err;
+  config_error_init(&err);
+  void* filter =
+      g_convolution_vtable.create("conv_bad_text", &cfg, 0, 8, NULL, &err);
+  ASSERT_TRUE(filter == NULL);
+  ASSERT_TRUE(err.type != CONFIG_ERR_NONE);
+  remove(path);
+}
+
+TEST(CommentInsideTextCoeffFileIsRejected) {
+  const char* path = "/tmp/cdsp_test_conv_mid_comment.txt";
+  const char* body = "1.0\n# comment\n2.0\n";
+  ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
+
+  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  snprintf(params.filename, sizeof(params.filename), "%s", path);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+
+  config_error_t err;
+  config_error_init(&err);
+  void* filter =
+      g_convolution_vtable.create("conv_mid_comment", &cfg, 0, 8, NULL, &err);
+  ASSERT_TRUE(filter == NULL);
+  ASSERT_TRUE(err.type != CONFIG_ERR_NONE);
+  remove(path);
+}
+
+TEST(EmptyLineInsideTextCoeffFileIsRejected) {
+  const char* path = "/tmp/cdsp_test_conv_empty_line.txt";
+  const char* body = "1.0\n\n2.0\n";
+  ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
+
+  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  snprintf(params.filename, sizeof(params.filename), "%s", path);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+
+  config_error_t err;
+  config_error_init(&err);
+  void* filter =
+      g_convolution_vtable.create("conv_empty_line", &cfg, 0, 8, NULL, &err);
+  ASSERT_TRUE(filter == NULL);
+  ASSERT_TRUE(err.type != CONFIG_ERR_NONE);
+  remove(path);
+}
+
+TEST(MultipleValuesOnLineIsRejected) {
+  const char* path = "/tmp/cdsp_test_conv_multi_val.txt";
+  const char* body = "1.0 2.0\n";
+  ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
+
+  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  snprintf(params.filename, sizeof(params.filename), "%s", path);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+
+  config_error_t err;
+  config_error_init(&err);
+  void* filter =
+      g_convolution_vtable.create("conv_multi_val", &cfg, 0, 8, NULL, &err);
+  ASSERT_TRUE(filter == NULL);
+  ASSERT_TRUE(err.type != CONFIG_ERR_NONE);
+  remove(path);
+}
+
+TEST(HexFloatIsRejected) {
+  const char* path = "/tmp/cdsp_test_conv_hex_float.txt";
+  const char* body = "0x1.0p0\n";
+  ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
+
+  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  snprintf(params.filename, sizeof(params.filename), "%s", path);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+
+  config_error_t err;
+  config_error_init(&err);
+  void* filter =
+      g_convolution_vtable.create("conv_hex_float", &cfg, 0, 8, NULL, &err);
+  ASSERT_TRUE(filter == NULL);
+  ASSERT_TRUE(err.type != CONFIG_ERR_NONE);
+  remove(path);
+}
+
+TEST(TextReadBytesLinesLimitsLines) {
+  const char* path = "/tmp/cdsp_test_conv_line_limit.txt";
+  const char* body = "1.0\n2.0\n3.0\n4.0\n";
+  ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
+
+  convolution_config_t params = {
+      .type = CONV_TYPE_RAW, .format = "TEXT", .read_bytes_lines = 2};
+  snprintf(params.filename, sizeof(params.filename), "%s", path);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+
+  config_error_t err;
+  config_error_init(&err);
+  void* filter =
+      g_convolution_vtable.create("conv_line_limit", &cfg, 0, 8, NULL, &err);
+  ASSERT_TRUE(filter != NULL);
+
+  double wave[8] = {1.0, 0, 0, 0, 0, 0, 0, 0};
+  g_convolution_vtable.process(filter, wave, 8);
+  ASSERT_NEAR(1.0, wave[0], 1e-7);
+  ASSERT_NEAR(2.0, wave[1], 1e-7);
+  ASSERT_NEAR(0.0, wave[2], 1e-7);
+
+  g_convolution_vtable.free(filter);
+  remove(path);
+}
+
+TEST(LongLineTextCoeffParsed) {
+  const char* path = "/tmp/cdsp_test_conv_long_line.txt";
+  char buf[300];
+  memset(buf, ' ', 200);
+  snprintf(buf + 200, sizeof(buf) - 200, "1.5\n");
+  ASSERT_TRUE(write_temp_file(path, buf, strlen(buf)));
+
+  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  snprintf(params.filename, sizeof(params.filename), "%s", path);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+
+  config_error_t err;
+  config_error_init(&err);
+  void* filter =
+      g_convolution_vtable.create("conv_long_line", &cfg, 0, 8, NULL, &err);
+  ASSERT_TRUE(filter != NULL);
+
+  double wave[8] = {1.0, 0, 0, 0, 0, 0, 0, 0};
+  g_convolution_vtable.process(filter, wave, 8);
+  ASSERT_NEAR(1.5, wave[0], 1e-7);
+
+  g_convolution_vtable.free(filter);
+  remove(path);
+}
+
+TEST(TruncatedRawCoeffFileIsRejected) {
+  // One byte is less than a single S16LE frame, so no coefficient can be read.
+  const char* path = "/tmp/cdsp_test_conv_truncated.raw";
+  const unsigned char body[1] = {0x7f};
+  ASSERT_TRUE(write_temp_file(path, body, sizeof(body)));
+
+  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "S16LE"};
+  snprintf(params.filename, sizeof(params.filename), "%s", path);
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+
+  config_error_t err;
+  config_error_init(&err);
+  void* filter =
+      g_convolution_vtable.create("conv_truncated", &cfg, 0, 8, NULL, &err);
+  ASSERT_TRUE(filter == NULL);
+  ASSERT_TRUE(err.type != CONFIG_ERR_NONE);
+  remove(path);
+}
+
+TEST(PartialChunkProcessesImmediatelyWithoutStaleSamples) {
+  double ir[] = {1.0, 0.5};
+  convolution_config_t params = {
+      .type = CONV_TYPE_VALUES, .values = ir, .values_count = 2};
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+  void* filter =
+      g_convolution_vtable.create("conv_partial", &cfg, 0, 8, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+
+  // Send a partial chunk of 4 samples (chunk_size is 8)
+  double wave[4] = {1.0, 2.0, 3.0, 4.0};
+  g_convolution_vtable.process(filter, wave, 4);
+
+  // Output must be computed immediately without waiting for a full chunk or
+  // emitting stale zeros
+  ASSERT_NEAR(1.0, wave[0], 1e-7);  // 1.0 * 1.0
+  ASSERT_NEAR(2.5, wave[1], 1e-7);  // 2.0 * 1.0 + 1.0 * 0.5
+  ASSERT_NEAR(4.0, wave[2], 1e-7);  // 3.0 * 1.0 + 2.0 * 0.5
+  ASSERT_NEAR(5.5, wave[3], 1e-7);  // 4.0 * 1.0 + 3.0 * 0.5
+
+  g_convolution_vtable.free(filter);
 }
 
 TEST_MAIN()

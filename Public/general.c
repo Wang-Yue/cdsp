@@ -7,7 +7,7 @@
 #include "Engine/dsp_engine.h"
 #include "Logging/app_logger.h"
 
-const char* cdsp_get_version(void) { return "CDSP 4.2.0"; }
+const char* cdsp_get_version(void) { return "4.2.0"; }
 
 void cdsp_get_supported_device_types(char*** out_playback_types,
                                      size_t* out_playback_count,

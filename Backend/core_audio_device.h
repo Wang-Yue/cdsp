@@ -127,6 +127,8 @@ AudioDeviceID core_audio_device_id_for_name(const char* name,
  * @param rate The target sample rate in Hz.
  * @return true if the rate was successfully set and verified, false otherwise.
  */
+bool core_audio_device_is_sample_rate_supported(AudioDeviceID device_id,
+                                                double rate);
 bool core_audio_device_set_nominal_sample_rate(AudioDeviceID device_id,
                                                double rate);
 

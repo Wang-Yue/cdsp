@@ -65,6 +65,7 @@ struct wasapi_capture {
   size_t decode_buf_cap;
 
   pthread_t inner_thread;
+  bool inner_thread_created;
   _Atomic bool thread_running;
   _Atomic bool stopped;
   _Atomic bool paused;
@@ -159,14 +160,22 @@ static void* wasapi_capture_loop(void* arg) {
   size_t data_buf_size = 8 * blockalign * 1024;
   uint8_t* data = (uint8_t*)malloc(data_buf_size);
   if (!data) {
+    logger_error(&g_wasapi_logger,
+                 "Capture failed to allocate %zu byte transfer buffer",
+                 data_buf_size);
+    atomic_store_explicit(&capture->thread_running, false,
+                          memory_order_release);
+    if (capture->semaphore) {
+      cdsp_sem_signal(capture->semaphore);
+    }
     CoUninitialize();
     return NULL;
   }
 
   REFERENCE_TIME def_time = 0, min_time = 0;
   IAudioClient_GetDevicePeriod(capture->client, &def_time, &min_time);
-  DWORD poll_delay_ms = (DWORD)(def_time / 10000);
-  if (poll_delay_ms == 0) poll_delay_ms = 1;
+  uint64_t poll_delay_us = (uint64_t)(def_time / 10);
+  if (poll_delay_us == 0) poll_delay_us = 1000;
 
   if (!capture->event_handle) {
     logger_debug(&g_wasapi_logger,
@@ -189,24 +198,34 @@ static void* wasapi_capture_loop(void* arg) {
   if (FAILED(hr)) {
     logger_error(&g_wasapi_logger, "Capture start stream failed: hr=0x%08lX",
                  (unsigned long)hr);
+    atomic_store_explicit(&capture->thread_running, false,
+                          memory_order_release);
+    if (capture->semaphore) {
+      cdsp_sem_signal(capture->semaphore);
+    }
     free(data);
     CoUninitialize();
     return NULL;
   }
   logger_trace(&g_wasapi_logger, "Started capture stream.");
 
-  while (atomic_load_explicit(&capture->thread_running, memory_order_acquire)) {
+  while (atomic_load_explicit(&capture->thread_running, memory_order_acquire) &&
+         !atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
     logger_trace(&g_wasapi_logger, "Capturing.");
     if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
       logger_debug(&g_wasapi_logger, "Stopping inner capture loop on request.");
-      IAudioClient_Stop(capture->client);
-      free(data);
-      CoUninitialize();
-      return NULL;
+      break;
     }
 
     if (capture->event_handle) {
       DWORD wait_res = WaitForSingleObject(capture->event_handle, 250);
+      if (atomic_load_explicit(&capture->stopped, memory_order_acquire) ||
+          !atomic_load_explicit(&capture->thread_running,
+                                memory_order_acquire)) {
+        logger_debug(&g_wasapi_logger,
+                     "Stopping inner capture loop on request.");
+        break;
+      }
       if (wait_res != WAIT_OBJECT_0) {
         logger_debug(&g_wasapi_logger, "Capture, timeout on event.");
         if (!inactive) {
@@ -217,7 +236,14 @@ static void* wasapi_capture_loop(void* arg) {
         continue;
       }
     } else {
-      cdsp_sleep_ms(poll_delay_ms);
+      cdsp_sleep_us(poll_delay_us);
+      if (atomic_load_explicit(&capture->stopped, memory_order_acquire) ||
+          !atomic_load_explicit(&capture->thread_running,
+                                memory_order_acquire)) {
+        logger_debug(&g_wasapi_logger,
+                     "Stopping inner capture loop on request.");
+        break;
+      }
       UINT32 frames_ready = 0;
       hr = IAudioClient_GetCurrentPadding(capture->client, &frames_ready);
       logger_trace(&g_wasapi_logger,
@@ -288,6 +314,11 @@ static void* wasapi_capture_loop(void* arg) {
           memset(data, 0, nbr_bytes_loop);
         }
 
+        if (spsc_byte_ring_buffer_get_available_to_write(capture->ring_buffer) <
+            nbr_bytes_loop) {
+          logger_debug(&g_wasapi_logger,
+                       "Dropping captured chunk, channel full");
+        }
         spsc_byte_ring_buffer_write(capture->ring_buffer, data, nbr_bytes_loop);
         if (capture->semaphore) {
           cdsp_sem_signal(capture->semaphore);
@@ -327,6 +358,10 @@ static void* wasapi_capture_loop(void* arg) {
     }
   }
 
+  atomic_store_explicit(&capture->thread_running, false, memory_order_release);
+  if (capture->semaphore) {
+    cdsp_sem_signal(capture->semaphore);
+  }
   IAudioClient_Stop(capture->client);
   free(data);
   CoUninitialize();
@@ -353,7 +388,10 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   }
   logger_trace(&g_wasapi_logger, "Got capture iaudioclient.");
 
-  bool exclusive = capture->loopback ? false : capture->exclusive;
+  if (capture->loopback) {
+    capture->exclusive = false;
+  }
+  bool exclusive = capture->exclusive;
   const char* direction_name = capture->loopback ? "Render" : "Capture";
 
   WAVEFORMATEXTENSIBLE wfx;
@@ -425,6 +463,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
                          "Failed to create inner capture thread");
     goto error_cleanup;
   }
+  capture->inner_thread_created = true;
 
   return true;
 
@@ -466,13 +505,14 @@ static void wasapi_capture_close(void* ctx) {
   wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (!capture) return;
 
-  if (capture->thread_running) {
+  if (capture->inner_thread_created) {
+    atomic_store_explicit(&capture->stopped, true, memory_order_release);
     atomic_store_explicit(&capture->thread_running, false,
                           memory_order_release);
-    atomic_store_explicit(&capture->stopped, true, memory_order_release);
     if (capture->event_handle) SetEvent(capture->event_handle);
     if (capture->semaphore) cdsp_sem_signal(capture->semaphore);
     pthread_join(capture->inner_thread, NULL);
+    capture->inner_thread_created = false;
   }
 
   if (capture->decode_buf) {
@@ -531,6 +571,7 @@ static void wasapi_capture_stop(void* ctx) {
   wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
   if (!capture) return;
   atomic_store_explicit(&capture->stopped, true, memory_order_release);
+  atomic_store_explicit(&capture->thread_running, false, memory_order_release);
   if (capture->event_handle) {
     SetEvent(capture->event_handle);
   }

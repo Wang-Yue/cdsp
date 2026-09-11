@@ -65,7 +65,7 @@ static void sha1_transform(uint32_t state[5], const unsigned char buffer[64]) {
 
 static void CC_SHA1(const void* data, CC_LONG len, unsigned char* digest) {
   uint32_t state[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476,
-                       0xC3D2C1F0};
+                       0xC3D2E1F0};
   unsigned char buffer[64];
   uint64_t total_bits = (uint64_t)len * 8;
   const unsigned char* d = (const unsigned char*)data;

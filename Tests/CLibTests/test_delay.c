@@ -91,4 +91,63 @@ TEST(delay_fraction) {
   g_delay_vtable.free(filter);
 }
 
+// A reload that leaves the delay length alone must replay the queued samples
+// exactly, otherwise every config change would punch a hole in the audio.
+TEST(delay_transfer_state_carries_queue_for_equal_length) {
+  delay_config_t params = {
+      .delay = 3.0, .delay_unit = DELAY_UNIT_SAMPLES, .subsample = false};
+  filter_config_t cfg = {.type = FILTER_TYPE_DELAY, .parameters.delay = params};
+  void* src = g_delay_vtable.create("delay_src", &cfg, 44100, 0, NULL, NULL);
+  void* dest = g_delay_vtable.create("delay_dest", &cfg, 44100, 0, NULL, NULL);
+  ASSERT_TRUE(src != NULL);
+  ASSERT_TRUE(dest != NULL);
+
+  double primed[] = {1.0, 2.0, 3.0};
+  g_delay_vtable.process(src, primed, 3);
+
+  g_delay_vtable.transfer_state(dest, src);
+
+  double silence[] = {0.0, 0.0, 0.0};
+  g_delay_vtable.process(dest, silence, 3);
+  ASSERT_DOUBLE_EQ(1.0, silence[0]);
+  ASSERT_DOUBLE_EQ(2.0, silence[1]);
+  ASSERT_DOUBLE_EQ(3.0, silence[2]);
+
+  g_delay_vtable.free(src);
+  g_delay_vtable.free(dest);
+}
+
+// Resize invariant: the queue is indexed purely by age, so a different delay
+// length would replay every retained sample at the wrong time. Carry nothing.
+TEST(delay_transfer_state_drops_queue_when_length_changes) {
+  delay_config_t short_params = {
+      .delay = 3.0, .delay_unit = DELAY_UNIT_SAMPLES, .subsample = false};
+  delay_config_t long_params = {
+      .delay = 5.0, .delay_unit = DELAY_UNIT_SAMPLES, .subsample = false};
+  filter_config_t short_cfg = {.type = FILTER_TYPE_DELAY,
+                               .parameters.delay = short_params};
+  filter_config_t long_cfg = {.type = FILTER_TYPE_DELAY,
+                              .parameters.delay = long_params};
+  void* src =
+      g_delay_vtable.create("delay_src", &short_cfg, 44100, 0, NULL, NULL);
+  void* dest =
+      g_delay_vtable.create("delay_dest", &long_cfg, 44100, 0, NULL, NULL);
+  ASSERT_TRUE(src != NULL);
+  ASSERT_TRUE(dest != NULL);
+
+  double primed[] = {1.0, 2.0, 3.0};
+  g_delay_vtable.process(src, primed, 3);
+
+  g_delay_vtable.transfer_state(dest, src);
+
+  double silence[] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  g_delay_vtable.process(dest, silence, 5);
+  for (size_t i = 0; i < 5; i++) {
+    ASSERT_DOUBLE_EQ(0.0, silence[i]);
+  }
+
+  g_delay_vtable.free(src);
+  g_delay_vtable.free(dest);
+}
+
 TEST_MAIN()

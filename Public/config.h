@@ -239,6 +239,27 @@ CDSP_API bool cdsp_validate_config_file_with_overrides(
     const char* format_override, int extra_samples_override, char** out_result,
     cdsp_config_error_type_t* out_err_type);
 
+/**
+ * @brief Parse and fill defaults for a JSON configuration string without
+ * validating pipeline or applying it (WebSocket: ReadConfigJson).
+ */
+CDSP_API bool cdsp_read_config_json(const char* json_str, char** out_result,
+                                    cdsp_config_error_type_t* out_err_type);
+
+/**
+ * @brief Parse and fill defaults for a YAML configuration string without
+ * validating pipeline or applying it (WebSocket: ReadConfig).
+ */
+CDSP_API bool cdsp_read_config_yaml(const char* yaml_str, char** out_result,
+                                    cdsp_config_error_type_t* out_err_type);
+
+/**
+ * @brief Parse and fill defaults for a configuration file without
+ * validating pipeline or applying it (WebSocket: ReadConfigFile).
+ */
+CDSP_API bool cdsp_read_config_file(const char* path, char** out_result,
+                                    cdsp_config_error_type_t* out_err_type);
+
 #ifdef __cplusplus
 }
 #endif

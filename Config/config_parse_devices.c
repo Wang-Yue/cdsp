@@ -1,5 +1,6 @@
 #include "Config/config_parse_devices.h"
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -16,14 +17,37 @@ static int parse_resampler(const cJSON* res_obj, devices_config_t* devices,
   resampler_config_t* res = &devices->resampler;
   devices->has_resampler = true;
 
-  char str_buf[64];
-  if (parse_json_str(res_obj, "type", str_buf, sizeof(str_buf))) {
-    res->type = resampler_type_from_string(str_buf);
-  } else {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "missing field 'type' in resampler");
+  // Upstream's Resampler is an internally tagged enum, so an unknown tag is a
+  // deserialization error. resampler_type_from_string() answers Synchronous
+  // for anything it does not recognise, which silently downgraded a
+  // misspelled "AsyncSync" to the fixed-ratio FFT resampler.
+  static const config_enum_variant_t resampler_types[] = {
+      {"AsyncPoly", RESAMPLER_TYPE_ASYNC_POLY},
+      {"AsyncSinc", RESAMPLER_TYPE_ASYNC_SINC},
+      {"Synchronous", RESAMPLER_TYPE_SYNCHRONOUS},
+      {"Slip", RESAMPLER_TYPE_SLIP},
+      {NULL, 0}};
+  int res_type = 0;
+  if (parse_enum_required(res_obj, "type", resampler_types, "resampler",
+                          &res_type, err) != 0) {
     return -1;
   }
+  res->type = (resampler_type_t)res_type;
+
+  static const config_enum_variant_t sinc_profiles[] = {{"VeryFast", 0},
+                                                        {"Fast", 1},
+                                                        {"Balanced", 2},
+                                                        {"Accurate", 3},
+                                                        {NULL, 0}};
+  static const config_enum_variant_t sinc_interpolations[] = {
+      {"Nearest", 0}, {"Linear", 1}, {"Quadratic", 2}, {"Cubic", 3}, {NULL, 0}};
+  static const config_enum_variant_t poly_interpolations[] = {
+      {"Linear", 0}, {"Cubic", 1}, {"Quintic", 2}, {"Septic", 3}, {NULL, 0}};
+  static const config_enum_variant_t sinc_windows[] = {
+      {"Hann", 0},      {"Hann2", 1},          {"Blackman", 2},
+      {"Blackman2", 3}, {"BlackmanHarris", 4}, {"BlackmanHarris2", 5},
+      {NULL, 0}};
+  int enum_scratch = 0;
 
   switch (res->type) {
     case RESAMPLER_TYPE_ASYNC_SINC: {
@@ -39,6 +63,42 @@ static int parse_resampler(const cJSON* res_obj, devices_config_t* devices,
                                   "AsyncSinc resampler", err) != 0) {
         return -1;
       }
+      // AsyncSincParameters is untagged: either a named `profile`, or the
+      // complete free-parameter set. Anything in between matches no variant.
+      if (cJSON_GetObjectItemCaseSensitive(res_obj, "profile")) {
+        if (cJSON_GetObjectItemCaseSensitive(res_obj, "sinc_len") ||
+            cJSON_GetObjectItemCaseSensitive(res_obj, "interpolation") ||
+            cJSON_GetObjectItemCaseSensitive(res_obj, "window") ||
+            cJSON_GetObjectItemCaseSensitive(res_obj, "oversampling_factor") ||
+            cJSON_GetObjectItemCaseSensitive(res_obj, "f_cutoff")) {
+          config_error_set(
+              err, CONFIG_ERR_PARSE,
+              "AsyncSinc resampler cannot mix 'profile' with free parameters");
+          return -1;
+        }
+        if (parse_enum_required(res_obj, "profile", sinc_profiles,
+                                "AsyncSinc resampler", &enum_scratch,
+                                err) != 0) {
+          return -1;
+        }
+      } else {
+        static const char* const req_free[] = {
+            "sinc_len", "interpolation", "window", "oversampling_factor", NULL};
+        if (require_json_fields(res_obj, req_free, "AsyncSinc resampler", NULL,
+                                err) != 0) {
+          return -1;
+        }
+        if (parse_enum_required(res_obj, "interpolation", sinc_interpolations,
+                                "AsyncSinc resampler", &enum_scratch,
+                                err) != 0) {
+          return -1;
+        }
+        if (parse_enum_required(res_obj, "window", sinc_windows,
+                                "AsyncSinc resampler", &enum_scratch,
+                                err) != 0) {
+          return -1;
+        }
+      }
       break;
     }
     case RESAMPLER_TYPE_ASYNC_POLY: {
@@ -46,6 +106,10 @@ static int parse_resampler(const cJSON* res_obj, devices_config_t* devices,
                                                       NULL};
       if (validate_unknown_fields(res_obj, allowed_poly_keys,
                                   "AsyncPoly resampler", err) != 0) {
+        return -1;
+      }
+      if (parse_enum_required(res_obj, "interpolation", poly_interpolations,
+                              "AsyncPoly resampler", &enum_scratch, err) != 0) {
         return -1;
       }
       break;
@@ -67,9 +131,7 @@ static int parse_resampler(const cJSON* res_obj, devices_config_t* devices,
       break;
     }
     default:
-      config_error_set(err, CONFIG_ERR_PARSE, "unknown resampler type '%s'",
-                       str_buf);
-      return -1;
+      break;
   }
 
   res->has_profile =
@@ -329,7 +391,9 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
       return -1;
   }
 
-  parse_json_size_t(cap_obj, "channels", &cap->channels);
+  if (parse_json_size_t_strict(cap_obj, "channels", "capture device",
+                               &cap->channels, NULL, err) != 0)
+    return -1;
   cap->has_device =
       parse_json_str(cap_obj, "device", cap->device, sizeof(cap->device));
   cap->has_filename =
@@ -410,8 +474,14 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
                      sizeof(cap->autoconnect_to));
 #endif
 
-  parse_labels_array(cJSON_GetObjectItemCaseSensitive(cap_obj, "labels"),
-                     &cap->labels, &cap->labels_count, &cap->has_labels);
+  const cJSON* cap_labels_node =
+      cJSON_GetObjectItemCaseSensitive(cap_obj, "labels");
+  if (!cap_labels_node) {
+    cap_labels_node =
+        cJSON_GetObjectItemCaseSensitive(cap_obj, "channel_labels");
+  }
+  parse_labels_array(cap_labels_node, &cap->labels, &cap->labels_count,
+                     &cap->has_labels);
 
   cap->has_bypass_dop =
       parse_json_bool(cap_obj, "bypass_dop", &cap->bypass_dop);
@@ -780,13 +850,13 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
     if (validate_unknown_fields(play_obj, allowed, "File playback", err) != 0)
       return -1;
   } else if (strcmp(type_str, "Stdout") == 0) {
-    static const char* const allowed[] = {
-        "type",     "channels", "format",         "wav_header",
-        "use_rf64", "labels",   "channel_labels",
+    static const char* const allowed[] = {"type",     "channels",
+                                          "format",   "wav_header",
+                                          "labels",   "channel_labels",
 #ifdef CDSP_TEST
-        "realtime",
+                                          "realtime",
 #endif
-        NULL};
+                                          NULL};
     if (validate_unknown_fields(play_obj, allowed, "Stdout playback", err) != 0)
       return -1;
   } else if (strcmp(type_str, "CoreAudio") == 0) {
@@ -838,7 +908,9 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
       return -1;
   }
 
-  parse_json_size_t(play_obj, "channels", &play->channels);
+  if (parse_json_size_t_strict(play_obj, "channels", "playback device",
+                               &play->channels, NULL, err) != 0)
+    return -1;
   play->has_device =
       parse_json_str(play_obj, "device", play->device, sizeof(play->device));
   play->has_filename = parse_json_str(play_obj, "filename", play->filename,
@@ -924,8 +996,14 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
                      sizeof(play->autoconnect_to));
 #endif
 
-  parse_labels_array(cJSON_GetObjectItemCaseSensitive(play_obj, "labels"),
-                     &play->labels, &play->labels_count, &play->has_labels);
+  const cJSON* play_labels_node =
+      cJSON_GetObjectItemCaseSensitive(play_obj, "labels");
+  if (!play_labels_node) {
+    play_labels_node =
+        cJSON_GetObjectItemCaseSensitive(play_obj, "channel_labels");
+  }
+  parse_labels_array(play_labels_node, &play->labels, &play->labels_count,
+                     &play->has_labels);
 
   // Copy flat temp to union configuration
   playback_device_config_t* final_play = &devices->playback;
@@ -954,6 +1032,9 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
       final_play->cfg.coreaudio.has_format = temp.has_format;
       final_play->cfg.coreaudio.exclusive = temp.exclusive;
       final_play->cfg.coreaudio.has_exclusive = temp.has_exclusive;
+      final_play->cfg.coreaudio.target_level =
+          devices->has_target_level ? devices->target_level : 0;
+      final_play->cfg.coreaudio.has_target_level = devices->has_target_level;
       break;
 #endif
 #if defined(ENABLE_ALSA)
@@ -994,6 +1075,9 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
                sizeof(final_play->cfg.pipewire.autoconnect_to), "%s",
                temp.autoconnect_to);
       final_play->cfg.pipewire.has_autoconnect_to = temp.has_autoconnect_to;
+      final_play->cfg.pipewire.target_level =
+          devices->has_target_level ? devices->target_level : 0;
+      final_play->cfg.pipewire.has_target_level = devices->has_target_level;
       break;
 #endif
 
@@ -1144,8 +1228,15 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
   }
   dev->has_enable_rate_adjust =
       parse_json_bool(dev_obj, "enable_rate_adjust", &dev->enable_rate_adjust);
-  if (parse_json_int(dev_obj, "target_level", &dev->target_level)) {
-    dev->has_target_level = (dev->target_level > 0);
+  size_t tl_val = 0;
+  bool tl_present = false;
+  if (parse_json_size_t_strict(dev_obj, "target_level", "devices", &tl_val,
+                               &tl_present, err) != 0) {
+    return -1;
+  }
+  if (tl_present) {
+    dev->target_level = (int)tl_val;
+    dev->has_target_level = true;
   }
   if (parse_json_double(dev_obj, "adjust_interval_s",
                         &dev->adjust_interval_s)) {
@@ -1174,12 +1265,21 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
                                                  &dev->stop_on_rate_change);
   if (parse_json_double(dev_obj, "rate_measure_interval_s",
                         &dev->rate_measure_interval_s)) {
-    dev->has_rate_measure_interval_s = (dev->rate_measure_interval_s > 0.0);
+    dev->has_rate_measure_interval_s = true;
   }
   dev->has_multithreaded =
       parse_json_bool(dev_obj, "multithreaded", &dev->multithreaded);
-  if (parse_json_int(dev_obj, "worker_threads", &dev->worker_threads)) {
-    dev->has_worker_threads = (dev->worker_threads > 0);
+  cJSON* wt_item = cJSON_GetObjectItemCaseSensitive(dev_obj, "worker_threads");
+  if (wt_item) {
+    if (!cJSON_IsNumber(wt_item) || wt_item->valuedouble < 0 ||
+        wt_item->valuedouble != floor(wt_item->valuedouble)) {
+      config_error_set(
+          err, CONFIG_ERR_PARSE,
+          "field 'worker_threads' in devices must be a non-negative integer");
+      return -1;
+    }
+    dev->worker_threads = wt_item->valueint;
+    dev->has_worker_threads = true;
   }
 
   cJSON* res_obj = cJSON_GetObjectItemCaseSensitive(dev_obj, "resampler");

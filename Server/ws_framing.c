@@ -12,13 +12,15 @@
 #include <sys/socket.h>
 #endif
 
-bool ws_parse_frame_header(const unsigned char* buf, size_t buf_len,
-                           size_t* out_payload_len, size_t* out_header_len,
-                           unsigned char** out_mask, uint8_t* out_opcode) {
+bool ws_parse_frame_header_ext(const unsigned char* buf, size_t buf_len,
+                               size_t* out_payload_len, size_t* out_header_len,
+                               unsigned char** out_mask, uint8_t* out_opcode,
+                               bool* out_fin) {
   if (buf_len < 2) return false;
 
   uint8_t first_byte = buf[0];
-  if (!(first_byte & 0x80)) return false;
+  bool fin = (first_byte & 0x80) != 0;
+  if (out_fin) *out_fin = fin;
 
   uint8_t opcode = first_byte & 0x0F;
   if (opcode != 0x00 && opcode != 0x01 && opcode != 0x02 && opcode != 0x08 &&
@@ -56,6 +58,13 @@ bool ws_parse_frame_header(const unsigned char* buf, size_t buf_len,
   *out_payload_len = payload_len;
   *out_header_len = header_len;
   return true;
+}
+
+bool ws_parse_frame_header(const unsigned char* buf, size_t buf_len,
+                           size_t* out_payload_len, size_t* out_header_len,
+                           unsigned char** out_mask, uint8_t* out_opcode) {
+  return ws_parse_frame_header_ext(buf, buf_len, out_payload_len,
+                                   out_header_len, out_mask, out_opcode, NULL);
 }
 
 static bool send_all(socket_t fd, const char* data, size_t len) {

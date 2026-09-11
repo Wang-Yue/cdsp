@@ -191,4 +191,17 @@ bool audio_chunk_encode_interleaved(const audio_chunk_t* chunk,
                                     binary_sample_format_t fmt, size_t channels,
                                     size_t frames, void* dst);
 
+/**
+ * @brief Computes the peak-to-peak value range across all channels in the
+ * chunk.
+ *
+ * Evaluates max(sample) - min(sample) across all channels folded from 0.0,
+ * matching upstream CamillaDSP chunk value range calculation for silence
+ * detection.
+ *
+ * @param chunk Pointer to audio chunk.
+ * @return Peak-to-peak value range (maxval - minval).
+ */
+double audio_chunk_get_value_range(const audio_chunk_t* chunk);
+
 #endif  // CLIB_AUDIO_AUDIO_CHUNK_H

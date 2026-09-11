@@ -464,6 +464,21 @@ static bool dsp_engine_get_vu_levels(void* ctx, vu_levels_t* out_vu) {
   return true;
 }
 
+static uint64_t dsp_engine_get_chunk_generation(void* ctx, bool is_capture) {
+  if (!ctx) return 0;
+  dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
+  pthread_mutex_lock(&impl->state_mutex);
+  processing_parameters_t* p =
+      dsp_session_get_processing_params(impl->session.active);
+  if (!p) {
+    pthread_mutex_unlock(&impl->state_mutex);
+    return 0;
+  }
+  uint64_t gen = processing_parameters_get_chunk_generation(p, is_capture);
+  pthread_mutex_unlock(&impl->state_mutex);
+  return gen;
+}
+
 static bool dsp_engine_get_signal_levels_since(void* ctx, bool is_capture,
                                                bool is_rms, uint64_t since_ms,
                                                float* out_levels,
@@ -504,20 +519,39 @@ static bool dsp_engine_get_signal_levels_since(void* ctx, bool is_capture,
   return true;
 }
 
+static void enable_history_buffers(dsp_engine_impl_t* impl) {
+  if (!impl) return;
+  if (impl->buffers.capture) {
+    audio_history_buffer_set_enabled(impl->buffers.capture, true);
+  }
+  if (impl->buffers.playback) {
+    audio_history_buffer_set_enabled(impl->buffers.playback, true);
+  }
+}
+
 static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
                                     const size_t* channel, float min_freq,
                                     float max_freq, uint32_t n_bins,
                                     spectrum_t* out_spec) {
   if (!ctx || !out_spec) return false;
+  out_spec->error_message[0] = '\0';
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
+
+  // Enable history buffers so recording starts/continues (sticky).
+  enable_history_buffers(impl);
+
   if (!impl->session.active || !impl->buffers.spectrum) {
     pthread_mutex_unlock(&impl->state_mutex);
+    snprintf(out_spec->error_message, sizeof(out_spec->error_message),
+             "No audio data available");
     return false;
   }
   const dsp_config_t* core_cfg = dsp_session_get_config(impl->session.active);
   if (!core_cfg) {
     pthread_mutex_unlock(&impl->state_mutex);
+    snprintf(out_spec->error_message, sizeof(out_spec->error_message),
+             "No audio data available");
     return false;
   }
   audio_history_buffer_t* buf =
@@ -527,8 +561,19 @@ static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
                           : core_cfg->devices.samplerate;
   size_t buf_channels = audio_history_buffer_get_channels(buf);
 
-  if (channel && *channel >= buf_channels) {
+  if (buf_channels == 0) {
     pthread_mutex_unlock(&impl->state_mutex);
+    snprintf(out_spec->error_message, sizeof(out_spec->error_message),
+             "No audio data available");
+    return false;
+  }
+
+  if (channel && *channel >= buf_channels) {
+    size_t req_ch = *channel;
+    pthread_mutex_unlock(&impl->state_mutex);
+    snprintf(out_spec->error_message, sizeof(out_spec->error_message),
+             "Channel %zu out of range (%zu channels available)", req_ch,
+             buf_channels);
     return false;
   }
 
@@ -538,7 +583,20 @@ static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
                                 max_freq, (size_t)n_bins, samplerate, &res);
   pthread_mutex_unlock(&impl->state_mutex);
 
-  if (status != 0) return false;
+  if (status != 0) {
+    if (status == SPECTRUM_ERROR_EMPTY) {
+      snprintf(out_spec->error_message, sizeof(out_spec->error_message),
+               "Insufficient data in buffer");
+    } else if (status == SPECTRUM_ERROR_OUT_OF_RANGE) {
+      snprintf(out_spec->error_message, sizeof(out_spec->error_message),
+               "Channel %zu out of range (%zu channels available)",
+               channel ? *channel : 0, buf_channels);
+    } else {
+      snprintf(out_spec->error_message, sizeof(out_spec->error_message),
+               "No audio data available");
+    }
+    return false;
+  }
   out_spec->count = res.count;
   if (out_spec->frequencies && out_spec->magnitudes) {
     memcpy(out_spec->frequencies, res.frequencies, res.count * sizeof(float));
@@ -553,6 +611,10 @@ static bool dsp_engine_get_samples(void* ctx, bool is_capture, size_t n_frames,
   if (!ctx || !out_samples) return false;
   dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
   pthread_mutex_lock(&impl->state_mutex);
+
+  // Enable history buffers so recording starts/continues (sticky).
+  enable_history_buffers(impl);
+
   if (!impl->session.active) {
     pthread_mutex_unlock(&impl->state_mutex);
     if (err) {
@@ -726,6 +788,8 @@ dsp_engine_t* dsp_engine_create(void) {
   impl->buffers.spectrum = spectrum_analyzer_create();
   impl->buffers.capture = audio_history_buffer_create();
   impl->buffers.playback = audio_history_buffer_create();
+  audio_history_buffer_set_enabled(impl->buffers.capture, false);
+  audio_history_buffer_set_enabled(impl->buffers.playback, false);
   impl->state_mgr = engine_state_manager_create();
 
   if (!impl->buffers.spectrum || !impl->buffers.capture ||
@@ -746,6 +810,7 @@ dsp_engine_t* dsp_engine_create(void) {
   impl->iface.get_active_config_json = dsp_engine_get_active_config_json;
   impl->iface.get_previous_config_json = dsp_engine_get_previous_config_json;
   impl->iface.get_vu_levels = dsp_engine_get_vu_levels;
+  impl->iface.get_chunk_generation = dsp_engine_get_chunk_generation;
   impl->iface.get_signal_levels_since = dsp_engine_get_signal_levels_since;
   impl->iface.get_available_devices = dsp_engine_get_available_devices;
   impl->iface.get_device_capabilities = dsp_engine_get_device_capabilities;

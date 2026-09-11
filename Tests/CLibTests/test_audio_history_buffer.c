@@ -272,4 +272,57 @@ TEST(ReadLatestNotEnoughDataYet) {
   audio_history_buffer_free(buffer);
 }
 
+TEST(HistoryBufferEnabledLifecycle) {
+  audio_history_buffer_t* buffer = audio_history_buffer_create();
+  ASSERT_TRUE(buffer != NULL);
+  // Default standalone buffer is enabled
+  ASSERT_TRUE(audio_history_buffer_is_enabled(buffer));
+
+  // Explicitly disable
+  audio_history_buffer_set_enabled(buffer, false);
+  ASSERT_FALSE(audio_history_buffer_is_enabled(buffer));
+
+  audio_history_buffer_reset(buffer, 2);
+  // reset must not affect enabled flag
+  ASSERT_FALSE(audio_history_buffer_is_enabled(buffer));
+
+  audio_chunk_t* chunk = audio_chunk_create(256, 2);
+  for (size_t t = 0; t < 256; t++) {
+    audio_chunk_get_channel(chunk, 0)[t] = (double)(t + 1);
+    audio_chunk_get_channel(chunk, 1)[t] = (double)(t + 1);
+  }
+  audio_chunk_set_valid_frames(chunk, 256);
+
+  // Appending while disabled must be a no-op
+  audio_history_buffer_append(buffer, chunk);
+
+  float* dest = (float*)calloc(256, sizeof(float));
+  bool enough = false;
+  const size_t ch0 = 0;
+
+  // read_latest while disabled still works if called, but since nothing was
+  // appended, enough_data is false
+  audio_history_buffer_status_t status =
+      audio_history_buffer_read_latest(buffer, dest, 256, &ch0, &enough);
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status);
+  ASSERT_FALSE(enough);
+  ASSERT_FALSE(audio_history_buffer_is_enabled(buffer));
+
+  // Now explicitly enable it
+  audio_history_buffer_set_enabled(buffer, true);
+  ASSERT_TRUE(audio_history_buffer_is_enabled(buffer));
+
+  // Now that it is enabled, append succeeds and records samples
+  audio_history_buffer_append(buffer, chunk);
+  status = audio_history_buffer_read_latest(buffer, dest, 256, &ch0, &enough);
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK, status);
+  ASSERT_TRUE(enough);
+  ASSERT_FLOAT_EQ(1.0f, dest[0]);
+  ASSERT_FLOAT_EQ(256.0f, dest[255]);
+
+  free(dest);
+  audio_chunk_free(chunk);
+  audio_history_buffer_free(buffer);
+}
+
 TEST_MAIN()

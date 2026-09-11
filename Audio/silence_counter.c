@@ -10,7 +10,7 @@
 
 struct silence_counter {
   size_t limit_chunks;
-  float threshold_db;
+  float threshold_linear;
   size_t silent_chunks;
 };
 
@@ -46,7 +46,7 @@ void silence_counter_init(silence_counter_t* counter, double threshold_db,
                           double timeout_seconds, size_t samplerate,
                           size_t chunksize) {
   if (!counter) return;
-  counter->threshold_db = (float)threshold_db;
+  counter->threshold_linear = (float)pow(10.0, threshold_db / 20.0);
   counter->silent_chunks = 0;
   // Convert the timeout duration from seconds to the number of audio chunks.
   if (timeout_seconds > 0.0 && chunksize > 0 && isfinite(timeout_seconds) &&
@@ -59,42 +59,44 @@ void silence_counter_init(silence_counter_t* counter, double threshold_db,
     counter->limit_chunks = 0;
   }
   logger_debug(&g_logger,
-               "Silence counter initialized (threshold=%.1fdB, timeout=%.2fs, "
+               "Silence counter initialized (threshold=%.1fdB (%.6f linear), "
+               "timeout=%.2fs, "
                "limit_chunks=%zu)",
-               threshold_db, timeout_seconds, counter->limit_chunks);
+               threshold_db, counter->threshold_linear, timeout_seconds,
+               counter->limit_chunks);
 }
 
-/// Feed the next chunk's loudest channel peak (dB). Returns the
+/// Feed the next chunk's value range (maxval - minval). Returns the
 /// engine state the capture loop should drive to.
 processing_state_t silence_counter_update(silence_counter_t* counter,
-                                          float signal_peak_db) {
+                                          float value_range) {
   if (!counter || counter->limit_chunks == 0) {
     return PROCESSING_STATE_RUNNING;
   }
   // Reset counter if signal level is above the silence threshold.
-  if (signal_peak_db > counter->threshold_db) {
+  if (value_range > counter->threshold_linear) {
     if (counter->silent_chunks >= counter->limit_chunks) {
       logger_info(&g_logger,
-                  "Audio signal restored above threshold (peak=%.1fdB > "
-                  "threshold=%.1fdB), resuming",
-                  signal_peak_db, counter->threshold_db);
+                  "Audio signal restored above threshold (value_range=%.6f > "
+                  "threshold=%.6f), resuming",
+                  value_range, counter->threshold_linear);
     }
     counter->silent_chunks = 0;
     return PROCESSING_STATE_RUNNING;
   }
-  // Increment silent chunk count, bounding it to the limit.
-  if (counter->silent_chunks < counter->limit_chunks) {
-    counter->silent_chunks++;
-    if (counter->silent_chunks == counter->limit_chunks) {
-      logger_info(&g_logger,
-                  "Silence timeout reached (silent_chunks=%zu, "
-                  "limit_chunks=%zu), requesting pause",
-                  counter->silent_chunks, counter->limit_chunks);
-    }
+  // Increment silent chunk count, bounding it to avoid overflow.
+  processing_state_t state = PROCESSING_STATE_RUNNING;
+  if (counter->silent_chunks == counter->limit_chunks) {
+    logger_info(&g_logger,
+                "Silence timeout reached (silent_chunks=%zu, "
+                "limit_chunks=%zu), requesting pause",
+                counter->silent_chunks, counter->limit_chunks);
   }
-  // Transition to PAUSED state if silence duration exceeds the limit.
   if (counter->silent_chunks >= counter->limit_chunks) {
-    return PROCESSING_STATE_PAUSED;
+    state = PROCESSING_STATE_PAUSED;
   }
-  return PROCESSING_STATE_RUNNING;
+  if (counter->silent_chunks <= counter->limit_chunks) {
+    counter->silent_chunks++;
+  }
+  return state;
 }

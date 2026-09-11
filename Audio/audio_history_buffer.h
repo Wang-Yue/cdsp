@@ -109,4 +109,23 @@ audio_history_buffer_status_t audio_history_buffer_read_latest(
     const audio_history_buffer_t* history, float* dest, size_t count,
     const size_t* channel, bool* enough_data);
 
+/**
+ * @brief Enables or disables recording into the history buffer.
+ *
+ * Audio thread skips copying into the history buffer when disabled.
+ *
+ * @param history Pointer to the history buffer.
+ * @param enabled True to enable, false to disable.
+ */
+void audio_history_buffer_set_enabled(audio_history_buffer_t* history,
+                                      bool enabled);
+
+/**
+ * @brief Checks if recording into the history buffer is enabled.
+ *
+ * @param history Pointer to the history buffer.
+ * @return True if enabled, false otherwise.
+ */
+bool audio_history_buffer_is_enabled(const audio_history_buffer_t* history);
+
 #endif  // CLIB_AUDIO_AUDIO_HISTORY_BUFFER_H

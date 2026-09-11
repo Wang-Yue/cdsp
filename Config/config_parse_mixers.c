@@ -42,8 +42,8 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
     }
 
     static const char* const allowed_mixer_keys[] = {
-        "channels", "channels_in", "channels_out", "mapping", "description",
-        "labels",   NULL};
+        "channels",    "channels_in", "channels_out",   "mapping",
+        "description", "labels",      "channel_labels", NULL};
     if (validate_unknown_fields(mixer_child, allowed_mixer_keys,
                                 "mixer definition", err) != 0) {
       return -1;
@@ -53,8 +53,13 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
 
     parse_json_str(mixer_child, "description", m_conf->description,
                    sizeof(m_conf->description));
-    parse_labels_array(cJSON_GetObjectItemCaseSensitive(mixer_child, "labels"),
-                       &m_conf->labels, &m_conf->labels_count,
+    const cJSON* m_labels_node =
+        cJSON_GetObjectItemCaseSensitive(mixer_child, "labels");
+    if (!m_labels_node) {
+      m_labels_node =
+          cJSON_GetObjectItemCaseSensitive(mixer_child, "channel_labels");
+    }
+    parse_labels_array(m_labels_node, &m_conf->labels, &m_conf->labels_count,
                        &m_conf->has_labels);
 
     cJSON* channels_obj =
@@ -65,11 +70,19 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
                                   "mixer channels", err) != 0) {
         return -1;
       }
-      parse_json_size_t(channels_obj, "in", &m_conf->channels_in);
-      parse_json_size_t(channels_obj, "out", &m_conf->channels_out);
+      if (parse_json_size_t_strict(channels_obj, "in", "mixer channels",
+                                   &m_conf->channels_in, NULL, err) != 0 ||
+          parse_json_size_t_strict(channels_obj, "out", "mixer channels",
+                                   &m_conf->channels_out, NULL, err) != 0) {
+        return -1;
+      }
     } else {
-      parse_json_size_t(mixer_child, "channels_in", &m_conf->channels_in);
-      parse_json_size_t(mixer_child, "channels_out", &m_conf->channels_out);
+      if (parse_json_size_t_strict(mixer_child, "channels_in", "mixer",
+                                   &m_conf->channels_in, NULL, err) != 0 ||
+          parse_json_size_t_strict(mixer_child, "channels_out", "mixer",
+                                   &m_conf->channels_out, NULL, err) != 0) {
+        return -1;
+      }
     }
 
     cJSON* mapping_arr =
@@ -94,7 +107,10 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
             return -1;
           }
           mixer_mapping_t* mapping = &m_conf->mapping[mp];
-          parse_json_size_t(map_el, "dest", &mapping->dest);
+          if (parse_json_size_t_strict(map_el, "dest", "mixer mapping item",
+                                       &mapping->dest, NULL, err) != 0) {
+            return -1;
+          }
           parse_json_bool(map_el, "mute", &mapping->mute);
 
           cJSON* sources_arr =
@@ -120,7 +136,11 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
                   return -1;
                 }
                 mixer_source_t* src = &mapping->sources[s];
-                parse_json_size_t(src_el, "channel", &src->channel);
+                if (parse_json_size_t_strict(src_el, "channel",
+                                             "mixer source item", &src->channel,
+                                             NULL, err) != 0) {
+                  return -1;
+                }
                 src->has_gain = parse_json_double(src_el, "gain", &src->gain);
                 char scale_buf[64];
                 if (parse_json_str(src_el, "scale", scale_buf,

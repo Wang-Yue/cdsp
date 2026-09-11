@@ -109,29 +109,38 @@ double* parse_double_array(const cJSON* arr, size_t* out_count) {
   return values;
 }
 
-size_t* parse_size_t_array(const cJSON* arr, size_t* out_count) {
-  if (!cJSON_IsArray(arr)) {
-    *out_count = 0;
-    return NULL;
-  }
+int parse_size_t_array_strict(const cJSON* arr, const char* field_name,
+                              const char* section_name, size_t** out_values,
+                              size_t* out_count, config_error_t* err) {
+  *out_values = NULL;
+  *out_count = 0;
+  if (!cJSON_IsArray(arr)) return 0;
   int size = cJSON_GetArraySize(arr);
-  if (size <= 0) {
-    *out_count = 0;
-    return NULL;
-  }
-  size_t* values = (size_t*)calloc(size, sizeof(size_t));
+  if (size <= 0) return 0;
+  size_t* values = (size_t*)calloc((size_t)size, sizeof(size_t));
   if (!values) {
-    *out_count = 0;
-    return NULL;
+    config_error_set(err, CONFIG_ERR_PARSE, "out of memory parsing '%s' in %s",
+                     field_name, section_name ? section_name : "object");
+    return -1;
   }
   for (int i = 0; i < size; i++) {
-    cJSON* el = cJSON_GetArrayItem(arr, i);
-    if (cJSON_IsNumber(el) && el->valueint >= 0) {
-      values[i] = (size_t)el->valueint;
+    const cJSON* el = cJSON_GetArrayItem(arr, i);
+    // Upstream these are Vec<usize>: a negative, fractional or non-numeric
+    // element is a deserialization error, not a silent zero.
+    if (!cJSON_IsNumber(el) || el->valuedouble < 0.0 ||
+        el->valuedouble != (double)el->valueint) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "element %d of '%s' in %s must be a non-negative "
+                       "integer",
+                       i, field_name, section_name ? section_name : "object");
+      free(values);
+      return -1;
     }
+    values[i] = (size_t)el->valueint;
   }
+  *out_values = values;
   *out_count = (size_t)size;
-  return values;
+  return 0;
 }
 
 static void replace_tokens_in_json_node(cJSON* node, int samplerate,
@@ -147,34 +156,43 @@ static void replace_tokens_in_json_node(cJSON* node, int samplerate,
       snprintf(sr_buf, sizeof(sr_buf), "%d", samplerate);
       snprintf(ch_buf, sizeof(ch_buf), "%d", channels);
 
-      char new_val[1024];
-      memset(new_val, 0, sizeof(new_val));
-      size_t out_len = 0;
       size_t in_len = strlen(str);
+      size_t cap = in_len + 128;
+      char* new_val = (char*)malloc(cap);
+      if (!new_val) return;
+      size_t out_len = 0;
       for (size_t i = 0; i < in_len;) {
+        const char* to_append = NULL;
+        size_t append_len = 0;
         if (strncmp(str + i, "$samplerate$", 12) == 0) {
-          size_t len = strlen(sr_buf);
-          if (out_len + len < sizeof(new_val) - 1) {
-            memcpy(new_val + out_len, sr_buf, len);
-            out_len += len;
-          }
+          to_append = sr_buf;
+          append_len = strlen(sr_buf);
           i += 12;
         } else if (strncmp(str + i, "$channels$", 10) == 0) {
-          size_t len = strlen(ch_buf);
-          if (out_len + len < sizeof(new_val) - 1) {
-            memcpy(new_val + out_len, ch_buf, len);
-            out_len += len;
-          }
+          to_append = ch_buf;
+          append_len = strlen(ch_buf);
           i += 10;
         } else {
-          if (out_len < sizeof(new_val) - 1) {
-            new_val[out_len++] = str[i];
-          }
+          to_append = str + i;
+          append_len = 1;
           i++;
         }
+
+        if (out_len + append_len + 1 > cap) {
+          cap = (out_len + append_len + 1) * 2;
+          char* resized = (char*)realloc(new_val, cap);
+          if (!resized) {
+            free(new_val);
+            return;
+          }
+          new_val = resized;
+        }
+        memcpy(new_val + out_len, to_append, append_len);
+        out_len += append_len;
       }
       new_val[out_len] = '\0';
       cJSON_SetValuestring(node, new_val);
+      free(new_val);
     }
   }
 
@@ -238,10 +256,10 @@ int dsp_config_parse_json_with_dir(const char* json, const char* config_dir,
                                                       out_config, err);
 }
 
-int dsp_config_parse_json_with_dir_and_overrides(
+int dsp_config_parse_json_with_dir_and_overrides_ext(
     const char* json, const char* config_dir,
     const dsp_config_overrides_t* overrides, dsp_config_t** out_config,
-    config_error_t* err) {
+    bool validate, config_error_t* err) {
   if (!json || !out_config) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "JSON string or output pointer is NULL");
@@ -282,13 +300,6 @@ int dsp_config_parse_json_with_dir_and_overrides(
     return -1;
   }
 
-  if (config_dir && config_dir[0] != '\0') {
-    cJSON* filters_obj = cJSON_GetObjectItemCaseSensitive(root, "filters");
-    if (filters_obj) {
-      resolve_relative_paths_in_filters(filters_obj, config_dir);
-    }
-  }
-
   cJSON* devices_obj = cJSON_GetObjectItemCaseSensitive(root, "devices");
   if (!devices_obj) {
     cJSON_Delete(root);
@@ -309,13 +320,26 @@ int dsp_config_parse_json_with_dir_and_overrides(
 
   // Apply WAV file and command-line overrides matching upstream CamillaDSP
   // apply_overrides (src/config/utils.rs:130-265)
-  dsp_config_apply_overrides(config, overrides, err);
+  if (dsp_config_apply_overrides(config, overrides, err) != 0) {
+    cJSON_Delete(root);
+    dsp_config_free(config);
+    return -1;
+  }
 
   // Replace tokens in JSON with final effective samplerate and channels
   int final_sr = (int)config->devices.samplerate;
   int final_ch = capture_device_config_get_channels(&config->devices.capture);
   if (final_sr > 0 || final_ch > 0) {
     replace_tokens_in_json_node(root, final_sr, final_ch, 0);
+  }
+
+  // Resolve relative paths in filters against config directory after token
+  // replacement
+  if (config_dir && config_dir[0] != '\0') {
+    cJSON* filters_obj = cJSON_GetObjectItemCaseSensitive(root, "filters");
+    if (filters_obj) {
+      resolve_relative_paths_in_filters(filters_obj, config_dir);
+    }
   }
 
   cJSON* pipeline_arr = cJSON_GetObjectItemCaseSensitive(root, "pipeline");
@@ -379,20 +403,37 @@ int dsp_config_parse_json_with_dir_and_overrides(
 
   cJSON_Delete(root);
 
-  /* Validate the populated configuration structure.
-   * This checks schema constraints and traces channel flows through the
-   * pipeline to catch configuration inconsistencies before return. */
-  if (dsp_config_validate(config, err) != 0) {
-    logger_error(&g_logger, "Config validation failed: %s",
-                 err ? err->message : "");
-    dsp_config_free(config);
-    return -1;
+  if (validate) {
+    /* Validate the populated configuration structure.
+     * This checks schema constraints and traces channel flows through the
+     * pipeline to catch configuration inconsistencies before return. */
+    if (dsp_config_validate(config, err) != 0) {
+      logger_error(&g_logger, "Config validation failed: %s",
+                   err ? err->message : "");
+      dsp_config_free(config);
+      return -1;
+    }
   }
 
   logger_info(&g_logger,
-              "Configuration successfully parsed and validated (samplerate=%d, "
+              "Configuration successfully parsed (samplerate=%d, "
               "chunksize=%d)",
               config->devices.samplerate, config->devices.chunksize);
   *out_config = config;
   return 0;
+}
+
+int dsp_config_parse_json_with_dir_and_overrides(
+    const char* json, const char* config_dir,
+    const dsp_config_overrides_t* overrides, dsp_config_t** out_config,
+    config_error_t* err) {
+  return dsp_config_parse_json_with_dir_and_overrides_ext(
+      json, config_dir, overrides, out_config, true, err);
+}
+
+int dsp_config_parse_json_no_validate(const char* json,
+                                      dsp_config_t** out_config,
+                                      config_error_t* err) {
+  return dsp_config_parse_json_with_dir_and_overrides_ext(
+      json, NULL, NULL, out_config, false, err);
 }

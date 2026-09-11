@@ -52,26 +52,36 @@ bool core_audio_device_name(AudioDeviceID device_id, char* out_name,
                             size_t max_len) {
   if (!out_name || max_len == 0) return false;
   out_name[0] = '\0';
-  AudioObjectPropertyAddress addr = {
-      .mSelector = kAudioObjectPropertyName,
-      .mScope = kAudioObjectPropertyScopeGlobal,
-      .mElement = kAudioObjectPropertyElementMain};
   CFStringRef cf_name = NULL;
   uint32_t size = sizeof(CFStringRef);
-  if (AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &size, &cf_name) ==
-          noErr &&
-      cf_name) {
-    CFStringGetCString(cf_name, out_name, (CFIndex)max_len,
-                       kCFStringEncodingUTF8);
+
+  AudioObjectPropertyAddress addr_cf = {
+      .mSelector = kAudioDevicePropertyDeviceNameCFString,
+      .mScope = kAudioDevicePropertyScopeOutput,
+      .mElement = kAudioObjectPropertyElementMain};
+  OSStatus status =
+      AudioObjectGetPropertyData(device_id, &addr_cf, 0, NULL, &size, &cf_name);
+  if (status != noErr || !cf_name) {
+    AudioObjectPropertyAddress addr_name = {
+        .mSelector = kAudioObjectPropertyName,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain};
+    size = sizeof(CFStringRef);
+    status = AudioObjectGetPropertyData(device_id, &addr_name, 0, NULL, &size,
+                                        &cf_name);
+  }
+  if (status == noErr && cf_name) {
+    Boolean ok = CFStringGetCString(cf_name, out_name, (CFIndex)max_len,
+                                    kCFStringEncodingUTF8);
     CFRelease(cf_name);
-    return true;
+    return ok ? true : false;
   }
   return false;
 }
 
 /// Check if device supports the given scope using
 /// kAudioDevicePropertyStreamConfiguration matching CamillaDSP
-/// device_supports_scope.
+/// device_supports_scope (verifying mNumberChannels > 0).
 bool core_audio_device_supports_scope(AudioDeviceID device_id,
                                       core_audio_scope_t scope) {
   AudioObjectPropertyAddress addr = {
@@ -83,12 +93,26 @@ bool core_audio_device_supports_scope(AudioDeviceID device_id,
   uint32_t size = 0;
   OSStatus status =
       AudioObjectGetPropertyDataSize(device_id, &addr, 0, NULL, &size);
-  if (status != noErr || size <= sizeof(UInt32)) {
+  if (status != noErr || size < sizeof(AudioBufferList)) {
     return false;
   }
-  uint32_t nbr_buffers =
-      (size - (uint32_t)sizeof(UInt32)) / (uint32_t)sizeof(AudioBuffer);
-  return (nbr_buffers > 0);
+  AudioBufferList* buf_list = (AudioBufferList*)malloc(size);
+  if (!buf_list) return false;
+  status =
+      AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &size, buf_list);
+  if (status != noErr) {
+    free(buf_list);
+    return false;
+  }
+  bool supported = false;
+  for (UInt32 i = 0; i < buf_list->mNumberBuffers; i++) {
+    if (buf_list->mBuffers[i].mNumberChannels > 0) {
+      supported = true;
+      break;
+    }
+  }
+  free(buf_list);
+  return supported;
 }
 
 /// True if the device exposes any streams/buffers in the given direction.
@@ -172,7 +196,7 @@ AudioDeviceID core_audio_device_default_id(core_audio_scope_t scope) {
 /// `nil`. Returns `nil` if the named device can't be found.
 AudioDeviceID core_audio_device_id_for_name(const char* name,
                                             core_audio_scope_t scope) {
-  if (!name || name[0] == '\0' || strcmp(name, "default") == 0) {
+  if (!name || name[0] == '\0') {
     return core_audio_device_default_id(scope);
   }
   core_audio_device_info_t devices[128];
@@ -218,8 +242,54 @@ bool core_audio_device_get_nominal_sample_rate(AudioDeviceID device_id,
 /// Devices that don't support the requested rate return a
 /// non-zero status from the set call; we surface that as `false`
 /// without polling.
+bool core_audio_device_is_sample_rate_supported(AudioDeviceID device_id,
+                                                double rate) {
+  if (device_id == 0 || rate <= 0.0) return false;
+  AudioObjectPropertyAddress addr = {
+      .mSelector = kAudioDevicePropertyAvailableNominalSampleRates,
+      .mScope = kAudioObjectPropertyScopeGlobal,
+      .mElement = kAudioObjectPropertyElementMain};
+  uint32_t data_size = 0;
+  OSStatus status =
+      AudioObjectGetPropertyDataSize(device_id, &addr, 0, NULL, &data_size);
+  if (status != noErr || data_size == 0) {
+    return true;
+  }
+  uint32_t n_ranges = data_size / (uint32_t)sizeof(AudioValueRange);
+  AudioValueRange* ranges = (AudioValueRange*)malloc(data_size);
+  if (!ranges) return true;
+  status =
+      AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &data_size, ranges);
+  if (status != noErr) {
+    free(ranges);
+    return true;
+  }
+  bool supported = false;
+  uint32_t rate_int = (uint32_t)(rate + 0.5);
+  for (uint32_t i = 0; i < n_ranges; i++) {
+    uint32_t min_int = (uint32_t)(ranges[i].mMinimum + 0.5);
+    uint32_t max_int = (uint32_t)(ranges[i].mMaximum + 0.5);
+    if ((min_int == rate_int && max_int == rate_int) ||
+        (rate >= ranges[i].mMinimum - 0.5 &&
+         rate <= ranges[i].mMaximum + 0.5)) {
+      supported = true;
+      break;
+    }
+  }
+  free(ranges);
+  return supported;
+}
+
 bool core_audio_device_set_nominal_sample_rate(AudioDeviceID device_id,
                                                double rate) {
+  if (device_id == 0 || rate <= 0.0) return false;
+  double current = 0.0;
+  if (core_audio_device_get_nominal_sample_rate(device_id, &current)) {
+    if (fabs(current - rate) < 0.5) return true;
+  }
+  if (!core_audio_device_is_sample_rate_supported(device_id, rate)) {
+    return false;
+  }
   AudioObjectPropertyAddress addr = {
       .mSelector = kAudioDevicePropertyNominalSampleRate,
       .mScope = kAudioObjectPropertyScopeGlobal,
@@ -230,12 +300,11 @@ bool core_audio_device_set_nominal_sample_rate(AudioDeviceID device_id,
   OSStatus status = AudioObjectSetPropertyData(device_id, &addr, 0, NULL,
                                                sizeof(Float64), &value);
   if (status != noErr) return false;
-  // Poll for up to 250ms (50 iterations * 5ms) until the device reports a
-  // nominal rate that matches the target rate. This ensures the change is
-  // finalized before we attempt to initialize AudioUnits, which could otherwise
-  // lock onto the old rate.
-  for (int i = 0; i < 50; i++) {
-    double current = 0.0;
+  // Poll for up to 2 seconds (400 iterations * 5ms) until the device reports a
+  // nominal rate that matches the target rate. This matches the coreaudio-rs
+  // rate settling timeout.
+  for (int i = 0; i < 400; i++) {
+    current = 0.0;
     if (core_audio_device_get_nominal_sample_rate(device_id, &current)) {
       if (fabs(current - rate) < 0.5) return true;
     }
@@ -782,6 +851,20 @@ bool core_audio_device_set_matching_virtual_format(
   return false;
 }
 
+static inline bool asbds_are_equal(const AudioStreamBasicDescription* left,
+                                   const AudioStreamBasicDescription* right) {
+  return ((uint32_t)(left->mSampleRate + 0.5) ==
+              (uint32_t)(right->mSampleRate + 0.5) ||
+          fabs(left->mSampleRate - right->mSampleRate) < 0.5) &&
+         left->mFormatID == right->mFormatID &&
+         left->mFormatFlags == right->mFormatFlags &&
+         left->mBytesPerPacket == right->mBytesPerPacket &&
+         left->mFramesPerPacket == right->mFramesPerPacket &&
+         left->mBytesPerFrame == right->mBytesPerFrame &&
+         left->mChannelsPerFrame == right->mChannelsPerFrame &&
+         left->mBitsPerChannel == right->mBitsPerChannel;
+}
+
 bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
                                                     core_audio_scope_t scope,
                                                     double sample_rate,
@@ -840,16 +923,16 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
           continue;
         }
 
-        // We want the smallest channel count that fits.
-        if (!found_best || phys_channels < (int)best_asbd.mChannelsPerFrame) {
-          best_asbd = asbd;
-          best_asbd.mSampleRate = sample_rate;
-          best_stream_id = streams[s];
-          found_best = true;
-        }
+        // Match upstream behavior: take the first matching physical format
+        // and keep the ASBD as advertised.
+        best_asbd = asbd;
+        best_stream_id = streams[s];
+        found_best = true;
+        break;
       }
     }
     free(ranged);
+    if (found_best) break;
   }
 
   // Set the physical format property on the matching stream if found.
@@ -873,16 +956,13 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
       uint32_t size = sizeof(AudioStreamBasicDescription);
       if (AudioObjectGetPropertyData(best_stream_id, &addr, 0, NULL, &size,
                                      &reported) == noErr) {
-        if (fabs(reported.mSampleRate - best_asbd.mSampleRate) < 0.5 &&
-            reported.mFormatID == best_asbd.mFormatID &&
-            reported.mBitsPerChannel == best_asbd.mBitsPerChannel &&
-            reported.mChannelsPerFrame == best_asbd.mChannelsPerFrame) {
+        if (asbds_are_equal(&reported, &best_asbd)) {
           return true;
         }
       }
       cdsp_sleep_us(5000);
     }
-    return true;
+    return false;
   }
 
   return false;
@@ -899,25 +979,32 @@ bool core_audio_device_acquire_hog_mode(AudioDeviceID device_id) {
       .mSelector = kAudioDevicePropertyHogMode,
       .mScope = kAudioObjectPropertyScopeGlobal,
       .mElement = kAudioObjectPropertyElementMain};
-  if (AudioObjectGetPropertyData(device_id, &hog_addr, 0, NULL, &hog_size,
-                                 &current_hog_pid) == noErr) {
-    if (current_hog_pid == camilla_pid) {
-      logger_debug(&g_coreaudio_dev_logger,
-                   "We already have exclusive access.");
-      return true;
-    } else if (current_hog_pid != -1) {
-      logger_warn(&g_coreaudio_dev_logger,
-                  "Device is owned by another process with pid %d!",
-                  (int)current_hog_pid);
-    } else {
-      logger_debug(&g_coreaudio_dev_logger,
-                   "Device is free, trying to get exclusive access.");
-    }
+  OSStatus status = AudioObjectGetPropertyData(device_id, &hog_addr, 0, NULL,
+                                               &hog_size, &current_hog_pid);
+  if (status != noErr) {
+    logger_warn(
+        &g_coreaudio_dev_logger,
+        "Device does not support hog mode or failed to query: status=%d",
+        (int)status);
+    return false;
   }
+  if (current_hog_pid == camilla_pid) {
+    logger_debug(&g_coreaudio_dev_logger, "We already have exclusive access.");
+    return true;
+  } else if (current_hog_pid != -1) {
+    logger_warn(&g_coreaudio_dev_logger,
+                "Device is owned by another process with pid %d!",
+                (int)current_hog_pid);
+    return false;
+  }
+
+  logger_debug(&g_coreaudio_dev_logger,
+               "Device is free, trying to get exclusive access.");
   pid_t hog_pid = camilla_pid;
   if (AudioObjectSetPropertyData(device_id, &hog_addr, 0, NULL, sizeof(pid_t),
                                  &hog_pid) == noErr) {
     pid_t new_device_pid = -1;
+    hog_size = sizeof(pid_t);
     if (AudioObjectGetPropertyData(device_id, &hog_addr, 0, NULL, &hog_size,
                                    &new_device_pid) == noErr &&
         new_device_pid == camilla_pid) {
@@ -928,7 +1015,7 @@ bool core_audio_device_acquire_hog_mode(AudioDeviceID device_id) {
           &g_coreaudio_dev_logger,
           "Could not get exclusive access. CamillaDSP pid: %d, device owner "
           "pid: %d.",
-          (int)camilla_pid, (int)current_hog_pid);
+          (int)camilla_pid, (int)new_device_pid);
     }
   }
   return false;

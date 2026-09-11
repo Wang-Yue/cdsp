@@ -295,34 +295,35 @@ double delay_filter_process_single(delay_filter_t* filter, double sample) {
   return out;
 }
 
+/**
+ * @brief Transfers the delay line and the subsample allpass state from src to
+ * dest.
+ *
+ * Resize invariant: the queue holds the last `queue_count` input samples and is
+ * read back purely by age, so its contents only mean anything while the delay
+ * length is unchanged. When the length changes, every retained sample would be
+ * replayed at the wrong time, so nothing is carried — a freshly created filter
+ * already has a zeroed queue, which reads as silence for the duration of the
+ * new delay. The subsample allpass is dropped along with it, because its state
+ * is the tail of that same discarded signal.
+ *
+ * @param dest_ptr Pointer to the destination delay filter instance.
+ * @param src_ptr Pointer to the source delay filter instance.
+ */
 static void delay_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   delay_filter_t* dest = (delay_filter_t*)dest_ptr;
   const delay_filter_t* src = (const delay_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
 
+  if (dest->queue_count != src->queue_count) return;
+
   if (dest->biquad && src->biquad) {
     g_biquad_vtable.transfer_state(dest->biquad, src->biquad);
   }
 
-  if (dest->queue && dest->queue_count > 0 && src->queue &&
-      src->queue_count > 0) {
-    size_t dest_qc = dest->queue_count;
-    size_t src_qc = src->queue_count;
-    size_t copy_len = dest_qc < src_qc ? dest_qc : src_qc;
-
-    // Clear dest queue
-    memset(dest->queue, 0, dest_qc * sizeof(double));
-
-    // Copy copy_len samples from src to the end of dest queue
-    size_t src_start_idx = (src->read_index + src_qc - copy_len) % src_qc;
-    size_t dest_start_idx = dest_qc - copy_len;
-
-    for (size_t i = 0; i < copy_len; i++) {
-      size_t src_idx = (src_start_idx + i) % src_qc;
-      size_t dest_idx = dest_start_idx + i;
-      dest->queue[dest_idx] = src->queue[src_idx];
-    }
-    dest->read_index = 0;
+  if (dest->queue && src->queue && dest->queue_count > 0) {
+    memcpy(dest->queue, src->queue, dest->queue_count * sizeof(double));
+    dest->read_index = src->read_index;
   }
 }
 

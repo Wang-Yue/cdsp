@@ -151,4 +151,103 @@ TEST(test_channel_correlation) {
   g_dither_vtable.free(filter2);
 }
 
+// An identical reload must be inaudible: the RNG position and the error
+// feedback history both carry, so the reloaded filter continues the exact
+// sequence the old one would have produced.
+TEST(dither_transfer_state_carries_shaper_for_identical_config) {
+  dither_config_t params = {.type = DITHER_TYPE_SHIBATA_441, .bits = 16};
+  filter_config_t cfg = {.type = FILTER_TYPE_DITHER,
+                         .parameters.dither = params};
+  void* src = g_dither_vtable.create("dither_src", &cfg, 0, 0, NULL, NULL);
+  void* dest = g_dither_vtable.create("dither_dest", &cfg, 0, 0, NULL, NULL);
+  ASSERT_TRUE(src != NULL);
+  ASSERT_TRUE(dest != NULL);
+
+  double primed[64];
+  for (size_t i = 0; i < 64; i++) {
+    primed[i] = 0.5 * sin(0.11 * (double)i);
+  }
+  g_dither_vtable.process(src, primed, 64);
+
+  g_dither_vtable.transfer_state(dest, src);
+
+  double continued[32];
+  double reloaded[32];
+  for (size_t i = 0; i < 32; i++) {
+    continued[i] = 0.25 * sin(0.07 * (double)i);
+    reloaded[i] = continued[i];
+  }
+  g_dither_vtable.process(src, continued, 32);
+  g_dither_vtable.process(dest, reloaded, 32);
+
+  for (size_t i = 0; i < 32; i++) {
+    ASSERT_DOUBLE_EQ(continued[i], reloaded[i]);
+  }
+
+  g_dither_vtable.free(src);
+  g_dither_vtable.free(dest);
+}
+
+// Resize invariant: the shaper buffer holds quantization errors measured in LSB
+// units of one bit depth, so a reload that changes the depth must drop them.
+// The RNG position still crosses, which is what makes this observable: the
+// reference below is given the same RNG position but a shaper that was never
+// charged, by routing it through a flat dither that has no shaper at all.
+TEST(dither_transfer_state_drops_shaper_when_scale_changes) {
+  dither_config_t params16 = {.type = DITHER_TYPE_SHIBATA_441, .bits = 16};
+  dither_config_t params24 = {.type = DITHER_TYPE_SHIBATA_441, .bits = 24};
+  dither_config_t params_flat = {.type = DITHER_TYPE_FLAT,
+                                 .bits = 16,
+                                 .amplitude = 2.0,
+                                 .has_amplitude = true};
+  filter_config_t cfg16 = {.type = FILTER_TYPE_DITHER,
+                           .parameters.dither = params16};
+  filter_config_t cfg24 = {.type = FILTER_TYPE_DITHER,
+                           .parameters.dither = params24};
+  filter_config_t cfg_flat = {.type = FILTER_TYPE_DITHER,
+                              .parameters.dither = params_flat};
+
+  void* src = g_dither_vtable.create("dither_src", &cfg16, 0, 0, NULL, NULL);
+  ASSERT_TRUE(src != NULL);
+  double primed[64];
+  for (size_t i = 0; i < 64; i++) {
+    primed[i] = 0.5 * sin(0.11 * (double)i);
+  }
+  g_dither_vtable.process(src, primed, 64);
+
+  // Crosses a bit-depth change, so only the RNG position may be carried.
+  void* dest = g_dither_vtable.create("dither_dest", &cfg24, 0, 0, NULL, NULL);
+  ASSERT_TRUE(dest != NULL);
+  g_dither_vtable.transfer_state(dest, src);
+
+  // Same RNG position, reached without ever touching a charged shaper: the
+  // relay has no shaper, so there is nothing for any policy to copy.
+  void* relay =
+      g_dither_vtable.create("dither_relay", &cfg_flat, 0, 0, NULL, NULL);
+  void* reference =
+      g_dither_vtable.create("dither_ref", &cfg24, 0, 0, NULL, NULL);
+  ASSERT_TRUE(relay != NULL);
+  ASSERT_TRUE(reference != NULL);
+  g_dither_vtable.transfer_state(relay, src);
+  g_dither_vtable.transfer_state(reference, relay);
+
+  double from_charged[32];
+  double from_fresh[32];
+  for (size_t i = 0; i < 32; i++) {
+    from_charged[i] = 0.25 * sin(0.07 * (double)i);
+    from_fresh[i] = from_charged[i];
+  }
+  g_dither_vtable.process(dest, from_charged, 32);
+  g_dither_vtable.process(reference, from_fresh, 32);
+
+  for (size_t i = 0; i < 32; i++) {
+    ASSERT_DOUBLE_EQ(from_fresh[i], from_charged[i]);
+  }
+
+  g_dither_vtable.free(src);
+  g_dither_vtable.free(dest);
+  g_dither_vtable.free(relay);
+  g_dither_vtable.free(reference);
+}
+
 TEST_MAIN()

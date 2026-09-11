@@ -25,6 +25,12 @@ bool cdsp_get_vu_levels(const dsp_engine_t* engine, cdsp_vu_levels_t* out_vu) {
   return ok;
 }
 
+uint64_t cdsp_get_chunk_generation(const dsp_engine_t* engine,
+                                   bool is_capture) {
+  if (!engine || !engine->get_chunk_generation) return 0;
+  return engine->get_chunk_generation(engine->ctx, is_capture);
+}
+
 bool cdsp_get_signal_levels_since(const dsp_engine_t* engine, bool is_capture,
                                   bool is_rms, uint64_t since_ms,
                                   float* out_levels, size_t* out_channels) {
@@ -51,6 +57,9 @@ static void get_labels_from_array(cJSON* labels_arr, char*** out_labels,
     }
     *out_labels = arr;
     *out_count = count;
+  } else {
+    *out_labels = (char**)malloc(sizeof(char*));
+    *out_count = 0;
   }
 }
 
@@ -71,7 +80,6 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
   if (!root) return false;
 
   cJSON* playback_labels_arr = NULL;
-  cJSON* playback_dev_labels_arr = NULL;
   cJSON* capture_labels_arr = NULL;
 
   cJSON* devices = cJSON_GetObjectItem(root, "devices");
@@ -79,15 +87,15 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
     cJSON* capture = cJSON_GetObjectItem(devices, "capture");
     if (capture) {
       capture_labels_arr = cJSON_GetObjectItem(capture, "labels");
-    }
-    cJSON* playback = cJSON_GetObjectItem(devices, "playback");
-    if (playback) {
-      playback_dev_labels_arr = cJSON_GetObjectItem(playback, "labels");
+      if (!capture_labels_arr) {
+        capture_labels_arr = cJSON_GetObjectItem(capture, "channel_labels");
+      }
     }
   }
 
-  // Resolve playback labels from pipeline mixer or fallback to playback device
-  // labels
+  // Resolve playback labels from last pipeline mixer or fallback to capture
+  // device labels
+  bool mixer_found = false;
   cJSON* pipeline = cJSON_GetObjectItem(root, "pipeline");
   cJSON* mixers = cJSON_GetObjectItem(root, "mixers");
   if (pipeline && mixers && cJSON_IsArray(pipeline)) {
@@ -103,10 +111,16 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
             cJSON* mixer = cJSON_GetObjectItem(mixers, name_node->valuestring);
             if (mixer && cJSON_IsObject(mixer)) {
               cJSON* labels_node = cJSON_GetObjectItem(mixer, "labels");
+              if (!labels_node) {
+                labels_node = cJSON_GetObjectItem(mixer, "channel_labels");
+              }
               if (labels_node && cJSON_IsArray(labels_node)) {
                 playback_labels_arr = labels_node;
-                break;
+              } else {
+                playback_labels_arr = NULL;
               }
+              mixer_found = true;
+              break;
             }
           }
         }
@@ -114,8 +128,8 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
     }
   }
 
-  if (!playback_labels_arr) {
-    playback_labels_arr = playback_dev_labels_arr;
+  if (!mixer_found) {
+    playback_labels_arr = capture_labels_arr;
   }
 
   get_labels_from_array(playback_labels_arr, out_playback_labels,

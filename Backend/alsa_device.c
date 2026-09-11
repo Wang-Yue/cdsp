@@ -456,19 +456,37 @@ int alsa_device_open_and_configure_hw(
     return rc;
   }
 
-  // Set sample rate
+  // Set sample rate.
+  // Upstream CamillaDSP uses the exact `snd_pcm_hw_params_set_rate` here, not
+  // `..._set_rate_near`: accepting a nearby rate would silently run the whole
+  // engine at the wrong rate (a pitch/speed error) instead of failing cleanly.
   logger_debug(&g_alsa_dev_logger, "%s: setting rate to %u", direction,
                sample_rate);
-  unsigned int val = sample_rate;
   int dir = 0;
-  rc = snd_pcm_hw_params_set_rate_near(*pcm, params, &val, &dir);
+  rc = snd_pcm_hw_params_set_rate(*pcm, params, sample_rate, dir);
   if (rc < 0) {
     if (out_error_msg && error_msg_len > 0) {
-      snprintf(out_error_msg, error_msg_len, "%s", snd_strerror(rc));
+      snprintf(out_error_msg, error_msg_len, "Sample rate %u not supported: %s",
+               sample_rate, snd_strerror(rc));
     }
     snd_pcm_close(*pcm);
     *pcm = NULL;
     return rc;
+  }
+
+  // Defensively confirm the device really took the requested rate.
+  unsigned int granted_rate = 0;
+  int granted_dir = 0;
+  rc = snd_pcm_hw_params_get_rate(params, &granted_rate, &granted_dir);
+  if (rc == 0 && granted_rate != sample_rate) {
+    if (out_error_msg && error_msg_len > 0) {
+      snprintf(out_error_msg, error_msg_len,
+               "Device rate %u does not match requested rate %u", granted_rate,
+               sample_rate);
+    }
+    snd_pcm_close(*pcm);
+    *pcm = NULL;
+    return -EINVAL;
   }
 
   // Set sample format

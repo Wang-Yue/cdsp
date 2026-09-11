@@ -52,20 +52,31 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
     filter_config_t* f_conf = &nf->filter;
 
     cJSON* type = cJSON_GetObjectItemCaseSensitive(filter_child, "type");
-    if (cJSON_IsString(type) && type->valuestring) {
-      f_conf->type = filter_type_from_string(type->valuestring);
-      if (f_conf->type == FILTER_TYPE_INVALID) {
-        config_error_set(err, CONFIG_ERR_PARSE,
-                         "Filter '%s': unknown filter type '%s'", nf->name,
-                         type->valuestring);
-        return -1;
-      }
+    if (!cJSON_IsString(type) || !type->valuestring) {
+      /* Upstream Filter is an internally tagged enum: serde fails with
+       * "missing field `type`" rather than defaulting to a variant. */
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Filter '%s': missing or non-string 'type'", nf->name);
+      return -1;
+    }
+    f_conf->type = filter_type_from_string(type->valuestring);
+    if (f_conf->type == FILTER_TYPE_INVALID) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Filter '%s': unknown filter type '%s'", nf->name,
+                       type->valuestring);
+      return -1;
     }
 
     cJSON* params =
         cJSON_GetObjectItemCaseSensitive(filter_child, "parameters");
-    if (cJSON_IsObject(params)) {
-      cJSON* item;
+    if (!cJSON_IsObject(params)) {
+      /* Every upstream Filter variant declares `parameters` without a serde
+       * default, so omitting it is "missing field `parameters`". */
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Filter '%s': missing 'parameters' object", nf->name);
+      return -1;
+    }
+    {
       switch (f_conf->type) {
         case FILTER_TYPE_GAIN: {
           static const char* const allowed[] = {"gain", "scale", "inverted",
@@ -105,16 +116,18 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           vp->has_ramp_time_ms =
               parse_json_double(params, "ramp_time_ms", &vp->ramp_time_ms);
           vp->has_limit = parse_json_double(params, "limit", &vp->limit);
-          item = cJSON_GetObjectItemCaseSensitive(params, "fader");
-          if (item) {
-            if (cJSON_IsString(item) && item->valuestring) {
-              vp->fader = fader_from_string(item->valuestring);
-            } else if (cJSON_IsNumber(item)) {
-              vp->fader = (fader_t)item->valueint;
-            }
-          } else {
-            vp->fader = FADER_MAIN;
-          }
+          static const config_enum_variant_t volume_faders[] = {
+              {"Aux1", FADER_AUX1},
+              {"Aux2", FADER_AUX2},
+              {"Aux3", FADER_AUX3},
+              {"Aux4", FADER_AUX4},
+              {NULL, 0}};
+          int fader_val = 0;
+          if (parse_enum_required(params, "fader", volume_faders,
+                                  "Volume filter parameters", &fader_val,
+                                  err) != 0)
+            return -1;
+          vp->fader = (fader_t)fader_val;
           break;
         }
         case FILTER_TYPE_LOUDNESS: {
@@ -126,6 +139,10 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                       "Loudness filter parameters", err) != 0)
             return -1;
           loudness_config_t* lp = &f_conf->parameters.loudness;
+          static const char* const req_loudness[] = {"reference_level", NULL};
+          if (require_json_fields(params, req_loudness,
+                                  "Loudness filter parameters", NULL, err) != 0)
+            return -1;
           lp->has_reference_level = parse_json_double(params, "reference_level",
                                                       &lp->reference_level);
           lp->has_high_boost =
@@ -139,16 +156,15 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               parse_json_double(params, "low_freq", &lp->low_freq);
           lp->has_high_q = parse_json_double(params, "high_q", &lp->high_q);
           lp->has_low_q = parse_json_double(params, "low_q", &lp->low_q);
-          item = cJSON_GetObjectItemCaseSensitive(params, "fader");
-          if (item) {
-            if (cJSON_IsString(item) && item->valuestring) {
-              lp->fader = fader_from_string(item->valuestring);
-            } else if (cJSON_IsNumber(item)) {
-              lp->fader = (fader_t)item->valueint;
-            }
-          } else {
-            lp->fader = FADER_MAIN;
-          }
+          static const config_enum_variant_t loudness_faders[] = {
+              {"Main", FADER_MAIN}, {"Aux1", FADER_AUX1}, {"Aux2", FADER_AUX2},
+              {"Aux3", FADER_AUX3}, {"Aux4", FADER_AUX4}, {NULL, 0}};
+          int lfader_val = FADER_MAIN;
+          if (parse_enum_optional(params, "fader", loudness_faders,
+                                  "Loudness filter parameters", &lfader_val,
+                                  err) != 0)
+            return -1;
+          lp->fader = (fader_t)lfader_val;
           break;
         }
         case FILTER_TYPE_BIQUAD: {
@@ -164,51 +180,133 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                       "Biquad filter parameters", err) != 0)
             return -1;
           biquad_config_t* bp = &f_conf->parameters.biquad;
-          item = cJSON_GetObjectItemCaseSensitive(params, "type");
-          if (cJSON_IsString(item) && item->valuestring) {
-            if (strcmp(item->valuestring, "Free") == 0)
-              bp->type = BIQUAD_TYPE_FREE;
-            else if (strcmp(item->valuestring, "Highpass") == 0)
-              bp->type = BIQUAD_TYPE_HIGHPASS;
-            else if (strcmp(item->valuestring, "Lowpass") == 0)
-              bp->type = BIQUAD_TYPE_LOWPASS;
-            else if (strcmp(item->valuestring, "HighpassFO") == 0)
-              bp->type = BIQUAD_TYPE_HIGHPASS_FO;
-            else if (strcmp(item->valuestring, "LowpassFO") == 0)
-              bp->type = BIQUAD_TYPE_LOWPASS_FO;
-            else if (strcmp(item->valuestring, "Highshelf") == 0)
-              bp->type = BIQUAD_TYPE_HIGHSHELF;
-            else if (strcmp(item->valuestring, "Lowshelf") == 0)
-              bp->type = BIQUAD_TYPE_LOWSHELF;
-            else if (strcmp(item->valuestring, "HighshelfFO") == 0)
-              bp->type = BIQUAD_TYPE_HIGHSHELF_FO;
-            else if (strcmp(item->valuestring, "LowshelfFO") == 0)
-              bp->type = BIQUAD_TYPE_LOWSHELF_FO;
-            else if (strcmp(item->valuestring, "Peaking") == 0)
-              bp->type = BIQUAD_TYPE_PEAKING;
-            else if (strcmp(item->valuestring, "Notch") == 0)
-              bp->type = BIQUAD_TYPE_NOTCH;
-            else if (strcmp(item->valuestring, "Bandpass") == 0)
-              bp->type = BIQUAD_TYPE_BANDPASS;
-            else if (strcmp(item->valuestring, "Allpass") == 0)
-              bp->type = BIQUAD_TYPE_ALLPASS;
-            else if (strcmp(item->valuestring, "AllpassFO") == 0)
-              bp->type = BIQUAD_TYPE_ALLPASS_FO;
-            else if (strcmp(item->valuestring, "GeneralNotch") == 0)
-              bp->type = BIQUAD_TYPE_GENERAL_NOTCH;
-            else if (strcmp(item->valuestring, "LinkwitzTransform") == 0)
-              bp->type = BIQUAD_TYPE_LINKWITZ_TRANSFORM;
+          // Upstream's BiquadParameters is an internally tagged enum, so the
+          // tag is required and an unknown variant is a deserialization error.
+          // Falling through the old if/else chain left type at 0 (Free) with
+          // all-zero coefficients, silencing the channel without a diagnostic.
+          static const config_enum_variant_t biquad_types[] = {
+              {"Free", BIQUAD_TYPE_FREE},
+              {"Highpass", BIQUAD_TYPE_HIGHPASS},
+              {"Lowpass", BIQUAD_TYPE_LOWPASS},
+              {"HighpassFO", BIQUAD_TYPE_HIGHPASS_FO},
+              {"LowpassFO", BIQUAD_TYPE_LOWPASS_FO},
+              {"Highshelf", BIQUAD_TYPE_HIGHSHELF},
+              {"Lowshelf", BIQUAD_TYPE_LOWSHELF},
+              {"HighshelfFO", BIQUAD_TYPE_HIGHSHELF_FO},
+              {"LowshelfFO", BIQUAD_TYPE_LOWSHELF_FO},
+              {"Peaking", BIQUAD_TYPE_PEAKING},
+              {"Notch", BIQUAD_TYPE_NOTCH},
+              {"Bandpass", BIQUAD_TYPE_BANDPASS},
+              {"Allpass", BIQUAD_TYPE_ALLPASS},
+              {"AllpassFO", BIQUAD_TYPE_ALLPASS_FO},
+              {"GeneralNotch", BIQUAD_TYPE_GENERAL_NOTCH},
+              {"LinkwitzTransform", BIQUAD_TYPE_LINKWITZ_TRANSFORM},
+              {NULL, 0}};
+          int biquad_type = 0;
+          if (parse_enum_required(params, "type", biquad_types,
+                                  "Biquad filter parameters", &biquad_type,
+                                  err) != 0)
+            return -1;
+          bp->type = (biquad_type_t)biquad_type;
+          if (bp->type == BIQUAD_TYPE_FREE) {
+            static const char* const allowed_free[] = {"type", "a1", "a2", "b0",
+                                                       "b1",   "b2", NULL};
+            if (validate_unknown_fields(params, allowed_free,
+                                        "Biquad Free filter parameters",
+                                        err) != 0)
+              return -1;
+          } else if (bp->type == BIQUAD_TYPE_HIGHPASS_FO ||
+                     bp->type == BIQUAD_TYPE_LOWPASS_FO ||
+                     bp->type == BIQUAD_TYPE_ALLPASS_FO) {
+            static const char* const allowed_fo[] = {"type", "freq", NULL};
+            if (validate_unknown_fields(params, allowed_fo,
+                                        "Biquad FO filter parameters",
+                                        err) != 0)
+              return -1;
+          } else if (bp->type == BIQUAD_TYPE_LINKWITZ_TRANSFORM) {
+            static const char* const allowed_lt[] = {
+                "type", "freq_act", "q_act", "freq_target", "q_target", NULL};
+            if (validate_unknown_fields(params, allowed_lt,
+                                        "Biquad LinkwitzTransform parameters",
+                                        err) != 0)
+              return -1;
+          }
+          {
+            // Each upstream variant carries its own required fields; a missing
+            // one is "missing field `freq`" and rejects the configuration.
+            const char* variant =
+                cJSON_GetObjectItemCaseSensitive(params, "type")->valuestring;
+            static const char* const req_free[] = {"a1", "a2", "b0",
+                                                   "b1", "b2", NULL};
+            static const char* const req_freq_q[] = {"freq", "q", NULL};
+            static const char* const req_freq[] = {"freq", NULL};
+            static const char* const req_freq_gain[] = {"freq", "gain", NULL};
+            static const char* const req_notch[] = {"freq_p", "freq_z", "q_p",
+                                                    NULL};
+            static const char* const req_lt[] = {
+                "freq_act", "q_act", "freq_target", "q_target", NULL};
+            static const char* const width_q_bw[] = {"q", "bandwidth", NULL};
+            static const char* const width_q_slope[] = {"q", "slope", NULL};
+            const char* const* required = NULL;
+            const char* const* width = NULL;
+            switch (bp->type) {
+              case BIQUAD_TYPE_FREE:
+                required = req_free;
+                break;
+              case BIQUAD_TYPE_HIGHPASS:
+              case BIQUAD_TYPE_LOWPASS:
+                required = req_freq_q;
+                break;
+              case BIQUAD_TYPE_HIGHPASS_FO:
+              case BIQUAD_TYPE_LOWPASS_FO:
+              case BIQUAD_TYPE_ALLPASS_FO:
+                required = req_freq;
+                break;
+              case BIQUAD_TYPE_HIGHSHELF_FO:
+              case BIQUAD_TYPE_LOWSHELF_FO:
+                required = req_freq_gain;
+                break;
+              case BIQUAD_TYPE_PEAKING:
+                required = req_freq_gain;
+                width = width_q_bw;
+                break;
+              case BIQUAD_TYPE_HIGHSHELF:
+              case BIQUAD_TYPE_LOWSHELF:
+                required = req_freq_gain;
+                width = width_q_slope;
+                break;
+              case BIQUAD_TYPE_NOTCH:
+              case BIQUAD_TYPE_BANDPASS:
+              case BIQUAD_TYPE_ALLPASS:
+                required = req_freq;
+                width = width_q_bw;
+                break;
+              case BIQUAD_TYPE_GENERAL_NOTCH:
+                required = req_notch;
+                break;
+              case BIQUAD_TYPE_LINKWITZ_TRANSFORM:
+                required = req_lt;
+                break;
+              default:
+                break;
+            }
+            if (required && require_json_fields(params, required,
+                                                "Biquad filter parameters",
+                                                variant, err) != 0)
+              return -1;
+            if (width && require_json_any_field(params, width,
+                                                "Biquad filter parameters",
+                                                variant, err) != 0)
+              return -1;
           }
           parse_json_double(params, "freq", &bp->freq);
           parse_json_double(params, "gain", &bp->gain);
 
           if (parse_json_double(params, "q", &bp->q)) {
             bp->steepness_type = STEEPNESS_TYPE_Q;
-          }
-          if (parse_json_double(params, "bandwidth", &bp->bandwidth)) {
+          } else if (parse_json_double(params, "bandwidth", &bp->bandwidth)) {
             bp->steepness_type = STEEPNESS_TYPE_BANDWIDTH;
-          }
-          if (parse_json_double(params, "slope", &bp->slope)) {
+          } else if (parse_json_double(params, "slope", &bp->slope)) {
             bp->steepness_type = STEEPNESS_TYPE_SLOPE;
           }
 
@@ -272,16 +370,45 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                       err) != 0)
             return -1;
           convolution_config_t* cp = &f_conf->parameters.conv;
-          char type_buf[64];
-          if (parse_json_str(params, "type", type_buf, sizeof(type_buf))) {
-            if (strcmp(type_buf, "Values") == 0)
-              cp->type = CONV_TYPE_VALUES;
-            else if (strcmp(type_buf, "Wav") == 0)
-              cp->type = CONV_TYPE_WAV;
-            else if (strcmp(type_buf, "Raw") == 0)
-              cp->type = CONV_TYPE_RAW;
-            else
-              cp->type = CONV_TYPE_DUMMY;
+          /* Upstream ConvParameters is an internally tagged enum, so the tag is
+           * mandatory and an unknown tag is a hard deserialization error. */
+          static const config_enum_variant_t conv_types[] = {
+              {"Values", CONV_TYPE_VALUES},
+              {"Wav", CONV_TYPE_WAV},
+              {"Raw", CONV_TYPE_RAW},
+              {"Dummy", CONV_TYPE_DUMMY},
+              {NULL, 0}};
+          int conv_type = 0;
+          if (parse_enum_required(params, "type", conv_types,
+                                  "Conv filter parameters", &conv_type,
+                                  err) != 0)
+            return -1;
+          cp->type = (conv_type_t)conv_type;
+          {
+            const char* variant =
+                cJSON_GetObjectItemCaseSensitive(params, "type")->valuestring;
+            static const char* const req_values[] = {"values", NULL};
+            static const char* const req_filename[] = {"filename", NULL};
+            static const char* const req_length[] = {"length", NULL};
+            const char* const* required = NULL;
+            switch (cp->type) {
+              case CONV_TYPE_VALUES:
+                required = req_values;
+                break;
+              case CONV_TYPE_WAV:
+              case CONV_TYPE_RAW:
+                required = req_filename;
+                break;
+              case CONV_TYPE_DUMMY:
+                required = req_length;
+                break;
+              default:
+                break;
+            }
+            if (required &&
+                require_json_fields(params, required, "Conv filter parameters",
+                                    variant, err) != 0)
+              return -1;
           }
           cp->values = parse_double_array(
               cJSON_GetObjectItemCaseSensitive(params, "values"),
@@ -306,22 +433,54 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                   params, allowed, "BiquadCombo filter parameters", err) != 0)
             return -1;
           biquad_combo_config_t* bcp = &f_conf->parameters.biquad_combo;
-          item = cJSON_GetObjectItemCaseSensitive(params, "type");
-          if (cJSON_IsString(item) && item->valuestring) {
-            if (strcmp(item->valuestring, "ButterworthHighpass") == 0)
-              bcp->type = BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS;
-            else if (strcmp(item->valuestring, "ButterworthLowpass") == 0)
-              bcp->type = BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS;
-            else if (strcmp(item->valuestring, "LinkwitzRileyHighpass") == 0)
-              bcp->type = BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS;
-            else if (strcmp(item->valuestring, "LinkwitzRileyLowpass") == 0)
-              bcp->type = BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS;
-            else if (strcmp(item->valuestring, "Tilt") == 0)
-              bcp->type = BIQUAD_COMBO_TYPE_TILT;
-            else if (strcmp(item->valuestring, "NPointPeq") == 0)
-              bcp->type = BIQUAD_COMBO_TYPE_N_POINT_PEQ;
-            else if (strcmp(item->valuestring, "GraphicEqualizer") == 0)
-              bcp->type = BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER;
+          static const config_enum_variant_t combo_types[] = {
+              {"ButterworthHighpass", BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS},
+              {"ButterworthLowpass", BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS},
+              {"LinkwitzRileyHighpass",
+               BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS},
+              {"LinkwitzRileyLowpass",
+               BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS},
+              {"Tilt", BIQUAD_COMBO_TYPE_TILT},
+              {"NPointPeq", BIQUAD_COMBO_TYPE_N_POINT_PEQ},
+              {"GraphicEqualizer", BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER},
+              {NULL, 0}};
+          int combo_type = 0;
+          if (parse_enum_required(params, "type", combo_types,
+                                  "BiquadCombo filter parameters", &combo_type,
+                                  err) != 0)
+            return -1;
+          bcp->type = (biquad_combo_type_t)combo_type;
+          {
+            const char* variant =
+                cJSON_GetObjectItemCaseSensitive(params, "type")->valuestring;
+            static const char* const req_freq_order[] = {"freq", "order", NULL};
+            static const char* const req_gain[] = {"gain", NULL};
+            static const char* const req_bands[] = {"bands", NULL};
+            static const char* const req_gains[] = {"gains", NULL};
+            const char* const* required = NULL;
+            switch (bcp->type) {
+              case BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS:
+              case BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS:
+              case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS:
+              case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
+                required = req_freq_order;
+                break;
+              case BIQUAD_COMBO_TYPE_TILT:
+                required = req_gain;
+                break;
+              case BIQUAD_COMBO_TYPE_N_POINT_PEQ:
+                required = req_bands;
+                break;
+              case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER:
+                required = req_gains;
+                break;
+              default:
+                break;
+            }
+            if (required && require_json_fields(params, required,
+                                                "BiquadCombo filter parameters",
+                                                variant, err) != 0)
+              return -1;
           }
           bcp->has_freq = parse_json_double(params, "freq", &bcp->freq);
           bcp->has_freq_min =
@@ -351,13 +510,24 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                 bcp->bands_count = (size_t)n_bands;
                 for (int b_idx = 0; b_idx < n_bands; b_idx++) {
                   cJSON* band_obj = cJSON_GetArrayItem(bands_arr, b_idx);
-                  if (cJSON_IsObject(band_obj)) {
-                    parse_json_double(band_obj, "freq",
-                                      &bcp->bands[b_idx].freq);
-                    parse_json_double(band_obj, "q", &bcp->bands[b_idx].q);
-                    parse_json_double(band_obj, "gain",
-                                      &bcp->bands[b_idx].gain);
+                  // Upstream's PeqBand has no defaults: every band must
+                  // carry all three fields.
+                  static const char* const req_band[] = {"freq", "q", "gain",
+                                                         NULL};
+                  if (!cJSON_IsObject(band_obj)) {
+                    config_error_set(err, CONFIG_ERR_PARSE,
+                                     "band %d in BiquadCombo filter "
+                                     "parameters must be an object",
+                                     b_idx);
+                    return -1;
                   }
+                  if (require_json_fields(band_obj, req_band,
+                                          "BiquadCombo filter parameters band",
+                                          NULL, err) != 0)
+                    return -1;
+                  parse_json_double(band_obj, "freq", &bcp->bands[b_idx].freq);
+                  parse_json_double(band_obj, "q", &bcp->bands[b_idx].q);
+                  parse_json_double(band_obj, "gain", &bcp->bands[b_idx].gain);
                 }
               }
             }
@@ -386,52 +556,55 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                       "Dither filter parameters", err) != 0)
             return -1;
           dither_config_t* dp = &f_conf->parameters.dither;
-          char type_buf[64];
-          if (parse_json_str(params, "type", type_buf, sizeof(type_buf))) {
-            if (strcmp(type_buf, "None") == 0)
-              dp->type = DITHER_TYPE_NONE;
-            else if (strcmp(type_buf, "Flat") == 0)
-              dp->type = DITHER_TYPE_FLAT;
-            else if (strcmp(type_buf, "Highpass") == 0)
-              dp->type = DITHER_TYPE_HIGHPASS;
-            else if (strcmp(type_buf, "Fweighted441") == 0)
-              dp->type = DITHER_TYPE_FWEIGHTED_441;
-            else if (strcmp(type_buf, "FweightedLong441") == 0)
-              dp->type = DITHER_TYPE_FWEIGHTED_LONG_441;
-            else if (strcmp(type_buf, "FweightedShort441") == 0)
-              dp->type = DITHER_TYPE_FWEIGHTED_SHORT_441;
-            else if (strcmp(type_buf, "Gesemann441") == 0)
-              dp->type = DITHER_TYPE_GESEMANN_441;
-            else if (strcmp(type_buf, "Gesemann48") == 0)
-              dp->type = DITHER_TYPE_GESEMANN_48;
-            else if (strcmp(type_buf, "Lipshitz441") == 0)
-              dp->type = DITHER_TYPE_LIPSHITZ_441;
-            else if (strcmp(type_buf, "LipshitzLong441") == 0)
-              dp->type = DITHER_TYPE_LIPSHITZ_LONG_441;
-            else if (strcmp(type_buf, "Shibata441") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_441;
-            else if (strcmp(type_buf, "ShibataHigh441") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_HIGH_441;
-            else if (strcmp(type_buf, "ShibataLow441") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_LOW_441;
-            else if (strcmp(type_buf, "Shibata48") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_48;
-            else if (strcmp(type_buf, "ShibataHigh48") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_HIGH_48;
-            else if (strcmp(type_buf, "ShibataLow48") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_LOW_48;
-            else if (strcmp(type_buf, "Shibata882") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_882;
-            else if (strcmp(type_buf, "ShibataLow882") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_LOW_882;
-            else if (strcmp(type_buf, "Shibata96") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_96;
-            else if (strcmp(type_buf, "ShibataLow96") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_LOW_96;
-            else if (strcmp(type_buf, "Shibata192") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_192;
-            else if (strcmp(type_buf, "ShibataLow192") == 0)
-              dp->type = DITHER_TYPE_SHIBATA_LOW_192;
+          static const config_enum_variant_t dither_types[] = {
+              {"None", DITHER_TYPE_NONE},
+              {"Flat", DITHER_TYPE_FLAT},
+              {"Highpass", DITHER_TYPE_HIGHPASS},
+              {"Fweighted441", DITHER_TYPE_FWEIGHTED_441},
+              {"FweightedLong441", DITHER_TYPE_FWEIGHTED_LONG_441},
+              {"FweightedShort441", DITHER_TYPE_FWEIGHTED_SHORT_441},
+              {"Gesemann441", DITHER_TYPE_GESEMANN_441},
+              {"Gesemann48", DITHER_TYPE_GESEMANN_48},
+              {"Lipshitz441", DITHER_TYPE_LIPSHITZ_441},
+              {"LipshitzLong441", DITHER_TYPE_LIPSHITZ_LONG_441},
+              {"Shibata441", DITHER_TYPE_SHIBATA_441},
+              {"ShibataHigh441", DITHER_TYPE_SHIBATA_HIGH_441},
+              {"ShibataLow441", DITHER_TYPE_SHIBATA_LOW_441},
+              {"Shibata48", DITHER_TYPE_SHIBATA_48},
+              {"ShibataHigh48", DITHER_TYPE_SHIBATA_HIGH_48},
+              {"ShibataLow48", DITHER_TYPE_SHIBATA_LOW_48},
+              {"Shibata882", DITHER_TYPE_SHIBATA_882},
+              {"ShibataLow882", DITHER_TYPE_SHIBATA_LOW_882},
+              {"Shibata96", DITHER_TYPE_SHIBATA_96},
+              {"ShibataLow96", DITHER_TYPE_SHIBATA_LOW_96},
+              {"Shibata192", DITHER_TYPE_SHIBATA_192},
+              {"ShibataLow192", DITHER_TYPE_SHIBATA_LOW_192},
+              {NULL, 0}};
+          int dither_type = 0;
+          if (parse_enum_required(params, "type", dither_types,
+                                  "Dither filter parameters", &dither_type,
+                                  err) != 0)
+            return -1;
+          dp->type = (dither_type_t)dither_type;
+          {
+            // Every upstream DitherParameters variant declares `bits`, and the
+            // Flat variant also declares `amplitude`; neither has a default.
+            const char* variant =
+                cJSON_GetObjectItemCaseSensitive(params, "type")->valuestring;
+            static const char* const req_bits[] = {"bits", NULL};
+            static const char* const req_flat[] = {"bits", "amplitude", NULL};
+            const char* const* required =
+                dp->type == DITHER_TYPE_FLAT ? req_flat : req_bits;
+            if (require_json_fields(params, required,
+                                    "Dither filter parameters", variant,
+                                    err) != 0)
+              return -1;
+          }
+          if (dp->type != DITHER_TYPE_FLAT) {
+            static const char* const allowed_nonflat[] = {"type", "bits", NULL};
+            if (validate_unknown_fields(params, allowed_nonflat,
+                                        "Dither filter parameters", err) != 0)
+              return -1;
           }
           parse_json_int(params, "bits", &dp->bits);
           dp->has_amplitude =
@@ -561,298 +734,351 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
     processor_config_t* p_conf = &np->processor;
 
     cJSON* type = cJSON_GetObjectItemCaseSensitive(proc_child, "type");
-    if (cJSON_IsString(type) && type->valuestring) {
-      p_conf->type = processor_type_from_string(type->valuestring);
-      if (p_conf->type == PROCESSOR_TYPE_INVALID) {
-        config_error_set(err, CONFIG_ERR_PARSE,
-                         "Processor '%s': unknown processor type '%s'",
-                         np->name, type->valuestring);
-        return -1;
-      }
+    if (!cJSON_IsString(type) || !type->valuestring) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Processor '%s': missing or non-string 'type'",
+                       np->name);
+      return -1;
+    }
+    p_conf->type = processor_type_from_string(type->valuestring);
+    if (p_conf->type == PROCESSOR_TYPE_INVALID) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Processor '%s': unknown processor type '%s'", np->name,
+                       type->valuestring);
+      return -1;
     }
 
     cJSON* params = cJSON_GetObjectItemCaseSensitive(proc_child, "parameters");
-    if (cJSON_IsObject(params)) {
-      switch (p_conf->type) {
-        case PROCESSOR_TYPE_COMPRESSOR: {
-          static const char* const allowed[] = {"channels",
-                                                "monitor_channels",
-                                                "process_channels",
-                                                "attack",
-                                                "attack_unit",
-                                                "release",
-                                                "release_unit",
-                                                "threshold",
-                                                "factor",
-                                                "makeup_gain",
-                                                "soft_clip",
-                                                "clip_limit",
-                                                NULL};
-          if (validate_unknown_fields(
-                  params, allowed, "Compressor processor parameters", err) != 0)
-            return -1;
-          compressor_config_t* cp = &p_conf->parameters.compressor;
-          parse_json_size_t(params, "channels", &cp->channels);
-          parse_json_double(params, "attack", &cp->attack);
-          parse_json_double(params, "release", &cp->release);
-          parse_json_double(params, "threshold", &cp->threshold);
-          parse_json_double(params, "factor", &cp->factor);
-          cp->has_makeup_gain =
-              parse_json_double(params, "makeup_gain", &cp->makeup_gain);
-          parse_json_bool(params, "soft_clip", &cp->soft_clip);
-          cp->has_clip_limit =
-              parse_json_double(params, "clip_limit", &cp->clip_limit);
+    if (!cJSON_IsObject(params)) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Processor '%s': missing 'parameters' object", np->name);
+      return -1;
+    }
+    switch (p_conf->type) {
+      case PROCESSOR_TYPE_COMPRESSOR: {
+        static const char* const allowed[] = {
+            "channels",    "monitor_channels", "process_channels", "attack",
+            "attack_unit", "release",          "release_unit",     "threshold",
+            "factor",      "makeup_gain",      "soft_clip",        "clip_limit",
+            NULL};
+        if (validate_unknown_fields(
+                params, allowed, "Compressor processor parameters", err) != 0)
+          return -1;
+        static const char* const req_comp[] = {
+            "channels",     "attack",    "attack_unit", "release",
+            "release_unit", "threshold", "factor",      NULL};
+        if (require_json_fields(params, req_comp,
+                                "Compressor processor parameters", NULL,
+                                err) != 0)
+          return -1;
+        compressor_config_t* cp = &p_conf->parameters.compressor;
+        if (parse_json_size_t_strict(params, "channels",
+                                     "Compressor processor parameters",
+                                     &cp->channels, NULL, err) != 0)
+          return -1;
+        parse_json_double(params, "attack", &cp->attack);
+        parse_json_double(params, "release", &cp->release);
+        parse_json_double(params, "threshold", &cp->threshold);
+        parse_json_double(params, "factor", &cp->factor);
+        cp->has_makeup_gain =
+            parse_json_double(params, "makeup_gain", &cp->makeup_gain);
+        parse_json_bool(params, "soft_clip", &cp->soft_clip);
+        cp->has_clip_limit =
+            parse_json_double(params, "clip_limit", &cp->clip_limit);
 
-          char a_unit_buf[64], r_unit_buf[64];
-          if (parse_json_str(params, "attack_unit", a_unit_buf,
-                             sizeof(a_unit_buf))) {
-            if (strcmp(a_unit_buf, "us") == 0)
-              cp->attack_unit = TIME_UNIT_US;
-            else if (strcmp(a_unit_buf, "ms") == 0)
-              cp->attack_unit = TIME_UNIT_MS;
-            else if (strcmp(a_unit_buf, "s") == 0)
-              cp->attack_unit = TIME_UNIT_S;
-            else if (strcmp(a_unit_buf, "samples") == 0)
-              cp->attack_unit = TIME_UNIT_SAMPLES;
-            else {
-              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                               "Processor '%s': invalid attack_unit '%s'",
-                               np->name, a_unit_buf);
-              return -1;
-            }
-          } else {
+        char a_unit_buf[64], r_unit_buf[64];
+        if (parse_json_str(params, "attack_unit", a_unit_buf,
+                           sizeof(a_unit_buf))) {
+          if (strcmp(a_unit_buf, "us") == 0)
+            cp->attack_unit = TIME_UNIT_US;
+          else if (strcmp(a_unit_buf, "ms") == 0)
+            cp->attack_unit = TIME_UNIT_MS;
+          else if (strcmp(a_unit_buf, "s") == 0)
+            cp->attack_unit = TIME_UNIT_S;
+          else if (strcmp(a_unit_buf, "samples") == 0)
+            cp->attack_unit = TIME_UNIT_SAMPLES;
+          else {
             config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                             "Processor '%s': missing required 'attack_unit'",
-                             np->name);
+                             "Processor '%s': invalid attack_unit '%s'",
+                             np->name, a_unit_buf);
             return -1;
           }
-
-          if (parse_json_str(params, "release_unit", r_unit_buf,
-                             sizeof(r_unit_buf))) {
-            if (strcmp(r_unit_buf, "us") == 0)
-              cp->release_unit = TIME_UNIT_US;
-            else if (strcmp(r_unit_buf, "ms") == 0)
-              cp->release_unit = TIME_UNIT_MS;
-            else if (strcmp(r_unit_buf, "s") == 0)
-              cp->release_unit = TIME_UNIT_S;
-            else if (strcmp(r_unit_buf, "samples") == 0)
-              cp->release_unit = TIME_UNIT_SAMPLES;
-            else {
-              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                               "Processor '%s': invalid release_unit '%s'",
-                               np->name, r_unit_buf);
-              return -1;
-            }
-          } else {
-            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                             "Processor '%s': missing required 'release_unit'",
-                             np->name);
-            return -1;
-          }
-
-          cp->monitor_channels = parse_size_t_array(
-              cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
-              &cp->monitor_channels_count);
-          cp->process_channels = parse_size_t_array(
-              cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
-              &cp->process_channels_count);
-          break;
+        } else {
+          config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                           "Processor '%s': missing required 'attack_unit'",
+                           np->name);
+          return -1;
         }
-        case PROCESSOR_TYPE_NOISE_GATE: {
-          static const char* const allowed[] = {
-              "channels",         "monitor_channels",
-              "process_channels", "attack",
-              "attack_unit",      "release",
-              "release_unit",     "threshold",
-              "attenuation",      NULL};
-          if (validate_unknown_fields(
-                  params, allowed, "NoiseGate processor parameters", err) != 0)
-            return -1;
-          noise_gate_config_t* ng = &p_conf->parameters.noise_gate;
-          parse_json_size_t(params, "channels", &ng->channels);
-          parse_json_double(params, "attack", &ng->attack);
-          parse_json_double(params, "release", &ng->release);
-          parse_json_double(params, "threshold", &ng->threshold);
-          parse_json_double(params, "attenuation", &ng->attenuation);
 
-          char a_unit_buf[64], r_unit_buf[64];
-          if (parse_json_str(params, "attack_unit", a_unit_buf,
-                             sizeof(a_unit_buf))) {
-            if (strcmp(a_unit_buf, "us") == 0)
-              ng->attack_unit = TIME_UNIT_US;
-            else if (strcmp(a_unit_buf, "ms") == 0)
-              ng->attack_unit = TIME_UNIT_MS;
-            else if (strcmp(a_unit_buf, "s") == 0)
-              ng->attack_unit = TIME_UNIT_S;
-            else if (strcmp(a_unit_buf, "samples") == 0)
-              ng->attack_unit = TIME_UNIT_SAMPLES;
-            else {
-              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                               "Processor '%s': invalid attack_unit '%s'",
-                               np->name, a_unit_buf);
-              return -1;
-            }
-          } else {
+        if (parse_json_str(params, "release_unit", r_unit_buf,
+                           sizeof(r_unit_buf))) {
+          if (strcmp(r_unit_buf, "us") == 0)
+            cp->release_unit = TIME_UNIT_US;
+          else if (strcmp(r_unit_buf, "ms") == 0)
+            cp->release_unit = TIME_UNIT_MS;
+          else if (strcmp(r_unit_buf, "s") == 0)
+            cp->release_unit = TIME_UNIT_S;
+          else if (strcmp(r_unit_buf, "samples") == 0)
+            cp->release_unit = TIME_UNIT_SAMPLES;
+          else {
             config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                             "Processor '%s': missing required 'attack_unit'",
-                             np->name);
+                             "Processor '%s': invalid release_unit '%s'",
+                             np->name, r_unit_buf);
             return -1;
           }
-
-          if (parse_json_str(params, "release_unit", r_unit_buf,
-                             sizeof(r_unit_buf))) {
-            if (strcmp(r_unit_buf, "us") == 0)
-              ng->release_unit = TIME_UNIT_US;
-            else if (strcmp(r_unit_buf, "ms") == 0)
-              ng->release_unit = TIME_UNIT_MS;
-            else if (strcmp(r_unit_buf, "s") == 0)
-              ng->release_unit = TIME_UNIT_S;
-            else if (strcmp(r_unit_buf, "samples") == 0)
-              ng->release_unit = TIME_UNIT_SAMPLES;
-            else {
-              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                               "Processor '%s': invalid release_unit '%s'",
-                               np->name, r_unit_buf);
-              return -1;
-            }
-          } else {
-            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                             "Processor '%s': missing required 'release_unit'",
-                             np->name);
-            return -1;
-          }
-
-          ng->monitor_channels = parse_size_t_array(
-              cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
-              &ng->monitor_channels_count);
-          ng->process_channels = parse_size_t_array(
-              cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
-              &ng->process_channels_count);
-          break;
+        } else {
+          config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                           "Processor '%s': missing required 'release_unit'",
+                           np->name);
+          return -1;
         }
-        case PROCESSOR_TYPE_RACE: {
-          static const char* const allowed[] = {
-              "channels",        "channel_a",  "channel_b",   "delay",
-              "subsample_delay", "delay_unit", "attenuation", NULL};
-          if (validate_unknown_fields(params, allowed,
-                                      "RACE processor parameters", err) != 0)
-            return -1;
-          race_config_t* rp = &p_conf->parameters.race;
-          parse_json_double(params, "attenuation", &rp->attenuation);
-          parse_json_double(params, "delay", &rp->delay);
-          parse_json_size_t(params, "channels", &rp->channels);
-          parse_json_size_t(params, "channel_a", &rp->channel_a);
-          parse_json_size_t(params, "channel_b", &rp->channel_b);
-          rp->has_subsample_delay =
-              parse_json_bool(params, "subsample_delay", &rp->subsample_delay);
 
-          char unit_buf[64];
-          if (parse_json_str(params, "delay_unit", unit_buf,
-                             sizeof(unit_buf))) {
-            if (strcmp(unit_buf, "us") == 0)
-              rp->delay_unit = DELAY_UNIT_US;
-            else if (strcmp(unit_buf, "ms") == 0)
-              rp->delay_unit = DELAY_UNIT_MS;
-            else if (strcmp(unit_buf, "s") == 0)
-              rp->delay_unit = DELAY_UNIT_S;
-            else if (strcmp(unit_buf, "samples") == 0)
-              rp->delay_unit = DELAY_UNIT_SAMPLES;
-            else if (strcmp(unit_buf, "mm") == 0)
-              rp->delay_unit = DELAY_UNIT_MM;
-            else {
-              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                               "Processor '%s': invalid delay_unit '%s'",
-                               np->name, unit_buf);
-              return -1;
-            }
-            rp->has_delay_unit = true;
-          } else {
-            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                             "Processor '%s': missing required 'delay_unit'",
-                             np->name);
-            return -1;
-          }
-          break;
-        }
-        case PROCESSOR_TYPE_LOOKAHEAD_LIMITER: {
-          static const char* const allowed[] = {
-              "channels", "monitor_channels", "process_channels",
-              "limit",    "attack",           "attack_unit",
-              "release",  "release_unit",     "delay_processed_only",
-              NULL};
-          if (validate_unknown_fields(params, allowed,
-                                      "LookaheadLimiter processor parameters",
-                                      err) != 0)
-            return -1;
-          lookahead_limiter_processor_config_t* lp =
-              &p_conf->parameters.lookahead_limiter;
-          parse_json_size_t(params, "channels", &lp->channels);
-          parse_json_double(params, "limit",
-                            &lp->limit);  // Default double is fine
-          parse_json_double(params, "attack", &lp->attack);
-          parse_json_double(params, "release", &lp->release);
-          lp->delay_processed_only = false;
-          parse_json_bool(params, "delay_processed_only",
-                          &lp->delay_processed_only);
-
-          char a_unit_buf[64], r_unit_buf[64];
-          if (parse_json_str(params, "attack_unit", a_unit_buf,
-                             sizeof(a_unit_buf))) {
-            if (strcmp(a_unit_buf, "us") == 0)
-              lp->attack_unit = TIME_UNIT_US;
-            else if (strcmp(a_unit_buf, "ms") == 0)
-              lp->attack_unit = TIME_UNIT_MS;
-            else if (strcmp(a_unit_buf, "s") == 0)
-              lp->attack_unit = TIME_UNIT_S;
-            else if (strcmp(a_unit_buf, "samples") == 0)
-              lp->attack_unit = TIME_UNIT_SAMPLES;
-            else {
-              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                               "Processor '%s': invalid attack_unit '%s'",
-                               np->name, a_unit_buf);
-              return -1;
-            }
-          } else {
-            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                             "Processor '%s': missing required 'attack_unit'",
-                             np->name);
-            return -1;
-          }
-
-          if (parse_json_str(params, "release_unit", r_unit_buf,
-                             sizeof(r_unit_buf))) {
-            if (strcmp(r_unit_buf, "us") == 0)
-              lp->release_unit = TIME_UNIT_US;
-            else if (strcmp(r_unit_buf, "ms") == 0)
-              lp->release_unit = TIME_UNIT_MS;
-            else if (strcmp(r_unit_buf, "s") == 0)
-              lp->release_unit = TIME_UNIT_S;
-            else if (strcmp(r_unit_buf, "samples") == 0)
-              lp->release_unit = TIME_UNIT_SAMPLES;
-            else {
-              config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                               "Processor '%s': invalid release_unit '%s'",
-                               np->name, r_unit_buf);
-              return -1;
-            }
-          } else {
-            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                             "Processor '%s': missing required 'release_unit'",
-                             np->name);
-            return -1;
-          }
-
-          lp->monitor_channels = parse_size_t_array(
-              cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
-              &lp->monitor_channels_count);
-          lp->process_channels = parse_size_t_array(
-              cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
-              &lp->process_channels_count);
-          break;
-        }
-        default:
-          break;
+        if (parse_size_t_array_strict(
+                cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
+                "monitor_channels", "Compressor processor parameters",
+                &cp->monitor_channels, &cp->monitor_channels_count, err) != 0)
+          return -1;
+        if (parse_size_t_array_strict(
+                cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
+                "process_channels", "Compressor processor parameters",
+                &cp->process_channels, &cp->process_channels_count, err) != 0)
+          return -1;
+        break;
       }
+      case PROCESSOR_TYPE_NOISE_GATE: {
+        static const char* const allowed[] = {
+            "channels",         "monitor_channels",
+            "process_channels", "attack",
+            "attack_unit",      "release",
+            "release_unit",     "threshold",
+            "attenuation",      NULL};
+        if (validate_unknown_fields(params, allowed,
+                                    "NoiseGate processor parameters", err) != 0)
+          return -1;
+        static const char* const req_gate[] = {
+            "channels",     "attack",    "attack_unit", "release",
+            "release_unit", "threshold", "attenuation", NULL};
+        if (require_json_fields(params, req_gate,
+                                "NoiseGate processor parameters", NULL,
+                                err) != 0)
+          return -1;
+        noise_gate_config_t* ng = &p_conf->parameters.noise_gate;
+        if (parse_json_size_t_strict(params, "channels",
+                                     "NoiseGate processor parameters",
+                                     &ng->channels, NULL, err) != 0)
+          return -1;
+        parse_json_double(params, "attack", &ng->attack);
+        parse_json_double(params, "release", &ng->release);
+        parse_json_double(params, "threshold", &ng->threshold);
+        parse_json_double(params, "attenuation", &ng->attenuation);
+
+        char a_unit_buf[64], r_unit_buf[64];
+        if (parse_json_str(params, "attack_unit", a_unit_buf,
+                           sizeof(a_unit_buf))) {
+          if (strcmp(a_unit_buf, "us") == 0)
+            ng->attack_unit = TIME_UNIT_US;
+          else if (strcmp(a_unit_buf, "ms") == 0)
+            ng->attack_unit = TIME_UNIT_MS;
+          else if (strcmp(a_unit_buf, "s") == 0)
+            ng->attack_unit = TIME_UNIT_S;
+          else if (strcmp(a_unit_buf, "samples") == 0)
+            ng->attack_unit = TIME_UNIT_SAMPLES;
+          else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': invalid attack_unit '%s'",
+                             np->name, a_unit_buf);
+            return -1;
+          }
+        } else {
+          config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                           "Processor '%s': missing required 'attack_unit'",
+                           np->name);
+          return -1;
+        }
+
+        if (parse_json_str(params, "release_unit", r_unit_buf,
+                           sizeof(r_unit_buf))) {
+          if (strcmp(r_unit_buf, "us") == 0)
+            ng->release_unit = TIME_UNIT_US;
+          else if (strcmp(r_unit_buf, "ms") == 0)
+            ng->release_unit = TIME_UNIT_MS;
+          else if (strcmp(r_unit_buf, "s") == 0)
+            ng->release_unit = TIME_UNIT_S;
+          else if (strcmp(r_unit_buf, "samples") == 0)
+            ng->release_unit = TIME_UNIT_SAMPLES;
+          else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': invalid release_unit '%s'",
+                             np->name, r_unit_buf);
+            return -1;
+          }
+        } else {
+          config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                           "Processor '%s': missing required 'release_unit'",
+                           np->name);
+          return -1;
+        }
+
+        if (parse_size_t_array_strict(
+                cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
+                "monitor_channels", "NoiseGate processor parameters",
+                &ng->monitor_channels, &ng->monitor_channels_count, err) != 0)
+          return -1;
+        if (parse_size_t_array_strict(
+                cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
+                "process_channels", "NoiseGate processor parameters",
+                &ng->process_channels, &ng->process_channels_count, err) != 0)
+          return -1;
+        break;
+      }
+      case PROCESSOR_TYPE_RACE: {
+        static const char* const allowed[] = {
+            "channels",        "channel_a",  "channel_b",   "delay",
+            "subsample_delay", "delay_unit", "attenuation", NULL};
+        if (validate_unknown_fields(params, allowed,
+                                    "RACE processor parameters", err) != 0)
+          return -1;
+        static const char* const req_race[] = {
+            "channels",   "channel_a",   "channel_b", "delay",
+            "delay_unit", "attenuation", NULL};
+        if (require_json_fields(params, req_race, "RACE processor parameters",
+                                NULL, err) != 0)
+          return -1;
+        race_config_t* rp = &p_conf->parameters.race;
+        parse_json_double(params, "attenuation", &rp->attenuation);
+        parse_json_double(params, "delay", &rp->delay);
+        if (parse_json_size_t_strict(params, "channels",
+                                     "RACE processor parameters", &rp->channels,
+                                     NULL, err) != 0 ||
+            parse_json_size_t_strict(params, "channel_a",
+                                     "RACE processor parameters",
+                                     &rp->channel_a, NULL, err) != 0 ||
+            parse_json_size_t_strict(params, "channel_b",
+                                     "RACE processor parameters",
+                                     &rp->channel_b, NULL, err) != 0)
+          return -1;
+        rp->has_subsample_delay =
+            parse_json_bool(params, "subsample_delay", &rp->subsample_delay);
+
+        char unit_buf[64];
+        if (parse_json_str(params, "delay_unit", unit_buf, sizeof(unit_buf))) {
+          if (strcmp(unit_buf, "us") == 0)
+            rp->delay_unit = DELAY_UNIT_US;
+          else if (strcmp(unit_buf, "ms") == 0)
+            rp->delay_unit = DELAY_UNIT_MS;
+          else if (strcmp(unit_buf, "s") == 0)
+            rp->delay_unit = DELAY_UNIT_S;
+          else if (strcmp(unit_buf, "samples") == 0)
+            rp->delay_unit = DELAY_UNIT_SAMPLES;
+          else if (strcmp(unit_buf, "mm") == 0)
+            rp->delay_unit = DELAY_UNIT_MM;
+          else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': invalid delay_unit '%s'",
+                             np->name, unit_buf);
+            return -1;
+          }
+          rp->has_delay_unit = true;
+        } else {
+          config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                           "Processor '%s': missing required 'delay_unit'",
+                           np->name);
+          return -1;
+        }
+        break;
+      }
+      case PROCESSOR_TYPE_LOOKAHEAD_LIMITER: {
+        static const char* const allowed[] = {
+            "channels", "monitor_channels", "process_channels",
+            "limit",    "attack",           "attack_unit",
+            "release",  "release_unit",     "delay_processed_only",
+            NULL};
+        if (validate_unknown_fields(params, allowed,
+                                    "LookaheadLimiter processor parameters",
+                                    err) != 0)
+          return -1;
+        static const char* const req_lim[] = {"channels",     "attack",
+                                              "attack_unit",  "release",
+                                              "release_unit", NULL};
+        if (require_json_fields(params, req_lim,
+                                "LookaheadLimiter processor parameters", NULL,
+                                err) != 0)
+          return -1;
+        lookahead_limiter_processor_config_t* lp =
+            &p_conf->parameters.lookahead_limiter;
+        if (parse_json_size_t_strict(params, "channels",
+                                     "LookaheadLimiter processor parameters",
+                                     &lp->channels, NULL, err) != 0)
+          return -1;
+        parse_json_double(params, "limit",
+                          &lp->limit);  // Default double is fine
+        parse_json_double(params, "attack", &lp->attack);
+        parse_json_double(params, "release", &lp->release);
+        lp->delay_processed_only = false;
+        parse_json_bool(params, "delay_processed_only",
+                        &lp->delay_processed_only);
+
+        char a_unit_buf[64], r_unit_buf[64];
+        if (parse_json_str(params, "attack_unit", a_unit_buf,
+                           sizeof(a_unit_buf))) {
+          if (strcmp(a_unit_buf, "us") == 0)
+            lp->attack_unit = TIME_UNIT_US;
+          else if (strcmp(a_unit_buf, "ms") == 0)
+            lp->attack_unit = TIME_UNIT_MS;
+          else if (strcmp(a_unit_buf, "s") == 0)
+            lp->attack_unit = TIME_UNIT_S;
+          else if (strcmp(a_unit_buf, "samples") == 0)
+            lp->attack_unit = TIME_UNIT_SAMPLES;
+          else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': invalid attack_unit '%s'",
+                             np->name, a_unit_buf);
+            return -1;
+          }
+        } else {
+          config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                           "Processor '%s': missing required 'attack_unit'",
+                           np->name);
+          return -1;
+        }
+
+        if (parse_json_str(params, "release_unit", r_unit_buf,
+                           sizeof(r_unit_buf))) {
+          if (strcmp(r_unit_buf, "us") == 0)
+            lp->release_unit = TIME_UNIT_US;
+          else if (strcmp(r_unit_buf, "ms") == 0)
+            lp->release_unit = TIME_UNIT_MS;
+          else if (strcmp(r_unit_buf, "s") == 0)
+            lp->release_unit = TIME_UNIT_S;
+          else if (strcmp(r_unit_buf, "samples") == 0)
+            lp->release_unit = TIME_UNIT_SAMPLES;
+          else {
+            config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                             "Processor '%s': invalid release_unit '%s'",
+                             np->name, r_unit_buf);
+            return -1;
+          }
+        } else {
+          config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                           "Processor '%s': missing required 'release_unit'",
+                           np->name);
+          return -1;
+        }
+
+        if (parse_size_t_array_strict(
+                cJSON_GetObjectItemCaseSensitive(params, "monitor_channels"),
+                "monitor_channels", "LookaheadLimiter processor parameters",
+                &lp->monitor_channels, &lp->monitor_channels_count, err) != 0)
+          return -1;
+        if (parse_size_t_array_strict(
+                cJSON_GetObjectItemCaseSensitive(params, "process_channels"),
+                "process_channels", "LookaheadLimiter processor parameters",
+                &lp->process_channels, &lp->process_channels_count, err) != 0)
+          return -1;
+        break;
+      }
+      default:
+        break;
     }
     p++;
   }

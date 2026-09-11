@@ -48,12 +48,17 @@ static inline uint8_t pcm_reverse_bits_u8(uint8_t b) {
  * @brief Encode a normalized double sample to a 16-bit signed integer [-32768,
  * 32767].
  *
+ * Rounding is truncation toward zero, matching upstream: `audioadapter`'s
+ * `from_scaled_float` scales by 2^15 and converts with
+ * `num_traits::ToPrimitive::to_i16`, which truncates and only reports
+ * out-of-range (→ clamp) values. Upstream pins `0.1 -> 0x0CCC`.
+ *
  * @param val Input double sample in [-1.0, 1.0].
  * @return Encoded 16-bit signed integer.
  */
 static inline int16_t pcm_sample_encode_s16(double val) {
   val = pcm_clamp_sample(val);
-  int32_t ival = (int32_t)lrint(val * 32768.0);
+  int32_t ival = (int32_t)(val * 32768.0);
   if (ival > 32767)
     ival = 32767;
   else if (ival < -32768)
@@ -80,7 +85,8 @@ static inline double pcm_sample_decode_s16(int16_t val) {
  */
 static inline void pcm_sample_encode_s16_bytes(double val, uint8_t* dst) {
   int16_t s16 = pcm_sample_encode_s16(val);
-  memcpy(dst, &s16, sizeof(int16_t));
+  dst[0] = (uint8_t)((uint16_t)s16 & 0xFF);
+  dst[1] = (uint8_t)(((uint16_t)s16 >> 8) & 0xFF);
 }
 
 /**
@@ -101,12 +107,15 @@ static inline double pcm_sample_decode_s16_bytes(const uint8_t* src) {
  * @brief Encode a normalized double sample to a 32-bit signed integer
  * [-2147483648, 2147483647].
  *
+ * Rounding is truncation toward zero, matching `ToPrimitive::to_i32` in
+ * upstream's `audioadapter` conversion.
+ *
  * @param val Input double sample in [-1.0, 1.0].
  * @return Encoded 32-bit signed integer.
  */
 static inline int32_t pcm_sample_encode_s32(double val) {
   val = pcm_clamp_sample(val);
-  int64_t val64 = (int64_t)llrint(val * 2147483648.0);
+  int64_t val64 = (int64_t)(val * 2147483648.0);
   if (val64 > 2147483647)
     val64 = 2147483647;
   else if (val64 < -2147483648LL)
@@ -133,7 +142,11 @@ static inline double pcm_sample_decode_s32(int32_t val) {
  */
 static inline void pcm_sample_encode_s32_bytes(double val, uint8_t* dst) {
   int32_t s32 = pcm_sample_encode_s32(val);
-  memcpy(dst, &s32, sizeof(int32_t));
+  uint32_t u32 = (uint32_t)s32;
+  dst[0] = (uint8_t)(u32 & 0xFF);
+  dst[1] = (uint8_t)((u32 >> 8) & 0xFF);
+  dst[2] = (uint8_t)((u32 >> 16) & 0xFF);
+  dst[3] = (uint8_t)((u32 >> 24) & 0xFF);
 }
 
 /**
@@ -144,9 +157,9 @@ static inline void pcm_sample_encode_s32_bytes(double val, uint8_t* dst) {
  * @return Normalized double sample in [-1.0, 1.0].
  */
 static inline double pcm_sample_decode_s32_bytes(const uint8_t* src) {
-  int32_t val;
-  memcpy(&val, src, sizeof(int32_t));
-  return pcm_sample_decode_s32(val);
+  uint32_t u32 = ((uint32_t)src[0]) | ((uint32_t)src[1] << 8) |
+                 ((uint32_t)src[2] << 16) | ((uint32_t)src[3] << 24);
+  return pcm_sample_decode_s32((int32_t)u32);
 }
 
 // MARK: - 24-Bit Signed Integer Format (S24)
@@ -155,17 +168,25 @@ static inline double pcm_sample_decode_s32_bytes(const uint8_t* src) {
  * @brief Encode a normalized double sample to a 24-bit signed integer
  * [-8388608, 8388607].
  *
+ * Reproduces upstream's two-step conversion exactly. `audioadapter` represents
+ * every 24-bit format as a *left-justified* `i32`: it scales by 2^31 and
+ * truncates toward zero (`ToPrimitive::to_i32`), then keeps only the top three
+ * bytes, which is an arithmetic `>> 8` and therefore **floors**. The two steps
+ * are not interchangeable with a single `floor(val * 2^23)` — truncating first
+ * can move the value across a 24-bit boundary — so both are performed here.
+ * Upstream pins `0.1 -> 0x0CCCCC` and `-0.1 -> 0xF33333`.
+ *
  * @param val Input double sample in [-1.0, 1.0].
  * @return Encoded 24-bit signed integer (right-justified in 32-bit output).
  */
 static inline int32_t pcm_sample_encode_s24(double val) {
   val = pcm_clamp_sample(val);
-  int32_t val24 = (int32_t)lrint(val * 8388608.0);
-  if (val24 > 8388607)
-    val24 = 8388607;
-  else if (val24 < -8388608)
-    val24 = -8388608;
-  return val24;
+  int64_t val32 = (int64_t)(val * 2147483648.0);
+  if (val32 > 2147483647)
+    val32 = 2147483647;
+  else if (val32 < -2147483648LL)
+    val32 = -2147483648LL;
+  return (int32_t)(val32 >> 8);
 }
 
 /**
@@ -244,9 +265,9 @@ static inline void pcm_sample_encode_s24_4_rj_bytes(double val, uint8_t* dst) {
  * @return Normalized double sample in [-1.0, 1.0].
  */
 static inline double pcm_sample_decode_s24_4_rj_bytes(const uint8_t* src) {
-  int32_t val;
-  memcpy(&val, src, sizeof(int32_t));
-  val = (int32_t)((uint32_t)val << 8) >> 8;
+  uint32_t u32 = ((uint32_t)src[0]) | ((uint32_t)src[1] << 8) |
+                 ((uint32_t)src[2] << 16) | ((uint32_t)src[3] << 24);
+  int32_t val = (int32_t)(u32 << 8) >> 8;
   return pcm_sample_decode_s24(val);
 }
 
@@ -259,7 +280,11 @@ static inline double pcm_sample_decode_s24_4_rj_bytes(const uint8_t* src) {
  */
 static inline void pcm_sample_encode_s24_4_lj_bytes(double val, uint8_t* dst) {
   int32_t s24 = pcm_sample_encode_s24_msb(val);
-  memcpy(dst, &s24, sizeof(int32_t));
+  uint32_t u32 = (uint32_t)s24;
+  dst[0] = (uint8_t)(u32 & 0xFF);
+  dst[1] = (uint8_t)((u32 >> 8) & 0xFF);
+  dst[2] = (uint8_t)((u32 >> 16) & 0xFF);
+  dst[3] = (uint8_t)((u32 >> 24) & 0xFF);
 }
 
 /**
@@ -270,8 +295,8 @@ static inline void pcm_sample_encode_s24_4_lj_bytes(double val, uint8_t* dst) {
  * @return Normalized double sample in [-1.0, 1.0].
  */
 static inline double pcm_sample_decode_s24_4_lj_bytes(const uint8_t* src) {
-  uint32_t u32;
-  memcpy(&u32, src, sizeof(uint32_t));
+  uint32_t u32 = ((uint32_t)src[0]) | ((uint32_t)src[1] << 8) |
+                 ((uint32_t)src[2] << 16) | ((uint32_t)src[3] << 24);
   int32_t val = (int32_t)(u32 & (uint32_t)0xFFFFFF00);
   return pcm_sample_decode_s32(val);
 }
@@ -300,29 +325,6 @@ static inline double pcm_sample_decode_f32(float val) {
 }
 
 /**
- * @brief Encode a normalized double sample into a 4-byte float buffer.
- *
- * @param val Input double sample in [-1.0, 1.0].
- * @param dst Target 4-byte output buffer.
- */
-static inline void pcm_sample_encode_f32_bytes(double val, uint8_t* dst) {
-  float fval = pcm_sample_encode_f32(val);
-  memcpy(dst, &fval, sizeof(float));
-}
-
-/**
- * @brief Decode a 4-byte float buffer to a normalized double sample.
- *
- * @param src Source 4-byte buffer.
- * @return Normalized double sample in [-1.0, 1.0].
- */
-static inline double pcm_sample_decode_f32_bytes(const uint8_t* src) {
-  float fval;
-  memcpy(&fval, src, sizeof(float));
-  return pcm_sample_decode_f32(fval);
-}
-
-/**
  * @brief Reinterpret a 32-bit uint32_t raw bit pattern as a 32-bit float.
  *
  * @param bits Raw uint32_t bit pattern.
@@ -344,6 +346,34 @@ static inline uint32_t pcm_sample_u32_from_f32(float fval) {
   uint32_t bits;
   memcpy(&bits, &fval, sizeof(uint32_t));
   return bits;
+}
+
+/**
+ * @brief Encode a normalized double sample into a 4-byte float buffer.
+ *
+ * @param val Input double sample in [-1.0, 1.0].
+ * @param dst Target 4-byte output buffer.
+ */
+static inline void pcm_sample_encode_f32_bytes(double val, uint8_t* dst) {
+  float fval = pcm_sample_encode_f32(val);
+  uint32_t u32 = pcm_sample_u32_from_f32(fval);
+  dst[0] = (uint8_t)(u32 & 0xFF);
+  dst[1] = (uint8_t)((u32 >> 8) & 0xFF);
+  dst[2] = (uint8_t)((u32 >> 16) & 0xFF);
+  dst[3] = (uint8_t)((u32 >> 24) & 0xFF);
+}
+
+/**
+ * @brief Decode a 4-byte float buffer to a normalized double sample.
+ *
+ * @param src Source 4-byte buffer.
+ * @return Normalized double sample in [-1.0, 1.0].
+ */
+static inline double pcm_sample_decode_f32_bytes(const uint8_t* src) {
+  uint32_t u32 = ((uint32_t)src[0]) | ((uint32_t)src[1] << 8) |
+                 ((uint32_t)src[2] << 16) | ((uint32_t)src[3] << 24);
+  float fval = pcm_sample_f32_from_u32(u32);
+  return pcm_sample_decode_f32(fval);
 }
 
 /**
@@ -385,7 +415,11 @@ static inline double pcm_sample_decode_f64(double val) {
  */
 static inline void pcm_sample_encode_f64_bytes(double val, uint8_t* dst) {
   double dval = pcm_sample_encode_f64(val);
-  memcpy(dst, &dval, sizeof(double));
+  uint64_t u64;
+  memcpy(&u64, &dval, sizeof(uint64_t));
+  for (int i = 0; i < 8; i++) {
+    dst[i] = (uint8_t)((u64 >> (i * 8)) & 0xFF);
+  }
 }
 
 /**
@@ -396,8 +430,12 @@ static inline void pcm_sample_encode_f64_bytes(double val, uint8_t* dst) {
  * @return Normalized double sample in [-1.0, 1.0].
  */
 static inline double pcm_sample_decode_f64_bytes(const uint8_t* src) {
+  uint64_t u64 = 0;
+  for (int i = 0; i < 8; i++) {
+    u64 |= ((uint64_t)src[i]) << (i * 8);
+  }
   double dval;
-  memcpy(&dval, src, sizeof(double));
+  memcpy(&dval, &u64, sizeof(double));
   return pcm_sample_decode_f64(dval);
 }
 

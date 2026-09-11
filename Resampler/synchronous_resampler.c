@@ -241,7 +241,7 @@ static resampler_error_t synchronous_resampler_process(
   if (!resampler || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
   size_t valid_frames = audio_chunk_get_valid_frames(input);
   if (valid_frames > resampler->chunk_size) {
-    return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
+    valid_frames = resampler->chunk_size;
   }
   if (audio_chunk_get_channels(input) != resampler->channels) {
     return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
@@ -261,8 +261,11 @@ static resampler_error_t synchronous_resampler_process(
     if (sub_valid > resampler->sub_fft_in) sub_valid = resampler->sub_fft_in;
 
     for (size_t ch = 0; ch < resampler->channels; ch++) {
-      const double* src_ptr = audio_chunk_get_channel(input, ch) + in_offset;
-      double* out_ptr = audio_chunk_get_channel(output, ch) + out_offset;
+      const double* src = audio_chunk_get_channel(input, ch);
+      double* out = audio_chunk_get_channel(output, ch);
+      if (!src || !out) continue;
+      const double* src_ptr = src + in_offset;
+      double* out_ptr = out + out_offset;
       double* carry_ptr = resampler->carries[ch];
 
       // Step 1. Place the input block at the start of a length-2N

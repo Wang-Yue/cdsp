@@ -45,12 +45,10 @@ static int clipper_config_validate(const filter_config_t* config,
   if (!config || config->type != FILTER_TYPE_CLIPPER) return -1;
   const clipper_config_t* params = &config->parameters.clipper;
   if (!params) return 0;
-  if (!isfinite(params->clip_limit) || params->clip_limit < -120.0 ||
-      params->clip_limit > 20.0) {
-    config_error_set(
-        err, CONFIG_ERR_INVALID_FILTER,
-        "Clipper clip_limit must be between -120.0 dB and 20.0 dB, got %g",
-        params->clip_limit);
+  if (!isfinite(params->clip_limit)) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Clipper clip_limit must be a finite number, got %g",
+                     params->clip_limit);
     return -1;
   }
   return 0;

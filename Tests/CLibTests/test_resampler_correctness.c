@@ -1035,4 +1035,149 @@ TEST(Slip_DC_StaysFlatAcrossCorrection) {
   resampler_free(res);
 }
 
+TEST(AsyncSinc_SincLenRoundedToMultipleOf8) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  cfg.has_sinc_len = true;
+  cfg.sinc_len = 100;  // Not a multiple of 8; should round to 104
+  cfg.has_oversampling_factor = true;
+  cfg.oversampling_factor = 128;
+  cfg.has_interpolation = true;
+  strncpy(cfg.interpolation, "Cubic", sizeof(cfg.interpolation) - 1);
+  cfg.has_window = true;
+  strncpy(cfg.window, "BlackmanHarris2", sizeof(cfg.window) - 1);
+
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 48000, 1, 1024, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  // output delay is (sinc_len * ratio) / 2.
+  // With 104 taps: 104 * (48000/44100) / 2 = 56 samples (vs 54 samples for 100
+  // taps).
+  size_t delay = resampler_get_output_delay(res);
+  ASSERT_EQ(56, delay);
+
+  resampler_free(res);
+}
+
+TEST(AsyncSinc_Reset_RecomputesNeededLengths) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  strncpy(cfg.profile, "VeryFast", sizeof(cfg.profile) - 1);
+  cfg.has_profile = true;
+
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 44100, 1, 1024, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  size_t initial_out = resampler_get_output_frames_next(res);
+
+  // Set relative ratio to 1.1 and process frames
+  resampler_set_relative_ratio(res, 1.1);
+  audio_chunk_t* in = audio_chunk_create(1024, 1);
+  audio_chunk_t* out = audio_chunk_create(2048, 1);
+  audio_chunk_set_valid_frames(in, 1024);
+
+  for (int i = 0; i < 5; i++) {
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(res, in, out));
+  }
+
+  // After processing at ratio 1.1, needed_output_size is higher
+  size_t shifted_out = resampler_get_output_frames_next(res);
+  ASSERT_TRUE(shifted_out > initial_out);
+
+  // Reset should restore lengths to base_ratio initial state
+  resampler_reset(res);
+  size_t reset_out = resampler_get_output_frames_next(res);
+  ASSERT_EQ(initial_out, reset_out);
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  resampler_free(res);
+}
+
+TEST(AsyncPoly_Reset_RecomputesNeededLengths) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
+  strncpy(cfg.profile, "VeryFast", sizeof(cfg.profile) - 1);
+  cfg.has_profile = true;
+
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 44100, 1, 1024, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  size_t initial_out = resampler_get_output_frames_next(res);
+
+  resampler_set_relative_ratio(res, 1.1);
+  audio_chunk_t* in = audio_chunk_create(1024, 1);
+  audio_chunk_t* out = audio_chunk_create(2048, 1);
+  audio_chunk_set_valid_frames(in, 1024);
+
+  for (int i = 0; i < 5; i++) {
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(res, in, out));
+  }
+
+  size_t shifted_out = resampler_get_output_frames_next(res);
+  ASSERT_TRUE(shifted_out > initial_out);
+
+  resampler_reset(res);
+  size_t reset_out = resampler_get_output_frames_next(res);
+  ASSERT_EQ(initial_out, reset_out);
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  resampler_free(res);
+}
+
+TEST(AsyncSinc_LargeUpsampling_DoesNotExceedMaxOutput) {
+  // 44100 -> 352800 (8x upsampling) with 1.1 relative ratio
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  strncpy(cfg.profile, "Fast", sizeof(cfg.profile) - 1);
+  cfg.has_profile = true;
+
+  size_t chunk_size = 512;
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 44100, 352800, 1, chunk_size, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  resampler_set_relative_ratio(res, 1.1);
+  size_t max_out = resampler_get_max_output_frames(res);
+
+  audio_chunk_t* in = audio_chunk_create(chunk_size, 1);
+  audio_chunk_t* out = audio_chunk_create(max_out, 1);
+  audio_chunk_set_valid_frames(in, chunk_size);
+
+  for (int i = 0; i < 20; i++) {
+    size_t needed_out = resampler_get_output_frames_next(res);
+    ASSERT_TRUE(needed_out <= max_out);
+    resampler_error_t err = resampler_process(res, in, out);
+    ASSERT_EQ(RESAMPLER_OK, err);
+  }
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  resampler_free(res);
+}
+
+TEST(Async_SetRelativeRatio_RejectsNaN) {
+  resampler_config_t cfg;
+  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  strncpy(cfg.profile, "VeryFast", sizeof(cfg.profile) - 1);
+  cfg.has_profile = true;
+
+  resampler_t* res =
+      resampler_create_from_config(&cfg, 48000, 48000, 1, 512, NULL);
+  ASSERT_TRUE(res != NULL);
+
+  double orig_ratio = resampler_get_ratio(res);
+  resampler_set_relative_ratio(res, NAN);
+  ASSERT_EQ(orig_ratio, resampler_get_ratio(res));
+
+  resampler_set_relative_ratio(res, INFINITY);
+  ASSERT_EQ(orig_ratio, resampler_get_ratio(res));
+
+  resampler_free(res);
+}
+
 TEST_MAIN()

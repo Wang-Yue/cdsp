@@ -44,7 +44,8 @@ typedef struct loudness_filter loudness_filter_t;
  * @param filter The loudness filter instance.
  * @param volume The current volume in dB.
  */
-static void recompute_shelves(loudness_filter_t* filter, double volume) {
+static void recompute_shelves(loudness_filter_t* filter, double volume,
+                              bool is_initial) {
   double ref = filter->params.has_reference_level
                    ? filter->params.reference_level
                    : -25.0;
@@ -54,7 +55,9 @@ static void recompute_shelves(loudness_filter_t* filter, double volume) {
   double diff = (ref - volume) / 20.0;
   double boost_factor = diff < 0.0 ? 0.0 : (diff > 1.0 ? 1.0 : diff);
 
-  filter->is_processing_active = boost_factor > 0.001;
+  // Upstream uses > 0.01 at construction time and > 0.001 during runtime
+  // updates
+  filter->is_processing_active = boost_factor > (is_initial ? 0.01 : 0.001);
 
   // Calculate target low and high boosts.
   double low_boost =
@@ -280,10 +283,10 @@ static void* loudness_filter_create(const char* name,
     return NULL;
   }
 
-  double init_vol = processing_parameters_get_current_volume_for_fader(
+  double init_vol = processing_parameters_get_target_volume_for_fader(
       filter->processing_parameters, filter->params.fader);
   filter->last_volume = init_vol;
-  recompute_shelves(filter, init_vol);
+  recompute_shelves(filter, init_vol, true);
 
   return filter;
 }
@@ -307,7 +310,7 @@ static void loudness_filter_process(void* instance, mutable_waveform_t waveform,
   // Recompute filter coefficients only if the volume has changed significantly.
   if (fabs(current_vol - filter->last_volume) > 0.01) {
     filter->last_volume = current_vol;
-    recompute_shelves(filter, current_vol);
+    recompute_shelves(filter, current_vol, false);
   }
 
   // If the volume is high enough that loudness compensation is not needed,
@@ -344,7 +347,7 @@ static void loudness_filter_transfer_state(void* dest_ptr,
   g_biquad_vtable.transfer_state(dest->high_shelf_filter,
                                  src->high_shelf_filter);
   dest->last_volume = src->last_volume;
-  recompute_shelves(dest, dest->last_volume);
+  recompute_shelves(dest, dest->last_volume, false);
 }
 
 const filter_vtable_t g_loudness_vtable = {

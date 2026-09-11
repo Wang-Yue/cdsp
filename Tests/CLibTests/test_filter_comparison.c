@@ -1067,6 +1067,33 @@ TEST(BiquadCombo_GraphicEqualizer) {
   compare_biquad_combo_geq(20.0, 20000.0, gains, 5, 1e-7, "geq");
 }
 
+TEST(BiquadCombo_GraphicEqualizer_EmptyGainsPassthrough) {
+  biquad_combo_config_t combo_cfg = {
+      .type = BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER,
+      .freq_min = 20.0,
+      .has_freq_min = true,
+      .freq_max = 20000.0,
+      .has_freq_max = true,
+      .gains = NULL,
+      .gains_count = 0,
+  };
+  filter_config_t cfg = {
+      .type = FILTER_TYPE_BIQUAD_COMBO,
+      .parameters.biquad_combo = combo_cfg,
+  };
+  filter_t* f = filter_create("geq_empty", &cfg, 48000, 256, NULL, NULL);
+  ASSERT_TRUE(f != NULL);
+  double in_out[256];
+  for (int i = 0; i < 256; i++) in_out[i] = (double)i / 256.0;
+  double orig[256];
+  memcpy(orig, in_out, sizeof(orig));
+  filter_process(f, in_out, 256);
+  for (int i = 0; i < 256; i++) {
+    ASSERT_NEAR(orig[i], in_out[i], 1e-15);
+  }
+  filter_free(f);
+}
+
 TEST(BiquadCombo_NPointPeq) {
   peq_band_t bands[5] = {
       {.freq = 80.0, .q = 0.707, .gain = 3.0},

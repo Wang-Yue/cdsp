@@ -105,11 +105,15 @@ static bool populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
       const mixer_source_t* src = &map->sources[j];
       if (src->mute) continue;
 
-      // Calculate linear gain from dB or linear configuration
-      double default_gain = (src->scale == GAIN_SCALE_LINEAR) ? 1.0 : 0.0;
-      double gain = src->has_gain ? src->gain : default_gain;
+      // Calculate linear gain from dB or linear configuration.
+      // Upstream's `MixerSource::gain()` is `unwrap_or_default()`, i.e. 0.0
+      // when the key is absent, *regardless of scale* - so a `scale: linear`
+      // source with no gain is silent, not unity. mixer_source_gain_value()
+      // already implements that.
+      double gain = mixer_source_gain_value(src);
       double lin_gain =
           (src->scale == GAIN_SCALE_LINEAR) ? gain : double_from_db(gain);
+
       // Invert phase if requested (represented as a negative linear gain
       // coefficient)
       if (src->inverted) {
@@ -303,6 +307,15 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
       return -1;
     }
 
+    // Upstream's equivalent check is dead code: `validate_mixer` declares and
+    // clears `input_channels` and tests `contains()`, but never pushes to it
+    // (mixer.rs:135/153/163 — the error string even carries a typo, "listed
+    // mote than once", so the branch has never run). `Mixer::from_config`
+    // meanwhile handles duplicates correctly, pushing both sources so
+    // `process_chunk` sums them. Rejecting here would refuse configs that real
+    // CamillaDSP loads and plays, so this is only a warning. The port's own
+    // `populate_mapping` accumulates a flat source list per destination and
+    // sums duplicates the same way.
     bool* seen_sources = (bool*)calloc(
         mixer->channels_in > 0 ? mixer->channels_in : 1, sizeof(bool));
     if (!seen_sources) {
@@ -320,13 +333,10 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
         return -1;
       }
       if (seen_sources[src_ch]) {
-        config_error_set(
-            err, CONFIG_ERR_INVALID_MIXER,
-            "mixer source channel %d listed more than once for dest %d", src_ch,
-            dest);
-        free(seen_sources);
-        free(seen_dests);
-        return -1;
+        logger_warn(&g_logger,
+                    "mixer source channel %d is listed more than once for "
+                    "dest %d; the entries will be summed",
+                    src_ch, dest);
       }
       seen_sources[src_ch] = true;
     }

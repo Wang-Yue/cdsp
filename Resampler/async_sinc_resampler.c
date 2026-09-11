@@ -156,7 +156,7 @@ static void async_sinc_resampler_free(void* impl) {
 static void async_sinc_resampler_set_relative_ratio(void* impl,
                                                     double multiplier) {
   async_sinc_resampler_t* resampler = (async_sinc_resampler_t*)impl;
-  if (!resampler) return;
+  if (!resampler || isnan(multiplier) || isinf(multiplier)) return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
   if (multiplier < min_ratio) multiplier = min_ratio;
   if (multiplier > resampler->max_relative_ratio)
@@ -270,6 +270,18 @@ static void run_nearest(async_sinc_resampler_t* resampler, size_t output_frames,
  * @param output_frames Number of output frames to generate.
  * @param output Pointer to the output audio chunk.
  */
+static inline size_t get_active_channel_count(
+    const async_sinc_resampler_t* resampler, const audio_chunk_t* output) {
+  size_t active = 0;
+  for (size_t ch = 0; ch < resampler->channels; ch++) {
+    if (audio_buffers_get_channel(resampler->input_buffer, ch) &&
+        audio_chunk_get_channel(output, ch)) {
+      active++;
+    }
+  }
+  return active;
+}
+
 static void run_cubic(async_sinc_resampler_t* resampler, size_t output_frames,
                       audio_chunk_t* output) {
   size_t s_len = resampler->sinc_len;
@@ -280,7 +292,7 @@ static void run_cubic(async_sinc_resampler_t* resampler, size_t output_frames,
   const double* idx_buf = resampler->idx_scratch;
   const double* frac_buf = resampler->frac_scratch;
 
-  if (resampler->channels >= 2) {
+  if (get_active_channel_count(resampler, output) >= 2) {
     double* combined = resampler->combined_scratch;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double idx = idx_buf[frame];
@@ -360,6 +372,7 @@ static void run_cubic(async_sinc_resampler_t* resampler, size_t output_frames,
         double a1 = -1.0 / 3.0 * p0 - 0.5 * p1 + p2 - 1.0 / 6.0 * p3;
         double a2 = 0.5 * (p0 + p2) - p1;
         double a3 = 0.5 * (p1 - p2) + 1.0 / 6.0 * (p3 - p0);
+        // Horner form with FMA: a0 + x*(a1 + x*(a2 + x*a3))
         double x = frac_offset;
         out[frame] = a0 + x * (a1 + x * (a2 + x * a3));
       }
@@ -387,7 +400,7 @@ static void run_quadratic(async_sinc_resampler_t* resampler,
   const double* idx_buf = resampler->idx_scratch;
   const double* frac_buf = resampler->frac_scratch;
 
-  if (resampler->channels > 2) {
+  if (get_active_channel_count(resampler, output) > 2) {
     double* combined = resampler->combined_scratch;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double idx = idx_buf[frame];
@@ -459,6 +472,7 @@ static void run_quadratic(async_sinc_resampler_t* resampler,
         double a2 = p0 - 2.0 * p1 + p2;
         double a1 = -3.0 * p0 + 4.0 * p1 - p2;
         double a0 = 2.0 * p0;
+        // Horner form with FMA: 0.5 * (a0 + x*(a1 + x*a2))
         double x = frac_offset;
         out[frame] = 0.5 * (a0 + x * (a1 + x * a2));
       }
@@ -486,7 +500,7 @@ static void run_linear(async_sinc_resampler_t* resampler, size_t output_frames,
   const double* idx_buf = resampler->idx_scratch;
   const double* frac_buf = resampler->frac_scratch;
 
-  if (resampler->channels > 2) {
+  if (get_active_channel_count(resampler, output) > 2) {
     double* combined = resampler->combined_scratch;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double idx = idx_buf[frame];
@@ -562,6 +576,9 @@ static resampler_error_t async_sinc_resampler_process(
   if (valid_frames > resampler->max_input_frames ||
       resampler->needed_input_size > resampler->max_input_frames) {
     return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
+  }
+  if (valid_frames > resampler->needed_input_size) {
+    valid_frames = resampler->needed_input_size;
   }
   if (audio_chunk_get_channels(input) != resampler->channels ||
       audio_chunk_get_channels(output) != resampler->channels) {
@@ -685,7 +702,17 @@ static void* async_sinc_resampler_create_impl(
         "AsyncSincResampler: oversampling_factor must be positive");
     return NULL;
   }
-  if (max_relative_ratio < 1.0) max_relative_ratio = 1.1;
+  if (sinc_len == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSincResampler: sinc_len must be positive");
+    return NULL;
+  }
+  sinc_len = (sinc_len + 7) & ~(size_t)7;
+  if (max_relative_ratio < 1.0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncSincResampler: max_relative_ratio must be >= 1.0");
+    return NULL;
+  }
 
   async_sinc_resampler_t* resampler =
       (async_sinc_resampler_t*)calloc(1, sizeof(async_sinc_resampler_t));
@@ -758,11 +785,8 @@ static void* async_sinc_resampler_create_impl(
   if (fixed == FIXED_ASYNC_OUTPUT) {
     resampler->max_output_frames = chunk_size;
   } else {
-    double most_neg_last_index = -((double)sinc_len - 1.0);
-    double max_ratio_abs = resampler->base_ratio * max_relative_ratio;
     double raw_max =
-        ((double)chunk_size - (double)(sinc_len + 1) - most_neg_last_index) *
-        max_ratio_abs;
+        (double)chunk_size * resampler->base_ratio * max_relative_ratio + 10.0;
 
     if (isnan(raw_max) || isinf(raw_max) || raw_max < 0.0 ||
         raw_max > (double)(SIZE_MAX - 32)) {
@@ -818,6 +842,16 @@ static int async_sinc_resampler_config_validate(
         err, CONFIG_ERR_VALIDATION,
         "AsyncSinc: must specify either profile or free parameters");
     return -1;
+  }
+  if (has_free) {
+    if (!config->has_sinc_len || !config->has_oversampling_factor ||
+        !config->has_window || !config->has_interpolation) {
+      config_error_set(
+          err, CONFIG_ERR_VALIDATION,
+          "AsyncSinc: incomplete free parameter set; sinc_len, "
+          "oversampling_factor, window, and interpolation are all required");
+      return -1;
+    }
   }
   if (config->has_window) {
     if (window_function_from_string(config->window, WINDOW_FUNCTION_LAST) ==
@@ -911,6 +945,7 @@ static void async_sinc_resampler_reset(void* impl) {
   resampler->last_index = -((double)resampler->sinc_len - 1.0);
   resampler->resample_ratio = resampler->base_ratio;
   resampler->target_ratio = resampler->base_ratio;
+  async_sinc_resampler_update_lengths(resampler);
 }
 
 const resampler_vtable_t g_async_sinc_resampler_vtable = {

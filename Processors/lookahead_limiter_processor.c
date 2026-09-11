@@ -84,6 +84,11 @@ static int lookahead_limiter_config_validate(const processor_config_t* config,
                      "LookaheadLimiter: channels must be > 0, got 0");
     return -1;
   }
+  if (isnan(p->limit) || p->limit == INFINITY) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "LookaheadLimiter: limit must not be NaN or +inf.");
+    return -1;
+  }
   if (p->attack < 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "LookaheadLimiter: attack must be >= 0, got %g",

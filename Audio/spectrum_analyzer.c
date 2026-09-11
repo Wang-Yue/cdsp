@@ -50,6 +50,94 @@ struct spectrum_analyzer {
 
 static const logger_t g_logger = {"dsp.spectrum_analyzer"};
 
+static size_t next_power_of_two(size_t v) {
+  if (v <= 1) return 1;
+  v--;
+  v |= v >> 1;
+  v |= v >> 2;
+  v |= v >> 4;
+  v |= v >> 8;
+  v |= v >> 16;
+#if SIZE_MAX > 0xFFFFFFFF
+  v |= v >> 32;
+#endif
+  v++;
+  return v;
+}
+
+static size_t spectrum_fft_length_for(float min_freq, size_t samplerate) {
+  double min_len = ceil((double)samplerate / (double)min_freq);
+  size_t len = (min_len > 1.0) ? (size_t)min_len : 1;
+  size_t p2 = next_power_of_two(len);
+  if (p2 > AUDIO_HISTORY_BUFFER_CAPACITY) {
+    p2 = AUDIO_HISTORY_BUFFER_CAPACITY;
+  }
+  return p2;
+}
+
+static bool spectrum_analyzer_reconfigure_fft(spectrum_analyzer_t* analyzer,
+                                              size_t new_n) {
+  if (!analyzer || new_n == 0) return false;
+  real_fftf_t* new_setup = real_fftf_create(new_n);
+  if (!new_setup) return false;
+
+  float* new_window = (float*)calloc(new_n, sizeof(float));
+  float* new_data = (float*)calloc(new_n, sizeof(float));
+  complexf_t* new_spec = (complexf_t*)calloc(new_n / 2 + 1, sizeof(complexf_t));
+  float* new_mags = (float*)calloc(new_n / 2 + 1, sizeof(float));
+  float* new_db_mags = (float*)calloc(new_n / 2 + 1, sizeof(float));
+
+  if (!new_window || !new_data || !new_spec || !new_mags || !new_db_mags) {
+    real_fftf_free(new_setup);
+    if (new_window) free(new_window);
+    if (new_data) free(new_data);
+    if (new_spec) free(new_spec);
+    if (new_mags) free(new_mags);
+    if (new_db_mags) free(new_db_mags);
+    return false;
+  }
+
+  // Compute symmetric Hann window matching upstream CamillaDSP
+  // (src/spectrum.rs:152-156)
+  float sum = 0.0f;
+  if (new_n > 1) {
+    double denom = (double)(new_n - 1);
+    for (size_t i = 0; i < new_n; i++) {
+      new_window[i] =
+          (float)(0.5 * (1.0 - cos(2.0 * M_PI * (double)i / denom)));
+      sum += new_window[i];
+    }
+  } else if (new_n == 1) {
+    new_window[0] = 1.0f;
+    sum = 1.0f;
+  }
+
+  if (analyzer->fft_setup) real_fftf_free(analyzer->fft_setup);
+  if (analyzer->window) free(analyzer->window);
+  if (analyzer->data) free(analyzer->data);
+  if (analyzer->spec) free(analyzer->spec);
+  if (analyzer->magnitudes) free(analyzer->magnitudes);
+  if (analyzer->db_magnitudes) free(analyzer->db_magnitudes);
+
+  analyzer->fft_n = new_n;
+  analyzer->fft_setup = new_setup;
+  analyzer->window = new_window;
+  analyzer->window_sum = sum;
+  analyzer->data = new_data;
+  analyzer->spec = new_spec;
+  analyzer->magnitudes = new_mags;
+  analyzer->db_magnitudes = new_db_mags;
+
+  // Invalidate cached plan
+  analyzer->plan.samplerate = 0;
+
+  return true;
+}
+
+size_t spectrum_analyzer_get_fft_n(const spectrum_analyzer_t* analyzer) {
+  return analyzer ? analyzer->fft_n : 0;
+}
+
 spectrum_analyzer_t* spectrum_analyzer_create(void) {
   spectrum_analyzer_t* analyzer =
       (spectrum_analyzer_t*)calloc(1, sizeof(spectrum_analyzer_t));
@@ -57,23 +145,12 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
     logger_error(&g_logger, "Memory allocation failed for spectrum_analyzer_t");
     return NULL;
   }
-  analyzer->fft_n = 4096;
-  analyzer->fft_setup = real_fftf_create(4096);
-  analyzer->window = (float*)calloc(analyzer->fft_n, sizeof(float));
-  analyzer->data = (float*)calloc(analyzer->fft_n, sizeof(float));
-  analyzer->spec =
-      (complexf_t*)calloc(analyzer->fft_n / 2 + 1, sizeof(complexf_t));
-  analyzer->magnitudes = (float*)calloc(analyzer->fft_n / 2 + 1, sizeof(float));
-  analyzer->db_magnitudes =
-      (float*)calloc(analyzer->fft_n / 2 + 1, sizeof(float));
 
-  if (analyzer->window) {
-    dsp_ops_float_hann_window(analyzer->window, analyzer->fft_n);
-    float sum = 0.0f;
-    for (size_t i = 0; i < analyzer->fft_n; i++) {
-      sum += analyzer->window[i];
-    }
-    analyzer->window_sum = sum;
+  if (!spectrum_analyzer_reconfigure_fft(analyzer, 4096)) {
+    logger_error(&g_logger,
+                 "Failed to configure initial FFT for spectrum analyzer");
+    spectrum_analyzer_free(analyzer);
+    return NULL;
   }
 
   analyzer->out_capacity = 4096;
@@ -85,9 +162,7 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
   analyzer->out_magnitudes =
       (float*)calloc(analyzer->out_capacity, sizeof(float));
 
-  if (!analyzer->fft_setup || !analyzer->window || !analyzer->data ||
-      !analyzer->spec || !analyzer->magnitudes || !analyzer->db_magnitudes ||
-      !analyzer->plan.frequencies || !analyzer->plan.ranges ||
+  if (!analyzer->plan.frequencies || !analyzer->plan.ranges ||
       !analyzer->out_magnitudes) {
     logger_error(&g_logger,
                  "Failed to allocate memory buffers for spectrum analyzer");
@@ -126,10 +201,16 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
       !analyzer->plan.ranges || !analyzer->out_magnitudes) {
     return SPECTRUM_ERROR_INVALID_PARAM;
   }
-  if (samplerate == 0 || n_bins == 0 || n_bins > analyzer->out_capacity ||
-      min_freq <= 0.0f || max_freq <= min_freq ||
-      max_freq > (float)samplerate / 2.0f) {
+  if (samplerate == 0 || n_bins < 2 || n_bins > analyzer->out_capacity ||
+      min_freq <= 0.0f || max_freq <= min_freq) {
     return SPECTRUM_ERROR_INVALID_PARAM;
+  }
+
+  size_t needed_fft_n = spectrum_fft_length_for(min_freq, samplerate);
+  if (needed_fft_n != analyzer->fft_n) {
+    if (!spectrum_analyzer_reconfigure_fft(analyzer, needed_fft_n)) {
+      return SPECTRUM_ERROR_INVALID_PARAM;
+    }
   }
 
   // Read data from history buffer directly into preallocated instance buffer
@@ -194,10 +275,10 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
       float high_f = powf(10.0f, high_log);
 
       // Convert frequency boundaries to FFT bin indices
-      int low_k = (int)ceilf(
-          (low_f * (float)analyzer->fft_n / (float)samplerate) - 0.5f);
-      int high_k = (int)floorf(
-          (high_f * (float)analyzer->fft_n / (float)samplerate) + 0.5f);
+      int low_k =
+          (int)floorf(low_f * (float)analyzer->fft_n / (float)samplerate);
+      int high_k =
+          (int)ceilf(high_f * (float)analyzer->fft_n / (float)samplerate);
       int nearest_k =
           (int)roundf(center_f * (float)analyzer->fft_n / (float)samplerate);
 

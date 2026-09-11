@@ -173,4 +173,100 @@ TEST(HistoryBufferAppendLargeChunkExceedingCapacity) {
   audio_history_buffer_free(buffer);
 }
 
+TEST(MaxFreqAboveNyquistClamped) {
+  spectrum_analyzer_t* analyzer = spectrum_analyzer_create();
+  audio_history_buffer_t* buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 1);
+
+  // 32 kHz sample rate; Nyquist is 16 kHz, max_freq is 20 kHz
+  int samplerate = 32000;
+  for (size_t i = 0; i < 8; i++) {
+    audio_chunk_t* chunk = sine_chunk(1000.0, samplerate, 1024, i * 1024, 1);
+    audio_history_buffer_append(buffer, chunk);
+    audio_chunk_free(chunk);
+  }
+
+  spectrum_result_t result = {0};
+  const size_t ch0 = 0;
+  spectrum_status_t status = spectrum_analyzer_compute(
+      analyzer, buffer, &ch0, 20.0f, 20000.0f, 32, samplerate, &result);
+  ASSERT_EQ(SPECTRUM_OK, status);
+  ASSERT_EQ(32, result.count);
+
+  audio_history_buffer_free(buffer);
+  spectrum_analyzer_free(analyzer);
+}
+
+TEST(DynamicFftLength) {
+  spectrum_analyzer_t* analyzer = spectrum_analyzer_create();
+  ASSERT_TRUE(analyzer != NULL);
+  ASSERT_EQ(4096, spectrum_analyzer_get_fft_n(analyzer));
+
+  audio_history_buffer_t* buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 1);
+
+  // Fill buffer with 32768 samples
+  for (size_t i = 0; i < 32; i++) {
+    audio_chunk_t* chunk = sine_chunk(1000.0, 96000, 1024, i * 1024, 1);
+    audio_history_buffer_append(buffer, chunk);
+    audio_chunk_free(chunk);
+  }
+
+  spectrum_result_t result = {0};
+  const size_t ch0 = 0;
+
+  // 1. 96 kHz with min_freq = 20 -> ceil(96000/20) = 4800 -> 8192
+  spectrum_status_t status = spectrum_analyzer_compute(
+      analyzer, buffer, &ch0, 20.0f, 20000.0f, 32, 96000, &result);
+  ASSERT_EQ(SPECTRUM_OK, status);
+  ASSERT_EQ(8192, spectrum_analyzer_get_fft_n(analyzer));
+
+  // 2. 192 kHz with min_freq = 20 -> ceil(192000/20) = 9600 -> 16384
+  status = spectrum_analyzer_compute(analyzer, buffer, &ch0, 20.0f, 20000.0f,
+                                     32, 192000, &result);
+  ASSERT_EQ(SPECTRUM_OK, status);
+  ASSERT_EQ(16384, spectrum_analyzer_get_fft_n(analyzer));
+
+  // 3. 48 kHz with min_freq = 10 -> ceil(48000/10) = 4800 -> 8192
+  status = spectrum_analyzer_compute(analyzer, buffer, &ch0, 10.0f, 20000.0f,
+                                     32, 48000, &result);
+  ASSERT_EQ(SPECTRUM_OK, status);
+  ASSERT_EQ(8192, spectrum_analyzer_get_fft_n(analyzer));
+
+  // 4. 48 kHz with min_freq = 20 -> ceil(48000/20) = 2400 -> 4096
+  status = spectrum_analyzer_compute(analyzer, buffer, &ch0, 20.0f, 20000.0f,
+                                     32, 48000, &result);
+  ASSERT_EQ(SPECTRUM_OK, status);
+  ASSERT_EQ(4096, spectrum_analyzer_get_fft_n(analyzer));
+
+  audio_history_buffer_free(buffer);
+}
+
+TEST(SpectrumAnalyzer_NBinsLessThanTwo_Rejected) {
+  spectrum_analyzer_t* analyzer = spectrum_analyzer_create();
+  audio_history_buffer_t* buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 1);
+  audio_chunk_t* chunk = sine_chunk(1000.0, 48000, 1024, 0, 1);
+  audio_history_buffer_append(buffer, chunk);
+
+  const size_t ch0 = 0;
+  spectrum_result_t result;
+  memset(&result, 0, sizeof(result));
+
+  // n_bins == 1 must fail with SPECTRUM_ERROR_INVALID_PARAM (upstream requires
+  // n_bins >= 2)
+  spectrum_status_t status = spectrum_analyzer_compute(
+      analyzer, buffer, &ch0, 20.0f, 20000.0f, 1, 48000, &result);
+  ASSERT_EQ(SPECTRUM_ERROR_INVALID_PARAM, status);
+
+  // n_bins == 0 must also fail
+  status = spectrum_analyzer_compute(analyzer, buffer, &ch0, 20.0f, 20000.0f, 0,
+                                     48000, &result);
+  ASSERT_EQ(SPECTRUM_ERROR_INVALID_PARAM, status);
+
+  audio_chunk_free(chunk);
+  audio_history_buffer_free(buffer);
+  spectrum_analyzer_free(analyzer);
+}
+
 TEST_MAIN()

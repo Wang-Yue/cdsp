@@ -8,7 +8,10 @@
 #include "Audio/audio_chunk.h"
 #include "Config/config_error.h"
 #include "Config/resampler_config_types.h"
+#include "Logging/app_logger.h"
 #include "Resampler/resampler_error.h"
+
+static const logger_t g_logger = {"resampler.slip"};
 
 #define MAX_CROSSFADE_LEN 128
 
@@ -228,7 +231,7 @@ static resampler_error_t slip_resampler_process(void* impl_ptr,
   for (size_t chan = 0; chan < impl->channels; chan++) {
     const double* in_data = audio_chunk_get_channel(input, chan);
     double* out_data = audio_chunk_get_channel(output, chan);
-    if (!in_data || !out_data) return RESAMPLER_ERR_INVALID_PARAMETER;
+    if (!in_data || !out_data) continue;
 
     if (impl->correction == 0) {
       memcpy(out_data, in_data, frames_to_read * sizeof(double));
@@ -274,8 +277,16 @@ static void slip_resampler_set_relative_ratio(void* impl_ptr,
     slip_resampler_get_ratio_range(impl, &min_r, &max_r);
     double target = multiplier;
     if (isnan(target) || target < min_r) {
+      logger_warn(
+          &g_logger,
+          "Slip resampler ratio %.6f out of range [%.6f, %.6f], clamping",
+          target, min_r, max_r);
       target = min_r;
     } else if (target > max_r) {
+      logger_warn(
+          &g_logger,
+          "Slip resampler ratio %.6f out of range [%.6f, %.6f], clamping",
+          target, min_r, max_r);
       target = max_r;
     }
     impl->resample_ratio = target;

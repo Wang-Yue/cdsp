@@ -64,6 +64,7 @@ struct wasapi_playback {
   size_t write_buf_cap;
 
   pthread_t inner_thread;
+  bool inner_thread_created;
   _Atomic bool thread_running;
   _Atomic bool stopped;
   _Atomic bool paused;
@@ -125,6 +126,8 @@ static void* wasapi_playback_loop(void* arg) {
              2 * chunksize * blockalign &&
          waited_millis < 1000) {
     if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
+      atomic_store_explicit(&playback->thread_running, false,
+                            memory_order_release);
       CoUninitialize();
       return NULL;
     }
@@ -147,8 +150,8 @@ static void* wasapi_playback_loop(void* arg) {
   size_t silence_frames_to_insert = 0;
   REFERENCE_TIME def_time = 0, min_time = 0;
   IAudioClient_GetDevicePeriod(playback->client, &def_time, &min_time);
-  DWORD poll_delay_ms = (DWORD)(def_time / 10000);
-  if (poll_delay_ms == 0) poll_delay_ms = 1;
+  uint64_t poll_delay_us = (uint64_t)(def_time / 10);
+  if (poll_delay_us == 0) poll_delay_us = 1000;
 
   if (!playback->event_handle) {
     logger_debug(&g_wasapi_logger,
@@ -167,7 +170,14 @@ static void* wasapi_playback_loop(void* arg) {
   // get_available_space_in_frames always returns the full buffer size: without
   // the preceding wait we would rewrite the buffer while the hardware reads it.
   while (
-      atomic_load_explicit(&playback->thread_running, memory_order_acquire)) {
+      atomic_load_explicit(&playback->thread_running, memory_order_acquire) &&
+      !atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
+    if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
+      logger_debug(&g_wasapi_logger,
+                   "Stopping inner playback loop on request.");
+      break;
+    }
+
     UINT32 buffer_free_frame_count =
         wasapi_audio_client_get_available_space_in_frames(
             playback->client, playback->exclusive,
@@ -257,16 +267,31 @@ static void* wasapi_playback_loop(void* arg) {
 
     if (playback->event_handle) {
       DWORD wait_res = WaitForSingleObject(playback->event_handle, 1000);
+      if (atomic_load_explicit(&playback->stopped, memory_order_acquire) ||
+          !atomic_load_explicit(&playback->thread_running,
+                                memory_order_acquire)) {
+        logger_debug(&g_wasapi_logger,
+                     "Stopping inner playback loop on request.");
+        break;
+      }
       if (wait_res != WAIT_OBJECT_0) {
         logger_error(&g_wasapi_logger, "Error on playback, stopping stream");
         IAudioClient_Stop(playback->client);
         break;
       }
     } else {
-      cdsp_sleep_ms(poll_delay_ms);
+      cdsp_sleep_us(poll_delay_us);
+      if (atomic_load_explicit(&playback->stopped, memory_order_acquire) ||
+          !atomic_load_explicit(&playback->thread_running,
+                                memory_order_acquire)) {
+        logger_debug(&g_wasapi_logger,
+                     "Stopping inner playback loop on request.");
+        break;
+      }
     }
   }
 
+  atomic_store_explicit(&playback->thread_running, false, memory_order_release);
   IAudioClient_Stop(playback->client);
   CoUninitialize();
   return NULL;
@@ -356,6 +381,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
                          "Failed to create inner playback thread");
     goto error_cleanup;
   }
+  playback->inner_thread_created = true;
 
   return true;
 
@@ -401,12 +427,13 @@ static void wasapi_playback_close(void* ctx) {
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return;
 
-  if (playback->thread_running) {
+  if (playback->inner_thread_created) {
+    atomic_store_explicit(&playback->stopped, true, memory_order_release);
     atomic_store_explicit(&playback->thread_running, false,
                           memory_order_release);
-    atomic_store_explicit(&playback->stopped, true, memory_order_release);
     if (playback->event_handle) SetEvent(playback->event_handle);
     pthread_join(playback->inner_thread, NULL);
+    playback->inner_thread_created = false;
   }
 
   if (playback->write_buf) {
@@ -476,6 +503,7 @@ static void wasapi_playback_stop(void* ctx) {
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return;
   atomic_store_explicit(&playback->stopped, true, memory_order_release);
+  atomic_store_explicit(&playback->thread_running, false, memory_order_release);
   if (playback->event_handle) {
     SetEvent(playback->event_handle);
   }

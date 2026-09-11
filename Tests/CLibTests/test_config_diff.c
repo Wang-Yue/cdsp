@@ -258,4 +258,120 @@ TEST(ConfigDiffDictionaryOrderIndependent) {
   dsp_config_free(c2);
 }
 
+TEST(ConfigDiffMixerDescriptionAndLabels) {
+  const char* base_json =
+      "{\n"
+      "    \"devices\": {\"samplerate\": 48000, \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"mixers\": {\n"
+      "        \"mymixer\": {\n"
+      "            \"channels\": {\"in\": 2, \"out\": 2},\n"
+      "            \"mapping\": [\n"
+      "                {\"dest\": 0, \"sources\": [{\"channel\": 0, \"gain\": "
+      "0.0, \"inverted\": false, \"mute\": false}]},\n"
+      "                {\"dest\": 1, \"sources\": [{\"channel\": 1, \"gain\": "
+      "0.0, \"inverted\": false, \"mute\": false}]}\n"
+      "            ],\n"
+      "            \"description\": \"Original mixer\",\n"
+      "            \"labels\": [\"Left\", \"Right\"]\n"
+      "        }\n"
+      "    },\n"
+      "    \"pipeline\": [\n"
+      "        {\"type\": \"Mixer\", \"name\": \"mymixer\"}\n"
+      "    ]\n"
+      "}";
+
+  const char* diff_desc_json =
+      "{\n"
+      "    \"devices\": {\"samplerate\": 48000, \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"mixers\": {\n"
+      "        \"mymixer\": {\n"
+      "            \"channels\": {\"in\": 2, \"out\": 2},\n"
+      "            \"mapping\": [\n"
+      "                {\"dest\": 0, \"sources\": [{\"channel\": 0, \"gain\": "
+      "0.0, \"inverted\": false, \"mute\": false}]},\n"
+      "                {\"dest\": 1, \"sources\": [{\"channel\": 1, \"gain\": "
+      "0.0, \"inverted\": false, \"mute\": false}]}\n"
+      "            ],\n"
+      "            \"description\": \"Modified description\",\n"
+      "            \"labels\": [\"Left\", \"Right\"]\n"
+      "        }\n"
+      "    },\n"
+      "    \"pipeline\": [\n"
+      "        {\"type\": \"Mixer\", \"name\": \"mymixer\"}\n"
+      "    ]\n"
+      "}";
+
+  const char* diff_labels_json =
+      "{\n"
+      "    \"devices\": {\"samplerate\": 48000, \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"RawFile\", \"filename\": "
+      "\"/dev/null\", \"format\": \"S16_LE\", \"channels\": 2},\n"
+      "        \"playback\": {\"type\": \"File\", \"filename\": \"/dev/null\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "    },\n"
+      "    \"mixers\": {\n"
+      "        \"mymixer\": {\n"
+      "            \"channels\": {\"in\": 2, \"out\": 2},\n"
+      "            \"mapping\": [\n"
+      "                {\"dest\": 0, \"sources\": [{\"channel\": 0, \"gain\": "
+      "0.0, \"inverted\": false, \"mute\": false}]},\n"
+      "                {\"dest\": 1, \"sources\": [{\"channel\": 1, \"gain\": "
+      "0.0, \"inverted\": false, \"mute\": false}]}\n"
+      "            ],\n"
+      "            \"description\": \"Original mixer\",\n"
+      "            \"labels\": [\"L\", \"R\"]\n"
+      "        }\n"
+      "    },\n"
+      "    \"pipeline\": [\n"
+      "        {\"type\": \"Mixer\", \"name\": \"mymixer\"}\n"
+      "    ]\n"
+      "}";
+
+  dsp_config_t *c_base = NULL, *c_desc = NULL, *c_labels = NULL;
+  config_error_t err;
+  config_error_init(&err);
+
+  ASSERT_EQ(0, dsp_config_parse_json(base_json, &c_base, &err));
+  ASSERT_EQ(0, dsp_config_parse_json(diff_desc_json, &c_desc, &err));
+  ASSERT_EQ(0, dsp_config_parse_json(diff_labels_json, &c_labels, &err));
+
+  // Description change must detect mixer change
+  config_change_t* ch1 = config_change_create();
+  config_change_type_t res1 = config_diff(c_base, c_desc, ch1);
+  ASSERT_EQ(CONFIG_CHANGE_MIXER_PARAMETERS, res1);
+  size_t cm1_count = 0;
+  char** cm1 = config_change_take_mixers(ch1, &cm1_count);
+  ASSERT_EQ(1, cm1_count);
+  ASSERT_STR_EQ("mymixer", cm1[0]);
+  free(cm1[0]);
+  free(cm1);
+  config_change_free(ch1);
+
+  // Labels change must detect mixer change
+  config_change_t* ch2 = config_change_create();
+  config_change_type_t res2 = config_diff(c_base, c_labels, ch2);
+  ASSERT_EQ(CONFIG_CHANGE_MIXER_PARAMETERS, res2);
+  size_t cm2_count = 0;
+  char** cm2 = config_change_take_mixers(ch2, &cm2_count);
+  ASSERT_EQ(1, cm2_count);
+  ASSERT_STR_EQ("mymixer", cm2[0]);
+  free(cm2[0]);
+  free(cm2);
+  config_change_free(ch2);
+
+  dsp_config_free(c_base);
+  dsp_config_free(c_desc);
+  dsp_config_free(c_labels);
+}
+
 TEST_MAIN()
