@@ -374,4 +374,68 @@ TEST(ConfigDiffMixerDescriptionAndLabels) {
   dsp_config_free(c_labels);
 }
 
+#if defined(ENABLE_PIPEWIRE)
+TEST(ConfigDiffPipeWireAutoconnectTo) {
+  const char* cfg_empty_str =
+      "{\n"
+      "    \"devices\": {\"samplerate\": 48000, \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"PipeWire\", \"channels\": 2, "
+      "\"autoconnect_to\": \"\"},\n"
+      "        \"playback\": {\"type\": \"PipeWire\", \"channels\": 2, "
+      "\"autoconnect_to\": \"\"}\n"
+      "    }\n"
+      "}";
+
+  const char* cfg_null_val =
+      "{\n"
+      "    \"devices\": {\"samplerate\": 48000, \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"PipeWire\", \"channels\": 2, "
+      "\"autoconnect_to\": null},\n"
+      "        \"playback\": {\"type\": \"PipeWire\", \"channels\": 2, "
+      "\"autoconnect_to\": null}\n"
+      "    }\n"
+      "}";
+
+  const char* cfg_target =
+      "{\n"
+      "    \"devices\": {\"samplerate\": 48000, \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"PipeWire\", \"channels\": 2, "
+      "\"autoconnect_to\": \"alsa_input\"},\n"
+      "        \"playback\": {\"type\": \"PipeWire\", \"channels\": 2, "
+      "\"autoconnect_to\": \"alsa_output\"}\n"
+      "    }\n"
+      "}";
+
+  dsp_config_t *c_empty = NULL, *c_null = NULL, *c_target = NULL;
+  config_error_t err;
+  config_error_init(&err);
+
+  ASSERT_EQ(0, dsp_config_parse_json(cfg_empty_str, &c_empty, &err));
+  ASSERT_EQ(0, dsp_config_parse_json(cfg_null_val, &c_null, &err));
+  ASSERT_EQ(0, dsp_config_parse_json(cfg_target, &c_target, &err));
+
+  // Changing autoconnect_to from "" to null must trigger full reload
+  config_change_t* ch1 = config_change_create();
+  config_change_type_t res1 = config_diff(c_empty, c_null, ch1);
+  ASSERT_EQ(CONFIG_CHANGE_FULL, res1);
+  config_change_free(ch1);
+
+  // Changing autoconnect_to from null to "" must trigger full reload
+  config_change_t* ch2 = config_change_create();
+  config_change_type_t res2 = config_diff(c_null, c_empty, ch2);
+  ASSERT_EQ(CONFIG_CHANGE_FULL, res2);
+  config_change_free(ch2);
+
+  // Changing autoconnect_to from "" to target node must trigger full reload
+  config_change_t* ch3 = config_change_create();
+  config_change_type_t res3 = config_diff(c_empty, c_target, ch3);
+  ASSERT_EQ(CONFIG_CHANGE_FULL, res3);
+  config_change_free(ch3);
+
+  dsp_config_free(c_empty);
+  dsp_config_free(c_null);
+  dsp_config_free(c_target);
+}
+#endif
+
 TEST_MAIN()

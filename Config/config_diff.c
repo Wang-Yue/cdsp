@@ -595,22 +595,46 @@ bool devices_config_equal(const devices_config_t* a,
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       if (a->capture.cfg.pipewire.channels != b->capture.cfg.pipewire.channels)
         return false;
-      if (!safe_streq(a->capture.cfg.pipewire.device,
+      if (a->capture.cfg.pipewire.has_device !=
+          b->capture.cfg.pipewire.has_device)
+        return false;
+      if (a->capture.cfg.pipewire.has_device &&
+          !safe_streq(a->capture.cfg.pipewire.device,
                       b->capture.cfg.pipewire.device))
         return false;
-      if (!safe_streq(a->capture.cfg.pipewire.node_name,
+      if (a->capture.cfg.pipewire.has_node_name !=
+          b->capture.cfg.pipewire.has_node_name)
+        return false;
+      if (a->capture.cfg.pipewire.has_node_name &&
+          !safe_streq(a->capture.cfg.pipewire.node_name,
                       b->capture.cfg.pipewire.node_name))
         return false;
-      if (!safe_streq(a->capture.cfg.pipewire.node_description,
+      if (a->capture.cfg.pipewire.has_node_description !=
+          b->capture.cfg.pipewire.has_node_description)
+        return false;
+      if (a->capture.cfg.pipewire.has_node_description &&
+          !safe_streq(a->capture.cfg.pipewire.node_description,
                       b->capture.cfg.pipewire.node_description))
         return false;
-      if (!safe_streq(a->capture.cfg.pipewire.node_group_name,
+      if (a->capture.cfg.pipewire.has_node_group_name !=
+          b->capture.cfg.pipewire.has_node_group_name)
+        return false;
+      if (a->capture.cfg.pipewire.has_node_group_name &&
+          !safe_streq(a->capture.cfg.pipewire.node_group_name,
                       b->capture.cfg.pipewire.node_group_name))
         return false;
-      if (!safe_streq(a->capture.cfg.pipewire.autoconnect_to,
+      if (a->capture.cfg.pipewire.has_autoconnect_to !=
+          b->capture.cfg.pipewire.has_autoconnect_to)
+        return false;
+      if (a->capture.cfg.pipewire.has_autoconnect_to &&
+          !safe_streq(a->capture.cfg.pipewire.autoconnect_to,
                       b->capture.cfg.pipewire.autoconnect_to))
         return false;
-      if (a->capture.cfg.pipewire.loopback != b->capture.cfg.pipewire.loopback)
+      if (a->capture.cfg.pipewire.has_loopback !=
+          b->capture.cfg.pipewire.has_loopback)
+        return false;
+      if (a->capture.cfg.pipewire.has_loopback &&
+          a->capture.cfg.pipewire.loopback != b->capture.cfg.pipewire.loopback)
         return false;
       break;
 #endif
@@ -752,20 +776,47 @@ bool devices_config_equal(const devices_config_t* a,
       if (a->playback.cfg.pipewire.channels !=
           b->playback.cfg.pipewire.channels)
         return false;
-      if (!safe_streq(a->playback.cfg.pipewire.device,
+      if (a->playback.cfg.pipewire.has_device !=
+          b->playback.cfg.pipewire.has_device)
+        return false;
+      if (a->playback.cfg.pipewire.has_device &&
+          !safe_streq(a->playback.cfg.pipewire.device,
                       b->playback.cfg.pipewire.device))
         return false;
-      if (!safe_streq(a->playback.cfg.pipewire.node_name,
+      if (a->playback.cfg.pipewire.has_node_name !=
+          b->playback.cfg.pipewire.has_node_name)
+        return false;
+      if (a->playback.cfg.pipewire.has_node_name &&
+          !safe_streq(a->playback.cfg.pipewire.node_name,
                       b->playback.cfg.pipewire.node_name))
         return false;
-      if (!safe_streq(a->playback.cfg.pipewire.node_description,
+      if (a->playback.cfg.pipewire.has_node_description !=
+          b->playback.cfg.pipewire.has_node_description)
+        return false;
+      if (a->playback.cfg.pipewire.has_node_description &&
+          !safe_streq(a->playback.cfg.pipewire.node_description,
                       b->playback.cfg.pipewire.node_description))
         return false;
-      if (!safe_streq(a->playback.cfg.pipewire.node_group_name,
+      if (a->playback.cfg.pipewire.has_node_group_name !=
+          b->playback.cfg.pipewire.has_node_group_name)
+        return false;
+      if (a->playback.cfg.pipewire.has_node_group_name &&
+          !safe_streq(a->playback.cfg.pipewire.node_group_name,
                       b->playback.cfg.pipewire.node_group_name))
         return false;
-      if (!safe_streq(a->playback.cfg.pipewire.autoconnect_to,
+      if (a->playback.cfg.pipewire.has_autoconnect_to !=
+          b->playback.cfg.pipewire.has_autoconnect_to)
+        return false;
+      if (a->playback.cfg.pipewire.has_autoconnect_to &&
+          !safe_streq(a->playback.cfg.pipewire.autoconnect_to,
                       b->playback.cfg.pipewire.autoconnect_to))
+        return false;
+      if (a->playback.cfg.pipewire.has_target_level !=
+          b->playback.cfg.pipewire.has_target_level)
+        return false;
+      if (a->playback.cfg.pipewire.has_target_level &&
+          a->playback.cfg.pipewire.target_level !=
+              b->playback.cfg.pipewire.target_level)
         return false;
       break;
 #endif
