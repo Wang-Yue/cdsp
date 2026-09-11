@@ -56,7 +56,7 @@ struct DeviceConfig {
     std::string nodeName;
     std::string nodeDescription;
     std::string nodeGroupName;
-    std::string autoconnectTo;
+    std::optional<std::string> autoconnectTo;
 
     std::optional<std::string> deviceName() const {
         return capabilities.name.empty() ? std::nullopt : std::make_optional(capabilities.name);

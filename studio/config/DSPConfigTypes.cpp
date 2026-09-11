@@ -1300,8 +1300,12 @@ PipeWireCaptureConfig PipeWireCaptureConfig::fromJson(const QJsonObject& json) {
         cfg.nodeDescription = json["node_description"].toString().toStdString();
     if (json.contains("node_group_name"))
         cfg.nodeGroupName = json["node_group_name"].toString().toStdString();
-    if (json.contains("autoconnect_to"))
-        cfg.autoconnectTo = json["autoconnect_to"].toString().toStdString();
+    if (json.contains("autoconnect_to")) {
+        if (json["autoconnect_to"].isNull())
+            cfg.autoconnectTo = std::nullopt;
+        else
+            cfg.autoconnectTo = json["autoconnect_to"].toString().toStdString();
+    }
     if (json.contains("channel_labels")) {
         for (const auto& val : json["channel_labels"].toArray())
             cfg.channelLabels.push_back(val.toString().toStdString());
@@ -1323,6 +1327,8 @@ QJsonObject PipeWireCaptureConfig::toJson() const {
         obj["node_group_name"] = QString::fromStdString(nodeGroupName.value());
     if (autoconnectTo.has_value())
         obj["autoconnect_to"] = QString::fromStdString(autoconnectTo.value());
+    else
+        obj["autoconnect_to"] = QJsonValue::Null;
     if (loopback.has_value())
         obj["loopback"] = loopback.value();
     if (!channelLabels.empty()) {
@@ -1344,8 +1350,12 @@ PipeWirePlaybackConfig PipeWirePlaybackConfig::fromJson(const QJsonObject& json)
         cfg.nodeDescription = json["node_description"].toString().toStdString();
     if (json.contains("node_group_name"))
         cfg.nodeGroupName = json["node_group_name"].toString().toStdString();
-    if (json.contains("autoconnect_to"))
-        cfg.autoconnectTo = json["autoconnect_to"].toString().toStdString();
+    if (json.contains("autoconnect_to")) {
+        if (json["autoconnect_to"].isNull())
+            cfg.autoconnectTo = std::nullopt;
+        else
+            cfg.autoconnectTo = json["autoconnect_to"].toString().toStdString();
+    }
     if (json.contains("channel_labels")) {
         for (const auto& val : json["channel_labels"].toArray())
             cfg.channelLabels.push_back(val.toString().toStdString());
@@ -1365,6 +1375,8 @@ QJsonObject PipeWirePlaybackConfig::toJson() const {
         obj["node_group_name"] = QString::fromStdString(nodeGroupName.value());
     if (autoconnectTo.has_value())
         obj["autoconnect_to"] = QString::fromStdString(autoconnectTo.value());
+    else
+        obj["autoconnect_to"] = QJsonValue::Null;
     if (!channelLabels.empty()) {
         QJsonArray arr;
         for (const auto& l : channelLabels)

@@ -99,6 +99,7 @@ private:
     QLineEdit* m_capPwNodeNameEdit = nullptr;
     QLineEdit* m_capPwNodeDescEdit = nullptr;
     QLineEdit* m_capPwNodeGroupEdit = nullptr;
+    QCheckBox* m_capPwAutoconnectCheck = nullptr;
     QLineEdit* m_capPwAutoconnectEdit = nullptr;
     QCheckBox* m_capPwLoopbackCheck = nullptr;
 
@@ -151,6 +152,7 @@ private:
     QLineEdit* m_pbPwNodeNameEdit = nullptr;
     QLineEdit* m_pbPwNodeDescEdit = nullptr;
     QLineEdit* m_pbPwNodeGroupEdit = nullptr;
+    QCheckBox* m_pbPwAutoconnectCheck = nullptr;
     QLineEdit* m_pbPwAutoconnectEdit = nullptr;
     QCheckBox* m_outputDoPCheck = nullptr;
     QComboBox* m_sdmFilterCombo = nullptr;

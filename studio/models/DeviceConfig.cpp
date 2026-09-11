@@ -7,6 +7,7 @@
 #include <QString>    // for QString
 #include <QtGlobal>   // for qint64
 #include <algorithm>  // for max, find, min, find_if, max_element, sort
+#include <cctype>     // for isspace
 #include <cstdlib>    // for abs
 #include <cstring>    // for memcpy
 #include <set>        // for set, operator!=
@@ -338,8 +339,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
             cap.pipeWire.nodeDescription = nodeDescription;
         if (!nodeGroupName.empty())
             cap.pipeWire.nodeGroupName = nodeGroupName;
-        if (!autoconnectTo.empty())
-            cap.pipeWire.autoconnectTo = autoconnectTo;
+        cap.pipeWire.autoconnectTo = autoconnectTo;
         cap.pipeWire.loopback = loopback;
         break;
 #endif
@@ -420,8 +420,7 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
             pb.pipeWire.nodeDescription = nodeDescription;
         if (!nodeGroupName.empty())
             pb.pipeWire.nodeGroupName = nodeGroupName;
-        if (!autoconnectTo.empty())
-            pb.pipeWire.autoconnectTo = autoconnectTo;
+        pb.pipeWire.autoconnectTo = autoconnectTo;
         break;
 #endif
     case AudioBackendType::RawFile:
@@ -474,7 +473,8 @@ QJsonObject DeviceConfig::toJson() const {
     obj["nodeName"] = QString::fromStdString(nodeName);
     obj["nodeDescription"] = QString::fromStdString(nodeDescription);
     obj["nodeGroupName"] = QString::fromStdString(nodeGroupName);
-    obj["autoconnectTo"] = QString::fromStdString(autoconnectTo);
+    if (autoconnectTo.has_value())
+        obj["autoconnectTo"] = QString::fromStdString(*autoconnectTo);
     obj["capabilities"] = capabilities.toJson();
     return obj;
 }
@@ -549,7 +549,7 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.nodeDescription = json["nodeDescription"].toString().toStdString();
     if (json.contains("nodeGroupName"))
         cfg.nodeGroupName = json["nodeGroupName"].toString().toStdString();
-    if (json.contains("autoconnectTo"))
+    if (json.contains("autoconnectTo") && !json["autoconnectTo"].isNull())
         cfg.autoconnectTo = json["autoconnectTo"].toString().toStdString();
     if (json.contains("capabilities") && json["capabilities"].isObject()) {
         cfg.capabilities = AudioDeviceDescriptor::fromJson(json["capabilities"].toObject());

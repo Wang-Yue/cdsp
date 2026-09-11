@@ -618,12 +618,20 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
     m_capCoreAudioForm->addRow(tr("Node Group:"), m_capPwNodeGroupEdit);
 
+    m_capPwAutoconnectCheck = new QCheckBox(tr("Autoconnect:"), w);
     m_capPwAutoconnectEdit = new QLineEdit(w);
+    m_capPwAutoconnectEdit->setPlaceholderText(tr("Default (or specify target node)"));
+    connect(m_capPwAutoconnectCheck, &QCheckBox::toggled, [this](bool checked) {
+        if (m_capPwAutoconnectEdit)
+            m_capPwAutoconnectEdit->setEnabled(checked);
+        if (!m_isRefreshing)
+            applySettings();
+    });
     connect(m_capPwAutoconnectEdit, &QLineEdit::editingFinished, [this]() {
         if (!m_isRefreshing)
             applySettings();
     });
-    m_capCoreAudioForm->addRow(tr("Autoconnect To:"), m_capPwAutoconnectEdit);
+    m_capCoreAudioForm->addRow(m_capPwAutoconnectCheck, m_capPwAutoconnectEdit);
 
     m_capPwLoopbackCheck = new QCheckBox(tr("PipeWire Loopback (Capture Monitor of Sink)"), w);
     connect(m_capPwLoopbackCheck, &QCheckBox::toggled, [this](bool) {
@@ -1028,12 +1036,20 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
     m_pbCoreAudioForm->addRow(tr("Node Group:"), m_pbPwNodeGroupEdit);
 
+    m_pbPwAutoconnectCheck = new QCheckBox(tr("Autoconnect:"), w);
     m_pbPwAutoconnectEdit = new QLineEdit(w);
+    m_pbPwAutoconnectEdit->setPlaceholderText(tr("Default (or specify target node)"));
+    connect(m_pbPwAutoconnectCheck, &QCheckBox::toggled, [this](bool checked) {
+        if (m_pbPwAutoconnectEdit)
+            m_pbPwAutoconnectEdit->setEnabled(checked);
+        if (!m_isRefreshing)
+            applySettings();
+    });
     connect(m_pbPwAutoconnectEdit, &QLineEdit::editingFinished, [this]() {
         if (!m_isRefreshing)
             applySettings();
     });
-    m_pbCoreAudioForm->addRow(tr("Autoconnect To:"), m_pbPwAutoconnectEdit);
+    m_pbCoreAudioForm->addRow(m_pbPwAutoconnectCheck, m_pbPwAutoconnectEdit);
 
     m_outputDoPCheck = new QCheckBox(tr("Output DoP (DSD-over-PCM)"), w);
     connect(m_outputDoPCheck, &QCheckBox::toggled, [this](bool checked) {
@@ -1448,7 +1464,7 @@ void DevicePickerView::refreshUi() {
         m_capCoreAudioForm->setRowVisible(m_capPwNodeNameEdit, isCapPw);
         m_capCoreAudioForm->setRowVisible(m_capPwNodeDescEdit, isCapPw);
         m_capCoreAudioForm->setRowVisible(m_capPwNodeGroupEdit, isCapPw);
-        m_capCoreAudioForm->setRowVisible(m_capPwAutoconnectEdit, isCapPw);
+        m_capCoreAudioForm->setRowVisible(m_capPwAutoconnectCheck, isCapPw);
         m_capCoreAudioForm->setRowVisible(m_capPwLoopbackCheck, isCapPw);
     }
 
@@ -1484,10 +1500,18 @@ void DevicePickerView::refreshUi() {
         m_capPwNodeGroupEdit->setText(QString::fromStdString(m_devices->captureConfig.nodeGroupName));
         m_capPwNodeGroupEdit->blockSignals(false);
     }
-    if (m_capPwAutoconnectEdit->text().toStdString() != m_devices->captureConfig.autoconnectTo) {
-        m_capPwAutoconnectEdit->blockSignals(true);
-        m_capPwAutoconnectEdit->setText(QString::fromStdString(m_devices->captureConfig.autoconnectTo));
-        m_capPwAutoconnectEdit->blockSignals(false);
+    if (m_capPwAutoconnectCheck && m_capPwAutoconnectEdit) {
+        const auto& autoTo = m_devices->captureConfig.autoconnectTo;
+        m_capPwAutoconnectCheck->blockSignals(true);
+        m_capPwAutoconnectCheck->setChecked(autoTo.has_value());
+        m_capPwAutoconnectCheck->blockSignals(false);
+        m_capPwAutoconnectEdit->setEnabled(autoTo.has_value());
+        QString txt = autoTo.has_value() ? QString::fromStdString(*autoTo) : QString();
+        if (m_capPwAutoconnectEdit->text() != txt) {
+            m_capPwAutoconnectEdit->blockSignals(true);
+            m_capPwAutoconnectEdit->setText(txt);
+            m_capPwAutoconnectEdit->blockSignals(false);
+        }
     }
 
     // 2. Refresh Capture File & Generator Views
@@ -1647,7 +1671,7 @@ void DevicePickerView::refreshUi() {
         m_pbCoreAudioForm->setRowVisible(m_pbPwNodeNameEdit, isPbPw);
         m_pbCoreAudioForm->setRowVisible(m_pbPwNodeDescEdit, isPbPw);
         m_pbCoreAudioForm->setRowVisible(m_pbPwNodeGroupEdit, isPbPw);
-        m_pbCoreAudioForm->setRowVisible(m_pbPwAutoconnectEdit, isPbPw);
+        m_pbCoreAudioForm->setRowVisible(m_pbPwAutoconnectCheck, isPbPw);
         m_pbCoreAudioForm->setRowVisible(m_outputDoPCheck, pbDopVisible);
         m_pbCoreAudioForm->setRowVisible(m_sdmFilterCombo, pbDopVisible);
         m_pbCoreAudioForm->setRowVisible(m_pbDopHintLabel, pbDopVisible);
@@ -1668,10 +1692,18 @@ void DevicePickerView::refreshUi() {
         m_pbPwNodeGroupEdit->setText(QString::fromStdString(m_devices->playbackConfig.nodeGroupName));
         m_pbPwNodeGroupEdit->blockSignals(false);
     }
-    if (m_pbPwAutoconnectEdit->text().toStdString() != m_devices->playbackConfig.autoconnectTo) {
-        m_pbPwAutoconnectEdit->blockSignals(true);
-        m_pbPwAutoconnectEdit->setText(QString::fromStdString(m_devices->playbackConfig.autoconnectTo));
-        m_pbPwAutoconnectEdit->blockSignals(false);
+    if (m_pbPwAutoconnectCheck && m_pbPwAutoconnectEdit) {
+        const auto& autoTo = m_devices->playbackConfig.autoconnectTo;
+        m_pbPwAutoconnectCheck->blockSignals(true);
+        m_pbPwAutoconnectCheck->setChecked(autoTo.has_value());
+        m_pbPwAutoconnectCheck->blockSignals(false);
+        m_pbPwAutoconnectEdit->setEnabled(autoTo.has_value());
+        QString txt = autoTo.has_value() ? QString::fromStdString(*autoTo) : QString();
+        if (m_pbPwAutoconnectEdit->text() != txt) {
+            m_pbPwAutoconnectEdit->blockSignals(true);
+            m_pbPwAutoconnectEdit->setText(txt);
+            m_pbPwAutoconnectEdit->blockSignals(false);
+        }
     }
 
     updateDoPCapability();
@@ -1811,8 +1843,11 @@ void DevicePickerView::applySettings() {
             pbCfg.nodeDescription = m_pbPwNodeDescEdit->text().toStdString();
         if (m_pbPwNodeGroupEdit)
             pbCfg.nodeGroupName = m_pbPwNodeGroupEdit->text().toStdString();
-        if (m_pbPwAutoconnectEdit)
-            pbCfg.autoconnectTo = m_pbPwAutoconnectEdit->text().toStdString();
+        if (m_pbPwAutoconnectCheck && m_pbPwAutoconnectEdit) {
+            pbCfg.autoconnectTo = m_pbPwAutoconnectCheck->isChecked()
+                                      ? std::make_optional(m_pbPwAutoconnectEdit->text().toStdString())
+                                      : std::nullopt;
+        }
         pbCfg.outputDoP = m_outputDoPCheck->isChecked();
         if (m_sdmFilterCombo->currentIndex() >= 0) {
             pbCfg.dsdEncoderFilter = static_cast<SDMFilter>(m_sdmFilterCombo->currentData().toInt());
@@ -1913,8 +1948,11 @@ void DevicePickerView::applySettings() {
             capCfg.nodeDescription = m_capPwNodeDescEdit->text().toStdString();
         if (m_capPwNodeGroupEdit)
             capCfg.nodeGroupName = m_capPwNodeGroupEdit->text().toStdString();
-        if (m_capPwAutoconnectEdit)
-            capCfg.autoconnectTo = m_capPwAutoconnectEdit->text().toStdString();
+        if (m_capPwAutoconnectCheck && m_capPwAutoconnectEdit) {
+            capCfg.autoconnectTo = m_capPwAutoconnectCheck->isChecked()
+                                       ? std::make_optional(m_capPwAutoconnectEdit->text().toStdString())
+                                       : std::nullopt;
+        }
     } else if (capCfg.backend == AudioBackendType::RawFile) {
         capCfg.filename = m_capRawFilePathEdit->text().toStdString();
         capCfg.fileFormat = m_capRawFileFormatCombo->currentText().toStdString();
