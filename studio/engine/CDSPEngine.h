@@ -9,9 +9,7 @@
 #include <string>     // for string
 #include <vector>     // for vector
 
-extern "C" {
-#include "Public/cdsp_pub_types.h" // for cdsp_fader_t, dsp_engine_t
-}
+typedef struct dsp_engine dsp_engine_t;
 
 class CDSPEngine {
 public:
@@ -51,8 +49,6 @@ public:
 
 private:
     dsp_engine_t* m_engine = nullptr;
-
-    static cdsp_fader_t faderToCFader(Fader fader);
 };
 
 #endif // CDSP_ENGINE_H
