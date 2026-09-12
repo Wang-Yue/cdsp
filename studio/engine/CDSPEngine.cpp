@@ -203,7 +203,9 @@ bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double
     outSpectrum.frequencies.resize(nBins);
     outSpectrum.magnitudes.resize(nBins);
 
-    cdsp_spectrum_t res = {outSpectrum.frequencies.data(), outSpectrum.magnitudes.data(), 0};
+    cdsp_spectrum_t res{};
+    res.frequencies = outSpectrum.frequencies.data();
+    res.magnitudes = outSpectrum.magnitudes.data();
 
     bool success = cdsp_get_spectrum(m_engine, side, ch_ptr, static_cast<float>(minFreq), static_cast<float>(maxFreq),
                                      nBins, &res);
