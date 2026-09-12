@@ -12,6 +12,8 @@
 
 __attribute__((unused)) static const logger_t g_logger = {"dsp.fft"};
 
+#define FFT_PLAN_FLAGS FFTW_MEASURE
+
 // MARK: - Core RealFFT Context Structures
 
 struct real_fft {
@@ -69,9 +71,9 @@ real_fft_t* real_fft_create(size_t length, config_error_t* err) {
     return NULL;
   }
   fft->plan_forward = fftw_plan_dft_r2c_1d((int)length, fft->in_real,
-                                           fft->out_complex, FFTW_PATIENT);
+                                           fft->out_complex, FFT_PLAN_FLAGS);
   fft->plan_inverse = fftw_plan_dft_c2r_1d((int)length, fft->out_complex,
-                                           fft->in_real, FFTW_PATIENT);
+                                           fft->in_real, FFT_PLAN_FLAGS);
   if (!fft->plan_forward || !fft->plan_inverse) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to create FFTW plan");
     real_fft_free(fft);
@@ -132,9 +134,9 @@ real_fftf_t* real_fftf_create(size_t length) {
     return NULL;
   }
   fft->plan_forward = fftwf_plan_dft_r2c_1d((int)length, fft->in_real,
-                                            fft->out_complex, FFTW_PATIENT);
+                                            fft->out_complex, FFT_PLAN_FLAGS);
   fft->plan_inverse = fftwf_plan_dft_c2r_1d((int)length, fft->out_complex,
-                                            fft->in_real, FFTW_PATIENT);
+                                            fft->in_real, FFT_PLAN_FLAGS);
   if (!fft->plan_forward || !fft->plan_inverse) {
     real_fftf_free(fft);
     return NULL;
