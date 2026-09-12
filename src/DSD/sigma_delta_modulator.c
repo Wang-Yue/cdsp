@@ -1,4 +1,4 @@
-#include "DoP/sigma_delta_modulator.h"
+#include "DSD/sigma_delta_modulator.h"
 
 #include <stdlib.h>
 #include <string.h>

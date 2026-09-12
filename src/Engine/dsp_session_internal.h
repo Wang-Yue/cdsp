@@ -9,7 +9,7 @@
 
 #include <pthread.h>
 
-#include "DoP/dsd_encoder.h"
+#include "DSD/dsd_encoder.h"
 #include "Engine/dsp_session.h"
 #include "Engine/engine_capture_loop.h"
 #include "Engine/engine_playback_loop.h"

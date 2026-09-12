@@ -30,7 +30,7 @@
 #include "Audio/audio_chunk.h"
 #include "Audio/processing_parameters.h"
 #include "Backend/audio_backend.h"
-#include "DoP/dsd_decoder.h"
+#include "DSD/dsd_decoder.h"
 #include "Engine/engine_shared_state.h"
 
 /**

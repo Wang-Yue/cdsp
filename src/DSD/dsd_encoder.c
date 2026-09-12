@@ -21,7 +21,7 @@
 // the polyphase coefficient table is shared across channels and built
 // once at init.
 
-#include "DoP/dsd_encoder.h"
+#include "DSD/dsd_encoder.h"
 
 #include "Audio/audio_chunk.h"
 #include "Config/engine_config_types.h"
@@ -42,7 +42,7 @@ static const logger_t g_logger = {"dsp.dsd.encoder"};
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "DoP/sigma_delta_modulator.h"
+#include "DSD/sigma_delta_modulator.h"
 
 /**
  * @brief State for a single DSD encoder channel.

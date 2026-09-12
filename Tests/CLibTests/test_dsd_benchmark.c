@@ -6,8 +6,8 @@
 #include <math.h>
 #include <time.h>
 
-#include "DoP/dsd_decoder.h"
-#include "DoP/dsd_encoder.h"
+#include "DSD/dsd_decoder.h"
+#include "DSD/dsd_encoder.h"
 #include "test_support.h"
 
 #ifndef M_PI

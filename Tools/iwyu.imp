@@ -1054,7 +1054,7 @@
     "include": [
       "\"dsd_decoder.h\"",
       "private",
-      "\"DoP/dsd_decoder.h\"",
+      "\"DSD/dsd_decoder.h\"",
       "public"
     ]
   },
@@ -1070,7 +1070,7 @@
     "include": [
       "\"dsd_encoder.h\"",
       "private",
-      "\"DoP/dsd_encoder.h\"",
+      "\"DSD/dsd_encoder.h\"",
       "public"
     ]
   },
@@ -1391,7 +1391,7 @@
     "include": [
       "\"sigma_delta_modulator.h\"",
       "private",
-      "\"DoP/sigma_delta_modulator.h\"",
+      "\"DSD/sigma_delta_modulator.h\"",
       "public"
     ]
   },

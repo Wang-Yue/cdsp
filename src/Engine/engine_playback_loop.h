@@ -50,7 +50,7 @@
 typedef struct engine_playback_loop engine_playback_loop_t;
 
 #include "Config/engine_config_types.h"
-#include "DoP/dsd_encoder.h"
+#include "DSD/dsd_encoder.h"
 
 typedef struct {
   engine_shared_state_t* shared;

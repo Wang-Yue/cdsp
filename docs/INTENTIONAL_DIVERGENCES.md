@@ -136,5 +136,5 @@ Per project design principles, a deviation from upstream is admitted **only when
 
 ### 4.3 Native DSD and DoP (DSD over PCM) Subsystem Support
 * **Upstream Behavior**: Upstream CamillaDSP is strictly limited to PCM audio formats.
-* **`cdsp` Enhancement**: [`DoP/`](../DoP) implements high-performance Native DSD and DoP (DSD over PCM) encoding/decoding supporting up to DSD256 with SDM-6 modulators.
+* **`cdsp` Enhancement**: [`DSD/`](../src/DSD) implements high-performance Native DSD and DoP (DSD over PCM) encoding/decoding supporting up to DSD256 with SDM-6 modulators.
 * **Why `cdsp` Is Better**: Expands high-end audiophile format support without sacrificing real-time speed, processing carrier streams up to 45x faster than real-time.

@@ -140,4 +140,4 @@ Run the AST callgraph analysis tool in `Tools/generate_callgraph.py`:
 python3 Tools/generate_callgraph.py
 ```
 
-It parses the C AST across `Engine/`, `Audio/`, `DoP/`, `Pipeline/`, `Resampler/`, `Filters/`, `Mixer/`, `Utils/`, `Backend/`, and `Logging/` to verify lock reachability, dynamic heap allocations (`malloc`/`free`), multiline signatures, and generates JSON/Mermaid call graph topologies.
+It parses the C AST across `Engine/`, `Audio/`, `DSD/`, `Pipeline/`, `Resampler/`, `Filters/`, `Mixer/`, `Utils/`, `Backend/`, and `Logging/` to verify lock reachability, dynamic heap allocations (`malloc`/`free`), multiline signatures, and generates JSON/Mermaid call graph topologies.

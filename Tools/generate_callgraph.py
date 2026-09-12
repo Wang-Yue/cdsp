@@ -7,7 +7,7 @@ import sys
 import json
 from collections import defaultdict, deque
 
-SEARCH_DIRS = ["Engine", "Audio", "DoP", "Pipeline", "Resampler", "Filters", "Mixer", "Utils", "Backend", "Logging"]
+SEARCH_DIRS = ["Engine", "Audio", "DSD", "Pipeline", "Resampler", "Filters", "Mixer", "Utils", "Backend", "Logging"]
 
 C_KEYWORDS = {
     "if", "while", "for", "switch", "return", "sizeof", "typeof", "alignof",

@@ -26,7 +26,7 @@
 // conditional add. Filter shape, tap count, and cutoff are unchanged from
 // the previous design, so the SINAD numbers the existing tests pin down
 // across DSD64 / 128 / 256 at 44.1 / 48 kHz families are preserved.
-#include "DoP/dsd_decoder.h"
+#include "DSD/dsd_decoder.h"
 
 #include "Audio/audio_chunk.h"
 

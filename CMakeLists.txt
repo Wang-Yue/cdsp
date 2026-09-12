@@ -672,8 +672,8 @@ install(DIRECTORY include/
 )
 
 set_source_files_properties(
-    src/DoP/dsd_encoder.c
-    src/DoP/sigma_delta_modulator.c
+    src/DSD/dsd_encoder.c
+    src/DSD/sigma_delta_modulator.c
     Tests/CLibTests/test_dsd.c
     Tests/CLibTests/test_resampler_matrix.c
     PROPERTIES COMPILE_OPTIONS "-fno-associative-math"

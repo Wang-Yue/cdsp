@@ -36,7 +36,7 @@
 #include "Backend/audio_backend.h"
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
-#include "DoP/dsd_encoder.h"
+#include "DSD/dsd_encoder.h"
 #include "Engine/rate_controller.h"
 #include "Engine/thread_priority.h"
 #include "Logging/app_logger.h"

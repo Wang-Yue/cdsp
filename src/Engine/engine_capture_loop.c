@@ -29,7 +29,7 @@
 #include "Backend/audio_backend.h"
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
-#include "DoP/dsd_decoder.h"
+#include "DSD/dsd_decoder.h"
 #include "Engine/sample_rate_watcher.h"
 
 struct engine_capture_loop {
