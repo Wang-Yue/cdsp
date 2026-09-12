@@ -99,6 +99,7 @@ private:
     QMap<QString, QWidget*> m_pageCache;
     QWidget* m_unavailableWidget = nullptr;
     QString m_lastActiveTag = "dashboard";
+    QWidget* m_resamplerSidebarToggle = nullptr;
 
     void setupUi();
     void setupSidebar();

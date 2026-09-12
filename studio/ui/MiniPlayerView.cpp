@@ -80,7 +80,10 @@ MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::sh
                 [this]() { buildMiniPipelineUi(); });
     }
     if (m_settings) {
-        connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() { onFaderChanged(0); });
+        connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() {
+            onFaderChanged(0);
+            buildMiniPipelineUi();
+        });
         connect(m_settings.get(), &AudioSettings::fadersChanged, this, [this]() { onFaderChanged(0); });
     }
 }

@@ -125,6 +125,14 @@ public:
         });
     }
 
+    void setChecked(bool checked) {
+        if (m_checkbox && m_checkbox->isChecked() != checked) {
+            m_checkbox->blockSignals(true);
+            m_checkbox->setChecked(checked);
+            m_checkbox->blockSignals(false);
+        }
+    }
+
 protected:
     void mousePressEvent(QMouseEvent* event) override {
         if (m_tree && m_item) {
@@ -241,6 +249,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         updateMuteDisplay();
         updateVolumeDisplay();
         updateStatusBar();
+        if (m_resamplerSidebarToggle) {
+            static_cast<SidebarToggleRowWidget*>(m_resamplerSidebarToggle)->setChecked(m_settings->resamplerEnabled);
+        }
     });
     connect(m_settings.get(), &AudioSettings::fadersChanged, this, [this]() {
         updateMuteDisplay();
@@ -998,10 +1009,10 @@ void MainWindow::refreshSidebarItems() {
         [this](bool c) {
             m_settings->resamplerEnabled = c;
             m_settings->savePreferences();
-            emit m_settings->settingsChanged();
             m_dspController->applyConfig();
         },
         [this, resItem]() { onSidebarItemClicked(resItem, 0); }, m_sidebarTree);
+    m_resamplerSidebarToggle = resW;
     m_sidebarTree->setItemWidget(resItem, 0, resW);
 
     for (size_t i = 0; i < m_pipeline->stages.size(); ++i) {

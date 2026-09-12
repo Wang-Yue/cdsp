@@ -7,6 +7,7 @@
 #include <QFontDatabase> // for QFontDatabase
 #include <QHBoxLayout>   // for QHBoxLayout
 #include <QList>         // for QList
+#include <QShowEvent>    // for QShowEvent
 #include <QString>       // for QString
 #include <QVBoxLayout>   // for QVBoxLayout
 #include <QVariant>      // for QVariant
@@ -41,10 +42,10 @@ void ResamplerDetailView::setupUi() {
 
     m_enabledCheck = new QCheckBox("Enabled", this);
     connect(m_enabledCheck, &QCheckBox::toggled, [this](bool checked) {
-        if (m_settings) {
-            m_settings->resamplerEnabled = checked;
-            applySettings();
-        }
+        if (m_isUpdatingUi || !m_settings)
+            return;
+        updateVisibility();
+        applySettings();
     });
     if (m_settings) {
         connect(m_settings.get(), &AudioSettings::settingsChanged, this, &ResamplerDetailView::refreshUi);
@@ -205,10 +206,19 @@ void ResamplerDetailView::updateVisibility() {
     }
 }
 
+void ResamplerDetailView::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    refreshUi();
+}
+
 void ResamplerDetailView::refreshUi() {
-    if (m_isLocalEditing || !m_settings)
+    if (m_isLocalEditing || m_isUpdatingUi || !m_settings)
         return;
+    m_isUpdatingUi = true;
+
+    m_enabledCheck->blockSignals(true);
     m_enabledCheck->setChecked(m_settings->resamplerEnabled);
+    m_enabledCheck->blockSignals(false);
 
     bool allowSlip = false;
     if (m_devices) {
@@ -229,21 +239,33 @@ void ResamplerDetailView::refreshUi() {
     if (allowSlip) {
         m_typeCombo->addItem("Slip");
     }
+    m_typeCombo->setCurrentText(QString::fromStdString(resamplerTypeToString(m_settings->resamplerType)));
     m_typeCombo->blockSignals(false);
 
-    m_typeCombo->setCurrentText(QString::fromStdString(resamplerTypeToString(m_settings->resamplerType)));
-    updateVisibility();
+    m_useProfileCheck->blockSignals(true);
     m_useProfileCheck->setChecked(m_settings->resamplerUseProfile);
-    m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));
-    m_sincLenSpin->setValue(m_settings->resamplerSincLen);
-    m_oversamplingSpin->setValue(m_settings->resamplerOversamplingFactor);
+    m_useProfileCheck->blockSignals(false);
 
+    m_profileCombo->blockSignals(true);
+    m_profileCombo->setCurrentText(QString::fromStdString(resamplerProfileToString(m_settings->resamplerProfile)));
+    m_profileCombo->blockSignals(false);
+
+    m_sincLenSpin->blockSignals(true);
+    m_sincLenSpin->setValue(m_settings->resamplerSincLen);
+    m_sincLenSpin->blockSignals(false);
+
+    m_oversamplingSpin->blockSignals(true);
+    m_oversamplingSpin->setValue(m_settings->resamplerOversamplingFactor);
+    m_oversamplingSpin->blockSignals(false);
+
+    m_windowCombo->blockSignals(true);
     int winIdx = m_windowCombo->findData(QString::fromStdString(m_settings->resamplerWindow));
     if (winIdx >= 0) {
         m_windowCombo->setCurrentIndex(winIdx);
     } else {
         m_windowCombo->setCurrentIndex(0);
     }
+    m_windowCombo->blockSignals(false);
 
     int cutoffVal = static_cast<int>(std::round(m_settings->resamplerFCutoff * 100.0));
     m_fCutoffSlider->blockSignals(true);
@@ -251,10 +273,15 @@ void ResamplerDetailView::refreshUi() {
     m_fCutoffSlider->blockSignals(false);
     m_fCutoffLabel->setText(QString("%1 × Fs/2").arg(m_settings->resamplerFCutoff, 0, 'f', 2));
 
+    m_sincInterpCombo->blockSignals(true);
     m_sincInterpCombo->setCurrentText(
         QString::fromStdString(sincInterpolationToString(m_settings->resamplerSincInterpolation)));
+    m_sincInterpCombo->blockSignals(false);
+
+    m_polyInterpCombo->blockSignals(true);
     m_polyInterpCombo->setCurrentText(
         QString::fromStdString(resamplerInterpolationToString(m_settings->resamplerInterpolation)));
+    m_polyInterpCombo->blockSignals(false);
 
     if (m_devices) {
         int capRate = m_devices->captureConfig.sampleRate > 0 ? m_devices->captureConfig.sampleRate : 44100;
@@ -268,10 +295,11 @@ void ResamplerDetailView::refreshUi() {
     }
 
     updateVisibility();
+    m_isUpdatingUi = false;
 }
 
 void ResamplerDetailView::applySettings() {
-    if (!m_settings)
+    if (m_isUpdatingUi || !m_settings)
         return;
 
     m_isLocalEditing = true;
@@ -281,7 +309,10 @@ void ResamplerDetailView::applySettings() {
     m_settings->resamplerProfile = stringToResamplerProfile(m_profileCombo->currentText().toStdString());
     m_settings->resamplerSincLen = m_sincLenSpin->value();
     m_settings->resamplerOversamplingFactor = m_oversamplingSpin->value();
-    m_settings->resamplerWindow = m_windowCombo->currentData().toString().toStdString();
+    QString winStr = m_windowCombo->currentData().toString();
+    if (!winStr.isEmpty()) {
+        m_settings->resamplerWindow = winStr.toStdString();
+    }
     m_settings->resamplerFCutoff = m_fCutoffSlider->value() / 100.0;
     m_settings->resamplerSincInterpolation = stringToSincInterpolation(m_sincInterpCombo->currentText().toStdString());
     m_settings->resamplerInterpolation = stringToResamplerInterpolation(m_polyInterpCombo->currentText().toStdString());

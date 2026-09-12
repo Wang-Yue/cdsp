@@ -56,8 +56,12 @@ private:
     void updateVisibility();
 
     bool m_isLocalEditing = false;
+    bool m_isUpdatingUi = false;
 
     void setupUi();
+
+protected:
+    void showEvent(QShowEvent* event) override;
 };
 
 #endif // RESAMPLER_DETAIL_VIEW_H

@@ -130,6 +130,8 @@ void AudioSettings::loadPreferences() {
     if (resamplerOversamplingFactor <= 0)
         resamplerOversamplingFactor = 128;
     resamplerWindow = s.value("resamplerWindow", "BlackmanHarris").toString().toStdString();
+    if (resamplerWindow.empty())
+        resamplerWindow = "BlackmanHarris";
     resamplerFCutoff = s.value("resamplerFCutoff", 0.95).toDouble();
     if (resamplerFCutoff <= 0.0)
         resamplerFCutoff = 0.95;
