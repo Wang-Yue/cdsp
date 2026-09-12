@@ -173,23 +173,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Source Files Selection
 # -----------------------------------------------------------------------------
-file(GLOB DSP_SRCS
-    CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Audio/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Backend/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Config/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/DoP/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Engine/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/FFT/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Filters/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Logging/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Mixer/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Pipeline/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Processors/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Public/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Resampler/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Utils/*.c"
-)
+file(GLOB_RECURSE DSP_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
 if(ENABLE_WEBSOCKET)
     file(GLOB SERVER_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/app/Server/*.c")
@@ -207,22 +191,6 @@ target_include_directories(dsp PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/cdsp>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Audio>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Backend>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Config>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/DoP>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Engine>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/FFT>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Filters>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Logging>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Mixer>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Pipeline>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Processors>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Public>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Resampler>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Utils>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/app>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/app/Server>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cdsp>
 )
@@ -459,6 +427,10 @@ endif()
 # -----------------------------------------------------------------------------
 add_executable(cdsp app/main.c ${SERVER_SRCS})
 target_link_libraries(cdsp PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,dsp>")
+target_include_directories(cdsp PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/app
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/Server
+)
 
 # -----------------------------------------------------------------------------
 # Testing: libdsp_test & CTest Test Infrastructure
@@ -502,7 +474,11 @@ if(BUILD_TESTING)
         ${SERVER_SRCS}
     )
     target_link_libraries(test_runner PRIVATE dsp_test)
-    target_include_directories(test_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests)
+    target_include_directories(test_runner PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests
+        ${CMAKE_CURRENT_SOURCE_DIR}/app
+        ${CMAKE_CURRENT_SOURCE_DIR}/app/Server
+    )
     target_compile_definitions(test_runner PRIVATE CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
 
     if(TARGET test-rust-build)
