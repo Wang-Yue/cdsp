@@ -27,13 +27,13 @@ typedef int socket_t;
 #include "Config/cJSON.h"
 #include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"  // IWYU pragma: keep
-#include "Public/cdsp_pub_types.h"
-#include "Public/general.h"
-#include "Public/processing.h"
 #include "Server/websocket_server.h"
 #include "Server/websocket_server_internal.h"
 #include "Server/ws_framing.h"
 #include "Utils/cdsp_time.h"
+#include "cdsp/cdsp_pub_types.h"
+#include "cdsp/general.h"
+#include "cdsp/processing.h"
 
 static void test_handle_command(websocket_server_t* server, int client_idx,
                                 const char* command_text, char* out_response,

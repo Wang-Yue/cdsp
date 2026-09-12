@@ -175,24 +175,24 @@ endif()
 # -----------------------------------------------------------------------------
 file(GLOB DSP_SRCS
     CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/Audio/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Backend/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Config/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/DoP/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/FFT/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Filters/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Logging/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Mixer/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Pipeline/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Processors/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Public/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Resampler/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Utils/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Audio/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Backend/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Config/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/DoP/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Engine/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/FFT/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Filters/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Logging/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Mixer/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Pipeline/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Processors/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Public/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Resampler/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Utils/*.c"
 )
 
 if(ENABLE_WEBSOCKET)
-    file(GLOB SERVER_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Server/*.c")
+    file(GLOB SERVER_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/app/Server/*.c")
 else()
     set(SERVER_SRCS "")
 endif()
@@ -204,22 +204,26 @@ add_library(dsp STATIC ${DSP_SRCS})
 add_library(cdsp::dsp ALIAS dsp)
 
 target_include_directories(dsp PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Audio>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Backend>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Config>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/DoP>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Engine>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/FFT>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Filters>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Logging>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Mixer>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Pipeline>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Processors>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Public>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Resampler>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Server>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Utils>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/cdsp>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Audio>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Backend>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Config>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/DoP>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Engine>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/FFT>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Filters>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Logging>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Mixer>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Pipeline>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Processors>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Public>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Resampler>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/Utils>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/app>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/app/Server>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cdsp>
 )
 
@@ -453,7 +457,7 @@ endif()
 # -----------------------------------------------------------------------------
 # CLI Executable: cdsp
 # -----------------------------------------------------------------------------
-add_executable(cdsp main.c ${SERVER_SRCS})
+add_executable(cdsp app/main.c ${SERVER_SRCS})
 target_link_libraries(cdsp PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,dsp>")
 
 # -----------------------------------------------------------------------------
@@ -686,14 +690,14 @@ install(TARGETS cdsp dsp
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-install(DIRECTORY Public/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cdsp
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.h"
 )
 
 set_source_files_properties(
-    DoP/dsd_encoder.c
-    DoP/sigma_delta_modulator.c
+    src/DoP/dsd_encoder.c
+    src/DoP/sigma_delta_modulator.c
     Tests/CLibTests/test_dsd.c
     Tests/CLibTests/test_resampler_matrix.c
     PROPERTIES COMPILE_OPTIONS "-fno-associative-math"

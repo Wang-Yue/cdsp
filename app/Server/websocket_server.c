@@ -14,14 +14,14 @@
 
 #include "Config/cJSON.h"
 #include "Logging/app_logger.h"
-#include "Public/processing.h"
-#include "Public/signal_levels.h"
-#include "Public/spectrum.h"
 #include "Server/websocket_server_internal.h"
 #include "Server/ws_framing.h"
 #include "Server/ws_handshake.h"
 #include "Server/ws_rpc_dispatcher.h"
 #include "Utils/cdsp_time.h"
+#include "cdsp/processing.h"
+#include "cdsp/signal_levels.h"
+#include "cdsp/spectrum.h"
 
 static const logger_t server_logger = {"dsp.server.websocket"};
 

@@ -1,11 +1,11 @@
-#include "Public/spectrum.h"
+#include "cdsp/spectrum.h"
 
 #include <stdint.h>
 #include <stdio.h>
 
 #include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"
-#include "Public/cdsp_pub_types.h"
+#include "cdsp/cdsp_pub_types.h"
 
 bool cdsp_get_spectrum(dsp_engine_t* engine, cdsp_spectrum_side_t side,
                        const size_t* channel, float min_freq, float max_freq,

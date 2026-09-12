@@ -39,7 +39,9 @@ def parse_c_files(root_dir, search_dirs):
     )
 
     for d in search_dirs:
-        dir_path = os.path.join(root_dir, d)
+        dir_path = os.path.join(root_dir, "src", d)
+        if not os.path.exists(dir_path):
+            dir_path = os.path.join(root_dir, d)
         if not os.path.exists(dir_path):
             continue
         for fname in os.listdir(dir_path):

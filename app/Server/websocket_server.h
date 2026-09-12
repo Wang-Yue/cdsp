@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "Public/cdsp_pub_types.h"
+#include "cdsp/cdsp_pub_types.h"
 
 /**
  * @brief Opaque structure representing a WebSocket server.

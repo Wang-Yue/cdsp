@@ -317,7 +317,7 @@ struct dsp_engine {
   void (*set_fader_mute)(void* ctx, fader_t fader, bool mute);
 };
 
-#include "Public/cdsp_export.h"
+#include "cdsp/cdsp_export.h"
 
 /**
  * @brief Create a new DSP engine instance.

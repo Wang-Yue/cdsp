@@ -10,12 +10,12 @@
 #endif
 
 #include "Logging/app_logger.h"
-#include "Public/cdsp_pub_types.h"
-#include "Public/config.h"
-#include "Public/fader.h"
-#include "Public/general.h"
-#include "Public/processing.h"
-#include "Public/state.h"
+#include "cdsp/cdsp_pub_types.h"
+#include "cdsp/config.h"
+#include "cdsp/fader.h"
+#include "cdsp/general.h"
+#include "cdsp/processing.h"
+#include "cdsp/state.h"
 #ifdef ENABLE_WEBSOCKET
 #include "Server/websocket_server.h"
 #endif

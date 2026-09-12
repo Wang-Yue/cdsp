@@ -837,7 +837,7 @@
     "include": [
       "\"cdsp_export.h\"",
       "private",
-      "\"Public/cdsp_export.h\"",
+      "\"cdsp/cdsp_export.h\"",
       "public"
     ]
   },
@@ -853,7 +853,7 @@
     "include": [
       "\"cdsp_pub_types.h\"",
       "private",
-      "\"Public/cdsp_pub_types.h\"",
+      "\"cdsp/cdsp_pub_types.h\"",
       "public"
     ]
   },
@@ -902,7 +902,7 @@
     "include": [
       "\"config.h\"",
       "private",
-      "\"Public/config.h\"",
+      "\"cdsp/config.h\"",
       "public"
     ]
   },
@@ -1030,7 +1030,7 @@
     "include": [
       "\"devices.h\"",
       "private",
-      "\"Public/devices.h\"",
+      "\"cdsp/devices.h\"",
       "public"
     ]
   },
@@ -1206,7 +1206,7 @@
     "include": [
       "\"general.h\"",
       "private",
-      "\"Public/general.h\"",
+      "\"cdsp/general.h\"",
       "public"
     ]
   },
@@ -1303,7 +1303,7 @@
     "include": [
       "\"processing.h\"",
       "private",
-      "\"Public/processing.h\"",
+      "\"cdsp/processing.h\"",
       "public"
     ]
   },
@@ -1399,7 +1399,7 @@
     "include": [
       "\"signal_levels.h\"",
       "private",
-      "\"Public/signal_levels.h\"",
+      "\"cdsp/signal_levels.h\"",
       "public"
     ]
   },
@@ -1439,7 +1439,7 @@
     "include": [
       "\"spectrum.h\"",
       "private",
-      "\"Public/spectrum.h\"",
+      "\"cdsp/spectrum.h\"",
       "public"
     ]
   },
@@ -1455,7 +1455,7 @@
     "include": [
       "\"state.h\"",
       "private",
-      "\"Public/state.h\"",
+      "\"cdsp/state.h\"",
       "public"
     ]
   },

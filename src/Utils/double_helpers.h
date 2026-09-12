@@ -348,9 +348,10 @@ ALWAYS_INLINE void dsp_ops_complex_multiply(const double* a_re,
 #if defined(__aarch64__) || defined(__ARM_NEON)
 #include <arm_neon.h>
 
-ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(
-    const double complex* a, const double complex* b, double complex* out,
-    size_t count) {
+ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(const double complex* a,
+                                                        const double complex* b,
+                                                        double complex* out,
+                                                        size_t count) {
   float64x2_t sign = {-1.0, 1.0};
   size_t chunks_4 = count / 4;
   double* r_ptr = (double*)out;
@@ -463,9 +464,10 @@ ALWAYS_INLINE void dsp_ops_complex_fma_interleaved(
     defined(__FMA__)
 #include <immintrin.h>
 
-ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(
-    const double complex* a, const double complex* b, double complex* out,
-    size_t count) {
+ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(const double complex* a,
+                                                        const double complex* b,
+                                                        double complex* out,
+                                                        size_t count) {
   size_t chunks_8 = count / 8;
   double* r_ptr = (double*)out;
   const double* a_ptr = (const double*)a;
@@ -579,9 +581,10 @@ ALWAYS_INLINE void dsp_ops_complex_fma_interleaved(
   }
 }
 #else
-ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(
-    const double complex* a, const double complex* b, double complex* out,
-    size_t count) {
+ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(const double complex* a,
+                                                        const double complex* b,
+                                                        double complex* out,
+                                                        size_t count) {
   const double* a_ptr = (const double*)a;
   const double* b_ptr = (const double*)b;
   double* r_ptr = (double*)out;

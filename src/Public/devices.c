@@ -1,4 +1,4 @@
-#include "Public/devices.h"
+#include "cdsp/devices.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,7 +8,7 @@
 #include "Backend/audio_backend_registry.h"
 #include "Backend/backend_error.h"
 #include "Config/engine_config_types.h"
-#include "Public/cdsp_pub_types.h"
+#include "cdsp/cdsp_pub_types.h"
 
 bool cdsp_get_available_devices(const char* backend, bool is_input,
                                 cdsp_device_info_t** out_devices,

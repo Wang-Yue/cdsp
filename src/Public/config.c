@@ -1,4 +1,4 @@
-#include "Public/config.h"
+#include "cdsp/config.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -12,8 +12,8 @@
 #include "Config/engine_config_types.h"
 #include "Engine/dsp_engine.h"
 #include "Pipeline/config_loader.h"
-#include "Public/cdsp_pub_types.h"
 #include "Utils/cdsp_path.h"
+#include "cdsp/cdsp_pub_types.h"
 
 // Static utility to read file into string
 static char* read_file_to_str(const char* path) {

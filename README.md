@@ -87,8 +87,8 @@ sequenceDiagram
 
 1. **Background Compilation**: The **Control Thread** loads configuration parameters, performs synchronous disk reads (e.g. loading convolution WAV coefficient files), and allocates memory for the new pipeline in the background.
 2. **Atomic Swap**: The Control Thread publishes the new pipeline pointer via an atomic slot (`_Atomic(pipeline_t*)`).
-3. **In-Place State Transfer**: At the start of its next iteration, the **Processing Thread** checks the atomic slot. If a new pipeline is present, it calls [pipeline_transfer_state](Pipeline/pipeline.c#L174-L196). Filters are matched by name, and their active history states (such as biquad delay lines and loudness targets) are copied in-place. This state copy copies raw values and performs **zero allocations, zero deallocations, and zero disk reads**.
-4. **Deferred GC**: The old pipeline pointer is retired into a single atomic slot `retired_pipeline` (in [engine_shared_state.c](Engine/engine_shared_state.c)). The **Control Thread** periodically collects this pointer and deallocates the old structures asynchronously, keeping the audio thread entirely free of deallocation overhead.
+3. **In-Place State Transfer**: At the start of its next iteration, the **Processing Thread** checks the atomic slot. If a new pipeline is present, it calls [pipeline_transfer_state](src/Pipeline/pipeline.c#L174-L196). Filters are matched by name, and their active history states (such as biquad delay lines and loudness targets) are copied in-place. This state copy copies raw values and performs **zero allocations, zero deallocations, and zero disk reads**.
+4. **Deferred GC**: The old pipeline pointer is retired into a single atomic slot `retired_pipeline` (in [engine_shared_state.c](src/Engine/engine_shared_state.c)). The **Control Thread** periodically collects this pointer and deallocates the old structures asynchronously, keeping the audio thread entirely free of deallocation overhead.
 
 ### 2.3 Cross-Platform Vectorization & Dynamic Core Scheduling
 We leverage platform-native APIs and math acceleration frameworks depending on the target operating system:
@@ -102,7 +102,7 @@ We leverage platform-native APIs and math acceleration frameworks depending on t
 - **Explicit Loop Vectorization**: Biquad loops and windowed-sinc resampler dot products are decorated with vectorization hints (`#pragma clang loop vectorize(enable)` / OpenMP SIMD pragmas) and fast-math contract pragmas (`#pragma clang fp contract(fast)`), ensuring Clang and GCC generate optimal Neon/AVX assembly.
 
 ### 2.4 Real-Time Safe Stall Watchdog
-Hardware drops, clock drift, or device hangs are handled using a dedicated **Stall Watchdog** ([engine_capture_loop.c](Engine/engine_capture_loop.c#L180-L200)) built directly into the capture loop.
+Hardware drops, clock drift, or device hangs are handled using a dedicated **Stall Watchdog** ([engine_capture_loop.c](src/Engine/engine_capture_loop.c#L180-L200)) built directly into the capture loop.
 
 #### 2.4.1 Unified Design vs. Backend-Specific Duplication
 A major architectural advantage of our design lies in how stall detection is managed:
@@ -114,11 +114,11 @@ A major architectural advantage of our design lies in how stall detection is man
 - **Fail-Safe Transitions**: If the capture device fails to return audio chunks for more than 0.5s consecutively while running, the watchdog transitions the engine state to `STALLED` via the atomic state machine, allowing the control server to alert the client and initiate a restart. The watchdog automatically recovers when the device resumes delivery, and is disabled during the `PAUSED` state to prevent false positives.
 
 ### 2.5 DSD (Native DSD / DoP) Integration and Architectural Flexibility
-To demonstrate the architectural flexibility of our clean-sheet engines in accommodating highly specialized audio formats without adding complexity to the core real-time processing loop, we implemented native DSD over PCM (DoP) and Native DSD (8, 16, 32-bit containers) support ([dsd_decoder.h](DoP/dsd_decoder.h) / [dsd_encoder.h](DoP/dsd_encoder.h)).
+To demonstrate the architectural flexibility of our clean-sheet engines in accommodating highly specialized audio formats without adding complexity to the core real-time processing loop, we implemented native DSD over PCM (DoP) and Native DSD (8, 16, 32-bit containers) support ([dsd_decoder.h](src/DoP/dsd_decoder.h) / [dsd_encoder.h](src/DoP/dsd_encoder.h)).
 
 Rather than running DSD as a separate, bulky processing layer, our design integrates it directly into the capture and processing pipeline:
-- **Automatic In-Place Decoding**: The DSD decoder runs at the start of the `EngineCaptureLoop` ([engine_capture_loop.c](Engine/engine_capture_loop.c)). It handles both Native DSD bitstreams (e.g. from ALSA or ASIO) and DoP carrier streams (detecting the `0x05`/`0xFA` marker alternation). When active, it decodes the raw 1-bit DSD samples in-place and decimates them back to high-resolution PCM before volume, level metering, and filter pipelines execute. This ensures downstream DSP stages and visual UI meters measure the actual audio content instead of high-frequency carrier noise.
-- **Selective In-Place Encoding**: At the end of the `EngineProcessingLoop` ([engine_processing_loop.c](Engine/engine_processing_loop.c)), if `output_dop` is enabled or a Native DSD sample format is configured, processed PCM is modulated back to DSD and packed into a DoP or Native DSD stream before being sent to the playback SPSC queue.
+- **Automatic In-Place Decoding**: The DSD decoder runs at the start of the `EngineCaptureLoop` ([engine_capture_loop.c](src/Engine/engine_capture_loop.c)). It handles both Native DSD bitstreams (e.g. from ALSA or ASIO) and DoP carrier streams (detecting the `0x05`/`0xFA` marker alternation). When active, it decodes the raw 1-bit DSD samples in-place and decimates them back to high-resolution PCM before volume, level metering, and filter pipelines execute. This ensures downstream DSP stages and visual UI meters measure the actual audio content instead of high-frequency carrier noise.
+- **Selective In-Place Encoding**: At the end of the `EngineProcessingLoop` ([engine_processing_loop.c](src/Engine/engine_processing_loop.c)), if `output_dop` is enabled or a Native DSD sample format is configured, processed PCM is modulated back to DSD and packed into a DoP or Native DSD stream before being sent to the playback SPSC queue.
 
 ### 2.6 Resampling Architecture: Fixed Input vs. Fixed Output Models
 
@@ -147,7 +147,7 @@ A major architectural contrast lies in how integration and external control are 
   - Consequently, any external GUI client (like *CamillaDSP-Monitor*) must control it across a process boundary via network loopback WebSocket RPC requests, introducing socket connection setup, IPC context-switches, and JSON serialization/deserialization overhead.
   
 * **CDSP Engine (Dual-Mode: WebSocket & Zero-Overhead FFI)**:
-  - In addition to hosting a compatible, drop-in WebSocket RPC server ([Server/websocket_server.c](Server/websocket_server.c)) for standard clients, `CDSP` exposes a clean, FFI-friendly public C API ([Public/general.h](Public/general.h)).
+  - In addition to hosting a compatible, drop-in WebSocket RPC server ([websocket_server.c](app/Server/websocket_server.c)) for standard clients, `CDSP` exposes a clean, FFI-friendly public C API ([general.h](include/cdsp/general.h)).
   - It exposes simple, stateless, thread-safe functions (such as `cdsp_engine_create`, `cdsp_volume_set_gain`, `cdsp_signal_levels_get`) that operate directly on opaque engine handles.
   - This allows host applications (like `CamillaDSP-Monitor` via Swift FFI or `Monitor-Qt` via direct C++ link) to embed the DSP processing engine **directly in-process** as a static or dynamic library (`libdsp.a`). 
   - Parameter changes (such as muting, panning, or changing volume) bypass IPC serialization entirely and update the engine's atomic register slots directly, eliminating TCP/IPC socket latency and loopback jitter.
