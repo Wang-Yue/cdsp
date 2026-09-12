@@ -140,8 +140,8 @@ static bool generator_capture_read(void* ctx, size_t frames,
     case SIGNAL_TYPE_SQUARE: {
       double phase = capture->phase;
       for (size_t f = 0; f < frames; f++) {
-        double val =
-            (sin(phase * 2.0 * M_PI) >= 0.0 ? 1.0 : -1.0) * capture->amplitude;
+        double s = sin(phase * 2.0 * M_PI);
+        double val = copysign(1.0, s) * capture->amplitude;
         for (size_t c = 0; c < capture->channels; c++) {
           dst_channels[c][f] = val;
         }

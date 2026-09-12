@@ -491,7 +491,14 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
     capture_avail_min =
         capture->period > 0 ? (snd_pcm_uframes_t)capture->period : 1;
     if (capture_avail_min > (snd_pcm_uframes_t)capture->bufsize) {
-      capture_avail_min = (snd_pcm_uframes_t)capture->bufsize;
+      char msg[256];
+      snprintf(msg, sizeof(msg),
+               "Trying to set avail_min to %lu, must be smaller than or equal to "
+               "device buffer size of %lu",
+               (unsigned long)capture_avail_min, (unsigned long)capture->bufsize);
+      logger_error(&g_logger, "%s", msg);
+      if (err) backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+      goto error_cleanup;
     }
   }
   capture->last_avail_min = (size_t)capture_avail_min;
@@ -629,7 +636,17 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
 
   // Update avail_min and start_threshold if requested input frames changed
   // (src/alsa_backend/device.rs:958 & buffermanager.rs:126-133)
-  if (frames != capture->last_avail_min && frames <= capture->bufsize) {
+  if (frames != capture->last_avail_min) {
+    if (frames > (size_t)capture->bufsize) {
+      char msg[256];
+      snprintf(msg, sizeof(msg),
+               "Trying to set avail_min to %zu, must be smaller than or equal to "
+               "device buffer size of %lu",
+               frames, (unsigned long)capture->bufsize);
+      logger_error(&g_logger, "%s", msg);
+      if (err) backend_error_init(err, BACKEND_ERROR_READ_ERROR, msg);
+      return false;
+    }
     snd_pcm_sw_params_t* sw_params;
     snd_pcm_sw_params_alloca(&sw_params);
     if (snd_pcm_sw_params_current(capture->pcm, sw_params) >= 0) {
@@ -1030,9 +1047,9 @@ static void alsa_capture_set_pitch(void* ctx, double multiplier) {
   if (capture->hctl_pitch_elem) {
     long value = 0;
     if (capture->pitch_is_loopback) {
-      value = (long)round(100000.0 / multiplier);
+      value = (long)trunc(100000.0 / multiplier);
     } else {
-      value = (long)round(multiplier * 1000000.0);
+      value = (long)trunc(multiplier * 1000000.0);
     }
     alsa_elem_write_as_int(capture->hctl_pitch_elem, value);
   }

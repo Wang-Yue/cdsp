@@ -7,9 +7,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "Config/log_level.h"
 #include "Engine/cdsp_sem.h"
+
+static FILE* g_log_file = NULL;
+static pthread_mutex_t g_log_file_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void app_logger_set_logfile(const char* path) {
+  if (!path || path[0] == '\0') return;
+  pthread_mutex_lock(&g_log_file_mutex);
+  if (g_log_file && g_log_file != stderr && g_log_file != stdout) {
+    fclose(g_log_file);
+  }
+  g_log_file = fopen(path, "a");
+  if (!g_log_file) {
+    fprintf(stderr, "Failed to open log file %s for writing\n", path);
+  }
+  pthread_mutex_unlock(&g_log_file_mutex);
+}
 
 struct app_logger_s {
   log_record_t* storage;
@@ -315,9 +332,35 @@ static void* worker_thread_func(void* arg) {
         if (cb) {
           cb(rec.level, rec.label ? rec.label : "", formatted_msg, cb_ctx);
         } else {
-          printf("[%s] %s: %s\n", lvl_str, rec.label ? rec.label : "",
-                 formatted_msg);
-          fflush(stdout);
+          char time_buf[64];
+          long usec = 0;
+#if defined(_WIN32)
+          time_t t = time(NULL);
+          struct tm tm_info;
+          localtime_s(&tm_info, &t);
+          strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_info);
+          usec = 0;
+#elif defined(__APPLE__) || defined(__linux__) || (defined(_POSIX_TIMERS) && (_POSIX_TIMERS > 0))
+          struct timespec ts;
+          clock_gettime(CLOCK_REALTIME, &ts);
+          struct tm tm_info;
+          localtime_r(&ts.tv_sec, &tm_info);
+          strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_info);
+          usec = (long)(ts.tv_nsec / 1000);
+#else
+          time_t t = time(NULL);
+          struct tm tm_info;
+          localtime_r(&t, &tm_info);
+          strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_info);
+          usec = 0;
+#endif
+
+          pthread_mutex_lock(&g_log_file_mutex);
+          FILE* out = g_log_file ? g_log_file : stderr;
+          fprintf(out, "%s.%06ld %-5s [%s] %s\n", time_buf, usec, lvl_str,
+                  rec.label ? rec.label : "", formatted_msg);
+          fflush(out);
+          pthread_mutex_unlock(&g_log_file_mutex);
         }
       } else {
         break;
@@ -463,6 +506,16 @@ void app_logger_flush_and_stop(app_logger_t* logger) {
     atomic_store_explicit(&logger->should_exit, false, memory_order_release);
   }
   pthread_mutex_unlock(&logger->worker_mutex);
+
+  pthread_mutex_lock(&g_log_file_mutex);
+  if (g_log_file) {
+    fflush(g_log_file);
+    if (g_log_file != stderr && g_log_file != stdout) {
+      fclose(g_log_file);
+    }
+    g_log_file = NULL;
+  }
+  pthread_mutex_unlock(&g_log_file_mutex);
 }
 
 void app_logger_log_raw_str(const logger_t* logger, log_level_t level,
@@ -511,8 +564,11 @@ void app_logger_log_raw_str(const logger_t* logger, log_level_t level,
         lvl_str = "INFO";
         break;
     }
-    printf("[%s] %s: %s\n", lvl_str, label, out_str);
-    fflush(stdout);
+    pthread_mutex_lock(&g_log_file_mutex);
+    FILE* out = g_log_file ? g_log_file : stderr;
+    fprintf(out, "[%s] %s: %s\n", lvl_str, label, out_str);
+    fflush(out);
+    pthread_mutex_unlock(&g_log_file_mutex);
   }
 
   if (full_msg) {

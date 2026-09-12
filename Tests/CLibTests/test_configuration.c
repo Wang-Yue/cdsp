@@ -1805,7 +1805,11 @@ TEST(RelativePathResolvedAfterTokenSubstitution) {
   char test_dir[256];
   snprintf(test_dir, sizeof(test_dir), "/tmp/cdsp_test_token_path_%d",
            getpid());
+#ifdef _WIN32
+  mkdir(test_dir);
+#else
   mkdir(test_dir, 0755);
+#endif
 
   char coeff_file[512];
   snprintf(coeff_file, sizeof(coeff_file), "%s/coeffs_44100.raw", test_dir);

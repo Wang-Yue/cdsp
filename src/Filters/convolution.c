@@ -79,13 +79,33 @@ typedef struct convolution_filter convolution_filter_t;
  * @return Pointer to the allocated double array containing samples, or NULL on
  * failure.
  */
-static double* load_wav_file(const char* path, int channel, size_t* out_count) {
+static double* load_wav_file(const char* path, int channel, size_t* out_count,
+                             char* err_buf, size_t err_len) {
+  if (err_buf && err_len > 0) err_buf[0] = '\0';
+  if (!out_count) return NULL;
+  *out_count = 0;
+
+  if (channel < 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len, "Conv channel must be non-negative (got %d)",
+               channel);
+    }
+    return NULL;
+  }
+
   FILE* f = cdsp_fopen(path, "rb");
-  if (!f) return NULL;
+  if (!f) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len, "Could not open WAV file '%s'", path);
+    }
+    return NULL;
+  }
 
   uint16_t audio_format = 0;
   uint16_t channels = 0;
   uint16_t bits_per_sample = 0;
+  uint16_t block_align = 0;
+  uint16_t valid_bits = 0;
   bool fmt_found = false;
   bool data_found = false;
   size_t data_bytes = 0;
@@ -93,6 +113,10 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
 
   uint8_t riff_header[12];
   if (fread(riff_header, 1, 12, f) != 12) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len, "Unable to parse wav file '%s', file is too short",
+               path);
+    }
     fclose(f);
     return NULL;
   }
@@ -100,6 +124,10 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
   if ((memcmp(riff_header, "RIFF", 4) != 0 &&
        memcmp(riff_header, "RF64", 4) != 0) ||
       memcmp(riff_header + 8, "WAVE", 4) != 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len, "Unable to parse wav file '%s', invalid RIFF/WAVE header",
+               path);
+    }
     fclose(f);
     return NULL;
   }
@@ -113,6 +141,9 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
       if (chunk_size >= 24) {
         uint8_t ds64_payload[24];
         if (fread(ds64_payload, 1, 24, f) != 24) {
+          if (err_buf && err_len > 0) {
+            snprintf(err_buf, err_len, "Unable to parse ds64 chunk in '%s'", path);
+          }
           fclose(f);
           return NULL;
         }
@@ -133,6 +164,11 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
       }
     } else if (memcmp(chunk_id, "fmt ", 4) == 0) {
       if (chunk_size < 16) {
+        if (err_buf && err_len > 0) {
+          snprintf(err_buf, err_len,
+                   "Unable to parse fmt chunk in '%s', too small (%u bytes)",
+                   path, chunk_size);
+        }
         fclose(f);
         return NULL;
       }
@@ -142,16 +178,23 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
         return NULL;
       }
       if (fread(fmt_data, 1, chunk_size, f) != chunk_size) {
+        if (err_buf && err_len > 0) {
+          snprintf(err_buf, err_len, "Unable to read fmt chunk in '%s'", path);
+        }
         free(fmt_data);
         fclose(f);
         return NULL;
       }
       audio_format = fmt_data[0] | (fmt_data[1] << 8);
       channels = fmt_data[2] | (fmt_data[3] << 8);
+      block_align = fmt_data[12] | (fmt_data[13] << 8);
       bits_per_sample = fmt_data[14] | (fmt_data[15] << 8);
+      valid_bits = bits_per_sample;
 
       if (audio_format == 65534) {  // WAVE_FORMAT_EXTENSIBLE
         if (chunk_size >= 40) {
+          uint16_t v = fmt_data[18] | (fmt_data[19] << 8);
+          if (v > 0) valid_bits = v;
           audio_format = fmt_data[24] | (fmt_data[25] << 8);
         }
       }
@@ -163,6 +206,10 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
     } else if (memcmp(chunk_id, "data", 4) == 0) {
       if (chunk_size == 0xFFFFFFFF && rf64_data_size > 0) {
         if (rf64_data_size > (uint64_t)SIZE_MAX) {
+          if (err_buf && err_len > 0) {
+            snprintf(err_buf, err_len,
+                     "WAV file '%s' data size exceeds system capacity", path);
+          }
           fclose(f);
           return NULL;
         }
@@ -179,27 +226,111 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
   }
 
   if (!fmt_found || !data_found || data_bytes == 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len,
+               "Unable to parse wav file '%s', missing fmt or data chunk", path);
+    }
     fclose(f);
     return NULL;
   }
 
   if (audio_format != 1 && audio_format != 3) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len,
+               "Unsupported wav format in '%s': audio_format %u", path,
+               audio_format);
+    }
+    fclose(f);
+    return NULL;
+  }
+
+  if (channels == 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len, "WAV file '%s' has 0 channels", path);
+    }
     fclose(f);
     return NULL;
   }
 
   if (channel < 0 || channel >= (int)channels) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len,
+               "Cant read channel %d of file '%s' which contains %u channels.",
+               channel, path, channels);
+    }
     fclose(f);
     return NULL;
   }
 
-  size_t bytes_per_sample = bits_per_sample / 8;
-  if (channels == 0 || bytes_per_sample == 0) {
+  size_t container_bytes = 0;
+  if (block_align >= channels) {
+    container_bytes = block_align / channels;
+  } else if (bits_per_sample > 0) {
+    container_bytes = (bits_per_sample + 7) / 8;
+  }
+
+  if (container_bytes == 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len, "Invalid container byte size 0 in WAV file '%s'",
+               path);
+    }
     fclose(f);
     return NULL;
   }
-  size_t num_frames = data_bytes / (channels * bytes_per_sample);
+
+  enum wav_dec_type {
+    DEC_U8,
+    DEC_S16,
+    DEC_S24_3,
+    DEC_S24_4_LJ,
+    DEC_S32,
+    DEC_F32,
+    DEC_F64,
+    DEC_UNSUPPORTED
+  } dec = DEC_UNSUPPORTED;
+
+  if (audio_format == 1) {  // PCM
+    if (bits_per_sample == 8 && container_bytes == 1) {
+      dec = DEC_U8;
+    } else if (bits_per_sample == 16 && container_bytes == 2) {
+      dec = DEC_S16;
+    } else if (bits_per_sample == 24 && container_bytes == 3) {
+      dec = DEC_S24_3;
+    } else if ((bits_per_sample == 24 && container_bytes == 4) ||
+               (bits_per_sample == 32 && valid_bits == 24 &&
+                container_bytes == 4)) {
+      dec = DEC_S24_4_LJ;
+    } else if (bits_per_sample == 32 &&
+               (valid_bits == 32 || valid_bits == bits_per_sample) &&
+               container_bytes == 4) {
+      dec = DEC_S32;
+    }
+  } else if (audio_format == 3) {  // IEEE Float
+    if (bits_per_sample == 32 && container_bytes == 4) {
+      dec = DEC_F32;
+    } else if (bits_per_sample == 64 && container_bytes == 8) {
+      dec = DEC_F64;
+    }
+  }
+
+  if (dec == DEC_UNSUPPORTED) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len,
+               "Unsupported wav format in '%s' (audio_format=%u, bits=%u, "
+               "container_bytes=%zu, valid_bits=%u)",
+               path, audio_format, bits_per_sample, container_bytes,
+               valid_bits);
+    }
+    fclose(f);
+    return NULL;
+  }
+
+  size_t bytes_per_frame = channels * container_bytes;
+  size_t num_frames = data_bytes / bytes_per_frame;
   if (num_frames == 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len, "WAV file '%s' has 0 audio frames", path);
+    }
     fclose(f);
     return NULL;
   }
@@ -210,7 +341,7 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
     return NULL;
   }
 
-  uint8_t* frame_buf = (uint8_t*)calloc(channels, bytes_per_sample);
+  uint8_t* frame_buf = (uint8_t*)malloc(bytes_per_frame);
   if (!frame_buf) {
     free(result);
     fclose(f);
@@ -219,30 +350,51 @@ static double* load_wav_file(const char* path, int channel, size_t* out_count) {
 
   size_t read_frames = 0;
   for (size_t i = 0; i < num_frames; i++) {
-    if (fread(frame_buf, 1, channels * bytes_per_sample, f) !=
-        channels * bytes_per_sample) {
+    if (fread(frame_buf, 1, bytes_per_frame, f) != bytes_per_frame) {
       break;
     }
-    const uint8_t* src = frame_buf + channel * bytes_per_sample;
+    const uint8_t* src = frame_buf + channel * container_bytes;
     double sample = 0.0;
-    if (bits_per_sample == 16) {
-      sample = pcm_sample_decode_s16_bytes(src);
-    } else if (bits_per_sample == 24) {
-      sample = pcm_sample_decode_s24_3bytes(src);
-    } else if (bits_per_sample == 32) {
-      if (audio_format == 3) {
-        sample = pcm_sample_decode_f32_bytes(src);
-      } else {
+    switch (dec) {
+      case DEC_U8:
+        sample = ((double)src[0] - 128.0) / 128.0;
+        break;
+      case DEC_S16:
+        sample = pcm_sample_decode_s16_bytes(src);
+        break;
+      case DEC_S24_3:
+        sample = pcm_sample_decode_s24_3bytes(src);
+        break;
+      case DEC_S24_4_LJ:
+        sample = pcm_sample_decode_s24_4_lj_bytes(src);
+        break;
+      case DEC_S32:
         sample = pcm_sample_decode_s32_bytes(src);
-      }
-    } else if (bits_per_sample == 64) {
-      sample = pcm_sample_decode_f64_bytes(src);
+        break;
+      case DEC_F32:
+        sample = pcm_sample_decode_f32_bytes(src);
+        break;
+      case DEC_F64:
+        sample = pcm_sample_decode_f64_bytes(src);
+        break;
+      default:
+        break;
     }
     result[read_frames++] = sample;
   }
 
   free(frame_buf);
   fclose(f);
+
+  if (read_frames == 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len,
+               "No usable samples decoded from WAV file '%s'", path);
+    }
+    free(result);
+    return NULL;
+  }
+
   *out_count = read_frames;
   return result;
 }
@@ -295,14 +447,45 @@ static char* read_dynamic_line(FILE* f) {
  */
 static double* load_raw_file(const char* path, const char* format_str,
                              int skip_bytes, int read_bytes,
-                             size_t* out_count) {
+                             size_t* out_count, char* err_buf,
+                             size_t err_len) {
+  if (err_buf && err_len > 0) err_buf[0] = '\0';
+  if (!out_count) return NULL;
+  *out_count = 0;
+
+  if (skip_bytes < 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len,
+               "Conv skip_bytes_lines must be non-negative (got %d)",
+               skip_bytes);
+    }
+    return NULL;
+  }
+  if (read_bytes < 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len,
+               "Conv read_bytes_lines must be non-negative (got %d)",
+               read_bytes);
+    }
+    return NULL;
+  }
+
   if (strcmp(format_str, "TEXT") == 0) {
     FILE* f = cdsp_fopen(path, "r");
-    if (!f) return NULL;
+    if (!f) {
+      if (err_buf && err_len > 0) {
+        snprintf(err_buf, err_len, "Could not open coefficient file '%s'", path);
+      }
+      return NULL;
+    }
 
     for (int i = 0; i < skip_bytes; i++) {
       char* line = read_dynamic_line(f);
       if (!line) {
+        if (err_buf && err_len > 0) {
+          snprintf(err_buf, err_len, "Failed to skip %d lines in file '%s'",
+                   skip_bytes, path);
+        }
         fclose(f);
         return NULL;
       }
@@ -321,6 +504,7 @@ static double* load_raw_file(const char* path, const char* format_str,
       char* line = read_dynamic_line(f);
       if (!line) break;
       lines_read++;
+      size_t line_nbr = (size_t)skip_bytes + lines_read;
 
       char* p = line;
       while (*p != '\0' && isspace((unsigned char)*p)) p++;
@@ -331,6 +515,11 @@ static double* load_raw_file(const char* path, const char* format_str,
 
       if (len == 0) {
         // Empty or whitespace-only lines are invalid
+        if (err_buf && err_len > 0) {
+          snprintf(err_buf, err_len,
+                   "Can't parse value on line %zu of file '%s'. Reason: empty line",
+                   line_nbr, path);
+        }
         free(line);
         free(result);
         fclose(f);
@@ -341,6 +530,11 @@ static double* load_raw_file(const char* path, const char* format_str,
       if (*check == '+' || *check == '-') check++;
       if (check[0] == '0' && (check[1] == 'x' || check[1] == 'X')) {
         // Hex floats are rejected by upstream Rust f64::from_str
+        if (err_buf && err_len > 0) {
+          snprintf(err_buf, err_len,
+                   "Can't parse value on line %zu of file '%s'. Reason: hex float not supported",
+                   line_nbr, path);
+        }
         free(line);
         free(result);
         fclose(f);
@@ -351,6 +545,11 @@ static double* load_raw_file(const char* path, const char* format_str,
       double val = strtod(p, &endptr);
       if (endptr == p || *endptr != '\0') {
         // Malformed value or trailing characters (comments, multiple values)
+        if (err_buf && err_len > 0) {
+          snprintf(err_buf, err_len,
+                   "Can't parse value on line %zu of file '%s'. Reason: invalid float '%s'",
+                   line_nbr, path, p);
+        }
         free(line);
         free(result);
         fclose(f);
@@ -373,6 +572,9 @@ static double* load_raw_file(const char* path, const char* format_str,
 
     fclose(f);
     if (count == 0) {
+      if (err_buf && err_len > 0) {
+        snprintf(err_buf, err_len, "No coefficients found in file '%s'", path);
+      }
       free(result);
       return NULL;
     }
@@ -381,7 +583,12 @@ static double* load_raw_file(const char* path, const char* format_str,
   }
 
   FILE* f = cdsp_fopen(path, "rb");
-  if (!f) return NULL;
+  if (!f) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len, "Could not open coefficient file '%s'", path);
+    }
+    return NULL;
+  }
 
   if (skip_bytes > 0) {
     fseek(f, skip_bytes, SEEK_SET);
@@ -389,20 +596,36 @@ static double* load_raw_file(const char* path, const char* format_str,
 
   binary_sample_format_t format = file_sample_format_from_string(format_str);
   if (format == BINARY_SAMPLE_FORMAT_INVALID) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len,
+               "Unsupported sample format '%s' for raw file '%s'",
+               format_str, path);
+    }
     fclose(f);
     return NULL;
   }
 
   size_t sample_size = sample_format_bytes_per_sample(format);
   if (sample_size == 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len,
+               "Invalid sample size for format '%s' in file '%s'",
+               format_str, path);
+    }
     fclose(f);
     return NULL;
   }
 
   fseek(f, 0, SEEK_END);
-  long file_size = ftell(f) - skip_bytes;
+  long total_file_size = ftell(f);
+  long file_size = total_file_size - skip_bytes;
   fseek(f, skip_bytes, SEEK_SET);
   if (file_size <= 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len,
+               "Coefficient file '%s' is empty or skip offset (%d) exceeds file size (%ld)",
+               path, skip_bytes, total_file_size);
+    }
     fclose(f);
     return NULL;
   }
@@ -422,6 +645,10 @@ static double* load_raw_file(const char* path, const char* format_str,
 
   size_t num_samples = max_read / sample_size;
   if (num_samples == 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len, "No coefficients could be read from '%s'",
+               path);
+    }
     fclose(f);
     return NULL;
   }
@@ -482,6 +709,16 @@ static double* load_raw_file(const char* path, const char* format_str,
 
   free(buf);
   fclose(f);
+
+  if (read_count == 0) {
+    if (err_buf && err_len > 0) {
+      snprintf(err_buf, err_len, "No coefficients could be read from '%s'",
+               path);
+    }
+    free(result);
+    return NULL;
+  }
+
   *out_count = read_count;
   return result;
 }
@@ -638,11 +875,15 @@ static int convolution_config_validate(const filter_config_t* config,
         return -1;
       }
       break;
-    case CONV_TYPE_WAV:
-    case CONV_TYPE_RAW: {
+    case CONV_TYPE_WAV: {
       if (params->filename[0] == '\0') {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                          "Conv filter missing filename");
+        return -1;
+      }
+      if (params->channel < 0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv 'channel' must be non-negative");
         return -1;
       }
       FILE* f = cdsp_fopen(params->filename, "rb");
@@ -664,28 +905,77 @@ static int convolution_config_validate(const filter_config_t* config,
         config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
         return -1;
       }
-      // Upstream's validate_config actually reads the coefficients and errors
-      // on an empty result, so a WAV channel index out of range, an
-      // unsupported encoding, an unparsable text file or a skip past EOF all
-      // reject the configuration. Doing the same here costs one extra read of
-      // the impulse response at config-check time and turns what used to be
-      // silence on the affected channel into a diagnostic.
+      char err_msg[512] = {0};
       size_t count = 0;
-      double* probe = NULL;
-      if (params->type == CONV_TYPE_WAV) {
-        probe = load_wav_file(params->filename, params->channel, &count);
-      } else {
-        probe = load_raw_file(params->filename, params->format,
-                              params->skip_bytes_lines,
-                              params->read_bytes_lines, &count);
-      }
+      double* probe = load_wav_file(params->filename, params->channel, &count,
+                                    err_msg, sizeof(err_msg));
       free(probe);
       if (!probe || count == 0) {
+        if (err_msg[0] != '\0') {
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER, "%s", err_msg);
+        } else {
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                           "Conv coefficients could not be read from '%s' "
+                           "(unsupported encoding, channel out of range, or no "
+                           "usable samples)",
+                           params->filename);
+        }
+        return -1;
+      }
+      break;
+    }
+    case CONV_TYPE_RAW: {
+      if (params->filename[0] == '\0') {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Conv coefficients could not be read from '%s' "
-                         "(unsupported encoding, channel out of range, or no "
-                         "usable samples)",
-                         params->filename);
+                         "Conv filter missing filename");
+        return -1;
+      }
+      if (params->skip_bytes_lines < 0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv 'skip_bytes_lines' must be non-negative");
+        return -1;
+      }
+      if (params->read_bytes_lines < 0) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv 'read_bytes_lines' must be non-negative");
+        return -1;
+      }
+      FILE* f = cdsp_fopen(params->filename, "rb");
+      if (!f) {
+        char msg[512];
+        snprintf(msg, sizeof(msg),
+                 "Conv file '%s' cannot be opened or does not exist",
+                 params->filename);
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
+        return -1;
+      }
+      fseek(f, 0, SEEK_END);
+      long fsize = ftell(f);
+      fclose(f);
+      if (fsize <= 0) {
+        char msg[512];
+        snprintf(msg, sizeof(msg), "Conv file '%s' is empty or invalid",
+                 params->filename);
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, msg);
+        return -1;
+      }
+      char err_msg[512] = {0};
+      size_t count = 0;
+      double* probe = load_raw_file(params->filename, params->format,
+                                    params->skip_bytes_lines,
+                                    params->read_bytes_lines, &count,
+                                    err_msg, sizeof(err_msg));
+      free(probe);
+      if (!probe || count == 0) {
+        if (err_msg[0] != '\0') {
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER, "%s", err_msg);
+        } else {
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                           "Conv coefficients could not be read from '%s' "
+                           "(unsupported encoding, channel out of range, or no "
+                           "usable samples)",
+                           params->filename);
+        }
         return -1;
       }
       break;
@@ -763,6 +1053,7 @@ static void* convolution_filter_create(const char* name,
   double* dummy_coeffs = NULL;
 
   if (!filter->coeffs) {
+    char err_msg[512] = {0};
     if (params->type == CONV_TYPE_VALUES) {
       coeffs = params->values;
       coeffs_count = params->values_count;
@@ -777,14 +1068,16 @@ static void* convolution_filter_create(const char* name,
       coeffs_count = len;
     } else if (params->type == CONV_TYPE_WAV) {
       size_t count = 0;
-      dummy_coeffs = load_wav_file(params->filename, params->channel, &count);
+      dummy_coeffs = load_wav_file(params->filename, params->channel, &count,
+                                   err_msg, sizeof(err_msg));
       coeffs = dummy_coeffs;
       coeffs_count = count;
     } else if (params->type == CONV_TYPE_RAW) {
       size_t count = 0;
       dummy_coeffs = load_raw_file(params->filename, params->format,
                                    params->skip_bytes_lines,
-                                   params->read_bytes_lines, &count);
+                                   params->read_bytes_lines, &count,
+                                   err_msg, sizeof(err_msg));
       coeffs = dummy_coeffs;
       coeffs_count = count;
     }
@@ -793,9 +1086,14 @@ static void* convolution_filter_create(const char* name,
       // Upstream's coeffs_from_config propagates the load error, so the
       // config is rejected. Producing one all-zero segment here instead
       // silently muted the channel.
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Conv filter '%s': no coefficients could be loaded",
-                       filter->name);
+      if (err_msg[0] != '\0') {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv filter '%s': %s", filter->name, err_msg);
+      } else {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Conv filter '%s': no coefficients could be loaded",
+                         filter->name);
+      }
       goto fail;
     }
     filter->num_segments = (coeffs_count + chunk_size - 1) / chunk_size;
@@ -964,19 +1262,21 @@ static void convolution_filter_transfer_state(void* dest_ptr,
   const convolution_filter_t* src = (const convolution_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
 
-  if (dest->chunk_size == src->chunk_size &&
-      dest->num_segments == src->num_segments) {
-    size_t num_seg = dest->num_segments;
-    size_t spec_stride = dest->spec_stride;
-
-    // Copy overlap buffer
+  if (dest->chunk_size == src->chunk_size) {
+    // Copy overlap buffer whenever chunk sizes match, even if segment count changes
     memcpy(dest->overlap_buffer, src->overlap_buffer,
            dest->chunk_size * sizeof(double));
 
-    // Copy history segments in a single contiguous block
-    memcpy(dest->hist_f, src->hist_f,
-           num_seg * spec_stride * sizeof(complex_t));
-    dest->write_idx = src->write_idx;
+    // History segments only line up if segment count also matches
+    if (dest->num_segments == src->num_segments) {
+      size_t num_seg = dest->num_segments;
+      size_t spec_stride = dest->spec_stride;
+
+      // Copy history segments in a single contiguous block
+      memcpy(dest->hist_f, src->hist_f,
+             num_seg * spec_stride * sizeof(complex_t));
+      dest->write_idx = src->write_idx;
+    }
   }
 }
 

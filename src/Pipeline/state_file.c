@@ -1,6 +1,7 @@
 #include "Pipeline/state_file.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,10 @@
 #include "Utils/cdsp_path.h"
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #include <io.h>
 #elif defined(__APPLE__)
 #include <fcntl.h>
@@ -51,6 +56,36 @@ static void trim_trailing(char* str) {
 }
 
 /**
+ * @brief Strip trailing YAML comments (' # ...'), respecting double and single
+ * quotes so hashes within quoted strings are preserved.
+ */
+static void strip_trailing_comment(char* str) {
+  bool in_double_quote = false;
+  bool in_single_quote = false;
+  for (char* p = str; *p != '\0'; p++) {
+    if (*p == '"' && !in_single_quote) {
+      size_t backslashes = 0;
+      char* b = p - 1;
+      while (b >= str && *b == '\\') {
+        backslashes++;
+        b--;
+      }
+      if (backslashes % 2 == 0) {
+        in_double_quote = !in_double_quote;
+      }
+    } else if (*p == '\'' && !in_double_quote) {
+      in_single_quote = !in_single_quote;
+    } else if (*p == '#' && !in_double_quote && !in_single_quote) {
+      if (p == str || isspace((unsigned char)*(p - 1))) {
+        *p = '\0';
+        break;
+      }
+    }
+  }
+  trim_trailing(str);
+}
+
+/**
  * @brief Parse a YAML boolean scalar.
  *
  * @param val   The scalar text, already stripped of surrounding whitespace.
@@ -73,12 +108,29 @@ static bool parse_bool_scalar(const char* val, bool* out) {
 
 /**
  * @brief Parse a YAML floating point scalar, rejecting trailing garbage.
+ * Supports YAML .inf, -.inf, .nan representations.
  *
  * @param val   The scalar text, already stripped of surrounding whitespace.
  * @param out   Receives the parsed value on success.
  * @return true if @p val is entirely consumed as a number, false otherwise.
  */
 static bool parse_double_scalar(const char* val, double* out) {
+  if (strcmp(val, ".inf") == 0 || strcmp(val, "+.inf") == 0 ||
+      strcmp(val, ".Inf") == 0 || strcmp(val, "+.Inf") == 0 ||
+      strcmp(val, ".INF") == 0 || strcmp(val, "+.INF") == 0) {
+    *out = INFINITY;
+    return true;
+  }
+  if (strcmp(val, "-.inf") == 0 || strcmp(val, "-.Inf") == 0 ||
+      strcmp(val, "-.INF") == 0) {
+    *out = -INFINITY;
+    return true;
+  }
+  if (strcmp(val, ".nan") == 0 || strcmp(val, ".NaN") == 0 ||
+      strcmp(val, ".NAN") == 0) {
+    *out = NAN;
+    return true;
+  }
   char* end = NULL;
   double parsed = strtod(val, &end);
   if (end == val || !end || *end != '\0') {
@@ -120,11 +172,7 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
 
   while (fgets(line, sizeof(line), fp)) {
     trim_trailing(line);
-
-    // skip empty or comment or doc-start lines
-    if (line[0] == '\0' || line[0] == '#' || strcmp(line, "---") == 0) {
-      continue;
-    }
+    strip_trailing_comment(line);
 
     // Indentation is deliberately ignored. A YAML block sequence nested under
     // a mapping key may be written either at the key's own indentation (which
@@ -134,6 +182,11 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
     char* trimmed = line;
     while (*trimmed == ' ' || *trimmed == '\t') {
       trimmed++;
+    }
+
+    // skip empty or comment or doc-start lines
+    if (trimmed[0] == '\0' || trimmed[0] == '#' || strcmp(trimmed, "---") == 0) {
+      continue;
     }
 
     if (mode != 0 && is_sequence_item(trimmed)) {
@@ -170,16 +223,27 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
       char* val = trimmed + 12;
       while (*val == ' ' || *val == '\t') val++;
       if (strcmp(val, "null") != 0 && strcmp(val, "~") != 0 && val[0] != '\0') {
-        // strip quotes if any
+        // strip quotes if any and unescape
         if (val[0] == '"' || val[0] == '\'') {
+          char quote_char = val[0];
           size_t vlen = strlen(val);
-          if (vlen >= 2 && val[vlen - 1] == val[0]) {
-            size_t copylen = vlen - 2;
-            if (copylen >= sizeof(out_state->config_path)) {
-              copylen = sizeof(out_state->config_path) - 1;
+          if (vlen >= 2 && val[vlen - 1] == quote_char) {
+            char* dst = out_state->config_path;
+            size_t max_dst = sizeof(out_state->config_path) - 1;
+            size_t d = 0;
+            for (size_t s = 1; s + 1 < vlen && d < max_dst; s++) {
+              if (quote_char == '"' && val[s] == '\\' && s + 2 < vlen) {
+                s++;
+                if (val[s] == '"') dst[d++] = '"';
+                else if (val[s] == '\\') dst[d++] = '\\';
+                else if (val[s] == 'n') dst[d++] = '\n';
+                else if (val[s] == 't') dst[d++] = '\t';
+                else { dst[d++] = '\\'; dst[d++] = val[s]; }
+              } else {
+                dst[d++] = val[s];
+              }
             }
-            strncpy(out_state->config_path, val + 1, copylen);
-            out_state->config_path[copylen] = '\0';
+            dst[d] = '\0';
           } else {
             strncpy(out_state->config_path, val + 1,
                     sizeof(out_state->config_path) - 1);
@@ -198,16 +262,78 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
         break;
       }
       seen_mute = true;
-      mode = 1;
-      mute_idx = 0;
+      char* val = trimmed + 5;
+      while (*val == ' ' || *val == '\t') val++;
+      if (*val == '[') {
+        // Flow sequence style: mute: [false, false, false, false, false]
+        val++;  // skip '['
+        char* close_bracket = strrchr(val, ']');
+        if (!close_bracket) {
+          valid = false;
+          break;
+        }
+        *close_bracket = '\0';
+        mute_idx = 0;
+        char* token = strtok(val, ",");
+        while (token) {
+          while (*token == ' ' || *token == '\t') token++;
+          trim_trailing(token);
+          bool parsed = false;
+          if (mute_idx >= 5 || !parse_bool_scalar(token, &parsed)) {
+            valid = false;
+            break;
+          }
+          out_state->mute[mute_idx++] = parsed;
+          token = strtok(NULL, ",");
+        }
+        if (!valid || mute_idx != 5) {
+          valid = false;
+          break;
+        }
+        mode = 0;
+      } else {
+        mode = 1;
+        mute_idx = 0;
+      }
     } else if (strncmp(trimmed, "volume:", 7) == 0) {
       if (seen_volume) {
         valid = false;
         break;
       }
       seen_volume = true;
-      mode = 2;
-      vol_idx = 0;
+      char* val = trimmed + 7;
+      while (*val == ' ' || *val == '\t') val++;
+      if (*val == '[') {
+        // Flow sequence style: volume: [0.0, 0.0, 0.0, 0.0, 0.0]
+        val++;  // skip '['
+        char* close_bracket = strrchr(val, ']');
+        if (!close_bracket) {
+          valid = false;
+          break;
+        }
+        *close_bracket = '\0';
+        vol_idx = 0;
+        char* token = strtok(val, ",");
+        while (token) {
+          while (*token == ' ' || *token == '\t') token++;
+          trim_trailing(token);
+          double parsed = 0.0;
+          if (vol_idx >= 5 || !parse_double_scalar(token, &parsed)) {
+            valid = false;
+            break;
+          }
+          out_state->volume[vol_idx++] = parsed;
+          token = strtok(NULL, ",");
+        }
+        if (!valid || vol_idx != 5) {
+          valid = false;
+          break;
+        }
+        mode = 0;
+      } else {
+        mode = 2;
+        vol_idx = 0;
+      }
     } else {
       // Upstream deserializes with `deny_unknown_fields`, so an unrecognised
       // key invalidates the whole file.
@@ -254,7 +380,14 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
 
   fprintf(fp, "---\n");
   if (state->has_config_path) {
-    fprintf(fp, "config_path: \"%s\"\n", state->config_path);
+    fprintf(fp, "config_path: \"");
+    for (const char* p = state->config_path; *p != '\0'; p++) {
+      if (*p == '\\' || *p == '"') {
+        fputc('\\', fp);
+      }
+      fputc(*p, fp);
+    }
+    fprintf(fp, "\"\n");
   } else {
     fprintf(fp, "config_path: null\n");
   }
@@ -269,7 +402,7 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
 
   fprintf(fp, "volume:\n");
   for (int i = 0; i < 5; i++) {
-    fprintf(fp, "- %.6f\n", state->volume[i]);
+    fprintf(fp, "- %.9g\n", state->volume[i]);
   }
 
   fflush(fp);
@@ -283,14 +416,21 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
   fclose(fp);
 
 #ifdef _WIN32
-  remove(filename);
-#endif
+  if (!MoveFileExA(tmp_name, filename,
+                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    logger_error(&g_logger, "Failed to rename state temporary file %s to %s",
+                 tmp_name, filename);
+    remove(tmp_name);
+    return false;
+  }
+#else
   if (rename(tmp_name, filename) != 0) {
     logger_error(&g_logger, "Failed to rename state temporary file %s to %s",
                  tmp_name, filename);
     remove(tmp_name);
     return false;
   }
+#endif
 
   logger_info(&g_logger, "State saved to %s", filename);
   return true;

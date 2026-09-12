@@ -58,6 +58,7 @@ static inline cJSON* safe_create_float_array(const float* numbers, int count) {
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #define CLOSE_SOCKET(s) close(s)
@@ -200,6 +201,13 @@ void client_session_clear(client_session_t* session) {
   session->frag_len = 0;
   session->frag_cap = 0;
   session->frag_opcode = 0;
+  if (session->rx_buf) {
+    free(session->rx_buf);
+    session->rx_buf = NULL;
+  }
+  session->rx_len = 0;
+  session->rx_cap = 0;
+  session->last_vu_update_time = 0;
   session->last_pb_generation = 0;
   session->last_cap_generation = 0;
   session->vu_pending_publish = false;
@@ -380,10 +388,8 @@ static void* server_thread_func(void* arg) {
                                              cap_channels * sizeof(float));
           if (new_peaks) {
             server->capture_global_peaks = new_peaks;
-            for (size_t k = server->capture_global_peaks_count;
-                 k < cap_channels; k++) {
-              server->capture_global_peaks[k] = 0.0f;
-            }
+            memset(server->capture_global_peaks, 0,
+                   cap_channels * sizeof(float));
             server->capture_global_peaks_count = cap_channels;
           }
         }
@@ -405,10 +411,8 @@ static void* server_thread_func(void* arg) {
                                              pb_channels * sizeof(float));
           if (new_peaks) {
             server->playback_global_peaks = new_peaks;
-            for (size_t k = server->playback_global_peaks_count;
-                 k < pb_channels; k++) {
-              server->playback_global_peaks[k] = 0.0f;
-            }
+            memset(server->playback_global_peaks, 0,
+                   pb_channels * sizeof(float));
             server->playback_global_peaks_count = pb_channels;
           }
         }
@@ -452,9 +456,10 @@ static void* server_thread_func(void* arg) {
           session->last_pb_generation = pb_gen;
           session->last_cap_generation = cap_gen;
 
-          float dt = session->last_vu_push_time == 0
+          float dt = session->last_vu_update_time == 0
                          ? 100.0f
-                         : (float)(now - session->last_vu_push_time);
+                         : (float)(now - session->last_vu_update_time);
+          session->last_vu_update_time = now;
           float attack = smoothing_alpha(dt, session->vu_attack);
           float release = smoothing_alpha(dt, session->vu_release);
 
@@ -578,16 +583,20 @@ static void* server_thread_func(void* arg) {
           cJSON_AddItemToObject(root, "value", val_value);
           cJSON_AddItemToObject(
               val_value, "playback_rms",
-              safe_create_float_array(session->vu_pb_rms, (int)pb_channels));
+              safe_create_float_array(session->vu_pb_rms,
+                                      (int)session->vu_pb_channels));
           cJSON_AddItemToObject(
               val_value, "playback_peak",
-              safe_create_float_array(session->vu_pb_peak, (int)pb_channels));
+              safe_create_float_array(session->vu_pb_peak,
+                                      (int)session->vu_pb_channels));
           cJSON_AddItemToObject(
               val_value, "capture_rms",
-              safe_create_float_array(session->vu_cap_rms, (int)cap_channels));
+              safe_create_float_array(session->vu_cap_rms,
+                                      (int)session->vu_cap_channels));
           cJSON_AddItemToObject(
               val_value, "capture_peak",
-              safe_create_float_array(session->vu_cap_peak, (int)cap_channels));
+              safe_create_float_array(session->vu_cap_peak,
+                                      (int)session->vu_cap_channels));
           QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
           cJSON_Delete(root);
           session->vu_pending_publish = false;
@@ -657,7 +666,15 @@ static void* server_thread_func(void* arg) {
                              ? cdsp_get_capture_rate(server->engine)
                              : 44100;
           if (cap_rate <= 0) cap_rate = 44100;
-          float hop_interval_ms = 1024.0f * 500.0f / (float)cap_rate;
+          float min_freq = session->spectrum_min_freq > 0.0f
+                               ? session->spectrum_min_freq
+                               : 20.0f;
+          size_t min_len = (size_t)ceilf((float)cap_rate / min_freq);
+          size_t fft_len = 1024;
+          while (fft_len < min_len && fft_len < 65536) {
+            fft_len <<= 1;
+          }
+          float hop_interval_ms = (float)fft_len * 500.0f / (float)cap_rate;
           float rate_interval_ms = session->spectrum_max_rate > 0.0f
                                        ? 1000.0f / session->spectrum_max_rate
                                        : 0.0f;
@@ -715,6 +732,19 @@ static void* server_thread_func(void* arg) {
         if (!IS_INVALID_SOCKET(cfd) && num_clients < 32) {
           logger_info(&server_logger, "Accepted client connection on slot %d",
                       num_clients);
+#ifdef _WIN32
+          DWORD timeout_ms = 2000;
+          setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout_ms,
+                     sizeof(timeout_ms));
+          setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout_ms,
+                     sizeof(timeout_ms));
+#else
+          struct timeval tv;
+          tv.tv_sec = 2;
+          tv.tv_usec = 0;
+          setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+          setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+#endif
           client_fds[num_clients] = cfd;
           last_state[num_clients][0] = '\0';
 
@@ -737,8 +767,8 @@ static void* server_thread_func(void* arg) {
       }
       for (int i = 0; i < polled_clients; i++) {
         if (fds[i + 1].revents & (POLLIN | POLLERR | POLLHUP)) {
-          char buf[4096];
-          int n = recv(client_fds[i], buf, sizeof(buf) - 1, 0);
+          char temp[4096];
+          int n = recv(client_fds[i], temp, sizeof(temp), 0);
 
           if (n <= 0) {
             logger_info(&server_logger, "Client disconnected on slot %d", i);
@@ -746,275 +776,433 @@ static void* server_thread_func(void* arg) {
                                   &num_clients, i);
             polled_clients--;
             i--;
-          } else {
-            buf[n] = '\0';
-            if (ws_handle_handshake(buf, client_fds[i])) {
-              pthread_mutex_lock(&server->sessions_mutex);
-              server->client_sessions[i].is_websocket = true;
+            continue;
+          }
+
+          pthread_mutex_lock(&server->sessions_mutex);
+          client_session_t* session = &server->client_sessions[i];
+          if (session->rx_len + (size_t)n > 64 * 1024 * 1024) {
+            pthread_mutex_unlock(&server->sessions_mutex);
+            ws_send_close_frame(client_fds[i], 1009);
+            remove_client_session(server, fds, client_fds, last_state,
+                                  &num_clients, i);
+            polled_clients--;
+            i--;
+            continue;
+          }
+
+          if (session->rx_len + (size_t)n >= session->rx_cap) {
+            size_t new_cap = session->rx_len + (size_t)n + 4096;
+            if (new_cap < 8192) new_cap = 8192;
+            char* new_buf = (char*)realloc(session->rx_buf, new_cap);
+            if (!new_buf) {
               pthread_mutex_unlock(&server->sessions_mutex);
+              ws_send_close_frame(client_fds[i], 1011);
+              remove_client_session(server, fds, client_fds, last_state,
+                                    &num_clients, i);
+              polled_clients--;
+              i--;
               continue;
             }
+            session->rx_buf = new_buf;
+            session->rx_cap = new_cap;
+          }
+          memcpy(session->rx_buf + session->rx_len, temp, (size_t)n);
+          session->rx_len += (size_t)n;
+          session->rx_buf[session->rx_len] = '\0';
 
-            int offset = 0;
-            while (offset < n) {
-              size_t payload_len = 0;
-              size_t header_len = 0;
-              unsigned char* mask = NULL;
-              uint8_t opcode = 0;
-              bool fin = false;
-              if (ws_parse_frame_header_ext(
-                      (const unsigned char*)&buf[offset], (size_t)(n - offset),
-                      &payload_len, &header_len, &mask, &opcode, &fin)) {
-                if (server->client_sessions[i].is_websocket && !mask) {
-                  ws_send_close_frame(client_fds[i], 1002);
-                  remove_client_session(server, fds, client_fds, last_state,
-                                        &num_clients, i);
-                  polled_clients--;
-                  i--;
-                  break;
-                }
-                // RFC 6455 §5.5: Control frames (opcodes 0x08, 0x09, 0x0A) MUST
-                // have a payload length of 125 bytes or less and MUST NOT be
-                // fragmented.
-                if ((opcode & 0x08) != 0 && (payload_len > 125 || !fin)) {
-                  ws_send_close_frame(client_fds[i], 1002);
-                  remove_client_session(server, fds, client_fds, last_state,
-                                        &num_clients, i);
-                  polled_clients--;
-                  i--;
-                  break;
-                }
+          bool client_removed = false;
 
-                if (opcode == 0x08) {
-                  uint16_t close_code = 1000;
-                  // RFC 6455 §5.5.1: If there is a body, the first two bytes
-                  // must be a 2-byte unsigned int code. A close frame cannot
-                  // have a payload length of 1.
-                  if (payload_len == 1) {
-                    ws_send_close_frame(client_fds[i], 1002);
-                    remove_client_session(server, fds, client_fds, last_state,
-                                          &num_clients, i);
-                    polled_clients--;
-                    i--;
-                    break;
-                  }
-                  if (payload_len >= 2 &&
-                      (size_t)(n - offset) >= header_len + 2) {
-                    const unsigned char* p =
-                        (const unsigned char*)&buf[offset + header_len];
-                    unsigned char b0 = mask ? (p[0] ^ mask[0]) : p[0];
-                    unsigned char b1 = mask ? (p[1] ^ mask[1]) : p[1];
-                    close_code = ((uint16_t)b0 << 8) | (uint16_t)b1;
-                    if (!is_valid_close_code(close_code)) {
-                      ws_send_close_frame(client_fds[i], 1002);
-                      remove_client_session(server, fds, client_fds, last_state,
-                                            &num_clients, i);
-                      polled_clients--;
-                      i--;
-                      break;
-                    }
-                  }
-                  ws_send_close_frame(client_fds[i], close_code);
-                  remove_client_session(server, fds, client_fds, last_state,
-                                        &num_clients, i);
-                  polled_clients--;
-                  i--;
-                  break;
-                }
-
-                if (payload_len > 16 * 1024 * 1024) {
-                  ws_send_close_frame(client_fds[i], 1009);
-                  remove_client_session(server, fds, client_fds, last_state,
-                                        &num_clients, i);
-                  polled_clients--;
-                  i--;
-                  break;
-                }
-
-                size_t to_copy = (size_t)(n - offset - header_len);
-                if (to_copy > payload_len) to_copy = payload_len;
-
-                char* payload = (char*)malloc(payload_len + 1);
-                if (!payload) {
-                  ws_send_close_frame(client_fds[i], 1011);
-                  remove_client_session(server, fds, client_fds, last_state,
-                                        &num_clients, i);
-                  polled_clients--;
-                  i--;
-                  break;
-                }
-
-                memcpy(payload, &buf[offset + header_len], to_copy);
-                size_t total_read = to_copy;
-                bool read_ok = true;
-                while (total_read < payload_len) {
-                  int r = recv(client_fds[i], payload + total_read,
-                               (int)(payload_len - total_read), 0);
-                  if (r <= 0) {
-                    read_ok = false;
-                    break;
-                  }
-                  total_read += (size_t)r;
-                }
-
-                if (!read_ok) {
-                  free(payload);
-                  remove_client_session(server, fds, client_fds, last_state,
-                                        &num_clients, i);
-                  polled_clients--;
-                  i--;
-                  break;
-                }
-
-                if (mask) {
-                  for (size_t p = 0; p < payload_len; p++) {
-                    payload[p] ^= mask[p % 4];
-                  }
-                }
-                payload[payload_len] = '\0';
-
-                if (to_copy < payload_len) {
-                  offset = n;
-                } else {
-                  offset += (int)(header_len + payload_len);
-                }
-
-                if (opcode == 0x09) {
-                  ws_send_pong_frame(client_fds[i], payload, payload_len);
-                  free(payload);
-                  continue;
-                }
-                if (opcode == 0x0A) {
-                  free(payload);
-                  continue;
-                }
-                if (opcode == 0x02) {
-                  // Upstream ignores binary frames without responding
-                  // (WsCommand::None)
-                  free(payload);
-                  continue;
-                }
-
-                pthread_mutex_lock(&server->sessions_mutex);
-                client_session_t* session = &server->client_sessions[i];
-                if (!fin || opcode == 0x00 || session->frag_len > 0) {
-                  if (opcode != 0x00) {
-                    session->frag_len = 0;
-                    session->frag_opcode = opcode;
-                  }
-                  if (session->frag_len + payload_len > 64 * 1024 * 1024) {
-                    pthread_mutex_unlock(&server->sessions_mutex);
-                    free(payload);
-                    ws_send_close_frame(client_fds[i], 1009);
-                    remove_client_session(server, fds, client_fds, last_state,
-                                          &num_clients, i);
-                    polled_clients--;
-                    i--;
-                    break;
-                  }
-
-                  size_t needed = session->frag_len + payload_len + 1;
-                  if (needed > session->frag_cap) {
-                    size_t new_cap = needed < 65536 ? 65536 : needed * 2;
-                    char* new_buf = (char*)realloc(session->frag_buf, new_cap);
-                    if (!new_buf) {
-                      pthread_mutex_unlock(&server->sessions_mutex);
-                      free(payload);
-                      ws_send_close_frame(client_fds[i], 1011);
-                      remove_client_session(server, fds, client_fds, last_state,
-                                            &num_clients, i);
-                      polled_clients--;
-                      i--;
-                      break;
-                    }
-                    session->frag_buf = new_buf;
-                    session->frag_cap = new_cap;
-                  }
-                  memcpy(session->frag_buf + session->frag_len, payload,
-                         payload_len);
-                  session->frag_len += payload_len;
-                  session->frag_buf[session->frag_len] = '\0';
-                  free(payload);
-
-                  if (!fin) {
-                    pthread_mutex_unlock(&server->sessions_mutex);
-                    continue;
-                  }
-
-                  char* full_msg = session->frag_buf;
-                  uint8_t orig_op = session->frag_opcode;
-                  session->frag_buf = NULL;
-                  session->frag_cap = 0;
-                  session->frag_len = 0;
-                  session->frag_opcode = 0;
-                  pthread_mutex_unlock(&server->sessions_mutex);
-
-                  if (orig_op == 0x01 &&
-                      !is_valid_utf8((const unsigned char*)full_msg,
-                                     strlen(full_msg))) {
-                    free(full_msg);
-                    ws_send_close_frame(client_fds[i], 1007);
-                    remove_client_session(server, fds, client_fds, last_state,
-                                          &num_clients, i);
-                    polled_clients--;
-                    i--;
-                    break;
-                  }
-
-                  logger_debug(&server_logger,
-                               "Received fragmented WS message: %s", full_msg);
-                  dyn_string_t ds;
-                  dyn_string_init(&ds, 4096);
-                  websocket_server_handle_command(server, i, full_msg, &ds);
-                  if (ds.data && ds.data[0] != '\0') {
-                    logger_debug(&server_logger, "Sending WS response: %s",
-                                 ds.data);
-                    ws_send_frame(client_fds[i], ds.data);
-                  }
-                  dyn_string_free(&ds);
-                  free(full_msg);
+          // Process HTTP handshake if WebSocket connection not yet established
+          if (!session->is_websocket) {
+            const char* header_end = strstr(session->rx_buf, "\r\n\r\n");
+            if (header_end) {
+              size_t req_len = (size_t)(header_end + 4 - session->rx_buf);
+              char* req_str = (char*)malloc(req_len + 1);
+              if (req_str) {
+                memcpy(req_str, session->rx_buf, req_len);
+                req_str[req_len] = '\0';
+                bool hs_ok = ws_handle_handshake(req_str, client_fds[i]);
+                free(req_str);
+                if (hs_ok) {
+                  session->is_websocket = true;
+                  memmove(session->rx_buf, session->rx_buf + req_len,
+                          session->rx_len - req_len);
+                  session->rx_len -= req_len;
+                  session->rx_buf[session->rx_len] = '\0';
                 } else {
                   pthread_mutex_unlock(&server->sessions_mutex);
-                  if (opcode == 0x01 &&
-                      !is_valid_utf8((const unsigned char*)payload,
-                                     payload_len)) {
-                    free(payload);
-                    ws_send_close_frame(client_fds[i], 1007);
-                    remove_client_session(server, fds, client_fds, last_state,
-                                          &num_clients, i);
-                    polled_clients--;
-                    i--;
-                    break;
-                  }
-                  logger_debug(&server_logger, "Received WS frame: %s",
-                               payload);
-                  dyn_string_t ds;
-                  dyn_string_init(&ds, 4096);
-                  websocket_server_handle_command(server, i, payload, &ds);
-                  if (ds.data && ds.data[0] != '\0') {
-                    logger_debug(&server_logger, "Sending WS response: %s",
-                                 ds.data);
-                    ws_send_frame(client_fds[i], ds.data);
-                  }
-                  dyn_string_free(&ds);
-                  free(payload);
+                  remove_client_session(server, fds, client_fds, last_state,
+                                        &num_clients, i);
+                  polled_clients--;
+                  i--;
+                  continue;
                 }
-              } else {
-                logger_debug(&server_logger, "Received raw TCP: %s",
-                             &buf[offset]);
+              }
+            } else if (session->rx_len > 8192) {
+              const char* bad_request =
+                  "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
+              send(client_fds[i], bad_request, (int)strlen(bad_request), 0);
+              pthread_mutex_unlock(&server->sessions_mutex);
+              remove_client_session(server, fds, client_fds, last_state,
+                                    &num_clients, i);
+              polled_clients--;
+              i--;
+              continue;
+            }
+          }
 
+          if (!session->is_websocket) {
+            const char* end_ptr = NULL;
+            cJSON* test_json =
+                cJSON_ParseWithOpts(session->rx_buf, &end_ptr, false);
+            if (test_json) {
+              cJSON_Delete(test_json);
+              size_t consumed = (size_t)(end_ptr - session->rx_buf);
+              char* cmd_copy = (char*)malloc(consumed + 1);
+              if (cmd_copy) {
+                memcpy(cmd_copy, session->rx_buf, consumed);
+                cmd_copy[consumed] = '\0';
+                logger_debug(&server_logger, "Received raw TCP: %s", cmd_copy);
                 dyn_string_t ds;
                 dyn_string_init(&ds, 4096);
-                websocket_server_handle_command(server, i, &buf[offset], &ds);
+                websocket_server_handle_command(server, i, cmd_copy, &ds);
                 if (ds.data && ds.data[0] != '\0') {
                   logger_debug(&server_logger, "Sending raw TCP response: %s",
                                ds.data);
                   send(client_fds[i], ds.data, (int)strlen(ds.data), 0);
                 }
                 dyn_string_free(&ds);
-                break;
+                free(cmd_copy);
+              }
+              while (consumed < session->rx_len &&
+                     (session->rx_buf[consumed] == '\r' ||
+                      session->rx_buf[consumed] == '\n' ||
+                      session->rx_buf[consumed] == ' ')) {
+                consumed++;
+              }
+              memmove(session->rx_buf, session->rx_buf + consumed,
+                      session->rx_len - consumed);
+              session->rx_len -= consumed;
+              session->rx_buf[session->rx_len] = '\0';
+            }
+            pthread_mutex_unlock(&server->sessions_mutex);
+            continue;
+          }
+
+          // Process all complete WebSocket frames in the buffer
+          while (session->rx_len >= 2) {
+            const unsigned char* rxb = (const unsigned char*)session->rx_buf;
+            // RFC 6455 §5.2: Reserved bits must be 0
+            if ((rxb[0] & 0x70) != 0) {
+              pthread_mutex_unlock(&server->sessions_mutex);
+              ws_send_close_frame(client_fds[i], 1002);
+              remove_client_session(server, fds, client_fds, last_state,
+                                    &num_clients, i);
+              polled_clients--;
+              i--;
+              client_removed = true;
+              break;
+            }
+
+            uint8_t opcode = rxb[0] & 0x0F;
+            if (opcode != 0x00 && opcode != 0x01 && opcode != 0x02 &&
+                opcode != 0x08 && opcode != 0x09 && opcode != 0x0A) {
+              pthread_mutex_unlock(&server->sessions_mutex);
+              ws_send_close_frame(client_fds[i], 1002);
+              remove_client_session(server, fds, client_fds, last_state,
+                                    &num_clients, i);
+              polled_clients--;
+              i--;
+              client_removed = true;
+              break;
+            }
+
+            uint8_t len_byte = rxb[1];
+            bool masked = (len_byte & 0x80) != 0;
+            // RFC 6455 §5.1: Client must mask all frames
+            if (!masked) {
+              pthread_mutex_unlock(&server->sessions_mutex);
+              ws_send_close_frame(client_fds[i], 1002);
+              remove_client_session(server, fds, client_fds, last_state,
+                                    &num_clients, i);
+              polled_clients--;
+              i--;
+              client_removed = true;
+              break;
+            }
+
+            size_t needed_header = 2;
+            size_t p_len = (len_byte & 0x7F);
+            if (p_len == 126) {
+              needed_header = 4;
+            } else if (p_len == 127) {
+              needed_header = 10;
+            }
+            if (masked) needed_header += 4;
+
+            if (session->rx_len < needed_header) {
+              // Incomplete header, wait for more bytes from socket
+              break;
+            }
+
+            size_t payload_len = 0;
+            size_t header_len = 0;
+            unsigned char* mask = NULL;
+            bool fin = false;
+            if (!ws_parse_frame_header_ext(rxb, session->rx_len,
+                                           &payload_len, &header_len,
+                                           &mask, &opcode, &fin)) {
+              pthread_mutex_unlock(&server->sessions_mutex);
+              ws_send_close_frame(client_fds[i], 1002);
+              remove_client_session(server, fds, client_fds, last_state,
+                                    &num_clients, i);
+              polled_clients--;
+              i--;
+              client_removed = true;
+              break;
+            }
+
+            // RFC 6455 §5.5: Control frames must be <= 125 bytes and unfragmented
+            if ((opcode & 0x08) != 0 && (payload_len > 125 || !fin)) {
+              pthread_mutex_unlock(&server->sessions_mutex);
+              ws_send_close_frame(client_fds[i], 1002);
+              remove_client_session(server, fds, client_fds, last_state,
+                                    &num_clients, i);
+              polled_clients--;
+              i--;
+              client_removed = true;
+              break;
+            }
+
+            if (payload_len > 16 * 1024 * 1024) {
+              pthread_mutex_unlock(&server->sessions_mutex);
+              ws_send_close_frame(client_fds[i], 1009);
+              remove_client_session(server, fds, client_fds, last_state,
+                                    &num_clients, i);
+              polled_clients--;
+              i--;
+              client_removed = true;
+              break;
+            }
+
+            if (session->rx_len < header_len + payload_len) {
+              // Incomplete frame payload, wait for next socket read
+              break;
+            }
+
+            // Extract complete frame payload without blocking
+            char* payload = (char*)malloc(payload_len + 1);
+            if (!payload) {
+              pthread_mutex_unlock(&server->sessions_mutex);
+              ws_send_close_frame(client_fds[i], 1011);
+              remove_client_session(server, fds, client_fds, last_state,
+                                    &num_clients, i);
+              polled_clients--;
+              i--;
+              client_removed = true;
+              break;
+            }
+
+            memcpy(payload, session->rx_buf + header_len, payload_len);
+            if (mask) {
+              for (size_t p = 0; p < payload_len; p++) {
+                payload[p] ^= mask[p % 4];
               }
             }
+            payload[payload_len] = '\0';
+
+            // Consume frame from session rx_buf
+            size_t frame_total = header_len + payload_len;
+            memmove(session->rx_buf, session->rx_buf + frame_total,
+                    session->rx_len - frame_total);
+            session->rx_len -= frame_total;
+            session->rx_buf[session->rx_len] = '\0';
+
+            // Handle Close frame (0x08)
+            if (opcode == 0x08) {
+              uint16_t close_code = 1000;
+              if (payload_len == 1) {
+                free(payload);
+                pthread_mutex_unlock(&server->sessions_mutex);
+                ws_send_close_frame(client_fds[i], 1002);
+                remove_client_session(server, fds, client_fds, last_state,
+                                      &num_clients, i);
+                polled_clients--;
+                i--;
+                client_removed = true;
+                break;
+              }
+              if (payload_len >= 2) {
+                unsigned char b0 = (unsigned char)payload[0];
+                unsigned char b1 = (unsigned char)payload[1];
+                close_code = ((uint16_t)b0 << 8) | (uint16_t)b1;
+                if (!is_valid_close_code(close_code)) {
+                  free(payload);
+                  pthread_mutex_unlock(&server->sessions_mutex);
+                  ws_send_close_frame(client_fds[i], 1002);
+                  remove_client_session(server, fds, client_fds, last_state,
+                                        &num_clients, i);
+                  polled_clients--;
+                  i--;
+                  client_removed = true;
+                  break;
+                }
+                // RFC 6455 §5.5.1: Validate UTF-8 of close reason
+                if (payload_len > 2 &&
+                    !is_valid_utf8((const unsigned char*)(payload + 2),
+                                   payload_len - 2)) {
+                  free(payload);
+                  pthread_mutex_unlock(&server->sessions_mutex);
+                  ws_send_close_frame(client_fds[i], 1007);
+                  remove_client_session(server, fds, client_fds, last_state,
+                                        &num_clients, i);
+                  polled_clients--;
+                  i--;
+                  client_removed = true;
+                  break;
+                }
+              }
+              free(payload);
+              pthread_mutex_unlock(&server->sessions_mutex);
+              ws_send_close_frame(client_fds[i], close_code);
+              remove_client_session(server, fds, client_fds, last_state,
+                                    &num_clients, i);
+              polled_clients--;
+              i--;
+              client_removed = true;
+              break;
+            }
+
+            // Handle Ping (0x09)
+            if (opcode == 0x09) {
+              ws_send_pong_frame(client_fds[i], payload, payload_len);
+              free(payload);
+              continue;
+            }
+
+            // Handle Pong (0x0A)
+            if (opcode == 0x0A) {
+              free(payload);
+              continue;
+            }
+
+            // Handle Binary (0x02) - ignored per upstream
+            if (opcode == 0x02) {
+              free(payload);
+              continue;
+            }
+
+            // Handle Text and Continuation
+            if (!fin || opcode == 0x00 || session->frag_len > 0) {
+              if (opcode != 0x00) {
+                session->frag_len = 0;
+                session->frag_opcode = opcode;
+              }
+              if (session->frag_len + payload_len > 64 * 1024 * 1024) {
+                free(payload);
+                pthread_mutex_unlock(&server->sessions_mutex);
+                ws_send_close_frame(client_fds[i], 1009);
+                remove_client_session(server, fds, client_fds, last_state,
+                                      &num_clients, i);
+                polled_clients--;
+                i--;
+                client_removed = true;
+                break;
+              }
+
+              size_t needed = session->frag_len + payload_len + 1;
+              if (needed > session->frag_cap) {
+                size_t new_cap = needed < 65536 ? 65536 : needed * 2;
+                char* new_buf = (char*)realloc(session->frag_buf, new_cap);
+                if (!new_buf) {
+                  free(payload);
+                  pthread_mutex_unlock(&server->sessions_mutex);
+                  ws_send_close_frame(client_fds[i], 1011);
+                  remove_client_session(server, fds, client_fds, last_state,
+                                        &num_clients, i);
+                  polled_clients--;
+                  i--;
+                  client_removed = true;
+                  break;
+                }
+                session->frag_buf = new_buf;
+                session->frag_cap = new_cap;
+              }
+              memcpy(session->frag_buf + session->frag_len, payload,
+                     payload_len);
+              session->frag_len += payload_len;
+              session->frag_buf[session->frag_len] = '\0';
+              free(payload);
+
+              if (!fin) {
+                continue;
+              }
+
+              char* full_msg = session->frag_buf;
+              uint8_t orig_op = session->frag_opcode;
+              session->frag_buf = NULL;
+              session->frag_cap = 0;
+              session->frag_len = 0;
+              session->frag_opcode = 0;
+
+              if (orig_op == 0x01 &&
+                  !is_valid_utf8((const unsigned char*)full_msg,
+                                 strlen(full_msg))) {
+                free(full_msg);
+                pthread_mutex_unlock(&server->sessions_mutex);
+                ws_send_close_frame(client_fds[i], 1007);
+                remove_client_session(server, fds, client_fds, last_state,
+                                      &num_clients, i);
+                polled_clients--;
+                i--;
+                client_removed = true;
+                break;
+              }
+
+              logger_debug(&server_logger,
+                           "Received fragmented WS message: %s", full_msg);
+              dyn_string_t ds;
+              dyn_string_init(&ds, 4096);
+              websocket_server_handle_command(server, i, full_msg, &ds);
+              if (ds.data && ds.data[0] != '\0') {
+                logger_debug(&server_logger, "Sending WS response: %s",
+                             ds.data);
+                ws_send_frame(client_fds[i], ds.data);
+              }
+              dyn_string_free(&ds);
+              free(full_msg);
+            } else {
+              if (opcode == 0x01 &&
+                  !is_valid_utf8((const unsigned char*)payload,
+                                 payload_len)) {
+                free(payload);
+                pthread_mutex_unlock(&server->sessions_mutex);
+                ws_send_close_frame(client_fds[i], 1007);
+                remove_client_session(server, fds, client_fds, last_state,
+                                      &num_clients, i);
+                polled_clients--;
+                i--;
+                client_removed = true;
+                break;
+              }
+              logger_debug(&server_logger, "Received WS frame: %s",
+                           payload);
+              dyn_string_t ds;
+              dyn_string_init(&ds, 4096);
+              websocket_server_handle_command(server, i, payload, &ds);
+              if (ds.data && ds.data[0] != '\0') {
+                logger_debug(&server_logger, "Sending WS response: %s",
+                             ds.data);
+                ws_send_frame(client_fds[i], ds.data);
+              }
+              dyn_string_free(&ds);
+              free(payload);
+            }
+          }
+
+          if (!client_removed) {
+            pthread_mutex_unlock(&server->sessions_mutex);
           }
         }
       }
@@ -1179,4 +1367,14 @@ void websocket_server_set_client_vu_subscribed(websocket_server_t* server,
   pthread_mutex_lock(&server->sessions_mutex);
   server->client_sessions[client_idx].vu_subscribed = subscribed;
   pthread_mutex_unlock(&server->sessions_mutex);
+}
+
+bool websocket_server_is_exit_requested(const websocket_server_t* server) {
+  if (!server) return false;
+  return atomic_load_explicit(&server->exit_requested, memory_order_acquire);
+}
+
+void websocket_server_request_exit(websocket_server_t* server) {
+  if (!server) return;
+  atomic_store_explicit(&server->exit_requested, true, memory_order_release);
 }

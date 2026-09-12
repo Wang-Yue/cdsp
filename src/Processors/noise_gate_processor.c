@@ -81,14 +81,26 @@ static int noise_gate_config_validate(const processor_config_t* config,
                      "NoiseGate: channels must be > 0, got 0");
     return -1;
   }
-  if (p->attack <= 0.0) {
+  if (p->attack <= 0.0 || !isfinite(p->attack)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "NoiseGate: attack must be > 0, got %g", p->attack);
     return -1;
   }
-  if (p->release <= 0.0) {
+  if (p->release <= 0.0 || !isfinite(p->release)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "NoiseGate: release must be > 0, got %g", p->release);
+    return -1;
+  }
+  if (!isfinite(p->threshold)) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "NoiseGate: threshold must be finite, got %g",
+                     p->threshold);
+    return -1;
+  }
+  if (!isfinite(p->attenuation)) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "NoiseGate: attenuation must be finite, got %g",
+                     p->attenuation);
     return -1;
   }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {
@@ -327,7 +339,7 @@ static void noise_gate_processor_transfer_state(void* dest_ptr,
                                                 const void* src_ptr) {
   noise_gate_processor_t* dest = (noise_gate_processor_t*)dest_ptr;
   const noise_gate_processor_t* src = (const noise_gate_processor_t*)src_ptr;
-  if (!dest || !src) return;
+  if (!dest || !src || dest == src) return;
   dest->prev_loudness = src->prev_loudness;
 }
 

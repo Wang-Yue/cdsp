@@ -8,7 +8,16 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#ifndef STDIN_FILENO
+#define STDIN_FILENO 0
+#endif
+#define pipe(fds) _pipe(fds, 4096, _O_BINARY)
+#else
 #include <unistd.h>
+#endif
 
 #include "Audio/audio_chunk.h"
 #include "Backend/audio_backend.h"

@@ -196,6 +196,11 @@ struct processing_parameters {
    * playback_channels. */
   atomic_float_t* playback_signal_rms;
 
+  /** Per-channel capture global linear peak levels since start/reset. */
+  atomic_float_t* capture_global_peaks;
+  /** Per-channel playback global linear peak levels since start/reset. */
+  atomic_float_t* playback_global_peaks;
+
   /** Per-chunk history of capture peak levels (1,024 chunk records). */
   chunk_level_history_t capture_peak_history;
   /** Per-chunk history of capture RMS levels (1,024 chunk records). */
@@ -316,7 +321,10 @@ processing_parameters_t* processing_parameters_create(
         (atomic_float_t*)calloc(capture_channels, sizeof(atomic_float_t));
     params->capture_signal_rms =
         (atomic_float_t*)calloc(capture_channels, sizeof(atomic_float_t));
+    params->capture_global_peaks =
+        (atomic_float_t*)calloc(capture_channels, sizeof(atomic_float_t));
     if (!params->capture_signal_peak || !params->capture_signal_rms ||
+        !params->capture_global_peaks ||
         !params->capture_peak_history.data ||
         !params->capture_rms_history.data) {
       processing_parameters_free(params);
@@ -325,6 +333,7 @@ processing_parameters_t* processing_parameters_create(
     for (size_t i = 0; i < capture_channels; i++) {
       atomic_float_init(&params->capture_signal_peak[i], -INFINITY);
       atomic_float_init(&params->capture_signal_rms[i], -INFINITY);
+      atomic_float_init(&params->capture_global_peaks[i], 0.0f);
     }
   }
 
@@ -333,7 +342,10 @@ processing_parameters_t* processing_parameters_create(
         (atomic_float_t*)calloc(playback_channels, sizeof(atomic_float_t));
     params->playback_signal_rms =
         (atomic_float_t*)calloc(playback_channels, sizeof(atomic_float_t));
+    params->playback_global_peaks =
+        (atomic_float_t*)calloc(playback_channels, sizeof(atomic_float_t));
     if (!params->playback_signal_peak || !params->playback_signal_rms ||
+        !params->playback_global_peaks ||
         !params->playback_peak_history.data ||
         !params->playback_rms_history.data) {
       processing_parameters_free(params);
@@ -342,6 +354,7 @@ processing_parameters_t* processing_parameters_create(
     for (size_t i = 0; i < playback_channels; i++) {
       atomic_float_init(&params->playback_signal_peak[i], -INFINITY);
       atomic_float_init(&params->playback_signal_rms[i], -INFINITY);
+      atomic_float_init(&params->playback_global_peaks[i], 0.0f);
     }
   }
 
@@ -359,8 +372,10 @@ void processing_parameters_free(processing_parameters_t* params) {
   if (!params) return;
   if (params->capture_signal_peak) free(params->capture_signal_peak);
   if (params->capture_signal_rms) free(params->capture_signal_rms);
+  if (params->capture_global_peaks) free(params->capture_global_peaks);
   if (params->playback_signal_peak) free(params->playback_signal_peak);
   if (params->playback_signal_rms) free(params->playback_signal_rms);
+  if (params->playback_global_peaks) free(params->playback_global_peaks);
   chunk_level_history_free(&params->capture_peak_history);
   chunk_level_history_free(&params->capture_rms_history);
   chunk_level_history_free(&params->playback_peak_history);
@@ -427,6 +442,18 @@ void processing_parameters_set_muted_for_fader(processing_parameters_t* params,
                                                bool value, fader_t fader) {
   if (!params || fader < 0 || fader >= FADER_COUNT) return;
   atomic_store_explicit(&params->muted[fader], value, memory_order_release);
+}
+
+bool processing_parameters_toggle_muted_for_fader(
+    processing_parameters_t* params, fader_t fader) {
+  if (!params || fader < 0 || fader >= FADER_COUNT) return false;
+  bool expected =
+      atomic_load_explicit(&params->muted[fader], memory_order_relaxed);
+  while (!atomic_compare_exchange_weak_explicit(
+      &params->muted[fader], &expected, !expected, memory_order_acq_rel,
+      memory_order_relaxed)) {
+  }
+  return !expected;
 }
 
 void processing_parameters_get_capture_signal_peak(
@@ -528,6 +555,7 @@ static float update_levels_internal(const audio_chunk_t* chunk,
                                     atomic_float_t* rms_storage,
                                     chunk_level_history_t* peak_hist,
                                     chunk_level_history_t* rms_hist,
+                                    atomic_float_t* global_peaks,
                                     size_t storage_count) {
   if (!chunk || !peak_storage || !rms_storage) return -INFINITY;
   size_t chunk_channels = audio_chunk_get_channels(chunk);
@@ -586,6 +614,12 @@ static float update_levels_internal(const audio_chunk_t* chunk,
     }
 
     float peak = dsp_ops_peak_absolute(buffer, frame_count);
+    if (global_peaks) {
+      float cur_global = atomic_float_get(&global_peaks[i]);
+      if (peak > cur_global) {
+        atomic_float_set(&global_peaks[i], peak);
+      }
+    }
     float peak_db = float_to_db(peak);
     atomic_float_set(&peak_storage[i], peak_db);
     if (peak_pos != (size_t)-1 && i < peak_hist->channels) {
@@ -632,7 +666,7 @@ float processing_parameters_update_capture_levels(
   return update_levels_internal(
       chunk, params->capture_signal_peak, params->capture_signal_rms,
       &params->capture_peak_history, &params->capture_rms_history,
-      params->capture_channels);
+      params->capture_global_peaks, params->capture_channels);
 }
 
 float processing_parameters_update_playback_levels(
@@ -641,7 +675,7 @@ float processing_parameters_update_playback_levels(
   return update_levels_internal(
       chunk, params->playback_signal_peak, params->playback_signal_rms,
       &params->playback_peak_history, &params->playback_rms_history,
-      params->playback_channels);
+      params->playback_global_peaks, params->playback_channels);
 }
 
 void processing_parameters_get_capture_signal_peak_since(
@@ -706,4 +740,46 @@ uint64_t processing_parameters_get_chunk_generation(
     return atomic_load_explicit(&params->playback_peak_history.total_written,
                                 memory_order_acquire);
   }
+}
+
+void processing_parameters_get_capture_global_peaks(
+    const processing_parameters_t* params, float* out_peaks, size_t count) {
+  if (!params || !out_peaks || !params->capture_global_peaks) return;
+  size_t limit =
+      count < params->capture_channels ? count : params->capture_channels;
+  for (size_t i = 0; i < limit; i++) {
+    out_peaks[i] = atomic_float_get(&params->capture_global_peaks[i]);
+  }
+}
+
+void processing_parameters_get_playback_global_peaks(
+    const processing_parameters_t* params, float* out_peaks, size_t count) {
+  if (!params || !out_peaks || !params->playback_global_peaks) return;
+  size_t limit =
+      count < params->playback_channels ? count : params->playback_channels;
+  for (size_t i = 0; i < limit; i++) {
+    out_peaks[i] = atomic_float_get(&params->playback_global_peaks[i]);
+  }
+}
+
+void processing_parameters_reset_capture_global_peaks(
+    processing_parameters_t* params) {
+  if (!params || !params->capture_global_peaks) return;
+  for (size_t i = 0; i < params->capture_channels; i++) {
+    atomic_float_set(&params->capture_global_peaks[i], 0.0f);
+  }
+}
+
+void processing_parameters_reset_playback_global_peaks(
+    processing_parameters_t* params) {
+  if (!params || !params->playback_global_peaks) return;
+  for (size_t i = 0; i < params->playback_channels; i++) {
+    atomic_float_set(&params->playback_global_peaks[i], 0.0f);
+  }
+}
+
+void processing_parameters_reset_global_peaks(
+    processing_parameters_t* params) {
+  processing_parameters_reset_capture_global_peaks(params);
+  processing_parameters_reset_playback_global_peaks(params);
 }

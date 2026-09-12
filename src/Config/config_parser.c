@@ -143,63 +143,107 @@ int parse_size_t_array_strict(const cJSON* arr, const char* field_name,
   return 0;
 }
 
-static void replace_tokens_in_json_node(cJSON* node, int samplerate,
-                                        int channels, int depth) {
-  if (!node || depth > 20) return;
+static void replace_tokens_in_string_node(cJSON* node, int samplerate,
+                                          int channels) {
+  if (!node || !cJSON_IsString(node) || !node->valuestring) return;
+  const char* str = node->valuestring;
+  if (strstr(str, "$samplerate$") == NULL &&
+      strstr(str, "$channels$") == NULL) {
+    return;
+  }
+  char sr_buf[32];
+  char ch_buf[32];
+  snprintf(sr_buf, sizeof(sr_buf), "%d", samplerate);
+  snprintf(ch_buf, sizeof(ch_buf), "%d", channels);
 
-  if (cJSON_IsString(node) && node->valuestring) {
-    const char* str = node->valuestring;
-    if (strstr(str, "$samplerate$") != NULL ||
-        strstr(str, "$channels$") != NULL) {
-      char sr_buf[32];
-      char ch_buf[32];
-      snprintf(sr_buf, sizeof(sr_buf), "%d", samplerate);
-      snprintf(ch_buf, sizeof(ch_buf), "%d", channels);
+  size_t in_len = strlen(str);
+  size_t cap = in_len + 128;
+  char* new_val = (char*)malloc(cap);
+  if (!new_val) return;
+  size_t out_len = 0;
+  for (size_t i = 0; i < in_len;) {
+    const char* to_append = NULL;
+    size_t append_len = 0;
+    if (strncmp(str + i, "$samplerate$", 12) == 0) {
+      to_append = sr_buf;
+      append_len = strlen(sr_buf);
+      i += 12;
+    } else if (strncmp(str + i, "$channels$", 10) == 0) {
+      to_append = ch_buf;
+      append_len = strlen(ch_buf);
+      i += 10;
+    } else {
+      to_append = str + i;
+      append_len = 1;
+      i++;
+    }
 
-      size_t in_len = strlen(str);
-      size_t cap = in_len + 128;
-      char* new_val = (char*)malloc(cap);
-      if (!new_val) return;
-      size_t out_len = 0;
-      for (size_t i = 0; i < in_len;) {
-        const char* to_append = NULL;
-        size_t append_len = 0;
-        if (strncmp(str + i, "$samplerate$", 12) == 0) {
-          to_append = sr_buf;
-          append_len = strlen(sr_buf);
-          i += 12;
-        } else if (strncmp(str + i, "$channels$", 10) == 0) {
-          to_append = ch_buf;
-          append_len = strlen(ch_buf);
-          i += 10;
-        } else {
-          to_append = str + i;
-          append_len = 1;
-          i++;
-        }
-
-        if (out_len + append_len + 1 > cap) {
-          cap = (out_len + append_len + 1) * 2;
-          char* resized = (char*)realloc(new_val, cap);
-          if (!resized) {
-            free(new_val);
-            return;
-          }
-          new_val = resized;
-        }
-        memcpy(new_val + out_len, to_append, append_len);
-        out_len += append_len;
+    if (out_len + append_len + 1 > cap) {
+      cap = (out_len + append_len + 1) * 2;
+      char* resized = (char*)realloc(new_val, cap);
+      if (!resized) {
+        free(new_val);
+        return;
       }
-      new_val[out_len] = '\0';
-      cJSON_SetValuestring(node, new_val);
-      free(new_val);
+      new_val = resized;
+    }
+    memcpy(new_val + out_len, to_append, append_len);
+    out_len += append_len;
+  }
+  new_val[out_len] = '\0';
+  cJSON_SetValuestring(node, new_val);
+  free(new_val);
+}
+
+static void replace_tokens_in_config_json(cJSON* root, int samplerate,
+                                         int channels) {
+  if (!root) return;
+  cJSON* filters = cJSON_GetObjectItemCaseSensitive(root, "filters");
+  if (cJSON_IsObject(filters)) {
+    cJSON* filter = filters->child;
+    while (filter) {
+      cJSON* type_item = cJSON_GetObjectItemCaseSensitive(filter, "type");
+      if (cJSON_IsString(type_item) && type_item->valuestring &&
+          strcmp(type_item->valuestring, "Conv") == 0) {
+        cJSON* params = cJSON_GetObjectItemCaseSensitive(filter, "parameters");
+        if (cJSON_IsObject(params)) {
+          cJSON* fn = cJSON_GetObjectItemCaseSensitive(params, "filename");
+          if (fn) {
+            replace_tokens_in_string_node(fn, samplerate, channels);
+          }
+        }
+      }
+      filter = filter->next;
     }
   }
-
-  cJSON* child = node->child;
-  while (child) {
-    replace_tokens_in_json_node(child, samplerate, channels, depth + 1);
-    child = child->next;
+  cJSON* pipeline = cJSON_GetObjectItemCaseSensitive(root, "pipeline");
+  if (cJSON_IsArray(pipeline)) {
+    int sz = cJSON_GetArraySize(pipeline);
+    for (int i = 0; i < sz; i++) {
+      cJSON* step = cJSON_GetArrayItem(pipeline, i);
+      if (!cJSON_IsObject(step)) continue;
+      cJSON* type_item = cJSON_GetObjectItemCaseSensitive(step, "type");
+      const char* tstr = (type_item && cJSON_IsString(type_item) &&
+                          type_item->valuestring)
+                             ? type_item->valuestring
+                             : "";
+      if (strcmp(tstr, "Filter") == 0) {
+        cJSON* names = cJSON_GetObjectItemCaseSensitive(step, "names");
+        if (cJSON_IsArray(names)) {
+          int nsz = cJSON_GetArraySize(names);
+          for (int j = 0; j < nsz; j++) {
+            replace_tokens_in_string_node(cJSON_GetArrayItem(names, j),
+                                         samplerate, channels);
+          }
+        }
+      } else if (strcmp(tstr, "Mixer") == 0 ||
+                 strcmp(tstr, "Processor") == 0) {
+        cJSON* name = cJSON_GetObjectItemCaseSensitive(step, "name");
+        if (name) {
+          replace_tokens_in_string_node(name, samplerate, channels);
+        }
+      }
+    }
   }
 }
 
@@ -330,7 +374,7 @@ int dsp_config_parse_json_with_dir_and_overrides_ext(
   int final_sr = (int)config->devices.samplerate;
   int final_ch = capture_device_config_get_channels(&config->devices.capture);
   if (final_sr > 0 || final_ch > 0) {
-    replace_tokens_in_json_node(root, final_sr, final_ch, 0);
+    replace_tokens_in_config_json(root, final_sr, final_ch);
   }
 
   // Resolve relative paths in filters against config directory after token

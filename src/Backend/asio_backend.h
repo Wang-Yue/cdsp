@@ -63,11 +63,31 @@ void asio_driver_teardown(const char* devname);
  */
 bool asio_driver_is_loaded(const char* devname);
 
-/**
- * @brief Look up a loaded driver COM instance by device name.
- * Matches CamillaDSP driver.rs:lookup.
- */
 IASIO* asio_driver_lookup(const char* devname);
+
+/**
+ * @brief Lock the per-driver mutex for devname and increment active reference count.
+ * Matches upstream driver handle Mutex locking.
+ */
+bool asio_driver_lock(const char* devname);
+
+/**
+ * @brief Unlock the per-driver mutex for devname and decrement active reference count.
+ */
+void asio_driver_unlock(const char* devname);
+
+/**
+ * @brief Callback function type for asio_with_driver.
+ */
+typedef bool (*asio_driver_action_fn)(IASIO* iasio, void* user_data,
+                                      backend_error_t* err);
+
+/**
+ * @brief Run action with the driver loaded for devname, holding the per-driver mutex.
+ * Matches CamillaDSP driver.rs:with_driver.
+ */
+bool asio_with_driver(const char* devname, asio_driver_action_fn action,
+                      void* user_data, backend_error_t* err);
 
 /**
  * @brief Whether this driver needs to be recreated for a sample rate change to

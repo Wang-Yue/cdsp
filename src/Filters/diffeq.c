@@ -338,12 +338,12 @@ static void diffeq_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   const diffeq_filter_t* src = (const diffeq_filter_t*)src_ptr;
   if (!dest || !src || dest == src) return;
 
-  if (dest->s && src->s && dest->order > 0 && src->order > 0) {
-    size_t copy_len = dest->order < src->order ? dest->order : src->order;
-    memcpy(dest->s, src->s, copy_len * sizeof(double));
-    if (dest->order > copy_len) {
-      memset(&dest->s[copy_len], 0, (dest->order - copy_len) * sizeof(double));
-    }
+  // Invariant: only retain state when structural dimensions are unchanged.
+  // When filter order changes, the delay line represents a different dimension.
+  if (dest->order != src->order) return;
+
+  if (dest->s && src->s && dest->order > 0) {
+    memcpy(dest->s, src->s, dest->order * sizeof(double));
   }
 }
 

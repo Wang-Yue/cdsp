@@ -13,6 +13,8 @@ struct delay_filter {
   size_t queue_count;
   size_t read_index;
   biquad_filter_t* biquad;
+  biquad_config_t bq_params;
+  bool has_coeffs;
 };
 
 typedef struct delay_filter delay_filter_t;
@@ -242,6 +244,8 @@ static void* delay_filter_create(const char* name,
   } else {
     filter->biquad = NULL;
   }
+  filter->bq_params = bq_params;
+  filter->has_coeffs = has_coeffs;
   return filter;
 }
 
@@ -317,8 +321,17 @@ static void delay_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
 
   if (dest->queue_count != src->queue_count) return;
 
-  if (dest->biquad && src->biquad) {
-    g_biquad_vtable.transfer_state(dest->biquad, src->biquad);
+  // Only transfer subsample biquad state if both instances have active biquads
+  // and their filter coefficients match. A change in fractional delay changes
+  // the allpass transfer function and its z-state cannot be carried over.
+  if (dest->has_coeffs && src->has_coeffs && dest->biquad && src->biquad) {
+    if (dest->bq_params.a1 == src->bq_params.a1 &&
+        dest->bq_params.a2 == src->bq_params.a2 &&
+        dest->bq_params.b0 == src->bq_params.b0 &&
+        dest->bq_params.b1 == src->bq_params.b1 &&
+        dest->bq_params.b2 == src->bq_params.b2) {
+      g_biquad_vtable.transfer_state(dest->biquad, src->biquad);
+    }
   }
 
   if (dest->queue && src->queue && dest->queue_count > 0) {

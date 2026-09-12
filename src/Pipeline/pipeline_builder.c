@@ -578,7 +578,7 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   filter_config_t vcfg = {.type = FILTER_TYPE_VOLUME,
                           .parameters.volume = vol_params};
   pipeline->master_volume = (volume_filter_t*)g_volume_vtable.create(
-      "master_volume", &vcfg, pipeline->rate, pipeline->frames_per_chunk,
+      "default", &vcfg, pipeline->rate, pipeline->frames_per_chunk,
       proc_params, err);
   if (!pipeline->master_volume) {
     logger_error(

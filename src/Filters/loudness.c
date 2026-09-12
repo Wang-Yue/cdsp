@@ -170,17 +170,17 @@ static int loudness_config_validate(const filter_config_t* config,
     }
     return -1;
   }
-  if (high_boost > 20.0) {
-    if (err) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "High boost cannot be larger than 20");
-    }
-    return -1;
-  }
   if (low_boost < 0.0) {
     if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "Low boost cannot be less than 0");
+    }
+    return -1;
+  }
+  if (high_boost > 20.0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "High boost cannot be larger than 20");
     }
     return -1;
   }
@@ -324,8 +324,7 @@ static void loudness_filter_process(void* instance, mutable_waveform_t waveform,
 
   // Apply midband attenuation if enabled to simulate bass/treble boost
   // without exceeding 0 dBFS peak gain.
-  if (filter->params.attenuate_mid &&
-      fabs(filter->midband_attenuation_db) > 0.001) {
+  if (filter->params.attenuate_mid) {
     double factor = double_from_db(filter->midband_attenuation_db);
     dsp_ops_scalar_multiply(waveform, factor, count);
   }

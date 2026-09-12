@@ -200,13 +200,21 @@ static void* alsa_playback_inner_thread_func(void* arg) {
             logger_warn(&g_logger, "PB: device stalled");
             snd_pcm_drop(playback->pcm);
             snd_pcm_prepare(playback->pcm);
+            snd_pcm_uframes_t avail_min =
+                playback->period > 0 ? (snd_pcm_uframes_t)playback->period : 1;
             snd_pcm_uframes_t frames_to_stall =
-                (playback->bufsize >= playback->chunk_size)
-                    ? (playback->bufsize - playback->chunk_size)
-                    : 0;
+                (playback->bufsize >= avail_min)
+                    ? (playback->bufsize - avail_min + 1)
+                    : 1;
             if (frames_to_stall > 0 && playback->zero_stall_buf) {
-              snd_pcm_writei(playback->pcm, playback->zero_stall_buf,
-                             frames_to_stall);
+              snd_pcm_sframes_t sw_rc = snd_pcm_writei(
+                  playback->pcm, playback->zero_stall_buf, frames_to_stall);
+              if (sw_rc < 0) {
+                logger_warn(&g_logger, "PB: Writing stall-check zeros failed with %s",
+                            snd_strerror((int)sw_rc));
+              } else {
+                logger_trace(&g_logger, "PB: Wrote %ld zero frames", (long)sw_rc);
+              }
             }
             playback->device_stalled = true;
           }
@@ -402,7 +410,14 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
   if (playback->threaded) {
     avail_min = playback->period > 0 ? (snd_pcm_uframes_t)playback->period : 1;
     if (avail_min > (snd_pcm_uframes_t)playback->bufsize) {
-      avail_min = (snd_pcm_uframes_t)playback->bufsize;
+      char msg[256];
+      snprintf(msg, sizeof(msg),
+               "Trying to set avail_min to %lu, must be smaller than or equal to "
+               "device buffer size of %lu",
+               (unsigned long)avail_min, (unsigned long)playback->bufsize);
+      logger_error(&g_logger, "%s", msg);
+      if (err) backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+      goto error_cleanup;
     }
   }
   alsa_device_configure_sw(playback->pcm, avail_min, 1);
@@ -946,7 +961,7 @@ static void alsa_playback_set_pitch(void* ctx, double multiplier) {
   alsa_playback_t* playback = (alsa_playback_t*)ctx;
   if (!playback || multiplier <= 0.0) return;
   pthread_mutex_lock(&playback->mixer_mutex);
-  long value = (long)round(1000000.0 / multiplier);
+  long value = (long)trunc(1000000.0 / multiplier);
   if (playback->hctl_pitch_elem) {
     alsa_elem_write_as_int(playback->hctl_pitch_elem, value);
   } else if (playback->pitch_elem) {

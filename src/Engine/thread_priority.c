@@ -27,12 +27,15 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
   (void)sample_rate;
   return (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
 #else
-  if (buffer_frames == 0 || sample_rate == 0) {
+  if (sample_rate == 0) {
     logger_warn(&g_logger,
                 "[%s] Invalid audio parameters for real-time priority: "
-                "frames=%zu, rate=%zu",
-                name ? name : "unknown", buffer_frames, sample_rate);
+                "sample rate must be non-zero",
+                name ? name : "unknown");
     return NULL;
+  }
+  if (buffer_frames == 0) {
+    buffer_frames = sample_rate / 20;
   }
 
   mach_timebase_info_data_t tb_info;
@@ -582,11 +585,14 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
             avrt_module, "AvSetMmThreadCharacteristicsW");
     if (set_fn) {
       DWORD task_index = 0;
-      HANDLE task_handle = set_fn(L"Audio", &task_index);
+      HANDLE task_handle = set_fn(L"Pro Audio", &task_index);
+      if (!task_handle) {
+        task_handle = set_fn(L"Audio", &task_index);
+      }
       if (task_handle) {
         logger_info(
             &g_logger,
-            "[%s] Thread promoted to Windows MMCSS (Audio task, index=%lu)",
+            "[%s] Thread promoted to Windows MMCSS (Pro Audio/Audio task, index=%lu)",
             name ? name : "unknown", task_index);
         handle->task_handle = task_handle;
         return handle;

@@ -53,7 +53,7 @@ static inline bool parse_json_str(const cJSON* obj, const char* key, char* dest,
 static inline bool parse_json_int(const cJSON* obj, const char* key,
                                   int* dest) {
   const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
-  if (cJSON_IsNumber(item)) {
+  if (cJSON_IsNumber(item) && item->valuedouble == (double)item->valueint) {
     *dest = item->valueint;
     return true;
   }

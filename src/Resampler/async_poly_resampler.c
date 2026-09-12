@@ -12,6 +12,7 @@
 
 #include "Resampler/async_poly_resampler.h"
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -20,8 +21,11 @@
 #include "Audio/audio_chunk.h"
 #include "Config/config_error.h"
 #include "Config/resampler_config_types.h"
+#include "Logging/app_logger.h"
 #include "Resampler/audio_resampler.h"
 #include "Resampler/resampler_error.h"
+
+static const logger_t g_logger = {"resampler.async_poly"};
 
 typedef enum {
   POLY_INTERPOLATION_LINEAR = 0,
@@ -155,12 +159,20 @@ static void async_poly_resampler_free(void* impl) {
 static void async_poly_resampler_set_relative_ratio(void* impl,
                                                     double multiplier) {
   async_poly_resampler_t* resampler = (async_poly_resampler_t*)impl;
-  if (!resampler || isnan(multiplier) || isinf(multiplier)) return;
+  if (!resampler || isnan(multiplier) || isinf(multiplier) || multiplier <= 0.0) return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
-  if (multiplier < min_ratio) multiplier = min_ratio;
-  if (multiplier > resampler->max_relative_ratio)
-    multiplier = resampler->max_relative_ratio;
-  resampler->target_ratio = resampler->base_ratio * multiplier;
+  if (multiplier < min_ratio || multiplier > resampler->max_relative_ratio) {
+    logger_warn(
+        &g_logger,
+        "AsyncPoly resampler relative ratio %.6f out of range [%.6f, %.6f]",
+        multiplier, min_ratio, resampler->max_relative_ratio);
+    return;
+  }
+  double new_ratio = resampler->base_ratio * multiplier;
+  if (!isfinite(new_ratio) || new_ratio <= 0.0) {
+    return;
+  }
+  resampler->target_ratio = new_ratio;
   async_poly_resampler_update_lengths(resampler);
 }
 
@@ -675,11 +687,11 @@ static void async_poly_resampler_reset(void* impl) {
                  sizeof(double));
     }
   }
-  resampler->current_buffer_fill = 2 * resampler->interpolator_len;
   resampler->last_index = -((double)resampler->interpolator_len / 2.0);
   resampler->resample_ratio = resampler->base_ratio;
   resampler->target_ratio = resampler->base_ratio;
   async_poly_resampler_update_lengths(resampler);
+  resampler->current_buffer_fill = resampler->needed_input_size;
 }
 
 const resampler_vtable_t g_async_poly_resampler_vtable = {

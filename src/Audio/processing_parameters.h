@@ -269,6 +269,16 @@ void processing_parameters_set_muted_for_fader(processing_parameters_t* params,
                                                bool value, fader_t fader);
 
 /**
+ * @brief Atomically toggles the mute state for a specific fader.
+ *
+ * @param params Pointer to the processing parameters.
+ * @param fader The fader to toggle.
+ * @return The new mute state after toggling.
+ */
+bool processing_parameters_toggle_muted_for_fader(
+    processing_parameters_t* params, fader_t fader);
+
+/**
  * @brief Gets the target volume for the main fader.
  *
  * @param params Pointer to the processing parameters.
@@ -332,6 +342,17 @@ static inline bool processing_parameters_is_muted(
 static inline void processing_parameters_set_muted(
     processing_parameters_t* params, bool value) {
   processing_parameters_set_muted_for_fader(params, value, FADER_MAIN);
+}
+
+/**
+ * @brief Atomically toggles the mute state for the main fader.
+ *
+ * @param params Pointer to the processing parameters.
+ * @return The new mute state after toggling.
+ */
+static inline bool processing_parameters_toggle_muted(
+    processing_parameters_t* params) {
+  return processing_parameters_toggle_muted_for_fader(params, FADER_MAIN);
 }
 
 /**
@@ -413,6 +434,49 @@ void processing_parameters_get_playback_signal_rms(
  */
 void processing_parameters_set_playback_signal_rms(
     processing_parameters_t* params, const float* levels, size_t count);
+
+/**
+ * @brief Gets the capture global linear peak levels since start or reset.
+ *
+ * @param params Pointer to the processing parameters.
+ * @param out_peaks Array to store the linear peak levels.
+ * @param count Number of channels to query.
+ */
+void processing_parameters_get_capture_global_peaks(
+    const processing_parameters_t* params, float* out_peaks, size_t count);
+
+/**
+ * @brief Gets the playback global linear peak levels since start or reset.
+ *
+ * @param params Pointer to the processing parameters.
+ * @param out_peaks Array to store the linear peak levels.
+ * @param count Number of channels to query.
+ */
+void processing_parameters_get_playback_global_peaks(
+    const processing_parameters_t* params, float* out_peaks, size_t count);
+
+/**
+ * @brief Resets the capture global peak levels to 0.0f.
+ *
+ * @param params Pointer to the processing parameters.
+ */
+void processing_parameters_reset_capture_global_peaks(
+    processing_parameters_t* params);
+
+/**
+ * @brief Resets the playback global peak levels to 0.0f.
+ *
+ * @param params Pointer to the processing parameters.
+ */
+void processing_parameters_reset_playback_global_peaks(
+    processing_parameters_t* params);
+
+/**
+ * @brief Resets both capture and playback global peak levels to 0.0f.
+ *
+ * @param params Pointer to the processing parameters.
+ */
+void processing_parameters_reset_global_peaks(processing_parameters_t* params);
 
 // MARK: - Chunk-based updates (no-allocation, audio-thread safe)
 

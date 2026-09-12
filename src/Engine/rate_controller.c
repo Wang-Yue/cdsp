@@ -61,11 +61,8 @@ struct pi_rate_controller {
 /// positive error and yields `speed > 1`, asking the capture path to
 /// run a touch faster. A buffer that is too full does the opposite.
 ///
-/// **Saturation.** The output is hard-limited to `1 ± maxAdjustment`
-/// so a single tick is always inaudible. The integrator state is
-/// clamped to the same band — this is the standard
-/// conditional-integration form of anti-windup, which prevents the
-/// integrator from accumulating during sustained saturation.
+/// **Saturation.** The output adjustment is hard-limited to `±0.005`
+/// so a single tick is always inaudible.
 pi_rate_controller_t* pi_rate_controller_create(int samplerate, double interval,
                                                 int target_level, double kp,
                                                 double ki) {
@@ -85,7 +82,7 @@ pi_rate_controller_t* pi_rate_controller_create(int samplerate, double interval,
   pi->ramp_steps = 20;
   pi->ramp_trigger_limit = 0.33;
   pi->ramp_start = (double)target_level;
-  pi->ramp_step = 20;  // Start fully stabilized by default
+  pi->ramp_step = 0;  // Start at 0 to perform soft-start ramp matching upstream
 
   return pi;
 }
@@ -135,25 +132,12 @@ double pi_rate_controller_next(pi_rate_controller_t* pi, double level) {
       pi->frames_per_interval > 0.0 ? err / pi->frames_per_interval : 0.0;
   pi->accumulated += rel_err * pi->interval;
 
-  // Anti-windup: clamp the integrator term to the safe saturation band (±0.005)
-  double max_val = 0.005;
-  double min_val = -0.005;
-  if (pi->ki > 0.0) {
-    if (pi->accumulated * pi->ki > max_val) {
-      pi->accumulated = max_val / pi->ki;
-    } else if (pi->accumulated * pi->ki < min_val) {
-      pi->accumulated = min_val / pi->ki;
-    }
-  } else {
-    pi->accumulated = 0.0;
-  }
-
   double proportional = pi->kp * rel_err;
   double integral = pi->ki * pi->accumulated;
   double output = proportional + integral;
   double clamped_output = output;
-  if (clamped_output > max_val) clamped_output = max_val;
-  if (clamped_output < min_val) clamped_output = min_val;
+  if (clamped_output > 0.005) clamped_output = 0.005;
+  if (clamped_output < -0.005) clamped_output = -0.005;
 
   return 1.0 - clamped_output;
 }

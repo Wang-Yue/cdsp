@@ -89,7 +89,7 @@ static int lookahead_limiter_config_validate(const processor_config_t* config,
                      "LookaheadLimiter: limit must not be NaN or +inf.");
     return -1;
   }
-  if (p->attack < 0.0) {
+  if (p->attack < 0.0 || !isfinite(p->attack)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "LookaheadLimiter: attack must be >= 0, got %g",
                      p->attack);
@@ -106,7 +106,7 @@ static int lookahead_limiter_config_validate(const processor_config_t* config,
       return -1;
     }
   }
-  if (p->release < 0.0) {
+  if (p->release < 0.0 || !isfinite(p->release)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "LookaheadLimiter: release must be >= 0, got %g",
                      p->release);
@@ -367,7 +367,7 @@ static void lookahead_limiter_processor_transfer_state(void* dest_ptr,
       (lookahead_limiter_processor_t*)dest_ptr;
   const lookahead_limiter_processor_t* src =
       (const lookahead_limiter_processor_t*)src_ptr;
-  if (!dest || !src) return;
+  if (!dest || !src || dest == src) return;
 
   if (dest->gain && src->gain) {
     g_lookahead_gain_vtable.transfer_state(dest->gain, src->gain);

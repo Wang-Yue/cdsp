@@ -16,6 +16,7 @@ struct audio_chunk {
   audio_buffers_t* buffers;
   size_t valid_frames;
   bool owns_buffers;
+  bool* used_channels;
 };
 
 struct round_robin_chunk_pool {
@@ -45,6 +46,30 @@ void audio_chunk_set_valid_frames(audio_chunk_t* chunk, size_t valid_frames) {
   if (chunk) chunk->valid_frames = valid_frames;
 }
 
+void audio_chunk_set_used_channels(audio_chunk_t* chunk,
+                                   const bool* used_channels) {
+  if (!chunk) return;
+  size_t channels = audio_chunk_get_channels(chunk);
+  if (channels == 0) return;
+  if (!used_channels) {
+    if (chunk->used_channels) {
+      free(chunk->used_channels);
+      chunk->used_channels = NULL;
+    }
+    return;
+  }
+  if (!chunk->used_channels) {
+    chunk->used_channels = (bool*)malloc(channels * sizeof(bool));
+  }
+  if (chunk->used_channels) {
+    memcpy(chunk->used_channels, used_channels, channels * sizeof(bool));
+  }
+}
+
+const bool* audio_chunk_get_used_channels(const audio_chunk_t* chunk) {
+  return chunk ? chunk->used_channels : NULL;
+}
+
 audio_chunk_t* audio_chunk_create(size_t frames, size_t channels) {
   audio_chunk_t* chunk = (audio_chunk_t*)calloc(1, sizeof(audio_chunk_t));
   if (!chunk) return NULL;
@@ -60,6 +85,10 @@ audio_chunk_t* audio_chunk_create(size_t frames, size_t channels) {
 
 void audio_chunk_free(audio_chunk_t* chunk) {
   if (!chunk) return;
+  if (chunk->used_channels) {
+    free(chunk->used_channels);
+    chunk->used_channels = NULL;
+  }
   if (chunk->owns_buffers && chunk->buffers) {
     audio_buffers_free(chunk->buffers);
   }
@@ -563,16 +592,20 @@ bool audio_chunk_encode_interleaved(const audio_chunk_t* chunk,
   return true;
 }
 
-double audio_chunk_get_value_range(const audio_chunk_t* chunk) {
+double audio_chunk_get_value_range_used(const audio_chunk_t* chunk,
+                                        const bool* used_channels) {
   if (!chunk) return 0.0;
   size_t channels = audio_chunk_get_channels(chunk);
   size_t frames = audio_chunk_get_valid_frames(chunk);
   if (channels == 0 || frames == 0) return 0.0;
 
+  const bool* mask = used_channels ? used_channels : chunk->used_channels;
+
   double overall_min = 0.0;
   double overall_max = 0.0;
 
   for (size_t ch = 0; ch < channels; ch++) {
+    if (mask && !mask[ch]) continue;
     const double* data = audio_chunk_get_channel(chunk, ch);
     if (!data) continue;
     double ch_min = 0.0, ch_max = 0.0;
@@ -581,4 +614,8 @@ double audio_chunk_get_value_range(const audio_chunk_t* chunk) {
     if (ch_max > overall_max) overall_max = ch_max;
   }
   return overall_max - overall_min;
+}
+
+double audio_chunk_get_value_range(const audio_chunk_t* chunk) {
+  return audio_chunk_get_value_range_used(chunk, NULL);
 }

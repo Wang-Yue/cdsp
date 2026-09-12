@@ -265,7 +265,12 @@ static resampler_error_t slip_resampler_process(void* impl_ptr,
   impl->drift_acc -= (double)impl->correction;
   slip_resampler_replan(impl);
 
-  audio_chunk_set_valid_frames(output, output_len);
+  size_t valid_out =
+      input_len > 0 ? (output_len * frames_to_read) / input_len : 0;
+  if (valid_out > output_len) {
+    valid_out = output_len;
+  }
+  audio_chunk_set_valid_frames(output, valid_out);
   return RESAMPLER_OK;
 }
 

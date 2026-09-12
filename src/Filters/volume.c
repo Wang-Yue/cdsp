@@ -33,6 +33,7 @@ struct volume_filter {
 
 typedef struct volume_filter volume_filter_t;
 
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -150,8 +151,14 @@ static void* volume_filter_create(const char* name,
   filter->chunk_size = chunk_size;
   filter->processing_parameters = proc_params;
 
-  filter->ramptime_in_chunks = (int)round(
-      ramp_time_ms / (1000.0 * (double)chunk_size / (double)sample_rate));
+  double chunk_duration_ms = 1000.0 * (double)chunk_size / (double)sample_rate;
+  if (chunk_duration_ms > 0.0) {
+    double rc = round(ramp_time_ms / chunk_duration_ms);
+    filter->ramptime_in_chunks =
+        (rc > (double)INT_MAX) ? INT_MAX : (rc < 0.0 ? 0 : (int)rc);
+  } else {
+    filter->ramptime_in_chunks = 0;
+  }
   filter->last_pause_count =
       proc_params ? processing_parameters_get_pause_count(proc_params) : 0ULL;
   // Pre-allocate array
@@ -192,7 +199,7 @@ static void* volume_filter_create(const char* name,
   filter->mute = initial_mute;
   filter->current_volume = initial_mute ? -100.0 : initial_vol;
   filter->target_linear_gain = initial_mute ? 0.0 : double_from_db(target_vol);
-  filter->ramp_start = filter->current_volume;
+  filter->ramp_start = initial_vol;
   filter->ramp_step = 0;
 
   return filter;

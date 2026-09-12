@@ -406,7 +406,8 @@ static void* synchronous_resampler_create_impl(size_t channels,
   }
 
   size_t two_sub_in = 2 * sub_fft_in;
-  double* filter_time = (double*)calloc(two_sub_in, sizeof(double));
+  double* filter_time =
+      (double*)cdsp_aligned_alloc(64, two_sub_in * sizeof(double));
   if (!filter_time) {
     config_error_set(
         err, CONFIG_ERR_PARSE,
@@ -415,16 +416,16 @@ static void* synchronous_resampler_create_impl(size_t channels,
     synchronous_resampler_free(resampler);
     return NULL;
   }
-  double scale = 1.0 / (double)two_sub_in;
+  memset(filter_time, 0, two_sub_in * sizeof(double));
   for (size_t i = 0; i < sub_fft_in; i++) {
-    filter_time[i] = kernel[i] * scale;
+    filter_time[i] = kernel[i] / (double)two_sub_in;
   }
   free(kernel);
 
   resampler->input_fft = real_fft_create(two_sub_in, err);
   resampler->output_fft = real_fft_create(2 * sub_fft_out, err);
   if (!resampler->input_fft || !resampler->output_fft) {
-    free(filter_time);
+    cdsp_aligned_free(filter_time);
     synchronous_resampler_free(resampler);
     return NULL;
   }
@@ -435,13 +436,13 @@ static void* synchronous_resampler_create_impl(size_t channels,
     config_error_set(
         err, CONFIG_ERR_PARSE,
         "SynchronousResampler: Failed to allocate filter spectrum buffer");
-    free(filter_time);
+    cdsp_aligned_free(filter_time);
     synchronous_resampler_free(resampler);
     return NULL;
   }
   memset(resampler->filter_spec, 0, (sub_fft_in + 1) * sizeof(complex_t));
   real_fft_forward(resampler->input_fft, filter_time, resampler->filter_spec);
-  free(filter_time);
+  cdsp_aligned_free(filter_time);
 
   resampler->carries = (double**)calloc(channels, sizeof(double*));
   if (!resampler->carries) {

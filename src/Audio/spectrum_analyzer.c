@@ -197,12 +197,35 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
                                             size_t n_bins, size_t samplerate,
                                             spectrum_result_t* out_result) {
   if (!analyzer || !buffer || !out_result) return SPECTRUM_ERROR_INVALID_PARAM;
-  if (analyzer->out_capacity == 0 || !analyzer->plan.frequencies ||
-      !analyzer->plan.ranges || !analyzer->out_magnitudes) {
+  if (samplerate == 0 || n_bins < 2 || min_freq <= 0.0f ||
+      max_freq <= min_freq) {
     return SPECTRUM_ERROR_INVALID_PARAM;
   }
-  if (samplerate == 0 || n_bins < 2 || n_bins > analyzer->out_capacity ||
-      min_freq <= 0.0f || max_freq <= min_freq) {
+
+  // Grow output and plan buffers dynamically if requested n_bins exceeds capacity
+  if (n_bins > analyzer->out_capacity) {
+    size_t new_cap = n_bins;
+    float* new_freqs =
+        (float*)realloc(analyzer->plan.frequencies, new_cap * sizeof(float));
+    bin_range_t* new_ranges = (bin_range_t*)realloc(
+        analyzer->plan.ranges, new_cap * sizeof(bin_range_t));
+    float* new_mags =
+        (float*)realloc(analyzer->out_magnitudes, new_cap * sizeof(float));
+    if (!new_freqs || !new_ranges || !new_mags) {
+      if (new_freqs) analyzer->plan.frequencies = new_freqs;
+      if (new_ranges) analyzer->plan.ranges = new_ranges;
+      if (new_mags) analyzer->out_magnitudes = new_mags;
+      return SPECTRUM_ERROR_INVALID_PARAM;
+    }
+    analyzer->plan.frequencies = new_freqs;
+    analyzer->plan.ranges = new_ranges;
+    analyzer->out_magnitudes = new_mags;
+    analyzer->plan.capacity = new_cap;
+    analyzer->out_capacity = new_cap;
+  }
+
+  if (analyzer->out_capacity == 0 || !analyzer->plan.frequencies ||
+      !analyzer->plan.ranges || !analyzer->out_magnitudes) {
     return SPECTRUM_ERROR_INVALID_PARAM;
   }
 
@@ -254,33 +277,41 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
   // 4. Geometric Binning via Cached Plan
 
   // Recompute the logarithmic binning plan if parameters changed.
-  // This maps output frequency bins to ranges of FFT bins.
+  // This maps output frequency bins to ranges of FFT bins using double (f64)
+  // arithmetic matching upstream CamillaDSP spectrum.rs.
   if (analyzer->plan.min_freq != min_freq ||
       analyzer->plan.max_freq != max_freq || analyzer->plan.n_bins != n_bins ||
       analyzer->plan.samplerate != samplerate) {
-    float log_min = log10f(min_freq);
-    float log_max = log10f(max_freq);
-    float step = n_bins > 1 ? (log_max - log_min) / (float)(n_bins - 1) : 0.0f;
+    double min_f = (double)min_freq;
+    double max_f = (double)max_freq;
+    double log_ratio = pow(max_f / min_f, 1.0 / (double)(n_bins - 1));
+    double sqrt_log_ratio = sqrt(log_ratio);
+    double freq_res = (double)samplerate / (double)analyzer->fft_n;
 
     for (size_t i = 0; i < n_bins; i++) {
-      float center_log = log_min + step * (float)i;
-      float center_f = powf(10.0f, center_log);
-      analyzer->plan.frequencies[i] = center_f;
+      double center_f = min_f * pow(log_ratio, (double)i);
+      analyzer->plan.frequencies[i] = (float)center_f;
 
-      // Define frequency boundaries for this bin
-      float low_log = i > 0 ? center_log - step / 2.0f : log_min;
-      float high_log = i < n_bins - 1 ? center_log + step / 2.0f : log_max;
+      // Define frequency boundaries for this bin (matching upstream spectrum.rs)
+      double low_f = (i == 0) ? min_f : (center_f / sqrt_log_ratio);
+      double high_f = (i == n_bins - 1) ? max_f : (center_f * sqrt_log_ratio);
 
-      float low_f = powf(10.0f, low_log);
-      float high_f = powf(10.0f, high_log);
+      // Convert frequency boundaries to FFT bin indices with safe bounds checking
+      double low_bin = floor(low_f / freq_res);
+      double high_bin = ceil(high_f / freq_res);
+      double nearest_bin = round(center_f / freq_res);
 
-      // Convert frequency boundaries to FFT bin indices
-      int low_k =
-          (int)floorf(low_f * (float)analyzer->fft_n / (float)samplerate);
+      int low_k = low_bin < 0.0
+                      ? 0
+                      : (low_bin > (double)half_n ? (int)half_n : (int)low_bin);
       int high_k =
-          (int)ceilf(high_f * (float)analyzer->fft_n / (float)samplerate);
-      int nearest_k =
-          (int)roundf(center_f * (float)analyzer->fft_n / (float)samplerate);
+          high_bin < 0.0
+              ? 0
+              : (high_bin > (double)half_n ? (int)half_n : (int)high_bin);
+      int nearest_k = nearest_bin < 0.0 ? 0
+                                        : (nearest_bin > (double)half_n
+                                               ? (int)half_n
+                                               : (int)nearest_bin);
 
       analyzer->plan.ranges[i].low_k = low_k;
       analyzer->plan.ranges[i].high_k = high_k;

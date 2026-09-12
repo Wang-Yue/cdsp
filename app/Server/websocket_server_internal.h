@@ -75,6 +75,7 @@ typedef struct {
   float vu_attack;
   float vu_release;
   uint64_t last_vu_push_time;
+  uint64_t last_vu_update_time;
 
   float* vu_pb_rms;
   float* vu_pb_peak;
@@ -93,6 +94,10 @@ typedef struct {
   size_t frag_len;
   size_t frag_cap;
   uint8_t frag_opcode;
+
+  char* rx_buf;
+  size_t rx_len;
+  size_t rx_cap;
 } client_session_t;
 
 struct websocket_server {
@@ -102,6 +107,7 @@ struct websocket_server {
 
   socket_t server_fd;
   _Atomic bool running;
+  _Atomic bool exit_requested;
   pthread_t thread;
 
   uint32_t update_interval;

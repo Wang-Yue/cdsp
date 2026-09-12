@@ -139,12 +139,23 @@ static int parse_resampler(const cJSON* res_obj, devices_config_t* devices,
   res->has_interpolation = parse_json_str(
       res_obj, "interpolation", res->interpolation, sizeof(res->interpolation));
 
-  if (parse_json_int(res_obj, "sinc_len", &res->sinc_len)) {
-    res->has_sinc_len = (res->sinc_len > 0);
+  size_t res_val = 0;
+  if (parse_json_size_t_strict(res_obj, "sinc_len", "AsyncSinc resampler",
+                               &res_val, &res->has_sinc_len, err) != 0) {
+    return -1;
   }
-  if (parse_json_int(res_obj, "oversampling_factor",
-                     &res->oversampling_factor)) {
-    res->has_oversampling_factor = (res->oversampling_factor > 0);
+  if (res->has_sinc_len) {
+    res->sinc_len = (int)res_val;
+    if (res->sinc_len <= 0) res->has_sinc_len = false;
+  }
+  if (parse_json_size_t_strict(res_obj, "oversampling_factor",
+                               "AsyncSinc resampler", &res_val,
+                               &res->has_oversampling_factor, err) != 0) {
+    return -1;
+  }
+  if (res->has_oversampling_factor) {
+    res->oversampling_factor = (int)res_val;
+    if (res->oversampling_factor <= 0) res->has_oversampling_factor = false;
   }
   res->has_window =
       parse_json_str(res_obj, "window", res->window, sizeof(res->window));
@@ -337,13 +348,6 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
     if (validate_unknown_fields(cap_obj, allowed, "SignalGenerator capture",
                                 err) != 0)
       return -1;
-    cJSON* sig = cJSON_GetObjectItemCaseSensitive(cap_obj, "signal");
-    if (sig && cJSON_IsObject(sig)) {
-      static const char* const allowed_sig[] = {"type", "freq", "level", NULL};
-      if (validate_unknown_fields(sig, allowed_sig, "SignalGenerator signal",
-                                  err) != 0)
-        return -1;
-    }
   } else if (strcmp(type_str, "CoreAudio") == 0) {
     static const char* const allowed[] = {
         "type",           "channels",   "device",        "format", "labels",
@@ -370,9 +374,9 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
       return -1;
   } else if (strcmp(type_str, "PipeWire") == 0) {
     static const char* const allowed[] = {
-        "type",      "channels",         "format",
-        "node_name", "node_description", "node_group_name",
-        "labels",    "channel_labels",   "autoconnect_to",
+        "type",            "channels",         "node_name",
+        "node_description","node_group_name",  "labels",
+        "channel_labels",  "autoconnect_to",   "loopback",
         NULL};
     if (validate_unknown_fields(cap_obj, allowed, "PipeWire capture", err) != 0)
       return -1;
@@ -414,30 +418,68 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
 #if defined(ENABLE_WASAPI)
     } else if (cap->type == AUDIO_BACKEND_TYPE_WASAPI) {
       cap->wasapi_format = wasapi_sample_format_from_string(item->valuestring);
+      if (cap->wasapi_format == WASAPI_SAMPLE_FORMAT_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "unknown sample format '%s' for Wasapi capture",
+                         item->valuestring);
+        return -1;
+      }
       cap->has_wasapi_format = true;
 #endif
 #if defined(ENABLE_ASIO)
     } else if (cap->type == AUDIO_BACKEND_TYPE_ASIO) {
       cap->asio_format = asio_sample_format_from_string(item->valuestring);
+      if (cap->asio_format == ASIO_SAMPLE_FORMAT_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "unknown sample format '%s' for Asio capture",
+                         item->valuestring);
+        return -1;
+      }
       cap->has_asio_format = true;
 #endif
 #if defined(ENABLE_ALSA)
     } else if (cap->type == AUDIO_BACKEND_TYPE_ALSA) {
       cap->alsa_format = alsa_sample_format_from_string(item->valuestring);
+      if (cap->alsa_format == ALSA_SAMPLE_FORMAT_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "unknown sample format '%s' for Alsa capture",
+                         item->valuestring);
+        return -1;
+      }
       cap->has_alsa_format = true;
 #endif
 #if defined(ENABLE_COREAUDIO)
     } else if (cap->type == AUDIO_BACKEND_TYPE_CORE_AUDIO) {
       cap->format = coreaudio_sample_format_from_string(item->valuestring);
+      if (cap->format == COREAUDIO_SAMPLE_FORMAT_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "unknown sample format '%s' for CoreAudio capture",
+                         item->valuestring);
+        return -1;
+      }
       cap->has_format = true;
 #endif
     }
   }
 
-  cap->has_skip_bytes = parse_json_int(cap_obj, "skip_bytes", &cap->skip_bytes);
-  cap->has_read_bytes = parse_json_int(cap_obj, "read_bytes", &cap->read_bytes);
-  cap->has_extra_samples =
-      parse_json_int(cap_obj, "extra_samples", &cap->extra_samples);
+  size_t bytes_val = 0;
+  if (parse_json_size_t_strict(cap_obj, "skip_bytes", "capture device",
+                               &bytes_val, &cap->has_skip_bytes, err) != 0) {
+    return -1;
+  }
+  if (cap->has_skip_bytes) cap->skip_bytes = (int)bytes_val;
+
+  if (parse_json_size_t_strict(cap_obj, "read_bytes", "capture device",
+                               &bytes_val, &cap->has_read_bytes, err) != 0) {
+    return -1;
+  }
+  if (cap->has_read_bytes) cap->read_bytes = (int)bytes_val;
+
+  if (parse_json_size_t_strict(cap_obj, "extra_samples", "capture device",
+                               &bytes_val, &cap->has_extra_samples, err) != 0) {
+    return -1;
+  }
+  if (cap->has_extra_samples) cap->extra_samples = (int)bytes_val;
   cap->has_exclusive = parse_json_bool(cap_obj, "exclusive", &cap->exclusive);
   cap->has_loopback = parse_json_bool(cap_obj, "loopback", &cap->loopback);
 
@@ -496,19 +538,67 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
   }
 #endif
 
-  cJSON* sig_obj = cJSON_GetObjectItemCaseSensitive(cap_obj, "signal");
-  if (cJSON_IsObject(sig_obj)) {
-    char sig_str[64];
-    if (parse_json_str(sig_obj, "type", sig_str, sizeof(sig_str))) {
-      cap->generator.type = signal_type_from_string(sig_str);
+  if (cap->type == AUDIO_BACKEND_TYPE_GENERATOR) {
+    cJSON* sig_obj = cJSON_GetObjectItemCaseSensitive(cap_obj, "signal");
+    if (!cJSON_IsObject(sig_obj)) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "missing field 'signal' in SignalGenerator capture");
+      return -1;
+    }
+    static const config_enum_variant_t sig_variants[] = {
+        {"Sine", SIGNAL_TYPE_SINE},
+        {"Square", SIGNAL_TYPE_SQUARE},
+        {"WhiteNoise", SIGNAL_TYPE_WHITE_NOISE},
+        {"Noise", SIGNAL_TYPE_WHITE_NOISE},
+        {NULL, 0}};
+    int stype = 0;
+    if (parse_enum_required(sig_obj, "type", sig_variants,
+                            "SignalGenerator signal", &stype, err) != 0) {
+      return -1;
+    }
+    cap->generator.type = (signal_type_t)stype;
+    if (cap->generator.type == SIGNAL_TYPE_WHITE_NOISE) {
+      static const char* const allowed_noise[] = {"type", "level", NULL};
+      if (validate_unknown_fields(sig_obj, allowed_noise,
+                                  "SignalGenerator signal", err) != 0) {
+        return -1;
+      }
+      static const char* const req_noise[] = {"level", NULL};
+      if (require_json_fields(sig_obj, req_noise, "SignalGenerator signal",
+                              "WhiteNoise", err) != 0) {
+        return -1;
+      }
+      if (!parse_json_double(sig_obj, "level", &cap->generator.level)) {
+        config_error_set(
+            err, CONFIG_ERR_PARSE,
+            "field 'level' in SignalGenerator signal must be a number");
+        return -1;
+      }
     } else {
-      cap->generator.type = SIGNAL_TYPE_SINE;
-    }
-    if (!parse_json_double(sig_obj, "freq", &cap->generator.frequency)) {
-      cap->generator.frequency = 1000.0;
-    }
-    if (!parse_json_double(sig_obj, "level", &cap->generator.level)) {
-      cap->generator.level = 0.0;
+      static const char* const allowed_tone[] = {"type", "freq", "level", NULL};
+      const char* vname =
+          (cap->generator.type == SIGNAL_TYPE_SINE) ? "Sine" : "Square";
+      if (validate_unknown_fields(sig_obj, allowed_tone,
+                                  "SignalGenerator signal", err) != 0) {
+        return -1;
+      }
+      static const char* const req_tone[] = {"freq", "level", NULL};
+      if (require_json_fields(sig_obj, req_tone, "SignalGenerator signal",
+                              vname, err) != 0) {
+        return -1;
+      }
+      if (!parse_json_double(sig_obj, "freq", &cap->generator.frequency)) {
+        config_error_set(
+            err, CONFIG_ERR_PARSE,
+            "field 'freq' in SignalGenerator signal must be a number");
+        return -1;
+      }
+      if (!parse_json_double(sig_obj, "level", &cap->generator.level)) {
+        config_error_set(
+            err, CONFIG_ERR_PARSE,
+            "field 'level' in SignalGenerator signal must be a number");
+        return -1;
+      }
     }
   }
 
@@ -710,7 +800,8 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
                        "SignalGenerator capture");
       return -1;
     }
-    if (!cJSON_IsObject(sig_obj)) {
+    cJSON* sig_node = cJSON_GetObjectItemCaseSensitive(cap_obj, "signal");
+    if (!cJSON_IsObject(sig_node)) {
       config_error_set(err, CONFIG_ERR_PARSE,
                        "missing field 'signal' in SignalGenerator capture");
       return -1;
@@ -720,6 +811,14 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
       config_error_set(err, CONFIG_ERR_PARSE,
                        "missing or non-positive field 'channels' in %s capture",
                        type_str);
+      return -1;
+    }
+  }
+
+  if (strcmp(type_str, "Alsa") == 0 || strcmp(type_str, "Asio") == 0) {
+    if (!temp.has_device || strlen(temp.device) == 0) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "missing field 'device' in %s capture", type_str);
       return -1;
     }
   }
@@ -883,9 +982,9 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
       return -1;
   } else if (strcmp(type_str, "PipeWire") == 0) {
     static const char* const allowed[] = {
-        "type",      "channels",         "format",
-        "node_name", "node_description", "node_group_name",
-        "labels",    "channel_labels",   "autoconnect_to",
+        "type",            "channels",         "node_name",
+        "node_description","node_group_name",  "labels",
+        "channel_labels",  "autoconnect_to",
         NULL};
     if (validate_unknown_fields(play_obj, allowed, "PipeWire playback", err) !=
         0)
@@ -931,21 +1030,45 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
 #if defined(ENABLE_WASAPI)
     } else if (play->type == AUDIO_BACKEND_TYPE_WASAPI) {
       play->wasapi_format = wasapi_sample_format_from_string(item->valuestring);
+      if (play->wasapi_format == WASAPI_SAMPLE_FORMAT_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "unknown sample format '%s' for Wasapi playback",
+                         item->valuestring);
+        return -1;
+      }
       play->has_wasapi_format = true;
 #endif
 #if defined(ENABLE_ASIO)
     } else if (play->type == AUDIO_BACKEND_TYPE_ASIO) {
       play->asio_format = asio_sample_format_from_string(item->valuestring);
+      if (play->asio_format == ASIO_SAMPLE_FORMAT_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "unknown sample format '%s' for Asio playback",
+                         item->valuestring);
+        return -1;
+      }
       play->has_asio_format = true;
 #endif
 #if defined(ENABLE_ALSA)
     } else if (play->type == AUDIO_BACKEND_TYPE_ALSA) {
       play->alsa_format = alsa_sample_format_from_string(item->valuestring);
+      if (play->alsa_format == ALSA_SAMPLE_FORMAT_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "unknown sample format '%s' for Alsa playback",
+                         item->valuestring);
+        return -1;
+      }
       play->has_alsa_format = true;
 #endif
 #if defined(ENABLE_COREAUDIO)
     } else if (play->type == AUDIO_BACKEND_TYPE_CORE_AUDIO) {
       play->format = coreaudio_sample_format_from_string(item->valuestring);
+      if (play->format == COREAUDIO_SAMPLE_FORMAT_INVALID) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "unknown sample format '%s' for CoreAudio playback",
+                         item->valuestring);
+        return -1;
+      }
       play->has_format = true;
 #endif
     }
@@ -1172,6 +1295,14 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
     }
   }
 
+  if (strcmp(type_str, "Alsa") == 0 || strcmp(type_str, "Asio") == 0) {
+    if (!play->has_device || strlen(play->device) == 0) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "missing field 'device' in %s playback", type_str);
+      return -1;
+    }
+  }
+
   return 0;
 }
 
@@ -1208,23 +1339,36 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
 
   devices_config_t* dev = &config->devices;
 
-  int val_int = 0;
-  if (!parse_json_int(dev_obj, "samplerate", &val_int) || val_int <= 0) {
+  size_t val_st = 0;
+  bool present = false;
+  if (parse_json_size_t_strict(dev_obj, "samplerate", "devices", &val_st,
+                               &present, err) != 0) {
+    return -1;
+  }
+  if (!present || val_st == 0) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "missing or non-positive field 'samplerate' in devices");
     return -1;
   }
-  dev->samplerate = (size_t)val_int;
+  dev->samplerate = val_st;
 
-  if (!parse_json_int(dev_obj, "chunksize", &val_int) || val_int <= 0) {
+  if (parse_json_size_t_strict(dev_obj, "chunksize", "devices", &val_st,
+                               &present, err) != 0) {
+    return -1;
+  }
+  if (!present || val_st == 0) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "missing or non-positive field 'chunksize' in devices");
     return -1;
   }
-  dev->chunksize = (size_t)val_int;
+  dev->chunksize = val_st;
 
-  if (parse_json_int(dev_obj, "queuelimit", &dev->queuelimit)) {
-    dev->has_queuelimit = true;
+  if (parse_json_size_t_strict(dev_obj, "queuelimit", "devices", &val_st,
+                               &dev->has_queuelimit, err) != 0) {
+    return -1;
+  }
+  if (dev->has_queuelimit) {
+    dev->queuelimit = (int)val_st;
   }
   dev->has_enable_rate_adjust =
       parse_json_bool(dev_obj, "enable_rate_adjust", &dev->enable_rate_adjust);
@@ -1250,9 +1394,10 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
                         &dev->silence_timeout_s)) {
     dev->has_silence_timeout_s = true;
   }
-  if (parse_json_int(dev_obj, "capture_samplerate", &val_int)) {
-    dev->capture_samplerate = val_int > 0 ? (size_t)val_int : 0;
-    dev->has_capture_samplerate = true;
+  if (parse_json_size_t_strict(dev_obj, "capture_samplerate", "devices",
+                               &dev->capture_samplerate,
+                               &dev->has_capture_samplerate, err) != 0) {
+    return -1;
   }
   if (parse_json_double(dev_obj, "volume_ramp_time_ms",
                         &dev->volume_ramp_time_ms)) {

@@ -53,12 +53,12 @@ static audio_device_descriptor_t* probe_device_capabilities(
   int available_count = asio_list_device_names(available_names, 64);
   bool found_name = false;
   for (int i = 0; i < available_count; i++) {
-    if (strcasecmp(available_names[i], target_dev_name) == 0) {
+    if (strcmp(available_names[i], target_dev_name) == 0) {
       found_name = true;
       break;
     }
   }
-  if (!found_name && strcasecmp(target_dev_name, "default") != 0) {
+  if (!found_name && strcmp(target_dev_name, "default") != 0) {
     if (err) {
       device_error_init(err, DEVICE_ERROR_NOT_FOUND, target_dev_name);
     }

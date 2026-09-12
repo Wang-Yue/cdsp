@@ -84,12 +84,12 @@ static int race_config_validate(const processor_config_t* config,
                      "RACE: channels must be > 0, got 0");
     return -1;
   }
-  if (p->attenuation <= 0.0) {
+  if (p->attenuation <= 0.0 || !isfinite(p->attenuation)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE: attenuation must be > 0, got %g", p->attenuation);
     return -1;
   }
-  if (p->delay <= 0.0) {
+  if (p->delay <= 0.0 || !isfinite(p->delay)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "RACE: delay must be > 0, got %g", p->delay);
     return -1;

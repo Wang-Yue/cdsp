@@ -71,19 +71,25 @@ static void configure(const lookahead_limiter_config_t* params, int sample_rate,
   time_unit_t release_unit = params ? params->release_unit : TIME_UNIT_MS;
   double attack = params ? params->attack : 0.0;
   double release = params ? params->release : 0.0;
-  *out_attack_samples =
-      (int)round(compute_time_samples(attack, attack_unit, sample_rate));
+  double attack_s = compute_time_samples(attack, attack_unit, sample_rate);
+  if (isnan(attack_s) || attack_s <= 0.0) {
+    *out_attack_samples = 0;
+  } else if (attack_s >= (double)sample_rate) {
+    *out_attack_samples = sample_rate;
+  } else {
+    *out_attack_samples = (int)round(attack_s);
+  }
   double release_samples =
       compute_time_samples(release, release_unit, sample_rate);
-  if (release_samples > 0.0) {
+  if (release_samples > 0.0 && !isnan(release_samples)) {
     *out_release_coeff = exp(-1.0 / release_samples);
   } else {
     *out_release_coeff = 0.0;
   }
 }
 
-static void calculate_envelope(lookahead_gain_t* lg, const double* detection,
-                               size_t len) {
+static size_t calculate_envelope(lookahead_gain_t* lg, const double* detection,
+                                 size_t len) {
   if (len > lg->gain_capacity) {
     double* new_gain = (double*)realloc(lg->gain, len * sizeof(double));
     if (new_gain) {
@@ -133,6 +139,7 @@ static void calculate_envelope(lookahead_gain_t* lg, const double* detection,
     }
   }
   lg->gain_len = len;
+  return len;
 }
 
 /* =========================================================================
@@ -311,11 +318,11 @@ static void lookahead_gain_transfer_state_common(void* dest_ptr,
     dest->history_read_idx = 0;
     dest->history_write_idx = 0;
 
-    // Flush the lookahead window with silence. `lookahead_window_get` reads
-    // exactly the newest `attack_samples` entries, so pushing that many zeros
-    // clears the whole window. `attack_samples` is validated to be at most one
-    // second and the capacity is at least the sample rate, so this cannot wrap
-    // past the start of the ring.
+    // Flush the lookahead window with silence.
+    // `lookahead_window_get` reads exactly the newest `attack_samples` entries,
+    // so pushing that many zeros clears the whole window. `attack_samples` is
+    // validated to be at most one second and the capacity is at least the sample
+    // rate, so this cannot wrap past the start of the ring.
     for (int i = 0; i < dest->attack_samples; i++) {
       history_push(dest, 0.0);
     }
@@ -340,13 +347,13 @@ static void lookahead_gain_process_envelope(void* instance,
   lookahead_gain_t* lg = (lookahead_gain_t*)instance;
   if (!lg || !waveform || count == 0) return;
 
-  calculate_envelope(lg, waveform, count);
+  size_t processed = calculate_envelope(lg, waveform, count);
 
-  for (size_t i = 0; i < count; i++) {
+  for (size_t i = 0; i < processed; i++) {
     history_push(lg, waveform[i]);
   }
 
-  memcpy(waveform, lg->gain, count * sizeof(double));
+  memcpy(waveform, lg->gain, processed * sizeof(double));
 }
 
 const filter_vtable_t g_lookahead_gain_vtable = {
@@ -373,10 +380,10 @@ static void lookahead_limiter_process_waveform(void* instance,
   lookahead_gain_t* lg = (lookahead_gain_t*)instance;
   if (!lg || !waveform || count == 0) return;
 
-  calculate_envelope(lg, waveform, count);
+  size_t processed = calculate_envelope(lg, waveform, count);
 
   size_t lookahead_start = lg->history_capacity - lg->attack_samples;
-  for (size_t i = 0; i < count; i++) {
+  for (size_t i = 0; i < processed; i++) {
     double input_sample;
     if (i < (size_t)lg->attack_samples) {
       input_sample = lg->history[(lg->history_read_idx + lookahead_start + i) %
@@ -387,11 +394,11 @@ static void lookahead_limiter_process_waveform(void* instance,
     lg->gain[i] *= input_sample;
   }
 
-  for (size_t i = 0; i < count; i++) {
+  for (size_t i = 0; i < processed; i++) {
     history_push(lg, waveform[i]);
   }
 
-  memcpy(waveform, lg->gain, count * sizeof(double));
+  memcpy(waveform, lg->gain, processed * sizeof(double));
 }
 
 const filter_vtable_t g_lookahead_limiter_vtable = {

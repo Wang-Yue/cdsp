@@ -265,7 +265,7 @@ static inline void dsp_ops_float_hann_window(float* buffer, size_t count) {
  * @brief Find the maximum value in a float vector.
  */
 static inline float dsp_ops_float_max(const float* buffer, size_t count) {
-  if (count == 0) return -200.0f;
+  if (count == 0) return -INFINITY;
 #if defined(ENABLE_ACCELERATE)
   float res = 0.0f;
   vDSP_maxv(buffer, 1, &res, count);

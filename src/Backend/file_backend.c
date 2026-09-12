@@ -203,7 +203,8 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
         return false;
       }
 
-      if (audio_format == 0xFFFE) {
+      bool is_extended = (audio_format == 0xFFFE);
+      if (is_extended) {
         if (chunk_size != 40) {
           snprintf(err_msg, err_msg_len,
                    "extended fmt chunk must be 40 bytes, got %u", chunk_size);
@@ -256,10 +257,10 @@ static bool parse_wav_header(FILE* f, wav_info_t* info, char* err_msg,
         else if (bits_per_sample == 24 && bytes_per_sample == 3)
           format = BINARY_SAMPLE_FORMAT_S24_3_LE;
         else if (bits_per_sample == 24 && bytes_per_sample == 4)
-          format = BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
+          format = BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
         else if (bits_per_sample == 32 && bytes_per_sample == 4) {
-          if (valid_bits == 24) {
-            format = BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
+          if (is_extended && valid_bits == 24) {
+            format = BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
           } else {
             format = BINARY_SAMPLE_FORMAT_S32_LE;
           }
@@ -444,8 +445,9 @@ static void write_wav_header_to_file(FILE* f, size_t channels,
     p[22] = 0;
     p[23] = 0;
     // SubFormat GUID
-    static const uint8_t guid_suffix[14] = {0x00, 0x00, 0x10, 0x00, 0x80, 0x00,
-                                            0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
+    static const uint8_t guid_suffix[14] = {
+        0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+        0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
     uint16_t sub_format = is_float ? 3 : 1;
     p[24] = sub_format & 0xFF;
     p[25] = (sub_format >> 8) & 0xFF;
@@ -613,8 +615,9 @@ static void write_rf64_header_to_file(FILE* f, size_t channels,
     p[21] = 0;
     p[22] = 0;
     p[23] = 0;
-    static const uint8_t guid_suffix[14] = {0x00, 0x00, 0x10, 0x00, 0x80, 0x00,
-                                            0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
+    static const uint8_t guid_suffix[14] = {
+        0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+        0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
     uint16_t sub_format = is_float ? 3 : 1;
     p[24] = sub_format & 0xFF;
     p[25] = (sub_format >> 8) & 0xFF;

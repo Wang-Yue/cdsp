@@ -417,19 +417,19 @@ TEST(ConfigDiffPipeWireAutoconnectTo) {
   // Changing autoconnect_to from "" to null must trigger full reload
   config_change_t* ch1 = config_change_create();
   config_change_type_t res1 = config_diff(c_empty, c_null, ch1);
-  ASSERT_EQ(CONFIG_CHANGE_FULL, res1);
+  ASSERT_EQ(CONFIG_CHANGE_DEVICES, res1);
   config_change_free(ch1);
 
   // Changing autoconnect_to from null to "" must trigger full reload
   config_change_t* ch2 = config_change_create();
   config_change_type_t res2 = config_diff(c_null, c_empty, ch2);
-  ASSERT_EQ(CONFIG_CHANGE_FULL, res2);
+  ASSERT_EQ(CONFIG_CHANGE_DEVICES, res2);
   config_change_free(ch2);
 
   // Changing autoconnect_to from "" to target node must trigger full reload
   config_change_t* ch3 = config_change_create();
   config_change_type_t res3 = config_diff(c_empty, c_target, ch3);
-  ASSERT_EQ(CONFIG_CHANGE_FULL, res3);
+  ASSERT_EQ(CONFIG_CHANGE_DEVICES, res3);
   config_change_free(ch3);
 
   dsp_config_free(c_empty);

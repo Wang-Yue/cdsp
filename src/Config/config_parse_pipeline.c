@@ -62,15 +62,32 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
       return -1;
     }
 
-    if (step->type == PIPELINE_STEP_TYPE_MIXER ||
-        step->type == PIPELINE_STEP_TYPE_PROCESSOR) {
+    if (step->type == PIPELINE_STEP_TYPE_FILTER) {
+      static const char* const allowed_filter_step_keys[] = {
+          "type", "name", "names", "channel", "channels", "bypassed", "description", NULL};
+      if (validate_unknown_fields(step_obj, allowed_filter_step_keys,
+                                  "Filter pipeline step", err) != 0) {
+        return -1;
+      }
+      if (!cJSON_HasObjectItem(step_obj, "names") &&
+          !cJSON_HasObjectItem(step_obj, "name")) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "missing field 'names' in Filter pipeline step");
+        return -1;
+      }
+    } else if (step->type == PIPELINE_STEP_TYPE_MIXER ||
+               step->type == PIPELINE_STEP_TYPE_PROCESSOR) {
+      const char* sname = (step->type == PIPELINE_STEP_TYPE_MIXER)
+                              ? "Mixer pipeline step"
+                              : "Processor pipeline step";
       static const char* const allowed_named_step_keys[] = {
           "type", "name", "bypassed", "description", NULL};
       if (validate_unknown_fields(step_obj, allowed_named_step_keys,
-                                  step->type == PIPELINE_STEP_TYPE_MIXER
-                                      ? "Mixer pipeline step"
-                                      : "Processor pipeline step",
-                                  err) != 0) {
+                                  sname, err) != 0) {
+        return -1;
+      }
+      static const char* const req_named[] = {"name", NULL};
+      if (require_json_fields(step_obj, req_named, sname, NULL, err) != 0) {
         return -1;
       }
     }

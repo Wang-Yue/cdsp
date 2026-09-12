@@ -480,18 +480,17 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
   if (config->devices.has_target_level) {
     if ((int64_t)config->devices.target_level > target_limit ||
         config->devices.target_level < 0) {
-      char msg[128];
-      snprintf(msg, sizeof(msg), "target_level cannot be larger than %lld",
-               (long long)target_limit);
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE, msg);
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "target_level cannot be larger than %lld",
+                       (long long)target_limit);
       return -1;
     }
   }
 
   if (config->devices.has_worker_threads &&
-      config->devices.worker_threads <= 0) {
+      config->devices.worker_threads < 0) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                     "worker_threads must be positive");
+                     "worker_threads cannot be negative");
     return -1;
   }
 

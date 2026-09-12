@@ -63,8 +63,8 @@ void dsp_processor_process(dsp_processor_t* proc, audio_chunk_t* chunk) {
 
 void dsp_processor_transfer_state(dsp_processor_t* dest,
                                   const dsp_processor_t* src) {
-  if (!dest || !src || dest->type != src->type || !dest->impl || !src->impl ||
-      !dest->vtable || !dest->vtable->transfer_state)
+  if (!dest || !src || dest == src || dest->type != src->type || !dest->impl ||
+      !src->impl || !dest->vtable || !dest->vtable->transfer_state)
     return;
   dest->vtable->transfer_state(dest->impl, src->impl);
   logger_info(&g_logger, "Transferred processor state for '%s'",
@@ -89,6 +89,11 @@ dsp_processor_t* dsp_processor_create(const char* name,
                                       const processor_config_t* config,
                                       int sample_rate, size_t chunk_size,
                                       config_error_t* err) {
+  if (!config) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "Null processor config");
+    return NULL;
+  }
   if (processor_config_validate(config, sample_rate, err) != 0) return NULL;
   const processor_vtable_t* vtable = processor_vtable_from_type(config->type);
   if (!vtable) {
@@ -121,10 +126,15 @@ dsp_processor_t* dsp_processor_create(const char* name,
 
 int processor_config_validate(const processor_config_t* proc, int sample_rate,
                               config_error_t* err) {
-  if (!proc) return 0;
+  if (!proc) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "Null processor config");
+    return -1;
+  }
   const processor_vtable_t* vtable = processor_vtable_from_type(proc->type);
   if (vtable && vtable->validate) {
     return vtable->validate(proc, sample_rate, err);
   }
-  return 0;
+  config_error_set(err, CONFIG_ERR_PARSE, "Unknown processor type");
+  return -1;
 }

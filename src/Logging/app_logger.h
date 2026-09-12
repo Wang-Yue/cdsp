@@ -169,6 +169,15 @@ typedef void (*cdsp_log_callback_t)(log_level_t level, const char* label,
 void app_logger_set_callback(cdsp_log_callback_t callback, void* user_data);
 
 /**
+ * @brief Sets a log file path for the logger.
+ *
+ * If set, logs will be written to this file instead of stderr.
+ *
+ * @param path The file path to write logs to.
+ */
+void app_logger_set_logfile(const char* path);
+
+/**
  * @brief Logs a message using the specified logger.
  *
  * @param logger Pointer to the logger instance.

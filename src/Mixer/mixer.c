@@ -76,15 +76,18 @@ struct mixer_s {
 static bool populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
   for (size_t i = 0; i < config->mapping_count; i++) {
     const mixer_mapping_t* map = &config->mapping[i];
+    if (map->dest >= mixer->channels_out || map->mute) {
+      continue;
+    }
     size_t dest = (size_t)map->dest;
-    // Ignore mappings to out-of-bounds destination channels or muted
-    // destination mappings
-    if (dest >= mixer->channels_out || map->mute) continue;
 
     // Count unmuted contributing sources for this destination channel
     size_t valid_count = 0;
     for (size_t j = 0; j < map->sources_count; j++) {
-      if (!map->sources[j].mute) valid_count++;
+      if (!map->sources[j].mute &&
+          (size_t)map->sources[j].channel < mixer->channels_in) {
+        valid_count++;
+      }
     }
     if (valid_count == 0) continue;
 
@@ -103,7 +106,9 @@ static bool populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
     size_t idx = 0;
     for (size_t j = 0; j < map->sources_count; j++) {
       const mixer_source_t* src = &map->sources[j];
-      if (src->mute) continue;
+      if (src->mute || (size_t)src->channel >= mixer->channels_in) {
+        continue;
+      }
 
       // Calculate linear gain from dB or linear configuration.
       // Upstream's `MixerSource::gain()` is `unwrap_or_default()`, i.e. 0.0
@@ -285,10 +290,10 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
 
   for (size_t i = 0; i < mixer->mapping_count; i++) {
     int dest = mixer->mapping[i].dest;
-    if ((size_t)dest >= mixer->channels_out) {
+    if (dest < 0 || (size_t)dest >= mixer->channels_out) {
       config_error_set(err, CONFIG_ERR_INVALID_MIXER,
                        "mixer dest %d >= channels_out %d", dest,
-                       mixer->channels_out);
+                       (int)mixer->channels_out);
       free(seen_dests);
       return -1;
     }
@@ -324,10 +329,10 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
     }
     for (size_t j = 0; j < mixer->mapping[i].sources_count; j++) {
       int src_ch = mixer->mapping[i].sources[j].channel;
-      if ((size_t)src_ch >= mixer->channels_in) {
+      if (src_ch < 0 || (size_t)src_ch >= mixer->channels_in) {
         config_error_set(err, CONFIG_ERR_INVALID_MIXER,
                          "mixer source channel %d >= channels_in %d", src_ch,
-                         mixer->channels_in);
+                         (int)mixer->channels_in);
         free(seen_sources);
         free(seen_dests);
         return -1;

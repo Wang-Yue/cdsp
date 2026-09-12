@@ -61,6 +61,21 @@ void websocket_server_stop(websocket_server_t* server);
  */
 void websocket_server_free(websocket_server_t* server);
 
+/**
+ * @brief Check if an exit was requested via WebSocket command.
+ *
+ * @param server Pointer to the WebSocket server.
+ * @return true if exit was requested, false otherwise.
+ */
+bool websocket_server_is_exit_requested(const websocket_server_t* server);
+
+/**
+ * @brief Request application exit via WebSocket server.
+ *
+ * @param server Pointer to the WebSocket server.
+ */
+void websocket_server_request_exit(websocket_server_t* server);
+
 // MARK: - Command Handler
 
 typedef struct dyn_string_s {

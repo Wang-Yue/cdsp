@@ -84,8 +84,18 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           if (validate_unknown_fields(params, allowed, "Gain filter parameters",
                                       err) != 0)
             return -1;
+          static const char* const req_gain[] = {"gain", NULL};
+          if (require_json_fields(params, req_gain, "Gain filter parameters",
+                                  NULL, err) != 0)
+            return -1;
           gain_config_t* gp = &f_conf->parameters.gain;
-          gp->has_gain = parse_json_double(params, "gain", &gp->gain);
+          if (!parse_json_double(params, "gain", &gp->gain)) {
+            config_error_set(
+                err, CONFIG_ERR_PARSE,
+                "field 'gain' in Gain filter parameters must be a number");
+            return -1;
+          }
+          gp->has_gain = true;
           char str_buf[64];
           if (parse_json_str(params, "scale", str_buf, sizeof(str_buf))) {
             if (strcmp(str_buf, "linear") == 0) {
@@ -223,11 +233,58 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                         "Biquad FO filter parameters",
                                         err) != 0)
               return -1;
+          } else if (bp->type == BIQUAD_TYPE_HIGHSHELF_FO ||
+                     bp->type == BIQUAD_TYPE_LOWSHELF_FO) {
+            static const char* const allowed_shelf_fo[] = {
+                "type", "freq", "gain", NULL};
+            if (validate_unknown_fields(params, allowed_shelf_fo,
+                                        "Biquad Shelf FO filter parameters",
+                                        err) != 0)
+              return -1;
+          } else if (bp->type == BIQUAD_TYPE_HIGHPASS ||
+                     bp->type == BIQUAD_TYPE_LOWPASS) {
+            static const char* const allowed_pass[] = {
+                "type", "freq", "q", NULL};
+            if (validate_unknown_fields(params, allowed_pass,
+                                        "Biquad Highpass/Lowpass parameters",
+                                        err) != 0)
+              return -1;
+          } else if (bp->type == BIQUAD_TYPE_GENERAL_NOTCH) {
+            static const char* const allowed_gn[] = {
+                "type", "freq_p", "freq_z", "q_p", "normalize_at_dc", NULL};
+            if (validate_unknown_fields(params, allowed_gn,
+                                        "Biquad GeneralNotch parameters",
+                                        err) != 0)
+              return -1;
           } else if (bp->type == BIQUAD_TYPE_LINKWITZ_TRANSFORM) {
             static const char* const allowed_lt[] = {
                 "type", "freq_act", "q_act", "freq_target", "q_target", NULL};
             if (validate_unknown_fields(params, allowed_lt,
                                         "Biquad LinkwitzTransform parameters",
+                                        err) != 0)
+              return -1;
+          } else if (bp->type == BIQUAD_TYPE_PEAKING) {
+            static const char* const allowed_peaking[] = {
+                "type", "freq", "gain", "q", "bandwidth", NULL};
+            if (validate_unknown_fields(params, allowed_peaking,
+                                        "Biquad Peaking parameters",
+                                        err) != 0)
+              return -1;
+          } else if (bp->type == BIQUAD_TYPE_HIGHSHELF ||
+                     bp->type == BIQUAD_TYPE_LOWSHELF) {
+            static const char* const allowed_shelf[] = {
+                "type", "freq", "gain", "q", "slope", NULL};
+            if (validate_unknown_fields(params, allowed_shelf,
+                                        "Biquad Shelf parameters",
+                                        err) != 0)
+              return -1;
+          } else if (bp->type == BIQUAD_TYPE_ALLPASS ||
+                     bp->type == BIQUAD_TYPE_BANDPASS ||
+                     bp->type == BIQUAD_TYPE_NOTCH) {
+            static const char* const allowed_width[] = {
+                "type", "freq", "q", "bandwidth", NULL};
+            if (validate_unknown_fields(params, allowed_width,
+                                        "Biquad filter parameters",
                                         err) != 0)
               return -1;
           }
@@ -331,8 +388,17 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           if (validate_unknown_fields(params, allowed,
                                       "Delay filter parameters", err) != 0)
             return -1;
+          static const char* const req_delay[] = {"delay", "delay_unit", NULL};
+          if (require_json_fields(params, req_delay, "Delay filter parameters",
+                                  NULL, err) != 0)
+            return -1;
           delay_config_t* dp = &f_conf->parameters.delay;
-          parse_json_double(params, "delay", &dp->delay);
+          if (!parse_json_double(params, "delay", &dp->delay)) {
+            config_error_set(
+                err, CONFIG_ERR_PARSE,
+                "field 'delay' in Delay filter parameters must be a number");
+            return -1;
+          }
           char unit_buf[64];
           if (parse_json_str(params, "delay_unit", unit_buf,
                              sizeof(unit_buf))) {
@@ -410,6 +476,34 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                     variant, err) != 0)
               return -1;
           }
+          if (cp->type == CONV_TYPE_RAW) {
+            static const char* const allowed_raw[] = {
+                "type", "filename", "format", "skip_bytes_lines",
+                "read_bytes_lines", NULL};
+            if (validate_unknown_fields(params, allowed_raw,
+                                        "Conv Raw filter parameters",
+                                        err) != 0)
+              return -1;
+          } else if (cp->type == CONV_TYPE_WAV) {
+            static const char* const allowed_wav[] = {
+                "type", "filename", "channel", NULL};
+            if (validate_unknown_fields(params, allowed_wav,
+                                        "Conv Wav filter parameters",
+                                        err) != 0)
+              return -1;
+          } else if (cp->type == CONV_TYPE_VALUES) {
+            static const char* const allowed_val[] = {"type", "values", NULL};
+            if (validate_unknown_fields(params, allowed_val,
+                                        "Conv Values filter parameters",
+                                        err) != 0)
+              return -1;
+          } else if (cp->type == CONV_TYPE_DUMMY) {
+            static const char* const allowed_dum[] = {"type", "length", NULL};
+            if (validate_unknown_fields(params, allowed_dum,
+                                        "Conv Dummy filter parameters",
+                                        err) != 0)
+              return -1;
+          }
           cp->values = parse_double_array(
               cJSON_GetObjectItemCaseSensitive(params, "values"),
               &cp->values_count);
@@ -418,11 +512,45 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           parse_json_str(params, "format", cp->format, sizeof(cp->format));
           if (strlen(cp->format) == 0) {
             strncpy(cp->format, "TEXT", sizeof(cp->format) - 1);
+          } else if (strcmp(cp->format, "TEXT") != 0 &&
+                     file_sample_format_from_string(cp->format) ==
+                         BINARY_SAMPLE_FORMAT_INVALID) {
+            config_error_set(err, CONFIG_ERR_PARSE,
+                             "unknown sample format '%s' for Conv filter",
+                             cp->format);
+            return -1;
           }
-          parse_json_int(params, "channel", &cp->channel);
-          parse_json_int(params, "length", &cp->length);
-          parse_json_int(params, "skip_bytes_lines", &cp->skip_bytes_lines);
-          parse_json_int(params, "read_bytes_lines", &cp->read_bytes_lines);
+          size_t cval = 0;
+          bool cpresent = false;
+          if (parse_json_size_t_strict(params, "channel", "Conv filter", &cval,
+                                       &cpresent, err) != 0)
+            return -1;
+          if (cpresent) cp->channel = (int)cval;
+
+          if (parse_json_size_t_strict(params, "length", "Conv filter", &cval,
+                                       &cpresent, err) != 0)
+            return -1;
+          if (cpresent) {
+            cp->length = (int)cval;
+            if (cp->type == CONV_TYPE_DUMMY && cp->length <= 0) {
+              config_error_set(err, CONFIG_ERR_PARSE,
+                               "field 'length' in Conv Dummy filter must be "
+                               "greater than 0");
+              return -1;
+            }
+          }
+
+          if (parse_json_size_t_strict(params, "skip_bytes_lines",
+                                       "Conv filter", &cval, &cpresent,
+                                       err) != 0)
+            return -1;
+          if (cpresent) cp->skip_bytes_lines = (int)cval;
+
+          if (parse_json_size_t_strict(params, "read_bytes_lines",
+                                       "Conv filter", &cval, &cpresent,
+                                       err) != 0)
+            return -1;
+          if (cpresent) cp->read_bytes_lines = (int)cval;
           break;
         }
         case FILTER_TYPE_BIQUAD_COMBO: {
@@ -450,6 +578,36 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                   err) != 0)
             return -1;
           bcp->type = (biquad_combo_type_t)combo_type;
+          if (bcp->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS ||
+              bcp->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS ||
+              bcp->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS ||
+              bcp->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS) {
+            static const char* const allowed_crossover[] = {
+                "type", "freq", "order", NULL};
+            if (validate_unknown_fields(params, allowed_crossover,
+                                        "BiquadCombo filter parameters",
+                                        err) != 0)
+              return -1;
+          } else if (bcp->type == BIQUAD_COMBO_TYPE_TILT) {
+            static const char* const allowed_tilt[] = {"type", "gain", NULL};
+            if (validate_unknown_fields(params, allowed_tilt,
+                                        "BiquadCombo Tilt parameters",
+                                        err) != 0)
+              return -1;
+          } else if (bcp->type == BIQUAD_COMBO_TYPE_N_POINT_PEQ) {
+            static const char* const allowed_peq[] = {"type", "bands", NULL};
+            if (validate_unknown_fields(params, allowed_peq,
+                                        "BiquadCombo NPointPeq parameters",
+                                        err) != 0)
+              return -1;
+          } else if (bcp->type == BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER) {
+            static const char* const allowed_geq[] = {
+                "type", "gains", "freq_min", "freq_max", NULL};
+            if (validate_unknown_fields(params, allowed_geq,
+                                        "BiquadCombo GraphicEqualizer parameters",
+                                        err) != 0)
+              return -1;
+          }
           {
             const char* variant =
                 cJSON_GetObjectItemCaseSensitive(params, "type")->valuestring;
@@ -497,7 +655,12 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               bcp->has_freq_max = true;
             }
           }
-          bcp->has_order = parse_json_int(params, "order", &bcp->order);
+          size_t order_val = 0;
+          if (parse_json_size_t_strict(params, "order",
+                                       "BiquadCombo filter parameters",
+                                       &order_val, &bcp->has_order, err) != 0)
+            return -1;
+          if (bcp->has_order) bcp->order = (int)order_val;
           bcp->has_gain = parse_json_double(params, "gain", &bcp->gain);
 
           cJSON* bands_arr = cJSON_GetObjectItemCaseSensitive(params, "bands");
@@ -606,7 +769,13 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                         "Dither filter parameters", err) != 0)
               return -1;
           }
-          parse_json_int(params, "bits", &dp->bits);
+          size_t bits_val = 0;
+          bool bits_present = false;
+          if (parse_json_size_t_strict(params, "bits",
+                                       "Dither filter parameters", &bits_val,
+                                       &bits_present, err) != 0)
+            return -1;
+          if (bits_present) dp->bits = (int)bits_val;
           dp->has_amplitude =
               parse_json_double(params, "amplitude", &dp->amplitude);
           break;
@@ -630,11 +799,27 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                       "LookaheadLimiter filter parameters",
                                       err) != 0)
             return -1;
+          static const char* const req_lim[] = {
+              "attack", "release", "attack_unit", "release_unit", NULL};
+          if (require_json_fields(params, req_lim,
+                                  "LookaheadLimiter filter parameters", NULL,
+                                  err) != 0)
+            return -1;
           lookahead_limiter_config_t* llp =
               &f_conf->parameters.lookahead_limiter;
           parse_json_double(params, "limit", &llp->limit);
-          parse_json_double(params, "attack", &llp->attack);
-          parse_json_double(params, "release", &llp->release);
+          if (!parse_json_double(params, "attack", &llp->attack)) {
+            config_error_set(
+                err, CONFIG_ERR_PARSE,
+                "field 'attack' in LookaheadLimiter filter parameters must be a number");
+            return -1;
+          }
+          if (!parse_json_double(params, "release", &llp->release)) {
+            config_error_set(
+                err, CONFIG_ERR_PARSE,
+                "field 'release' in LookaheadLimiter filter parameters must be a number");
+            return -1;
+          }
           char a_unit_buf[64], r_unit_buf[64];
           if (parse_json_str(params, "attack_unit", a_unit_buf,
                              sizeof(a_unit_buf))) {

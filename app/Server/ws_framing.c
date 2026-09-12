@@ -19,6 +19,7 @@ bool ws_parse_frame_header_ext(const unsigned char* buf, size_t buf_len,
   if (buf_len < 2) return false;
 
   uint8_t first_byte = buf[0];
+  if ((first_byte & 0x70) != 0) return false;
   bool fin = (first_byte & 0x80) != 0;
   if (out_fin) *out_fin = fin;
 

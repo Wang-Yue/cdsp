@@ -192,8 +192,41 @@ bool audio_chunk_encode_interleaved(const audio_chunk_t* chunk,
                                     size_t frames, void* dst);
 
 /**
- * @brief Computes the peak-to-peak value range across all channels in the
+ * @brief Sets the used channels mask for the chunk.
+ *
+ * @param chunk Pointer to audio chunk.
+ * @param used_channels Array of booleans of length channels, or NULL to clear.
+ */
+void audio_chunk_set_used_channels(audio_chunk_t* chunk,
+                                   const bool* used_channels);
+
+/**
+ * @brief Gets the used channels mask for the chunk.
+ *
+ * @param chunk Pointer to audio chunk.
+ * @return Pointer to boolean mask array, or NULL if not set.
+ */
+const bool* audio_chunk_get_used_channels(const audio_chunk_t* chunk);
+
+/**
+ * @brief Computes the peak-to-peak value range across used channels in the
  * chunk.
+ *
+ * Evaluates max(sample) - min(sample) folded from 0.0 only over channels
+ * where used_channels[ch] is true (or all channels if used_channels is NULL),
+ * matching upstream CamillaDSP chunk value range calculation for silence
+ * detection.
+ *
+ * @param chunk Pointer to audio chunk.
+ * @param used_channels Array of booleans indicating used channels, or NULL.
+ * @return Peak-to-peak value range (maxval - minval).
+ */
+double audio_chunk_get_value_range_used(const audio_chunk_t* chunk,
+                                        const bool* used_channels);
+
+/**
+ * @brief Computes the peak-to-peak value range across all channels (or used channels
+ * if previously set on the chunk).
  *
  * Evaluates max(sample) - min(sample) across all channels folded from 0.0,
  * matching upstream CamillaDSP chunk value range calculation for silence

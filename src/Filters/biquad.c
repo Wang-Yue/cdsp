@@ -894,6 +894,7 @@ bool biquad_filter_update_parameters(biquad_filter_t* filter,
   if (biquad_coefficients_compute(&config->parameters.biquad, sample_rate,
                                   &new_coeffs)) {
     filter->coeffs = new_coeffs;
+    filter->type = config->parameters.biquad.type;
     filter->neg_a1 = -new_coeffs.a1;
     filter->neg_a2 = -new_coeffs.a2;
     return true;

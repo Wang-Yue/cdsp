@@ -75,7 +75,7 @@ processing_state_t silence_counter_update(silence_counter_t* counter,
   }
   // Reset counter if signal level is above the silence threshold.
   if (value_range > counter->threshold_linear) {
-    if (counter->silent_chunks >= counter->limit_chunks) {
+    if (counter->silent_chunks > counter->limit_chunks) {
       logger_info(&g_logger,
                   "Audio signal restored above threshold (value_range=%.6f > "
                   "threshold=%.6f), resuming",
