@@ -85,6 +85,10 @@ filter_t* filter_create(const char* name, const filter_config_t* config,
                         int sample_rate, size_t chunk_size,
                         processing_parameters_t* proc_params,
                         config_error_t* err) {
+  if (!config) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Null filter config");
+    return NULL;
+  }
   if (filter_config_validate(config, sample_rate, err) != 0) return NULL;
   const filter_vtable_t* vtable = filter_vtable_from_type(config->type);
   if (!vtable) {
@@ -194,7 +198,10 @@ void filter_free(filter_t* filter) {
 
 int filter_config_validate(const filter_config_t* filter, int sample_rate,
                            config_error_t* err) {
-  if (!filter) return 0;
+  if (!filter) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Null filter config");
+    return -1;
+  }
   const filter_vtable_t* vtable = filter_vtable_from_type(filter->type);
   if (vtable && vtable->validate) {
     return vtable->validate(filter, sample_rate, err);

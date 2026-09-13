@@ -14,6 +14,7 @@
 #include "Pipeline/pipeline.h"
 #include "Processors/processor.h"
 #include "Resampler/audio_resampler.h"
+#include "Wav/wav_reader.h"
 
 static const logger_t g_logger = {"dsp.config"};
 
@@ -38,15 +39,16 @@ int dsp_config_apply_overrides(dsp_config_t* config,
       config->devices.capture.is_wav &&
       config->devices.capture.cfg.wav_file.has_filename) {
     const char* fname = config->devices.capture.cfg.wav_file.filename;
-    cdsp_wav_info_t wav_info;
+    wav_info_t wav_info;
     char wav_err[256];
-    if (cdsp_wav_file_read_info(fname, &wav_info, wav_err, sizeof(wav_err))) {
+    if (wav_read_info_from_file(fname, &wav_info, wav_err, sizeof(wav_err))) {
       logger_info(
           &g_logger,
           "Updating overrides with values from wav input file, rate %u, "
           "format: %s, channels: %u",
           wav_info.sample_rate, file_sample_format_to_string(wav_info.format),
           (unsigned int)wav_info.channels);
+      config->devices.capture.cfg.wav_file.channels = wav_info.channels;
       overrides.channels = (int)wav_info.channels;
       overrides.sample_format = wav_info.format;
       overrides.has_sample_format = true;
@@ -137,9 +139,7 @@ int dsp_config_apply_overrides(dsp_config_t* config,
                  overrides.channels);
     switch (config->devices.capture.type) {
       case AUDIO_BACKEND_TYPE_FILE:
-        if (config->devices.capture.is_wav) {
-          config->devices.capture.cfg.wav_file.channels = overrides.channels;
-        } else {
+        if (!config->devices.capture.is_wav) {
           config->devices.capture.cfg.raw_file.channels = overrides.channels;
         }
         break;

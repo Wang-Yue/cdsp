@@ -12,6 +12,8 @@
 #include "Backend/asio_backend.h"
 #include "Backend/asio_types.h"
 
+static inline bool asio_ok(long r) { return r == 0 || r == (long)ASE_SUCCESS; }
+
 int asio_capabilities_available_device_names(bool is_capture,
                                              char out_names[][256],
                                              int max_names) {
@@ -58,7 +60,7 @@ static audio_device_descriptor_t* probe_device_capabilities(
       break;
     }
   }
-  if (!found_name && strcmp(target_dev_name, "default") != 0) {
+  if (!found_name) {
     if (err) {
       device_error_init(err, DEVICE_ERROR_NOT_FOUND, target_dev_name);
     }
@@ -82,7 +84,8 @@ static audio_device_descriptor_t* probe_device_capabilities(
   // Supported rates probe (lines 1242-1247)
   bool pcm_rate_supported[STANDARD_RATES_COUNT] = {false};
   for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
-    if (iasio->lpVtbl->canSampleRate(iasio, (double)STANDARD_RATES[r]) == 0) {
+    if (asio_ok(
+            iasio->lpVtbl->canSampleRate(iasio, (double)STANDARD_RATES[r]))) {
       pcm_rate_supported[r] = true;
     }
   }
@@ -92,7 +95,7 @@ static audio_device_descriptor_t* probe_device_capabilities(
   memset(&chan_info, 0, sizeof(chan_info));
   chan_info.channel = 0;
   chan_info.isInput = is_capture ? ASIOTrue : ASIOFalse;
-  if (iasio->lpVtbl->getChannelInfo(iasio, &chan_info) != 0) {
+  if (!asio_ok(iasio->lpVtbl->getChannelInfo(iasio, &chan_info))) {
     if (err) {
       const char* direction_name = is_capture ? "capture" : "playback";
       char msg[512];
@@ -120,6 +123,19 @@ static audio_device_descriptor_t* probe_device_capabilities(
   }
   const char* fmt_str = asio_format_to_str(sample_fmt);
 
+  // Get channel count before touching DSD format or setting rate (AS-F9)
+  long num_inputs = 0, num_outputs = 0;
+  if (!asio_ok(iasio->lpVtbl->getChannels(iasio, &num_inputs, &num_outputs))) {
+    if (err) {
+      char msg[512];
+      snprintf(msg, sizeof(msg), "ASIOGetChannels failed for '%s'",
+               target_dev_name);
+      device_error_init(err, DEVICE_ERROR_OTHER, msg);
+    }
+    asio_driver_teardown(target_dev_name);
+    return NULL;
+  }
+
   // 3. Check whether Native DSD is supported by the ASIO driver and probe DSD
   // rates in DSD mode
   ASIOIoFormat dsd_format;
@@ -142,25 +158,16 @@ static audio_device_descriptor_t* probe_device_capabilities(
     for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
       double raw_dsd_rate = (double)STANDARD_RATES[r] * 32.0;
       if (raw_dsd_rate >= 2822400.0 &&
-          iasio->lpVtbl->canSampleRate(iasio, raw_dsd_rate) == 0) {
+          asio_ok(iasio->lpVtbl->canSampleRate(iasio, raw_dsd_rate))) {
         dsd_rate_supported[r] = true;
       }
     }
-    // Switch back
+    // Switch back to PCM format and restore sample rate (AS-F9)
+    ASIOIoFormat pcm_format;
+    memset(&pcm_format, 0, sizeof(pcm_format));
+    pcm_format.FormatType = kASIOFormatPCM;
+    iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &pcm_format);
     iasio->lpVtbl->setSampleRate(iasio, 44100.0);
-  }
-
-  // Get channel count (lines 1262-1274)
-  long num_inputs = 0, num_outputs = 0;
-  if (iasio->lpVtbl->getChannels(iasio, &num_inputs, &num_outputs) != 0) {
-    if (err) {
-      char msg[512];
-      snprintf(msg, sizeof(msg), "ASIOGetChannels failed for '%s'",
-               target_dev_name);
-      device_error_init(err, DEVICE_ERROR_OTHER, msg);
-    }
-    asio_driver_teardown(target_dev_name);
-    return NULL;
   }
 
   // Teardown driver now that probing is finished
@@ -226,17 +233,26 @@ static audio_device_descriptor_t* probe_device_capabilities(
     rate_cap->samplerate = (int)STANDARD_RATES[i];
 
     size_t n_fmts = (is_pcm ? 1 : 0) + (is_dsd ? 1 : 0);
-    rate_cap->formats_count = n_fmts;
     rate_cap->formats = (char**)calloc(n_fmts, sizeof(char*));
-    if (rate_cap->formats) {
-      size_t f_idx = 0;
-      if (is_pcm) {
-        rate_cap->formats[f_idx++] = strdup(fmt_str);
-      }
-      if (is_dsd) {
-        rate_cap->formats[f_idx++] = strdup("DSD_INT8");
-      }
+    if (!rate_cap->formats) {
+      goto error_cleanup;
     }
+    size_t f_idx = 0;
+    if (is_pcm) {
+      rate_cap->formats[f_idx] = strdup(fmt_str);
+      if (!rate_cap->formats[f_idx]) {
+        goto error_cleanup;
+      }
+      f_idx++;
+    }
+    if (is_dsd) {
+      rate_cap->formats[f_idx] = strdup("DSD_INT8");
+      if (!rate_cap->formats[f_idx]) {
+        goto error_cleanup;
+      }
+      f_idx++;
+    }
+    rate_cap->formats_count = f_idx;
   }
 
   return desc;

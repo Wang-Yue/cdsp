@@ -65,6 +65,7 @@ struct async_sinc_resampler {
   double max_relative_ratio;
   double last_index;  // tracking index
   // in the interpolator.
+  double cutoff;
   double* sinc_table;
   // Per-channel input buffer. Layout:
   //   [0 .. 2*sincLen)            — history (last 2*sincLen samples of the
@@ -92,6 +93,16 @@ struct async_sinc_resampler {
 #include <math.h>
 #include <stdlib.h>
 
+static inline size_t size_as_usize(double size) {
+  if (isnan(size) || size <= 0.0) {
+    return 0;
+  }
+  if (isinf(size) || size > (double)(SIZE_MAX - 4096)) {
+    return SIZE_MAX;
+  }
+  return (size_t)size;
+}
+
 static inline double avg_t_ratio(double resample_ratio, double target_ratio) {
   return 0.5 * (1.0 / resample_ratio + 1.0 / target_ratio);
 }
@@ -113,8 +124,7 @@ static inline size_t calculate_input_size(
   double raw = last_index +
                (double)chunk_size * avg_t_ratio(resample_ratio, target_ratio) +
                ramp_overshoot + (double)interpolator_len;
-  if (raw < 0.0) return 0;
-  return (size_t)ceil(raw);
+  return size_as_usize(ceil(raw));
 }
 
 static inline size_t calculate_output_size(
@@ -128,8 +138,7 @@ static inline size_t calculate_output_size(
   double ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
   double raw =
       (space - ramp_overshoot) / avg_t_ratio(resample_ratio, target_ratio);
-  if (raw < 0.0) return 0;
-  return (size_t)floor(raw);
+  return size_as_usize(floor(raw));
 }
 
 static void async_sinc_resampler_update_lengths(
@@ -156,20 +165,14 @@ static void async_sinc_resampler_free(void* impl) {
 static void async_sinc_resampler_set_relative_ratio(void* impl,
                                                     double multiplier) {
   async_sinc_resampler_t* resampler = (async_sinc_resampler_t*)impl;
-  if (!resampler || isnan(multiplier) || isinf(multiplier) || multiplier <= 0.0) return;
+  if (!resampler || isnan(multiplier) || isinf(multiplier) || multiplier <= 0.0)
+    return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
-  if (multiplier < min_ratio) {
-    logger_warn(
-        &g_logger,
-        "Async sinc resampler ratio %.6f out of range [%.6f, %.6f], clamping",
-        multiplier, min_ratio, resampler->max_relative_ratio);
-    multiplier = min_ratio;
-  } else if (multiplier > resampler->max_relative_ratio) {
-    logger_warn(
-        &g_logger,
-        "Async sinc resampler ratio %.6f out of range [%.6f, %.6f], clamping",
-        multiplier, min_ratio, resampler->max_relative_ratio);
-    multiplier = resampler->max_relative_ratio;
+  if (multiplier < min_ratio || multiplier > resampler->max_relative_ratio) {
+    logger_warn(&g_logger,
+                "Async sinc resampler ratio %.6f out of range [%.6f, %.6f]",
+                multiplier, min_ratio, resampler->max_relative_ratio);
+    return;
   }
   double new_ratio = resampler->base_ratio * multiplier;
   if (!isfinite(new_ratio) || new_ratio <= 0.0) return;
@@ -356,7 +359,8 @@ static void run_cubic(async_sinc_resampler_t* resampler, size_t output_frames,
         if (!buf || !out) continue;
         double dot = sinc_dot_product(buf + base_offset, combined, s_len);
         for (int s = 0; s < max_shift; s++) {
-          dot += combined[s_len + (size_t)s] * buf[base_offset + s_len + (size_t)s];
+          dot += combined[s_len + (size_t)s] *
+                 buf[base_offset + s_len + (size_t)s];
         }
         out[frame] = dot;
       }
@@ -465,7 +469,8 @@ static void run_quadratic(async_sinc_resampler_t* resampler,
         if (!buf || !out) continue;
         double dot = sinc_dot_product(buf + base_offset, combined, s_len);
         for (int s = 0; s < max_shift; s++) {
-          dot += combined[s_len + (size_t)s] * buf[base_offset + s_len + (size_t)s];
+          dot += combined[s_len + (size_t)s] *
+                 buf[base_offset + s_len + (size_t)s];
         }
         out[frame] = dot;
       }
@@ -566,7 +571,8 @@ static void run_linear(async_sinc_resampler_t* resampler, size_t output_frames,
         if (!buf || !out) continue;
         double dot = sinc_dot_product(buf + base_offset, combined, s_len);
         for (int s = 0; s < max_shift; s++) {
-          dot += combined[s_len + (size_t)s] * buf[base_offset + s_len + (size_t)s];
+          dot += combined[s_len + (size_t)s] *
+                 buf[base_offset + s_len + (size_t)s];
         }
         out[frame] = dot;
       }
@@ -617,7 +623,8 @@ static resampler_error_t async_sinc_resampler_process(
     return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
   }
   size_t output_frames = resampler->needed_output_size;
-  if (output_frames > 0 && audio_chunk_get_frames(output) < output_frames) {
+  if (output_frames > resampler->max_output_frames ||
+      (output_frames > 0 && audio_chunk_get_frames(output) < output_frames)) {
     return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
   if (valid_frames > resampler->needed_input_size) {
@@ -695,9 +702,10 @@ static resampler_error_t async_sinc_resampler_process(
   size_t prev_needed_input_size = resampler->needed_input_size;
   async_sinc_resampler_update_lengths(resampler);
 
-  size_t valid_out = prev_needed_input_size > 0
-                         ? (output_frames * valid_frames) / prev_needed_input_size
-                         : output_frames;
+  size_t valid_out =
+      prev_needed_input_size > 0
+          ? (output_frames * valid_frames) / prev_needed_input_size
+          : output_frames;
   audio_chunk_set_valid_frames(output, valid_out);
   return RESAMPLER_OK;
 }
@@ -739,25 +747,13 @@ static void* async_sinc_resampler_create_impl(
         "AsyncSincResampler: oversampling_factor must be positive");
     return NULL;
   }
-  if (interpolation == SINC_INTERPOLATION_CUBIC && oversampling_factor < 3) {
-    config_error_set(
-        err, CONFIG_ERR_VALIDATION,
-        "AsyncSincResampler: oversampling_factor must be >= 3 for Cubic interpolation");
-    return NULL;
-  }
-  if (interpolation == SINC_INTERPOLATION_QUADRATIC && oversampling_factor < 2) {
-    config_error_set(
-        err, CONFIG_ERR_VALIDATION,
-        "AsyncSincResampler: oversampling_factor must be >= 2 for Quadratic interpolation");
-    return NULL;
-  }
   if (sinc_len == 0) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "AsyncSincResampler: sinc_len must be positive");
     return NULL;
   }
   sinc_len = (sinc_len + 7) & ~(size_t)7;
-  if (max_relative_ratio < 1.0) {
+  if (!isfinite(max_relative_ratio) || max_relative_ratio < 1.0) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "AsyncSincResampler: max_relative_ratio must be >= 1.0");
     return NULL;
@@ -790,6 +786,7 @@ static void* async_sinc_resampler_create_impl(
                      : base_cutoff * (float)resampler->base_ratio;
   double fc = (double)fc_f32;
 
+  resampler->cutoff = fc;
   resampler->sinc_table =
       make_sinc_table(sinc_len, oversampling_factor, window, fc);
   if (!resampler->sinc_table) {
@@ -809,6 +806,14 @@ static void* async_sinc_resampler_create_impl(
   } else {
     double raw_max_in = ((double)chunk_size) / min_ratio_abs + 2.0 +
                         (double)resampler->sinc_len / 2.0;
+    if (isnan(raw_max_in) || isinf(raw_max_in) || raw_max_in < 0.0 ||
+        raw_max_in > (double)(SIZE_MAX - 32)) {
+      config_error_set(
+          err, CONFIG_ERR_VALIDATION,
+          "AsyncSincResampler: calculated maximum input size is invalid");
+      async_sinc_resampler_free(resampler);
+      return NULL;
+    }
     resampler->max_input_frames = (size_t)ceil(raw_max_in) + 16;
   }
 
@@ -935,20 +940,10 @@ static int async_sinc_resampler_config_validate(
                        config->interpolation);
       return -1;
     }
-    if (config->has_oversampling_factor) {
-      if (interp == SINC_INTERPOLATION_CUBIC && config->oversampling_factor < 3) {
-        config_error_set(
-            err, CONFIG_ERR_VALIDATION,
-            "AsyncSinc: oversampling_factor must be >= 3 for Cubic interpolation");
-        return -1;
-      }
-      if (interp == SINC_INTERPOLATION_QUADRATIC &&
-          config->oversampling_factor < 2) {
-        config_error_set(
-            err, CONFIG_ERR_VALIDATION,
-            "AsyncSinc: oversampling_factor must be >= 2 for Quadratic interpolation");
-        return -1;
-      }
+    if (config->has_oversampling_factor && config->oversampling_factor == 0) {
+      config_error_set(err, CONFIG_ERR_VALIDATION,
+                       "AsyncSinc: oversampling_factor must be positive");
+      return -1;
     }
   }
   if (config->has_profile) {
@@ -1006,9 +1001,14 @@ static void* async_sinc_resampler_create(const resampler_config_t* config,
 
 static size_t async_sinc_resampler_get_output_delay(const void* impl) {
   const async_sinc_resampler_t* resampler = (const async_sinc_resampler_t*)impl;
-  return resampler ? (size_t)((double)resampler->sinc_len *
-                              resampler->resample_ratio / 2.0)
-                   : 0;
+  if (!resampler) return 0;
+  double delay = (double)resampler->sinc_len * resampler->resample_ratio / 2.0;
+  return size_as_usize(delay);
+}
+
+double async_sinc_resampler_get_cutoff(
+    const async_sinc_resampler_t* resampler) {
+  return resampler ? resampler->cutoff : 0.0;
 }
 
 static void async_sinc_resampler_reset(void* impl) {

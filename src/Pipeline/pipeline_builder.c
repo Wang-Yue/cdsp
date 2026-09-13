@@ -424,8 +424,14 @@ static bool build_filter_step(const pipeline_step_config_t* step,
         goto cleanup;
       }
 
+      bool can_parallelize = false;
+#if defined(ENABLE_LIBDISPATCH) || defined(ENABLE_OPENMP)
+      if (pipeline->multithreaded) {
+        can_parallelize = true;
+      }
+#endif
       size_t count = pipeline->steps_count;
-      if (pipeline->multithreaded && count > 0 &&
+      if (can_parallelize && count > 0 &&
           pipeline->steps[count - 1].type == EXEC_STEP_PARALLEL_FILTERS) {
         if (!merge_parallel_filter_chains(&pipeline->steps[count - 1], chains,
                                           channels_count, err)) {
@@ -557,6 +563,10 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
       capture_device_config_get_channels(&config->devices.capture);
   pipeline->multithreaded =
       config->devices.has_multithreaded ? config->devices.multithreaded : false;
+  pipeline->worker_threads =
+      (config->devices.has_worker_threads && config->devices.worker_threads > 0)
+          ? (size_t)config->devices.worker_threads
+          : 0;
 
   logger_info(&g_logger,
               "Initializing DSP pipeline (sample_rate=%d, chunk_size=%zu, "
@@ -578,8 +588,8 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
   filter_config_t vcfg = {.type = FILTER_TYPE_VOLUME,
                           .parameters.volume = vol_params};
   pipeline->master_volume = (volume_filter_t*)g_volume_vtable.create(
-      "default", &vcfg, pipeline->rate, pipeline->frames_per_chunk,
-      proc_params, err);
+      "default", &vcfg, pipeline->rate, pipeline->frames_per_chunk, proc_params,
+      err);
   if (!pipeline->master_volume) {
     logger_error(
         &g_logger,
@@ -607,6 +617,18 @@ pipeline_t* pipeline_create(const dsp_config_t* config,
                      "Failed to allocate capture scratch buffer");
     pipeline_free(pipeline);
     return NULL;
+  }
+
+  if (pipeline->expected_in_channels > 0) {
+    pipeline->used_capture_channels =
+        (bool*)calloc(pipeline->expected_in_channels, sizeof(bool));
+    if (pipeline->used_capture_channels) {
+      pipeline_compute_used_capture_channels(config,
+                                             pipeline->used_capture_channels,
+                                             pipeline->expected_in_channels);
+      audio_chunk_set_used_channels(pipeline->capture_scratch,
+                                    pipeline->used_capture_channels);
+    }
   }
 
   // 3. Count steps and allocate mixer scratch arrays

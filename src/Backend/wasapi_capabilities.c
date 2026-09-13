@@ -58,7 +58,8 @@ int wasapi_capabilities_available_device_names(bool is_capture,
         hr_prop = IPropertyStore_GetValue(properties, &PKEY_Device_FriendlyName,
                                           &var);
         if (SUCCEEDED(hr_prop) && var.vt == VT_LPWSTR && var.pwszVal) {
-          wcstombs(name_buf, var.pwszVal, sizeof(name_buf) - 1);
+          WideCharToMultiByte(CP_UTF8, 0, var.pwszVal, -1, name_buf,
+                              (int)sizeof(name_buf), NULL, NULL);
           name_buf[sizeof(name_buf) - 1] = '\0';
           has_name = true;
         }
@@ -69,7 +70,8 @@ int wasapi_capabilities_available_device_names(bool is_capture,
         LPWSTR id = NULL;
         IMMDevice_GetId(dev, &id);
         if (id) {
-          wcstombs(name_buf, id, sizeof(name_buf) - 1);
+          WideCharToMultiByte(CP_UTF8, 0, id, -1, name_buf,
+                              (int)sizeof(name_buf), NULL, NULL);
           name_buf[sizeof(name_buf) - 1] = '\0';
           CoTaskMemFree(id);
         }
@@ -499,7 +501,8 @@ audio_device_descriptor_t* wasapi_capabilities_describe(const char* device_name,
       if (SUCCEEDED(IPropertyStore_GetValue(prop_store,
                                             &PKEY_Device_FriendlyName, &var)) &&
           var.vt == VT_LPWSTR) {
-        wcstombs(desc->name, var.pwszVal, sizeof(desc->name) - 1);
+        WideCharToMultiByte(CP_UTF8, 0, var.pwszVal, -1, desc->name,
+                            (int)sizeof(desc->name), NULL, NULL);
         desc->name[sizeof(desc->name) - 1] = '\0';
         PropVariantClear(&var);
       }

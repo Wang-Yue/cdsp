@@ -92,12 +92,12 @@ static int compressor_config_validate(const processor_config_t* config,
                      "Compressor: channels must be > 0, got 0");
     return -1;
   }
-  if (p->attack <= 0.0 || !isfinite(p->attack)) {
+  if (p->attack <= 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "Compressor: attack must be > 0, got %g", p->attack);
     return -1;
   }
-  if (p->release <= 0.0 || !isfinite(p->release)) {
+  if (p->release <= 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "Compressor: release must be > 0, got %g", p->release);
     return -1;
@@ -113,15 +113,9 @@ static int compressor_config_validate(const processor_config_t* config,
   // threshold to full scale. Upstream would do the same, but that is a speaker
   // hazard rather than a feature, so it stays rejected as a deliberate
   // one-value divergence.
-  if (p->factor == 0.0 || !isfinite(p->factor)) {
+  if (p->factor == 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "Compressor: factor must not be 0");
-    return -1;
-  }
-  if (!isfinite(p->threshold)) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "Compressor: threshold must be finite, got %g",
-                     p->threshold);
     return -1;
   }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {

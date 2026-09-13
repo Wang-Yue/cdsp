@@ -114,10 +114,11 @@ struct synchronous_resampler {
   size_t sub_fft_out;
   /// Number of sub-chunks processed per call.
   size_t num_subchunks;
+  double cutoff;
   /// Number of unique-bin frequencies common to the input and output
-  /// spectra: `min(sub_fft_in, sub_fft_out) + 1`. Bins above
-  /// this in the output spectrum are zeroed (band-limiting for
-  /// downsampling, spectral zero-pad for upsampling).
+  /// spectra: `sub_fft_in + 1` for upsampling/equal, `sub_fft_out` for
+  /// downsampling. Bins above this in the output spectrum are zeroed
+  /// (band-limiting for downsampling, spectral zero-pad for upsampling).
   size_t shared_bins;
   // Anti-aliasing filter, pre-FFT'd at init. `sub_fft_in + 1`
   // unique bins. Stored as raw pointer to bypass overhead.
@@ -357,8 +358,17 @@ static void* synchronous_resampler_create_impl(size_t channels,
   size_t min_chunk_in = input_rate / g;
   size_t min_chunk_out = output_rate / g;
 
-  size_t fft_chunks =
-      (size_t)ceil((double)requested_chunk_size / (double)min_chunk_in);
+  double raw_fft_chunks =
+      ceil((double)requested_chunk_size / (double)min_chunk_in);
+  if (isnan(raw_fft_chunks) || isinf(raw_fft_chunks) ||
+      raw_fft_chunks > (double)(SIZE_MAX / min_chunk_in)) {
+    config_error_set(
+        err, CONFIG_ERR_VALIDATION,
+        "SynchronousResampler: requested_chunk_size is out of bounds");
+    synchronous_resampler_free(resampler);
+    return NULL;
+  }
+  size_t fft_chunks = (size_t)raw_fft_chunks;
   if (fft_chunks < 1) fft_chunks = 1;
 
   size_t sub_fft_in = fft_chunks * min_chunk_in;
@@ -395,6 +405,7 @@ static void* synchronous_resampler_create_impl(size_t channels,
   } else {
     cutoff = calculate_cutoff(sub_fft_in, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
   }
+  resampler->cutoff = cutoff;
   double* kernel =
       make_sinc_table(sub_fft_in, 1, WINDOW_FUNCTION_BLACKMAN_HARRIS2, cutoff);
   if (!kernel) {
@@ -535,6 +546,21 @@ static size_t synchronous_resampler_get_output_delay(const void* impl) {
   const synchronous_resampler_t* resampler =
       (const synchronous_resampler_t*)impl;
   return resampler ? (resampler->sub_fft_out / 2) : 0;
+}
+
+size_t synchronous_resampler_get_fft_size_in(
+    const synchronous_resampler_t* resampler) {
+  return resampler ? resampler->sub_fft_in : 0;
+}
+
+size_t synchronous_resampler_get_fft_size_out(
+    const synchronous_resampler_t* resampler) {
+  return resampler ? resampler->sub_fft_out : 0;
+}
+
+double synchronous_resampler_get_cutoff(
+    const synchronous_resampler_t* resampler) {
+  return resampler ? resampler->cutoff : 0.0;
 }
 
 static void synchronous_resampler_reset(void* impl) {

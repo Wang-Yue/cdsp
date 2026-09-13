@@ -178,6 +178,15 @@ void app_logger_set_callback(cdsp_log_callback_t callback, void* user_data);
 void app_logger_set_logfile(const char* path);
 
 /**
+ * @brief Sets log file rotation parameters.
+ *
+ * @param max_size_bytes Maximum file size in bytes before rotation (0 to
+ * disable).
+ * @param keep_count Number of rotated files to retain (0 for unlimited).
+ */
+void app_logger_set_logfile_rotation(size_t max_size_bytes, size_t keep_count);
+
+/**
  * @brief Logs a message using the specified logger.
  *
  * @param logger Pointer to the logger instance.

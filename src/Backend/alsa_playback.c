@@ -210,10 +210,12 @@ static void* alsa_playback_inner_thread_func(void* arg) {
               snd_pcm_sframes_t sw_rc = snd_pcm_writei(
                   playback->pcm, playback->zero_stall_buf, frames_to_stall);
               if (sw_rc < 0) {
-                logger_warn(&g_logger, "PB: Writing stall-check zeros failed with %s",
+                logger_warn(&g_logger,
+                            "PB: Writing stall-check zeros failed with %s",
                             snd_strerror((int)sw_rc));
               } else {
-                logger_trace(&g_logger, "PB: Wrote %ld zero frames", (long)sw_rc);
+                logger_trace(&g_logger, "PB: Wrote %ld zero frames",
+                             (long)sw_rc);
               }
             }
             playback->device_stalled = true;
@@ -411,16 +413,28 @@ static bool alsa_playback_open(void* ctx, backend_error_t* err) {
     avail_min = playback->period > 0 ? (snd_pcm_uframes_t)playback->period : 1;
     if (avail_min > (snd_pcm_uframes_t)playback->bufsize) {
       char msg[256];
-      snprintf(msg, sizeof(msg),
-               "Trying to set avail_min to %lu, must be smaller than or equal to "
-               "device buffer size of %lu",
-               (unsigned long)avail_min, (unsigned long)playback->bufsize);
+      snprintf(
+          msg, sizeof(msg),
+          "Trying to set avail_min to %lu, must be smaller than or equal to "
+          "device buffer size of %lu",
+          (unsigned long)avail_min, (unsigned long)playback->bufsize);
       logger_error(&g_logger, "%s", msg);
-      if (err) backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
       goto error_cleanup;
     }
   }
-  alsa_device_configure_sw(playback->pcm, avail_min, 1);
+  int sw_rc = alsa_device_configure_sw(playback->pcm, avail_min, 1);
+  if (sw_rc < 0) {
+    char msg[256];
+    snprintf(msg, sizeof(msg), "Failed to configure ALSA sw params: %s",
+             snd_strerror(sw_rc));
+    logger_error(&g_logger, "%s", msg);
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+    }
+    goto error_cleanup;
+  }
 
   size_t sample_size = alsa_format_sample_size(playback->format);
 
@@ -572,17 +586,19 @@ static bool alsa_playback_write(void* ctx, const audio_chunk_t* chunk,
   size_t total_frames = audio_chunk_get_valid_frames(chunk);
   if (total_frames == 0) return true;
 
-  bool paused = atomic_load_explicit(&playback->paused, memory_order_acquire);
-  if (paused) {
-    if (playback->can_pause && !playback->currently_paused) {
-      snd_pcm_pause(playback->pcm, 1);
-      playback->currently_paused = true;
-    }
-    return true;
-  } else {
-    if (playback->can_pause && playback->currently_paused) {
-      snd_pcm_pause(playback->pcm, 0);
-      playback->currently_paused = false;
+  if (!playback->threaded) {
+    bool paused = atomic_load_explicit(&playback->paused, memory_order_acquire);
+    if (paused) {
+      if (playback->can_pause && !playback->currently_paused) {
+        snd_pcm_pause(playback->pcm, 1);
+        playback->currently_paused = true;
+      }
+      return true;
+    } else {
+      if (playback->can_pause && playback->currently_paused) {
+        snd_pcm_pause(playback->pcm, 0);
+        playback->currently_paused = false;
+      }
     }
   }
 
@@ -867,7 +883,9 @@ static size_t alsa_playback_get_buffer_level(void* ctx) {
     }
     return ring_frames + dev_delay;
   }
-  if (!playback->pcm) return 0;
+  if (!playback->pcm || snd_pcm_state(playback->pcm) != SND_PCM_STATE_RUNNING) {
+    return 0;
+  }
   snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
   if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
     return (size_t)(playback->bufsize - (snd_pcm_uframes_t)avail);

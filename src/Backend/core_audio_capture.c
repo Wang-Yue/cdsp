@@ -95,29 +95,21 @@ static OSStatus capture_callback(void* inRefCon,
     return noErr;
   }
 
-  // Restore the size of the preallocated buffer list's buffers, resizing if
-  // HAL delivers a slice larger than our preallocated capacity.
+  // Restore the size of the preallocated buffer list's buffers
   AudioBufferList* buffer_list = capture->prealloc_buffer_list;
   UInt32 required_bytes =
       inNumberFrames * (UInt32)capture->channels * (UInt32)sizeof(float);
   if (required_bytes > (UInt32)capture->prealloc_bytes_per_channel_buffer) {
-    void* new_buf =
-        realloc(capture->prealloc_channel_data_pointers[0], required_bytes);
-    if (!new_buf) {
-      atomic_fetch_add_explicit(&capture->callback_error_count, 1,
-                                memory_order_relaxed);
-      atomic_store_explicit(&capture->last_callback_error, -1,
-                            memory_order_relaxed);
-      if (capture->semaphore) {
-        cdsp_sem_signal(capture->semaphore);
-      }
-      atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
-                                memory_order_release);
-      return noErr;
+    atomic_fetch_add_explicit(&capture->callback_error_count, 1,
+                              memory_order_relaxed);
+    atomic_store_explicit(&capture->last_callback_error, -1,
+                          memory_order_relaxed);
+    if (capture->semaphore) {
+      cdsp_sem_signal(capture->semaphore);
     }
-    capture->prealloc_channel_data_pointers[0] = new_buf;
-    capture->prealloc_buffer_list->mBuffers[0].mData = new_buf;
-    capture->prealloc_bytes_per_channel_buffer = (int)required_bytes;
+    atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
+                              memory_order_release);
+    return noErr;
   }
 
   uint32_t prealloc_size = (uint32_t)capture->prealloc_bytes_per_channel_buffer;
@@ -150,7 +142,11 @@ static OSStatus capture_callback(void* inRefCon,
   atomic_store_explicit(&capture->callback_error_count, 0,
                         memory_order_relaxed);
 
-  size_t bytes_to_write = (size_t)buffer_list->mBuffers[0].mDataByteSize;
+  size_t bytes_to_write = (size_t)required_bytes;
+  if (buffer_list->mBuffers[0].mDataByteSize > 0 &&
+      buffer_list->mBuffers[0].mDataByteSize < bytes_to_write) {
+    bytes_to_write = (size_t)buffer_list->mBuffers[0].mDataByteSize;
+  }
   const uint8_t* byte_ptr =
       (const uint8_t*)capture->prealloc_channel_data_pointers[0];
   spsc_byte_ring_buffer_write(capture->ring_buffer, byte_ptr, bytes_to_write);
@@ -192,16 +188,17 @@ static void deallocate_render_buffers(core_audio_capture_t* capture) {
 static bool allocate_render_buffers(core_audio_capture_t* capture) {
   deallocate_render_buffers(capture);
 
-  int buffer_frames = (int)capture->chunk_size;
+  int buffer_frames = (int)capture->chunk_size * 2;
   if (capture->opened_device_id != 0) {
     uint32_t actual_size = 0;
     if (core_audio_device_get_buffer_frame_size(
             capture->opened_device_id, CORE_AUDIO_SCOPE_INPUT, &actual_size)) {
-      if ((int)actual_size > buffer_frames) buffer_frames = (int)actual_size;
+      if ((int)actual_size * 2 > buffer_frames)
+        buffer_frames = (int)actual_size * 2;
     }
   }
-  if (buffer_frames < 4096) {
-    buffer_frames = 4096;
+  if (buffer_frames < 8192) {
+    buffer_frames = 8192;
   }
 
   int bytes_per_buffer =

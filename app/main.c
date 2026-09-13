@@ -59,10 +59,6 @@
 #define CDSP_ARCH_NAME "unknown"
 #endif
 
-// Forward declaration from Public/config.c
-void cdsp_set_cli_overrides(int samplerate, int channels, const char* format,
-                            int extra_samples);
-
 static const logger_t g_logger = {"dsp.main"};
 
 static volatile sig_atomic_t keep_running = 1;
@@ -155,10 +151,12 @@ static void print_usage(void) {
       "  -l, --loglevel    Log level (trace, debug, info, warn, error, off). "
       "Defaults to info.\n"
       "  -o, --logfile     Write logs to the given file path.\n"
-      "  --log_rotate_size Rotate log file when size exceeds bytes (min 1000).\n"
+      "  --log_rotate_size Rotate log file when size exceeds bytes (min "
+      "1000).\n"
       "  --log_keep_nbr    Number of previous log files to keep.\n"
       "  --custom_log_spec Custom logger specification.\n"
-      "  -g, --gain        Initial gain in dB for main volume control (-120..+20).\n"
+      "  -g, --gain        Initial gain in dB for main volume control "
+      "(-120..+20).\n"
       "  --gain1           Initial gain in dB for Aux1 fader (-120..+20).\n"
       "  --gain2           Initial gain in dB for Aux2 fader (-120..+20).\n"
       "  --gain3           Initial gain in dB for Aux3 fader (-120..+20).\n"
@@ -172,7 +170,8 @@ static void print_usage(void) {
       "  -n, --channels    Override number of channels of capture device in "
       "config.\n"
       "  -f, --format      Override sample format of capture device in "
-      "config (S16_LE, S24_3_LE, S24_4_LJ_LE, S24_4_RJ_LE, S32_LE, F32_LE, F64_LE).\n"
+      "config (S16_LE, S24_3_LE, S24_4_LJ_LE, S24_4_RJ_LE, S32_LE, F32_LE, "
+      "F64_LE).\n"
       "  -e, --extra_samples Override number of extra samples in config.\n\n"
       "Supported device types:\n"
       "  Capture: "
@@ -249,7 +248,9 @@ int main(int argc, char** argv) {
   int verbosity_count = 0;
   bool has_logfile = false;
   bool has_rotate_size = false;
+  size_t log_rotate_size = 0;
   bool has_keep_nbr = false;
+  size_t log_keep_nbr = 0;
 
   double initial_gains[CDSP_FADER_COUNT];
   bool has_initial_gains[CDSP_FADER_COUNT];
@@ -279,8 +280,12 @@ int main(int argc, char** argv) {
     } else if (strncmp(arg, "-v", 2) == 0 && strlen(arg) > 2) {
       bool all_v = true;
       for (size_t k = 1; k < strlen(arg); k++) {
-        if (arg[k] == 'v') verbosity_count++;
-        else { all_v = false; break; }
+        if (arg[k] == 'v')
+          verbosity_count++;
+        else {
+          all_v = false;
+          break;
+        }
       }
       if (!all_v) {
         fprintf(stderr, "Unknown option: %s\n", arg);
@@ -309,7 +314,9 @@ int main(int argc, char** argv) {
         char* endptr = NULL;
         long p = strtol(argv[++i], &endptr, 10);
         if (endptr == argv[i] || *endptr != '\0' || p < 0 || p >= 65535) {
-          fprintf(stderr, "Error: Invalid port '%s': Must be between 0 and 65534\n", argv[i]);
+          fprintf(stderr,
+                  "Error: Invalid port '%s': Must be between 0 and 65534\n",
+                  argv[i]);
           return CDSP_EXIT_BAD_CONFIG;
         }
         port = (uint16_t)p;
@@ -327,7 +334,9 @@ int main(int argc, char** argv) {
       if (i + 1 < argc && argv[i + 1][0] != '-') {
         bind_address = argv[++i];
         if (!is_valid_ip(bind_address)) {
-          fprintf(stderr, "Error: Invalid address '%s': Must be a valid IP address\n", bind_address);
+          fprintf(stderr,
+                  "Error: Invalid address '%s': Must be a valid IP address\n",
+                  bind_address);
           return CDSP_EXIT_BAD_CONFIG;
         }
         has_address = true;
@@ -364,7 +373,10 @@ int main(int argc, char** argv) {
             strcmp(log_level_str, "warn") != 0 &&
             strcmp(log_level_str, "error") != 0 &&
             strcmp(log_level_str, "off") != 0) {
-          fprintf(stderr, "Error: Invalid log level '%s'. Must be one of: trace, debug, info, warn, error, off\n", log_level_str);
+          fprintf(stderr,
+                  "Error: Invalid log level '%s'. Must be one of: trace, "
+                  "debug, info, warn, error, off\n",
+                  log_level_str);
           return CDSP_EXIT_BAD_CONFIG;
         }
         has_loglevel = true;
@@ -394,9 +406,13 @@ int main(int argc, char** argv) {
         char* endptr = NULL;
         long sz = strtol(argv[++i], &endptr, 10);
         if (endptr == argv[i] || *endptr != '\0' || sz < 1000) {
-          fprintf(stderr, "Error: Invalid log_rotate_size '%s': Must be an integer >= 1000\n", argv[i]);
+          fprintf(stderr,
+                  "Error: Invalid log_rotate_size '%s': Must be an integer >= "
+                  "1000\n",
+                  argv[i]);
           return CDSP_EXIT_BAD_CONFIG;
         }
+        log_rotate_size = (size_t)sz;
         has_rotate_size = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
@@ -410,6 +426,7 @@ int main(int argc, char** argv) {
           fprintf(stderr, "Error: Invalid log_keep_nbr '%s'\n", argv[i]);
           return CDSP_EXIT_BAD_CONFIG;
         }
+        log_keep_nbr = (size_t)nbr;
         has_keep_nbr = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
@@ -418,7 +435,10 @@ int main(int argc, char** argv) {
     } else if (strcmp(arg, "-g") == 0 || strcmp(arg, "--gain") == 0) {
       if (i + 1 < argc) {
         if (!parse_gain_value(argv[++i], &initial_gains[0])) {
-          fprintf(stderr, "Error: Invalid gain value '%s': Must be a number between -120 and +20\n", argv[i]);
+          fprintf(stderr,
+                  "Error: Invalid gain value '%s': Must be a number between "
+                  "-120 and +20\n",
+                  argv[i]);
           return CDSP_EXIT_BAD_CONFIG;
         }
         has_initial_gains[0] = true;
@@ -429,7 +449,10 @@ int main(int argc, char** argv) {
     } else if (strcmp(arg, "--gain1") == 0) {
       if (i + 1 < argc) {
         if (!parse_gain_value(argv[++i], &initial_gains[1])) {
-          fprintf(stderr, "Error: Invalid gain1 value '%s': Must be a number between -120 and +20\n", argv[i]);
+          fprintf(stderr,
+                  "Error: Invalid gain1 value '%s': Must be a number between "
+                  "-120 and +20\n",
+                  argv[i]);
           return CDSP_EXIT_BAD_CONFIG;
         }
         has_initial_gains[1] = true;
@@ -440,7 +463,10 @@ int main(int argc, char** argv) {
     } else if (strcmp(arg, "--gain2") == 0) {
       if (i + 1 < argc) {
         if (!parse_gain_value(argv[++i], &initial_gains[2])) {
-          fprintf(stderr, "Error: Invalid gain2 value '%s': Must be a number between -120 and +20\n", argv[i]);
+          fprintf(stderr,
+                  "Error: Invalid gain2 value '%s': Must be a number between "
+                  "-120 and +20\n",
+                  argv[i]);
           return CDSP_EXIT_BAD_CONFIG;
         }
         has_initial_gains[2] = true;
@@ -451,7 +477,10 @@ int main(int argc, char** argv) {
     } else if (strcmp(arg, "--gain3") == 0) {
       if (i + 1 < argc) {
         if (!parse_gain_value(argv[++i], &initial_gains[3])) {
-          fprintf(stderr, "Error: Invalid gain3 value '%s': Must be a number between -120 and +20\n", argv[i]);
+          fprintf(stderr,
+                  "Error: Invalid gain3 value '%s': Must be a number between "
+                  "-120 and +20\n",
+                  argv[i]);
           return CDSP_EXIT_BAD_CONFIG;
         }
         has_initial_gains[3] = true;
@@ -462,7 +491,10 @@ int main(int argc, char** argv) {
     } else if (strcmp(arg, "--gain4") == 0) {
       if (i + 1 < argc) {
         if (!parse_gain_value(argv[++i], &initial_gains[4])) {
-          fprintf(stderr, "Error: Invalid gain4 value '%s': Must be a number between -120 and +20\n", argv[i]);
+          fprintf(stderr,
+                  "Error: Invalid gain4 value '%s': Must be a number between "
+                  "-120 and +20\n",
+                  argv[i]);
           return CDSP_EXIT_BAD_CONFIG;
         }
         has_initial_gains[4] = true;
@@ -498,7 +530,10 @@ int main(int argc, char** argv) {
     } else if (strcmp(arg, "-r") == 0 || strcmp(arg, "--samplerate") == 0) {
       if (i + 1 < argc && argv[i + 1][0] != '-') {
         if (!parse_positive_int(argv[++i], &samplerate_override)) {
-          fprintf(stderr, "Error: Invalid samplerate value '%s': Must be a positive integer\n", argv[i]);
+          fprintf(stderr,
+                  "Error: Invalid samplerate value '%s': Must be a positive "
+                  "integer\n",
+                  argv[i]);
           return CDSP_EXIT_BAD_CONFIG;
         }
       } else {
@@ -508,7 +543,10 @@ int main(int argc, char** argv) {
     } else if (strcmp(arg, "-n") == 0 || strcmp(arg, "--channels") == 0) {
       if (i + 1 < argc && argv[i + 1][0] != '-') {
         if (!parse_positive_int(argv[++i], &channels_override)) {
-          fprintf(stderr, "Error: Invalid channels value '%s': Must be a positive integer\n", argv[i]);
+          fprintf(stderr,
+                  "Error: Invalid channels value '%s': Must be a positive "
+                  "integer\n",
+                  argv[i]);
           return CDSP_EXIT_BAD_CONFIG;
         }
       } else {
@@ -519,7 +557,11 @@ int main(int argc, char** argv) {
       if (i + 1 < argc && argv[i + 1][0] != '-') {
         format_override = argv[++i];
         if (!is_valid_format(format_override)) {
-          fprintf(stderr, "Error: Invalid format '%s'. Must be one of: S16_LE, S24_3_LE, S24_4_LJ_LE, S24_4_RJ_LE, S32_LE, F32_LE, F64_LE\n", format_override);
+          fprintf(
+              stderr,
+              "Error: Invalid format '%s'. Must be one of: S16_LE, S24_3_LE, "
+              "S24_4_LJ_LE, S24_4_RJ_LE, S32_LE, F32_LE, F64_LE\n",
+              format_override);
           return CDSP_EXIT_BAD_CONFIG;
         }
       } else {
@@ -529,7 +571,10 @@ int main(int argc, char** argv) {
     } else if (strcmp(arg, "-e") == 0 || strcmp(arg, "--extra_samples") == 0) {
       if (i + 1 < argc && argv[i + 1][0] != '-') {
         if (!parse_positive_int(argv[++i], &extra_samples_override)) {
-          fprintf(stderr, "Error: Missing or invalid extra_samples value for %s (must be >= 1)\n", arg);
+          fprintf(stderr,
+                  "Error: Missing or invalid extra_samples value for %s (must "
+                  "be >= 1)\n",
+                  arg);
           return CDSP_EXIT_BAD_CONFIG;
         }
       } else {
@@ -553,7 +598,8 @@ int main(int argc, char** argv) {
 
   // Conflict validation: -v conflicts with -l
   if (verbosity_count > 0 && has_loglevel) {
-    fprintf(stderr, "Error: The argument '-v' cannot be used with '--loglevel'\n");
+    fprintf(stderr,
+            "Error: The argument '-v' cannot be used with '--loglevel'\n");
     return CDSP_EXIT_BAD_CONFIG;
   }
 
@@ -564,7 +610,8 @@ int main(int argc, char** argv) {
     return CDSP_EXIT_BAD_CONFIG;
   }
   if (has_address && !has_port) {
-    fprintf(stderr, "Error: The argument '--address' requires '--port <PORT>'\n");
+    fprintf(stderr,
+            "Error: The argument '--address' requires '--port <PORT>'\n");
     return CDSP_EXIT_BAD_CONFIG;
   }
   if (cert_path && !has_port) {
@@ -582,11 +629,15 @@ int main(int argc, char** argv) {
       return CDSP_EXIT_BAD_CONFIG;
     }
     if (!state_file_path) {
-      fprintf(stderr, "Error: The argument '--no_config' requires '--statefile <STATEFILE>'\n");
+      fprintf(stderr,
+              "Error: The argument '--no_config' requires '--statefile "
+              "<STATEFILE>'\n");
       return CDSP_EXIT_BAD_CONFIG;
     }
     if (config_path) {
-      fprintf(stderr, "Error: The argument '--no_config' cannot be used with a config file\n");
+      fprintf(stderr,
+              "Error: The argument '--no_config' cannot be used with a config "
+              "file\n");
       return CDSP_EXIT_BAD_CONFIG;
     }
   }
@@ -595,12 +646,20 @@ int main(int argc, char** argv) {
     return CDSP_EXIT_BAD_CONFIG;
   }
   if (has_rotate_size && !has_logfile) {
-    fprintf(stderr, "Error: The argument '--log_rotate_size' requires '--logfile <LOGFILE>'\n");
+    fprintf(stderr,
+            "Error: The argument '--log_rotate_size' requires '--logfile "
+            "<LOGFILE>'\n");
     return CDSP_EXIT_BAD_CONFIG;
   }
   if (has_keep_nbr && !has_rotate_size) {
-    fprintf(stderr, "Error: The argument '--log_keep_nbr' requires '--log_rotate_size <ROTATE_SIZE>'\n");
+    fprintf(stderr,
+            "Error: The argument '--log_keep_nbr' requires '--log_rotate_size "
+            "<ROTATE_SIZE>'\n");
     return CDSP_EXIT_BAD_CONFIG;
+  }
+
+  if (has_rotate_size) {
+    app_logger_set_logfile_rotation(log_rotate_size, log_keep_nbr);
   }
 
   // Resolve log level
@@ -673,18 +732,28 @@ int main(int argc, char** argv) {
 
   for (int i = 0; i < CDSP_FADER_COUNT; i++) {
     if (has_initial_gains[i]) {
-      if (i == 0) logger_debug(&g_logger, "Using command line argument for initial main volume");
-      else logger_debug(&g_logger, "Using command line argument for initial Aux%d volume", i);
+      if (i == 0)
+        logger_debug(&g_logger,
+                     "Using command line argument for initial main volume");
+      else
+        logger_debug(&g_logger,
+                     "Using command line argument for initial Aux%d volume", i);
     }
     if (has_initial_mutes[i]) {
-      if (i == 0) logger_debug(&g_logger, "Using command line argument for initial main mute");
-      else logger_debug(&g_logger, "Using command line argument for initial Aux%d mute", i);
+      if (i == 0)
+        logger_debug(&g_logger,
+                     "Using command line argument for initial main mute");
+      else
+        logger_debug(&g_logger,
+                     "Using command line argument for initial Aux%d mute", i);
     }
   }
 
   if (!config_path && has_loaded_state && loaded_state) {
     if (no_config) {
-      logger_debug(&g_logger, "Ignoring config from statefile as per command line argument");
+      logger_debug(
+          &g_logger,
+          "Ignoring config from statefile as per command line argument");
     } else if (cdsp_state_has_config_path(loaded_state)) {
       logger_debug(&g_logger, "Using config from statefile");
       allocated_config_path = strdup(cdsp_state_get_config_path(loaded_state));
@@ -697,7 +766,8 @@ int main(int argc, char** argv) {
     bool state_changed = !has_loaded_state;
     if (has_loaded_state) {
       const char* loaded_cfg = cdsp_state_get_config_path(loaded_state);
-      if ((config_path && (!loaded_cfg || strcmp(config_path, loaded_cfg) != 0)) ||
+      if ((config_path &&
+           (!loaded_cfg || strcmp(config_path, loaded_cfg) != 0)) ||
           (!config_path && loaded_cfg)) {
         state_changed = true;
       }
@@ -720,7 +790,8 @@ int main(int argc, char** argv) {
         cdsp_state_free(state_to_save);
       }
     } else {
-      logger_debug(&g_logger, "No change to state from %s, not overwriting.", state_file_path);
+      logger_debug(&g_logger, "No change to state from %s, not overwriting.",
+                   state_file_path);
     }
   }
 
@@ -739,7 +810,9 @@ int main(int argc, char** argv) {
         return CDSP_EXIT_BAD_CONFIG;
       }
       // With statefile but no config and no wait, exit OK cleanly
-      logger_debug(&g_logger, "Wait mode is disabled, there are no queued commands, and no new config. Exiting.");
+      logger_debug(&g_logger,
+                   "Wait mode is disabled, there are no queued commands, and "
+                   "no new config. Exiting.");
       app_logger_flush_and_stop(app_logger_get_shared());
       return CDSP_EXIT_OK;
     }
@@ -765,7 +838,8 @@ int main(int argc, char** argv) {
     cdsp_set_state_file_path(engine, state_file_path);
   }
 
-  // Load configuration if path is available (wait mode still loads initial config)
+  // Load configuration if path is available (wait mode still loads initial
+  // config)
   if (config_path && !no_config) {
     cdsp_backend_error_t berr = {0};
     if (cdsp_engine_set_config_file(engine, config_path, samplerate_override,
@@ -796,7 +870,8 @@ int main(int argc, char** argv) {
     server = websocket_server_create(port, bind_address);
     websocket_server_set_engine(server, engine);
     if (websocket_server_start(server)) {
-      fprintf(stderr, "WebSocket server running on %s:%u\n", bind_address, port);
+      fprintf(stderr, "WebSocket server running on %s:%u\n", bind_address,
+              port);
     } else {
       logger_error(&g_logger, "Failed to start WebSocket server on %s:%u",
                    bind_address, port);

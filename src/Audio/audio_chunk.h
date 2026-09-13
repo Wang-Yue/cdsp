@@ -103,6 +103,21 @@ size_t audio_chunk_get_valid_frames(const audio_chunk_t* chunk);
 void audio_chunk_set_valid_frames(audio_chunk_t* chunk, size_t valid_frames);
 
 /**
+ * @brief Zero all sample storage in the chunk across all channels.
+ *
+ * @param chunk Pointer to the audio chunk.
+ */
+void audio_chunk_zero(audio_chunk_t* chunk);
+
+/**
+ * @brief Zero the sample storage beyond valid_frames up to frames across all
+ * channels.
+ *
+ * @param chunk Pointer to the audio chunk.
+ */
+void audio_chunk_zero_tail(audio_chunk_t* chunk);
+
+/**
  * @brief Create a round-robin chunk pool.
  *
  * @param capacity The number of chunks in the pool.
@@ -225,8 +240,8 @@ double audio_chunk_get_value_range_used(const audio_chunk_t* chunk,
                                         const bool* used_channels);
 
 /**
- * @brief Computes the peak-to-peak value range across all channels (or used channels
- * if previously set on the chunk).
+ * @brief Computes the peak-to-peak value range across all channels (or used
+ * channels if previously set on the chunk).
  *
  * Evaluates max(sample) - min(sample) across all channels folded from 0.0,
  * matching upstream CamillaDSP chunk value range calculation for silence

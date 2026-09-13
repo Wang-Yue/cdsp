@@ -200,8 +200,8 @@ typedef struct {
   char format[32];     /**< Sample format (for raw files). */
   int channel;         /**< Channel to use from multi-channel files. */
   int length;          /**< Max number of samples to read. */
-  int skip_bytes_lines; /**< Bytes/lines to skip at start of file. */
-  int read_bytes_lines; /**< Bytes/lines to read from file. */
+  size_t skip_bytes_lines; /**< Bytes/lines to skip at start of file. */
+  size_t read_bytes_lines; /**< Bytes/lines to read from file. */
 } convolution_config_t;
 
 /**
@@ -333,7 +333,7 @@ typedef struct {
  * @brief Parameters for a Clipper filter.
  */
 typedef struct {
-  double clip_limit; /**< Clip limit (linear scale). */
+  double clip_limit; /**< Clip limit (dB scale). */
   bool soft_clip;    /**< Enable soft clipping. */
 } clipper_config_t;
 

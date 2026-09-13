@@ -522,8 +522,10 @@ float processing_parameters_update_playback_levels(
  * @param since_ms Millisecond timestamp cutoff.
  * @param out_levels Array to store maximum peak levels per channel.
  * @param count Number of channels to query.
+ * @return true if data was found in the requested window, false if no data was
+ * found.
  */
-void processing_parameters_get_capture_signal_peak_since(
+bool processing_parameters_get_capture_signal_peak_since(
     const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
     size_t count);
 
@@ -535,8 +537,10 @@ void processing_parameters_get_capture_signal_peak_since(
  * @param since_ms Millisecond timestamp cutoff.
  * @param out_levels Array to store energy-averaged RMS levels per channel.
  * @param count Number of channels to query.
+ * @return true if data was found in the requested window, false if no data was
+ * found.
  */
-void processing_parameters_get_capture_signal_rms_since(
+bool processing_parameters_get_capture_signal_rms_since(
     const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
     size_t count);
 
@@ -548,8 +552,10 @@ void processing_parameters_get_capture_signal_rms_since(
  * @param since_ms Millisecond timestamp cutoff.
  * @param out_levels Array to store maximum peak levels per channel.
  * @param count Number of channels to query.
+ * @return true if data was found in the requested window, false if no data was
+ * found.
  */
-void processing_parameters_get_playback_signal_peak_since(
+bool processing_parameters_get_playback_signal_peak_since(
     const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
     size_t count);
 
@@ -561,8 +567,10 @@ void processing_parameters_get_playback_signal_peak_since(
  * @param since_ms Millisecond timestamp cutoff.
  * @param out_levels Array to store energy-averaged RMS levels per channel.
  * @param count Number of channels to query.
+ * @return true if data was found in the requested window, false if no data was
+ * found.
  */
-void processing_parameters_get_playback_signal_rms_since(
+bool processing_parameters_get_playback_signal_rms_since(
     const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
     size_t count);
 

@@ -4,10 +4,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /**
  * @brief Get high-resolution monotonic timestamp in nanoseconds.
  *
@@ -41,9 +37,5 @@ void cdsp_sleep_ms(uint32_t ms);
  * @param us Duration in microseconds.
  */
 void cdsp_sleep_us(uint64_t us);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // CDSP_TIME_H

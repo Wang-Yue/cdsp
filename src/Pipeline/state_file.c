@@ -13,8 +13,8 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <windows.h>
 #include <io.h>
+#include <windows.h>
 #elif defined(__APPLE__)
 #include <fcntl.h>
 #else
@@ -24,7 +24,7 @@
 static const logger_t g_logger = {"dsp.pipeline.state"};
 
 struct dsp_state_s {
-  char config_path[1024];
+  char* config_path;
   bool has_config_path;
   bool mute[5];
   double volume[5];
@@ -35,7 +35,11 @@ dsp_state_t* dsp_state_create(void) {
   return state;
 }
 
-void dsp_state_free(dsp_state_t* state) { free(state); }
+void dsp_state_free(dsp_state_t* state) {
+  if (!state) return;
+  free(state->config_path);
+  free(state);
+}
 
 /**
  * @brief Helper function to trim trailing whitespace and newline characters
@@ -147,6 +151,42 @@ static bool is_sequence_item(const char* trimmed) {
   return trimmed[0] == '-' && (trimmed[1] == ' ' || trimmed[1] == '\t');
 }
 
+/**
+ * @brief Read a full logical line dynamically, growing the buffer if the line
+ * exceeds the initial capacity so lines > 1023 bytes are not split or
+ * truncated.
+ */
+static bool read_dynamic_line_buffered(FILE* fp, char** buf_ptr,
+                                       size_t* cap_ptr) {
+  if (!fp || !buf_ptr || !cap_ptr) return false;
+  if (*buf_ptr == NULL || *cap_ptr == 0) {
+    *cap_ptr = 1024;
+    *buf_ptr = (char*)malloc(*cap_ptr);
+    if (!*buf_ptr) return false;
+  }
+  size_t len = 0;
+  (*buf_ptr)[0] = '\0';
+
+  while (fgets(*buf_ptr + len, (int)(*cap_ptr - len), fp)) {
+    len += strlen(*buf_ptr + len);
+    if (len > 0 &&
+        ((*buf_ptr)[len - 1] == '\n' || (*buf_ptr)[len - 1] == '\r')) {
+      return true;
+    }
+    if (feof(fp)) {
+      return (len > 0);
+    }
+    size_t new_cap = (*cap_ptr) * 2;
+    char* new_buf = (char*)realloc(*buf_ptr, new_cap);
+    if (!new_buf) {
+      return false;
+    }
+    *buf_ptr = new_buf;
+    *cap_ptr = new_cap;
+  }
+  return (len > 0);
+}
+
 bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
   if (!filename || !out_state) return false;
   FILE* fp = cdsp_fopen(filename, "r");
@@ -155,9 +195,11 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
     return false;
   }
 
+  free(out_state->config_path);
   memset(out_state, 0, sizeof(dsp_state_t));
 
-  char line[1024];
+  char* line = NULL;
+  size_t line_cap = 0;
   // Parser state machine mode:
   // 0: Root level key-value pairs
   // 1: Processing the elements of the 'mute' list
@@ -170,7 +212,7 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
   bool seen_volume = false;
   bool valid = true;
 
-  while (fgets(line, sizeof(line), fp)) {
+  while (read_dynamic_line_buffered(fp, &line, &line_cap)) {
     trim_trailing(line);
     strip_trailing_comment(line);
 
@@ -185,7 +227,8 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
     }
 
     // skip empty or comment or doc-start lines
-    if (trimmed[0] == '\0' || trimmed[0] == '#' || strcmp(trimmed, "---") == 0) {
+    if (trimmed[0] == '\0' || trimmed[0] == '#' ||
+        strcmp(trimmed, "---") == 0) {
       continue;
     }
 
@@ -228,33 +271,45 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
           char quote_char = val[0];
           size_t vlen = strlen(val);
           if (vlen >= 2 && val[vlen - 1] == quote_char) {
-            char* dst = out_state->config_path;
-            size_t max_dst = sizeof(out_state->config_path) - 1;
+            char* dst = (char*)malloc(vlen);
+            if (!dst) {
+              valid = false;
+              break;
+            }
             size_t d = 0;
-            for (size_t s = 1; s + 1 < vlen && d < max_dst; s++) {
+            for (size_t s = 1; s + 1 < vlen; s++) {
               if (quote_char == '"' && val[s] == '\\' && s + 2 < vlen) {
                 s++;
-                if (val[s] == '"') dst[d++] = '"';
-                else if (val[s] == '\\') dst[d++] = '\\';
-                else if (val[s] == 'n') dst[d++] = '\n';
-                else if (val[s] == 't') dst[d++] = '\t';
-                else { dst[d++] = '\\'; dst[d++] = val[s]; }
+                if (val[s] == '"')
+                  dst[d++] = '"';
+                else if (val[s] == '\\')
+                  dst[d++] = '\\';
+                else if (val[s] == 'n')
+                  dst[d++] = '\n';
+                else if (val[s] == 't')
+                  dst[d++] = '\t';
+                else {
+                  dst[d++] = '\\';
+                  if (d + 1 < vlen) {
+                    dst[d++] = val[s];
+                  }
+                }
               } else {
                 dst[d++] = val[s];
               }
             }
             dst[d] = '\0';
+            free(out_state->config_path);
+            out_state->config_path = dst;
           } else {
-            strncpy(out_state->config_path, val + 1,
-                    sizeof(out_state->config_path) - 1);
-            out_state->config_path[sizeof(out_state->config_path) - 1] = '\0';
+            free(out_state->config_path);
+            out_state->config_path = strdup(val + 1);
           }
         } else {
-          strncpy(out_state->config_path, val,
-                  sizeof(out_state->config_path) - 1);
-          out_state->config_path[sizeof(out_state->config_path) - 1] = '\0';
+          free(out_state->config_path);
+          out_state->config_path = strdup(val);
         }
-        out_state->has_config_path = true;
+        out_state->has_config_path = (out_state->config_path != NULL);
       }
     } else if (strncmp(trimmed, "mute:", 5) == 0) {
       if (seen_mute) {
@@ -343,6 +398,7 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
   }
 
   fclose(fp);
+  free(line);
 
   // Upstream's `load_state` returns None on any deserialization error and the
   // caller then uses nothing from the file. Partially parsed state must not be
@@ -351,6 +407,7 @@ bool dsp_state_load(const char* filename, dsp_state_t* out_state) {
   if (!valid || !seen_config_path || !seen_mute || !seen_volume ||
       mute_idx != 5 || vol_idx != 5) {
     logger_warn(&g_logger, "Invalid statefile, ignoring: %s", filename);
+    free(out_state->config_path);
     memset(out_state, 0, sizeof(dsp_state_t));
     return false;
   }
@@ -364,17 +421,20 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
   // Save to a temporary file first, then rename to the target filename.
   // This ensures an atomic write, preventing corruption of the state file
   // if the process is interrupted or crashes during write.
-  char tmp_name[1024];
-  int written = snprintf(tmp_name, sizeof(tmp_name), "%s.tmp", filename);
-  if (written < 0 || (size_t)written >= sizeof(tmp_name)) {
-    logger_error(&g_logger, "State file path overflow for %s", filename);
+  size_t tmp_name_len = strlen(filename) + 5;
+  char* tmp_name = (char*)malloc(tmp_name_len);
+  if (!tmp_name) {
+    logger_error(&g_logger,
+                 "Failed to allocate memory for temporary state file name");
     return false;
   }
+  snprintf(tmp_name, tmp_name_len, "%s.tmp", filename);
 
   FILE* fp = cdsp_fopen(tmp_name, "w");
   if (!fp) {
     logger_error(&g_logger, "Failed to open state temporary file: %s",
                  tmp_name);
+    free(tmp_name);
     return false;
   }
 
@@ -402,7 +462,14 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
 
   fprintf(fp, "volume:\n");
   for (int i = 0; i < 5; i++) {
-    fprintf(fp, "- %.9g\n", state->volume[i]);
+    double v = state->volume[i];
+    if (isnan(v)) {
+      fprintf(fp, "- .nan\n");
+    } else if (isinf(v)) {
+      fprintf(fp, "- %s\n", v < 0 ? "-.inf" : ".inf");
+    } else {
+      fprintf(fp, "- %.9g\n", v);
+    }
   }
 
   fflush(fp);
@@ -421,6 +488,7 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
     logger_error(&g_logger, "Failed to rename state temporary file %s to %s",
                  tmp_name, filename);
     remove(tmp_name);
+    free(tmp_name);
     return false;
   }
 #else
@@ -428,26 +496,28 @@ bool dsp_state_save(const char* filename, const dsp_state_t* state) {
     logger_error(&g_logger, "Failed to rename state temporary file %s to %s",
                  tmp_name, filename);
     remove(tmp_name);
+    free(tmp_name);
     return false;
   }
 #endif
 
+  free(tmp_name);
   logger_info(&g_logger, "State saved to %s", filename);
   return true;
 }
 
 const char* dsp_state_get_config_path(const dsp_state_t* state) {
-  return state ? state->config_path : NULL;
+  return (state && state->has_config_path) ? state->config_path : NULL;
 }
 
 void dsp_state_set_config_path(dsp_state_t* state, const char* path) {
   if (!state) return;
+  free(state->config_path);
+  state->config_path = NULL;
   if (path) {
-    strncpy(state->config_path, path, sizeof(state->config_path) - 1);
-    state->config_path[sizeof(state->config_path) - 1] = '\0';
-    state->has_config_path = true;
+    state->config_path = strdup(path);
+    state->has_config_path = (state->config_path != NULL);
   } else {
-    state->config_path[0] = '\0';
     state->has_config_path = false;
   }
 }
@@ -457,7 +527,14 @@ bool dsp_state_has_config_path(const dsp_state_t* state) {
 }
 
 void dsp_state_set_has_config_path(dsp_state_t* state, bool has_path) {
-  if (state) state->has_config_path = has_path;
+  if (!state) return;
+  state->has_config_path = has_path;
+  if (!has_path) {
+    free(state->config_path);
+    state->config_path = NULL;
+  } else if (!state->config_path) {
+    state->config_path = strdup("");
+  }
 }
 
 bool dsp_state_get_mute(const dsp_state_t* state, int index) {

@@ -3,10 +3,12 @@
 #include <stdio.h>
 
 #include "Backend/backend_error.h"
+#include "Backend/file_backend.h"
 #include "Config/engine_config_types.h"
 #include "Logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.backend.factory"};
+static capture_backend_t* s_last_capture_backend = NULL;
 
 static audio_backend_error_type_t map_backend_error_type(
     backend_error_type_t type) {
@@ -48,6 +50,7 @@ capture_backend_t* audio_backend_factory_create_capture(
     return NULL;
   }
 
+  s_last_capture_backend = backend;
   return backend;
 }
 
@@ -55,6 +58,12 @@ playback_backend_t* audio_backend_factory_create_playback(
     const playback_device_config_t* config, size_t sample_rate,
     size_t chunk_size, bool full_duplex, processing_parameters_t* params,
     audio_backend_error_t* out_err) {
+  if (s_last_capture_backend) {
+    file_capture_set_pipeline_sample_rate(s_last_capture_backend,
+                                          (int)sample_rate);
+    s_last_capture_backend = NULL;
+  }
+
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
 

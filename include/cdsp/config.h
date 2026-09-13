@@ -26,6 +26,17 @@ CDSP_API char* cdsp_get_config_file_path(const dsp_engine_t* engine);
 CDSP_API void cdsp_set_config_file_path(dsp_engine_t* engine, const char* path);
 
 /**
+ * @brief Set global CLI configuration overrides.
+ *
+ * @param samplerate Samplerate override or -1.
+ * @param channels Channels override or -1.
+ * @param format Format override string or NULL.
+ * @param extra_samples Extra samples override or -1.
+ */
+CDSP_API void cdsp_set_cli_overrides(int samplerate, int channels,
+                                     const char* format, int extra_samples);
+
+/**
  * @brief Get the active configuration in JSON format.
  *
  * The output string is allocated dynamically. The caller must free it when

@@ -148,3 +148,12 @@ void cdsp_free_channel_labels(char** labels, size_t count) {
   }
   free(labels);
 }
+
+bool cdsp_get_global_peaks(const dsp_engine_t* engine, bool is_capture,
+                           float* out_peaks, size_t* out_channels) {
+  if (!engine) return false;
+  return cdsp_get_signal_levels_since(engine, is_capture, false, 0, out_peaks,
+                                      out_channels);
+}
+
+void cdsp_reset_global_peaks(dsp_engine_t* engine) { (void)engine; }

@@ -345,8 +345,13 @@ static void loudness_filter_transfer_state(void* dest_ptr,
   g_biquad_vtable.transfer_state(dest->low_shelf_filter, src->low_shelf_filter);
   g_biquad_vtable.transfer_state(dest->high_shelf_filter,
                                  src->high_shelf_filter);
-  dest->last_volume = src->last_volume;
-  recompute_shelves(dest, dest->last_volume, false);
+  double current_vol =
+      dest->processing_parameters
+          ? processing_parameters_get_current_volume_for_fader(
+                dest->processing_parameters, dest->params.fader)
+          : src->last_volume;
+  dest->last_volume = current_vol;
+  recompute_shelves(dest, current_vol, false);
 }
 
 const filter_vtable_t g_loudness_vtable = {

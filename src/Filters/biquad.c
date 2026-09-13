@@ -17,6 +17,7 @@ static inline biquad_coefficients_t biquad_coefficients_passthrough(void) {
   return (biquad_coefficients_t){1.0, 0.0, 0.0, 0.0, 0.0};
 }
 
+#include <assert.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -60,9 +61,7 @@ static bool biquad_coefficients_compute(const biquad_config_t* params,
   if (!params || !out_coeffs || sample_rate <= 0) return false;
 
   double fs = (double)sample_rate;
-  double freq = params->freq > 0 ? params->freq : 1000.0;
   double gain = params->gain;
-  double q = params->q > 0 ? params->q : 0.707;
 
   double w0 = 0.0;
   double cos_w0 = 0.0;
@@ -75,6 +74,8 @@ static bool biquad_coefficients_compute(const biquad_config_t* params,
                    params->type != BIQUAD_TYPE_LINKWITZ_TRANSFORM);
 
   if (needs_w0) {
+    if (params->freq <= 0.0) return false;
+    double freq = params->freq;
     w0 = 2.0 * M_PI * freq / fs;
     cos_w0 = cos(w0);
     sin_w0 = sin(w0);
@@ -83,18 +84,28 @@ static bool biquad_coefficients_compute(const biquad_config_t* params,
     if (fabs(sin_w0) < 1e-12) sin_w0 = 1e-12;
     if (A < 1e-12) A = 1e-12;
 
-    // Compute alpha directly based on steepness_type (Bandwidth, Slope, or Q)
-    if (params->steepness_type == STEEPNESS_TYPE_BANDWIDTH) {
-      double bw = params->bandwidth;
-      alpha = sin_w0 * sinh(log(2.0) / 2.0 * bw * w0 / sin_w0);
-    } else if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
-      double slope_s = params->slope / 12.0;
-      if (fabs(slope_s) < 1e-12) slope_s = 1e-12;
-      double term = (A + 1.0 / A) * (1.0 / slope_s - 1.0) + 2.0;
-      alpha = sin_w0 / 2.0 * sqrt(term > 1e-12 ? term : 1e-12);
-    } else {
-      if (fabs(q) < 1e-12) q = 1e-12;
-      alpha = sin_w0 / (2.0 * q);
+    bool is_fo = (params->type == BIQUAD_TYPE_LOWPASS_FO ||
+                  params->type == BIQUAD_TYPE_HIGHPASS_FO ||
+                  params->type == BIQUAD_TYPE_LOWSHELF_FO ||
+                  params->type == BIQUAD_TYPE_HIGHSHELF_FO ||
+                  params->type == BIQUAD_TYPE_ALLPASS_FO);
+
+    if (!is_fo) {
+      if (params->steepness_type == STEEPNESS_TYPE_BANDWIDTH) {
+        if (params->bandwidth <= 0.0) return false;
+        alpha = sin_w0 * sinh(log(2.0) / 2.0 * params->bandwidth * w0 / sin_w0);
+      } else if (params->steepness_type == STEEPNESS_TYPE_SLOPE) {
+        if (params->slope <= 0.0) return false;
+        double slope_s = params->slope / 12.0;
+        if (fabs(slope_s) < 1e-12) slope_s = 1e-12;
+        double term = (A + 1.0 / A) * (1.0 / slope_s - 1.0) + 2.0;
+        alpha = sin_w0 / 2.0 * sqrt(term > 1e-12 ? term : 1e-12);
+      } else {
+        if (params->q <= 0.0) return false;
+        double q = params->q;
+        if (fabs(q) < 1e-12) q = 1e-12;
+        alpha = sin_w0 / (2.0 * q);
+      }
     }
   }
 
@@ -113,8 +124,12 @@ static bool biquad_coefficients_compute(const biquad_config_t* params,
     case BIQUAD_TYPE_GENERAL_NOTCH: {
       // General notch filter allows independent control of notch frequency and
       // pole frequency. Uses bilinear transform.
-      double freq_z = params->freq_notch > 0 ? params->freq_notch : 1000.0;
-      double freq_p = params->freq_pole > 0 ? params->freq_pole : 1000.0;
+      if (params->freq_notch <= 0.0 || params->freq_pole <= 0.0 ||
+          params->q_p <= 0.0) {
+        return false;
+      }
+      double freq_z = params->freq_notch;
+      double freq_p = params->freq_pole;
       double q_p = params->q_p;
       bool normalize = params->normalize_at_dc;
       double tn_z = tan(M_PI * freq_z / fs);
@@ -138,10 +153,14 @@ static bool biquad_coefficients_compute(const biquad_config_t* params,
       // speaker in a sealed box and replaces it with a new target response
       // (lower Fc, different Q). Act: actual speaker parameters. Target:
       // desired parameters.
-      double freq_act = params->freq_act > 0 ? params->freq_act : 50.0;
-      double q_act = params->q_act > 0 ? params->q_act : 0.707;
-      double freq_target = params->freq_target > 0 ? params->freq_target : 25.0;
-      double q_target = params->q_target > 0 ? params->q_target : 0.707;
+      if (params->freq_act <= 0.0 || params->q_act <= 0.0 ||
+          params->freq_target <= 0.0 || params->q_target <= 0.0) {
+        return false;
+      }
+      double freq_act = params->freq_act;
+      double q_act = params->q_act;
+      double freq_target = params->freq_target;
+      double q_target = params->q_target;
       double d0i = pow(2.0 * M_PI * freq_act, 2);
       double d1i = (2.0 * M_PI * freq_act) / q_act;
       double c0i = pow(2.0 * M_PI * freq_target, 2);
@@ -637,8 +656,6 @@ biquad_filter_t* biquad_filter_clone(const biquad_filter_t* src) {
   biquad_filter_t* dst = (biquad_filter_t*)calloc(1, sizeof(biquad_filter_t));
   if (!dst) return NULL;
   memcpy(dst, src, sizeof(biquad_filter_t));
-  dst->z1 = 0.0;
-  dst->z2 = 0.0;
   return dst;
 }
 
@@ -809,6 +826,7 @@ static void dispatch_pass(biquad_filter_t*** cascades, double** waveforms,
                                   start, n_frames);                         \
       break;                                                                \
     default:                                                                \
+      assert(0 && "depth is clamped to MAX_DEPTH");                         \
       break;                                                                \
   }
 
@@ -826,6 +844,7 @@ static void dispatch_pass(biquad_filter_t*** cascades, double** waveforms,
       DISPATCH_DEPTH(4);
       break;
     default:
+      assert(0 && "members_count is clamped to MAX_CHANNELS");
       break;
   }
 #undef DISPATCH_DEPTH

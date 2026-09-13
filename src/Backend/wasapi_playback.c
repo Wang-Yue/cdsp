@@ -42,7 +42,7 @@ struct wasapi_playback {
   wasapi_sample_format_t format;
   bool exclusive;
   bool polling;
-  int target_level;
+  _Atomic int target_level;
 
   binary_sample_format_t bin_fmt;
   size_t bytes_per_sample;
@@ -74,6 +74,7 @@ struct wasapi_playback {
 
 static void wasapi_playback_on_format_change(void* parent, double new_rate) {
   wasapi_playback_t* playback = (wasapi_playback_t*)parent;
+  if (!playback) return;
   playback->pending_rate = new_rate;
   atomic_store_explicit(&playback->has_pending_rate_change, true,
                         memory_order_release);
@@ -108,13 +109,12 @@ static inline UINT32 wasapi_audio_client_get_available_space_in_frames(
  */
 static void* wasapi_playback_loop(void* arg) {
   wasapi_playback_t* playback = (wasapi_playback_t*)arg;
-  HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-  (void)init_hr;
+  bool com_ok = SUCCEEDED(CoInitializeEx(NULL, COINIT_MULTITHREADED));
 
   size_t chunksize = (size_t)playback->chunk_size;
   size_t blockalign = playback->blockalign;
-  size_t target_level =
-      playback->target_level > 0 ? (size_t)playback->target_level : chunksize;
+  int tl = atomic_load_explicit(&playback->target_level, memory_order_acquire);
+  size_t target_level = tl > 0 ? (size_t)tl : chunksize;
 
   // Pre-roll wait: wait for data to start playback, will time out after one
   // second
@@ -293,7 +293,9 @@ static void* wasapi_playback_loop(void* arg) {
 
   atomic_store_explicit(&playback->thread_running, false, memory_order_release);
   IAudioClient_Stop(playback->client);
-  CoUninitialize();
+  if (com_ok) {
+    CoUninitialize();
+  }
   return NULL;
 }
 
@@ -473,7 +475,8 @@ static bool wasapi_playback_prefill_silence(void* ctx, size_t frames,
   (void)err;
   wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
   if (!playback) return false;
-  playback->target_level = (int)frames;
+  atomic_store_explicit(&playback->target_level, (int)frames,
+                        memory_order_release);
   return true;
 }
 
@@ -539,6 +542,9 @@ static playback_backend_t* wasapi_playback_create(
       config->cfg.wasapi.has_exclusive ? config->cfg.wasapi.exclusive : false;
   playback->polling =
       config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
+  atomic_init(&playback->target_level, config->cfg.wasapi.has_target_level
+                                           ? config->cfg.wasapi.target_level
+                                           : 0);
 
   atomic_init(&playback->paused, false);
   playback_backend_t* backend =

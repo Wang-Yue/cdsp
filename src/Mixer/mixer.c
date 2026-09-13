@@ -289,17 +289,17 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
   if (!seen_dests) return -1;
 
   for (size_t i = 0; i < mixer->mapping_count; i++) {
-    int dest = mixer->mapping[i].dest;
-    if (dest < 0 || (size_t)dest >= mixer->channels_out) {
+    size_t dest = mixer->mapping[i].dest;
+    if (dest >= mixer->channels_out) {
       config_error_set(err, CONFIG_ERR_INVALID_MIXER,
-                       "mixer dest %d >= channels_out %d", dest,
-                       (int)mixer->channels_out);
+                       "mixer dest %zu >= channels_out %zu", dest,
+                       mixer->channels_out);
       free(seen_dests);
       return -1;
     }
     if (seen_dests[dest]) {
       config_error_set(err, CONFIG_ERR_INVALID_MIXER,
-                       "mixer dest %d mapped more than once", dest);
+                       "mixer dest %zu mapped more than once", dest);
       free(seen_dests);
       return -1;
     }
@@ -307,7 +307,7 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
 
     if (mixer->mapping[i].sources_count > 0 && !mixer->mapping[i].sources) {
       config_error_set(err, CONFIG_ERR_INVALID_MIXER,
-                       "Null sources array for dest %d", dest);
+                       "Null sources array for dest %zu", dest);
       free(seen_dests);
       return -1;
     }
@@ -328,19 +328,19 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
       return -1;
     }
     for (size_t j = 0; j < mixer->mapping[i].sources_count; j++) {
-      int src_ch = mixer->mapping[i].sources[j].channel;
-      if (src_ch < 0 || (size_t)src_ch >= mixer->channels_in) {
+      size_t src_ch = mixer->mapping[i].sources[j].channel;
+      if (src_ch >= mixer->channels_in) {
         config_error_set(err, CONFIG_ERR_INVALID_MIXER,
-                         "mixer source channel %d >= channels_in %d", src_ch,
-                         (int)mixer->channels_in);
+                         "mixer source channel %zu >= channels_in %zu", src_ch,
+                         mixer->channels_in);
         free(seen_sources);
         free(seen_dests);
         return -1;
       }
       if (seen_sources[src_ch]) {
         logger_warn(&g_logger,
-                    "mixer source channel %d is listed more than once for "
-                    "dest %d; the entries will be summed",
+                    "mixer source channel %zu is listed more than once for "
+                    "dest %zu; the entries will be summed",
                     src_ch, dest);
       }
       seen_sources[src_ch] = true;

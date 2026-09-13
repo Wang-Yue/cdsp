@@ -688,9 +688,9 @@ typedef struct {
   binary_sample_format_t format; /**< Sample format. */
   int extra_samples;             /**< Extra samples to read. */
   bool has_extra_samples;        /**< True if extra_samples is specified. */
-  int skip_bytes;                /**< Bytes to skip at start. */
+  size_t skip_bytes;             /**< Bytes to skip at start. */
   bool has_skip_bytes;           /**< True if skip_bytes is specified. */
-  int read_bytes;                /**< Max bytes to read. */
+  size_t read_bytes;             /**< Max bytes to read. */
   bool has_read_bytes;           /**< True if read_bytes is specified. */
 } stdin_capture_config_t;
 
@@ -735,6 +735,8 @@ typedef struct {
   bool has_exclusive;            /**< True if exclusive is specified. */
   bool polling;                  /**< Use polling event mechanism. */
   bool has_polling;              /**< True if polling is specified. */
+  int target_level;              /**< Target buffer level in frames. */
+  bool has_target_level;         /**< True if target_level is specified. */
 } wasapi_playback_config_t;
 #endif
 
@@ -784,9 +786,9 @@ typedef struct {
   binary_sample_format_t format; /**< Sample format. */
   bool has_format;               /**< True if format is specified. */
   size_t channels;               /**< Number of channels. */
-  int skip_bytes;                /**< Bytes to skip at start. */
+  size_t skip_bytes;             /**< Bytes to skip at start. */
   bool has_skip_bytes;           /**< True if skip_bytes is specified. */
-  int read_bytes;                /**< Max bytes to read. */
+  size_t read_bytes;             /**< Max bytes to read. */
   bool has_read_bytes;           /**< True if read_bytes is specified. */
   int extra_samples;             /**< Extra samples to read. */
   bool has_extra_samples;        /**< True if extra_samples is specified. */

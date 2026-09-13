@@ -2,12 +2,13 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "Config/log_level.h"
 #include "Engine/dsp_engine.h"
 #include "Logging/app_logger.h"
 
-const char* cdsp_get_version(void) { return "4.2.0"; }
+const char* cdsp_get_version(void) { return "5.0.0"; }
 
 void cdsp_get_supported_device_types(char*** out_playback_types,
                                      size_t* out_playback_count,
@@ -149,8 +150,38 @@ void cdsp_engine_poll(dsp_engine_t* engine) {
   if (engine && engine->poll) engine->poll(engine->ctx);
 }
 
+static bool is_valid_log_level_string(const char* s) {
+  if (!s) return false;
+  if (strcasecmp(s, "off") == 0) return true;
+  if (strcasecmp(s, "error") == 0) return true;
+  if (strcasecmp(s, "warn") == 0 || strcasecmp(s, "warning") == 0) return true;
+  if (strcasecmp(s, "info") == 0) return true;
+  if (strcasecmp(s, "debug") == 0) return true;
+  if (strcasecmp(s, "trace") == 0) return true;
+  return false;
+}
+
 void cdsp_set_log_level(const char* level_str) {
+  if (!is_valid_log_level_string(level_str)) {
+    app_logger_log(app_logger_get_shared(), LOG_LEVEL_WARN, "Public",
+                   "Unknown log level; ignoring request",
+                   log_arg_string(level_str ? level_str : "(null)"),
+                   log_arg_none(), log_arg_none(), log_arg_none());
+    return;
+  }
   app_logger_set_level(log_level_from_string(level_str));
+}
+
+static uint32_t g_public_update_interval_ms = 100;
+
+void cdsp_set_update_interval(dsp_engine_t* engine, uint32_t interval_ms) {
+  (void)engine;
+  g_public_update_interval_ms = interval_ms;
+}
+
+uint32_t cdsp_get_update_interval(const dsp_engine_t* engine) {
+  (void)engine;
+  return g_public_update_interval_ms;
 }
 
 static cdsp_log_callback_fn g_pub_log_cb = NULL;

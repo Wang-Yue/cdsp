@@ -74,6 +74,9 @@ static cJSON* locate_pointer(cJSON* root, const char* pointer,
                              cJSON** out_parent, const char** out_key,
                              int* out_index, char* out_new_key,
                              size_t new_key_max_len) {
+  if (out_parent) *out_parent = NULL;
+  if (out_key) *out_key = NULL;
+  if (out_index) *out_index = -1;
   if (out_new_key && new_key_max_len > 0) {
     out_new_key[0] = '\0';
   }
@@ -109,10 +112,12 @@ static cJSON* locate_pointer(cJSON* root, const char* pointer,
     if (*ptr == '/') ptr++;
 
     parent = curr;
+    last_key = NULL;
+    last_idx = -1;
+
     if (cJSON_IsObject(curr)) {
       cJSON* child = curr->child;
       curr = NULL;
-      last_key = NULL;
       bool found = false;
       while (child) {
         if (child->string && strcmp(child->string, segment) == 0) {
@@ -129,20 +134,30 @@ static cJSON* locate_pointer(cJSON* root, const char* pointer,
             strncpy(out_new_key, segment, new_key_max_len - 1);
             out_new_key[new_key_max_len - 1] = '\0';
           }
+          if (out_parent) *out_parent = parent;
+          if (out_key) *out_key = NULL;
+          if (out_index) *out_index = -1;
+          return NULL;
         }
-        break;
+        return NULL;
       }
-      last_idx = -1;
     } else if (cJSON_IsArray(curr)) {
       char* endptr = NULL;
       int idx = (int)strtol(segment, &endptr, 10);
       if (idx < 0 || endptr == segment || *endptr != '\0') return NULL;
       curr = cJSON_GetArrayItem(curr, idx);
+      if (!curr) {
+        return NULL;
+      }
       last_idx = idx;
       last_key = NULL;
     } else {
       return NULL;
     }
+  }
+
+  if (*ptr != '\0') {
+    return NULL;
   }
 
   if (out_parent) *out_parent = parent;
@@ -229,11 +244,235 @@ static cdsp_backend_error_type_t map_backend_error_type(
   }
 }
 
+static bool apply_cjson_overrides(cJSON* root, int samplerate_override,
+                                  int channels_override,
+                                  const char* format_override,
+                                  int extra_samples_override, char* err_msg,
+                                  size_t err_msg_len) {
+  if (!root) return true;
+
+  cJSON* devices = cJSON_GetObjectItem(root, "devices");
+  if (!devices) return true;
+
+  cJSON* capture = cJSON_GetObjectItem(devices, "capture");
+  const char* cap_type = "";
+  if (capture) {
+    cJSON* t = cJSON_GetObjectItem(capture, "type");
+    if (t && t->valuestring) {
+      cap_type = t->valuestring;
+    }
+  }
+
+  if (samplerate_override > 0) {
+    cJSON* resampler = cJSON_GetObjectItem(devices, "resampler");
+    cJSON* old_sr = cJSON_GetObjectItem(devices, "samplerate");
+    double cfg_rate = old_sr ? old_sr->valuedouble : 0.0;
+
+    if (!resampler || cJSON_IsNull(resampler)) {
+      cJSON* old_cs = cJSON_GetObjectItem(devices, "chunksize");
+      if (cfg_rate > 0.0 && old_cs && old_cs->valuedouble > 0.0) {
+        double rate = (double)samplerate_override;
+        double cfg_chunksize = old_cs->valuedouble;
+        long scaled_chunksize;
+        if (rate > cfg_rate) {
+          scaled_chunksize = (long)(cfg_chunksize * round(rate / cfg_rate));
+        } else {
+          scaled_chunksize = (long)(cfg_chunksize / round(cfg_rate / rate));
+        }
+        if (scaled_chunksize <= 0) {
+          scaled_chunksize = 1;
+        }
+        cJSON_ReplaceItemInObject(devices, "chunksize",
+                                  cJSON_CreateNumber((double)scaled_chunksize));
+      }
+      cJSON* item = cJSON_CreateNumber(samplerate_override);
+      if (cJSON_HasObjectItem(devices, "samplerate")) {
+        cJSON_ReplaceItemInObject(devices, "samplerate", item);
+      } else {
+        cJSON_AddItemToObject(devices, "samplerate", item);
+      }
+
+      // Rescale extra_samples for RawFile or Stdin capture
+      if (capture && (strcmp(cap_type, "RawFile") == 0 ||
+                      strcmp(cap_type, "Stdin") == 0)) {
+        cJSON* old_extra = cJSON_GetObjectItem(capture, "extra_samples");
+        if (old_extra && cfg_rate > 0.0) {
+          long new_extra =
+              (long)((old_extra->valuedouble * (double)samplerate_override) /
+                     cfg_rate);
+          cJSON_ReplaceItemInObject(capture, "extra_samples",
+                                    cJSON_CreateNumber((double)new_extra));
+        }
+      }
+    } else {
+      cJSON* item = cJSON_CreateNumber(samplerate_override);
+      if (cJSON_HasObjectItem(devices, "capture_samplerate")) {
+        cJSON_ReplaceItemInObject(devices, "capture_samplerate", item);
+      } else {
+        cJSON_AddItemToObject(devices, "capture_samplerate", item);
+      }
+
+      cJSON* era = cJSON_GetObjectItem(devices, "enable_rate_adjust");
+      bool has_rate_adjust = era && cJSON_IsTrue(era);
+      if (cfg_rate > 0.0 && samplerate_override == (int)cfg_rate &&
+          !has_rate_adjust) {
+        cJSON_DeleteItemFromObject(devices, "resampler");
+      }
+    }
+  }
+
+  if (capture) {
+    if (channels_override > 0) {
+      if (strcmp(cap_type, "WavFile") != 0) {
+        cJSON* item = cJSON_CreateNumber(channels_override);
+        if (cJSON_HasObjectItem(capture, "channels")) {
+          cJSON_ReplaceItemInObject(capture, "channels", item);
+        } else {
+          cJSON_AddItemToObject(capture, "channels", item);
+        }
+      }
+    }
+    if (extra_samples_override >= 0) {
+      if (strcmp(cap_type, "RawFile") == 0 || strcmp(cap_type, "Stdin") == 0) {
+        cJSON* item = cJSON_CreateNumber(extra_samples_override);
+        if (cJSON_HasObjectItem(capture, "extra_samples")) {
+          cJSON_ReplaceItemInObject(capture, "extra_samples", item);
+        } else {
+          cJSON_AddItemToObject(capture, "extra_samples", item);
+        }
+      }
+    }
+    if (format_override && format_override[0] != '\0') {
+      const char* mapped_fmt = NULL;
+      bool skip_format = false;
+      if (strcmp(cap_type, "WavFile") == 0 ||
+          strcmp(cap_type, "SignalGenerator") == 0) {
+        skip_format = true;
+      } else if (strcmp(cap_type, "PipeWire") == 0) {
+        skip_format = true;
+      } else if (strcmp(cap_type, "CoreAudio") == 0) {
+        if (strcmp(format_override, "S16_LE") == 0)
+          mapped_fmt = "S16";
+        else if (strcmp(format_override, "S24_3_LE") == 0 ||
+                 strcmp(format_override, "S24_4_LJ_LE") == 0 ||
+                 strcmp(format_override, "S24_4_RJ_LE") == 0)
+          mapped_fmt = "S24";
+        else if (strcmp(format_override, "S32_LE") == 0)
+          mapped_fmt = "S32";
+        else if (strcmp(format_override, "F32_LE") == 0)
+          mapped_fmt = "F32";
+        else {
+          if (err_msg && err_msg_len > 0)
+            snprintf(
+                err_msg, err_msg_len,
+                "CoreAudio does not have a sample format corresponding to %s",
+                format_override);
+          return false;
+        }
+      } else if (strcmp(cap_type, "Wasapi") == 0) {
+        if (strcmp(format_override, "S16_LE") == 0)
+          mapped_fmt = "S16";
+        else if (strcmp(format_override, "S24_3_LE") == 0 ||
+                 strcmp(format_override, "S24_4_LJ_LE") == 0 ||
+                 strcmp(format_override, "S24_4_RJ_LE") == 0)
+          mapped_fmt = "S24";
+        else if (strcmp(format_override, "S32_LE") == 0)
+          mapped_fmt = "S32";
+        else if (strcmp(format_override, "F32_LE") == 0)
+          mapped_fmt = "F32";
+        else {
+          if (err_msg && err_msg_len > 0)
+            snprintf(err_msg, err_msg_len,
+                     "Wasapi does not have a sample format corresponding to %s",
+                     format_override);
+          return false;
+        }
+      } else if (strcmp(cap_type, "Alsa") == 0) {
+        if (strcmp(format_override, "S16_LE") == 0)
+          mapped_fmt = "S16_LE";
+        else if (strcmp(format_override, "S24_3_LE") == 0)
+          mapped_fmt = "S24_3_LE";
+        else if (strcmp(format_override, "S24_4_LJ_LE") == 0 ||
+                 strcmp(format_override, "S24_4_RJ_LE") == 0)
+          mapped_fmt = "S24_4_LE";
+        else if (strcmp(format_override, "S32_LE") == 0)
+          mapped_fmt = "S32_LE";
+        else if (strcmp(format_override, "F32_LE") == 0)
+          mapped_fmt = "F32_LE";
+        else if (strcmp(format_override, "F64_LE") == 0)
+          mapped_fmt = "F64_LE";
+        else
+          mapped_fmt = format_override;
+      } else if (strcmp(cap_type, "Asio") == 0) {
+        if (strcmp(format_override, "S16_LE") == 0)
+          mapped_fmt = "S16_LE";
+        else if (strcmp(format_override, "S24_3_LE") == 0)
+          mapped_fmt = "S24_3_LE";
+        else if (strcmp(format_override, "S24_4_LJ_LE") == 0 ||
+                 strcmp(format_override, "S24_4_RJ_LE") == 0)
+          mapped_fmt = "S24_4_LE";
+        else if (strcmp(format_override, "S32_LE") == 0)
+          mapped_fmt = "S32_LE";
+        else if (strcmp(format_override, "F32_LE") == 0)
+          mapped_fmt = "F32_LE";
+        else if (strcmp(format_override, "F64_LE") == 0)
+          mapped_fmt = "F64_LE";
+        else
+          mapped_fmt = format_override;
+      } else {
+        mapped_fmt = format_override;
+      }
+
+      if (!skip_format && mapped_fmt) {
+        cJSON* item = cJSON_CreateString(mapped_fmt);
+        if (cJSON_HasObjectItem(capture, "format")) {
+          cJSON_ReplaceItemInObject(capture, "format", item);
+        } else {
+          cJSON_AddItemToObject(capture, "format", item);
+        }
+      }
+    }
+  }
+  return true;
+}
+
 bool cdsp_set_config_json(dsp_engine_t* engine, const char* json_str,
                           cdsp_backend_error_t* out_err) {
   if (!engine || !engine->set_config_json) return false;
+
+  const char* json_to_set = json_str;
+  char* overridden_json = NULL;
+
+  if (g_cli_overrides.samplerate > 0 || g_cli_overrides.channels > 0 ||
+      g_cli_overrides.has_format || g_cli_overrides.extra_samples >= 0) {
+    cJSON* root = cJSON_Parse(json_str);
+    if (root) {
+      char err_msg[256] = {0};
+      if (apply_cjson_overrides(
+              root, g_cli_overrides.samplerate, g_cli_overrides.channels,
+              g_cli_overrides.has_format ? g_cli_overrides.format : NULL,
+              g_cli_overrides.extra_samples, err_msg, sizeof(err_msg))) {
+        overridden_json = cJSON_PrintUnformatted(root);
+        if (overridden_json) {
+          json_to_set = overridden_json;
+        }
+      } else {
+        cJSON_Delete(root);
+        if (out_err) {
+          out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
+          snprintf(out_err->message, sizeof(out_err->message), "%s", err_msg);
+        }
+        return false;
+      }
+      cJSON_Delete(root);
+    }
+  }
+
   audio_backend_error_t berr = {0};
-  bool ok = engine->set_config_json(engine->ctx, json_str, &berr);
+  bool ok = engine->set_config_json(engine->ctx, json_to_set, &berr);
+  if (overridden_json) {
+    free(overridden_json);
+  }
   if (!ok && out_err) {
     out_err->type = map_backend_error_type(berr.type);
     strncpy(out_err->message, berr.message, sizeof(out_err->message) - 1);
@@ -304,7 +543,8 @@ static char* read_config_file_as_json_with_overrides(
     return NULL;
   }
 
-  // Fall back to persistent CLI overrides if caller didn't specify explicit values
+  // Fall back to persistent CLI overrides if caller didn't specify explicit
+  // values
   if (samplerate_override <= 0 && g_cli_overrides.samplerate > 0) {
     samplerate_override = g_cli_overrides.samplerate;
   }
@@ -318,157 +558,11 @@ static char* read_config_file_as_json_with_overrides(
     extra_samples_override = g_cli_overrides.extra_samples;
   }
 
-  cJSON* devices = cJSON_GetObjectItem(root, "devices");
-  if (devices) {
-    cJSON* capture = cJSON_GetObjectItem(devices, "capture");
-    const char* cap_type = "";
-    if (capture) {
-      cJSON* t = cJSON_GetObjectItem(capture, "type");
-      if (t && t->valuestring) {
-        cap_type = t->valuestring;
-      }
-    }
-
-    if (samplerate_override > 0) {
-      cJSON* resampler = cJSON_GetObjectItem(devices, "resampler");
-      cJSON* old_sr = cJSON_GetObjectItem(devices, "samplerate");
-      double cfg_rate = old_sr ? old_sr->valuedouble : 0.0;
-
-      if (!resampler || cJSON_IsNull(resampler)) {
-        cJSON* old_cs = cJSON_GetObjectItem(devices, "chunksize");
-        if (cfg_rate > 0.0 && old_cs && old_cs->valuedouble > 0.0) {
-          double rate = (double)samplerate_override;
-          double cfg_chunksize = old_cs->valuedouble;
-          long scaled_chunksize;
-          if (rate > cfg_rate) {
-            scaled_chunksize = (long)(cfg_chunksize * round(rate / cfg_rate));
-          } else {
-            scaled_chunksize = (long)(cfg_chunksize / round(cfg_rate / rate));
-          }
-          if (scaled_chunksize <= 0) {
-            scaled_chunksize = 1;
-          }
-          cJSON_ReplaceItemInObject(devices, "chunksize",
-                                    cJSON_CreateNumber((double)scaled_chunksize));
-        }
-        cJSON* item = cJSON_CreateNumber(samplerate_override);
-        if (cJSON_HasObjectItem(devices, "samplerate")) {
-          cJSON_ReplaceItemInObject(devices, "samplerate", item);
-        } else {
-          cJSON_AddItemToObject(devices, "samplerate", item);
-        }
-
-        // Rescale extra_samples for RawFile or Stdin capture
-        if (capture && (strcmp(cap_type, "RawFile") == 0 || strcmp(cap_type, "Stdin") == 0)) {
-          cJSON* old_extra = cJSON_GetObjectItem(capture, "extra_samples");
-          if (old_extra && cfg_rate > 0.0) {
-            long new_extra = (long)((old_extra->valuedouble * (double)samplerate_override) / cfg_rate);
-            cJSON_ReplaceItemInObject(capture, "extra_samples",
-                                      cJSON_CreateNumber((double)new_extra));
-          }
-        }
-      } else {
-        cJSON* item = cJSON_CreateNumber(samplerate_override);
-        if (cJSON_HasObjectItem(devices, "capture_samplerate")) {
-          cJSON_ReplaceItemInObject(devices, "capture_samplerate", item);
-        } else {
-          cJSON_AddItemToObject(devices, "capture_samplerate", item);
-        }
-
-        bool has_rate_adjust = (cJSON_GetObjectItem(devices, "rate_measure_interval") != NULL);
-        if (cfg_rate > 0.0 && samplerate_override == (int)cfg_rate && !has_rate_adjust) {
-          cJSON_DeleteItemFromObject(devices, "resampler");
-          cJSON_DeleteItemFromObject(devices, "capture_samplerate");
-        }
-      }
-    }
-
-    if (capture) {
-      if (channels_override > 0) {
-        if (strcmp(cap_type, "WavFile") != 0) {
-          cJSON* item = cJSON_CreateNumber(channels_override);
-          if (cJSON_HasObjectItem(capture, "channels")) {
-            cJSON_ReplaceItemInObject(capture, "channels", item);
-          } else {
-            cJSON_AddItemToObject(capture, "channels", item);
-          }
-        }
-      }
-      if (extra_samples_override >= 0) {
-        cJSON* item = cJSON_CreateNumber(extra_samples_override);
-        if (cJSON_HasObjectItem(capture, "extra_samples")) {
-          cJSON_ReplaceItemInObject(capture, "extra_samples", item);
-        } else {
-          cJSON_AddItemToObject(capture, "extra_samples", item);
-        }
-      }
-      if (format_override && format_override[0] != '\0') {
-        const char* mapped_fmt = NULL;
-        bool skip_format = false;
-        if (strcmp(cap_type, "WavFile") == 0 || strcmp(cap_type, "SignalGenerator") == 0) {
-          skip_format = true;
-        } else if (strcmp(cap_type, "PipeWire") == 0) {
-          skip_format = true;
-        } else if (strcmp(cap_type, "CoreAudio") == 0) {
-          if (strcmp(format_override, "S16_LE") == 0) mapped_fmt = "S16";
-          else if (strcmp(format_override, "S24_3_LE") == 0 ||
-                   strcmp(format_override, "S24_4_LJ_LE") == 0 ||
-                   strcmp(format_override, "S24_4_RJ_LE") == 0) mapped_fmt = "S24";
-          else if (strcmp(format_override, "S32_LE") == 0) mapped_fmt = "S32";
-          else if (strcmp(format_override, "F32_LE") == 0) mapped_fmt = "F32";
-          else {
-            if (err_msg) snprintf(err_msg, err_msg_len,
-                                  "CoreAudio does not have a sample format corresponding to %s",
-                                  format_override);
-            cJSON_Delete(root);
-            return NULL;
-          }
-        } else if (strcmp(cap_type, "Wasapi") == 0) {
-          if (strcmp(format_override, "S16_LE") == 0) mapped_fmt = "S16";
-          else if (strcmp(format_override, "S24_3_LE") == 0 ||
-                   strcmp(format_override, "S24_4_LJ_LE") == 0 ||
-                   strcmp(format_override, "S24_4_RJ_LE") == 0) mapped_fmt = "S24";
-          else if (strcmp(format_override, "S32_LE") == 0) mapped_fmt = "S32";
-          else if (strcmp(format_override, "F32_LE") == 0) mapped_fmt = "F32";
-          else {
-            if (err_msg) snprintf(err_msg, err_msg_len,
-                                  "Wasapi does not have a sample format corresponding to %s",
-                                  format_override);
-            cJSON_Delete(root);
-            return NULL;
-          }
-        } else if (strcmp(cap_type, "Alsa") == 0) {
-          if (strcmp(format_override, "S16_LE") == 0) mapped_fmt = "S16_LE";
-          else if (strcmp(format_override, "S24_3_LE") == 0) mapped_fmt = "S24_3_LE";
-          else if (strcmp(format_override, "S24_4_LJ_LE") == 0 ||
-                   strcmp(format_override, "S24_4_RJ_LE") == 0) mapped_fmt = "S24_4_LE";
-          else if (strcmp(format_override, "S32_LE") == 0) mapped_fmt = "S32_LE";
-          else if (strcmp(format_override, "F32_LE") == 0) mapped_fmt = "F32_LE";
-          else if (strcmp(format_override, "F64_LE") == 0) mapped_fmt = "F64_LE";
-          else mapped_fmt = format_override;
-        } else if (strcmp(cap_type, "Asio") == 0) {
-          if (strcmp(format_override, "S16_LE") == 0) mapped_fmt = "S16_LE";
-          else if (strcmp(format_override, "S24_3_LE") == 0) mapped_fmt = "S24_3_LE";
-          else if (strcmp(format_override, "S24_4_LJ_LE") == 0 ||
-                   strcmp(format_override, "S24_4_RJ_LE") == 0) mapped_fmt = "S24_4_LE";
-          else if (strcmp(format_override, "S32_LE") == 0) mapped_fmt = "S32_LE";
-          else if (strcmp(format_override, "F32_LE") == 0) mapped_fmt = "F32_LE";
-          else if (strcmp(format_override, "F64_LE") == 0) mapped_fmt = "F64_LE";
-          else mapped_fmt = format_override;
-        } else {
-          mapped_fmt = format_override;
-        }
-
-        if (!skip_format && mapped_fmt) {
-          cJSON* item = cJSON_CreateString(mapped_fmt);
-          if (cJSON_HasObjectItem(capture, "format")) {
-            cJSON_ReplaceItemInObject(capture, "format", item);
-          } else {
-            cJSON_AddItemToObject(capture, "format", item);
-          }
-        }
-      }
-    }
+  if (!apply_cjson_overrides(root, samplerate_override, channels_override,
+                             format_override, extra_samples_override, err_msg,
+                             err_msg_len)) {
+    cJSON_Delete(root);
+    return NULL;
   }
 
   char* updated_json = cJSON_PrintUnformatted(root);
@@ -584,13 +678,17 @@ bool cdsp_set_config_value(dsp_engine_t* engine, const char* json_ptr,
     return false;
   }
 
-  if (key) {
-    cJSON_ReplaceItemInObject(parent, key, new_node);
-  } else if (new_key[0] != '\0') {
+  bool ok_mod = false;
+  if (key && cJSON_IsObject(parent)) {
+    ok_mod = cJSON_ReplaceItemInObject(parent, key, new_node);
+  } else if (new_key[0] != '\0' && cJSON_IsObject(parent)) {
     cJSON_AddItemToObject(parent, new_key, new_node);
-  } else if (idx >= 0) {
-    cJSON_ReplaceItemInArray(parent, idx, new_node);
-  } else {
+    ok_mod = true;
+  } else if (idx >= 0 && cJSON_IsArray(parent)) {
+    ok_mod = cJSON_ReplaceItemInArray(parent, idx, new_node);
+  }
+
+  if (!ok_mod) {
     cJSON_Delete(new_node);
     cJSON_Delete(root);
     return false;
@@ -656,8 +754,14 @@ bool cdsp_patch_config(dsp_engine_t* engine, const char* patch_json,
   if (!root) return false;
 
   cJSON* patch = cJSON_Parse(patch_json);
-  if (!patch) {
+  if (!patch || !cJSON_IsObject(patch)) {
+    if (patch) cJSON_Delete(patch);
     cJSON_Delete(root);
+    if (out_err) {
+      out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
+      snprintf(out_err->message, sizeof(out_err->message),
+               "Patch must be a JSON object");
+    }
     return false;
   }
 
@@ -842,6 +946,33 @@ static void config_fill_defaults(cJSON* root) {
             if (!cJSON_HasObjectItem(params, "attenuation")) {
               cJSON_AddNullToObject(params, "attenuation");
             }
+          } else if (strcmp(type->valuestring, "Conv") == 0) {
+            cJSON* conv_type = cJSON_GetObjectItemCaseSensitive(params, "type");
+            if (conv_type && cJSON_IsString(conv_type)) {
+              if (strcmp(conv_type->valuestring, "Raw") == 0) {
+                if (!cJSON_HasObjectItem(params, "skip_bytes_lines")) {
+                  cJSON_AddNullToObject(params, "skip_bytes_lines");
+                }
+                if (!cJSON_HasObjectItem(params, "read_bytes_lines")) {
+                  cJSON_AddNullToObject(params, "read_bytes_lines");
+                }
+              } else if (strcmp(conv_type->valuestring, "Wav") == 0) {
+                if (!cJSON_HasObjectItem(params, "channel")) {
+                  cJSON_AddNullToObject(params, "channel");
+                }
+              }
+            }
+          } else if (strcmp(type->valuestring, "Delay") == 0) {
+            if (!cJSON_HasObjectItem(params, "unit")) {
+              cJSON_AddNullToObject(params, "unit");
+            }
+            if (!cJSON_HasObjectItem(params, "subsample")) {
+              cJSON_AddNullToObject(params, "subsample");
+            }
+          } else if (strcmp(type->valuestring, "Dither") == 0) {
+            if (!cJSON_HasObjectItem(params, "bits")) {
+              cJSON_AddNullToObject(params, "bits");
+            }
           }
         }
       }
@@ -912,16 +1043,38 @@ bool cdsp_read_config_json(const char* json_str, char** out_result,
 bool cdsp_validate_config_json(const char* json_str, char** out_result,
                                cdsp_config_error_type_t* out_err_type) {
   if (!json_str || !out_result || !out_err_type) return false;
-  cJSON* root = cJSON_Parse(json_str);
+
+  const char* json_to_use = json_str;
+  char* overridden_json = NULL;
+
+  if (g_cli_overrides.samplerate > 0 || g_cli_overrides.channels > 0 ||
+      g_cli_overrides.has_format || g_cli_overrides.extra_samples >= 0) {
+    cJSON* temp_root = cJSON_Parse(json_str);
+    if (temp_root) {
+      char err_msg[256] = {0};
+      if (apply_cjson_overrides(
+              temp_root, g_cli_overrides.samplerate, g_cli_overrides.channels,
+              g_cli_overrides.has_format ? g_cli_overrides.format : NULL,
+              g_cli_overrides.extra_samples, err_msg, sizeof(err_msg))) {
+        overridden_json = cJSON_PrintUnformatted(temp_root);
+        if (overridden_json) json_to_use = overridden_json;
+      }
+      cJSON_Delete(temp_root);
+    }
+  }
+
+  cJSON* root = cJSON_Parse(json_to_use);
   if (!root) {
+    if (overridden_json) free(overridden_json);
     *out_result = strdup("Failed to parse JSON (syntax error or invalid JSON)");
     *out_err_type = CDSP_CONFIG_ERR_PARSE;
     return false;
   }
   dsp_config_t* parsed = NULL;
   config_error_t cerr = {0};
-  if (dsp_config_parse_json_no_validate(json_str, &parsed, &cerr) != 0 ||
+  if (dsp_config_parse_json_no_validate(json_to_use, &parsed, &cerr) != 0 ||
       !parsed) {
+    if (overridden_json) free(overridden_json);
     cJSON_Delete(root);
     *out_result =
         strdup(cerr.message[0] ? cerr.message : "Failed to parse JSON");
@@ -930,6 +1083,7 @@ bool cdsp_validate_config_json(const char* json_str, char** out_result,
   }
 
   if (dsp_config_validate(parsed, &cerr) != 0) {
+    if (overridden_json) free(overridden_json);
     dsp_config_free(parsed);
     cJSON_Delete(root);
     *out_result =
@@ -942,6 +1096,7 @@ bool cdsp_validate_config_json(const char* json_str, char** out_result,
   config_fill_defaults(root);
   *out_result = cJSON_PrintUnformatted(root);
   cJSON_Delete(root);
+  if (overridden_json) free(overridden_json);
   *out_err_type = CDSP_CONFIG_ERR_NONE;
   return true;
 }

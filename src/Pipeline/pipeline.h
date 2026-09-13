@@ -118,4 +118,48 @@ size_t pipeline_get_last_error_got(const pipeline_t* pipeline);
  */
 int pipeline_config_validate(const dsp_config_t* config, config_error_t* err);
 
+/**
+ * @brief Get whether the pipeline is configured for multithreading.
+ *
+ * @param[in] pipeline The pipeline instance.
+ * @return true if multithreaded, false otherwise.
+ */
+bool pipeline_is_multithreaded(const pipeline_t* pipeline);
+
+/**
+ * @brief Get the configured worker threads count.
+ *
+ * @param[in] pipeline The pipeline instance.
+ * @return Number of worker threads (0 = default/auto).
+ */
+size_t pipeline_get_worker_threads(const pipeline_t* pipeline);
+
+/**
+ * @brief Computes the used capture channels mask based on the first
+ * non-bypassed mixer in the pipeline.
+ *
+ * If there is a non-bypassed mixer in the pipeline, a capture channel is marked
+ * true if and only if it is routed as an unmuted source in at least one unmuted
+ * mapping of that mixer. If there is no non-bypassed mixer, all capture
+ * channels are marked true.
+ *
+ * @param[in] config DSP configuration.
+ * @param[out] out_used Boolean array of size at least channels_count.
+ * @param[in] channels_count Number of capture channels.
+ * @return true on success, false on error or if config is NULL.
+ */
+bool pipeline_compute_used_capture_channels(const dsp_config_t* config,
+                                            bool* out_used,
+                                            size_t channels_count);
+
+/**
+ * @brief Get the used capture channels mask stored on the pipeline.
+ *
+ * @param[in] pipeline The pipeline instance.
+ * @param[out] out_count Optional pointer to receive the channel count.
+ * @return Pointer to boolean mask array of used capture channels, or NULL.
+ */
+const bool* pipeline_get_used_capture_channels(const pipeline_t* pipeline,
+                                               size_t* out_count);
+
 #endif  // CLIB_PIPELINE_PIPELINE_H

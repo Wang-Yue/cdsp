@@ -76,6 +76,10 @@ void parse_labels_array(const cJSON* labels_arr, char*** out_labels,
       arr[k] = strdup(el->valuestring);
     } else if (cJSON_IsNull(el)) {
       arr[k] = NULL;
+    } else {
+      for (int j = 0; j < k; j++) free(arr[j]);
+      free(arr);
+      return;
     }
   }
 
@@ -101,9 +105,12 @@ double* parse_double_array(const cJSON* arr, size_t* out_count) {
   }
   for (int i = 0; i < size; i++) {
     cJSON* el = cJSON_GetArrayItem(arr, i);
-    if (cJSON_IsNumber(el)) {
-      values[i] = el->valuedouble;
+    if (!cJSON_IsNumber(el)) {
+      free(values);
+      *out_count = 0;
+      return NULL;
     }
+    values[i] = el->valuedouble;
   }
   *out_count = (size_t)size;
   return values;
@@ -125,10 +132,9 @@ int parse_size_t_array_strict(const cJSON* arr, const char* field_name,
   }
   for (int i = 0; i < size; i++) {
     const cJSON* el = cJSON_GetArrayItem(arr, i);
-    // Upstream these are Vec<usize>: a negative, fractional or non-numeric
-    // element is a deserialization error, not a silent zero.
     if (!cJSON_IsNumber(el) || el->valuedouble < 0.0 ||
-        el->valuedouble != (double)el->valueint) {
+        floor(el->valuedouble) != el->valuedouble ||
+        el->valuedouble > (double)SIZE_MAX) {
       config_error_set(err, CONFIG_ERR_PARSE,
                        "element %d of '%s' in %s must be a non-negative "
                        "integer",
@@ -136,7 +142,7 @@ int parse_size_t_array_strict(const cJSON* arr, const char* field_name,
       free(values);
       return -1;
     }
-    values[i] = (size_t)el->valueint;
+    values[i] = (size_t)el->valuedouble;
   }
   *out_values = values;
   *out_count = (size_t)size;
@@ -196,7 +202,7 @@ static void replace_tokens_in_string_node(cJSON* node, int samplerate,
 }
 
 static void replace_tokens_in_config_json(cJSON* root, int samplerate,
-                                         int channels) {
+                                          int channels) {
   if (!root) return;
   cJSON* filters = cJSON_GetObjectItemCaseSensitive(root, "filters");
   if (cJSON_IsObject(filters)) {
@@ -223,21 +229,20 @@ static void replace_tokens_in_config_json(cJSON* root, int samplerate,
       cJSON* step = cJSON_GetArrayItem(pipeline, i);
       if (!cJSON_IsObject(step)) continue;
       cJSON* type_item = cJSON_GetObjectItemCaseSensitive(step, "type");
-      const char* tstr = (type_item && cJSON_IsString(type_item) &&
-                          type_item->valuestring)
-                             ? type_item->valuestring
-                             : "";
+      const char* tstr =
+          (type_item && cJSON_IsString(type_item) && type_item->valuestring)
+              ? type_item->valuestring
+              : "";
       if (strcmp(tstr, "Filter") == 0) {
         cJSON* names = cJSON_GetObjectItemCaseSensitive(step, "names");
         if (cJSON_IsArray(names)) {
           int nsz = cJSON_GetArraySize(names);
           for (int j = 0; j < nsz; j++) {
             replace_tokens_in_string_node(cJSON_GetArrayItem(names, j),
-                                         samplerate, channels);
+                                          samplerate, channels);
           }
         }
-      } else if (strcmp(tstr, "Mixer") == 0 ||
-                 strcmp(tstr, "Processor") == 0) {
+      } else if (strcmp(tstr, "Mixer") == 0 || strcmp(tstr, "Processor") == 0) {
         cJSON* name = cJSON_GetObjectItemCaseSensitive(step, "name");
         if (name) {
           replace_tokens_in_string_node(name, samplerate, channels);
@@ -274,10 +279,12 @@ static void resolve_relative_paths_in_filters(cJSON* filters_obj,
             char resolved[1024];
             size_t dir_len = strlen(config_dir);
             bool needs_slash = (dir_len > 0 && config_dir[dir_len - 1] != '/');
-            snprintf(resolved, sizeof(resolved), "%s%s%s", config_dir,
-                     needs_slash ? "/" : "", str);
-            if (access(resolved, F_OK) == 0) {
-              cJSON_SetValuestring(fn_node, resolved);
+            int n = snprintf(resolved, sizeof(resolved), "%s%s%s", config_dir,
+                             needs_slash ? "/" : "", str);
+            if (n >= 0 && (size_t)n < sizeof(resolved)) {
+              if (access(resolved, F_OK) == 0) {
+                cJSON_SetValuestring(fn_node, resolved);
+              }
             }
           }
         }
@@ -344,6 +351,10 @@ int dsp_config_parse_json_with_dir_and_overrides_ext(
     return -1;
   }
 
+  parse_json_str(root, "title", config->title, sizeof(config->title));
+  parse_json_str(root, "description", config->description,
+                 sizeof(config->description));
+
   cJSON* devices_obj = cJSON_GetObjectItemCaseSensitive(root, "devices");
   if (!devices_obj) {
     cJSON_Delete(root);
@@ -387,18 +398,20 @@ int dsp_config_parse_json_with_dir_and_overrides_ext(
   }
 
   cJSON* pipeline_arr = cJSON_GetObjectItemCaseSensitive(root, "pipeline");
-  if (pipeline_arr) {
-    if (config_parse_pipeline(pipeline_arr, config, err) != 0) {
-      cJSON_Delete(root);
-      dsp_config_free(config);
-      logger_error(&g_logger, "Config parsing failed in pipeline section: %s",
-                   err ? err->message : "");
-      return -1;
+  if (pipeline_arr && !cJSON_IsNull(pipeline_arr)) {
+    if (!cJSON_IsObject(pipeline_arr) || cJSON_GetArraySize(pipeline_arr) > 0) {
+      if (config_parse_pipeline(pipeline_arr, config, err) != 0) {
+        cJSON_Delete(root);
+        dsp_config_free(config);
+        logger_error(&g_logger, "Config parsing failed in pipeline section: %s",
+                     err ? err->message : "");
+        return -1;
+      }
     }
   }
 
   cJSON* mixers_obj = cJSON_GetObjectItemCaseSensitive(root, "mixers");
-  if (mixers_obj) {
+  if (mixers_obj && !cJSON_IsNull(mixers_obj)) {
     if (config_parse_mixers(mixers_obj, config, err) != 0) {
       cJSON_Delete(root);
       dsp_config_free(config);
@@ -409,7 +422,7 @@ int dsp_config_parse_json_with_dir_and_overrides_ext(
   }
 
   cJSON* filters_obj = cJSON_GetObjectItemCaseSensitive(root, "filters");
-  if (filters_obj) {
+  if (filters_obj && !cJSON_IsNull(filters_obj)) {
     if (config_parse_filters(filters_obj, config, err) != 0) {
       cJSON_Delete(root);
       dsp_config_free(config);
@@ -420,7 +433,7 @@ int dsp_config_parse_json_with_dir_and_overrides_ext(
   }
 
   cJSON* processors_obj = cJSON_GetObjectItemCaseSensitive(root, "processors");
-  if (processors_obj) {
+  if (processors_obj && !cJSON_IsNull(processors_obj)) {
     if (config_parse_processors(processors_obj, config, err) != 0) {
       cJSON_Delete(root);
       dsp_config_free(config);

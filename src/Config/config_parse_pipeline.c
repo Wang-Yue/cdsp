@@ -64,7 +64,8 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
 
     if (step->type == PIPELINE_STEP_TYPE_FILTER) {
       static const char* const allowed_filter_step_keys[] = {
-          "type", "name", "names", "channel", "channels", "bypassed", "description", NULL};
+          "type",     "name",     "names",       "channel",
+          "channels", "bypassed", "description", NULL};
       if (validate_unknown_fields(step_obj, allowed_filter_step_keys,
                                   "Filter pipeline step", err) != 0) {
         return -1;
@@ -82,8 +83,8 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
                               : "Processor pipeline step";
       static const char* const allowed_named_step_keys[] = {
           "type", "name", "bypassed", "description", NULL};
-      if (validate_unknown_fields(step_obj, allowed_named_step_keys,
-                                  sname, err) != 0) {
+      if (validate_unknown_fields(step_obj, allowed_named_step_keys, sname,
+                                  err) != 0) {
         return -1;
       }
       static const char* const req_named[] = {"name", NULL};
@@ -92,14 +93,26 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
       }
     }
 
-    step->has_name =
-        parse_json_str(step_obj, "name", step->name, sizeof(step->name));
+    if (parse_json_str_strict(step_obj, "description", "pipeline step",
+                              step->description, sizeof(step->description),
+                              NULL, err) != 0) {
+      return -1;
+    }
+
+    if (parse_json_str_strict(step_obj, "name", "pipeline step", step->name,
+                              sizeof(step->name), &step->has_name, err) != 0) {
+      return -1;
+    }
     if (parse_json_size_t_strict(step_obj, "channel", "pipeline step",
                                  &step->channel, &step->has_channel,
                                  err) != 0) {
       return -1;
     }
-    parse_json_bool(step_obj, "bypassed", &step->bypassed);
+    bool bypassed_dummy = false;
+    if (parse_json_bool_strict(step_obj, "bypassed", "pipeline step",
+                               &step->bypassed, &bypassed_dummy, err) != 0) {
+      return -1;
+    }
 
     cJSON* names_arr = cJSON_GetObjectItemCaseSensitive(step_obj, "names");
     if (names_arr && cJSON_IsArray(names_arr)) {

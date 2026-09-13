@@ -276,14 +276,20 @@ static size_t list_formats(snd_pcm_t* pcm, snd_pcm_hw_params_t* hwp,
 audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
                                                       bool is_capture,
                                                       device_error_t* err) {
+  const char* target_dev =
+      (device_name && device_name[0]) ? device_name : "default";
+
   char clean_dev[256];
-  alsa_sanitize_device_name(device_name, clean_dev, sizeof(clean_dev));
+  alsa_sanitize_device_name(target_dev, clean_dev, sizeof(clean_dev));
 
   pthread_mutex_lock(&g_alsa_mutex);
   snd_pcm_stream_t stream =
       is_capture ? SND_PCM_STREAM_CAPTURE : SND_PCM_STREAM_PLAYBACK;
   snd_pcm_t* pcm = NULL;
-  int open_res = snd_pcm_open(&pcm, clean_dev, stream, 0);
+  int open_res = snd_pcm_open(&pcm, target_dev, stream, 0);
+  if (open_res < 0 && strcmp(clean_dev, target_dev) != 0) {
+    open_res = snd_pcm_open(&pcm, clean_dev, stream, 0);
+  }
   if (open_res < 0) {
     if (err) {
       if (open_res == -EBUSY) {
@@ -340,8 +346,7 @@ audio_device_descriptor_t* alsa_capabilities_describe(const char* device_name,
     pthread_mutex_unlock(&g_alsa_mutex);
     return NULL;
   }
-  snprintf(desc->name, sizeof(desc->name), "%s",
-           (device_name && device_name[0]) ? device_name : clean_dev);
+  snprintf(desc->name, sizeof(desc->name), "%s", target_dev);
 
   desc->capability_sets_count = 1;
   desc->capability_sets =

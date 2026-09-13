@@ -1,8 +1,17 @@
 #include "cdsp/fader.h"
 
+#include <math.h>
+
 #include "Config/filter_config_types.h"
 #include "Engine/dsp_engine.h"
 #include "cdsp/cdsp_pub_types.h"
+
+static inline float clamp_volume_db(float db) {
+  if (isnan(db)) return -150.0f;
+  if (db > 50.0f) return 50.0f;
+  if (db < -150.0f) return -150.0f;
+  return db;
+}
 
 float cdsp_get_volume(const dsp_engine_t* engine) {
   return engine && engine->get_fader_volume
@@ -12,7 +21,8 @@ float cdsp_get_volume(const dsp_engine_t* engine) {
 
 void cdsp_set_volume(dsp_engine_t* engine, float db, bool instant) {
   if (engine && engine->set_fader_volume) {
-    engine->set_fader_volume(engine->ctx, (fader_t)0, db, instant);
+    engine->set_fader_volume(engine->ctx, (fader_t)0, clamp_volume_db(db),
+                             instant);
   }
 }
 
@@ -37,8 +47,33 @@ float cdsp_get_fader_volume(const dsp_engine_t* engine, cdsp_fader_t fader) {
 void cdsp_set_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader, float db,
                            bool instant) {
   if (engine && engine->set_fader_volume) {
-    engine->set_fader_volume(engine->ctx, (fader_t)fader, db, instant);
+    engine->set_fader_volume(engine->ctx, (fader_t)fader, clamp_volume_db(db),
+                             instant);
   }
+}
+
+float cdsp_adjust_fader_volume(dsp_engine_t* engine, cdsp_fader_t fader,
+                               float delta) {
+  float current = cdsp_get_fader_volume(engine, fader);
+  float new_vol = clamp_volume_db(current + delta);
+  cdsp_set_fader_volume(engine, fader, new_vol, false);
+  return new_vol;
+}
+
+float cdsp_adjust_fader_volume_clamped(dsp_engine_t* engine, cdsp_fader_t fader,
+                                       float delta, float min_db,
+                                       float max_db) {
+  float current = cdsp_get_fader_volume(engine, fader);
+  float new_vol = current + delta;
+  if (new_vol < min_db) new_vol = min_db;
+  if (new_vol > max_db) new_vol = max_db;
+  new_vol = clamp_volume_db(new_vol);
+  cdsp_set_fader_volume(engine, fader, new_vol, false);
+  return new_vol;
+}
+
+float cdsp_adjust_volume(dsp_engine_t* engine, float delta) {
+  return cdsp_adjust_fader_volume(engine, (cdsp_fader_t)0, delta);
 }
 
 bool cdsp_get_fader_mute(const dsp_engine_t* engine, cdsp_fader_t fader) {

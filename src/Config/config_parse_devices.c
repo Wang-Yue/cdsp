@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "Config/cJSON.h"
@@ -145,8 +146,13 @@ static int parse_resampler(const cJSON* res_obj, devices_config_t* devices,
     return -1;
   }
   if (res->has_sinc_len) {
+    if (res_val == 0) {
+      config_error_set(
+          err, CONFIG_ERR_PARSE,
+          "field 'sinc_len' in AsyncSinc resampler must be positive");
+      return -1;
+    }
     res->sinc_len = (int)res_val;
-    if (res->sinc_len <= 0) res->has_sinc_len = false;
   }
   if (parse_json_size_t_strict(res_obj, "oversampling_factor",
                                "AsyncSinc resampler", &res_val,
@@ -154,13 +160,25 @@ static int parse_resampler(const cJSON* res_obj, devices_config_t* devices,
     return -1;
   }
   if (res->has_oversampling_factor) {
+    if (res_val == 0) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "field 'oversampling_factor' in AsyncSinc resampler "
+                       "must be positive");
+      return -1;
+    }
     res->oversampling_factor = (int)res_val;
-    if (res->oversampling_factor <= 0) res->has_oversampling_factor = false;
   }
   res->has_window =
       parse_json_str(res_obj, "window", res->window, sizeof(res->window));
-  if (parse_json_double(res_obj, "f_cutoff", &res->f_cutoff)) {
-    res->has_f_cutoff = (res->f_cutoff > 0.0);
+  if (parse_json_double_strict(res_obj, "f_cutoff", "AsyncSinc resampler",
+                               &res->f_cutoff, &res->has_f_cutoff, err) != 0) {
+    return -1;
+  }
+  if (res->has_f_cutoff && res->f_cutoff <= 0.0) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "field 'f_cutoff' in AsyncSinc resampler must be positive");
+    return -1;
   }
   return 0;
 }
@@ -190,9 +208,9 @@ typedef struct {
   bool has_file_format;
   bool is_wav;
   bool has_is_wav;
-  int skip_bytes;
+  size_t skip_bytes;
   bool has_skip_bytes;
-  int read_bytes;
+  size_t read_bytes;
   bool has_read_bytes;
   int extra_samples;
   bool has_extra_samples;
@@ -252,6 +270,24 @@ typedef struct {
  * @param cap_obj The cJSON object containing capture settings.
  * @param devices Pointer to the devices configuration structure to populate.
  */
+static void cleanup_capture_labels(capture_device_config_t* cap_dev,
+                                   flat_capture_device_config_t* cap) {
+  if (cap && cap->labels) {
+    for (size_t i = 0; i < cap->labels_count; i++) {
+      free(cap->labels[i]);
+    }
+    free(cap->labels);
+    cap->labels = NULL;
+    cap->labels_count = 0;
+    cap->has_labels = false;
+  }
+  if (cap_dev) {
+    cap_dev->labels = NULL;
+    cap_dev->labels_count = 0;
+    cap_dev->has_labels = false;
+  }
+}
+
 static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
                          config_error_t* err) {
   if (!cJSON_IsObject(cap_obj)) {
@@ -373,11 +409,16 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
     if (validate_unknown_fields(cap_obj, allowed, "Alsa capture", err) != 0)
       return -1;
   } else if (strcmp(type_str, "PipeWire") == 0) {
-    static const char* const allowed[] = {
-        "type",            "channels",         "node_name",
-        "node_description","node_group_name",  "labels",
-        "channel_labels",  "autoconnect_to",   "loopback",
-        NULL};
+    static const char* const allowed[] = {"type",
+                                          "channels",
+                                          "node_name",
+                                          "node_description",
+                                          "node_group_name",
+                                          "labels",
+                                          "channel_labels",
+                                          "autoconnect_to",
+                                          "loopback",
+                                          NULL};
     if (validate_unknown_fields(cap_obj, allowed, "PipeWire capture", err) != 0)
       return -1;
   } else if (strcmp(type_str, "Wasapi") == 0) {
@@ -398,10 +439,13 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
   if (parse_json_size_t_strict(cap_obj, "channels", "capture device",
                                &cap->channels, NULL, err) != 0)
     return -1;
-  cap->has_device =
-      parse_json_str(cap_obj, "device", cap->device, sizeof(cap->device));
-  cap->has_filename =
-      parse_json_str(cap_obj, "filename", cap->filename, sizeof(cap->filename));
+  if (parse_json_str_strict(cap_obj, "device", "capture device", cap->device,
+                            sizeof(cap->device), &cap->has_device, err) != 0)
+    return -1;
+  if (parse_json_str_strict(cap_obj, "filename", "capture device",
+                            cap->filename, sizeof(cap->filename),
+                            &cap->has_filename, err) != 0)
+    return -1;
 
   item = cJSON_GetObjectItemCaseSensitive(cap_obj, "format");
   if (cJSON_IsString(item) && item->valuestring) {
@@ -467,13 +511,13 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
                                &bytes_val, &cap->has_skip_bytes, err) != 0) {
     return -1;
   }
-  if (cap->has_skip_bytes) cap->skip_bytes = (int)bytes_val;
+  if (cap->has_skip_bytes) cap->skip_bytes = bytes_val;
 
   if (parse_json_size_t_strict(cap_obj, "read_bytes", "capture device",
                                &bytes_val, &cap->has_read_bytes, err) != 0) {
     return -1;
   }
-  if (cap->has_read_bytes) cap->read_bytes = (int)bytes_val;
+  if (cap->has_read_bytes) cap->read_bytes = bytes_val;
 
   if (parse_json_size_t_strict(cap_obj, "extra_samples", "capture device",
                                &bytes_val, &cap->has_extra_samples, err) != 0) {
@@ -524,6 +568,9 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
   }
   parse_labels_array(cap_labels_node, &cap->labels, &cap->labels_count,
                      &cap->has_labels);
+  devices->capture.labels = cap->labels;
+  devices->capture.labels_count = cap->labels_count;
+  devices->capture.has_labels = cap->has_labels;
 
   cap->has_bypass_dop =
       parse_json_bool(cap_obj, "bypass_dop", &cap->bypass_dop);
@@ -543,7 +590,7 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
     if (!cJSON_IsObject(sig_obj)) {
       config_error_set(err, CONFIG_ERR_PARSE,
                        "missing field 'signal' in SignalGenerator capture");
-      return -1;
+      goto fail_capture;
     }
     static const config_enum_variant_t sig_variants[] = {
         {"Sine", SIGNAL_TYPE_SINE},
@@ -554,25 +601,25 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
     int stype = 0;
     if (parse_enum_required(sig_obj, "type", sig_variants,
                             "SignalGenerator signal", &stype, err) != 0) {
-      return -1;
+      goto fail_capture;
     }
     cap->generator.type = (signal_type_t)stype;
     if (cap->generator.type == SIGNAL_TYPE_WHITE_NOISE) {
       static const char* const allowed_noise[] = {"type", "level", NULL};
       if (validate_unknown_fields(sig_obj, allowed_noise,
                                   "SignalGenerator signal", err) != 0) {
-        return -1;
+        goto fail_capture;
       }
       static const char* const req_noise[] = {"level", NULL};
       if (require_json_fields(sig_obj, req_noise, "SignalGenerator signal",
                               "WhiteNoise", err) != 0) {
-        return -1;
+        goto fail_capture;
       }
       if (!parse_json_double(sig_obj, "level", &cap->generator.level)) {
         config_error_set(
             err, CONFIG_ERR_PARSE,
             "field 'level' in SignalGenerator signal must be a number");
-        return -1;
+        goto fail_capture;
       }
     } else {
       static const char* const allowed_tone[] = {"type", "freq", "level", NULL};
@@ -580,24 +627,24 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
           (cap->generator.type == SIGNAL_TYPE_SINE) ? "Sine" : "Square";
       if (validate_unknown_fields(sig_obj, allowed_tone,
                                   "SignalGenerator signal", err) != 0) {
-        return -1;
+        goto fail_capture;
       }
       static const char* const req_tone[] = {"freq", "level", NULL};
       if (require_json_fields(sig_obj, req_tone, "SignalGenerator signal",
                               vname, err) != 0) {
-        return -1;
+        goto fail_capture;
       }
       if (!parse_json_double(sig_obj, "freq", &cap->generator.frequency)) {
         config_error_set(
             err, CONFIG_ERR_PARSE,
             "field 'freq' in SignalGenerator signal must be a number");
-        return -1;
+        goto fail_capture;
       }
       if (!parse_json_double(sig_obj, "level", &cap->generator.level)) {
         config_error_set(
             err, CONFIG_ERR_PARSE,
             "field 'level' in SignalGenerator signal must be a number");
-        return -1;
+        goto fail_capture;
       }
     }
   }
@@ -804,14 +851,14 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
     if (!cJSON_IsObject(sig_node)) {
       config_error_set(err, CONFIG_ERR_PARSE,
                        "missing field 'signal' in SignalGenerator capture");
-      return -1;
+      goto fail_capture;
     }
   } else {
     if (temp.channels == 0) {
       config_error_set(err, CONFIG_ERR_PARSE,
                        "missing or non-positive field 'channels' in %s capture",
                        type_str);
-      return -1;
+      goto fail_capture;
     }
   }
 
@@ -819,11 +866,15 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
     if (!temp.has_device || strlen(temp.device) == 0) {
       config_error_set(err, CONFIG_ERR_PARSE,
                        "missing field 'device' in %s capture", type_str);
-      return -1;
+      goto fail_capture;
     }
   }
 
   return 0;
+
+fail_capture:
+  cleanup_capture_labels(&devices->capture, cap);
+  return -1;
 }
 
 typedef struct {
@@ -981,11 +1032,15 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
     if (validate_unknown_fields(play_obj, allowed, "Alsa playback", err) != 0)
       return -1;
   } else if (strcmp(type_str, "PipeWire") == 0) {
-    static const char* const allowed[] = {
-        "type",            "channels",         "node_name",
-        "node_description","node_group_name",  "labels",
-        "channel_labels",  "autoconnect_to",
-        NULL};
+    static const char* const allowed[] = {"type",
+                                          "channels",
+                                          "node_name",
+                                          "node_description",
+                                          "node_group_name",
+                                          "labels",
+                                          "channel_labels",
+                                          "autoconnect_to",
+                                          NULL};
     if (validate_unknown_fields(play_obj, allowed, "PipeWire playback", err) !=
         0)
       return -1;
@@ -1010,10 +1065,13 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
   if (parse_json_size_t_strict(play_obj, "channels", "playback device",
                                &play->channels, NULL, err) != 0)
     return -1;
-  play->has_device =
-      parse_json_str(play_obj, "device", play->device, sizeof(play->device));
-  play->has_filename = parse_json_str(play_obj, "filename", play->filename,
-                                      sizeof(play->filename));
+  if (parse_json_str_strict(play_obj, "device", "playback device", play->device,
+                            sizeof(play->device), &play->has_device, err) != 0)
+    return -1;
+  if (parse_json_str_strict(play_obj, "filename", "playback device",
+                            play->filename, sizeof(play->filename),
+                            &play->has_filename, err) != 0)
+    return -1;
 
   item = cJSON_GetObjectItemCaseSensitive(play_obj, "format");
   if (cJSON_IsString(item) && item->valuestring) {
@@ -1240,6 +1298,9 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
       final_play->cfg.wasapi.has_exclusive = temp.has_exclusive;
       final_play->cfg.wasapi.polling = temp.polling;
       final_play->cfg.wasapi.has_polling = temp.has_polling;
+      final_play->cfg.wasapi.target_level =
+          devices->has_target_level ? devices->target_level : 0;
+      final_play->cfg.wasapi.has_target_level = devices->has_target_level;
       break;
 #endif
 #if defined(ENABLE_ASIO)
@@ -1399,21 +1460,31 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
                                &dev->has_capture_samplerate, err) != 0) {
     return -1;
   }
-  if (parse_json_double(dev_obj, "volume_ramp_time_ms",
-                        &dev->volume_ramp_time_ms)) {
-    dev->has_volume_ramp_time_ms = true;
+  if (parse_json_double_strict(dev_obj, "volume_ramp_time_ms", "devices",
+                               &dev->volume_ramp_time_ms,
+                               &dev->has_volume_ramp_time_ms, err) != 0) {
+    return -1;
   }
-  if (parse_json_double(dev_obj, "volume_limit", &dev->volume_limit)) {
-    dev->has_volume_limit = true;
+  if (parse_json_double_strict(dev_obj, "volume_limit", "devices",
+                               &dev->volume_limit, &dev->has_volume_limit,
+                               err) != 0) {
+    return -1;
   }
-  dev->has_stop_on_rate_change = parse_json_bool(dev_obj, "stop_on_rate_change",
-                                                 &dev->stop_on_rate_change);
-  if (parse_json_double(dev_obj, "rate_measure_interval_s",
-                        &dev->rate_measure_interval_s)) {
-    dev->has_rate_measure_interval_s = true;
+  if (parse_json_bool_strict(dev_obj, "stop_on_rate_change", "devices",
+                             &dev->stop_on_rate_change,
+                             &dev->has_stop_on_rate_change, err) != 0) {
+    return -1;
   }
-  dev->has_multithreaded =
-      parse_json_bool(dev_obj, "multithreaded", &dev->multithreaded);
+  if (parse_json_double_strict(dev_obj, "rate_measure_interval_s", "devices",
+                               &dev->rate_measure_interval_s,
+                               &dev->has_rate_measure_interval_s, err) != 0) {
+    return -1;
+  }
+  if (parse_json_bool_strict(dev_obj, "multithreaded", "devices",
+                             &dev->multithreaded, &dev->has_multithreaded,
+                             err) != 0) {
+    return -1;
+  }
   cJSON* wt_item = cJSON_GetObjectItemCaseSensitive(dev_obj, "worker_threads");
   if (wt_item) {
     if (!cJSON_IsNumber(wt_item) || wt_item->valuedouble < 0 ||

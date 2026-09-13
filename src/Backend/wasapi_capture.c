@@ -75,6 +75,7 @@ struct wasapi_capture {
 
 static void wasapi_capture_on_format_change(void* parent, double new_rate) {
   wasapi_capture_t* capture = (wasapi_capture_t*)parent;
+  if (!capture) return;
   capture->pending_rate = new_rate;
   atomic_store_explicit(&capture->has_pending_rate_change, true,
                         memory_order_release);
@@ -151,8 +152,7 @@ static inline bool wasapi_capture_read_from_device(
  */
 static void* wasapi_capture_loop(void* arg) {
   wasapi_capture_t* capture = (wasapi_capture_t*)arg;
-  HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-  (void)init_hr;
+  bool com_ok = SUCCEEDED(CoInitializeEx(NULL, COINIT_MULTITHREADED));
 
   size_t blockalign = capture->blockalign;
   bool inactive = false;
@@ -168,7 +168,9 @@ static void* wasapi_capture_loop(void* arg) {
     if (capture->semaphore) {
       cdsp_sem_signal(capture->semaphore);
     }
-    CoUninitialize();
+    if (com_ok) {
+      CoUninitialize();
+    }
     return NULL;
   }
 
@@ -204,7 +206,9 @@ static void* wasapi_capture_loop(void* arg) {
       cdsp_sem_signal(capture->semaphore);
     }
     free(data);
-    CoUninitialize();
+    if (com_ok) {
+      CoUninitialize();
+    }
     return NULL;
   }
   logger_trace(&g_wasapi_logger, "Started capture stream.");
@@ -248,7 +252,17 @@ static void* wasapi_capture_loop(void* arg) {
       hr = IAudioClient_GetCurrentPadding(capture->client, &frames_ready);
       logger_trace(&g_wasapi_logger,
                    "Capture, nbr frames ready after sleep: %u.", frames_ready);
-      if (SUCCEEDED(hr) && frames_ready > 0) {
+      if (FAILED(hr)) {
+        if (!atomic_load_explicit(&capture->has_pending_rate_change,
+                                  memory_order_acquire)) {
+          logger_error(&g_wasapi_logger,
+                       "WASAPI capture GetCurrentPadding failed (hr=0x%08lX), "
+                       "stopping stream.",
+                       (unsigned long)hr);
+        }
+        break;
+      }
+      if (frames_ready > 0) {
         no_frames_counter = 0;
       } else {
         no_frames_counter++;
@@ -292,6 +306,7 @@ static void* wasapi_capture_loop(void* arg) {
                  available_frames);
 
     if (available_frames > 0) {
+      bool error_occurred = false;
       while (true) {
         UINT32 nbr_frames_read = 0;
         DWORD flags = 0;
@@ -299,8 +314,13 @@ static void* wasapi_capture_loop(void* arg) {
                                              data_buf_size, blockalign,
                                              &nbr_frames_read, &flags)) {
           if (atomic_load_explicit(&capture->has_pending_rate_change,
-                                   memory_order_acquire))
+                                   memory_order_acquire)) {
             break;
+          }
+          logger_error(
+              &g_wasapi_logger,
+              "WASAPI capture read_from_device failed, stopping stream.");
+          error_occurred = true;
           break;
         }
 
@@ -342,8 +362,9 @@ static void* wasapi_capture_loop(void* arg) {
           }
         } else {
           UINT32 padding = 0;
-          if (SUCCEEDED(
-                  IAudioClient_GetCurrentPadding(capture->client, &padding))) {
+          HRESULT hr_pad =
+              IAudioClient_GetCurrentPadding(capture->client, &padding);
+          if (SUCCEEDED(hr_pad)) {
             if (padding == 0) break;
             logger_trace(
                 &g_wasapi_logger,
@@ -351,9 +372,21 @@ static void* wasapi_capture_loop(void* arg) {
                 padding);
             available_frames = padding;
           } else {
+            if (atomic_load_explicit(&capture->has_pending_rate_change,
+                                     memory_order_acquire)) {
+              break;
+            }
+            logger_error(&g_wasapi_logger,
+                         "WASAPI capture GetCurrentPadding failed "
+                         "(hr=0x%08lX), stopping stream.",
+                         (unsigned long)hr_pad);
+            error_occurred = true;
             break;
           }
         }
+      }
+      if (error_occurred) {
+        break;
       }
     }
   }
@@ -364,7 +397,9 @@ static void* wasapi_capture_loop(void* arg) {
   }
   IAudioClient_Stop(capture->client);
   free(data);
-  CoUninitialize();
+  if (com_ok) {
+    CoUninitialize();
+  }
   return NULL;
 }
 
@@ -388,8 +423,12 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
   }
   logger_trace(&g_wasapi_logger, "Got capture iaudioclient.");
 
-  if (capture->loopback) {
-    capture->exclusive = false;
+  if (capture->loopback && capture->exclusive) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Loopback is not supported in exclusive mode");
+    }
+    goto error_cleanup;
   }
   bool exclusive = capture->exclusive;
   const char* direction_name = capture->loopback ? "Render" : "Capture";

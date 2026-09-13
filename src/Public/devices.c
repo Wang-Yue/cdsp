@@ -15,10 +15,19 @@ bool cdsp_get_available_devices(const char* backend, bool is_input,
                                 size_t* out_count) {
   if (!backend || !out_devices || !out_count) return false;
 
-  audio_device_t devs[128];
+  const int max_devs = 1024;
+  audio_device_t* devs =
+      (audio_device_t*)malloc(max_devs * sizeof(audio_device_t));
+  if (!devs) {
+    *out_count = 0;
+    *out_devices = NULL;
+    return false;
+  }
+
   int count = audio_backend_registry_get_available_devices(backend, is_input,
-                                                           devs, 128);
+                                                           devs, max_devs);
   if (count < 0) {
+    free(devs);
     *out_count = 0;
     *out_devices = NULL;
     return false;
@@ -29,6 +38,7 @@ bool cdsp_get_available_devices(const char* backend, bool is_input,
     cdsp_device_info_t* list =
         (cdsp_device_info_t*)malloc(count * sizeof(cdsp_device_info_t));
     if (!list) {
+      free(devs);
       *out_count = 0;
       *out_devices = NULL;
       return false;
@@ -66,6 +76,7 @@ bool cdsp_get_available_devices(const char* backend, bool is_input,
     *out_devices = NULL;
   }
 
+  free(devs);
   return true;
 }
 

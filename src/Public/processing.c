@@ -50,28 +50,28 @@ double cdsp_get_signal_range(const dsp_engine_t* engine) {
     vu_levels_t vu_query = {0};
     if (engine->get_vu_levels(engine->ctx, &vu_query)) {
       size_t cap_ch = vu_query.capture_channels;
-      size_t pb_ch = vu_query.playback_channels;
-      size_t count = cap_ch > 0 ? cap_ch : pb_ch;
-      if (count == 0) return 0.0;
+      if (cap_ch == 0) return 0.0;
 
-      float* pk_buf = (float*)malloc(count * sizeof(float));
+      // Preallocate generous headroom (at least 4096 channels) to prevent
+      // TOCTOU heap overflow if a concurrent reload increases channels between
+      // calls.
+      size_t alloc_count = cap_ch < 4096 ? 4096 : (cap_ch * 2);
+      float* pk_buf = (float*)malloc(alloc_count * sizeof(float));
       if (!pk_buf) return 0.0;
 
       vu_levels_t vu = {0};
-      if (cap_ch > 0) {
-        vu.capture_peak = pk_buf;
-      } else {
-        vu.playback_peak = pk_buf;
-      }
+      vu.capture_peak = pk_buf;
 
       if (engine->get_vu_levels(engine->ctx, &vu)) {
+        size_t actual_ch = vu.capture_channels;
+        size_t scan_count = actual_ch < alloc_count ? actual_ch : alloc_count;
         double max_peak = -INFINITY;
-        for (size_t i = 0; i < count; i++) {
+        for (size_t i = 0; i < scan_count; i++) {
           double pk = (double)pk_buf[i];
           if (pk > max_peak) max_peak = pk;
         }
         free(pk_buf);
-        if (!isfinite(max_peak) || max_peak <= -200.0) return 0.0;
+        if (!isfinite(max_peak)) return 0.0;
         return 2.0 * double_from_db(max_peak);
       }
       free(pk_buf);

@@ -395,35 +395,48 @@ int alsa_device_open_and_configure_hw(
     double resampling_ratio, snd_pcm_format_t* out_format,
     snd_pcm_uframes_t* out_bufsize, snd_pcm_uframes_t* out_period,
     bool* out_can_pause, char* out_error_msg, size_t error_msg_len) {
-  if (!pcm || !device_name) return -EINVAL;
-
-  char clean_dev[256];
-  snprintf(clean_dev, sizeof(clean_dev), "%s",
-           device_name[0] ? device_name : "default");
-  char* paren = strstr(clean_dev, " (");
-  if (paren) {
-    *paren = '\0';
-  } else if (clean_dev[0] != '\0' && clean_dev[0] != '(') {
-    char* single_paren = strchr(clean_dev, '(');
-    if (single_paren) {
-      *single_paren = '\0';
-    }
-  }
-  size_t dlen = strlen(clean_dev);
-  while (dlen > 0 &&
-         (clean_dev[dlen - 1] == ' ' || clean_dev[dlen - 1] == '\t')) {
-    clean_dev[--dlen] = '\0';
-  }
-  if (clean_dev[0] == '\0') {
-    snprintf(clean_dev, sizeof(clean_dev), "default");
-  }
-
+  const char* target_dev =
+      (device_name && device_name[0]) ? device_name : "default";
   const char* direction =
       (stream == SND_PCM_STREAM_PLAYBACK) ? "Playback" : "Capture";
   logger_debug(&g_alsa_dev_logger, "%s: opening ALSA device '%s'", direction,
-               clean_dev);
+               target_dev);
+
+  char clean_dev[256];
+  snprintf(clean_dev, sizeof(clean_dev), "%s", target_dev);
 
   int rc = snd_pcm_open(pcm, clean_dev, stream, SND_PCM_NONBLOCK);
+  if (rc < 0) {
+    // If opening verbatim fails, check if the device name includes an
+    // enumerated description suffix like "hw:0,0 (Sound Card)" and retry with
+    // the cleaned name.
+    char* paren = strstr(clean_dev, " (");
+    if (paren) {
+      *paren = '\0';
+    } else if (clean_dev[0] != '\0' && clean_dev[0] != '(') {
+      char* single_paren = strchr(clean_dev, '(');
+      if (single_paren) {
+        *single_paren = '\0';
+      }
+    }
+    size_t dlen = strlen(clean_dev);
+    while (dlen > 0 &&
+           (clean_dev[dlen - 1] == ' ' || clean_dev[dlen - 1] == '\t')) {
+      clean_dev[--dlen] = '\0';
+    }
+    if (clean_dev[0] == '\0') {
+      snprintf(clean_dev, sizeof(clean_dev), "default");
+    }
+
+    if (strcmp(clean_dev, target_dev) != 0) {
+      logger_debug(
+          &g_alsa_dev_logger,
+          "%s: opening verbatim failed (%s), retrying with stripped name '%s'",
+          direction, snd_strerror(rc), clean_dev);
+      rc = snd_pcm_open(pcm, clean_dev, stream, SND_PCM_NONBLOCK);
+    }
+  }
+
   if (rc < 0) {
     if (out_error_msg && error_msg_len > 0) {
       snprintf(out_error_msg, error_msg_len, "%s", snd_strerror(rc));
@@ -568,8 +581,10 @@ int alsa_device_configure_sw(snd_pcm_t* pcm, snd_pcm_uframes_t avail_min,
   int rc = snd_pcm_sw_params_current(pcm, sw_params);
   if (rc < 0) return rc;
 
-  snd_pcm_sw_params_set_start_threshold(pcm, sw_params, start_threshold);
-  snd_pcm_sw_params_set_avail_min(pcm, sw_params, avail_min);
+  rc = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, start_threshold);
+  if (rc < 0) return rc;
+  rc = snd_pcm_sw_params_set_avail_min(pcm, sw_params, avail_min);
+  if (rc < 0) return rc;
   return snd_pcm_sw_params(pcm, sw_params);
 }
 

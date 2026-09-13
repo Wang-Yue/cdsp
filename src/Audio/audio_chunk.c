@@ -42,8 +42,29 @@ size_t audio_chunk_get_valid_frames(const audio_chunk_t* chunk) {
   return chunk ? chunk->valid_frames : 0;
 }
 
+void audio_chunk_zero(audio_chunk_t* chunk) {
+  if (!chunk || !chunk->buffers) return;
+  audio_buffers_zero(chunk->buffers);
+}
+
+void audio_chunk_zero_tail(audio_chunk_t* chunk) {
+  if (!chunk || !chunk->buffers) return;
+  size_t total_frames = audio_chunk_get_frames(chunk);
+  size_t valid = chunk->valid_frames;
+  if (valid >= total_frames) return;
+  size_t channels = audio_chunk_get_channels(chunk);
+  for (size_t ch = 0; ch < channels; ch++) {
+    mutable_waveform_t w = audio_chunk_get_channel(chunk, ch);
+    if (w) {
+      memset(w + valid, 0, (total_frames - valid) * sizeof(double));
+    }
+  }
+}
+
 void audio_chunk_set_valid_frames(audio_chunk_t* chunk, size_t valid_frames) {
-  if (chunk) chunk->valid_frames = valid_frames;
+  if (!chunk) return;
+  chunk->valid_frames = valid_frames;
+  audio_chunk_zero_tail(chunk);
 }
 
 void audio_chunk_set_used_channels(audio_chunk_t* chunk,
@@ -126,7 +147,12 @@ audio_chunk_t* round_robin_chunk_pool_next(round_robin_chunk_pool_t* pool) {
   if (!pool || pool->capacity == 0) return NULL;
   size_t idx =
       atomic_fetch_add_explicit(&pool->current_index, 1, memory_order_relaxed);
-  return pool->pool[idx % pool->capacity];
+  audio_chunk_t* chunk = pool->pool[idx % pool->capacity];
+  if (chunk) {
+    audio_chunk_zero(chunk);
+    chunk->valid_frames = audio_chunk_get_frames(chunk);
+  }
+  return chunk;
 }
 
 void round_robin_chunk_pool_free(round_robin_chunk_pool_t* pool) {
@@ -530,6 +556,7 @@ bool audio_chunk_decode_interleaved(const void* src, binary_sample_format_t fmt,
                                     audio_chunk_t* chunk) {
   if (!src || !chunk || channels == 0 || frames == 0) return false;
   if (audio_chunk_get_channels(chunk) < channels) return false;
+  if (frames > audio_chunk_get_frames(chunk)) return false;
 
   bool ok = false;
   if (channels == 2) {
@@ -567,6 +594,7 @@ bool audio_chunk_encode_interleaved(const audio_chunk_t* chunk,
                                     size_t frames, void* dst) {
   if (!chunk || !dst || channels == 0 || frames == 0) return false;
   if (audio_chunk_get_channels(chunk) < channels) return false;
+  if (frames > audio_chunk_get_frames(chunk)) return false;
 
   if (channels == 2) {
     const double* ch0 = audio_chunk_get_channel(chunk, 0);

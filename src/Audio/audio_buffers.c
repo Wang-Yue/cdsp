@@ -100,3 +100,9 @@ void audio_buffers_free(audio_buffers_t* buffers) {
   if (buffers->channel_buffers) free(buffers->channel_buffers);
   free(buffers);
 }
+
+void audio_buffers_zero(audio_buffers_t* buffers) {
+  if (!buffers || !buffers->storage) return;
+  memset(buffers->storage, 0,
+         buffers->channels * buffers->capacity * sizeof(double));
+}

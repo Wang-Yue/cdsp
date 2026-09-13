@@ -128,8 +128,6 @@ static OSStatus playback_callback(void* inRefCon,
           memset(dst + silence_bytes + copied, 0, rem_bytes - copied);
           atomic_store_explicit(&playback->is_running, false,
                                 memory_order_relaxed);
-          atomic_store_explicit(&playback->underrun_silence_frames,
-                                playback->target_level, memory_order_relaxed);
         }
       }
     } else {
@@ -157,9 +155,6 @@ static OSStatus playback_callback(void* inRefCon,
               memset(dst + silence_bytes + copied, 0, rem_bytes - copied);
               atomic_store_explicit(&playback->is_running, false,
                                     memory_order_relaxed);
-              atomic_store_explicit(&playback->underrun_silence_frames,
-                                    playback->target_level,
-                                    memory_order_relaxed);
             }
           }
           atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
@@ -179,8 +174,6 @@ static OSStatus playback_callback(void* inRefCon,
         memset(dst + copied, 0, bytes_needed - copied);
         atomic_store_explicit(&playback->is_running, false,
                               memory_order_relaxed);
-        atomic_store_explicit(&playback->underrun_silence_frames,
-                              playback->target_level, memory_order_relaxed);
       }
     }
   }
@@ -368,14 +361,9 @@ static bool core_audio_playback_open(void* ctx, backend_error_t* err) {
   if (playback->exclusive) {
     playback->did_acquire_hog_mode = core_audio_device_acquire_hog_mode(dev_id);
     if (!playback->did_acquire_hog_mode) {
-      logger_error(
-          &g_logger,
-          "Failed to acquire exclusive access (hog mode) on playback device");
-      if (err)
-        backend_error_init(
-            err, BACKEND_ERROR_INITIALIZATION_FAILED,
-            "Failed to acquire exclusive access (hog mode) on playback device");
-      goto cleanup;
+      logger_warn(&g_logger,
+                  "Could not get exclusive access (hog mode) on playback "
+                  "device, continuing in shared mode");
     }
   } else {
     core_audio_device_release_hog_mode(dev_id);

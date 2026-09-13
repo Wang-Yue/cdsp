@@ -67,6 +67,7 @@ struct pipeline_s {
   pipeline_exec_step_t* steps;
   size_t steps_count;
   bool multithreaded;
+  size_t worker_threads;
   volume_filter_t* master_volume;
   audio_chunk_t* capture_scratch;
   audio_chunk_t** scratches_for_mixers;
@@ -76,6 +77,8 @@ struct pipeline_s {
   int rate;
   size_t expected_in_channels;
   size_t expected_out_channels;
+
+  bool* used_capture_channels;
 
   size_t last_error_needed;
   size_t last_error_got;

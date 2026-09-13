@@ -240,15 +240,9 @@ bool wasapi_check_and_resolve_pending_rate(
                  pending_rate);
     double rate = pending_rate;
     if (rate <= 0.0) {
-      for (int i = 0; i < 100; i++) {
-        rate = wasapi_device_get_current_mix_rate(device, is_capture);
-        if (rate > 0.0) break;
-        cdsp_sleep_ms(50);
-      }
+      rate = wasapi_device_get_current_mix_rate(device, is_capture);
     }
     atomic_store_explicit(has_pending_rate_change, false, memory_order_release);
-    logger_debug(&g_wasapi_logger,
-                 "get_pending_rate_change evaluated final rate=%f", rate);
     if (rate > 0.0) {
       if (out_rate) {
         *out_rate = rate;
@@ -257,6 +251,10 @@ bool wasapi_check_and_resolve_pending_rate(
                    "get_pending_rate_change returning true with rate=%f", rate);
       return true;
     }
+    logger_debug(
+        &g_wasapi_logger,
+        "get_pending_rate_change evaluated non-positive rate=%f, ignoring",
+        rate);
   }
   return false;
 }
@@ -709,7 +707,8 @@ IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
 
   if (devname[0] == '{') {
     wchar_t w_id[256] = {0};
-    mbstowcs(w_id, devname, 255);
+    MultiByteToWideChar(CP_UTF8, 0, devname, -1, w_id, 256);
+    w_id[255] = L'\0';
     IMMDevice* device = NULL;
     HRESULT hr = IMMDeviceEnumerator_GetDevice(enumerator, w_id, &device);
     if (SUCCEEDED(hr) && device) {
@@ -739,7 +738,8 @@ IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
           IPropertyStore_GetValue(properties, &PKEY_Device_FriendlyName, &var);
       if (SUCCEEDED(hr_prop) && var.vt == VT_LPWSTR && var.pwszVal) {
         char friendly_name[256] = {0};
-        wcstombs(friendly_name, var.pwszVal, sizeof(friendly_name) - 1);
+        WideCharToMultiByte(CP_UTF8, 0, var.pwszVal, -1, friendly_name,
+                            (int)sizeof(friendly_name), NULL, NULL);
         friendly_name[sizeof(friendly_name) - 1] = '\0';
         if (strcmp(friendly_name, devname) == 0) {
           found = dev;
@@ -757,7 +757,8 @@ IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
 
   if (!found && devname[0] != '{') {
     wchar_t w_id[256] = {0};
-    mbstowcs(w_id, devname, 255);
+    MultiByteToWideChar(CP_UTF8, 0, devname, -1, w_id, 256);
+    w_id[255] = L'\0';
     hr = IMMDeviceEnumerator_GetDevice(enumerator, w_id, &found);
     if (SUCCEEDED(hr) && found) {
       return found;
@@ -875,7 +876,7 @@ double wasapi_device_get_current_mix_rate(const char* device_name,
       device_name[0] != '\0' ? device_name : "default", (int)is_capture);
 
   double rate = 0.0;
-  for (int i = 0; i < 40; i++) {
+  for (int i = 0; i < 2; i++) {
     IMMDevice* mm_device =
         wasapi_find_device(enumerator, device_name, is_capture, false);
     if (mm_device) {
@@ -905,7 +906,9 @@ double wasapi_device_get_current_mix_rate(const char* device_name,
     } else {
       logger_trace(&g_wasapi_logger, "wasapi_find_device failed");
     }
-    cdsp_sleep_ms(100);
+    if (i == 0) {
+      cdsp_sleep_ms(10);
+    }
   }
 
   SAFE_RELEASE(enumerator);

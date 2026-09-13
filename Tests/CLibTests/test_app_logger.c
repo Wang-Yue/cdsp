@@ -56,4 +56,29 @@ TEST(AppLoggerCallback) {
   app_logger_set_callback(NULL, NULL);
 }
 
+TEST(AppLoggerRotation) {
+  const char* logpath = "/tmp/test_cdsp_rotate.log";
+  const char* rotpath1 = "/tmp/test_cdsp_rotate.log.1";
+  remove(logpath);
+  remove(rotpath1);
+
+  app_logger_set_logfile(logpath);
+  app_logger_set_logfile_rotation(100, 2);
+
+  logger_t log = logger_create("test.rotate");
+  for (int i = 0; i < 5; i++) {
+    logger_info(&log,
+                "This is a log message that exceeds rotation threshold #%d", i);
+  }
+  app_logger_flush_and_stop(app_logger_get_shared());
+
+  FILE* f_rot = fopen(rotpath1, "r");
+  ASSERT_TRUE(f_rot != NULL);
+  if (f_rot) fclose(f_rot);
+
+  remove(logpath);
+  remove(rotpath1);
+  app_logger_set_logfile_rotation(0, 0);
+}
+
 TEST_MAIN()

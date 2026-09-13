@@ -162,8 +162,6 @@ static void* alsa_capture_inner_thread_func(void* arg) {
           logger_info(&g_logger,
                       "Capture device is stalled, processing is stalled");
           capture->device_stalled = true;
-          snd_pcm_drop(capture->pcm);
-          snd_pcm_prepare(capture->pcm);
         }
       } else if (frames_read == -EAGAIN || frames_read == -EINTR) {
         // Upstream's capture_buffer reports -EAGAIN/-EINTR as
@@ -178,8 +176,6 @@ static void* alsa_capture_inner_thread_func(void* arg) {
         logger_info(&g_logger,
                     "Capture device is stalled, processing is stalled");
         capture->device_stalled = true;
-        snd_pcm_drop(capture->pcm);
-        snd_pcm_prepare(capture->pcm);
       }
     } else if (wait_rc < 0 && wait_rc != -EPIPE && wait_rc != -ESTRPIPE &&
                wait_rc != -EINTR) {
@@ -326,8 +322,9 @@ static void alsa_capture_sync_linked_controls(alsa_capture_t* capture) {
     if (capture->linked_mute_value != target_mute) {
       logger_debug(&g_logger, "Updating linked switch control to %d",
                    !target_mute);
+      alsa_elem_write_as_bool(capture->hctl_mute_elem, !target_mute);
+      capture->linked_mute_value = target_mute;
     }
-    alsa_elem_write_as_bool(capture->hctl_mute_elem, !target_mute);
   }
 
   pthread_mutex_unlock(&capture->mixer_mutex);
@@ -492,17 +489,29 @@ static bool alsa_capture_open(void* ctx, backend_error_t* err) {
         capture->period > 0 ? (snd_pcm_uframes_t)capture->period : 1;
     if (capture_avail_min > (snd_pcm_uframes_t)capture->bufsize) {
       char msg[256];
-      snprintf(msg, sizeof(msg),
-               "Trying to set avail_min to %lu, must be smaller than or equal to "
-               "device buffer size of %lu",
-               (unsigned long)capture_avail_min, (unsigned long)capture->bufsize);
+      snprintf(
+          msg, sizeof(msg),
+          "Trying to set avail_min to %lu, must be smaller than or equal to "
+          "device buffer size of %lu",
+          (unsigned long)capture_avail_min, (unsigned long)capture->bufsize);
       logger_error(&g_logger, "%s", msg);
-      if (err) backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
       goto error_cleanup;
     }
   }
   capture->last_avail_min = (size_t)capture_avail_min;
-  alsa_device_configure_sw(capture->pcm, capture_avail_min, 0);
+  int sw_rc = alsa_device_configure_sw(capture->pcm, capture_avail_min, 0);
+  if (sw_rc < 0) {
+    char msg[256];
+    snprintf(msg, sizeof(msg), "Failed to configure ALSA sw params: %s",
+             snd_strerror(sw_rc));
+    logger_error(&g_logger, "%s", msg);
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+    }
+    goto error_cleanup;
+  }
 
   size_t sample_size = alsa_format_sample_size(capture->format);
 
@@ -608,9 +617,10 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
     return false;
   }
 
-  // Sync volume/mute from engine to hardware (src/alsa_backend/device.rs:1090)
-  alsa_capture_sync_linked_controls(capture);
+  // Process events from ALSA control interface first, then sync linked controls
+  // (matches CamillaDSP device.rs:1090)
   alsa_capture_process_events(capture);
+  alsa_capture_sync_linked_controls(capture);
 
   if (atomic_load_explicit(&capture->is_inactive, memory_order_acquire)) {
     logger_info(&g_logger,
@@ -639,10 +649,11 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
   if (frames != capture->last_avail_min) {
     if (frames > (size_t)capture->bufsize) {
       char msg[256];
-      snprintf(msg, sizeof(msg),
-               "Trying to set avail_min to %zu, must be smaller than or equal to "
-               "device buffer size of %lu",
-               frames, (unsigned long)capture->bufsize);
+      snprintf(
+          msg, sizeof(msg),
+          "Trying to set avail_min to %zu, must be smaller than or equal to "
+          "device buffer size of %lu",
+          frames, (unsigned long)capture->bufsize);
       logger_error(&g_logger, "%s", msg);
       if (err) backend_error_init(err, BACKEND_ERROR_READ_ERROR, msg);
       return false;
@@ -754,8 +765,6 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
             logger_info(&g_logger,
                         "Capture device is stalled, processing is stalled");
             capture->device_stalled = true;
-            snd_pcm_drop(capture->pcm);
-            snd_pcm_prepare(capture->pcm);
           }
           if (err) {
             backend_error_init(err, BACKEND_ERROR_NONE,
@@ -913,8 +922,6 @@ static bool alsa_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
           logger_info(&g_logger,
                       "Capture device is stalled, processing is stalled");
           capture->device_stalled = true;
-          snd_pcm_drop(capture->pcm);
-          snd_pcm_prepare(capture->pcm);
         }
         continue;
       } else if (err_read == -EAGAIN) {

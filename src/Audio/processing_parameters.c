@@ -25,7 +25,7 @@ typedef struct {
   _Atomic uint64_t write_seq;
   _Atomic size_t write_pos;
   _Atomic size_t total_written;
-  uint64_t timestamps_ms[CHUNK_LEVEL_HISTORY_CAPACITY];
+  uint64_t timestamps_ns[CHUNK_LEVEL_HISTORY_CAPACITY];
   float* data;  // planar array: channels * CHUNK_LEVEL_HISTORY_CAPACITY
 } chunk_level_history_t;
 
@@ -36,7 +36,7 @@ static inline void chunk_level_history_init(chunk_level_history_t* hist,
   atomic_init(&hist->write_seq, 0ULL);
   atomic_init(&hist->write_pos, 0);
   atomic_init(&hist->total_written, 0);
-  memset(hist->timestamps_ms, 0, sizeof(hist->timestamps_ms));
+  memset(hist->timestamps_ns, 0, sizeof(hist->timestamps_ns));
   if (channels > 0) {
     size_t total = channels * CHUNK_LEVEL_HISTORY_CAPACITY;
     hist->data = (float*)cdsp_aligned_alloc(64, total * sizeof(float));
@@ -59,14 +59,16 @@ static inline void chunk_level_history_free(chunk_level_history_t* hist) {
   hist->channels = 0;
 }
 
-static inline void chunk_level_history_get_max_since(
-    const chunk_level_history_t* hist, uint64_t since_ms, float* out_levels,
+static inline bool chunk_level_history_get_max_since_ns(
+    const chunk_level_history_t* hist, uint64_t since_ns, float* out_levels,
     size_t count) {
-  if (!out_levels || count == 0) return;
-  for (size_t c = 0; c < count; c++) {
-    out_levels[c] = -INFINITY;
+  if (out_levels && count > 0) {
+    for (size_t c = 0; c < count; c++) {
+      out_levels[c] = -INFINITY;
+    }
   }
-  if (!hist || !hist->data || hist->channels == 0) return;
+  if (!out_levels || count == 0) return false;
+  if (!hist || !hist->data || hist->channels == 0) return false;
   size_t ch_limit = count < hist->channels ? count : hist->channels;
 
   for (int retry = 0; retry < 10; retry++) {
@@ -76,7 +78,7 @@ static inline void chunk_level_history_get_max_since(
 
     size_t total =
         atomic_load_explicit(&hist->total_written, memory_order_acquire);
-    if (total == 0) return;
+    if (total == 0) return false;
     size_t available = total < CHUNK_LEVEL_HISTORY_CAPACITY
                            ? total
                            : CHUNK_LEVEL_HISTORY_CAPACITY;
@@ -87,33 +89,53 @@ static inline void chunk_level_history_get_max_since(
     for (size_t c = 0; c < ch_limit; c++) {
       out_levels[c] = -INFINITY;
     }
+    size_t count_samples = 0;
 
     for (size_t i = 0; i < available; i++) {
-      uint64_t ts = hist->timestamps_ms[idx];
-      if (ts <= since_ms) break;
+      uint64_t ts = hist->timestamps_ns[idx];
+      if (ts <= since_ns) break;
       for (size_t ch = 0; ch < ch_limit; ch++) {
         float val = hist->data[(ch * CHUNK_LEVEL_HISTORY_CAPACITY) + idx];
         if (val > out_levels[ch]) {
           out_levels[ch] = val;
         }
       }
+      count_samples++;
       idx = (idx + mask) & mask;
     }
 
     uint64_t seq_after =
         atomic_load_explicit(&hist->write_seq, memory_order_acquire);
-    if (seq_after == seq_before) return;
+    if (seq_after == seq_before) {
+      if (count_samples == 0) {
+        for (size_t c = 0; c < count; c++) {
+          out_levels[c] = -INFINITY;
+        }
+        return false;
+      }
+      for (size_t c = ch_limit; c < count; c++) {
+        out_levels[c] = -INFINITY;
+      }
+      return true;
+    }
   }
+
+  for (size_t ch = 0; ch < count; ch++) {
+    out_levels[ch] = -INFINITY;
+  }
+  return false;
 }
 
-static inline void chunk_level_history_get_rms_since(
-    const chunk_level_history_t* hist, uint64_t since_ms, float* out_levels,
+static inline bool chunk_level_history_get_rms_since_ns(
+    const chunk_level_history_t* hist, uint64_t since_ns, float* out_levels,
     size_t count) {
-  if (!out_levels || count == 0) return;
-  for (size_t c = 0; c < count; c++) {
-    out_levels[c] = -INFINITY;
+  if (out_levels && count > 0) {
+    for (size_t c = 0; c < count; c++) {
+      out_levels[c] = -INFINITY;
+    }
   }
-  if (!hist || !hist->data || hist->channels == 0) return;
+  if (!out_levels || count == 0) return false;
+  if (!hist || !hist->data || hist->channels == 0) return false;
   size_t ch_limit = count < hist->channels ? count : hist->channels;
 
   for (int retry = 0; retry < 10; retry++) {
@@ -123,7 +145,7 @@ static inline void chunk_level_history_get_rms_since(
 
     size_t total =
         atomic_load_explicit(&hist->total_written, memory_order_acquire);
-    if (total == 0) return;
+    if (total == 0) return false;
     size_t available = total < CHUNK_LEVEL_HISTORY_CAPACITY
                            ? total
                            : CHUNK_LEVEL_HISTORY_CAPACITY;
@@ -137,8 +159,8 @@ static inline void chunk_level_history_get_rms_since(
     size_t count_samples = 0;
 
     for (size_t i = 0; i < available; i++) {
-      uint64_t ts = hist->timestamps_ms[idx];
-      if (ts <= since_ms) break;
+      uint64_t ts = hist->timestamps_ns[idx];
+      if (ts <= since_ns) break;
       for (size_t ch = 0; ch < ch_limit; ch++) {
         float db = hist->data[(ch * CHUNK_LEVEL_HISTORY_CAPACITY) + idx];
         float amp = float_from_db(db);
@@ -156,18 +178,23 @@ static inline void chunk_level_history_get_rms_since(
           float mean_sq = out_levels[ch] / (float)count_samples;
           out_levels[ch] = 10.0f * log10f(mean_sq);
         }
+        for (size_t c = ch_limit; c < count; c++) {
+          out_levels[c] = -INFINITY;
+        }
+        return true;
       } else {
         for (size_t ch = 0; ch < count; ch++) {
           out_levels[ch] = -INFINITY;
         }
+        return false;
       }
-      return;
     }
   }
 
   for (size_t ch = 0; ch < count; ch++) {
     out_levels[ch] = -INFINITY;
   }
+  return false;
 }
 
 struct processing_parameters {
@@ -324,8 +351,7 @@ processing_parameters_t* processing_parameters_create(
     params->capture_global_peaks =
         (atomic_float_t*)calloc(capture_channels, sizeof(atomic_float_t));
     if (!params->capture_signal_peak || !params->capture_signal_rms ||
-        !params->capture_global_peaks ||
-        !params->capture_peak_history.data ||
+        !params->capture_global_peaks || !params->capture_peak_history.data ||
         !params->capture_rms_history.data) {
       processing_parameters_free(params);
       return NULL;
@@ -345,8 +371,7 @@ processing_parameters_t* processing_parameters_create(
     params->playback_global_peaks =
         (atomic_float_t*)calloc(playback_channels, sizeof(atomic_float_t));
     if (!params->playback_signal_peak || !params->playback_signal_rms ||
-        !params->playback_global_peaks ||
-        !params->playback_peak_history.data ||
+        !params->playback_global_peaks || !params->playback_peak_history.data ||
         !params->playback_rms_history.data) {
       processing_parameters_free(params);
       return NULL;
@@ -571,7 +596,7 @@ static float update_levels_internal(const audio_chunk_t* chunk,
     return -INFINITY;
   }
 
-  uint64_t now_ms = cdsp_time_now_ns() / 1000000ULL;
+  uint64_t now_ns = cdsp_time_now_ns();
   size_t peak_pos = (size_t)-1;
   size_t rms_pos = (size_t)-1;
   uint64_t peak_seq = 0;
@@ -584,7 +609,7 @@ static float update_levels_internal(const audio_chunk_t* chunk,
                           memory_order_release);
     peak_pos =
         atomic_load_explicit(&peak_hist->write_pos, memory_order_relaxed);
-    peak_hist->timestamps_ms[peak_pos] = now_ms;
+    peak_hist->timestamps_ns[peak_pos] = now_ns;
   }
 
   if (rms_hist && rms_hist->data && rms_hist->channels > 0) {
@@ -592,7 +617,7 @@ static float update_levels_internal(const audio_chunk_t* chunk,
     atomic_store_explicit(&rms_hist->write_seq, rms_seq + 1,
                           memory_order_release);
     rms_pos = atomic_load_explicit(&rms_hist->write_pos, memory_order_relaxed);
-    rms_hist->timestamps_ms[rms_pos] = now_ms;
+    rms_hist->timestamps_ns[rms_pos] = now_ns;
   }
 
   float max_peak = -INFINITY;
@@ -678,56 +703,67 @@ float processing_parameters_update_playback_levels(
       params->playback_global_peaks, params->playback_channels);
 }
 
-void processing_parameters_get_capture_signal_peak_since(
-    const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
-    size_t count) {
-  if (!params) {
-    if (out_levels) {
-      for (size_t i = 0; i < count; i++) out_levels[i] = -INFINITY;
-    }
-    return;
+static inline uint64_t ms_to_ns_clamped(uint64_t ms) {
+  if (ms > UINT64_MAX / 1000000ULL) {
+    return UINT64_MAX;
   }
-  chunk_level_history_get_max_since(&params->capture_peak_history, since_ms,
-                                    out_levels, count);
+  return ms * 1000000ULL;
 }
 
-void processing_parameters_get_capture_signal_rms_since(
+bool processing_parameters_get_capture_signal_peak_since(
     const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
     size_t count) {
   if (!params) {
     if (out_levels) {
       for (size_t i = 0; i < count; i++) out_levels[i] = -INFINITY;
     }
-    return;
+    return false;
   }
-  chunk_level_history_get_rms_since(&params->capture_rms_history, since_ms,
-                                    out_levels, count);
+  return chunk_level_history_get_max_since_ns(&params->capture_peak_history,
+                                              ms_to_ns_clamped(since_ms),
+                                              out_levels, count);
 }
 
-void processing_parameters_get_playback_signal_peak_since(
+bool processing_parameters_get_capture_signal_rms_since(
     const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
     size_t count) {
   if (!params) {
     if (out_levels) {
       for (size_t i = 0; i < count; i++) out_levels[i] = -INFINITY;
     }
-    return;
+    return false;
   }
-  chunk_level_history_get_max_since(&params->playback_peak_history, since_ms,
-                                    out_levels, count);
+  return chunk_level_history_get_rms_since_ns(&params->capture_rms_history,
+                                              ms_to_ns_clamped(since_ms),
+                                              out_levels, count);
 }
 
-void processing_parameters_get_playback_signal_rms_since(
+bool processing_parameters_get_playback_signal_peak_since(
     const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
     size_t count) {
   if (!params) {
     if (out_levels) {
       for (size_t i = 0; i < count; i++) out_levels[i] = -INFINITY;
     }
-    return;
+    return false;
   }
-  chunk_level_history_get_rms_since(&params->playback_rms_history, since_ms,
-                                    out_levels, count);
+  return chunk_level_history_get_max_since_ns(&params->playback_peak_history,
+                                              ms_to_ns_clamped(since_ms),
+                                              out_levels, count);
+}
+
+bool processing_parameters_get_playback_signal_rms_since(
+    const processing_parameters_t* params, uint64_t since_ms, float* out_levels,
+    size_t count) {
+  if (!params) {
+    if (out_levels) {
+      for (size_t i = 0; i < count; i++) out_levels[i] = -INFINITY;
+    }
+    return false;
+  }
+  return chunk_level_history_get_rms_since_ns(&params->playback_rms_history,
+                                              ms_to_ns_clamped(since_ms),
+                                              out_levels, count);
 }
 
 uint64_t processing_parameters_get_chunk_generation(
@@ -778,8 +814,7 @@ void processing_parameters_reset_playback_global_peaks(
   }
 }
 
-void processing_parameters_reset_global_peaks(
-    processing_parameters_t* params) {
+void processing_parameters_reset_global_peaks(processing_parameters_t* params) {
   processing_parameters_reset_capture_global_peaks(params);
   processing_parameters_reset_playback_global_peaks(params);
 }

@@ -888,6 +888,7 @@ bool devices_config_equal(const devices_config_t* a,
 static bool pipeline_step_equal(const pipeline_step_config_t* a,
                                 const pipeline_step_config_t* b) {
   if (a->type != b->type) return false;
+  if (!safe_streq(a->description, b->description)) return false;
   if (a->channel != b->channel) return false;
   if (a->has_channel != b->has_channel) return false;
   if (a->has_channels != b->has_channels) return false;
@@ -984,19 +985,30 @@ config_change_type_t config_diff(const dsp_config_t* current,
     if (!changed_filters) goto error_cleanup;
   }
   for (size_t i = 0; i < new_conf->filters_count; i++) {
-    filter_config_t* old_f =
-        dsp_config_get_filter(current, new_conf->filters[i].name);
-    if (!old_f) {
+    const named_filter_config_t* new_nf = &new_conf->filters[i];
+    const named_filter_config_t* old_nf = NULL;
+    for (size_t j = 0; j < current->filters_count; j++) {
+      if (strcmp(current->filters[j].name, new_nf->name) == 0) {
+        old_nf = &current->filters[j];
+        break;
+      }
+    }
+    if (!old_nf) {
       // The pipeline didn't change, any added filter isn't included and can be
       // skipped
       continue;
     }
-    if (old_f->type != new_conf->filters[i].filter.type) {
+    if (old_nf->filter.type != new_nf->filter.type) {
       out_change->type = CONFIG_CHANGE_PIPELINE;
       goto cleanup_pipeline;
     }
-    if (!filter_config_equal(old_f, &new_conf->filters[i].filter)) {
-      char* name_copy = strdup(new_conf->filters[i].name);
+    if (!filter_config_equal(&old_nf->filter, &new_nf->filter) ||
+        !safe_streq(old_nf->description, new_nf->description)) {
+      if (old_nf->filter.type == FILTER_TYPE_LOOKAHEAD_LIMITER) {
+        out_change->type = CONFIG_CHANGE_PIPELINE;
+        goto cleanup_pipeline;
+      }
+      char* name_copy = strdup(new_nf->name);
       if (!name_copy) goto error_cleanup;
       changed_filters[cf_count++] = name_copy;
     }
@@ -1007,28 +1019,44 @@ config_change_type_t config_diff(const dsp_config_t* current,
     if (!changed_processors) goto error_cleanup;
   }
   for (size_t i = 0; i < new_conf->processors_count; i++) {
-    processor_config_t* old_p =
-        dsp_config_get_processor(current, new_conf->processors[i].name);
-    if (!old_p) {
+    const named_processor_config_t* new_np = &new_conf->processors[i];
+    const named_processor_config_t* old_np = NULL;
+    for (size_t j = 0; j < current->processors_count; j++) {
+      if (strcmp(current->processors[j].name, new_np->name) == 0) {
+        old_np = &current->processors[j];
+        break;
+      }
+    }
+    if (!old_np) {
       // The pipeline didn't change, any added processor isn't included and can
       // be skipped
       continue;
     }
-    if (old_p->type != new_conf->processors[i].processor.type) {
+    if (old_np->processor.type != new_np->processor.type) {
       out_change->type = CONFIG_CHANGE_PIPELINE;
       goto cleanup_pipeline;
     }
-    if (!processor_config_equal(old_p, &new_conf->processors[i].processor)) {
-      char* name_copy = strdup(new_conf->processors[i].name);
+    if (!processor_config_equal(&old_np->processor, &new_np->processor) ||
+        !safe_streq(old_np->description, new_np->description)) {
+      char* name_copy = strdup(new_np->name);
       if (!name_copy) goto error_cleanup;
       changed_processors[cp_count++] = name_copy;
     }
   }
 
-  // If no parameters changed, we have no changes at all.
+  // If no parameters changed, check top-level title / description.
   if (cf_count == 0 && cp_count == 0) {
     if (changed_filters) free(changed_filters);
     if (changed_processors) free(changed_processors);
+    if (!safe_streq(current->title, new_conf->title) ||
+        !safe_streq(current->description, new_conf->description)) {
+      out_change->type = CONFIG_CHANGE_FILTER_PARAMETERS;
+      out_change->filters = NULL;
+      out_change->filters_count = 0;
+      out_change->processors = NULL;
+      out_change->processors_count = 0;
+      return CONFIG_CHANGE_FILTER_PARAMETERS;
+    }
     out_change->type = CONFIG_CHANGE_NONE;
     return CONFIG_CHANGE_NONE;
   }

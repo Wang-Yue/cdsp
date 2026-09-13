@@ -97,7 +97,7 @@ static bool spectrum_analyzer_reconfigure_fft(spectrum_analyzer_t* analyzer,
     return false;
   }
 
-  // Compute symmetric Hann window matching upstream CamillaDSP
+  // Compute symmetric Hann window (accumulated in float for performance)
   // (src/spectrum.rs:152-156)
   float sum = 0.0f;
   if (new_n > 1) {
@@ -202,7 +202,8 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
     return SPECTRUM_ERROR_INVALID_PARAM;
   }
 
-  // Grow output and plan buffers dynamically if requested n_bins exceeds capacity
+  // Grow output and plan buffers dynamically if requested n_bins exceeds
+  // capacity
   if (n_bins > analyzer->out_capacity) {
     size_t new_cap = n_bins;
     float* new_freqs =
@@ -292,11 +293,13 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
       double center_f = min_f * pow(log_ratio, (double)i);
       analyzer->plan.frequencies[i] = (float)center_f;
 
-      // Define frequency boundaries for this bin (matching upstream spectrum.rs)
+      // Define frequency boundaries for this bin (matching upstream
+      // spectrum.rs)
       double low_f = (i == 0) ? min_f : (center_f / sqrt_log_ratio);
       double high_f = (i == n_bins - 1) ? max_f : (center_f * sqrt_log_ratio);
 
-      // Convert frequency boundaries to FFT bin indices with safe bounds checking
+      // Convert frequency boundaries to FFT bin indices with safe bounds
+      // checking
       double low_bin = floor(low_f / freq_res);
       double high_bin = ceil(high_f / freq_res);
       double nearest_bin = round(center_f / freq_res);
@@ -304,14 +307,13 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
       int low_k = low_bin < 0.0
                       ? 0
                       : (low_bin > (double)half_n ? (int)half_n : (int)low_bin);
-      int high_k =
-          high_bin < 0.0
+      int high_k = high_bin < 0.0 ? 0
+                                  : (high_bin > (double)half_n ? (int)half_n
+                                                               : (int)high_bin);
+      int nearest_k =
+          nearest_bin < 0.0
               ? 0
-              : (high_bin > (double)half_n ? (int)half_n : (int)high_bin);
-      int nearest_k = nearest_bin < 0.0 ? 0
-                                        : (nearest_bin > (double)half_n
-                                               ? (int)half_n
-                                               : (int)nearest_bin);
+              : (nearest_bin > (double)half_n ? (int)half_n : (int)nearest_bin);
 
       analyzer->plan.ranges[i].low_k = low_k;
       analyzer->plan.ranges[i].high_k = high_k;

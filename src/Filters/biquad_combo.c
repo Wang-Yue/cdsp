@@ -26,6 +26,8 @@ typedef struct biquad_combo_filter biquad_combo_filter_t;
 #define M_PI 3.14159265358979323846
 #endif
 
+#define BIQUAD_COMBO_MAX_ORDER 128
+
 // MARK: - Butterworth & Linkwitz-Riley helper calculations
 /**
  * @brief Computes Q values for a Butterworth filter of a given order.
@@ -42,13 +44,14 @@ typedef struct biquad_combo_filter biquad_combo_filter_t;
  */
 size_t biquad_combo_butterworth_q(int order, double* out_q, size_t max_q) {
   if (order < 1 || !out_q || max_q == 0) return 0;
+  size_t uorder = (size_t)order;
   size_t count = 0;
-  for (int k = 0; k < order / 2; k++) {
+  for (size_t k = 0; k < uorder / 2; k++) {
     if (count >= max_q) break;
-    double angle = M_PI / (double)order * ((double)k + 0.5);
+    double angle = M_PI / (double)uorder * ((double)k + 0.5);
     out_q[count++] = 1.0 / (2.0 * sin(angle));
   }
-  if (order % 2 != 0 && count < max_q) {
+  if (uorder % 2 != 0 && count < max_q) {
     out_q[count++] = -1.0;
   }
   return count;
@@ -158,6 +161,12 @@ static int biquad_combo_config_validate(const filter_config_t* config,
                          "Butterworth order must be larger than zero");
         return -1;
       }
+      if (params->order > BIQUAD_COMBO_MAX_ORDER) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Butterworth order must be <= %d",
+                         BIQUAD_COMBO_MAX_ORDER);
+        return -1;
+      }
       break;
     case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
     case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS:
@@ -173,9 +182,13 @@ static int biquad_combo_config_validate(const filter_config_t* config,
       }
       if (!params->has_order || params->order <= 0 ||
           (params->order % 2) != 0) {
-        config_error_set(
-            err, CONFIG_ERR_INVALID_FILTER,
-            "LR order must be an even non-zero number");
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "LR order must be an even non-zero number");
+        return -1;
+      }
+      if (params->order > BIQUAD_COMBO_MAX_ORDER) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "LR order must be <= %d", BIQUAD_COMBO_MAX_ORDER);
         return -1;
       }
       break;
@@ -186,13 +199,11 @@ static int biquad_combo_config_validate(const filter_config_t* config,
         return -1;
       }
       if (params->gain <= -100.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Gain must be > -100");
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Gain must be > -100");
         return -1;
       }
       if (params->gain >= 100.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Gain must be < 100");
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Gain must be < 100");
         return -1;
       }
       break;
@@ -240,9 +251,8 @@ static int biquad_combo_config_validate(const filter_config_t* config,
       double f_min = params->has_freq_min ? params->freq_min : 20.0;
       double f_max = params->has_freq_max ? params->freq_max : 20000.0;
       if (f_min <= 0.0 || f_max <= 0.0) {
-        config_error_set(
-            err, CONFIG_ERR_INVALID_FILTER,
-            "Min and max requencies must be > 0");
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Min and max requencies must be > 0");
         return -1;
       }
       if (f_min >= nyquist || f_max >= nyquist) {
@@ -251,17 +261,15 @@ static int biquad_combo_config_validate(const filter_config_t* config,
         return -1;
       }
       if (f_min >= f_max) {
-        config_error_set(
-            err, CONFIG_ERR_INVALID_FILTER,
-            "Min frequency must be lower than max frequency");
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Min frequency must be lower than max frequency");
         return -1;
       }
       for (size_t i = 0; i < params->gains_count; i++) {
         double g = params->gains[i];
         if (g < -40.0 || g > 40.0) {
-          config_error_set(
-              err, CONFIG_ERR_INVALID_FILTER,
-              "Equalizer gains must be withing +- 40 dB");
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                           "Equalizer gains must be withing +- 40 dB");
           return -1;
         }
       }
@@ -333,7 +341,12 @@ static void* biquad_combo_filter_create(const char* name,
              params->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS ||
              params->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS ||
              params->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS) {
-    max_secs = (params->order + 1) / 2 + 1;
+    if (params->order > 0) {
+      size_t ord = (size_t)params->order;
+      max_secs = (ord + 1) / 2 + 1;
+    } else {
+      max_secs = 1;
+    }
   } else if (params->type == BIQUAD_COMBO_TYPE_N_POINT_PEQ) {
     max_secs = params->bands_count > 0 ? params->bands_count : 1;
   } else if (params->type == BIQUAD_COMBO_TYPE_TILT) {
@@ -352,7 +365,12 @@ static void* biquad_combo_filter_create(const char* name,
     case BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS:
     case BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS: {
       bool hp = (params->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS);
-      size_t q_capacity = (size_t)params->order + 2;
+      if (params->order <= 0) {
+        biquad_combo_filter_free(filter);
+        return NULL;
+      }
+      size_t ord = (size_t)params->order;
+      size_t q_capacity = ord + 2;
       double* q_vals = (double*)malloc(q_capacity * sizeof(double));
       if (!q_vals) {
         config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate memory");
@@ -379,7 +397,12 @@ static void* biquad_combo_filter_create(const char* name,
     case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
     case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS: {
       bool hp = (params->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS);
-      size_t q_capacity = (size_t)params->order + 2;
+      if (params->order <= 0) {
+        biquad_combo_filter_free(filter);
+        return NULL;
+      }
+      size_t ord = (size_t)params->order;
+      size_t q_capacity = ord + 2;
       double* q_vals = (double*)malloc(q_capacity * sizeof(double));
       if (!q_vals) {
         config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate memory");
@@ -402,12 +425,17 @@ static void* biquad_combo_filter_create(const char* name,
     // MARK: - Tilt EQ
     case BIQUAD_COMBO_TYPE_TILT: {
       double gain = params->has_gain ? params->gain : 0.0;
-      filter->sections[filter->num_sections++] = create_section(
-          "low_shelf", BIQUAD_TYPE_LOWSHELF, 110.0, 0.35, -gain / 2.0, 0.0, 0.0,
-          STEEPNESS_TYPE_Q, sample_rate, err);
-      filter->sections[filter->num_sections++] = create_section(
-          "high_shelf", BIQUAD_TYPE_HIGHSHELF, 3500.0, 0.35, gain / 2.0, 0.0,
-          0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+      double nyquist = (double)sample_rate / 2.0;
+      if (110.0 < nyquist) {
+        filter->sections[filter->num_sections++] = create_section(
+            "low_shelf", BIQUAD_TYPE_LOWSHELF, 110.0, 0.35, -gain / 2.0, 0.0,
+            0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+      }
+      if (3500.0 < nyquist) {
+        filter->sections[filter->num_sections++] = create_section(
+            "high_shelf", BIQUAD_TYPE_HIGHSHELF, 3500.0, 0.35, gain / 2.0, 0.0,
+            0.0, STEEPNESS_TYPE_Q, sample_rate, err);
+      }
       break;
     }
     // MARK: - Graphic EQ

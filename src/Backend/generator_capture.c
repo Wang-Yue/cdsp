@@ -331,7 +331,7 @@ static capture_backend_t* generator_capture_create(
 
   backend->ctx = capture;
   backend->vtable = &g_generator_capture_vtable;
-  backend->is_realtime = true;
+  backend->is_realtime = false;
   return backend;
 }
 

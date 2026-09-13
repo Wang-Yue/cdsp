@@ -87,11 +87,7 @@ static void* clipper_filter_create(const char* name,
   }
   double limit_db = params ? params->clip_limit : 0.0;
   double limit = double_from_db(limit_db);
-  if (limit <= 0.0 || !isfinite(limit)) {
-    clipper_filter_free(filter);
-    return NULL;
-  }
-  filter->clip_limit = limit;
+  filter->clip_limit = (limit > 0.0 && isfinite(limit)) ? limit : 0.0;
   filter->soft_clip = params ? params->soft_clip : false;
   return filter;
 }
@@ -107,6 +103,10 @@ static void clipper_filter_process(void* instance, mutable_waveform_t waveform,
                                    size_t count) {
   clipper_filter_t* filter = (clipper_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
+  if (filter->clip_limit <= 0.0) {
+    dsp_ops_clear(waveform, count);
+    return;
+  }
   if (filter->soft_clip) {
     double inv_limit = 1.0 / filter->clip_limit;
     for (size_t i = 0; i < count; i++) {

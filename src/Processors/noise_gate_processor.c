@@ -81,26 +81,14 @@ static int noise_gate_config_validate(const processor_config_t* config,
                      "NoiseGate: channels must be > 0, got 0");
     return -1;
   }
-  if (p->attack <= 0.0 || !isfinite(p->attack)) {
+  if (p->attack <= 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "NoiseGate: attack must be > 0, got %g", p->attack);
     return -1;
   }
-  if (p->release <= 0.0 || !isfinite(p->release)) {
+  if (p->release <= 0.0) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "NoiseGate: release must be > 0, got %g", p->release);
-    return -1;
-  }
-  if (!isfinite(p->threshold)) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "NoiseGate: threshold must be finite, got %g",
-                     p->threshold);
-    return -1;
-  }
-  if (!isfinite(p->attenuation)) {
-    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "NoiseGate: attenuation must be finite, got %g",
-                     p->attenuation);
     return -1;
   }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {

@@ -6,8 +6,10 @@
  * @brief Internal utility helpers shared across config sub-parsers.
  */
 
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -41,7 +43,7 @@ static inline bool parse_json_str(const cJSON* obj, const char* key, char* dest,
   if (cJSON_IsString(item) && item->valuestring) {
     size_t len = strlen(item->valuestring);
     if (len >= dest_sz) {
-      len = dest_sz - 1;
+      return false;
     }
     memcpy(dest, item->valuestring, len);
     dest[len] = '\0';
@@ -124,21 +126,82 @@ int parse_size_t_array_strict(const cJSON* arr, const char* field_name,
  * @param err Optional error sink.
  * @return 0 if absent or valid, -1 if present and invalid.
  */
+static inline int parse_json_str_strict(const cJSON* obj, const char* key,
+                                        const char* section_name, char* dest,
+                                        size_t dest_sz, bool* present,
+                                        config_error_t* err) {
+  if (present) *present = false;
+  const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item || cJSON_IsNull(item)) return 0;
+  if (!cJSON_IsString(item) || !item->valuestring) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a string",
+                     key, section_name ? section_name : "object");
+    return -1;
+  }
+  size_t len = strlen(item->valuestring);
+  if (dest_sz > 0 && len >= dest_sz) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "string '%s' in %s exceeds maximum length of %zu", key,
+                     section_name ? section_name : "object", dest_sz - 1);
+    return -1;
+  }
+  if (dest && dest_sz > 0) {
+    memcpy(dest, item->valuestring, len + 1);
+  }
+  if (present) *present = true;
+  return 0;
+}
+
 static inline int parse_json_size_t_strict(const cJSON* obj, const char* key,
                                            const char* section_name,
                                            size_t* dest, bool* present,
                                            config_error_t* err) {
   if (present) *present = false;
   const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
-  if (!item) return 0;
+  if (!item || cJSON_IsNull(item)) return 0;
   if (!cJSON_IsNumber(item) || item->valuedouble < 0.0 ||
-      item->valuedouble != (double)item->valueint) {
+      floor(item->valuedouble) != item->valuedouble ||
+      item->valuedouble > (double)SIZE_MAX) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "field '%s' in %s must be a non-negative integer", key,
                      section_name ? section_name : "object");
     return -1;
   }
-  if (dest) *dest = (size_t)item->valueint;
+  if (dest) *dest = (size_t)item->valuedouble;
+  if (present) *present = true;
+  return 0;
+}
+
+static inline int parse_json_bool_strict(const cJSON* obj, const char* key,
+                                         const char* section_name, bool* dest,
+                                         bool* present, config_error_t* err) {
+  if (present) *present = false;
+  const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item || cJSON_IsNull(item)) return 0;
+  if (!cJSON_IsBool(item)) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "field '%s' in %s must be a boolean", key,
+                     section_name ? section_name : "object");
+    return -1;
+  }
+  if (dest) *dest = cJSON_IsTrue(item);
+  if (present) *present = true;
+  return 0;
+}
+
+static inline int parse_json_double_strict(const cJSON* obj, const char* key,
+                                           const char* section_name,
+                                           double* dest, bool* present,
+                                           config_error_t* err) {
+  if (present) *present = false;
+  const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item || cJSON_IsNull(item)) return 0;
+  if (!cJSON_IsNumber(item)) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a number",
+                     key, section_name ? section_name : "object");
+    return -1;
+  }
+  if (dest) *dest = item->valuedouble;
   if (present) *present = true;
   return 0;
 }

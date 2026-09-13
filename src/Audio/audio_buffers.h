@@ -95,4 +95,11 @@ size_t audio_buffers_get_capacity(const audio_buffers_t* buffers);
 mutable_waveform_t audio_buffers_get_channel(const audio_buffers_t* buffers,
                                              size_t ch);
 
+/**
+ * @brief Zero all sample storage across all channels.
+ *
+ * @param buffers Pointer to the audio_buffers_t.
+ */
+void audio_buffers_zero(audio_buffers_t* buffers);
+
 #endif  // CLIB_AUDIO_AUDIO_BUFFERS_H

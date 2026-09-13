@@ -208,10 +208,10 @@ static cJSON* parse_scalar_val(const char* str) {
     cJSON* parsed = cJSON_Parse(str);
     if (parsed) return parsed;
   }
-  if (strcasecmp(str, "true") == 0 || strcasecmp(str, "yes") == 0) {
+  if (strcasecmp(str, "true") == 0) {
     return cJSON_CreateTrue();
   }
-  if (strcasecmp(str, "false") == 0 || strcasecmp(str, "no") == 0) {
+  if (strcasecmp(str, "false") == 0) {
     return cJSON_CreateFalse();
   }
 
@@ -333,6 +333,24 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
     content = trim_str(content);
     if (*content == '\0') continue;
 
+    if (strcmp(content, "---") == 0) {
+      if (depth == 0) continue;
+      if (out_err)
+        *out_err =
+            strdup("YAML syntax error: multiple documents not supported");
+      if (root) cJSON_Delete(root);
+      return NULL;
+    }
+
+    if (content[0] == '&' || content[0] == '*') {
+      if (out_err)
+        *out_err = strdup(
+            "Unsupported YAML construct: anchors and aliases (&/*) are not "
+            "supported");
+      if (root) cJSON_Delete(root);
+      return NULL;
+    }
+
     bool is_list_item =
         (content[0] == '-' && (content[1] == ' ' || content[1] == '\0'));
 
@@ -406,6 +424,13 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
             key++;
           }
           char* val = trim_str(colon + 1);
+          if (*val == '|' || *val == '>') {
+            if (out_err)
+              *out_err =
+                  strdup("Unsupported YAML construct: block scalar (|/>)");
+            if (root) cJSON_Delete(root);
+            return NULL;
+          }
           if (*val == '\0') {
             cJSON* child = cJSON_CreateObject();
             CHECK_OOM(child);
@@ -435,6 +460,23 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
           key++;
         }
         char* val = trim_str(colon + 1);
+        if (*val == '|' || *val == '>') {
+          if (out_err)
+            *out_err = strdup("Unsupported YAML construct: block scalar (|/>)");
+          if (root) cJSON_Delete(root);
+          return NULL;
+        }
+
+        if (cJSON_GetObjectItemCaseSensitive(top->node, key) != NULL) {
+          if (out_err) {
+            char err_buf[256];
+            snprintf(err_buf, sizeof(err_buf),
+                     "Duplicate YAML key '%s' in mapping", key);
+            *out_err = strdup(err_buf);
+          }
+          if (root) cJSON_Delete(root);
+          return NULL;
+        }
 
         if (*val == '\0') {
           cJSON* placeholder = cJSON_CreateObject();
@@ -446,6 +488,15 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
           CHECK_OOM(scalar);
           cJSON_AddItemToObject(top->node, key, scalar);
         }
+      } else {
+        if (out_err) {
+          char err_buf[256];
+          snprintf(err_buf, sizeof(err_buf),
+                   "YAML syntax error: unparsed line '%s'", content);
+          *out_err = strdup(err_buf);
+        }
+        if (root) cJSON_Delete(root);
+        return NULL;
       }
     }
   }

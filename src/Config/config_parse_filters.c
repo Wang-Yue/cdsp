@@ -33,6 +33,12 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
   cJSON_ArrayForEach(filter_child, filters_obj) {
     named_filter_config_t* nf = &config->filters[f];
     const char* f_name = filter_child->string ? filter_child->string : "";
+    if (strlen(f_name) >= sizeof(nf->name)) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Filter name '%s' exceeds maximum length of %zu", f_name,
+                       sizeof(nf->name) - 1);
+      return -1;
+    }
     strncpy(nf->name, f_name, sizeof(nf->name) - 1);
     nf->name[sizeof(nf->name) - 1] = '\0';
 
@@ -46,6 +52,12 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                                       "parameters", NULL};
     if (validate_unknown_fields(filter_child, allowed_filter_keys,
                                 "filter definition", err) != 0) {
+      return -1;
+    }
+
+    if (parse_json_str_strict(filter_child, "description", "filter definition",
+                              nf->description, sizeof(nf->description), NULL,
+                              err) != 0) {
       return -1;
     }
 
@@ -112,8 +124,14 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           } else {
             gp->scale = GAIN_SCALE_DB;
           }
-          parse_json_bool(params, "inverted", &gp->inverted);
-          parse_json_bool(params, "mute", &gp->mute);
+          if (parse_json_bool_strict(params, "inverted", "Gain filter",
+                                     &gp->inverted, NULL, err) != 0) {
+            return -1;
+          }
+          if (parse_json_bool_strict(params, "mute", "Gain filter", &gp->mute,
+                                     NULL, err) != 0) {
+            return -1;
+          }
           break;
         }
         case FILTER_TYPE_VOLUME: {
@@ -235,16 +253,16 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               return -1;
           } else if (bp->type == BIQUAD_TYPE_HIGHSHELF_FO ||
                      bp->type == BIQUAD_TYPE_LOWSHELF_FO) {
-            static const char* const allowed_shelf_fo[] = {
-                "type", "freq", "gain", NULL};
+            static const char* const allowed_shelf_fo[] = {"type", "freq",
+                                                           "gain", NULL};
             if (validate_unknown_fields(params, allowed_shelf_fo,
                                         "Biquad Shelf FO filter parameters",
                                         err) != 0)
               return -1;
           } else if (bp->type == BIQUAD_TYPE_HIGHPASS ||
                      bp->type == BIQUAD_TYPE_LOWPASS) {
-            static const char* const allowed_pass[] = {
-                "type", "freq", "q", NULL};
+            static const char* const allowed_pass[] = {"type", "freq", "q",
+                                                       NULL};
             if (validate_unknown_fields(params, allowed_pass,
                                         "Biquad Highpass/Lowpass parameters",
                                         err) != 0)
@@ -267,25 +285,22 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
             static const char* const allowed_peaking[] = {
                 "type", "freq", "gain", "q", "bandwidth", NULL};
             if (validate_unknown_fields(params, allowed_peaking,
-                                        "Biquad Peaking parameters",
-                                        err) != 0)
+                                        "Biquad Peaking parameters", err) != 0)
               return -1;
           } else if (bp->type == BIQUAD_TYPE_HIGHSHELF ||
                      bp->type == BIQUAD_TYPE_LOWSHELF) {
-            static const char* const allowed_shelf[] = {
-                "type", "freq", "gain", "q", "slope", NULL};
+            static const char* const allowed_shelf[] = {"type", "freq",  "gain",
+                                                        "q",    "slope", NULL};
             if (validate_unknown_fields(params, allowed_shelf,
-                                        "Biquad Shelf parameters",
-                                        err) != 0)
+                                        "Biquad Shelf parameters", err) != 0)
               return -1;
           } else if (bp->type == BIQUAD_TYPE_ALLPASS ||
                      bp->type == BIQUAD_TYPE_BANDPASS ||
                      bp->type == BIQUAD_TYPE_NOTCH) {
-            static const char* const allowed_width[] = {
-                "type", "freq", "q", "bandwidth", NULL};
+            static const char* const allowed_width[] = {"type", "freq", "q",
+                                                        "bandwidth", NULL};
             if (validate_unknown_fields(params, allowed_width,
-                                        "Biquad filter parameters",
-                                        err) != 0)
+                                        "Biquad filter parameters", err) != 0)
               return -1;
           }
           {
@@ -477,19 +492,20 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               return -1;
           }
           if (cp->type == CONV_TYPE_RAW) {
-            static const char* const allowed_raw[] = {
-                "type", "filename", "format", "skip_bytes_lines",
-                "read_bytes_lines", NULL};
+            static const char* const allowed_raw[] = {"type",
+                                                      "filename",
+                                                      "format",
+                                                      "skip_bytes_lines",
+                                                      "read_bytes_lines",
+                                                      NULL};
             if (validate_unknown_fields(params, allowed_raw,
-                                        "Conv Raw filter parameters",
-                                        err) != 0)
+                                        "Conv Raw filter parameters", err) != 0)
               return -1;
           } else if (cp->type == CONV_TYPE_WAV) {
-            static const char* const allowed_wav[] = {
-                "type", "filename", "channel", NULL};
+            static const char* const allowed_wav[] = {"type", "filename",
+                                                      "channel", NULL};
             if (validate_unknown_fields(params, allowed_wav,
-                                        "Conv Wav filter parameters",
-                                        err) != 0)
+                                        "Conv Wav filter parameters", err) != 0)
               return -1;
           } else if (cp->type == CONV_TYPE_VALUES) {
             static const char* const allowed_val[] = {"type", "values", NULL};
@@ -507,9 +523,15 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           cp->values = parse_double_array(
               cJSON_GetObjectItemCaseSensitive(params, "values"),
               &cp->values_count);
-          parse_json_str(params, "filename", cp->filename,
-                         sizeof(cp->filename));
-          parse_json_str(params, "format", cp->format, sizeof(cp->format));
+          if (parse_json_str_strict(params, "filename", "Conv filter",
+                                    cp->filename, sizeof(cp->filename), NULL,
+                                    err) != 0) {
+            return -1;
+          }
+          if (parse_json_str_strict(params, "format", "Conv filter", cp->format,
+                                    sizeof(cp->format), NULL, err) != 0) {
+            return -1;
+          }
           if (strlen(cp->format) == 0) {
             strncpy(cp->format, "TEXT", sizeof(cp->format) - 1);
           } else if (strcmp(cp->format, "TEXT") != 0 &&
@@ -544,13 +566,13 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                                        "Conv filter", &cval, &cpresent,
                                        err) != 0)
             return -1;
-          if (cpresent) cp->skip_bytes_lines = (int)cval;
+          if (cpresent) cp->skip_bytes_lines = cval;
 
           if (parse_json_size_t_strict(params, "read_bytes_lines",
                                        "Conv filter", &cval, &cpresent,
                                        err) != 0)
             return -1;
-          if (cpresent) cp->read_bytes_lines = (int)cval;
+          if (cpresent) cp->read_bytes_lines = cval;
           break;
         }
         case FILTER_TYPE_BIQUAD_COMBO: {
@@ -582,8 +604,8 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               bcp->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS ||
               bcp->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS ||
               bcp->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS) {
-            static const char* const allowed_crossover[] = {
-                "type", "freq", "order", NULL};
+            static const char* const allowed_crossover[] = {"type", "freq",
+                                                            "order", NULL};
             if (validate_unknown_fields(params, allowed_crossover,
                                         "BiquadCombo filter parameters",
                                         err) != 0)
@@ -603,9 +625,9 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
           } else if (bcp->type == BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER) {
             static const char* const allowed_geq[] = {
                 "type", "gains", "freq_min", "freq_max", NULL};
-            if (validate_unknown_fields(params, allowed_geq,
-                                        "BiquadCombo GraphicEqualizer parameters",
-                                        err) != 0)
+            if (validate_unknown_fields(
+                    params, allowed_geq,
+                    "BiquadCombo GraphicEqualizer parameters", err) != 0)
               return -1;
           }
           {
@@ -809,15 +831,15 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
               &f_conf->parameters.lookahead_limiter;
           parse_json_double(params, "limit", &llp->limit);
           if (!parse_json_double(params, "attack", &llp->attack)) {
-            config_error_set(
-                err, CONFIG_ERR_PARSE,
-                "field 'attack' in LookaheadLimiter filter parameters must be a number");
+            config_error_set(err, CONFIG_ERR_PARSE,
+                             "field 'attack' in LookaheadLimiter filter "
+                             "parameters must be a number");
             return -1;
           }
           if (!parse_json_double(params, "release", &llp->release)) {
-            config_error_set(
-                err, CONFIG_ERR_PARSE,
-                "field 'release' in LookaheadLimiter filter parameters must be a number");
+            config_error_set(err, CONFIG_ERR_PARSE,
+                             "field 'release' in LookaheadLimiter filter "
+                             "parameters must be a number");
             return -1;
           }
           char a_unit_buf[64], r_unit_buf[64];
@@ -900,6 +922,12 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
   cJSON_ArrayForEach(proc_child, processors_obj) {
     named_processor_config_t* np = &config->processors[p];
     const char* p_name = proc_child->string ? proc_child->string : "";
+    if (strlen(p_name) >= sizeof(np->name)) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Processor name '%s' exceeds maximum length of %zu",
+                       p_name, sizeof(np->name) - 1);
+      return -1;
+    }
     strncpy(np->name, p_name, sizeof(np->name) - 1);
     np->name[sizeof(np->name) - 1] = '\0';
 
@@ -913,6 +941,12 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
                                                     "parameters", NULL};
     if (validate_unknown_fields(proc_child, allowed_proc_keys,
                                 "processor definition", err) != 0) {
+      return -1;
+    }
+
+    if (parse_json_str_strict(proc_child, "description", "processor definition",
+                              np->description, sizeof(np->description), NULL,
+                              err) != 0) {
       return -1;
     }
 

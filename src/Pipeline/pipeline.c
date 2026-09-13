@@ -129,6 +129,9 @@ void pipeline_free(pipeline_t* pipeline) {
   if (pipeline->steps) {
     free_exec_steps(pipeline->steps, pipeline->steps_count);
   }
+  if (pipeline->used_capture_channels) {
+    free(pipeline->used_capture_channels);
+  }
   free(pipeline);
 }
 
@@ -147,9 +150,13 @@ static void execute_biquad_step(biquad_step_t* step, audio_chunk_t* chunk,
     step->waveforms[ch] = audio_chunk_get_channel(chunk, ch);
   }
 
+  const bool* used = audio_chunk_get_used_channels(chunk);
   step->live_count = 0;
   for (size_t i = 0; i < step->channels_count; i++) {
     size_t ch = step->channel_of[i];
+    if (used && ch < chunk_channels && !used[ch]) {
+      continue;
+    }
     if (ch < chunk_channels && step->waveforms[ch] != NULL) {
       step->live[step->live_count++] = i;
     }
@@ -165,6 +172,8 @@ static inline void process_filter_chain(const parallel_filter_chain_t* chain,
                                         audio_chunk_t* chunk,
                                         size_t valid_frames) {
   if (chain->channel >= audio_chunk_get_channels(chunk)) return;
+  const bool* used = audio_chunk_get_used_channels(chunk);
+  if (used && !used[chain->channel]) return;
   mutable_waveform_t buf = audio_chunk_get_channel(chunk, chain->channel);
   if (!buf || valid_frames == 0) return;
   for (size_t j = 0; j < chain->filters_count; j++) {
@@ -195,7 +204,9 @@ static void execute_parallel_filters(const pipeline_t* pipeline,
   bool use_multithreading = false;
 #if defined(ENABLE_LIBDISPATCH) || defined(ENABLE_OPENMP)
   if (pipeline->multithreaded && step->chains_count > 1) {
-    use_multithreading = true;
+    if (pipeline->worker_threads != 1) {
+      use_multithreading = true;
+    }
   }
 #endif
   (void)pipeline;
@@ -207,7 +218,19 @@ static void execute_parallel_filters(const pipeline_t* pipeline,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
     dispatch_apply_f(step->chains_count, queue, &dctx, parallel_filter_worker);
 #elif defined(ENABLE_OPENMP)
-#pragma omp parallel for num_threads(step->chains_count)
+    int nthreads = (int)step->chains_count;
+    if (pipeline->worker_threads > 0) {
+      if (nthreads > (int)pipeline->worker_threads) {
+        nthreads = (int)pipeline->worker_threads;
+      }
+    } else {
+      int max_threads = omp_get_max_threads();
+      if (nthreads > max_threads) {
+        nthreads = max_threads;
+      }
+    }
+    if (nthreads < 1) nthreads = 1;
+#pragma omp parallel for num_threads(nthreads)
     for (size_t idx = 0; idx < step->chains_count; idx++) {
       process_filter_chain(&step->chains[idx], current_chunk, valid_frames);
     }
@@ -304,6 +327,10 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
 
   // 2. Copy input into our pre-allocated scratch.
   for (size_t ch = 0; ch < pipeline->expected_in_channels; ch++) {
+    if (pipeline->used_capture_channels &&
+        !pipeline->used_capture_channels[ch]) {
+      continue;
+    }
     waveform_t src = audio_chunk_get_channel(input, ch);
     mutable_waveform_t dst =
         audio_chunk_get_channel(pipeline->capture_scratch, ch);
@@ -318,6 +345,11 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
   // 3. Implicit main volume with smooth ramp.
   volume_filter_prepare_chunk(pipeline->master_volume);
   for (size_t ch = 0; ch < audio_chunk_get_channels(current_chunk); ch++) {
+    if (pipeline->used_capture_channels &&
+        current_chunk == pipeline->capture_scratch &&
+        !pipeline->used_capture_channels[ch]) {
+      continue;
+    }
     mutable_waveform_t buf = audio_chunk_get_channel(current_chunk, ch);
     if (buf && valid_frames > 0) {
       g_volume_vtable.process(pipeline->master_volume, buf, valid_frames);
@@ -381,4 +413,61 @@ size_t pipeline_get_last_error_needed(const pipeline_t* pipeline) {
 
 size_t pipeline_get_last_error_got(const pipeline_t* pipeline) {
   return pipeline ? pipeline->last_error_got : 0;
+}
+
+bool pipeline_is_multithreaded(const pipeline_t* pipeline) {
+  return pipeline ? pipeline->multithreaded : false;
+}
+
+size_t pipeline_get_worker_threads(const pipeline_t* pipeline) {
+  return pipeline ? pipeline->worker_threads : 0;
+}
+
+bool pipeline_compute_used_capture_channels(const dsp_config_t* config,
+                                            bool* out_used,
+                                            size_t channels_count) {
+  if (!config || !out_used || channels_count == 0) return false;
+
+  memset(out_used, 0, channels_count * sizeof(bool));
+
+  const mixer_config_t* first_mixer = NULL;
+  for (size_t i = 0; i < config->pipeline_count; i++) {
+    const pipeline_step_config_t* step = &config->pipeline[i];
+    if (step->bypassed) continue;
+    if (step->type == PIPELINE_STEP_TYPE_MIXER) {
+      first_mixer = dsp_config_get_mixer(config, step->name);
+      if (first_mixer) {
+        break;
+      }
+    }
+  }
+
+  if (first_mixer) {
+    for (size_t m = 0; m < first_mixer->mapping_count; m++) {
+      const mixer_mapping_t* mapping = &first_mixer->mapping[m];
+      if (mapping->mute) continue;
+      for (size_t s = 0; s < mapping->sources_count; s++) {
+        const mixer_source_t* src = &mapping->sources[s];
+        if (src->mute) continue;
+        if (src->channel < channels_count) {
+          out_used[src->channel] = true;
+        }
+      }
+    }
+  } else {
+    for (size_t c = 0; c < channels_count; c++) {
+      out_used[c] = true;
+    }
+  }
+  return true;
+}
+
+const bool* pipeline_get_used_capture_channels(const pipeline_t* pipeline,
+                                               size_t* out_count) {
+  if (!pipeline) {
+    if (out_count) *out_count = 0;
+    return NULL;
+  }
+  if (out_count) *out_count = pipeline->expected_in_channels;
+  return pipeline->used_capture_channels;
 }

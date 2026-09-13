@@ -145,6 +145,7 @@ double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
  */
 static int delay_config_validate(const filter_config_t* config, int sample_rate,
                                  config_error_t* err) {
+  (void)sample_rate;
   if (!config || config->type != FILTER_TYPE_DELAY) return -1;
   const delay_config_t* params = &config->parameters.delay;
   if (!params) return 0;
@@ -152,17 +153,6 @@ static int delay_config_validate(const filter_config_t* config, int sample_rate,
     if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "Delay cannot be negative");
-    }
-    return -1;
-  }
-
-  double delay_samples =
-      compute_delay_samples(params->delay, params->delay_unit, sample_rate);
-  if (isnan(delay_samples) || isinf(delay_samples) || delay_samples < 0.0 ||
-      delay_samples > 100000000.0) {
-    if (err) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Invalid delay value %f",
-                       params->delay);
     }
     return -1;
   }

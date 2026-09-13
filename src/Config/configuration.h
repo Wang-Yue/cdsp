@@ -38,6 +38,7 @@ typedef enum {
  */
 typedef struct {
   pipeline_step_type_t type; /**< The type of pipeline step. */
+  char description[256];     /**< Description of the pipeline step. */
   size_t
       channel; /**< The channel to apply the filter to (if single channel). */
   bool has_channel;      /**< True if `channel` is valid. */
@@ -57,6 +58,7 @@ typedef struct {
  */
 typedef struct {
   char name[128];         /**< Name of the filter. */
+  char description[256];  /**< Description of the filter. */
   filter_config_t filter; /**< Filter configuration. */
 } named_filter_config_t;
 
@@ -73,6 +75,7 @@ typedef struct {
  */
 typedef struct {
   char name[128];               /**< Name of the processor. */
+  char description[256];        /**< Description of the processor. */
   processor_config_t processor; /**< Processor configuration. */
 } named_processor_config_t;
 
@@ -80,11 +83,13 @@ typedef struct {
  * @brief Top-level configuration consumed by the DSP engine.
  */
 typedef struct {
-  devices_config_t devices;             /**< Audio devices configuration. */
-  named_filter_config_t* filters;       /**< Array of named filters. */
-  size_t filters_count;                 /**< Number of filters. */
-  named_mixer_config_t* mixers;         /**< Array of named mixers. */
-  size_t mixers_count;                  /**< Number of mixers. */
+  char title[128];                /**< Title of the configuration. */
+  char description[256];          /**< Description of the configuration. */
+  devices_config_t devices;       /**< Audio devices configuration. */
+  named_filter_config_t* filters; /**< Array of named filters. */
+  size_t filters_count;           /**< Number of filters. */
+  named_mixer_config_t* mixers;   /**< Array of named mixers. */
+  size_t mixers_count;            /**< Number of mixers. */
   named_processor_config_t* processors; /**< Array of named processors. */
   size_t processors_count;              /**< Number of processors. */
   pipeline_step_config_t*

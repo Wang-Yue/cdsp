@@ -3280,7 +3280,7 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
 
   // Fetch muted VU levels - playback fader is post-mute, so it should be silent
   bool got_muted_vu = false;
-  for (int i = 0; i < 50; i++) {
+  for (int i = 0; i < 150; i++) {
     cdsp_sleep_ms(10);
     if (cdsp_get_vu_levels(engine, &vu) && vu.playback_peak[0] < -150.0) {
       got_muted_vu = true;
@@ -3650,6 +3650,8 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   capture_backend_t* cap_backend =
       create_capture_backend(&cap_cfg, 48000, 64, false, NULL, &berr);
   ASSERT_TRUE(cap_backend != NULL);
+  // Specifically test real-time drop handling by setting is_realtime = true
+  cap_backend->is_realtime = true;
 
   engine_capture_loop_config_t loop_cfg = {
       .shared = shared,

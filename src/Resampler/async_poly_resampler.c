@@ -97,6 +97,16 @@ struct async_poly_resampler {
 #include <math.h>
 #include <stdlib.h>
 
+static inline size_t size_as_usize(double size) {
+  if (isnan(size) || size <= 0.0) {
+    return 0;
+  }
+  if (isinf(size) || size > (double)(SIZE_MAX - 4096)) {
+    return SIZE_MAX;
+  }
+  return (size_t)size;
+}
+
 static inline double avg_t_ratio(double resample_ratio, double target_ratio) {
   return 0.5 * (1.0 / resample_ratio + 1.0 / target_ratio);
 }
@@ -118,8 +128,7 @@ static inline size_t calculate_input_size(
   double raw = last_index +
                (double)chunk_size * avg_t_ratio(resample_ratio, target_ratio) +
                ramp_overshoot + (double)interpolator_len;
-  if (raw < 0.0) return 0;
-  return (size_t)ceil(raw);
+  return size_as_usize(ceil(raw));
 }
 
 static inline size_t calculate_output_size(
@@ -133,8 +142,7 @@ static inline size_t calculate_output_size(
   double ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
   double raw =
       (space - ramp_overshoot) / avg_t_ratio(resample_ratio, target_ratio);
-  if (raw < 0.0) return 0;
-  return (size_t)floor(raw);
+  return size_as_usize(floor(raw));
 }
 
 static void async_poly_resampler_update_lengths(
@@ -159,7 +167,8 @@ static void async_poly_resampler_free(void* impl) {
 static void async_poly_resampler_set_relative_ratio(void* impl,
                                                     double multiplier) {
   async_poly_resampler_t* resampler = (async_poly_resampler_t*)impl;
-  if (!resampler || isnan(multiplier) || isinf(multiplier) || multiplier <= 0.0) return;
+  if (!resampler || isnan(multiplier) || isinf(multiplier) || multiplier <= 0.0)
+    return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
   if (multiplier < min_ratio || multiplier > resampler->max_relative_ratio) {
     logger_warn(
@@ -465,7 +474,10 @@ static resampler_error_t async_poly_resampler_process(
   size_t prev_needed_input_size = resampler->needed_input_size;
   async_poly_resampler_update_lengths(resampler);
 
-  size_t valid_out = (output_frames * valid_frames) / prev_needed_input_size;
+  size_t valid_out =
+      prev_needed_input_size > 0
+          ? (output_frames * valid_frames) / prev_needed_input_size
+          : output_frames;
   audio_chunk_set_valid_frames(output, valid_out);
   return RESAMPLER_OK;
 }
@@ -499,7 +511,7 @@ static void* async_poly_resampler_create_impl(
                      "AsyncPolyResampler: rates must be positive");
     return NULL;
   }
-  if (max_relative_ratio < 1.0) {
+  if (!isfinite(max_relative_ratio) || max_relative_ratio < 1.0) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "AsyncPolyResampler: max_relative_ratio must be >= 1.0");
     return NULL;
@@ -531,6 +543,14 @@ static void* async_poly_resampler_create_impl(
   } else {
     double raw_max_in = ((double)chunk_size) / min_ratio_abs + 2.0 +
                         (double)resampler->interpolator_len / 2.0;
+    if (isnan(raw_max_in) || isinf(raw_max_in) || raw_max_in < 0.0 ||
+        raw_max_in > (double)(SIZE_MAX - 32)) {
+      config_error_set(
+          err, CONFIG_ERR_VALIDATION,
+          "AsyncPolyResampler: calculated maximum input size is invalid");
+      async_poly_resampler_free(resampler);
+      return NULL;
+    }
     resampler->max_input_frames = (size_t)ceil(raw_max_in) + 16;
   }
 
@@ -671,9 +691,16 @@ static void* async_poly_resampler_create(const resampler_config_t* config,
 
 static size_t async_poly_resampler_get_output_delay(const void* impl) {
   const async_poly_resampler_t* resampler = (const async_poly_resampler_t*)impl;
-  return resampler ? (size_t)((double)resampler->interpolator_len *
-                              resampler->resample_ratio / 2.0)
-                   : 0;
+  if (!resampler) return 0;
+  double delay =
+      (double)resampler->interpolator_len * resampler->resample_ratio / 2.0;
+  return size_as_usize(delay);
+}
+
+double async_poly_resampler_get_cutoff(
+    const async_poly_resampler_t* resampler) {
+  (void)resampler;
+  return -1.0;
 }
 
 static void async_poly_resampler_reset(void* impl) {

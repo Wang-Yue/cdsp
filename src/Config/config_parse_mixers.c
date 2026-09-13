@@ -32,6 +32,12 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
   cJSON_ArrayForEach(mixer_child, mixers_obj) {
     named_mixer_config_t* nm = &config->mixers[m];
     const char* m_name = mixer_child->string ? mixer_child->string : "";
+    if (strlen(m_name) >= sizeof(nm->name)) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Mixer name '%s' exceeds maximum length of %zu", m_name,
+                       sizeof(nm->name) - 1);
+      return -1;
+    }
     strncpy(nm->name, m_name, sizeof(nm->name) - 1);
     nm->name[sizeof(nm->name) - 1] = '\0';
 
@@ -51,8 +57,11 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
 
     mixer_config_t* m_conf = &nm->mixer;
 
-    parse_json_str(mixer_child, "description", m_conf->description,
-                   sizeof(m_conf->description));
+    if (parse_json_str_strict(mixer_child, "description", "mixer definition",
+                              m_conf->description, sizeof(m_conf->description),
+                              NULL, err) != 0) {
+      return -1;
+    }
     const cJSON* m_labels_node =
         cJSON_GetObjectItemCaseSensitive(mixer_child, "labels");
     if (!m_labels_node) {
@@ -124,7 +133,7 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
                                   "mixer mapping item", err) != 0) {
         return -1;
       }
-      static const char* const req_mapping[] = {"dest", NULL};
+      static const char* const req_mapping[] = {"dest", "sources", NULL};
       if (require_json_fields(map_el, req_mapping, "mixer mapping item", NULL,
                               err) != 0) {
         return -1;
@@ -134,10 +143,12 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
                                    &mapping->dest, NULL, err) != 0) {
         return -1;
       }
-      parse_json_bool(map_el, "mute", &mapping->mute);
+      if (parse_json_bool_strict(map_el, "mute", "mixer mapping item",
+                                 &mapping->mute, NULL, err) != 0) {
+        return -1;
+      }
 
-      cJSON* sources_arr =
-          cJSON_GetObjectItemCaseSensitive(map_el, "sources");
+      cJSON* sources_arr = cJSON_GetObjectItemCaseSensitive(map_el, "sources");
       if (sources_arr) {
         if (!cJSON_IsArray(sources_arr)) {
           config_error_set(err, CONFIG_ERR_PARSE,
@@ -148,8 +159,7 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
         mapping->sources =
             (mixer_source_t*)calloc(src_size, sizeof(mixer_source_t));
         if (!mapping->sources) {
-          config_error_set(err, CONFIG_ERR_PARSE,
-                           "Memory allocation failure");
+          config_error_set(err, CONFIG_ERR_PARSE, "Memory allocation failure");
           return -1;
         }
         mapping->sources_count = src_size;
@@ -174,15 +184,13 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
             return -1;
           }
           mixer_source_t* src = &mapping->sources[s];
-          if (parse_json_size_t_strict(src_el, "channel",
-                                       "mixer source item", &src->channel,
-                                       NULL, err) != 0) {
+          if (parse_json_size_t_strict(src_el, "channel", "mixer source item",
+                                       &src->channel, NULL, err) != 0) {
             return -1;
           }
           src->has_gain = parse_json_double(src_el, "gain", &src->gain);
           char scale_buf[64];
-          if (parse_json_str(src_el, "scale", scale_buf,
-                             sizeof(scale_buf))) {
+          if (parse_json_str(src_el, "scale", scale_buf, sizeof(scale_buf))) {
             if (strcmp(scale_buf, "linear") == 0) {
               src->scale = GAIN_SCALE_LINEAR;
             } else if (strcmp(scale_buf, "dB") == 0) {
@@ -197,8 +205,14 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
           } else {
             src->scale = GAIN_SCALE_DB;
           }
-          parse_json_bool(src_el, "inverted", &src->inverted);
-          parse_json_bool(src_el, "mute", &src->mute);
+          if (parse_json_bool_strict(src_el, "inverted", "mixer source item",
+                                     &src->inverted, NULL, err) != 0) {
+            return -1;
+          }
+          if (parse_json_bool_strict(src_el, "mute", "mixer source item",
+                                     &src->mute, NULL, err) != 0) {
+            return -1;
+          }
         }
       }
     }
