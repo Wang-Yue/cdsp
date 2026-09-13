@@ -36,16 +36,16 @@ static const logger_t g_logger = {"dsp.backend.asio"};
 
 typedef struct asio_driver_entry {
   char devname[256];
-  IASIO* iasio;
+  IASIO *iasio;
   CRITICAL_SECTION lock;
   LONG refcount;
-  struct asio_driver_entry* next;
+  struct asio_driver_entry *next;
 } asio_driver_entry_t;
 
 static struct {
   SRWLOCK lock;
-  asio_driver_entry_t* head;
-  asio_driver_entry_t* unlinked_head;
+  asio_driver_entry_t *head;
+  asio_driver_entry_t *unlinked_head;
 } g_driver_registry = {
     .lock = SRWLOCK_INIT, .head = NULL, .unlinked_head = NULL};
 
@@ -60,7 +60,7 @@ static struct {
  * Safe to call more than once per thread; COM keeps a per-thread reference
  * count.
  */
-bool asio_com_init_this_thread(backend_error_t* err) {
+bool asio_com_init_this_thread(backend_error_t *err) {
   HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   logger_trace(&g_logger, "CoInitializeEx returned 0x%08lX", (unsigned long)hr);
   if (FAILED(hr)) {
@@ -92,7 +92,7 @@ bool asio_com_init_this_thread(backend_error_t* err) {
  * deadlocks when asked to do it, so the reload is only done for drivers known
  * to need it.
  */
-static const char* const NEEDS_RATE_RELOAD[] = {"steinberg built-in"};
+static const char *const NEEDS_RATE_RELOAD[] = {"steinberg built-in"};
 static const size_t NEEDS_RATE_RELOAD_COUNT =
     sizeof(NEEDS_RATE_RELOAD) / sizeof(NEEDS_RATE_RELOAD[0]);
 
@@ -120,7 +120,7 @@ static const size_t NEEDS_RATE_RELOAD_COUNT =
  * backend at ASIO4ALL is better served by the Wasapi backend, so the driver is
  * refused with a message that says so.
  */
-static const char* const UNSUPPORTED_DRIVERS[] = {"asio4all"};
+static const char *const UNSUPPORTED_DRIVERS[] = {"asio4all"};
 static const size_t UNSUPPORTED_DRIVERS_COUNT =
     sizeof(UNSUPPORTED_DRIVERS) / sizeof(UNSUPPORTED_DRIVERS[0]);
 
@@ -133,12 +133,14 @@ static const size_t UNSUPPORTED_DRIVERS_COUNT =
  * from `getDriverName`, but as `Asio4all v2` in the description that device
  * names are taken from.
  */
-static bool matches_driver(const char* devname, const char* const* names,
+static bool matches_driver(const char *devname, const char *const *names,
                            size_t count) {
-  if (!devname || !names || count == 0) return false;
+  if (!devname || !names || count == 0)
+    return false;
   size_t len = strlen(devname);
-  char* lower_devname = (char*)malloc(len + 1);
-  if (!lower_devname) return false;
+  char *lower_devname = (char *)malloc(len + 1);
+  if (!lower_devname)
+    return false;
   for (size_t i = 0; i < len; i++) {
     lower_devname[i] = (char)tolower((unsigned char)devname[i]);
   }
@@ -159,33 +161,15 @@ static bool matches_driver(const char* devname, const char* const* names,
  * @brief Whether this driver needs to be recreated for a sample rate change to
  * take effect. Matches CamillaDSP driver.rs:needs_rate_reload.
  */
-bool asio_needs_rate_reload(const char* devname) {
+bool asio_needs_rate_reload(const char *devname) {
   return matches_driver(devname, NEEDS_RATE_RELOAD, NEEDS_RATE_RELOAD_COUNT);
 }
-
-#ifdef CDSP_TEST
-static bool g_allow_unsupported_drivers = false;
-
-void asio_set_allow_unsupported_drivers(bool allow) {
-  g_allow_unsupported_drivers = allow;
-}
-#endif
 
 /**
  * @brief Whether this driver is refused outright.
  * Matches CamillaDSP driver.rs:is_unsupported_driver.
  */
-bool asio_is_unsupported_driver(const char* devname) {
-#ifdef CDSP_TEST
-  if (g_allow_unsupported_drivers) {
-    return false;
-  }
-  const char* env = getenv("CDSP_ALLOW_UNSUPPORTED_ASIO");
-  if (env && (strcmp(env, "1") == 0 || strcmp(env, "true") == 0 ||
-              strcmp(env, "TRUE") == 0)) {
-    return false;
-  }
-#endif
+bool asio_is_unsupported_driver(const char *devname) {
   return matches_driver(devname, UNSUPPORTED_DRIVERS,
                         UNSUPPORTED_DRIVERS_COUNT);
 }
@@ -195,14 +179,15 @@ bool asio_is_unsupported_driver(const char* devname) {
  * Matches CamillaDSP driver.rs:is_single_instance_driver.
  * @deprecated Use asio_is_unsupported_driver instead.
  */
-bool asio_is_single_instance_driver(const char* devname) {
+bool asio_is_single_instance_driver(const char *devname) {
   return asio_is_unsupported_driver(devname);
 }
 
-static asio_driver_entry_t* asio_driver_get_entry(const char* devname) {
-  if (!devname) return NULL;
+static asio_driver_entry_t *asio_driver_get_entry(const char *devname) {
+  if (!devname)
+    return NULL;
   AcquireSRWLockShared(&g_driver_registry.lock);
-  asio_driver_entry_t* curr = g_driver_registry.head;
+  asio_driver_entry_t *curr = g_driver_registry.head;
   while (curr) {
     if (strcmp(curr->devname, devname) == 0) {
       InterlockedIncrement(&curr->refcount);
@@ -214,11 +199,12 @@ static asio_driver_entry_t* asio_driver_get_entry(const char* devname) {
   return curr;
 }
 
-static void asio_driver_entry_release(asio_driver_entry_t* entry) {
-  if (!entry) return;
+static void asio_driver_entry_release(asio_driver_entry_t *entry) {
+  if (!entry)
+    return;
   if (InterlockedDecrement(&entry->refcount) == 0) {
     AcquireSRWLockExclusive(&g_driver_registry.lock);
-    asio_driver_entry_t** curr = &g_driver_registry.unlinked_head;
+    asio_driver_entry_t **curr = &g_driver_registry.unlinked_head;
     while (*curr) {
       if (*curr == entry) {
         *curr = entry->next;
@@ -248,10 +234,12 @@ static void asio_driver_entry_release(asio_driver_entry_t* entry) {
  * @brief Lock the per-driver mutex for devname and increment active reference
  * count. Matches upstream driver handle Mutex locking.
  */
-bool asio_driver_lock(const char* devname) {
-  if (!devname) return false;
-  asio_driver_entry_t* entry = asio_driver_get_entry(devname);
-  if (!entry) return false;
+bool asio_driver_lock(const char *devname) {
+  if (!devname)
+    return false;
+  asio_driver_entry_t *entry = asio_driver_get_entry(devname);
+  if (!entry)
+    return false;
   EnterCriticalSection(&entry->lock);
   return true;
 }
@@ -260,11 +248,12 @@ bool asio_driver_lock(const char* devname) {
  * @brief Unlock the per-driver mutex for devname and decrement active reference
  * count.
  */
-void asio_driver_unlock(const char* devname) {
-  if (!devname) return;
+void asio_driver_unlock(const char *devname) {
+  if (!devname)
+    return;
   AcquireSRWLockShared(&g_driver_registry.lock);
-  asio_driver_entry_t* curr = g_driver_registry.head;
-  asio_driver_entry_t* target = NULL;
+  asio_driver_entry_t *curr = g_driver_registry.head;
+  asio_driver_entry_t *target = NULL;
   while (curr) {
     if (strcmp(curr->devname, devname) == 0) {
       target = curr;
@@ -293,8 +282,8 @@ void asio_driver_unlock(const char* devname) {
  * @brief Run action with the driver loaded for devname, holding the per-driver
  * mutex. Matches CamillaDSP driver.rs:with_driver.
  */
-bool asio_with_driver(const char* devname, asio_driver_action_fn action,
-                      void* user_data, backend_error_t* err) {
+bool asio_with_driver(const char *devname, asio_driver_action_fn action,
+                      void *user_data, backend_error_t *err) {
   if (!devname) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -303,7 +292,7 @@ bool asio_with_driver(const char* devname, asio_driver_action_fn action,
     return false;
   }
 
-  asio_driver_entry_t* entry = asio_driver_get_entry(devname);
+  asio_driver_entry_t *entry = asio_driver_get_entry(devname);
   if (!entry) {
     if (err) {
       char msg[256];
@@ -324,11 +313,12 @@ bool asio_with_driver(const char* devname, asio_driver_action_fn action,
 /**
  * @brief Look up a loaded driver by device name in the registry.
  */
-IASIO* asio_driver_lookup(const char* devname) {
-  if (!devname) return NULL;
+IASIO *asio_driver_lookup(const char *devname) {
+  if (!devname)
+    return NULL;
   AcquireSRWLockShared(&g_driver_registry.lock);
-  asio_driver_entry_t* curr = g_driver_registry.head;
-  IASIO* result = NULL;
+  asio_driver_entry_t *curr = g_driver_registry.head;
+  IASIO *result = NULL;
   while (curr) {
     if (strcmp(curr->devname, devname) == 0) {
       result = curr->iasio;
@@ -344,23 +334,27 @@ IASIO* asio_driver_lookup(const char* devname) {
  * @brief Whether a driver is currently loaded for `devname`.
  * Matches driver.rs:driver_is_loaded.
  */
-bool asio_driver_is_loaded(const char* devname) {
+bool asio_driver_is_loaded(const char *devname) {
   return asio_driver_lookup(devname) != NULL;
 }
 
-static bool asio_reg_query_string_utf8(HKEY key, const wchar_t* val_name,
-                                       char* out_buf, size_t out_size) {
-  if (!key || !out_buf || out_size == 0) return false;
+static bool asio_reg_query_string_utf8(HKEY key, const wchar_t *val_name,
+                                       char *out_buf, size_t out_size) {
+  if (!key || !out_buf || out_size == 0)
+    return false;
   out_buf[0] = '\0';
 
   DWORD datatype = 0;
   DWORD byte_size = 0;
   LONG cr = RegQueryValueExW(key, val_name, NULL, &datatype, NULL, &byte_size);
-  if (cr != ERROR_SUCCESS || byte_size == 0) return false;
-  if (datatype != REG_SZ && datatype != REG_EXPAND_SZ) return false;
+  if (cr != ERROR_SUCCESS || byte_size == 0)
+    return false;
+  if (datatype != REG_SZ && datatype != REG_EXPAND_SZ)
+    return false;
 
-  wchar_t* wbuf = (wchar_t*)malloc(byte_size + sizeof(wchar_t));
-  if (!wbuf) return false;
+  wchar_t *wbuf = (wchar_t *)malloc(byte_size + sizeof(wchar_t));
+  if (!wbuf)
+    return false;
 
   DWORD read_size = byte_size;
   cr = RegQueryValueExW(key, val_name, NULL, &datatype, (LPBYTE)wbuf,
@@ -382,16 +376,20 @@ static bool asio_reg_query_string_utf8(HKEY key, const wchar_t* val_name,
   return true;
 }
 
-static bool parse_asio_clsid(const char* clsid_str, CLSID* out_clsid) {
-  if (!clsid_str || !out_clsid) return false;
-  while (isspace((unsigned char)*clsid_str)) clsid_str++;
+static bool parse_asio_clsid(const char *clsid_str, CLSID *out_clsid) {
+  if (!clsid_str || !out_clsid)
+    return false;
+  while (isspace((unsigned char)*clsid_str))
+    clsid_str++;
 
   char normalized[64];
   size_t len = strlen(clsid_str);
-  while (len > 0 && isspace((unsigned char)clsid_str[len - 1])) len--;
-  if (len == 0 || len >= sizeof(normalized) - 3) return false;
+  while (len > 0 && isspace((unsigned char)clsid_str[len - 1]))
+    len--;
+  if (len == 0 || len >= sizeof(normalized) - 3)
+    return false;
 
-  const char* start = clsid_str;
+  const char *start = clsid_str;
   if (*start == '{') {
     start++;
     len--;
@@ -399,7 +397,8 @@ static bool parse_asio_clsid(const char* clsid_str, CLSID* out_clsid) {
   if (len > 0 && start[len - 1] == '}') {
     len--;
   }
-  if (len != 36) return false;
+  if (len != 36)
+    return false;
 
   normalized[0] = '{';
   memcpy(normalized + 1, start, 36);
@@ -413,7 +412,7 @@ static bool parse_asio_clsid(const char* clsid_str, CLSID* out_clsid) {
   return SUCCEEDED(CLSIDFromString(wclsid, out_clsid));
 }
 
-static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid) {
+static bool find_asio_driver_clsid(const char *driver_name, CLSID *out_clsid) {
   if (!driver_name || driver_name[0] == '\0' || !out_clsid) {
     return false;
   }
@@ -447,24 +446,26 @@ static bool find_asio_driver_clsid(const char* driver_name, CLSID* out_clsid) {
       }
       RegCloseKey(hk_driver);
     }
-    if (found) break;
+    if (found)
+      break;
   }
   RegCloseKey(hk);
   return found;
 }
 
-static HRESULT create_asio_com_instance(const CLSID* clsid, IASIO** out_iasio) {
-  if (!clsid || !out_iasio) return E_POINTER;
+static HRESULT create_asio_com_instance(const CLSID *clsid, IASIO **out_iasio) {
+  if (!clsid || !out_iasio)
+    return E_POINTER;
   *out_iasio = NULL;
 
-  IUnknown* unk = NULL;
-  HRESULT hr =
-      CoCreateInstance(clsid, NULL, CLSCTX_SERVER, &IID_IUnknown, (void**)&unk);
+  IUnknown *unk = NULL;
+  HRESULT hr = CoCreateInstance(clsid, NULL, CLSCTX_SERVER, &IID_IUnknown,
+                                (void **)&unk);
   if (FAILED(hr) || !unk) {
     return hr;
   }
 
-  hr = unk->lpVtbl->QueryInterface(unk, clsid, (void**)out_iasio);
+  hr = unk->lpVtbl->QueryInterface(unk, clsid, (void **)out_iasio);
   unk->lpVtbl->Release(unk);
   return hr;
 }
@@ -474,7 +475,8 @@ static HRESULT create_asio_com_instance(const CLSID* clsid, IASIO** out_iasio) {
  * Matches driver.rs:list_device_names.
  */
 int asio_list_device_names(char out_names[][256], int max_names) {
-  if (!out_names || max_names <= 0) return 0;
+  if (!out_names || max_names <= 0)
+    return 0;
 
   HKEY hk;
   if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\ASIO", 0, KEY_READ, &hk) !=
@@ -516,12 +518,13 @@ int asio_list_device_names(char out_names[][256], int max_names) {
  * @brief Release the driver loaded for `devname`, if any.
  * Matches driver.rs:teardown_asio_driver.
  */
-void asio_driver_teardown(const char* devname) {
-  if (!devname) return;
+void asio_driver_teardown(const char *devname) {
+  if (!devname)
+    return;
 
-  asio_driver_entry_t* entry = NULL;
+  asio_driver_entry_t *entry = NULL;
   AcquireSRWLockExclusive(&g_driver_registry.lock);
-  asio_driver_entry_t** curr = &g_driver_registry.head;
+  asio_driver_entry_t **curr = &g_driver_registry.head;
   while (*curr) {
     if (strcmp((*curr)->devname, devname) == 0) {
       entry = *curr;
@@ -551,8 +554,8 @@ void asio_driver_teardown(const char* devname) {
  * @brief Load an ASIO driver by name and initialise it.
  * Matches driver.rs:load_driver_by_name.
  */
-bool asio_driver_load_by_name(const char* name, IASIO** out_iasio,
-                              backend_error_t* err) {
+bool asio_driver_load_by_name(const char *name, IASIO **out_iasio,
+                              backend_error_t *err) {
   logger_trace(&g_logger, "asio_driver_load_by_name: loading '%s'", name);
   if (asio_is_unsupported_driver(name)) {
     if (err) {
@@ -582,7 +585,7 @@ bool asio_driver_load_by_name(const char* name, IASIO** out_iasio,
     return false;
   }
 
-  IASIO* iasio = NULL;
+  IASIO *iasio = NULL;
   HRESULT hr = create_asio_com_instance(&clsid, &iasio);
   if (FAILED(hr) || !iasio) {
     if (err) {
@@ -617,8 +620,8 @@ bool asio_driver_load_by_name(const char* name, IASIO** out_iasio,
                driver_name[0] ? driver_name : name, driver_version);
 
   // Store in registry
-  asio_driver_entry_t* entry =
-      (asio_driver_entry_t*)calloc(1, sizeof(asio_driver_entry_t));
+  asio_driver_entry_t *entry =
+      (asio_driver_entry_t *)calloc(1, sizeof(asio_driver_entry_t));
   if (!entry) {
     SAFE_RELEASE(iasio);
     if (err) {
@@ -658,10 +661,10 @@ struct asio_rate_data {
   int rate_hz;
 };
 
-static bool get_sample_rate_action(IASIO* iasio, void* user_data,
-                                   backend_error_t* err) {
+static bool get_sample_rate_action(IASIO *iasio, void *user_data,
+                                   backend_error_t *err) {
   (void)err;
-  struct asio_rate_data* d = (struct asio_rate_data*)user_data;
+  struct asio_rate_data *d = (struct asio_rate_data *)user_data;
   double rate = 0.0;
   long res = iasio->lpVtbl->getSampleRate(iasio, &rate);
   if (asio_ok(res) && isfinite(rate) && rate > 0.0) {
@@ -670,7 +673,7 @@ static bool get_sample_rate_action(IASIO* iasio, void* user_data,
   return true;
 }
 
-static int read_current_asio_sample_rate_hz(const char* devname) {
+static int read_current_asio_sample_rate_hz(const char *devname) {
   struct asio_rate_data d = {0};
   if (!asio_with_driver(devname, get_sample_rate_action, &d, NULL)) {
     return 0;
@@ -681,10 +684,11 @@ static int read_current_asio_sample_rate_hz(const char* devname) {
 /**
  * @brief make_buffer_infos matching utils.rs:make_channel_ids.
  */
-static ASIOBufferInfo* make_buffer_infos(size_t num_channels, bool is_input) {
-  ASIOBufferInfo* infos =
-      (ASIOBufferInfo*)calloc(num_channels, sizeof(ASIOBufferInfo));
-  if (!infos) return NULL;
+static ASIOBufferInfo *make_buffer_infos(size_t num_channels, bool is_input) {
+  ASIOBufferInfo *infos =
+      (ASIOBufferInfo *)calloc(num_channels, sizeof(ASIOBufferInfo));
+  if (!infos)
+    return NULL;
   for (size_t ch = 0; ch < num_channels; ch++) {
     infos[ch].isInput = is_input ? ASIOTrue : ASIOFalse;
     infos[ch].channelNum = (int32_t)ch;
@@ -697,76 +701,76 @@ static ASIOBufferInfo* make_buffer_infos(size_t num_channels, bool is_input) {
 /**
  * @brief asio_format_to_str matching utils.rs:asio_format_to_str.
  */
-const char* asio_format_to_str(asio_sample_format_t fmt) {
+const char *asio_format_to_str(asio_sample_format_t fmt) {
   switch (fmt) {
-    case ASIO_SAMPLE_FORMAT_S16_LE:
-      return "S16_LE";
-    case ASIO_SAMPLE_FORMAT_S24_4_LE:
-      return "S24_4_LE";
-    case ASIO_SAMPLE_FORMAT_S24_3_LE:
-      return "S24_3_LE";
-    case ASIO_SAMPLE_FORMAT_S32_LE:
-      return "S32_LE";
-    case ASIO_SAMPLE_FORMAT_F32_LE:
-      return "F32_LE";
-    case ASIO_SAMPLE_FORMAT_F64_LE:
-      return "F64_LE";
-    case ASIO_SAMPLE_FORMAT_DSD_INT8:
-      return "DSD_INT8";
-    default:
-      return "Unknown";
+  case ASIO_SAMPLE_FORMAT_S16_LE:
+    return "S16_LE";
+  case ASIO_SAMPLE_FORMAT_S24_4_LE:
+    return "S24_4_LE";
+  case ASIO_SAMPLE_FORMAT_S24_3_LE:
+    return "S24_3_LE";
+  case ASIO_SAMPLE_FORMAT_S32_LE:
+    return "S32_LE";
+  case ASIO_SAMPLE_FORMAT_F32_LE:
+    return "F32_LE";
+  case ASIO_SAMPLE_FORMAT_F64_LE:
+    return "F64_LE";
+  case ASIO_SAMPLE_FORMAT_DSD_INT8:
+    return "DSD_INT8";
+  default:
+    return "Unknown";
   }
 }
 
 /**
  * @brief asio_sample_type_name matching utils.rs:asio_sample_type_name.
  */
-const char* asio_sample_type_name(int type_id) {
+const char *asio_sample_type_name(int type_id) {
   switch (type_id) {
-    case ASIO_ST_INT16_MSB:
-      return "Int16 MSB (big-endian)";
-    case ASIO_ST_INT24_MSB:
-      return "Int24 MSB (3-byte packed, big-endian)";
-    case ASIO_ST_INT32_MSB:
-      return "Int32 MSB (big-endian)";
-    case ASIO_ST_FLOAT32_MSB:
-      return "Float32 MSB (big-endian)";
-    case ASIO_ST_FLOAT64_MSB:
-      return "Float64 MSB (big-endian)";
-    case ASIO_ST_INT32_MSB_16:
-      return "Int32 MSB 16-bit (big-endian)";
-    case ASIO_ST_INT32_MSB_18:
-      return "Int32 MSB 18-bit (big-endian)";
-    case ASIO_ST_INT32_MSB_20:
-      return "Int32 MSB 20-bit (big-endian)";
-    case ASIO_ST_INT32_MSB_24:
-      return "Int32 MSB 24-bit (big-endian)";
-    case ASIO_ST_INT16_LSB:
-      return "Int16 LSB";
-    case ASIO_ST_INT24_LSB:
-      return "Int24 LSB (3-byte packed)";
-    case ASIO_ST_INT32_LSB:
-      return "Int32 LSB";
-    case ASIO_ST_FLOAT32_LSB:
-      return "Float32 LSB";
-    case ASIO_ST_FLOAT64_LSB:
-      return "Float64 LSB";
-    case ASIO_ST_INT32_LSB_16:
-      return "Int32 LSB 16-bit";
-    case ASIO_ST_INT32_LSB_18:
-      return "Int32 LSB 18-bit";
-    case ASIO_ST_INT32_LSB_20:
-      return "Int32 LSB 20-bit";
-    case ASIO_ST_INT32_LSB_24:
-      return "Int32 LSB 24-bit";
-    case ASIO_ST_DSD_INT8_LSB_1:
-      return "DSD Int8 LSB 1";
-    case ASIO_ST_DSD_INT8_MSB_1:
-      return "DSD Int8 MSB 1";
-    case ASIO_ST_DSD_INT8_NER8:
-      return "DSD Int8 NER8";
-    default:
-      return "Unknown";
+  case ASIO_ST_INT16_MSB:
+    return "Int16 MSB (big-endian)";
+  case ASIO_ST_INT24_MSB:
+    return "Int24 MSB (3-byte packed, big-endian)";
+  case ASIO_ST_INT32_MSB:
+    return "Int32 MSB (big-endian)";
+  case ASIO_ST_FLOAT32_MSB:
+    return "Float32 MSB (big-endian)";
+  case ASIO_ST_FLOAT64_MSB:
+    return "Float64 MSB (big-endian)";
+  case ASIO_ST_INT32_MSB_16:
+    return "Int32 MSB 16-bit (big-endian)";
+  case ASIO_ST_INT32_MSB_18:
+    return "Int32 MSB 18-bit (big-endian)";
+  case ASIO_ST_INT32_MSB_20:
+    return "Int32 MSB 20-bit (big-endian)";
+  case ASIO_ST_INT32_MSB_24:
+    return "Int32 MSB 24-bit (big-endian)";
+  case ASIO_ST_INT16_LSB:
+    return "Int16 LSB";
+  case ASIO_ST_INT24_LSB:
+    return "Int24 LSB (3-byte packed)";
+  case ASIO_ST_INT32_LSB:
+    return "Int32 LSB";
+  case ASIO_ST_FLOAT32_LSB:
+    return "Float32 LSB";
+  case ASIO_ST_FLOAT64_LSB:
+    return "Float64 LSB";
+  case ASIO_ST_INT32_LSB_16:
+    return "Int32 LSB 16-bit";
+  case ASIO_ST_INT32_LSB_18:
+    return "Int32 LSB 18-bit";
+  case ASIO_ST_INT32_LSB_20:
+    return "Int32 LSB 20-bit";
+  case ASIO_ST_INT32_LSB_24:
+    return "Int32 LSB 24-bit";
+  case ASIO_ST_DSD_INT8_LSB_1:
+    return "DSD Int8 LSB 1";
+  case ASIO_ST_DSD_INT8_MSB_1:
+    return "DSD Int8 MSB 1";
+  case ASIO_ST_DSD_INT8_NER8:
+    return "DSD Int8 NER8";
+  default:
+    return "Unknown";
   }
 }
 
@@ -776,27 +780,27 @@ const char* asio_sample_type_name(int type_id) {
  */
 asio_sample_format_t asio_sample_type_to_format(int type_id) {
   switch (type_id) {
-    case ASIO_ST_INT16_LSB:
-      return ASIO_SAMPLE_FORMAT_S16_LE;
-    case ASIO_ST_INT24_LSB:
-      return ASIO_SAMPLE_FORMAT_S24_3_LE;
-    case ASIO_ST_INT32_LSB:
-    case ASIO_ST_INT32_LSB_16:
-    case ASIO_ST_INT32_LSB_18:
-    case ASIO_ST_INT32_LSB_20:
-      return ASIO_SAMPLE_FORMAT_S32_LE;
-    case ASIO_ST_INT32_LSB_24:
-      return ASIO_SAMPLE_FORMAT_S24_4_LE;
-    case ASIO_ST_FLOAT32_LSB:
-      return ASIO_SAMPLE_FORMAT_F32_LE;
-    case ASIO_ST_FLOAT64_LSB:
-      return ASIO_SAMPLE_FORMAT_F64_LE;
-    case ASIO_ST_DSD_INT8_LSB_1:
-    case ASIO_ST_DSD_INT8_MSB_1:
-    case ASIO_ST_DSD_INT8_NER8:
-      return ASIO_SAMPLE_FORMAT_DSD_INT8;
-    default:
-      return ASIO_SAMPLE_FORMAT_INVALID;
+  case ASIO_ST_INT16_LSB:
+    return ASIO_SAMPLE_FORMAT_S16_LE;
+  case ASIO_ST_INT24_LSB:
+    return ASIO_SAMPLE_FORMAT_S24_3_LE;
+  case ASIO_ST_INT32_LSB:
+  case ASIO_ST_INT32_LSB_16:
+  case ASIO_ST_INT32_LSB_18:
+  case ASIO_ST_INT32_LSB_20:
+    return ASIO_SAMPLE_FORMAT_S32_LE;
+  case ASIO_ST_INT32_LSB_24:
+    return ASIO_SAMPLE_FORMAT_S24_4_LE;
+  case ASIO_ST_FLOAT32_LSB:
+    return ASIO_SAMPLE_FORMAT_F32_LE;
+  case ASIO_ST_FLOAT64_LSB:
+    return ASIO_SAMPLE_FORMAT_F64_LE;
+  case ASIO_ST_DSD_INT8_LSB_1:
+  case ASIO_ST_DSD_INT8_MSB_1:
+  case ASIO_ST_DSD_INT8_NER8:
+    return ASIO_SAMPLE_FORMAT_DSD_INT8;
+  default:
+    return ASIO_SAMPLE_FORMAT_INVALID;
   }
 }
 
@@ -808,15 +812,15 @@ struct query_format_data {
   int type;
 };
 
-static bool query_format_action(IASIO* iasio, void* user_data,
-                                backend_error_t* err) {
-  struct query_format_data* d = (struct query_format_data*)user_data;
+static bool query_format_action(IASIO *iasio, void *user_data,
+                                backend_error_t *err) {
+  struct query_format_data *d = (struct query_format_data *)user_data;
   ASIOChannelInfo info = {0};
   info.channel = 0;
   info.isInput = d->is_input ? ASIOTrue : ASIOFalse;
   long res = iasio->lpVtbl->getChannelInfo(iasio, &info);
   if (!asio_ok(res)) {
-    const char* direction = d->is_input ? "input" : "output";
+    const char *direction = d->is_input ? "input" : "output";
     if (err) {
       char msg[256];
       snprintf(msg, sizeof(msg),
@@ -833,8 +837,8 @@ static bool query_format_action(IASIO* iasio, void* user_data,
   return true;
 }
 
-static bool query_device_format(const char* devname, bool is_input,
-                                int* out_type, backend_error_t* err) {
+static bool query_device_format(const char *devname, bool is_input,
+                                int *out_type, backend_error_t *err) {
   struct query_format_data d = {.is_input = is_input, .type = 0};
   if (!asio_with_driver(devname, query_format_action, &d, err)) {
     return false;
@@ -846,16 +850,16 @@ static bool query_device_format(const char* devname, bool is_input,
 /**
  * @brief resolve_format matching utils.rs:resolve_format.
  */
-static bool resolve_format(const char* devname, asio_sample_format_t configured,
+static bool resolve_format(const char *devname, asio_sample_format_t configured,
                            bool has_configured, bool is_input,
-                           asio_sample_format_t* out_format,
-                           backend_error_t* err) {
+                           asio_sample_format_t *out_format,
+                           backend_error_t *err) {
   int device_type = 0;
   if (!query_device_format(devname, is_input, &device_type, err)) {
     return false;
   }
   asio_sample_format_t native_format = asio_sample_type_to_format(device_type);
-  const char* direction = is_input ? "capture" : "playback";
+  const char *direction = is_input ? "capture" : "playback";
 
   if (native_format == ASIO_SAMPLE_FORMAT_INVALID) {
     if (err) {
@@ -901,9 +905,9 @@ struct get_buf_size_data {
   long preferred;
 };
 
-static bool get_buf_size_action(IASIO* iasio, void* user_data,
-                                backend_error_t* err) {
-  struct get_buf_size_data* d = (struct get_buf_size_data*)user_data;
+static bool get_buf_size_action(IASIO *iasio, void *user_data,
+                                backend_error_t *err) {
+  struct get_buf_size_data *d = (struct get_buf_size_data *)user_data;
   long min_buf = 0, max_buf = 0, preferred_buf = 0, granularity = 0;
   long res = iasio->lpVtbl->getBufferSize(iasio, &min_buf, &max_buf,
                                           &preferred_buf, &granularity);
@@ -924,8 +928,8 @@ static bool get_buf_size_action(IASIO* iasio, void* user_data,
   return true;
 }
 
-static bool get_preferred_buffer_size(const char* devname, long* out_preferred,
-                                      backend_error_t* err) {
+static bool get_preferred_buffer_size(const char *devname, long *out_preferred,
+                                      backend_error_t *err) {
   struct get_buf_size_data d = {0};
   if (!asio_with_driver(devname, get_buf_size_action, &d, err)) {
     return false;
@@ -938,15 +942,15 @@ static bool get_preferred_buffer_size(const char* devname, long* out_preferred,
  * @brief create_asio_buffers matching utils.rs:create_asio_buffers.
  */
 struct create_buffers_data {
-  ASIOBufferInfo* buffer_infos;
+  ASIOBufferInfo *buffer_infos;
   long num_channels;
   long buffer_size;
-  ASIOCallbacks* callbacks;
+  ASIOCallbacks *callbacks;
 };
 
-static bool create_buffers_action(IASIO* iasio, void* user_data,
-                                  backend_error_t* err) {
-  struct create_buffers_data* d = (struct create_buffers_data*)user_data;
+static bool create_buffers_action(IASIO *iasio, void *user_data,
+                                  backend_error_t *err) {
+  struct create_buffers_data *d = (struct create_buffers_data *)user_data;
   logger_trace(
       &g_logger,
       "Calling createBuffers: infos_ptr=%p, channels=%ld, buffer_size=%ld, "
@@ -968,10 +972,10 @@ static bool create_buffers_action(IASIO* iasio, void* user_data,
   return true;
 }
 
-static bool create_asio_buffers(const char* devname,
-                                ASIOBufferInfo* buffer_infos, long num_channels,
-                                long buffer_size, ASIOCallbacks* callbacks,
-                                backend_error_t* err) {
+static bool create_asio_buffers(const char *devname,
+                                ASIOBufferInfo *buffer_infos, long num_channels,
+                                long buffer_size, ASIOCallbacks *callbacks,
+                                backend_error_t *err) {
   struct create_buffers_data d = {
       .buffer_infos = buffer_infos,
       .num_channels = num_channels,
@@ -984,22 +988,22 @@ static bool create_asio_buffers(const char* devname,
 /**
  * @brief dispose_asio_buffers matching utils.rs:dispose_asio_buffers.
  */
-static bool dispose_buffers_action(IASIO* iasio, void* user_data,
-                                   backend_error_t* err) {
+static bool dispose_buffers_action(IASIO *iasio, void *user_data,
+                                   backend_error_t *err) {
   (void)user_data;
   (void)err;
   return asio_ok(iasio->lpVtbl->disposeBuffers(iasio));
 }
 
-static bool dispose_asio_buffers(const char* devname) {
+static bool dispose_asio_buffers(const char *devname) {
   return asio_with_driver(devname, dispose_buffers_action, NULL, NULL);
 }
 
 /**
  * @brief start_asio_stream matching utils.rs:start_asio_stream.
  */
-static bool start_stream_action(IASIO* iasio, void* user_data,
-                                backend_error_t* err) {
+static bool start_stream_action(IASIO *iasio, void *user_data,
+                                backend_error_t *err) {
   (void)user_data;
   long res = iasio->lpVtbl->start(iasio);
   if (!asio_ok(res)) {
@@ -1013,21 +1017,21 @@ static bool start_stream_action(IASIO* iasio, void* user_data,
   return true;
 }
 
-static bool start_asio_stream(const char* devname, backend_error_t* err) {
+static bool start_asio_stream(const char *devname, backend_error_t *err) {
   return asio_with_driver(devname, start_stream_action, NULL, err);
 }
 
 /**
  * @brief stop_asio_stream matching utils.rs:stop_asio_stream.
  */
-static bool stop_stream_action(IASIO* iasio, void* user_data,
-                               backend_error_t* err) {
+static bool stop_stream_action(IASIO *iasio, void *user_data,
+                               backend_error_t *err) {
   (void)user_data;
   (void)err;
   return asio_ok(iasio->lpVtbl->stop(iasio));
 }
 
-static bool stop_asio_stream(const char* devname) {
+static bool stop_asio_stream(const char *devname) {
   return asio_with_driver(devname, stop_stream_action, NULL, NULL);
 }
 
@@ -1040,10 +1044,10 @@ struct latencies_data {
   bool ok;
 };
 
-static bool latencies_action(IASIO* iasio, void* user_data,
-                             backend_error_t* err) {
+static bool latencies_action(IASIO *iasio, void *user_data,
+                             backend_error_t *err) {
   (void)err;
-  struct latencies_data* d = (struct latencies_data*)user_data;
+  struct latencies_data *d = (struct latencies_data *)user_data;
   long in_lat = 0, out_lat = 0;
   long res = iasio->lpVtbl->getLatencies(iasio, &in_lat, &out_lat);
   if (asio_ok(res)) {
@@ -1054,7 +1058,7 @@ static bool latencies_action(IASIO* iasio, void* user_data,
   return true;
 }
 
-static void log_asio_latencies(const char* devname) {
+static void log_asio_latencies(const char *devname) {
   struct latencies_data d = {0};
   if (!asio_with_driver(devname, latencies_action, &d, NULL) || !d.ok) {
     logger_debug(&g_logger, "Could not read ASIO latencies");
@@ -1084,10 +1088,10 @@ struct dsd_lsb_data {
   bool is_lsb;
 };
 
-static bool check_dsd_lsb_action(IASIO* iasio, void* user_data,
-                                 backend_error_t* err) {
+static bool check_dsd_lsb_action(IASIO *iasio, void *user_data,
+                                 backend_error_t *err) {
   (void)err;
-  struct dsd_lsb_data* d = (struct dsd_lsb_data*)user_data;
+  struct dsd_lsb_data *d = (struct dsd_lsb_data *)user_data;
   ASIOChannelInfo ch_info = {0};
   ch_info.channel = 0;
   ch_info.isInput = d->is_input ? ASIOTrue : ASIOFalse;
@@ -1099,7 +1103,7 @@ static bool check_dsd_lsb_action(IASIO* iasio, void* user_data,
   return true;
 }
 
-static bool asio_device_is_dsd_lsb(const char* devname, bool is_input) {
+static bool asio_device_is_dsd_lsb(const char *devname, bool is_input) {
   struct dsd_lsb_data d = {.is_input = is_input, .is_lsb = false};
   asio_with_driver(devname, check_dsd_lsb_action, &d, NULL);
   return d.is_lsb;
@@ -1108,13 +1112,13 @@ static bool asio_device_is_dsd_lsb(const char* devname, bool is_input) {
 // MARK: - Internal Contexts and Global Atomics matching CamillaDSP device.rs
 
 typedef struct {
-  spsc_byte_ring_buffer_t* ring_buffer;
-  ASIOBufferInfo* buffer_infos;
+  spsc_byte_ring_buffer_t *ring_buffer;
+  ASIOBufferInfo *buffer_infos;
   size_t num_channels;
   size_t buffer_size;
   size_t bytes_per_sample;
-  uint8_t* read_tmp;
-  uint8_t* sample_queue;
+  uint8_t *read_tmp;
+  uint8_t *sample_queue;
   size_t sample_queue_len;
   size_t sample_queue_cap;
   _Atomic size_t target_level;
@@ -1125,18 +1129,18 @@ typedef struct {
 } asio_playback_context_t;
 
 typedef struct {
-  spsc_byte_ring_buffer_t* ring_buffer;
+  spsc_byte_ring_buffer_t *ring_buffer;
   cdsp_sem_t semaphore;
-  ASIOBufferInfo* buffer_infos;
+  ASIOBufferInfo *buffer_infos;
   size_t num_channels;
   size_t buffer_size;
   size_t bytes_per_sample;
-  uint8_t* transfer_buf;
+  uint8_t *transfer_buf;
   size_t transfer_buf_size;
 } asio_capture_context_t;
 
-static _Atomic(asio_playback_context_t*) PLAYBACK_CONTEXT = NULL;
-static _Atomic(asio_capture_context_t*) CAPTURE_CONTEXT = NULL;
+static _Atomic(asio_playback_context_t *) PLAYBACK_CONTEXT = NULL;
+static _Atomic(asio_capture_context_t *) CAPTURE_CONTEXT = NULL;
 
 /// Gates the capture callback until the capture loop is ready to consume.
 /// Matches device.rs:CAPTURE_STREAM_ACTIVE.
@@ -1229,12 +1233,13 @@ static bool wait_for_playback_callback(DWORD timeout_ms) {
 
 static void buffer_switch_combined(long buffer_index, ASIOBool direct_process);
 
-static inline bool ensure_sample_queue_cap(asio_playback_context_t* ctx,
+static inline bool ensure_sample_queue_cap(asio_playback_context_t *ctx,
                                            size_t needed_cap) {
   if (ctx->sample_queue_cap < needed_cap) {
     size_t new_cap = ctx->sample_queue_cap * 2;
-    if (new_cap < needed_cap) new_cap = needed_cap;
-    uint8_t* new_buf = (uint8_t*)realloc(ctx->sample_queue, new_cap);
+    if (new_cap < needed_cap)
+      new_cap = needed_cap;
+    uint8_t *new_buf = (uint8_t *)realloc(ctx->sample_queue, new_cap);
     if (!new_buf) {
       return false;
     }
@@ -1249,7 +1254,7 @@ static inline bool ensure_sample_queue_cap(asio_playback_context_t* ctx,
  */
 static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
   (void)direct_process;
-  asio_playback_context_t* ctx =
+  asio_playback_context_t *ctx =
       atomic_load_explicit(&PLAYBACK_CONTEXT, memory_order_acquire);
   if (!ctx) {
     return;
@@ -1355,9 +1360,9 @@ static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
   size_t src_offset = 0;
   for (size_t frame = 0; frame < ctx->buffer_size; frame++) {
     for (size_t ch = 0; ch < ctx->num_channels; ch++) {
-      void* out_ptr = ctx->buffer_infos[ch].buffers[buffer_index];
+      void *out_ptr = ctx->buffer_infos[ch].buffers[buffer_index];
       if (out_ptr) {
-        uint8_t* dst = (uint8_t*)out_ptr + frame * ctx->bytes_per_sample;
+        uint8_t *dst = (uint8_t *)out_ptr + frame * ctx->bytes_per_sample;
         memcpy(dst, ctx->sample_queue + src_offset, ctx->bytes_per_sample);
       } else if (frame == 0) {
         logger_trace(
@@ -1401,7 +1406,7 @@ static void buffer_switch_capture(long buffer_index, ASIOBool direct_process) {
     // CAPTURE_STREAM_ACTIVE.
     return;
   }
-  asio_capture_context_t* ctx =
+  asio_capture_context_t *ctx =
       atomic_load_explicit(&CAPTURE_CONTEXT, memory_order_acquire);
   if (!ctx) {
     return;
@@ -1430,10 +1435,10 @@ static void buffer_switch_capture(long buffer_index, ASIOBool direct_process) {
   // Read from per-channel ASIO input buffers and interleave into transfer_buf
   for (size_t frame = 0; frame < ctx->buffer_size; frame++) {
     for (size_t ch = 0; ch < ctx->num_channels; ch++) {
-      void* in_ptr = ctx->buffer_infos[ch].buffers[buffer_index];
+      void *in_ptr = ctx->buffer_infos[ch].buffers[buffer_index];
       if (in_ptr) {
-        const uint8_t* src =
-            (const uint8_t*)in_ptr + frame * ctx->bytes_per_sample;
+        const uint8_t *src =
+            (const uint8_t *)in_ptr + frame * ctx->bytes_per_sample;
         size_t offset =
             (frame * ctx->num_channels + ch) * ctx->bytes_per_sample;
         memcpy(&ctx->transfer_buf[offset], src, ctx->bytes_per_sample);
@@ -1459,21 +1464,21 @@ static void buffer_switch_combined(long buffer_index, ASIOBool direct_process) {
   buffer_switch_capture(buffer_index, direct_process);
 }
 
-static void* buffer_switch_timeinfo_playback(void* params,
+static void *buffer_switch_timeinfo_playback(void *params,
                                              long doubleBufferIndex,
                                              ASIOBool directProcess) {
   buffer_switch_playback(doubleBufferIndex, directProcess);
   return params;
 }
 
-static void* buffer_switch_timeinfo_capture(void* params,
+static void *buffer_switch_timeinfo_capture(void *params,
                                             long doubleBufferIndex,
                                             ASIOBool directProcess) {
   buffer_switch_capture(doubleBufferIndex, directProcess);
   return params;
 }
 
-static void* buffer_switch_timeinfo_combined(void* params,
+static void *buffer_switch_timeinfo_combined(void *params,
                                              long doubleBufferIndex,
                                              ASIOBool directProcess) {
   buffer_switch_combined(doubleBufferIndex, directProcess);
@@ -1524,71 +1529,71 @@ static void sample_rate_changed_capture(ASIOSampleRate s_rate) {
 static long handle_asio_message(long selector, long value, bool playback,
                                 bool capture) {
   switch (selector) {
+  case K_ASIO_SELECTOR_SUPPORTED:
+    switch (value) {
     case K_ASIO_SELECTOR_SUPPORTED:
-      switch (value) {
-        case K_ASIO_SELECTOR_SUPPORTED:
-        case K_ASIO_ENGINE_VERSION:
-        case K_ASIO_RESET_REQUEST:
-        case K_ASIO_RESYNC_REQUEST:
-        case K_ASIO_LATENCIES_CHANGED:
-        case K_ASIO_SUPPORTS_TIME_INFO:
-          return 1;  // Supported
-        case K_ASIO_BUFFER_SIZE_CHANGE:
-        case K_ASIO_SUPPORTS_TIME_CODE:
-        default:
-          return 0;  // Not supported
-      }
     case K_ASIO_ENGINE_VERSION:
-      return 2;  // ASIO 2.0
-    case K_ASIO_SUPPORTS_TIME_INFO:
-      return 1;
-    case K_ASIO_SUPPORTS_TIME_CODE:
-      return 0;
     case K_ASIO_RESET_REQUEST:
-      // Answering 1 commits us to tearing the stream down and starting over, so
-      // raise the flag the device loop watches. Doing the work here is not
-      // allowed, this runs on the driver's own callback thread.
-      logger_warn(&g_logger,
-                  "ASIO reset request received, restarting the stream.");
-      if (playback) {
-        atomic_store_explicit(&ASIO_PLAYBACK_RESET_REQUESTED, true,
-                              memory_order_release);
-      }
-      if (capture) {
-        atomic_store_explicit(&ASIO_CAPTURE_RESET_REQUESTED, true,
-                              memory_order_release);
-        asio_capture_context_t* cap_ctx =
-            atomic_load_explicit(&CAPTURE_CONTEXT, memory_order_acquire);
-        if (cap_ctx && cap_ctx->semaphore) {
-          cdsp_sem_signal(cap_ctx->semaphore);
-        }
-      }
-      return 1;
-    case K_ASIO_BUFFER_SIZE_CHANGE:
-      logger_warn(
-          &g_logger,
-          "ASIO buffer size change request received. Dynamic resize is not "
-          "implemented in this backend.");
-      return 0;
     case K_ASIO_RESYNC_REQUEST:
-      // Deliberately nothing to do. This selector says the driver's timestamps
-      // have gone invalid and asks the host to resynchronise its transport to
-      // them, which matters to a sequencer. This backend never reads the Time
-      // struct, it hands it straight back, so there is nothing here that can be
-      // out of sync. The selector that asks for the driver to be torn down is
-      // RESET_REQUEST, and that one is acted on above. Answering 1 without
-      // acting matches what other hosts do, and stopping the stream over a
-      // notification the driver considers recoverable would only turn it into a
-      // dropout.
-      logger_debug(&g_logger,
-                   "ASIO resync request received, nothing to resynchronise.");
-      return 1;
     case K_ASIO_LATENCIES_CHANGED:
-      logger_debug(&g_logger, "ASIO latencies changed notification.");
-      return 1;
+    case K_ASIO_SUPPORTS_TIME_INFO:
+      return 1; // Supported
+    case K_ASIO_BUFFER_SIZE_CHANGE:
+    case K_ASIO_SUPPORTS_TIME_CODE:
     default:
-      logger_trace(&g_logger, "Unhandled ASIO message selector %ld.", selector);
-      return 0;
+      return 0; // Not supported
+    }
+  case K_ASIO_ENGINE_VERSION:
+    return 2; // ASIO 2.0
+  case K_ASIO_SUPPORTS_TIME_INFO:
+    return 1;
+  case K_ASIO_SUPPORTS_TIME_CODE:
+    return 0;
+  case K_ASIO_RESET_REQUEST:
+    // Answering 1 commits us to tearing the stream down and starting over, so
+    // raise the flag the device loop watches. Doing the work here is not
+    // allowed, this runs on the driver's own callback thread.
+    logger_warn(&g_logger,
+                "ASIO reset request received, restarting the stream.");
+    if (playback) {
+      atomic_store_explicit(&ASIO_PLAYBACK_RESET_REQUESTED, true,
+                            memory_order_release);
+    }
+    if (capture) {
+      atomic_store_explicit(&ASIO_CAPTURE_RESET_REQUESTED, true,
+                            memory_order_release);
+      asio_capture_context_t *cap_ctx =
+          atomic_load_explicit(&CAPTURE_CONTEXT, memory_order_acquire);
+      if (cap_ctx && cap_ctx->semaphore) {
+        cdsp_sem_signal(cap_ctx->semaphore);
+      }
+    }
+    return 1;
+  case K_ASIO_BUFFER_SIZE_CHANGE:
+    logger_warn(
+        &g_logger,
+        "ASIO buffer size change request received. Dynamic resize is not "
+        "implemented in this backend.");
+    return 0;
+  case K_ASIO_RESYNC_REQUEST:
+    // Deliberately nothing to do. This selector says the driver's timestamps
+    // have gone invalid and asks the host to resynchronise its transport to
+    // them, which matters to a sequencer. This backend never reads the Time
+    // struct, it hands it straight back, so there is nothing here that can be
+    // out of sync. The selector that asks for the driver to be torn down is
+    // RESET_REQUEST, and that one is acted on above. Answering 1 without
+    // acting matches what other hosts do, and stopping the stream over a
+    // notification the driver considers recoverable would only turn it into a
+    // dropout.
+    logger_debug(&g_logger,
+                 "ASIO resync request received, nothing to resynchronise.");
+    return 1;
+  case K_ASIO_LATENCIES_CHANGED:
+    logger_debug(&g_logger, "ASIO latencies changed notification.");
+    return 1;
+  default:
+    logger_trace(&g_logger, "Unhandled ASIO message selector %ld.", selector);
+    return 0;
   }
 }
 
@@ -1596,8 +1601,8 @@ static long handle_asio_message(long selector, long value, bool playback,
  * @brief asioMessage callback for full-duplex stream.
  * Matches CamillaDSP device.rs:asio_message_combined.
  */
-static long asio_message_combined(long selector, long value, void* message,
-                                  double* opt) {
+static long asio_message_combined(long selector, long value, void *message,
+                                  double *opt) {
   (void)message;
   (void)opt;
   return handle_asio_message(selector, value, true, true);
@@ -1607,8 +1612,8 @@ static long asio_message_combined(long selector, long value, void* message,
  * @brief asioMessage callback for standalone playback stream.
  * Matches CamillaDSP device.rs:asio_message_playback.
  */
-static long asio_message_playback(long selector, long value, void* message,
-                                  double* opt) {
+static long asio_message_playback(long selector, long value, void *message,
+                                  double *opt) {
   (void)message;
   (void)opt;
   return handle_asio_message(selector, value, true, false);
@@ -1618,8 +1623,8 @@ static long asio_message_playback(long selector, long value, void* message,
  * @brief asioMessage callback for standalone capture stream.
  * Matches CamillaDSP device.rs:asio_message_capture.
  */
-static long asio_message_capture(long selector, long value, void* message,
-                                 double* opt) {
+static long asio_message_capture(long selector, long value, void *message,
+                                 double *opt) {
   (void)message;
   (void)opt;
   return handle_asio_message(selector, value, false, true);
@@ -1633,37 +1638,37 @@ typedef struct {
   long num_outputs;
   long preferred_buf_size;
 
-  ASIOBufferInfo* pending_output;
+  ASIOBufferInfo *pending_output;
   size_t pending_output_channels;
 
-  ASIOBufferInfo* pending_input;
+  ASIOBufferInfo *pending_input;
   size_t pending_input_channels;
 
   bool stream_started;
   char setup_error[256];
   uint8_t active_count;
 
-  ASIOBufferInfo* buffer_infos_for_driver;
+  ASIOBufferInfo *buffer_infos_for_driver;
   ASIOCallbacks callbacks_for_driver;
 } asio_shared_state_t;
 
 static struct {
   SRWLOCK lock;
   CONDITION_VARIABLE cond;
-  asio_shared_state_t* state;
+  asio_shared_state_t *state;
 } g_asio_shared = {
     .lock = SRWLOCK_INIT, .cond = CONDITION_VARIABLE_INIT, .state = NULL};
 
-static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
-                             long* out_inputs, long* out_outputs,
-                             backend_error_t* err);
+static bool open_asio_device(const char *devname, int samplerate, bool is_dsd,
+                             long *out_inputs, long *out_outputs,
+                             backend_error_t *err);
 
 /**
  * @brief init_shared_asio matching CamillaDSP device.rs:init_shared_asio.
  */
-static bool init_shared_asio(const char* devname, int samplerate, bool is_dsd,
-                             long* out_inputs, long* out_outputs,
-                             long* out_preferred_buf, backend_error_t* err) {
+static bool init_shared_asio(const char *devname, int samplerate, bool is_dsd,
+                             long *out_inputs, long *out_outputs,
+                             long *out_preferred_buf, backend_error_t *err) {
   logger_trace(&g_logger,
                "init_shared_asio: dev='%s', samplerate=%d, is_dsd=%d", devname,
                samplerate, (int)is_dsd);
@@ -1708,7 +1713,7 @@ static bool init_shared_asio(const char* devname, int samplerate, bool is_dsd,
   }
 
   g_asio_shared.state =
-      (asio_shared_state_t*)calloc(1, sizeof(asio_shared_state_t));
+      (asio_shared_state_t *)calloc(1, sizeof(asio_shared_state_t));
   if (!g_asio_shared.state) {
     asio_driver_teardown(devname);
     ReleaseSRWLockExclusive(&g_asio_shared.lock);
@@ -1738,8 +1743,8 @@ static bool init_shared_asio(const char* devname, int samplerate, bool is_dsd,
  * @brief register_and_wait matching CamillaDSP device.rs:register_and_wait.
  */
 static bool register_and_wait(bool is_input, size_t num_channels,
-                              ASIOBufferInfo** out_buffer_infos,
-                              long* out_buf_size, backend_error_t* err) {
+                              ASIOBufferInfo **out_buffer_infos,
+                              long *out_buf_size, backend_error_t *err) {
   logger_trace(&g_logger, "register_and_wait: is_input=%d, num_channels=%zu",
                is_input, num_channels);
   AcquireSRWLockExclusive(&g_asio_shared.lock);
@@ -1764,7 +1769,7 @@ static bool register_and_wait(bool is_input, size_t num_channels,
     return false;
   }
 
-  ASIOBufferInfo* my_infos = make_buffer_infos(num_channels, is_input);
+  ASIOBufferInfo *my_infos = make_buffer_infos(num_channels, is_input);
   if (!my_infos) {
     snprintf(g_asio_shared.state->setup_error,
              sizeof(g_asio_shared.state->setup_error),
@@ -1789,14 +1794,14 @@ static bool register_and_wait(bool is_input, size_t num_channels,
                      g_asio_shared.state->pending_output != NULL);
 
   if (both_ready) {
-    const char* devname = g_asio_shared.state->driver_name;
+    const char *devname = g_asio_shared.state->driver_name;
     size_t out_ch = g_asio_shared.state->pending_output_channels;
     size_t in_ch = g_asio_shared.state->pending_input_channels;
     long preferred_buf = g_asio_shared.state->preferred_buf_size;
     size_t total_ch = out_ch + in_ch;
 
-    ASIOBufferInfo* combined =
-        (ASIOBufferInfo*)calloc(total_ch, sizeof(ASIOBufferInfo));
+    ASIOBufferInfo *combined =
+        (ASIOBufferInfo *)calloc(total_ch, sizeof(ASIOBufferInfo));
     if (!combined) {
       snprintf(g_asio_shared.state->setup_error,
                sizeof(g_asio_shared.state->setup_error),
@@ -1836,12 +1841,12 @@ static bool register_and_wait(bool is_input, size_t num_channels,
     }
 
     // Update global playback/capture context buffer_infos
-    asio_playback_context_t* pb_ctx =
+    asio_playback_context_t *pb_ctx =
         atomic_load_explicit(&PLAYBACK_CONTEXT, memory_order_acquire);
     if (pb_ctx) {
       pb_ctx->buffer_infos = combined;
     }
-    asio_capture_context_t* cap_ctx =
+    asio_capture_context_t *cap_ctx =
         atomic_load_explicit(&CAPTURE_CONTEXT, memory_order_acquire);
     if (cap_ctx) {
       cap_ctx->buffer_infos = combined + out_ch;
@@ -1960,7 +1965,7 @@ static void release_shared_asio(void) {
  * @brief Give up this side's claim on the shared state after a failed
  * full-duplex setup. Matches CamillaDSP device.rs:abort_shared_asio.
  */
-static void abort_shared_asio(const char* msg) {
+static void abort_shared_asio(const char *msg) {
   AcquireSRWLockExclusive(&g_asio_shared.lock);
   if (g_asio_shared.state) {
     if (g_asio_shared.state->setup_error[0] == '\0') {
@@ -1980,7 +1985,7 @@ static void abort_shared_asio(const char* msg) {
  * @brief Dispose the buffers and release the driver after a failed stream
  * setup. Matches CamillaDSP device.rs:cleanup_failed_setup.
  */
-static void cleanup_failed_setup(const char* devname) {
+static void cleanup_failed_setup(const char *devname) {
   dispose_asio_buffers(devname);
   asio_driver_teardown(devname);
 }
@@ -1991,9 +1996,9 @@ static void cleanup_failed_setup(const char* devname) {
  * @brief Log the name and sample format of each channel in one direction.
  * Matches device.rs:log_channel_details.
  */
-static void log_channel_details(IASIO* iasio, long num_channels,
+static void log_channel_details(IASIO *iasio, long num_channels,
                                 bool is_input) {
-  const char* direction = is_input ? "Input " : "Output";
+  const char *direction = is_input ? "Input " : "Output";
   for (long ch = 0; ch < num_channels; ch++) {
     ASIOChannelInfo info = {0};
     info.channel = (int32_t)ch;
@@ -2016,9 +2021,9 @@ static void log_channel_details(IASIO* iasio, long num_channels,
  * Recreating the driver instance makes the new rate take effect cleanly
  * without needing a dummy stream cycle.
  */
-static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
-                             long* out_inputs, long* out_outputs,
-                             backend_error_t* err) {
+static bool open_asio_device(const char *devname, int samplerate, bool is_dsd,
+                             long *out_inputs, long *out_outputs,
+                             backend_error_t *err) {
   logger_trace(&g_logger,
                "open_asio_device: dev='%s', samplerate=%d, is_dsd=%d", devname,
                samplerate, (int)is_dsd);
@@ -2052,7 +2057,7 @@ static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
   logger_debug(&g_logger, "Available ASIO devices: %s", avail_str);
 
   backend_error_t load_err = {0};
-  IASIO* iasio = NULL;
+  IASIO *iasio = NULL;
   if (!asio_driver_load_by_name(devname, &iasio, &load_err)) {
     // A refused driver is not a missing one, and its message already says what
     // to do.
@@ -2069,9 +2074,9 @@ static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
         break;
       }
     }
-    const char* err_desc =
+    const char *err_desc =
         load_err.message[0] ? load_err.message : "driver load failed";
-    const char* hint =
+    const char *hint =
         exact_match
             ? " A driver matching the provided name was found, so the device "
               "may be turned off or disconnected."
@@ -2284,12 +2289,12 @@ static bool open_asio_device(const char* devname, int samplerate, bool is_dsd,
 /**
  * @brief open_asio_playback matching CamillaDSP device.rs:open_asio_playback.
  */
-static bool open_asio_playback(const char* devname, size_t num_channels,
+static bool open_asio_playback(const char *devname, size_t num_channels,
                                int samplerate,
                                asio_sample_format_t configured_format,
                                bool has_format,
-                               asio_sample_format_t* out_resolved_format,
-                               backend_error_t* err) {
+                               asio_sample_format_t *out_resolved_format,
+                               backend_error_t *err) {
   long inputs = 0, outputs = 0;
   bool is_dsd = (configured_format == ASIO_SAMPLE_FORMAT_DSD_INT8);
   if (!open_asio_device(devname, samplerate, is_dsd, &inputs, &outputs, err)) {
@@ -2317,12 +2322,12 @@ static bool open_asio_playback(const char* devname, size_t num_channels,
 /**
  * @brief open_asio_capture matching CamillaDSP device.rs:open_asio_capture.
  */
-static bool open_asio_capture(const char* devname, size_t num_channels,
+static bool open_asio_capture(const char *devname, size_t num_channels,
                               int samplerate,
                               asio_sample_format_t configured_format,
                               bool has_format,
-                              asio_sample_format_t* out_resolved_format,
-                              backend_error_t* err) {
+                              asio_sample_format_t *out_resolved_format,
+                              backend_error_t *err) {
   long inputs = 0, outputs = 0;
   bool is_dsd = (configured_format == ASIO_SAMPLE_FORMAT_DSD_INT8);
   if (!open_asio_device(devname, samplerate, is_dsd, &inputs, &outputs, err)) {
@@ -2365,24 +2370,25 @@ struct asio_playback {
   size_t bytes_per_sample;
   long actual_buffer_size;
 
-  ASIOBufferInfo* buffer_infos;
+  ASIOBufferInfo *buffer_infos;
   bool single_mode_allocated_infos;
   ASIOCallbacks callbacks_for_driver;
 
-  spsc_byte_ring_buffer_t* ring_buffer;
-  uint8_t* encode_buf;
+  spsc_byte_ring_buffer_t *ring_buffer;
+  uint8_t *encode_buf;
   size_t encode_buf_size;
 
-  asio_playback_context_t* context;
+  asio_playback_context_t *context;
   _Atomic bool is_running;
   _Atomic bool stopped;
   _Atomic bool paused;
   bool com_initialized;
 };
 
-static void asio_playback_close(void* ctx) {
-  asio_playback_t* playback = (asio_playback_t*)ctx;
-  if (!playback) return;
+static void asio_playback_close(void *ctx) {
+  asio_playback_t *playback = (asio_playback_t *)ctx;
+  if (!playback)
+    return;
 
   logger_debug(&g_logger, "Stopping ASIO playback.");
   if (playback->full_duplex) {
@@ -2431,9 +2437,10 @@ static void asio_playback_close(void* ctx) {
 /**
  * @brief open matching CamillaDSP device.rs AsioPlaybackDevice::start.
  */
-static bool asio_playback_open(void* ctx, backend_error_t* err) {
-  asio_playback_t* playback = (asio_playback_t*)ctx;
-  if (!playback) return false;
+static bool asio_playback_open(void *ctx, backend_error_t *err) {
+  asio_playback_t *playback = (asio_playback_t *)ctx;
+  if (!playback)
+    return false;
 
   if (!asio_com_init_this_thread(err)) {
     return false;
@@ -2510,7 +2517,7 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
   playback->encode_buf_size = playback->channels *
                               (size_t)playback->chunk_size *
                               playback->bytes_per_sample * 2;
-  playback->encode_buf = (uint8_t*)malloc(playback->encode_buf_size);
+  playback->encode_buf = (uint8_t *)malloc(playback->encode_buf_size);
 
   clear_playback_driver_events();
   reset_playback_callback_seen();
@@ -2523,7 +2530,7 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
   size_t asio_buf_frames = (size_t)asio_buffer_size;
 
   playback->context =
-      (asio_playback_context_t*)calloc(1, sizeof(asio_playback_context_t));
+      (asio_playback_context_t *)calloc(1, sizeof(asio_playback_context_t));
   if (!playback->ring_buffer || !playback->encode_buf || !playback->context) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -2541,14 +2548,14 @@ static bool asio_playback_open(void* ctx, backend_error_t* err) {
   playback->context->buffer_size = asio_buf_frames;
   playback->context->bytes_per_sample = playback->bytes_per_sample;
   playback->context->read_tmp =
-      (uint8_t*)calloc(1, asio_buf_frames * bytes_per_frame);
+      (uint8_t *)calloc(1, asio_buf_frames * bytes_per_frame);
 
   size_t initial_queue_cap =
       (16 * ring_frames + target_level + asio_buf_frames * 2) * bytes_per_frame;
   if (initial_queue_cap < asio_buf_frames * bytes_per_frame * 4) {
     initial_queue_cap = asio_buf_frames * bytes_per_frame * 4;
   }
-  playback->context->sample_queue = (uint8_t*)malloc(initial_queue_cap);
+  playback->context->sample_queue = (uint8_t *)malloc(initial_queue_cap);
   if (!playback->context->read_tmp || !playback->context->sample_queue) {
     if (err) {
       backend_error_init(
@@ -2644,10 +2651,11 @@ error_cleanup:
 /**
  * @brief write matching CamillaDSP device.rs.
  */
-static bool asio_playback_write(void* ctx, const audio_chunk_t* chunk,
-                                backend_error_t* err) {
-  asio_playback_t* playback = (asio_playback_t*)ctx;
-  if (!playback) return false;
+static bool asio_playback_write(void *ctx, const audio_chunk_t *chunk,
+                                backend_error_t *err) {
+  asio_playback_t *playback = (asio_playback_t *)ctx;
+  if (!playback)
+    return false;
 
   // The driver asked for a reset and the callback promised one, so stop
   // here and let the engine reopen the device. Matches CamillaDSP device.rs.
@@ -2668,7 +2676,8 @@ static bool asio_playback_write(void* ctx, const audio_chunk_t* chunk,
       (size_t)(1000000ULL * (unsigned long long)playback->chunk_size /
                (unsigned long long)playback->sample_rate / 2ULL);
   uint32_t sleep_ms = (uint32_t)(sleep_duration_us / 1000);
-  if (sleep_ms == 0) sleep_ms = 1;
+  if (sleep_ms == 0)
+    sleep_ms = 1;
 
   return audio_backend_ring_buffer_write(
       playback->ring_buffer, playback->encode_buf, playback->encode_buf_size,
@@ -2679,9 +2688,10 @@ static bool asio_playback_write(void* ctx, const audio_chunk_t* chunk,
       &playback->stopped, &playback->paused, &ASIO_PLAYBACK_RATE_CHANGED, err);
 }
 
-static size_t asio_playback_get_buffer_level(void* ctx) {
-  asio_playback_t* playback = (asio_playback_t*)ctx;
-  if (!playback || !playback->context) return 0;
+static size_t asio_playback_get_buffer_level(void *ctx) {
+  asio_playback_t *playback = (asio_playback_t *)ctx;
+  if (!playback || !playback->context)
+    return 0;
   double frames = atomic_load_explicit(&playback->context->buffer_fill,
                                        memory_order_relaxed);
   uint64_t update_time = atomic_load_explicit(
@@ -2701,9 +2711,10 @@ static size_t asio_playback_get_buffer_level(void* ctx) {
   return (size_t)(frames - frames_consumed);
 }
 
-static bool asio_playback_get_pending_rate_change(void* ctx, double* out_rate) {
-  asio_playback_t* playback = (asio_playback_t*)ctx;
-  if (!playback) return false;
+static bool asio_playback_get_pending_rate_change(void *ctx, double *out_rate) {
+  asio_playback_t *playback = (asio_playback_t *)ctx;
+  if (!playback)
+    return false;
   if (take_playback_rate_change_event()) {
     int new_rate = read_current_asio_sample_rate_hz(playback->device);
     if (out_rate) {
@@ -2714,11 +2725,12 @@ static bool asio_playback_get_pending_rate_change(void* ctx, double* out_rate) {
   return false;
 }
 
-static bool asio_playback_prefill_silence(void* ctx, size_t frames,
-                                          backend_error_t* err) {
+static bool asio_playback_prefill_silence(void *ctx, size_t frames,
+                                          backend_error_t *err) {
   (void)err;
-  asio_playback_t* playback = (asio_playback_t*)ctx;
-  if (!playback) return false;
+  asio_playback_t *playback = (asio_playback_t *)ctx;
+  if (!playback)
+    return false;
   playback->target_level = (int)frames;
   if (playback->context) {
     atomic_store_explicit(&playback->context->target_level, frames,
@@ -2727,40 +2739,45 @@ static bool asio_playback_prefill_silence(void* ctx, size_t frames,
   return true;
 }
 
-static void asio_playback_stop(void* ctx) {
-  asio_playback_t* playback = (asio_playback_t*)ctx;
-  if (!playback) return;
+static void asio_playback_stop(void *ctx) {
+  asio_playback_t *playback = (asio_playback_t *)ctx;
+  if (!playback)
+    return;
   atomic_store_explicit(&playback->stopped, true, memory_order_release);
 }
 
-static bool asio_playback_get_is_paused(void* ctx) {
-  asio_playback_t* playback = (asio_playback_t*)ctx;
-  if (!playback) return false;
+static bool asio_playback_get_is_paused(void *ctx) {
+  asio_playback_t *playback = (asio_playback_t *)ctx;
+  if (!playback)
+    return false;
   return atomic_load_explicit(&playback->paused, memory_order_acquire);
 }
 
-static void asio_playback_set_is_paused(void* ctx, bool paused) {
-  asio_playback_t* playback = (asio_playback_t*)ctx;
-  if (!playback) return;
+static void asio_playback_set_is_paused(void *ctx, bool paused) {
+  asio_playback_t *playback = (asio_playback_t *)ctx;
+  if (!playback)
+    return;
   atomic_store_explicit(&playback->paused, paused, memory_order_release);
 }
 
-static void asio_playback_destroy(void* ctx) {
-  asio_playback_t* playback = (asio_playback_t*)ctx;
+static void asio_playback_destroy(void *ctx) {
+  asio_playback_t *playback = (asio_playback_t *)ctx;
   if (playback) {
     asio_playback_close(playback);
     free(playback);
   }
 }
 
-static playback_backend_t* asio_playback_create(
-    const playback_device_config_t* config, int sample_rate, int chunk_size,
-    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+static playback_backend_t *
+asio_playback_create(const playback_device_config_t *config, int sample_rate,
+                     int chunk_size, bool full_duplex,
+                     processing_parameters_t *params, backend_error_t *err) {
   (void)params;
   (void)err;
-  asio_playback_t* playback =
-      (asio_playback_t*)calloc(1, sizeof(asio_playback_t));
-  if (!playback) return NULL;
+  asio_playback_t *playback =
+      (asio_playback_t *)calloc(1, sizeof(asio_playback_t));
+  if (!playback)
+    return NULL;
 
   snprintf(playback->device, sizeof(playback->device), "%s",
            config->cfg.asio.device);
@@ -2777,8 +2794,8 @@ static playback_backend_t* asio_playback_create(
   atomic_init(&playback->stopped, false);
   atomic_init(&playback->paused, false);
 
-  playback_backend_t* backend =
-      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
+  playback_backend_t *backend =
+      (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
   if (!backend) {
     free(playback);
     return NULL;
@@ -2821,24 +2838,25 @@ struct asio_capture {
   size_t bytes_per_sample;
   long actual_buffer_size;
 
-  ASIOBufferInfo* buffer_infos;
+  ASIOBufferInfo *buffer_infos;
   bool single_mode_allocated_infos;
   ASIOCallbacks callbacks_for_driver;
 
-  spsc_byte_ring_buffer_t* ring_buffer;
+  spsc_byte_ring_buffer_t *ring_buffer;
   cdsp_sem_t semaphore;
-  uint8_t* decode_buf;
+  uint8_t *decode_buf;
   size_t decode_buf_size;
 
-  asio_capture_context_t* context;
+  asio_capture_context_t *context;
   _Atomic bool is_running;
   _Atomic bool stopped;
   bool com_initialized;
 };
 
-static void asio_capture_close(void* ctx) {
-  asio_capture_t* capture = (asio_capture_t*)ctx;
-  if (!capture) return;
+static void asio_capture_close(void *ctx) {
+  asio_capture_t *capture = (asio_capture_t *)ctx;
+  if (!capture)
+    return;
 
   // Close the gate first, so callbacks arriving during teardown do no work.
   // Matches device.rs:CAPTURE_STREAM_ACTIVE.
@@ -2893,9 +2911,10 @@ static void asio_capture_close(void* ctx) {
 /**
  * @brief open matching CamillaDSP device.rs AsioCaptureDevice::start.
  */
-static bool asio_capture_open(void* ctx, backend_error_t* err) {
-  asio_capture_t* capture = (asio_capture_t*)ctx;
-  if (!capture) return false;
+static bool asio_capture_open(void *ctx, backend_error_t *err) {
+  asio_capture_t *capture = (asio_capture_t *)ctx;
+  if (!capture)
+    return false;
 
   if (!asio_com_init_this_thread(err)) {
     return false;
@@ -2969,14 +2988,14 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
 
   capture->decode_buf_size = capture->channels * (size_t)capture->chunk_size *
                              capture->bytes_per_sample * 2;
-  capture->decode_buf = (uint8_t*)malloc(capture->decode_buf_size);
+  capture->decode_buf = (uint8_t *)malloc(capture->decode_buf_size);
 
   clear_capture_driver_events();
   // Keep the callback from pushing until the loop is ready to consume
   atomic_store_explicit(&CAPTURE_STREAM_ACTIVE, false, memory_order_release);
 
   capture->context =
-      (asio_capture_context_t*)calloc(1, sizeof(asio_capture_context_t));
+      (asio_capture_context_t *)calloc(1, sizeof(asio_capture_context_t));
   if (capture->context) {
     capture->context->ring_buffer = capture->ring_buffer;
     capture->context->semaphore = capture->semaphore;
@@ -2987,7 +3006,7 @@ static bool asio_capture_open(void* ctx, backend_error_t* err) {
                                           capture->bytes_per_sample *
                                           capture->channels;
     capture->context->transfer_buf =
-        (uint8_t*)malloc(capture->context->transfer_buf_size);
+        (uint8_t *)malloc(capture->context->transfer_buf_size);
   }
 
   if (!capture->ring_buffer || !capture->semaphore || !capture->decode_buf ||
@@ -3080,10 +3099,11 @@ error_cleanup:
 /**
  * @brief read matching CamillaDSP device.rs.
  */
-static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
-                              backend_error_t* err) {
-  asio_capture_t* capture = (asio_capture_t*)ctx;
-  if (!capture) return false;
+static bool asio_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
+                              backend_error_t *err) {
+  asio_capture_t *capture = (asio_capture_t *)ctx;
+  if (!capture)
+    return false;
 
   // The driver asked for a reset and the callback promised one, so stop
   // here and let the engine reopen the device. Matches CamillaDSP device.rs.
@@ -3109,17 +3129,19 @@ static bool asio_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       &ASIO_CAPTURE_RATE_CHANGED, chunk, err);
 }
 
-static bool asio_capture_wait_for_data(void* ctx, uint32_t timeout_ms) {
-  asio_capture_t* capture = (asio_capture_t*)ctx;
-  if (!capture || !capture->semaphore) return false;
+static bool asio_capture_wait_for_data(void *ctx, uint32_t timeout_ms) {
+  asio_capture_t *capture = (asio_capture_t *)ctx;
+  if (!capture || !capture->semaphore)
+    return false;
   if (atomic_load_explicit(&capture->stopped, memory_order_acquire))
     return false;
   return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 
-static bool asio_capture_get_pending_rate_change(void* ctx, double* out_rate) {
-  asio_capture_t* capture = (asio_capture_t*)ctx;
-  if (!capture) return false;
+static bool asio_capture_get_pending_rate_change(void *ctx, double *out_rate) {
+  asio_capture_t *capture = (asio_capture_t *)ctx;
+  if (!capture)
+    return false;
   if (take_capture_rate_change_event()) {
     int new_rate = read_current_asio_sample_rate_hz(capture->device);
     if (out_rate) {
@@ -3130,30 +3152,33 @@ static bool asio_capture_get_pending_rate_change(void* ctx, double* out_rate) {
   return false;
 }
 
-static void asio_capture_stop(void* ctx) {
-  asio_capture_t* capture = (asio_capture_t*)ctx;
-  if (!capture) return;
+static void asio_capture_stop(void *ctx) {
+  asio_capture_t *capture = (asio_capture_t *)ctx;
+  if (!capture)
+    return;
   atomic_store_explicit(&capture->stopped, true, memory_order_release);
   if (capture->semaphore) {
     cdsp_sem_signal(capture->semaphore);
   }
 }
 
-static void asio_capture_destroy(void* ctx) {
-  asio_capture_t* capture = (asio_capture_t*)ctx;
+static void asio_capture_destroy(void *ctx) {
+  asio_capture_t *capture = (asio_capture_t *)ctx;
   if (capture) {
     asio_capture_close(capture);
     free(capture);
   }
 }
 
-static capture_backend_t* asio_capture_create(
-    const capture_device_config_t* config, int sample_rate, int chunk_size,
-    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+static capture_backend_t *
+asio_capture_create(const capture_device_config_t *config, int sample_rate,
+                    int chunk_size, bool full_duplex,
+                    processing_parameters_t *params, backend_error_t *err) {
   (void)params;
   (void)err;
-  asio_capture_t* capture = (asio_capture_t*)calloc(1, sizeof(asio_capture_t));
-  if (!capture) return NULL;
+  asio_capture_t *capture = (asio_capture_t *)calloc(1, sizeof(asio_capture_t));
+  if (!capture)
+    return NULL;
 
   snprintf(capture->device, sizeof(capture->device), "%s",
            config->cfg.asio.device);
@@ -3168,8 +3193,8 @@ static capture_backend_t* asio_capture_create(
   atomic_init(&capture->is_running, false);
   atomic_init(&capture->stopped, false);
 
-  capture_backend_t* backend =
-      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
+  capture_backend_t *backend =
+      (capture_backend_t *)calloc(1, sizeof(capture_backend_t));
   if (!backend) {
     free(capture);
     return NULL;
@@ -3180,9 +3205,10 @@ static capture_backend_t* asio_capture_create(
   return backend;
 }
 
-static void asio_capture_set_is_paused(void* ctx, bool paused) {
-  asio_capture_t* capture = (asio_capture_t*)ctx;
-  if (!capture) return;
+static void asio_capture_set_is_paused(void *ctx, bool paused) {
+  asio_capture_t *capture = (asio_capture_t *)ctx;
+  if (!capture)
+    return;
   (void)paused;
 }
 
@@ -3200,4 +3226,4 @@ const capture_backend_vtable_t g_asio_capture_vtable = {
     .destroy = asio_capture_destroy,
 };
 
-#endif  // ENABLE_ASIO
+#endif // ENABLE_ASIO

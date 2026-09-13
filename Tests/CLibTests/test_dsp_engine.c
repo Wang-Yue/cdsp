@@ -51,19 +51,19 @@
 #include "cdsp/spectrum.h"
 #include "test_support.h"
 
-static void run_e2e_test_config(const char* json, const char* backend_name) {
-  dsp_engine_t* engine = dsp_engine_create();
+static void run_e2e_test_config(const char *json, const char *backend_name) {
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   cdsp_backend_error_t err;
   memset(&err, 0, sizeof(err));
   bool success = cdsp_set_config_json(engine, json, &err);
   if (!success) {
-    printf(
-        "⚠️ [E2E Warning] Skipping E2E test for backend '%s' (Initialization "
-        "failed: %s)\n",
-        backend_name, err.message);
-    if (engine && engine->free) engine->free(engine->ctx);
+    printf("⚠️ [E2E Warning] Skipping E2E test for backend '%s' (Initialization "
+           "failed: %s)\n",
+           backend_name, err.message);
+    if (engine && engine->free)
+      engine->free(engine->ctx);
     return;
   }
 
@@ -79,41 +79,42 @@ static void run_e2e_test_config(const char* json, const char* backend_name) {
   cdsp_get_vu_levels(engine, &vu);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   printf("✅ [E2E Success] Backend '%s' ran successfully\n", backend_name);
 }
 
 TEST(DSPEngineCreateFree) {
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 }
 
 TEST(DSPEngineSetConfigAndReload) {
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-  const char* json1 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"RawFile\",\n"
-      "            \"filename\": \"/dev/null\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"/dev/null\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  const char *json1 = "{\n"
+                      "    \"devices\": {\n"
+                      "        \"samplerate\": 44100,\n"
+                      "        \"chunksize\": 1024,\n"
+                      "        \"capture\": {\n"
+                      "            \"type\": \"RawFile\",\n"
+                      "            \"filename\": \"/dev/null\",\n"
+                      "            \"format\": \"S16_LE\",\n"
+                      "            \"channels\": 2\n"
+                      "        },\n"
+                      "        \"playback\": {\n"
+                      "            \"type\": \"File\",\n"
+                      "            \"filename\": \"/dev/null\",\n"
+                      "            \"format\": \"S16_LE\",\n"
+                      "            \"channels\": 2\n"
+                      "        }\n"
+                      "    }\n"
+                      "}";
 
-  const char* json2 =
+  const char *json2 =
       "{\n"
       "    \"devices\": {\n"
       "        \"samplerate\": 44100,\n"
@@ -168,10 +169,10 @@ TEST(DSPEngineSetConfigAndReload) {
   }
   ASSERT_TRUE(success2);
 
-  char* active_json = NULL;
+  char *active_json = NULL;
   ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
   ASSERT_TRUE(active_json != NULL);
-  dsp_config_t* active = NULL;
+  dsp_config_t *active = NULL;
   config_error_t cerr = {0};
   ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr));
   ASSERT_TRUE(active != NULL);
@@ -181,78 +182,77 @@ TEST(DSPEngineSetConfigAndReload) {
   free(active_json);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 }
 
 TEST(DSPEngineHotParameterReload) {
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-  const char* json1 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"RawFile\",\n"
-      "            \"filename\": \"/dev/null\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"/dev/null\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    },\n"
-      "    \"filters\": {\n"
-      "        \"mygain\": {\n"
-      "            \"type\": \"Gain\",\n"
-      "            \"parameters\": {\n"
-      "                \"gain\": -6.0\n"
-      "            }\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Filter\",\n"
-      "        \"channel\": 0,\n"
-      "        \"names\": [\"mygain\"]\n"
-      "    }]\n"
-      "}";
+  const char *json1 = "{\n"
+                      "    \"devices\": {\n"
+                      "        \"samplerate\": 44100,\n"
+                      "        \"chunksize\": 1024,\n"
+                      "        \"capture\": {\n"
+                      "            \"type\": \"RawFile\",\n"
+                      "            \"filename\": \"/dev/null\",\n"
+                      "            \"format\": \"S16_LE\",\n"
+                      "            \"channels\": 2\n"
+                      "        },\n"
+                      "        \"playback\": {\n"
+                      "            \"type\": \"File\",\n"
+                      "            \"filename\": \"/dev/null\",\n"
+                      "            \"format\": \"S16_LE\",\n"
+                      "            \"channels\": 2\n"
+                      "        }\n"
+                      "    },\n"
+                      "    \"filters\": {\n"
+                      "        \"mygain\": {\n"
+                      "            \"type\": \"Gain\",\n"
+                      "            \"parameters\": {\n"
+                      "                \"gain\": -6.0\n"
+                      "            }\n"
+                      "        }\n"
+                      "    },\n"
+                      "    \"pipeline\": [{\n"
+                      "        \"type\": \"Filter\",\n"
+                      "        \"channel\": 0,\n"
+                      "        \"names\": [\"mygain\"]\n"
+                      "    }]\n"
+                      "}";
 
-  const char* json2 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"RawFile\",\n"
-      "            \"filename\": \"/dev/null\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"/dev/null\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    },\n"
-      "    \"filters\": {\n"
-      "        \"mygain\": {\n"
-      "            \"type\": \"Gain\",\n"
-      "            \"parameters\": {\n"
-      "                \"gain\": -3.0\n"
-      "            }\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Filter\",\n"
-      "        \"channel\": 0,\n"
-      "        \"names\": [\"mygain\"]\n"
-      "    }]\n"
-      "}";
+  const char *json2 = "{\n"
+                      "    \"devices\": {\n"
+                      "        \"samplerate\": 44100,\n"
+                      "        \"chunksize\": 1024,\n"
+                      "        \"capture\": {\n"
+                      "            \"type\": \"RawFile\",\n"
+                      "            \"filename\": \"/dev/null\",\n"
+                      "            \"format\": \"S16_LE\",\n"
+                      "            \"channels\": 2\n"
+                      "        },\n"
+                      "        \"playback\": {\n"
+                      "            \"type\": \"File\",\n"
+                      "            \"filename\": \"/dev/null\",\n"
+                      "            \"format\": \"S16_LE\",\n"
+                      "            \"channels\": 2\n"
+                      "        }\n"
+                      "    },\n"
+                      "    \"filters\": {\n"
+                      "        \"mygain\": {\n"
+                      "            \"type\": \"Gain\",\n"
+                      "            \"parameters\": {\n"
+                      "                \"gain\": -3.0\n"
+                      "            }\n"
+                      "        }\n"
+                      "    },\n"
+                      "    \"pipeline\": [{\n"
+                      "        \"type\": \"Filter\",\n"
+                      "        \"channel\": 0,\n"
+                      "        \"names\": [\"mygain\"]\n"
+                      "    }]\n"
+                      "}";
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
@@ -262,10 +262,10 @@ TEST(DSPEngineHotParameterReload) {
   bool success2 = engine->set_config_json(engine->ctx, json2, &err);
   ASSERT_TRUE(success2);
 
-  char* active_json = NULL;
+  char *active_json = NULL;
   ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
   ASSERT_TRUE(active_json != NULL);
-  dsp_config_t* active = NULL;
+  dsp_config_t *active = NULL;
   config_error_t cerr = {0};
   ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr));
   ASSERT_TRUE(active != NULL);
@@ -275,67 +275,66 @@ TEST(DSPEngineHotParameterReload) {
   free(active_json);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 }
 
 TEST(DSPEngineSetConfigStruct) {
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"RawFile\",\n"
-      "            \"filename\": \"/dev/null\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"/dev/null\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  const char *json = "{\n"
+                     "    \"devices\": {\n"
+                     "        \"samplerate\": 44100,\n"
+                     "        \"chunksize\": 1024,\n"
+                     "        \"capture\": {\n"
+                     "            \"type\": \"RawFile\",\n"
+                     "            \"filename\": \"/dev/null\",\n"
+                     "            \"format\": \"S16_LE\",\n"
+                     "            \"channels\": 2\n"
+                     "        },\n"
+                     "        \"playback\": {\n"
+                     "            \"type\": \"File\",\n"
+                     "            \"filename\": \"/dev/null\",\n"
+                     "            \"format\": \"S16_LE\",\n"
+                     "            \"channels\": 2\n"
+                     "        }\n"
+                     "    }\n"
+                     "}";
 
-  dsp_config_t* parsed = NULL;
+  dsp_config_t *parsed = NULL;
   config_error_t cerr;
   int parse_res = config_loader_parse(json, &parsed, &cerr);
   ASSERT_EQ(0, parse_res);
   ASSERT_TRUE(parsed != NULL);
 
-  const char* json_override =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"RawFile\",\n"
-      "            \"filename\": \"/dev/null\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 4\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"/dev/null\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 4\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  const char *json_override = "{\n"
+                              "    \"devices\": {\n"
+                              "        \"samplerate\": 48000,\n"
+                              "        \"chunksize\": 1024,\n"
+                              "        \"capture\": {\n"
+                              "            \"type\": \"RawFile\",\n"
+                              "            \"filename\": \"/dev/null\",\n"
+                              "            \"format\": \"S16_LE\",\n"
+                              "            \"channels\": 4\n"
+                              "        },\n"
+                              "        \"playback\": {\n"
+                              "            \"type\": \"File\",\n"
+                              "            \"filename\": \"/dev/null\",\n"
+                              "            \"format\": \"S16_LE\",\n"
+                              "            \"channels\": 4\n"
+                              "        }\n"
+                              "    }\n"
+                              "}";
 
   audio_backend_error_t berr;
   bool ok = engine->set_config_json(engine->ctx, json_override, &berr);
   ASSERT_TRUE(ok);
 
-  char* active_json = NULL;
+  char *active_json = NULL;
   ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
   ASSERT_TRUE(active_json != NULL);
-  dsp_config_t* active = NULL;
+  dsp_config_t *active = NULL;
   config_error_t cerr2 = {0};
   ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr2));
   ASSERT_TRUE(active != NULL);
@@ -346,28 +345,28 @@ TEST(DSPEngineSetConfigStruct) {
   dsp_config_free(parsed);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 }
 
 TEST(DSPEngineE2E_ALSA) {
 #if defined(__linux__)
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Alsa\",\n"
-      "            \"device\": \"null\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  const char *json = "{\n"
+                     "    \"devices\": {\n"
+                     "        \"samplerate\": 44100,\n"
+                     "        \"chunksize\": 512,\n"
+                     "        \"capture\": {\n"
+                     "            \"type\": \"Alsa\",\n"
+                     "            \"device\": \"null\",\n"
+                     "            \"channels\": 2\n"
+                     "        },\n"
+                     "        \"playback\": {\n"
+                     "            \"type\": \"Alsa\",\n"
+                     "            \"device\": \"null\",\n"
+                     "            \"channels\": 2\n"
+                     "        }\n"
+                     "    }\n"
+                     "}";
   run_e2e_test_config(json, "ALSA");
 #endif
 }
@@ -387,7 +386,7 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
   remove(alsa_conf);
 
   // 1. Create ALSA user-space loopback devices (loopback 1 & loopback 2)
-  FILE* conf_f = fopen(alsa_conf, "w");
+  FILE *conf_f = fopen(alsa_conf, "w");
   ASSERT_TRUE(conf_f != NULL);
   fprintf(conf_f,
           "pcm.cdsp_loop1_play {\n"
@@ -434,7 +433,7 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
     input_samples[i] = (int16_t)(((i % 128) - 64) * 200);
   }
 
-  snd_pcm_t* pcm_play1 = NULL;
+  snd_pcm_t *pcm_play1 = NULL;
   int pcm_err =
       snd_pcm_open(&pcm_play1, "cdsp_loop1_play", SND_PCM_STREAM_PLAYBACK, 0);
   ASSERT_EQ(0, pcm_err);
@@ -470,7 +469,7 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
            "    }\n"
            "}");
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -479,14 +478,16 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
   ASSERT_TRUE(success);
 
   for (int i = 0; i < 100; i++) {
-    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) break;
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE)
+      break;
     cdsp_sleep_ms(10);
   }
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
-  FILE* out_f = fopen(raw_loop2, "rb");
+  FILE *out_f = fopen(raw_loop2, "rb");
   ASSERT_TRUE(out_f != NULL);
   fseek(out_f, 0, SEEK_END);
   long out_size = ftell(out_f);
@@ -524,9 +525,9 @@ typedef struct {
   pthread_t thread;
 } alsa_loopback_reader_t;
 
-static void* alsa_loopback_reader_func(void* arg) {
-  alsa_loopback_reader_t* reader = (alsa_loopback_reader_t*)arg;
-  snd_pcm_t* pcm = NULL;
+static void *alsa_loopback_reader_func(void *arg) {
+  alsa_loopback_reader_t *reader = (alsa_loopback_reader_t *)arg;
+  snd_pcm_t *pcm = NULL;
   if (snd_pcm_open(&pcm, "hw:CARD=Loopback,DEV=1", SND_PCM_STREAM_CAPTURE, 0) <
       0) {
     return NULL;
@@ -555,11 +556,11 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
   // Create a valid 16-bit stereo 44.1kHz WAV file with 20000 frames (~0.45s) of
   // audio
   size_t test_frames = 20000;
-  int16_t* samples = (int16_t*)malloc(test_frames * 2 * sizeof(int16_t));
+  int16_t *samples = (int16_t *)malloc(test_frames * 2 * sizeof(int16_t));
   for (size_t i = 0; i < test_frames * 2; i++) {
     samples[i] = (int16_t)(((i % 128) - 64) * 200);
   }
-  FILE* wf = fopen(wav_file, "wb");
+  FILE *wf = fopen(wav_file, "wb");
   ASSERT_TRUE(wf != NULL);
 
   // Write 44-byte WAV header
@@ -577,7 +578,7 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
   fwrite("WAVE", 1, 4, wf);
   fwrite("fmt ", 1, 4, wf);
   uint32_t subchunk1_size = 16;
-  uint16_t audio_format = 1;  // PCM
+  uint16_t audio_format = 1; // PCM
   fwrite(&subchunk1_size, 4, 1, wf);
   fwrite(&audio_format, 2, 1, wf);
   fwrite(&num_channels, 2, 1, wf);
@@ -619,7 +620,7 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
   pthread_create(&reader.thread, NULL, alsa_loopback_reader_func, &reader);
   cdsp_sleep_ms(50);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -644,23 +645,24 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
   ASSERT_EQ(CDSP_PROCESSING_STATE_INACTIVE, cdsp_get_state(engine));
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   remove(wav_file);
 #endif
 }
 
 #if defined(__linux__) && defined(ENABLE_ALSA)
 typedef struct {
-  const char* pcm_name;
+  const char *pcm_name;
   unsigned int sample_rate;
   atomic_int change_rate;
   atomic_bool stop;
   pthread_t thread;
 } alsa_loopback_player_t;
 
-static void* alsa_loopback_player_func(void* arg) {
-  alsa_loopback_player_t* player = (alsa_loopback_player_t*)arg;
-  snd_pcm_t* pcm = NULL;
+static void *alsa_loopback_player_func(void *arg) {
+  alsa_loopback_player_t *player = (alsa_loopback_player_t *)arg;
+  snd_pcm_t *pcm = NULL;
   if (snd_pcm_open(&pcm, player->pcm_name, SND_PCM_STREAM_PLAYBACK, 0) < 0) {
     return NULL;
   }
@@ -713,7 +715,7 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
   remove(alsa_conf);
 
   // Create ALSA user-space loopback devices
-  FILE* conf_f = fopen(alsa_conf, "w");
+  FILE *conf_f = fopen(alsa_conf, "w");
   ASSERT_TRUE(conf_f != NULL);
   fprintf(conf_f,
           "pcm.cdsp_loop1_play {\n"
@@ -784,7 +786,7 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
            "    }\n"
            "}");
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -838,7 +840,8 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
   pthread_join(player.thread, NULL);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   // 4. Change the config for the capture rate to 48kHz and it should play
   // smoothly again
@@ -900,7 +903,8 @@ TEST(DSPEngineE2E_ALSALoopbackSampleRateChange) {
   pthread_join(player48k_2.thread, NULL);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   unlink(raw_loop1);
   remove(raw_loop2);
@@ -929,7 +933,7 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
   remove(raw_loop2);
   remove(alsa_conf);
 
-  FILE* conf_f = fopen(alsa_conf, "w");
+  FILE *conf_f = fopen(alsa_conf, "w");
   ASSERT_TRUE(conf_f != NULL);
   fprintf(conf_f,
           "pcm.cdsp_loop1_play {\n"
@@ -999,7 +1003,7 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
            "    }\n"
            "}");
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -1049,7 +1053,8 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
   pthread_join(player.thread, NULL);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   // Reconfigure engine with 48kHz for playback
   char json_48k[1024];
@@ -1098,7 +1103,8 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
   ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   unlink(raw_loop1);
   remove(raw_loop2);
@@ -1146,17 +1152,17 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
            "    }\n"
            "}");
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
   memset(&berr, 0, sizeof(berr));
   if (!engine->set_config_json(engine->ctx, json_44k, &berr)) {
-    printf(
-        "PipeWire unavailable (%s), skipping PipeWire capture rate change "
-        "test\n",
-        berr.message);
-    if (engine->free) engine->free(engine->ctx);
+    printf("PipeWire unavailable (%s), skipping PipeWire capture rate change "
+           "test\n",
+           berr.message);
+    if (engine->free)
+      engine->free(engine->ctx);
     return;
   }
 
@@ -1171,7 +1177,8 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
   if (!running) {
     printf("PipeWire stream failed to enter Running state, skipping test\n");
     cdsp_stop(engine);
-    if (engine->free) engine->free(engine->ctx);
+    if (engine->free)
+      engine->free(engine->ctx);
     return;
   }
 
@@ -1204,11 +1211,11 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
   system("pw-metadata -n settings 0 clock.force-rate 0 >/dev/null 2>&1");
 
   if (!rate_change_stopped) {
-    printf(
-        "PipeWire environment internal resampling did not fire rate change "
-        "event, skipping recovery check\n");
+    printf("PipeWire environment internal resampling did not fire rate change "
+           "event, skipping recovery check\n");
     cdsp_stop(engine);
-    if (engine && engine->free) engine->free(engine->ctx);
+    if (engine && engine->free)
+      engine->free(engine->ctx);
     return;
   }
 
@@ -1216,7 +1223,8 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
   ASSERT_EQ(STOP_REASON_CAPTURE_FORMAT_CHANGE, stop_reason.type);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   // Reconfigure PipeWire engine with 48kHz
   char json_48k[1024];
@@ -1261,7 +1269,8 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
   ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 #endif
 }
 
@@ -1293,17 +1302,17 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
            "    }\n"
            "}");
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
   memset(&berr, 0, sizeof(berr));
   if (!engine->set_config_json(engine->ctx, json_44k, &berr)) {
-    printf(
-        "PipeWire unavailable (%s), skipping PipeWire playback rate change "
-        "test\n",
-        berr.message);
-    if (engine->free) engine->free(engine->ctx);
+    printf("PipeWire unavailable (%s), skipping PipeWire playback rate change "
+           "test\n",
+           berr.message);
+    if (engine->free)
+      engine->free(engine->ctx);
     return;
   }
 
@@ -1318,7 +1327,8 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
   if (!running) {
     printf("PipeWire stream failed to enter Running state, skipping test\n");
     cdsp_stop(engine);
-    if (engine->free) engine->free(engine->ctx);
+    if (engine->free)
+      engine->free(engine->ctx);
     return;
   }
 
@@ -1352,11 +1362,11 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
   system("pw-metadata -n settings 0 clock.force-rate 0 >/dev/null 2>&1");
 
   if (!rate_change_stopped) {
-    printf(
-        "PipeWire environment internal resampling did not fire rate change "
-        "event, skipping recovery check\n");
+    printf("PipeWire environment internal resampling did not fire rate change "
+           "event, skipping recovery check\n");
     cdsp_stop(engine);
-    if (engine && engine->free) engine->free(engine->ctx);
+    if (engine && engine->free)
+      engine->free(engine->ctx);
     return;
   }
 
@@ -1365,7 +1375,8 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
               stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   // Reconfigure PipeWire engine with 48kHz
   char json_48k[1024];
@@ -1413,50 +1424,49 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
   ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 #endif
 }
 
 TEST(DSPEngineE2E_PipeWire) {
 #if defined(__linux__)
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Pipewire\",\n"
-      "            \"device\": \"default\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Pipewire\",\n"
-      "            \"device\": \"default\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  const char *json = "{\n"
+                     "    \"devices\": {\n"
+                     "        \"samplerate\": 48000,\n"
+                     "        \"chunksize\": 512,\n"
+                     "        \"capture\": {\n"
+                     "            \"type\": \"Pipewire\",\n"
+                     "            \"device\": \"default\",\n"
+                     "            \"channels\": 2\n"
+                     "        },\n"
+                     "        \"playback\": {\n"
+                     "            \"type\": \"Pipewire\",\n"
+                     "            \"device\": \"default\",\n"
+                     "            \"channels\": 2\n"
+                     "        }\n"
+                     "    }\n"
+                     "}";
   run_e2e_test_config(json, "PipeWire");
 #endif
 }
 
 TEST(DSPEngineE2E_CoreAudio) {
 #if defined(__APPLE__)
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 44100,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"CoreAudio\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  const char *json = "{\n"
+                     "    \"devices\": {\n"
+                     "        \"samplerate\": 44100,\n"
+                     "        \"chunksize\": 512,\n"
+                     "        \"capture\": {\n"
+                     "            \"type\": \"CoreAudio\",\n"
+                     "            \"channels\": 2\n"
+                     "        },\n"
+                     "        \"playback\": {\n"
+                     "            \"type\": \"CoreAudio\",\n"
+                     "            \"channels\": 2\n"
+                     "        }\n"
+                     "    }\n"
+                     "}";
   run_e2e_test_config(json, "CoreAudio");
 #endif
 }
@@ -1471,9 +1481,8 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
   AudioDeviceID out_dev_id =
       core_audio_device_id_for_name("BlackHole 16ch", CORE_AUDIO_SCOPE_OUTPUT);
   if (dev_id == 0 || out_dev_id == 0) {
-    printf(
-        "⚠️ [E2E Warning] Skipping CoreAudio rate change test: BlackHole "
-        "devices not found\n");
+    printf("⚠️ [E2E Warning] Skipping CoreAudio rate change test: BlackHole "
+           "devices not found\n");
     return;
   }
 
@@ -1523,7 +1532,7 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
            "}",
            init_sr);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -1577,7 +1586,8 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
   ASSERT_EQ(STOP_REASON_CAPTURE_FORMAT_CHANGE, stop_reason.type);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   // Ensure playback device is also set to target_sr before restart
   core_audio_device_set_nominal_sample_rate(out_dev_id, (double)target_sr);
@@ -1636,7 +1646,8 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
   ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   // Restore the hardware nominal rates to initial state
   core_audio_device_set_nominal_sample_rate(dev_id, initial_rate);
@@ -1645,7 +1656,8 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
     double r1 = 0, r2 = 0;
     core_audio_device_get_nominal_sample_rate(dev_id, &r1);
     core_audio_device_get_nominal_sample_rate(out_dev_id, &r2);
-    if (fabs(r1 - initial_rate) < 1.0 && fabs(r2 - initial_rate) < 1.0) break;
+    if (fabs(r1 - initial_rate) < 1.0 && fabs(r2 - initial_rate) < 1.0)
+      break;
     cdsp_sleep_ms(20);
   }
   cdsp_sleep_ms(100);
@@ -1709,7 +1721,7 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
            "}",
            init_sr);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -1763,7 +1775,8 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
   ASSERT_EQ(STOP_REASON_PLAYBACK_FORMAT_CHANGE, stop_reason.type);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   // 4. Re-configure the engine for target_sr and verify it restarts and runs
   // smoothly
@@ -1821,7 +1834,8 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
   ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   // Restore the hardware nominal rate to its initial state
   if (in_dev_id != 0) {
@@ -1890,7 +1904,7 @@ TEST(DSPEngineE2E_FileFile) {
   remove(in_file);
   remove(out_file);
 
-  FILE* f = fopen(in_file, "wb");
+  FILE *f = fopen(in_file, "wb");
   ASSERT_TRUE(f != NULL);
   int16_t input_samples[1024 * 2];
   for (int i = 0; i < 1024 * 2; i++) {
@@ -1921,7 +1935,7 @@ TEST(DSPEngineE2E_FileFile) {
            "}",
            in_file, out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -1930,14 +1944,16 @@ TEST(DSPEngineE2E_FileFile) {
   ASSERT_TRUE(success);
 
   for (int i = 0; i < 200; i++) {
-    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) break;
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE)
+      break;
     cdsp_sleep_ms(10);
   }
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
-  FILE* out_f = fopen(out_file, "rb");
+  FILE *out_f = fopen(out_file, "rb");
   ASSERT_TRUE(out_f != NULL);
   int16_t output_samples[1024 * 2];
   size_t read_count = fread(output_samples, sizeof(int16_t), 1024 * 2, out_f);
@@ -1988,7 +2004,7 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
            "}",
            out_filename);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -2000,10 +2016,11 @@ TEST(DSPEngineE2E_GeneratorFile_SpeedTest) {
   cdsp_sleep_ms(2500);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   // Check the size of the output file
-  FILE* f = fopen(out_filename, "rb");
+  FILE *f = fopen(out_filename, "rb");
   ASSERT_TRUE(f != NULL);
   fseek(f, 0, SEEK_END);
   long size = ftell(f);
@@ -2035,33 +2052,31 @@ static bool wasapi_change_playback_rate_only(int sample_rate);
 static bool wasapi_complete_rate_change(int sample_rate);
 
 TEST(DSPEngineASIOUnsupportedDriverRefused) {
-  asio_set_allow_unsupported_drivers(false);
   ASSERT_TRUE(asio_is_unsupported_driver("ASIO4ALL"));
   ASSERT_TRUE(asio_is_unsupported_driver("ASIO4ALL v2"));
   ASSERT_TRUE(asio_is_unsupported_driver("asio4all USB"));
   ASSERT_FALSE(asio_is_unsupported_driver("Realtek ASIO"));
   ASSERT_FALSE(asio_is_unsupported_driver("FlexASIO"));
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  const char *json = "{\n"
+                     "    \"devices\": {\n"
+                     "        \"samplerate\": 48000,\n"
+                     "        \"chunksize\": 1024,\n"
+                     "        \"capture\": {\n"
+                     "            \"type\": \"Asio\",\n"
+                     "            \"device\": \"ASIO4ALL v2\",\n"
+                     "            \"channels\": 2\n"
+                     "        },\n"
+                     "        \"playback\": {\n"
+                     "            \"type\": \"Asio\",\n"
+                     "            \"device\": \"ASIO4ALL v2\",\n"
+                     "            \"channels\": 2\n"
+                     "        }\n"
+                     "    }\n"
+                     "}";
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
@@ -2088,45 +2103,44 @@ TEST(DSPEngineASIOUnsupportedDriverRefused) {
                      "is not supported, use the Wasapi backend") != NULL);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 }
 
 TEST(DSPEngineASIOSetConfigAndReload) {
-  asio_set_allow_unsupported_drivers(true);
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-  const char* json1 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  const char *json1 = "{\n"
+                      "    \"devices\": {\n"
+                      "        \"samplerate\": 48000,\n"
+                      "        \"chunksize\": 1024,\n"
+                      "        \"capture\": {\n"
+                      "            \"type\": \"Asio\",\n"
+                      "            \"device\": \"FlexASIO\",\n"
+                      "            \"channels\": 2\n"
+                      "        },\n"
+                      "        \"playback\": {\n"
+                      "            \"type\": \"Asio\",\n"
+                      "            \"device\": \"FlexASIO\",\n"
+                      "            \"channels\": 2\n"
+                      "        }\n"
+                      "    }\n"
+                      "}";
 
-  const char* json2 =
+  const char *json2 =
       "{\n"
       "    \"devices\": {\n"
       "        \"samplerate\": 48000,\n"
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
+      "            \"device\": \"FlexASIO\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
+      "            \"device\": \"FlexASIO\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    },\n"
@@ -2159,10 +2173,10 @@ TEST(DSPEngineASIOSetConfigAndReload) {
   bool success2 = engine->set_config_json(engine->ctx, json2, &err);
   ASSERT_TRUE(success2);
 
-  char* active_json = NULL;
+  char *active_json = NULL;
   ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
   ASSERT_TRUE(active_json != NULL);
-  dsp_config_t* active = NULL;
+  dsp_config_t *active = NULL;
   config_error_t cerr = {0};
   ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr));
   ASSERT_TRUE(active != NULL);
@@ -2172,76 +2186,73 @@ TEST(DSPEngineASIOSetConfigAndReload) {
   free(active_json);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
-  asio_set_allow_unsupported_drivers(false);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 }
 
 TEST(DSPEngineASIOHotParameterReload) {
-  asio_set_allow_unsupported_drivers(true);
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-  const char* json1 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    },\n"
-      "    \"filters\": {\n"
-      "        \"mygain\": {\n"
-      "            \"type\": \"Gain\",\n"
-      "            \"parameters\": {\n"
-      "                \"gain\": -6.0\n"
-      "            }\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Filter\",\n"
-      "        \"channel\": 0,\n"
-      "        \"names\": [\"mygain\"]\n"
-      "    }]\n"
-      "}";
+  const char *json1 = "{\n"
+                      "    \"devices\": {\n"
+                      "        \"samplerate\": 48000,\n"
+                      "        \"chunksize\": 1024,\n"
+                      "        \"capture\": {\n"
+                      "            \"type\": \"Asio\",\n"
+                      "            \"device\": \"FlexASIO\",\n"
+                      "            \"channels\": 2\n"
+                      "        },\n"
+                      "        \"playback\": {\n"
+                      "            \"type\": \"Asio\",\n"
+                      "            \"device\": \"FlexASIO\",\n"
+                      "            \"channels\": 2\n"
+                      "        }\n"
+                      "    },\n"
+                      "    \"filters\": {\n"
+                      "        \"mygain\": {\n"
+                      "            \"type\": \"Gain\",\n"
+                      "            \"parameters\": {\n"
+                      "                \"gain\": -6.0\n"
+                      "            }\n"
+                      "        }\n"
+                      "    },\n"
+                      "    \"pipeline\": [{\n"
+                      "        \"type\": \"Filter\",\n"
+                      "        \"channel\": 0,\n"
+                      "        \"names\": [\"mygain\"]\n"
+                      "    }]\n"
+                      "}";
 
-  const char* json2 =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    },\n"
-      "    \"filters\": {\n"
-      "        \"mygain\": {\n"
-      "            \"type\": \"Gain\",\n"
-      "            \"parameters\": {\n"
-      "                \"gain\": -3.0\n"
-      "            }\n"
-      "        }\n"
-      "    },\n"
-      "    \"pipeline\": [{\n"
-      "        \"type\": \"Filter\",\n"
-      "        \"channel\": 0,\n"
-      "        \"names\": [\"mygain\"]\n"
-      "    }]\n"
-      "}";
+  const char *json2 = "{\n"
+                      "    \"devices\": {\n"
+                      "        \"samplerate\": 48000,\n"
+                      "        \"chunksize\": 1024,\n"
+                      "        \"capture\": {\n"
+                      "            \"type\": \"Asio\",\n"
+                      "            \"device\": \"FlexASIO\",\n"
+                      "            \"channels\": 2\n"
+                      "        },\n"
+                      "        \"playback\": {\n"
+                      "            \"type\": \"Asio\",\n"
+                      "            \"device\": \"FlexASIO\",\n"
+                      "            \"channels\": 2\n"
+                      "        }\n"
+                      "    },\n"
+                      "    \"filters\": {\n"
+                      "        \"mygain\": {\n"
+                      "            \"type\": \"Gain\",\n"
+                      "            \"parameters\": {\n"
+                      "                \"gain\": -3.0\n"
+                      "            }\n"
+                      "        }\n"
+                      "    },\n"
+                      "    \"pipeline\": [{\n"
+                      "        \"type\": \"Filter\",\n"
+                      "        \"channel\": 0,\n"
+                      "        \"names\": [\"mygain\"]\n"
+                      "    }]\n"
+                      "}";
 
   audio_backend_error_t err;
   memset(&err, 0, sizeof(err));
@@ -2251,10 +2262,10 @@ TEST(DSPEngineASIOHotParameterReload) {
   bool success2 = engine->set_config_json(engine->ctx, json2, &err);
   ASSERT_TRUE(success2);
 
-  char* active_json = NULL;
+  char *active_json = NULL;
   ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
   ASSERT_TRUE(active_json != NULL);
-  dsp_config_t* active = NULL;
+  dsp_config_t *active = NULL;
   config_error_t cerr = {0};
   ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr));
   ASSERT_TRUE(active != NULL);
@@ -2264,34 +2275,32 @@ TEST(DSPEngineASIOHotParameterReload) {
   free(active_json);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
-  asio_set_allow_unsupported_drivers(false);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 }
 
 TEST(DSPEngineASIOSetConfigStruct) {
-  asio_set_allow_unsupported_drivers(true);
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
-  const char* json =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  const char *json = "{\n"
+                     "    \"devices\": {\n"
+                     "        \"samplerate\": 48000,\n"
+                     "        \"chunksize\": 1024,\n"
+                     "        \"capture\": {\n"
+                     "            \"type\": \"Asio\",\n"
+                     "            \"device\": \"FlexASIO\",\n"
+                     "            \"channels\": 2\n"
+                     "        },\n"
+                     "        \"playback\": {\n"
+                     "            \"type\": \"Asio\",\n"
+                     "            \"device\": \"FlexASIO\",\n"
+                     "            \"channels\": 2\n"
+                     "        }\n"
+                     "    }\n"
+                     "}";
 
-  dsp_config_t* parsed = NULL;
+  dsp_config_t *parsed = NULL;
   config_error_t cerr;
   int parse_res = config_loader_parse(json, &parsed, &cerr);
   ASSERT_EQ(0, parse_res);
@@ -2301,32 +2310,31 @@ TEST(DSPEngineASIOSetConfigStruct) {
   parsed->devices.samplerate = 48000;
   capture_device_config_set_channels(&parsed->devices.capture, 2);
 
-  const char* json_override =
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": 48000,\n"
-      "        \"chunksize\": 1024,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"Asio\",\n"
-      "            \"device\": \"Asio4all v2\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}";
+  const char *json_override = "{\n"
+                              "    \"devices\": {\n"
+                              "        \"samplerate\": 48000,\n"
+                              "        \"chunksize\": 1024,\n"
+                              "        \"capture\": {\n"
+                              "            \"type\": \"Asio\",\n"
+                              "            \"device\": \"FlexASIO\",\n"
+                              "            \"channels\": 2\n"
+                              "        },\n"
+                              "        \"playback\": {\n"
+                              "            \"type\": \"Asio\",\n"
+                              "            \"device\": \"FlexASIO\",\n"
+                              "            \"channels\": 2\n"
+                              "        }\n"
+                              "    }\n"
+                              "}";
 
   audio_backend_error_t berr;
   bool ok = engine->set_config_json(engine->ctx, json_override, &berr);
   ASSERT_TRUE(ok);
 
-  char* active_json = NULL;
+  char *active_json = NULL;
   ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active_json));
   ASSERT_TRUE(active_json != NULL);
-  dsp_config_t* active = NULL;
+  dsp_config_t *active = NULL;
   config_error_t cerr2 = {0};
   ASSERT_EQ(0, config_loader_parse(active_json, &active, &cerr2));
   ASSERT_TRUE(active != NULL);
@@ -2337,22 +2345,20 @@ TEST(DSPEngineASIOSetConfigStruct) {
   dsp_config_free(parsed);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
-  asio_set_allow_unsupported_drivers(false);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 }
 
 TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
   // Align both devices to 48000 Hz initially to guarantee they match and can
   // start
   if (!wasapi_set_both_rates(48000)) {
-    printf(
-        "⚠️ [ASIO Warning] Skipping ASIO Capture rate change test (Failed "
-        "to set initial device rates)\n");
+    printf("⚠️ [ASIO Warning] Skipping ASIO Capture rate change test (Failed "
+           "to set initial device rates)\n");
     return;
   }
   int init_sr = 48000;
   int target_sr = 44100;
-  asio_set_allow_unsupported_drivers(true);
 
   char out_file[256];
   snprintf(out_file, sizeof(out_file), "/tmp/asio_cap_test_out.raw");
@@ -2367,7 +2373,7 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
            "        \"stop_on_rate_change\": true,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"Asio4all v2\",\n"
+           "            \"device\": \"FlexASIO\",\n"
            "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -2380,7 +2386,7 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
            "}",
            init_sr, out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -2453,7 +2459,7 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"Asio4all v2\",\n"
+           "            \"device\": \"FlexASIO\",\n"
            "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -2485,21 +2491,18 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);
-  asio_set_allow_unsupported_drivers(false);
 }
 
 TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
   // Align both devices to 48000 Hz initially to guarantee they match and can
   // start
   if (!wasapi_set_both_rates(48000)) {
-    printf(
-        "⚠️ [ASIO Warning] Skipping ASIO Playback rate change test (Failed "
-        "to set initial device rates)\n");
+    printf("⚠️ [ASIO Warning] Skipping ASIO Playback rate change test (Failed "
+           "to set initial device rates)\n");
     return;
   }
   int init_sr = 48000;
   int target_sr = 44100;
-  asio_set_allow_unsupported_drivers(true);
 
   char json_init[1024];
   snprintf(json_init, sizeof(json_init),
@@ -2518,14 +2521,14 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"Asio4all v2\",\n"
+           "            \"device\": \"FlexASIO\",\n"
            "            \"channels\": 2\n"
            "        }\n"
            "    }\n"
            "}",
            init_sr);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -2604,7 +2607,7 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"Asio4all v2\",\n"
+           "            \"device\": \"FlexASIO\",\n"
            "            \"channels\": 2\n"
            "        }\n"
            "    }\n"
@@ -2630,7 +2633,6 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);
-  asio_set_allow_unsupported_drivers(false);
 }
 #endif
 
@@ -2644,9 +2646,9 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
   remove(out_file);
 
   // Write test input (S16_LE mono)
-  FILE* f = fopen(in_file, "wb");
+  FILE *f = fopen(in_file, "wb");
   ASSERT_TRUE(f != NULL);
-  int16_t* input_samples = malloc(total_frames * sizeof(int16_t));
+  int16_t *input_samples = malloc(total_frames * sizeof(int16_t));
   for (int i = 0; i < total_frames; i++) {
     input_samples[i] = (int16_t)(i % 32768);
   }
@@ -2680,7 +2682,7 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
            in_file, capture_rt ? "true" : "false", out_file,
            playback_rt ? "true" : "false");
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -2709,12 +2711,13 @@ static void run_e2e_file_file_test(bool capture_rt, bool playback_rt,
 
   double elapsed = (double)(cdsp_time_now_ns() - t0_ns) / 1000000000.0;
 
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
   // Verify the output content matches input
-  FILE* out_f = fopen(out_file, "rb");
+  FILE *out_f = fopen(out_file, "rb");
   ASSERT_TRUE(out_f != NULL);
-  int16_t* output_samples = malloc(total_frames * sizeof(int16_t));
+  int16_t *output_samples = malloc(total_frames * sizeof(int16_t));
   size_t read_count =
       fread(output_samples, sizeof(int16_t), total_frames, out_f);
   ASSERT_EQ((size_t)total_frames, read_count);
@@ -2774,12 +2777,12 @@ TEST(DSPEngineE2E_FileFile_Realtime_TT) {
 }
 
 struct stop_thread_args {
-  dsp_engine_t* engine;
+  dsp_engine_t *engine;
   _Atomic bool done;
 };
 
-static void* stop_thread_func(void* arg) {
-  struct stop_thread_args* args = (struct stop_thread_args*)arg;
+static void *stop_thread_func(void *arg) {
+  struct stop_thread_args *args = (struct stop_thread_args *)arg;
   cdsp_stop(args->engine);
   atomic_store_explicit(&args->done, true, memory_order_release);
   return NULL;
@@ -2804,9 +2807,9 @@ TEST(DSPEngineE2E_DeadlockGuard) {
   // 500 chunks) to ensure capture thread exits while processing thread is
   // blocked.
   int total_frames = 358400;
-  FILE* f = fopen(in_file, "wb");
+  FILE *f = fopen(in_file, "wb");
   ASSERT_TRUE(f != NULL);
-  int16_t* input_samples = malloc(total_frames * sizeof(int16_t));
+  int16_t *input_samples = malloc(total_frames * sizeof(int16_t));
   for (int i = 0; i < total_frames; i++) {
     input_samples[i] = (int16_t)(i % 32768);
   }
@@ -2840,7 +2843,7 @@ TEST(DSPEngineE2E_DeadlockGuard) {
            "}",
            in_file, out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -2865,7 +2868,7 @@ TEST(DSPEngineE2E_DeadlockGuard) {
     if (atomic_load_explicit(&stop_args.done, memory_order_acquire)) {
       break;
     }
-    cdsp_sleep_ms(10);  // 10ms
+    cdsp_sleep_ms(10); // 10ms
   }
 
   // Assert that the stop thread completed within 2.0 seconds (no deadlock)
@@ -2877,7 +2880,8 @@ TEST(DSPEngineE2E_DeadlockGuard) {
     pthread_detach(stop_thread);
   }
 
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   free(input_samples);
   remove(in_file);
   remove(out_file);
@@ -2925,7 +2929,7 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
            "}",
            out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -2967,7 +2971,8 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
 
   cdsp_stop(engine);
 
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   remove(out_file);
 }
 
@@ -3055,7 +3060,7 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
            "}",
            out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -3096,7 +3101,8 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
 
   cdsp_stop(engine);
 
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   remove(out_file);
 }
 
@@ -3125,7 +3131,7 @@ TEST(DSPEngineE2E_AutoPauseResume) {
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
            "                \"freq\": 1000.0,\n"
-           "                \"level\": -100.0\n"  // Silent
+           "                \"level\": -100.0\n" // Silent
            "            }\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -3154,7 +3160,7 @@ TEST(DSPEngineE2E_AutoPauseResume) {
            "            \"signal\": {\n"
            "                \"type\": \"Sine\",\n"
            "                \"freq\": 1000.0,\n"
-           "                \"level\": -20.0\n"  // Loud
+           "                \"level\": -20.0\n" // Loud
            "            }\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -3168,7 +3174,7 @@ TEST(DSPEngineE2E_AutoPauseResume) {
            "}",
            out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -3205,7 +3211,8 @@ TEST(DSPEngineE2E_AutoPauseResume) {
   ASSERT_TRUE(resumed);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   remove(out_file);
 }
 
@@ -3245,7 +3252,7 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
            "}",
            out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -3288,7 +3295,7 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
     }
   }
   ASSERT_TRUE(got_muted_vu);
-  ASSERT_TRUE(vu.capture_peak[0] > -20.0);  // Capture is pre-fader, still loud
+  ASSERT_TRUE(vu.capture_peak[0] > -20.0); // Capture is pre-fader, still loud
 
   // Unmute main fader and set fader volume
   cdsp_set_fader_mute(engine, CDSP_FADER_MAIN, false);
@@ -3297,7 +3304,8 @@ TEST(DSPEngineE2E_FaderVolumeMuteControl) {
   ASSERT_EQ(-12.0f, cdsp_get_fader_volume(engine, CDSP_FADER_MAIN));
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   remove(out_file);
 }
 
@@ -3314,7 +3322,7 @@ TEST(DSPEngineE2E_PresetFaderVolumeBeforeStart) {
   remove(out_file);
 
   // Write 1024 frames of mono 16-bit audio with loud amplitude (20000)
-  FILE* in_f = fopen(in_file, "wb");
+  FILE *in_f = fopen(in_file, "wb");
   ASSERT_TRUE(in_f != NULL);
   int16_t input_samples[1024];
   for (int i = 0; i < 1024; i++) {
@@ -3346,7 +3354,7 @@ TEST(DSPEngineE2E_PresetFaderVolumeBeforeStart) {
            "}",
            in_file, out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   // Set fader volume to -40dB BEFORE applying configuration
@@ -3360,14 +3368,16 @@ TEST(DSPEngineE2E_PresetFaderVolumeBeforeStart) {
 
   // Wait for file-to-file processing to complete
   for (int i = 0; i < 200; i++) {
-    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) break;
+    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE)
+      break;
     cdsp_sleep_ms(10);
   }
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
 
-  FILE* out_f = fopen(out_file, "rb");
+  FILE *out_f = fopen(out_file, "rb");
   ASSERT_TRUE(out_f != NULL);
   int16_t output_samples[1024];
   size_t read_count = fread(output_samples, sizeof(int16_t), 1024, out_f);
@@ -3380,12 +3390,12 @@ TEST(DSPEngineE2E_PresetFaderVolumeBeforeStart) {
   for (size_t i = 0; i < 512; i++) {
     int16_t abs_s =
         output_samples[i] < 0 ? -output_samples[i] : output_samples[i];
-    if (abs_s > max_sample) max_sample = abs_s;
+    if (abs_s > max_sample)
+      max_sample = abs_s;
   }
-  printf(
-      "First chunk peak amplitude: %d (input was 20000, target at -40dB is "
-      "~200)\n",
-      max_sample);
+  printf("First chunk peak amplitude: %d (input was 20000, target at -40dB is "
+         "~200)\n",
+         max_sample);
   ASSERT_TRUE(max_sample <= 300);
 
   remove(in_file);
@@ -3408,7 +3418,7 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
 
   // Write exactly 1024 frames of stereo 16-bit audio (1024 * 2 samples)
   // At chunk size 512, this represents exactly 2 chunks of audio.
-  FILE* f = fopen(in_file, "wb");
+  FILE *f = fopen(in_file, "wb");
   ASSERT_TRUE(f != NULL);
   int16_t input_samples[1024 * 2] = {0};
   fwrite(input_samples, sizeof(int16_t), 1024 * 2, f);
@@ -3435,13 +3445,13 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
       "            \"filename\": \"%s\",\n"
       "            \"format\": \"S16_LE\",\n"
       "            \"channels\": 2,\n"
-      "            \"realtime\": true\n"  // Playback throttled to real-time!
+      "            \"realtime\": true\n" // Playback throttled to real-time!
       "        }\n"
       "    }\n"
       "}",
       in_file, out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -3486,7 +3496,8 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
   ASSERT_TRUE(inactive);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   remove(in_file);
   remove(out_file);
 }
@@ -3589,7 +3600,7 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
            out_file);
 #endif
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -3617,7 +3628,8 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
   cdsp_get_stop_reason(engine, &stop_reason);
   ASSERT_EQ(stop_reason.type, CDSP_STOP_REASON_CAPTURE_ERROR);
 
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   remove(out_file);
 }
 
@@ -3630,11 +3642,11 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
 // corruption.
 TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   // Shared state with queue depth 2
-  engine_shared_state_t* shared = engine_shared_state_create(2, 2);
+  engine_shared_state_t *shared = engine_shared_state_create(2, 2);
   ASSERT_TRUE(shared != NULL);
 
   // Pool with capacity 4 (chunk0, chunk1, chunk2, chunk3)
-  round_robin_chunk_pool_t* pool = round_robin_chunk_pool_create(4, 64, 1);
+  round_robin_chunk_pool_t *pool = round_robin_chunk_pool_create(4, 64, 1);
   ASSERT_TRUE(pool != NULL);
 
   capture_device_config_t cap_cfg;
@@ -3647,7 +3659,7 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
 
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
-  capture_backend_t* cap_backend =
+  capture_backend_t *cap_backend =
       create_capture_backend(&cap_cfg, 48000, 64, false, NULL, &berr);
   ASSERT_TRUE(cap_backend != NULL);
   // Specifically test real-time drop handling by setting is_realtime = true
@@ -3668,12 +3680,12 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
       .rate_measure_interval_s = 0.0,
   };
 
-  engine_capture_loop_t* loop = engine_capture_loop_create(&loop_cfg);
+  engine_capture_loop_t *loop = engine_capture_loop_create(&loop_cfg);
   ASSERT_TRUE(loop != NULL);
 
   // Fill captured_queue (depth 2) with chunk0 and chunk1
-  audio_chunk_t* chunk0 = round_robin_chunk_pool_next(pool);
-  audio_chunk_t* chunk1 = round_robin_chunk_pool_next(pool);
+  audio_chunk_t *chunk0 = round_robin_chunk_pool_next(pool);
+  audio_chunk_t *chunk1 = round_robin_chunk_pool_next(pool);
   ASSERT_TRUE(engine_shared_state_enqueue_captured(shared, chunk0));
   ASSERT_TRUE(engine_shared_state_enqueue_captured(shared, chunk1));
 
@@ -3687,14 +3699,14 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   }
 
   // Dequeue chunk0 sitting in captured_queue
-  audio_chunk_t* dequeued0 =
+  audio_chunk_t *dequeued0 =
       engine_shared_state_dequeue_captured_blocking(shared);
   ASSERT_EQ(chunk0, dequeued0);
 
   // Verify that chunk0 is NOT returned as the next available pool chunk after
   // drop iterations! Without pending_chunk retention, pool wrap-around causes
   // next_pool_chunk == chunk0 (overwriting active queue buffer).
-  audio_chunk_t* next_pool_chunk = round_robin_chunk_pool_next(pool);
+  audio_chunk_t *next_pool_chunk = round_robin_chunk_pool_next(pool);
   ASSERT_NE(chunk0, next_pool_chunk);
 
   engine_capture_loop_free(loop);
@@ -3704,8 +3716,8 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   engine_shared_state_free(shared);
 }
 
-static void* proc_thread_worker(void* arg) {
-  engine_processing_loop_t* loop = (engine_processing_loop_t*)arg;
+static void *proc_thread_worker(void *arg) {
+  engine_processing_loop_t *loop = (engine_processing_loop_t *)arg;
   engine_processing_loop_run(loop);
   return NULL;
 }
@@ -3718,13 +3730,13 @@ static void* proc_thread_worker(void* arg) {
 // draining all remaining buffered chunks in captured_queue.
 TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
   // Shared state with queue depth 4
-  engine_shared_state_t* shared = engine_shared_state_create(4, 4);
+  engine_shared_state_t *shared = engine_shared_state_create(4, 4);
   ASSERT_TRUE(shared != NULL);
 
-  round_robin_chunk_pool_t* pool = round_robin_chunk_pool_create(8, 64, 1);
+  round_robin_chunk_pool_t *pool = round_robin_chunk_pool_create(8, 64, 1);
   ASSERT_TRUE(pool != NULL);
 
-  processing_parameters_t* params = processing_parameters_create(1, 1);
+  processing_parameters_t *params = processing_parameters_create(1, 1);
   ASSERT_TRUE(params != NULL);
 
   dsp_config_t dcfg;
@@ -3736,7 +3748,7 @@ TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
   dcfg.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
   dcfg.devices.playback.cfg.raw_file.channels = 1;
 
-  pipeline_t* pipe = pipeline_create(&dcfg, params, 64, NULL);
+  pipeline_t *pipe = pipeline_create(&dcfg, params, 64, NULL);
   ASSERT_TRUE(pipe != NULL);
 
   engine_processing_loop_config_t loop_cfg = {
@@ -3755,19 +3767,19 @@ TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
       .is_realtime = false,
   };
 
-  engine_processing_loop_t* loop = engine_processing_loop_create(&loop_cfg);
+  engine_processing_loop_t *loop = engine_processing_loop_create(&loop_cfg);
   ASSERT_TRUE(loop != NULL);
 
   // Fill processed_queue to capacity (4 chunks) so processing thread blocks
   // when trying to enqueue
   for (int i = 0; i < 4; i++) {
-    audio_chunk_t* pchunk = round_robin_chunk_pool_next(pool);
+    audio_chunk_t *pchunk = round_robin_chunk_pool_next(pool);
     ASSERT_TRUE(engine_shared_state_enqueue_processed(shared, pchunk));
   }
 
   // Fill captured_queue with 4 chunks to process
   for (int i = 0; i < 4; i++) {
-    audio_chunk_t* cchunk = round_robin_chunk_pool_next(pool);
+    audio_chunk_t *cchunk = round_robin_chunk_pool_next(pool);
     ASSERT_TRUE(engine_shared_state_enqueue_captured(shared, cchunk));
   }
 
@@ -3816,7 +3828,7 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
   // Write 10000 frames of mono 16-bit audio:
   // Part 1 (frames 0..4999): Zero silence samples
   // Part 2 (frames 5000..9999): Maximum amplitude loud samples (32767)
-  FILE* f = fopen(in_file, "wb");
+  FILE *f = fopen(in_file, "wb");
   ASSERT_TRUE(f != NULL);
   int16_t samples[10000] = {0};
   for (int i = 5000; i < 10000; i++) {
@@ -3854,7 +3866,7 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
            "}",
            in_file, out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t err;
@@ -3888,7 +3900,8 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
   cdsp_processing_state_t state_after_loud_signal = cdsp_get_state(engine);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   remove(in_file);
   remove(out_file);
 
@@ -3904,13 +3917,13 @@ TEST(DSPEngineE2E_SilenceAutoPause_FileBackend_AutoResumeBug) {
 // inside its while (dequeue_processed_blocking) loop, causing it to drain and
 // render all queued chunks to DAC/file instead of aborting immediately.
 TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
-  engine_shared_state_t* shared = engine_shared_state_create(8, 8);
+  engine_shared_state_t *shared = engine_shared_state_create(8, 8);
   ASSERT_TRUE(shared != NULL);
 
-  round_robin_chunk_pool_t* pool = round_robin_chunk_pool_create(8, 64, 1);
+  round_robin_chunk_pool_t *pool = round_robin_chunk_pool_create(8, 64, 1);
   ASSERT_TRUE(pool != NULL);
 
-  processing_parameters_t* params = processing_parameters_create(1, 1);
+  processing_parameters_t *params = processing_parameters_create(1, 1);
   ASSERT_TRUE(params != NULL);
 
   char out_file[256];
@@ -3926,7 +3939,7 @@ TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
            sizeof(play_cfg.cfg.raw_file.filename), "%s", out_file);
 
   backend_error_t berr;
-  playback_backend_t* pb =
+  playback_backend_t *pb =
       create_playback_backend(&play_cfg, 48000, 64, false, NULL, &berr);
   ASSERT_TRUE(pb != NULL);
 
@@ -3941,12 +3954,12 @@ TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
       .adjust_period = 0.0,
   };
 
-  engine_playback_loop_t* loop = engine_playback_loop_create(&loop_cfg);
+  engine_playback_loop_t *loop = engine_playback_loop_create(&loop_cfg);
   ASSERT_TRUE(loop != NULL);
 
   // Push 4 chunks into processed_queue
   for (int i = 0; i < 4; i++) {
-    audio_chunk_t* chunk = round_robin_chunk_pool_next(pool);
+    audio_chunk_t *chunk = round_robin_chunk_pool_next(pool);
     audio_chunk_set_valid_frames(chunk, 64);
     ASSERT_TRUE(engine_shared_state_enqueue_processed(shared, chunk));
   }
@@ -3988,7 +4001,7 @@ TEST(DSPEngineE2E_ImmediateAbort_PlaybackDrainingBug) {
 // skipping error publication and state INACTIVE transition, silently dropping
 // the hardware error and leaving session worker threads hanging.
 TEST(DSPEngine_Repro_CAS_Publication_Window_Race) {
-  engine_shared_state_t* shared = engine_shared_state_create(16, 16);
+  engine_shared_state_t *shared = engine_shared_state_create(16, 16);
   ASSERT_TRUE(shared != NULL);
 
   // Step 1: Simulate Thread A winning CAS with unpublished / non-error stop
@@ -4022,7 +4035,7 @@ TEST(DSPEngine_Repro_CAS_Publication_Window_Race) {
 // STOP_REASON_DONE), overwriting STOP_REASON_DONE with STOP_REASON_NONE and
 // destroying completion diagnostic records.
 TEST(DSPEngine_Repro_StopReason_None_Overwriting_Done) {
-  engine_shared_state_t* shared = engine_shared_state_create(16, 16);
+  engine_shared_state_t *shared = engine_shared_state_create(16, 16);
   ASSERT_TRUE(shared != NULL);
 
   // Step 1: Graceful EOF teardown finishes, setting stop_reason to
@@ -4051,7 +4064,7 @@ TEST(DSPEngine_Repro_StopReason_None_Overwriting_Done) {
 // STOP_REASON_NONE was false, leaving state_raw as RUNNING/STARTING and
 // processed_queue open, causing Playback thread to hang indefinitely on join.
 TEST(DSPEngine_Repro_UserStopDuringEOFDrain_UnblocksPlayback) {
-  engine_shared_state_t* shared = engine_shared_state_create(16, 16);
+  engine_shared_state_t *shared = engine_shared_state_create(16, 16);
   ASSERT_TRUE(shared != NULL);
 
   // Step 1: Capture thread reaches EOF and requests graceful stop
@@ -4076,7 +4089,7 @@ TEST(DSPEngine_Repro_UserStopDuringEOFDrain_UnblocksPlayback) {
 
   // 3. Processed queue MUST be shut down so blocking dequeue returns NULL
   // immediately
-  audio_chunk_t* chunk = engine_shared_state_dequeue_processed_blocking(shared);
+  audio_chunk_t *chunk = engine_shared_state_dequeue_processed_blocking(shared);
   ASSERT_TRUE(chunk == NULL);
 
   engine_shared_state_free(shared);
@@ -4097,21 +4110,23 @@ TEST(DSPEngine_Repro_UserStopDuringEOFDrain_UnblocksPlayback) {
 // environments
 
 static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
-                                          bool* out_modified) {
-  if (out_modified) *out_modified = false;
+                                          bool *out_modified) {
+  if (out_modified)
+    *out_modified = false;
   HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   bool com_ok = SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
 
-  IMMDeviceEnumerator* enumerator = NULL;
+  IMMDeviceEnumerator *enumerator = NULL;
   hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
-                        &IID_IMMDeviceEnumerator, (void**)&enumerator);
+                        &IID_IMMDeviceEnumerator, (void **)&enumerator);
   if (FAILED(hr)) {
-    if (com_ok) CoUninitialize();
+    if (com_ok)
+      CoUninitialize();
     return false;
   }
 
-  IMMDevice* device = NULL;
-  IMMDeviceCollection* collection = NULL;
+  IMMDevice *device = NULL;
+  IMMDeviceCollection *collection = NULL;
   hr = enumerator->lpVtbl->EnumAudioEndpoints(enumerator, flow,
                                               DEVICE_STATE_ACTIVE, &collection);
   if (SUCCEEDED(hr) && collection) {
@@ -4124,9 +4139,9 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
          {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}},
         14};
     for (UINT i = 0; i < count; i++) {
-      IMMDevice* temp_device = NULL;
+      IMMDevice *temp_device = NULL;
       collection->lpVtbl->Item(collection, i, &temp_device);
-      IPropertyStore* temp_store = NULL;
+      IPropertyStore *temp_store = NULL;
       if (SUCCEEDED(temp_device->lpVtbl->OpenPropertyStore(
               temp_device, STGM_READ, &temp_store))) {
         PROPVARIANT nameProp;
@@ -4157,16 +4172,17 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
   enumerator->lpVtbl->Release(enumerator);
 
   if (FAILED(hr) || !device) {
-    if (com_ok) CoUninitialize();
+    if (com_ok)
+      CoUninitialize();
     return false;
   }
 
   int old_rate = 48000;
-  IAudioClient* client = NULL;
+  IAudioClient *client = NULL;
   hr = device->lpVtbl->Activate(device, &IID_IAudioClient, CLSCTX_ALL, NULL,
-                                (void**)&client);
+                                (void **)&client);
   if (SUCCEEDED(hr) && client) {
-    WAVEFORMATEX* wfx = NULL;
+    WAVEFORMATEX *wfx = NULL;
     hr = client->lpVtbl->GetMixFormat(client, &wfx);
     if (SUCCEEDED(hr) && wfx) {
       old_rate = (int)wfx->nSamplesPerSec;
@@ -4177,15 +4193,17 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
 
   if (old_rate == sample_rate) {
     device->lpVtbl->Release(device);
-    if (com_ok) CoUninitialize();
+    if (com_ok)
+      CoUninitialize();
     return true;
   }
 
-  IPropertyStore* store = NULL;
+  IPropertyStore *store = NULL;
   hr = device->lpVtbl->OpenPropertyStore(device, STGM_READWRITE, &store);
   if (FAILED(hr)) {
     device->lpVtbl->Release(device);
-    if (com_ok) CoUninitialize();
+    if (com_ok)
+      CoUninitialize();
     return false;
   }
   device->lpVtbl->Release(device);
@@ -4197,20 +4215,21 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
   for (DWORD i = 0; i < prop_count; i++) {
     PROPERTYKEY key;
     hr = store->lpVtbl->GetAt(store, i, &key);
-    if (FAILED(hr)) continue;
+    if (FAILED(hr))
+      continue;
 
     PROPVARIANT prop;
     PropVariantInit(&prop);
     hr = store->lpVtbl->GetValue(store, &key, &prop);
     if (SUCCEEDED(hr) && prop.vt == VT_BLOB) {
       if (prop.blob.cbSize >= sizeof(WAVEFORMATEX)) {
-        WAVEFORMATEX* wfx = (WAVEFORMATEX*)prop.blob.pBlobData;
+        WAVEFORMATEX *wfx = (WAVEFORMATEX *)prop.blob.pBlobData;
         if ((int)wfx->nSamplesPerSec == old_rate) {
           ULONG cbSize = prop.blob.cbSize;
-          BYTE* pLocalData = (BYTE*)CoTaskMemAlloc(cbSize);
+          BYTE *pLocalData = (BYTE *)CoTaskMemAlloc(cbSize);
           if (pLocalData) {
             memcpy(pLocalData, prop.blob.pBlobData, cbSize);
-            WAVEFORMATEX* wfx_new = (WAVEFORMATEX*)pLocalData;
+            WAVEFORMATEX *wfx_new = (WAVEFORMATEX *)pLocalData;
             wfx_new->nSamplesPerSec = sample_rate;
             wfx_new->nAvgBytesPerSec =
                 wfx_new->nSamplesPerSec * wfx_new->nBlockAlign;
@@ -4224,7 +4243,8 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
             hr = store->lpVtbl->SetValue(store, &key, &prop);
             if (SUCCEEDED(hr)) {
               modified = true;
-              if (out_modified) *out_modified = true;
+              if (out_modified)
+                *out_modified = true;
             }
           }
         }
@@ -4237,7 +4257,8 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
     hr = store->lpVtbl->Commit(store);
   }
   store->lpVtbl->Release(store);
-  if (com_ok) CoUninitialize();
+  if (com_ok)
+    CoUninitialize();
 
   return modified && SUCCEEDED(hr);
 }
@@ -4257,8 +4278,10 @@ static bool wasapi_restart_audio_services(void) {
   if (!svc_audio || !svc_builder) {
     printf("⚠️ [Service Control] Failed to open services (error %lu)\n",
            GetLastError());
-    if (svc_audio) CloseServiceHandle(svc_audio);
-    if (svc_builder) CloseServiceHandle(svc_builder);
+    if (svc_audio)
+      CloseServiceHandle(svc_audio);
+    if (svc_builder)
+      CloseServiceHandle(svc_builder);
     CloseServiceHandle(scm);
     return false;
   }
@@ -4271,7 +4294,8 @@ static bool wasapi_restart_audio_services(void) {
     // Wait for Audiosrv to stop (up to 5 seconds) before stopping builder
     for (int i = 0; i < 50; i++) {
       QueryServiceStatus(svc_audio, &status);
-      if (status.dwCurrentState == SERVICE_STOPPED) break;
+      if (status.dwCurrentState == SERVICE_STOPPED)
+        break;
       Sleep(100);
     }
   } else {
@@ -4287,16 +4311,16 @@ static bool wasapi_restart_audio_services(void) {
     // Wait for AudioEndpointBuilder to stop (up to 5 seconds)
     for (int i = 0; i < 50; i++) {
       QueryServiceStatus(svc_builder, &status);
-      if (status.dwCurrentState == SERVICE_STOPPED) break;
+      if (status.dwCurrentState == SERVICE_STOPPED)
+        break;
       Sleep(100);
     }
   } else {
     DWORD err = GetLastError();
     if (err != ERROR_SERVICE_NOT_ACTIVE) {
-      printf(
-          "⚠️ [Service Control] Failed to stop AudioEndpointBuilder (error "
-          "%lu)\n",
-          err);
+      printf("⚠️ [Service Control] Failed to stop AudioEndpointBuilder (error "
+             "%lu)\n",
+             err);
     }
   }
 
@@ -4305,7 +4329,8 @@ static bool wasapi_restart_audio_services(void) {
   StartService(svc_builder, 0, NULL);
   for (int i = 0; i < 50; i++) {
     QueryServiceStatus(svc_builder, &status);
-    if (status.dwCurrentState == SERVICE_RUNNING) break;
+    if (status.dwCurrentState == SERVICE_RUNNING)
+      break;
     Sleep(100);
   }
 
@@ -4314,7 +4339,8 @@ static bool wasapi_restart_audio_services(void) {
   StartService(svc_audio, 0, NULL);
   for (int i = 0; i < 50; i++) {
     QueryServiceStatus(svc_audio, &status);
-    if (status.dwCurrentState == SERVICE_RUNNING) break;
+    if (status.dwCurrentState == SERVICE_RUNNING)
+      break;
     Sleep(100);
   }
 
@@ -4325,18 +4351,17 @@ static bool wasapi_restart_audio_services(void) {
   return true;
 }
 
-static void wasapi_wait_for_endpoints_ready(const char* device_name,
+static void wasapi_wait_for_endpoints_ready(const char *device_name,
                                             bool is_capture) {
-  printf(
-      "ℹ️ debug: Waiting dynamically for WASAPI endpoint '%s' to be "
-      "responsive...\n",
-      device_name);
+  printf("ℹ️ debug: Waiting dynamically for WASAPI endpoint '%s' to be "
+         "responsive...\n",
+         device_name);
   for (int i = 0; i < 150; i++) {
     double rate = wasapi_device_get_current_mix_rate(device_name, is_capture);
     if (rate > 0.0) {
       printf("ℹ️ debug: WASAPI endpoint '%s' ready (rate=%.1f Hz) after %d ms\n",
              device_name, rate, i * 100);
-      Sleep(200);  // Allow streaming subsystem to settle (reduced from 1000)
+      Sleep(200); // Allow streaming subsystem to settle (reduced from 1000)
       break;
     }
     Sleep(100);
@@ -4351,15 +4376,13 @@ static bool wasapi_complete_rate_change(int sample_rate) {
       wasapi_write_endpoint_formats(eCapture, sample_rate, &cap_modified);
   bool render_ok =
       wasapi_write_endpoint_formats(eRender, sample_rate, &render_modified);
-  printf(
-      "ℹ️ debug: Write endpoint formats: Capture=%d (mod=%d), Render=%d "
-      "(mod=%d)\n",
-      cap_ok, cap_modified, render_ok, render_modified);
+  printf("ℹ️ debug: Write endpoint formats: Capture=%d (mod=%d), Render=%d "
+         "(mod=%d)\n",
+         cap_ok, cap_modified, render_ok, render_modified);
 
   if (cap_modified || render_modified) {
-    printf(
-        "ℹ️ debug: Restarting AudioEndpointBuilder to reload endpoint "
-        "properties...\n");
+    printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload endpoint "
+           "properties...\n");
     wasapi_restart_audio_services();
     wasapi_wait_for_endpoints_ready("CABLE Input (VB-Audio Virtual Cable)",
                                     false);
@@ -4379,9 +4402,8 @@ static bool wasapi_change_capture_rate_only(int sample_rate) {
       wasapi_write_endpoint_formats(eCapture, sample_rate, &cap_modified);
   bool render_ok =
       wasapi_write_endpoint_formats(eRender, sample_rate, &render_modified);
-  printf(
-      "ℹ️ debug: Restarting AudioEndpointBuilder to reload capture "
-      "endpoint...\n");
+  printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload capture "
+         "endpoint...\n");
   wasapi_restart_audio_services();
   wasapi_wait_for_endpoints_ready("CABLE Output (VB-Audio Virtual Cable)",
                                   true);
@@ -4398,9 +4420,8 @@ static bool wasapi_change_playback_rate_only(int sample_rate) {
       wasapi_write_endpoint_formats(eCapture, sample_rate, &cap_modified);
   bool render_ok =
       wasapi_write_endpoint_formats(eRender, sample_rate, &render_modified);
-  printf(
-      "ℹ️ debug: Restarting AudioEndpointBuilder to reload playback "
-      "endpoint...\n");
+  printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload playback "
+         "endpoint...\n");
   wasapi_restart_audio_services();
   wasapi_wait_for_endpoints_ready("CABLE Input (VB-Audio Virtual Cable)",
                                   false);
@@ -4427,27 +4448,26 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
 
   {
     HRESULT hr;
-    IMMDeviceEnumerator* enumerator = NULL;
+    IMMDeviceEnumerator *enumerator = NULL;
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
     hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
-                          &IID_IMMDeviceEnumerator, (void**)&enumerator);
+                          &IID_IMMDeviceEnumerator, (void **)&enumerator);
     if (SUCCEEDED(hr) && enumerator) {
-      IMMDevice* device = NULL;
+      IMMDevice *device = NULL;
       hr = enumerator->lpVtbl->GetDefaultAudioEndpoint(enumerator, eCapture,
                                                        eConsole, &device);
       if (SUCCEEDED(hr) && device) {
-        IAudioClient* client = NULL;
+        IAudioClient *client = NULL;
         hr = device->lpVtbl->Activate(device, &IID_IAudioClient, CLSCTX_ALL,
-                                      NULL, (void**)&client);
+                                      NULL, (void **)&client);
         if (SUCCEEDED(hr) && client) {
-          WAVEFORMATEX* wfx = NULL;
+          WAVEFORMATEX *wfx = NULL;
           hr = IAudioClient_GetMixFormat(client, &wfx);
           if (SUCCEEDED(hr) && wfx) {
-            printf(
-                "ℹ️ diagnostic: default capture device mix format: rate=%d, "
-                "channels=%d, wFormatTag=%d\n",
-                (int)wfx->nSamplesPerSec, (int)wfx->nChannels,
-                (int)wfx->wFormatTag);
+            printf("ℹ️ diagnostic: default capture device mix format: rate=%d, "
+                   "channels=%d, wFormatTag=%d\n",
+                   (int)wfx->nSamplesPerSec, (int)wfx->nChannels,
+                   (int)wfx->wFormatTag);
             CoTaskMemFree(wfx);
           } else {
             printf("⚠️ diagnostic: GetMixFormat failed: HRESULT 0x%lx\n", hr);
@@ -4496,7 +4516,7 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
       "}",
       init_sr, out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -4517,10 +4537,9 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
 
   cdsp_sleep_ms(500);
 
-  printf(
-      "ℹ️ debug: changing WASAPI capture device sample rate from %d Hz to %d "
-      "Hz...\n",
-      init_sr, target_sr);
+  printf("ℹ️ debug: changing WASAPI capture device sample rate from %d Hz to %d "
+         "Hz...\n",
+         init_sr, target_sr);
   ASSERT_TRUE(wasapi_change_capture_rate_only(target_sr));
 
   // Expect engine to stop due to format change
@@ -4555,8 +4574,8 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
   // subsequent tests
   ASSERT_TRUE(wasapi_complete_rate_change(target_sr));
 
-  cdsp_sleep_ms(200);  // Allow Windows Audio service to apply the deferred
-                       // format change once idle
+  cdsp_sleep_ms(200); // Allow Windows Audio service to apply the deferred
+                      // format change once idle
 
   // Re-configure for target rate and verify it runs
   char json_target[1024];
@@ -4646,7 +4665,7 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
            "}",
            init_sr);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -4706,8 +4725,8 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
   wasapi_wait_for_endpoints_ready("CABLE Output (VB-Audio Virtual Cable)",
                                   true);
 
-  cdsp_sleep_ms(200);  // Allow Windows Audio service to apply the deferred
-                       // format change once idle
+  cdsp_sleep_ms(200); // Allow Windows Audio service to apply the deferred
+                      // format change once idle
 
   // Re-configure for target rate and verify it runs
   char json_target[1024];
@@ -4792,7 +4811,7 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
            "}",
            out_file);
 
-  dsp_engine_t* engine = dsp_engine_create();
+  dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
   audio_backend_error_t berr;
@@ -4831,7 +4850,8 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
   for (int retry = 0; retry < 150; retry++) {
     got_spec = cdsp_get_spectrum(engine, CDSP_SPECTRUM_SIDE_CAPTURE, NULL,
                                  20.0f, 20000.0f, 16, &spec);
-    if (got_spec) break;
+    if (got_spec)
+      break;
     cdsp_sleep_ms(10);
   }
   ASSERT_TRUE(got_spec);
@@ -4842,14 +4862,15 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
 
   // 3. Test Audio Samples with caller stack buffers
   float c0[128], c1[128];
-  float* chans[2] = {c0, c1};
+  float *chans[2] = {c0, c1};
   cdsp_audio_samples_t samples = {
       .channels = chans,
   };
   bool got_samples = false;
   for (int retry = 0; retry < 150; retry++) {
     got_samples = cdsp_get_samples(engine, true, 128, &samples, NULL);
-    if (got_samples) break;
+    if (got_samples)
+      break;
     cdsp_sleep_ms(10);
   }
   ASSERT_TRUE(got_samples);
@@ -4857,7 +4878,8 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
   ASSERT_EQ(128, samples.frames);
 
   cdsp_stop(engine);
-  if (engine && engine->free) engine->free(engine->ctx);
+  if (engine && engine->free)
+    engine->free(engine->ctx);
   remove(out_file);
 }
 
