@@ -264,9 +264,12 @@ void DevicePickerView::setupUi() {
     m_procForm->addRow(tr("Chunk Size:"), chunkLayout);
 
     m_enableRateAdjustCheck = new QCheckBox(tr("Enable Rate Adjust"), procGroup);
-    connect(m_enableRateAdjustCheck, &QCheckBox::toggled, [this](bool) {
+    connect(m_enableRateAdjustCheck, &QCheckBox::toggled, [this](bool checked) {
         if (m_isRefreshing)
             return;
+        if (m_procForm && m_rateAdjustIntervalRow) {
+            m_procForm->setRowVisible(m_rateAdjustIntervalRow, checked);
+        }
         applySettings();
     });
     m_procForm->addRow(m_enableRateAdjustCheck);
@@ -278,22 +281,27 @@ void DevicePickerView::setupUi() {
     m_rateAdjustSub->setWordWrap(true);
     m_procForm->addRow(m_rateAdjustSub);
 
-    m_queueLimitSpin = new QSpinBox(procGroup);
-    m_queueLimitSpin->setRange(1, 32);
-    connect(m_queueLimitSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-        if (m_isRefreshing)
-            return;
-        applySettings();
-    });
-    m_procForm->addRow(tr("Queue Limit:"), m_queueLimitSpin);
+    m_rateAdjustIntervalRow = new QWidget(procGroup);
+    auto rateAdjustIntervalBox = new QHBoxLayout(m_rateAdjustIntervalRow);
+    rateAdjustIntervalBox->setContentsMargins(0, 0, 0, 0);
+    m_rateAdjustIntervalSlider = new QSlider(Qt::Horizontal, m_rateAdjustIntervalRow);
+    m_rateAdjustIntervalSlider->setRange(5, 300); // 0.5 to 30.0 s
 
-    m_stopOnRateChangeCheck = new QCheckBox(tr("Stop on Rate Change"), procGroup);
-    connect(m_stopOnRateChangeCheck, &QCheckBox::toggled, [this](bool) {
+    m_rateAdjustIntervalValLabel = new QLabel(m_rateAdjustIntervalRow);
+    m_rateAdjustIntervalValLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    m_rateAdjustIntervalValLabel->setMinimumWidth(50);
+
+    connect(m_rateAdjustIntervalSlider, &QSlider::valueChanged, [this](int val) {
         if (m_isRefreshing)
             return;
+        double dVal = val / 10.0;
+        m_rateAdjustIntervalValLabel->setText(QString("%1 s").arg(dVal, 0, 'f', 1));
         applySettings();
     });
-    m_procForm->addRow(m_stopOnRateChangeCheck);
+    rateAdjustIntervalBox->addWidget(m_rateAdjustIntervalSlider);
+    rateAdjustIntervalBox->addWidget(m_rateAdjustIntervalValLabel);
+    rateAdjustIntervalBox->addStretch();
+    m_procForm->addRow(tr("Rate Adjust Interval:"), m_rateAdjustIntervalRow);
 
     auto intervalBox = new QHBoxLayout();
     m_measureIntervalSlider = new QSlider(Qt::Horizontal, procGroup);
@@ -313,7 +321,24 @@ void DevicePickerView::setupUi() {
     intervalBox->addWidget(m_measureIntervalSlider);
     intervalBox->addWidget(m_measureIntervalValLabel);
     intervalBox->addStretch();
-    m_procForm->addRow(tr("Measure Interval:"), intervalBox);
+    m_procForm->addRow(tr("Rate Measure Interval:"), intervalBox);
+
+    m_queueLimitSpin = new QSpinBox(procGroup);
+    m_queueLimitSpin->setRange(1, 32);
+    connect(m_queueLimitSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
+        if (m_isRefreshing)
+            return;
+        applySettings();
+    });
+    m_procForm->addRow(tr("Queue Limit:"), m_queueLimitSpin);
+
+    m_stopOnRateChangeCheck = new QCheckBox(tr("Stop on Rate Change"), procGroup);
+    connect(m_stopOnRateChangeCheck, &QCheckBox::toggled, [this](bool) {
+        if (m_isRefreshing)
+            return;
+        applySettings();
+    });
+    m_procForm->addRow(m_stopOnRateChangeCheck);
 
     m_multithreadedCheck = new QCheckBox(tr("Multithreaded"), procGroup);
     connect(m_multithreadedCheck, &QCheckBox::toggled, [this](bool checked) {
@@ -1747,6 +1772,11 @@ void DevicePickerView::refreshUi() {
     updateLatencyText();
 
     m_enableRateAdjustCheck->setChecked(m_settings->enableRateAdjust);
+    m_rateAdjustIntervalSlider->setValue(static_cast<int>(m_settings->rateAdjustInterval * 10.0));
+    m_rateAdjustIntervalValLabel->setText(QString("%1 s").arg(m_settings->rateAdjustInterval, 0, 'f', 1));
+    if (m_procForm && m_rateAdjustIntervalRow) {
+        m_procForm->setRowVisible(m_rateAdjustIntervalRow, m_settings->enableRateAdjust);
+    }
     m_queueLimitSpin->setValue(m_settings->queuelimit);
     m_stopOnRateChangeCheck->setChecked(m_settings->stopOnRateChange);
 
@@ -1778,6 +1808,8 @@ void DevicePickerView::applySettings() {
         m_settings->chunkSize = m_chunkSizeCombo->currentData().toInt();
     if (m_enableRateAdjustCheck)
         m_settings->enableRateAdjust = m_enableRateAdjustCheck->isChecked();
+    if (m_rateAdjustIntervalSlider)
+        m_settings->rateAdjustInterval = m_rateAdjustIntervalSlider->value() / 10.0;
     if (m_queueLimitSpin)
         m_settings->queuelimit = m_queueLimitSpin->value();
     if (m_stopOnRateChangeCheck)

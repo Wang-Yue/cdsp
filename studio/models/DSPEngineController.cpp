@@ -76,6 +76,7 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
     config.devices.chunksize = m_settings ? m_settings->chunkSize : 1024;
     if (m_settings && m_settings->enableRateAdjust) {
         config.devices.enableRateAdjust = true;
+        config.devices.adjustPeriod = m_settings->rateAdjustInterval;
     }
 
     if (m_settings) {

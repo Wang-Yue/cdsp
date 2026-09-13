@@ -176,6 +176,9 @@ private:
     QLabel* m_latencyLabel = nullptr;
     QCheckBox* m_enableRateAdjustCheck = nullptr;
     QLabel* m_rateAdjustSub = nullptr;
+    QWidget* m_rateAdjustIntervalRow = nullptr;
+    QSlider* m_rateAdjustIntervalSlider = nullptr;
+    QLabel* m_rateAdjustIntervalValLabel = nullptr;
     QSpinBox* m_queueLimitSpin = nullptr;
     QCheckBox* m_stopOnRateChangeCheck = nullptr;
     QSlider* m_measureIntervalSlider = nullptr;

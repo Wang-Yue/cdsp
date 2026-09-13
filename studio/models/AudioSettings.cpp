@@ -183,6 +183,9 @@ void AudioSettings::loadPreferences() {
     rateMeasureInterval = s.value("rateMeasureInterval", 1.0).toDouble();
     if (rateMeasureInterval <= 0.0)
         rateMeasureInterval = 1.0;
+    rateAdjustInterval = s.value("rateAdjustInterval", 3.0).toDouble();
+    if (rateAdjustInterval <= 0.0)
+        rateAdjustInterval = 3.0;
     multithreaded = s.value("multithreaded", false).toBool();
     workerThreads = s.value("workerThreads", 0).toInt();
     if (workerThreads < 0)
@@ -233,6 +236,7 @@ void AudioSettings::savePreferences() {
     s.setValue("queuelimit", queuelimit);
     s.setValue("stopOnRateChange", stopOnRateChange);
     s.setValue("rateMeasureInterval", rateMeasureInterval);
+    s.setValue("rateAdjustInterval", rateAdjustInterval);
     s.setValue("multithreaded", multithreaded);
     s.setValue("workerThreads", workerThreads);
     s.setValue("autoStartEngine", autoStartEngine);

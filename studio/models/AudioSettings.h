@@ -57,6 +57,7 @@ public:
     int queuelimit = 4;
     bool stopOnRateChange = false;
     double rateMeasureInterval = 1.0;
+    double rateAdjustInterval = 3.0;
     bool multithreaded = false;
     int workerThreads = 0;
 
