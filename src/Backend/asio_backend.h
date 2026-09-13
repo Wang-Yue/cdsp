@@ -95,6 +95,14 @@ bool asio_with_driver(const char* devname, asio_driver_action_fn action,
  */
 bool asio_needs_rate_reload(const char* devname);
 
+#ifdef CDSP_TEST
+/**
+ * @brief Allow or disallow unsupported drivers (e.g. ASIO4ALL).
+ * Useful for automated tests or environments where only ASIO4ALL is available.
+ */
+void asio_set_allow_unsupported_drivers(bool allow);
+#endif
+
 /**
  * @brief Whether this driver is refused outright.
  * Matches CamillaDSP driver.rs:is_unsupported_driver.

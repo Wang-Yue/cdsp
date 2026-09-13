@@ -162,11 +162,29 @@ bool asio_needs_rate_reload(const char* devname) {
   return matches_driver(devname, NEEDS_RATE_RELOAD, NEEDS_RATE_RELOAD_COUNT);
 }
 
+#ifdef CDSP_TEST
+static bool g_allow_unsupported_drivers = false;
+
+void asio_set_allow_unsupported_drivers(bool allow) {
+  g_allow_unsupported_drivers = allow;
+}
+#endif
+
 /**
  * @brief Whether this driver is refused outright.
  * Matches CamillaDSP driver.rs:is_unsupported_driver.
  */
 bool asio_is_unsupported_driver(const char* devname) {
+#ifdef CDSP_TEST
+  if (g_allow_unsupported_drivers) {
+    return false;
+  }
+  const char* env = getenv("CDSP_ALLOW_UNSUPPORTED_ASIO");
+  if (env && (strcmp(env, "1") == 0 || strcmp(env, "true") == 0 ||
+              strcmp(env, "TRUE") == 0)) {
+    return false;
+  }
+#endif
   return matches_driver(devname, UNSUPPORTED_DRIVERS,
                         UNSUPPORTED_DRIVERS_COUNT);
 }

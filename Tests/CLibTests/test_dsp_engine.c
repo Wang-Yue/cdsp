@@ -2035,6 +2035,7 @@ static bool wasapi_change_playback_rate_only(int sample_rate);
 static bool wasapi_complete_rate_change(int sample_rate);
 
 TEST(DSPEngineASIOUnsupportedDriverRefused) {
+  asio_set_allow_unsupported_drivers(false);
   ASSERT_TRUE(asio_is_unsupported_driver("ASIO4ALL"));
   ASSERT_TRUE(asio_is_unsupported_driver("ASIO4ALL v2"));
   ASSERT_TRUE(asio_is_unsupported_driver("asio4all USB"));
@@ -2051,12 +2052,12 @@ TEST(DSPEngineASIOUnsupportedDriverRefused) {
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Asio\",\n"
-      "            \"device\": \"ASIO4ALL v2\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Asio\",\n"
-      "            \"device\": \"ASIO4ALL v2\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    }\n"
@@ -2091,6 +2092,7 @@ TEST(DSPEngineASIOUnsupportedDriverRefused) {
 }
 
 TEST(DSPEngineASIOSetConfigAndReload) {
+  asio_set_allow_unsupported_drivers(true);
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
@@ -2101,10 +2103,12 @@ TEST(DSPEngineASIOSetConfigAndReload) {
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    }\n"
@@ -2117,10 +2121,12 @@ TEST(DSPEngineASIOSetConfigAndReload) {
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    },\n"
@@ -2167,9 +2173,11 @@ TEST(DSPEngineASIOSetConfigAndReload) {
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
+  asio_set_allow_unsupported_drivers(false);
 }
 
 TEST(DSPEngineASIOHotParameterReload) {
+  asio_set_allow_unsupported_drivers(true);
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
@@ -2180,10 +2188,12 @@ TEST(DSPEngineASIOHotParameterReload) {
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    },\n"
@@ -2209,10 +2219,12 @@ TEST(DSPEngineASIOHotParameterReload) {
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    },\n"
@@ -2253,9 +2265,11 @@ TEST(DSPEngineASIOHotParameterReload) {
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
+  asio_set_allow_unsupported_drivers(false);
 }
 
 TEST(DSPEngineASIOSetConfigStruct) {
+  asio_set_allow_unsupported_drivers(true);
   dsp_engine_t* engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
 
@@ -2266,10 +2280,12 @@ TEST(DSPEngineASIOSetConfigStruct) {
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    }\n"
@@ -2292,10 +2308,12 @@ TEST(DSPEngineASIOSetConfigStruct) {
       "        \"chunksize\": 1024,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
       "            \"type\": \"Asio\",\n"
+      "            \"device\": \"Asio4all v2\",\n"
       "            \"channels\": 2\n"
       "        }\n"
       "    }\n"
@@ -2316,9 +2334,11 @@ TEST(DSPEngineASIOSetConfigStruct) {
   ASSERT_EQ(2, capture_device_config_get_channels(&active->devices.capture));
   dsp_config_free(active);
   free(active_json);
+  dsp_config_free(parsed);
 
   cdsp_stop(engine);
   if (engine && engine->free) engine->free(engine->ctx);
+  asio_set_allow_unsupported_drivers(false);
 }
 
 TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
@@ -2332,6 +2352,7 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
   }
   int init_sr = 48000;
   int target_sr = 44100;
+  asio_set_allow_unsupported_drivers(true);
 
   char out_file[256];
   snprintf(out_file, sizeof(out_file), "/tmp/asio_cap_test_out.raw");
@@ -2346,7 +2367,7 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
            "        \"stop_on_rate_change\": true,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"FlexASIO\",\n"
+           "            \"device\": \"Asio4all v2\",\n"
            "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -2432,7 +2453,7 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"FlexASIO\",\n"
+           "            \"device\": \"Asio4all v2\",\n"
            "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
@@ -2464,6 +2485,7 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);
+  asio_set_allow_unsupported_drivers(false);
 }
 
 TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
@@ -2477,6 +2499,7 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
   }
   int init_sr = 48000;
   int target_sr = 44100;
+  asio_set_allow_unsupported_drivers(true);
 
   char json_init[1024];
   snprintf(json_init, sizeof(json_init),
@@ -2495,7 +2518,7 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"FlexASIO\",\n"
+           "            \"device\": \"Asio4all v2\",\n"
            "            \"channels\": 2\n"
            "        }\n"
            "    }\n"
@@ -2581,7 +2604,7 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Asio\",\n"
-           "            \"device\": \"FlexASIO\",\n"
+           "            \"device\": \"Asio4all v2\",\n"
            "            \"channels\": 2\n"
            "        }\n"
            "    }\n"
@@ -2607,6 +2630,7 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);
+  asio_set_allow_unsupported_drivers(false);
 }
 #endif
 
@@ -3473,6 +3497,10 @@ TEST(DSPEngineE2E_GracefulTeardown_Sequence) {
 // Verifies that initialization fails cleanly and immediately transitions the
 // engine state to INACTIVE.
 TEST(DSPEngineE2E_StartupFailure_Abort) {
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/startup_fail_out.raw");
+  remove(out_file);
+
   char json[1024];
 #if defined(ENABLE_COREAUDIO)
   snprintf(json, sizeof(json),
@@ -3494,7 +3522,7 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
            "        }\n"
            "    }\n"
            "}",
-           "/tmp/startup_fail_out.raw");
+           out_file);
 #elif defined(ENABLE_ALSA)
   snprintf(json, sizeof(json),
            "{\n"
@@ -3515,7 +3543,7 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
            "        }\n"
            "    }\n"
            "}",
-           "/tmp/startup_fail_out.raw");
+           out_file);
 #elif defined(ENABLE_WASAPI)
   snprintf(json, sizeof(json),
            "{\n"
@@ -3536,7 +3564,7 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
            "        }\n"
            "    }\n"
            "}",
-           "/tmp/startup_fail_out.raw");
+           out_file);
 #else
   snprintf(json, sizeof(json),
            "{\n"
@@ -3558,7 +3586,7 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
            "        }\n"
            "    }\n"
            "}",
-           "/tmp/startup_fail_out.raw");
+           out_file);
 #endif
 
   dsp_engine_t* engine = dsp_engine_create();
@@ -3590,7 +3618,7 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
   ASSERT_EQ(stop_reason.type, CDSP_STOP_REASON_CAPTURE_ERROR);
 
   if (engine && engine->free) engine->free(engine->ctx);
-  remove("/tmp/startup_fail_out.raw");
+  remove(out_file);
 }
 
 // Real-world scenario simulated:

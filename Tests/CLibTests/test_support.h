@@ -13,8 +13,10 @@
 #include <io.h>
 #include <process.h>
 #define getpid _getpid
+#define TEST_NULL_DEVICE "NUL"
 #else
 #include <unistd.h>
+#define TEST_NULL_DEVICE "/dev/null"
 #endif
 
 #include <stdarg.h>
@@ -24,6 +26,13 @@ static inline int custom_snprintf(char* str, size_t size, const char* format,
   va_list args;
   va_start(args, format);
   int ret;
+#ifdef _WIN32
+  if (strcmp(format, "/dev/null") == 0 || strcmp(format, "\\dev\\null") == 0) {
+    ret = vsnprintf(str, size, "NUL", args);
+    va_end(args);
+    return ret;
+  }
+#endif
   if (strncmp(format, "/tmp/", 5) == 0) {
     char temp[512];
 #ifdef _WIN32
@@ -50,15 +59,12 @@ static inline int custom_snprintf(char* str, size_t size, const char* format,
 #endif
     if (ret >= 0 && ret < (int)sizeof(temp)) {
       char* dot = strrchr(temp, '.');
-      if (dot && strcmp(dot, ".raw") == 0) {
+      if (dot && dot != temp && !strchr(dot, '/') && !strchr(dot, '\\')) {
+        char ext[32];
+        strncpy(ext, dot, sizeof(ext) - 1);
+        ext[sizeof(ext) - 1] = '\0';
         *dot = '\0';
-        ret = (snprintf)(str, size, "%s_%d.raw", temp, getpid());
-      } else if (dot && strcmp(dot, ".yaml") == 0) {
-        *dot = '\0';
-        ret = (snprintf)(str, size, "%s_%d.yaml", temp, getpid());
-      } else if (dot && strcmp(dot, ".wav") == 0) {
-        *dot = '\0';
-        ret = (snprintf)(str, size, "%s_%d.wav", temp, getpid());
+        ret = (snprintf)(str, size, "%s_%d%s", temp, getpid(), ext);
       } else {
         ret = (snprintf)(str, size, "%s_%d", temp, getpid());
       }
@@ -114,7 +120,11 @@ static inline double test_run_rust_harness_bench(const char* base_name,
   if (!bin) return NAN;
 
   char cmd[1024];
+#ifdef _WIN32
+  custom_snprintf(cmd, sizeof(cmd), "%s %s 2>nul", bin, args);
+#else
   custom_snprintf(cmd, sizeof(cmd), "%s %s 2>/dev/null", bin, args);
+#endif
   FILE* fp = popen(cmd, "r");
   if (!fp) return NAN;
 

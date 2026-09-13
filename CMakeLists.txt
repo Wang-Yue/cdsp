@@ -488,6 +488,7 @@ if(BUILD_TESTING)
     if(WIN32)
         target_link_options(test_runner PRIVATE
             -Wl,--wrap,malloc -Wl,--wrap,calloc -Wl,--wrap,realloc -Wl,--wrap,free
+            -Wl,--wrap,fopen
         )
     endif()
 

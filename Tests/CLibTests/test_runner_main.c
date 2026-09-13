@@ -11,6 +11,36 @@ int g_test_failures = 0;
 test_entry_t* g_test_head = NULL;
 test_entry_t** g_test_tail = &g_test_head;
 
+#if defined(_WIN32)
+FILE* __real_fopen(const char* filename, const char* mode);
+
+FILE* __wrap_fopen(const char* filename, const char* mode) {
+  if (filename && (strcmp(filename, "/dev/null") == 0 ||
+                   strcmp(filename, "\\dev\\null") == 0)) {
+    return __real_fopen("NUL", mode);
+  }
+  if (filename && (strncmp(filename, "/tmp/", 5) == 0 ||
+                   strncmp(filename, "\\tmp\\", 5) == 0)) {
+    char win_path[512];
+    const char* temp_env = getenv("TEMP");
+    if (!temp_env) temp_env = getenv("TMP");
+    if (temp_env) {
+      char clean_temp[512];
+      strncpy(clean_temp, temp_env, sizeof(clean_temp) - 1);
+      clean_temp[sizeof(clean_temp) - 1] = '\0';
+      for (int i = 0; clean_temp[i] != '\0'; i++) {
+        if (clean_temp[i] == '\\') clean_temp[i] = '/';
+      }
+      snprintf(win_path, sizeof(win_path), "%s/%s", clean_temp, filename + 5);
+    } else {
+      snprintf(win_path, sizeof(win_path), "./%s", filename + 5);
+    }
+    return __real_fopen(win_path, mode);
+  }
+  return __real_fopen(filename, mode);
+}
+#endif
+
 int main(int argc, char* argv[]) {
 #if defined(ENABLE_ACCELERATE)
   // Warm up Accelerate CBLAS thread-local dispatch state before running tests

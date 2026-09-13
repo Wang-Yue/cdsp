@@ -225,7 +225,8 @@ static bool write_temp_file(const char* path, const void* contents,
 }
 
 TEST(UnparsableTextCoeffFileIsRejected) {
-  const char* path = "/tmp/cdsp_test_conv_unparsable.txt";
+  char path[512];
+  snprintf(path, sizeof(path), "/tmp/cdsp_test_conv_unparsable.txt");
   const char* body = "# only a comment, no coefficients\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
@@ -243,7 +244,8 @@ TEST(UnparsableTextCoeffFileIsRejected) {
 }
 
 TEST(CommentInsideTextCoeffFileIsRejected) {
-  const char* path = "/tmp/cdsp_test_conv_mid_comment.txt";
+  char path[512];
+  snprintf(path, sizeof(path), "/tmp/cdsp_test_conv_mid_comment.txt");
   const char* body = "1.0\n# comment\n2.0\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
@@ -261,7 +263,8 @@ TEST(CommentInsideTextCoeffFileIsRejected) {
 }
 
 TEST(EmptyLineInsideTextCoeffFileIsRejected) {
-  const char* path = "/tmp/cdsp_test_conv_empty_line.txt";
+  char path[512];
+  snprintf(path, sizeof(path), "/tmp/cdsp_test_conv_empty_line.txt");
   const char* body = "1.0\n\n2.0\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
@@ -279,7 +282,8 @@ TEST(EmptyLineInsideTextCoeffFileIsRejected) {
 }
 
 TEST(MultipleValuesOnLineIsRejected) {
-  const char* path = "/tmp/cdsp_test_conv_multi_val.txt";
+  char path[512];
+  snprintf(path, sizeof(path), "/tmp/cdsp_test_conv_multi_val.txt");
   const char* body = "1.0 2.0\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
@@ -297,7 +301,8 @@ TEST(MultipleValuesOnLineIsRejected) {
 }
 
 TEST(HexFloatIsRejected) {
-  const char* path = "/tmp/cdsp_test_conv_hex_float.txt";
+  char path[512];
+  snprintf(path, sizeof(path), "/tmp/cdsp_test_conv_hex_float.txt");
   const char* body = "0x1.0p0\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
@@ -315,7 +320,8 @@ TEST(HexFloatIsRejected) {
 }
 
 TEST(TextReadBytesLinesLimitsLines) {
-  const char* path = "/tmp/cdsp_test_conv_line_limit.txt";
+  char path[512];
+  snprintf(path, sizeof(path), "/tmp/cdsp_test_conv_line_limit.txt");
   const char* body = "1.0\n2.0\n3.0\n4.0\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
@@ -341,7 +347,8 @@ TEST(TextReadBytesLinesLimitsLines) {
 }
 
 TEST(LongLineTextCoeffParsed) {
-  const char* path = "/tmp/cdsp_test_conv_long_line.txt";
+  char path[512];
+  snprintf(path, sizeof(path), "/tmp/cdsp_test_conv_long_line.txt");
   char buf[300];
   memset(buf, ' ', 200);
   snprintf(buf + 200, sizeof(buf) - 200, "1.5\n");
@@ -367,7 +374,8 @@ TEST(LongLineTextCoeffParsed) {
 
 TEST(TruncatedRawCoeffFileIsRejected) {
   // One byte is less than a single S16LE frame, so no coefficient can be read.
-  const char* path = "/tmp/cdsp_test_conv_truncated.raw";
+  char path[512];
+  snprintf(path, sizeof(path), "/tmp/cdsp_test_conv_truncated.raw");
   const unsigned char body[1] = {0x7f};
   ASSERT_TRUE(write_temp_file(path, body, sizeof(body)));
 
