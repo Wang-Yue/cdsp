@@ -243,10 +243,21 @@ TEST(test_lookahead_limiter_transfer_state_flushes_lookahead) {
                          .parameters.lookahead_limiter = params};
   void* src = g_lookahead_limiter_vtable.create("limiter_src", &cfg, 48000, 32,
                                                 NULL, NULL);
-  void* dest = g_lookahead_limiter_vtable.create("limiter_dest", &cfg, 48000,
-                                                 32, NULL, NULL);
+  void* dest_same = g_lookahead_limiter_vtable.create("limiter_dest_same", &cfg, 48000,
+                                                      32, NULL, NULL);
+
+  lookahead_limiter_config_t params_changed = {.limit = -1.0,
+                                               .attack = 4.0,
+                                               .attack_unit = TIME_UNIT_SAMPLES,
+                                               .release = 1.0,
+                                               .release_unit = TIME_UNIT_SAMPLES};
+  filter_config_t cfg_changed = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
+                                 .parameters.lookahead_limiter = params_changed};
+  void* dest_changed = g_lookahead_limiter_vtable.create("limiter_dest_changed", &cfg_changed, 48000,
+                                                         32, NULL, NULL);
   ASSERT_TRUE(src != NULL);
-  ASSERT_TRUE(dest != NULL);
+  ASSERT_TRUE(dest_same != NULL);
+  ASSERT_TRUE(dest_changed != NULL);
 
   // Quiet audio ending in a burst that is still inside the lookahead window
   // when the chunk returns: it has not been emitted or limited yet.
@@ -256,31 +267,40 @@ TEST(test_lookahead_limiter_transfer_state_flushes_lookahead) {
   }
   g_lookahead_limiter_vtable.process(src, primed, 19);
 
-  g_lookahead_limiter_vtable.transfer_state(dest, src);
+  // Transfer state to identical config (preserves history) and changed config (flushes history)
+  g_lookahead_limiter_vtable.transfer_state(dest_same, src);
+  g_lookahead_limiter_vtable.transfer_state(dest_changed, src);
 
   double continued[19];
-  double reloaded[19];
+  double reloaded_same[19];
+  double reloaded_changed[19];
   for (size_t i = 0; i < 19; i++) {
     continued[i] = 0.5;
-    reloaded[i] = 0.5;
+    reloaded_same[i] = 0.5;
+    reloaded_changed[i] = 0.5;
   }
   g_lookahead_limiter_vtable.process(src, continued, 19);
-  g_lookahead_limiter_vtable.process(dest, reloaded, 19);
+  g_lookahead_limiter_vtable.process(dest_same, reloaded_same, 19);
+  g_lookahead_limiter_vtable.process(dest_changed, reloaded_changed, 19);
 
   // Without a reload the burst comes out of the window, limited to 0 dB, and
   // holds the gain down behind it.
   ASSERT_TRUE(is_close(continued[0], 1.0, 1e-9));
 
-  // After a reload the window is silent, so the burst is gone entirely...
-  for (size_t i = 0; i < 4; i++) {
-    ASSERT_DOUBLE_EQ(0.0, reloaded[i]);
+  // When config is identical, lookahead history is preserved across reloads (M-1)
+  for (size_t i = 0; i < 19; i++) {
+    ASSERT_DOUBLE_EQ(continued[i], reloaded_same[i]);
   }
-  // ...and the new audio is no longer ducked by it.
-  ASSERT_TRUE(reloaded[4] > continued[4] + 0.1);
-  ASSERT_TRUE(is_close(reloaded[12], 0.5, 1e-3));
+
+  // When parameters changed, the window was flushed with silence
+  for (size_t i = 0; i < 4; i++) {
+    ASSERT_DOUBLE_EQ(0.0, reloaded_changed[i]);
+  }
+  ASSERT_TRUE(reloaded_changed[4] > continued[4] + 0.1);
 
   g_lookahead_limiter_vtable.free(src);
-  g_lookahead_limiter_vtable.free(dest);
+  g_lookahead_limiter_vtable.free(dest_same);
+  g_lookahead_limiter_vtable.free(dest_changed);
 }
 
 TEST_MAIN()

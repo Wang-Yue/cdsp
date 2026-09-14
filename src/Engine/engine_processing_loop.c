@@ -72,6 +72,7 @@ struct engine_processing_loop {
   bool is_realtime;
   uint64_t processed_drop_counter;
   size_t overloaded_chunks;
+  size_t resampler_overloaded_chunks;
 };
 
 #include "Engine/thread_priority.h"
@@ -236,13 +237,16 @@ static void processing_loop_record_metrics(engine_processing_loop_t* loop,
   if (!loop->processing_params) return;
 
   // Calculate CPU load of the DSP pipeline and resampler.
-  // The load is the ratio of processing time (in nanoseconds) to the
-  // physical duration of the audio chunk. A load > 1.0 means we cannot
-  // process in real-time and will cause dropouts.
-  size_t frames = audio_chunk_get_valid_frames(chunk);
-  if (frames > 0) {
+  // Denominator is the nominal physical duration of one chunk (chunksize / samplerate).
+  size_t nominal_frames = loop->pipeline_scratch
+                              ? audio_chunk_get_frames(loop->pipeline_scratch)
+                              : audio_chunk_get_valid_frames(chunk);
+  if (nominal_frames == 0) {
+    nominal_frames = audio_chunk_get_valid_frames(chunk);
+  }
+  if (nominal_frames > 0 && loop->pipeline_rate > 0) {
     uint64_t chunk_duration_ns =
-        (uint64_t)frames * 1000000000ULL / loop->pipeline_rate;
+        (uint64_t)nominal_frames * 1000000000ULL / loop->pipeline_rate;
     if (chunk_duration_ns > 0) {
       double p_load =
           ((double)(pipe_end - pipe_start) / (double)chunk_duration_ns) * 100.0;
@@ -265,21 +269,32 @@ static void processing_loop_record_metrics(engine_processing_loop_t* loop,
             ((double)(res_end - res_start) / (double)chunk_duration_ns) * 100.0;
         processing_parameters_set_resampler_load(loop->processing_params,
                                                  r_load);
+        if (r_load > 100.0) {
+          loop->resampler_overloaded_chunks++;
+          if (loop->resampler_overloaded_chunks == 10) {
+            logger_warn(&g_logger,
+                        "Resampler is overloaded (load > 100%% for 10 "
+                        "consecutive chunks)");
+          }
+        } else {
+          loop->resampler_overloaded_chunks = 0;
+        }
       } else {
         processing_parameters_set_resampler_load(loop->processing_params, 0.0);
+        loop->resampler_overloaded_chunks = 0;
       }
     }
   }
 
-  // Scan the output chunk for clipped samples (outside [-1.0, 1.0] range).
-  // This is done before DoP encoding.
+  // Scan the output chunk for clipped samples (outside [-1.0, 1.0) range).
+  // Samples >= 1.0 or < -1.0 cannot be represented in standard fixed-point.
   size_t channels = audio_chunk_get_channels(chunk);
   size_t c_frames = audio_chunk_get_valid_frames(chunk);
   uint64_t clipped = 0;
   for (size_t c = 0; c < channels; c++) {
     mutable_waveform_t data = audio_chunk_get_channel(chunk, c);
     for (size_t f = 0; f < c_frames; f++) {
-      if (data[f] > 1.0 || data[f] < -1.0) {
+      if (data[f] >= 1.0 || data[f] < -1.0) {
         clipped++;
       }
     }
@@ -379,10 +394,6 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
 
     uint64_t res_start = 0;
     uint64_t res_end = 0;
-    if (engine_shared_state_get_state(loop->shared) ==
-        PROCESSING_STATE_PAUSED) {
-      continue;
-    }
 
     // 1. Pre-processing tap for visualisation (Raw captured samples before
     // resample).
@@ -443,6 +454,11 @@ void engine_processing_loop_run(engine_processing_loop_t* loop) {
   // NULL. Shutdown processed queue and exit thread.
   if (loop->shared) {
     engine_shared_state_shutdown_processed_queue(loop->shared);
+  }
+
+  if (loop->processing_params) {
+    processing_parameters_set_processing_load(loop->processing_params, 0.0);
+    processing_parameters_set_resampler_load(loop->processing_params, 0.0);
   }
 
   if (rt_handle) {

@@ -128,10 +128,19 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
       }
       pthread_mutex_unlock((pthread_mutex_t*)&core->config_mutex);
       if (elapsed > timeout_sec) {
-        engine_shared_state_set_state(core->shared, PROCESSING_STATE_STALLED);
-        logger_warn(&g_logger,
-                    "Watchdog: capture device stalled (no data for %.3fs)",
-                    elapsed);
+        if (engine_shared_state_get_state(core->shared) != PROCESSING_STATE_STALLED) {
+          engine_shared_state_set_state(core->shared, PROCESSING_STATE_STALLED);
+          logger_warn(&g_logger,
+                      "Watchdog: capture device stalled (no data for %.3fs)",
+                      elapsed);
+        }
+        if (core->processing_params) {
+          processing_parameters_bump_pause_count(core->processing_params);
+          processing_parameters_set_measured_capture_rate(core->processing_params,
+                                                          0.0);
+          processing_parameters_set_signal_range(core->processing_params, 0.0f);
+          processing_parameters_set_rate_adjust(core->processing_params, 0.0);
+        }
       }
     }
   }

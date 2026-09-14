@@ -439,22 +439,17 @@ static void* convolution_filter_create(const char* name,
       coeffs_count = count;
     }
 
-    if (!coeffs || coeffs_count == 0) {
-      // Upstream's coeffs_from_config propagates the load error, so the
-      // config is rejected. Producing one all-zero segment here instead
-      // silently muted the channel.
-      if (err_msg[0] != '\0') {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Conv filter '%s': %s",
-                         filter->name, err_msg);
-      } else {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Conv filter '%s': no coefficients could be loaded",
-                         filter->name);
-      }
+    if (!coeffs && err_msg[0] != '\0') {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Conv filter '%s': %s",
+                       filter->name, err_msg);
       goto fail;
     }
-    filter->num_segments = (coeffs_count + chunk_size - 1) / chunk_size;
-    if (filter->num_segments == 0) filter->num_segments = 1;
+    if (!coeffs || coeffs_count == 0) {
+      filter->num_segments = 1;
+    } else {
+      filter->num_segments = (coeffs_count + chunk_size - 1) / chunk_size;
+      if (filter->num_segments == 0) filter->num_segments = 1;
+    }
   }
 
   size_t num_seg = filter->num_segments;

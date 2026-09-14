@@ -92,9 +92,8 @@ static bool populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
     if (valid_count == 0) continue;
 
     // Allocate prepared source array for this destination channel
-    if (mixer->mapping[dest].sources) {
-      free(mixer->mapping[dest].sources);
-    }
+    assert(!mixer->mapping[dest].sources &&
+           "Duplicate dest mappings must be rejected by validation");
     mixer->mapping[dest].sources =
         (prepared_source_t*)calloc(valid_count, sizeof(prepared_source_t));
     if (!mixer->mapping[dest].sources) {
@@ -185,6 +184,13 @@ mixer_error_t mixer_process(mixer_t* mixer, const audio_chunk_t* input,
                 mixer->name, frames, mixer->chunk_size);
     return MIXER_ERR_INPUT_SIZE_MISMATCH;
   }
+  if (audio_chunk_get_channels(input) != mixer->channels_in) {
+    logger_warn(
+        &g_logger,
+        "Mixer '%s' input channel count mismatch: expected %zu, got %zu",
+        mixer->name, mixer->channels_in, audio_chunk_get_channels(input));
+    return MIXER_ERR_CHANNEL_COUNT_MISMATCH;
+  }
   if (audio_chunk_get_channels(output) != mixer->channels_out) {
     logger_warn(
         &g_logger,
@@ -220,7 +226,7 @@ mixer_error_t mixer_process(mixer_t* mixer, const audio_chunk_t* input,
       // instruction cycles
       if (src->gain == 1.0) {
         dsp_ops_add(src_ptr, dst, frames);
-      } else if (src->gain != 0.0) {
+      } else {
         dsp_ops_multiply_add(src_ptr, src->gain, dst, frames);
       }
     }

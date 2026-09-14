@@ -338,6 +338,38 @@ static int biquad_config_validate(const filter_config_t* config,
   const biquad_config_t* params = &config->parameters.biquad;
   double nyquist = (double)sample_rate / 2.0;
 
+  // 1. Check Frequency (matching Rust validate_config match block 1)
+  bool has_standard_freq = (params->type == BIQUAD_TYPE_HIGHPASS ||
+                            params->type == BIQUAD_TYPE_LOWPASS ||
+                            params->type == BIQUAD_TYPE_HIGHPASS_FO ||
+                            params->type == BIQUAD_TYPE_LOWPASS_FO ||
+                            params->type == BIQUAD_TYPE_PEAKING ||
+                            params->type == BIQUAD_TYPE_HIGHSHELF ||
+                            params->type == BIQUAD_TYPE_LOWSHELF ||
+                            params->type == BIQUAD_TYPE_HIGHSHELF_FO ||
+                            params->type == BIQUAD_TYPE_LOWSHELF_FO ||
+                            params->type == BIQUAD_TYPE_NOTCH ||
+                            params->type == BIQUAD_TYPE_BANDPASS ||
+                            params->type == BIQUAD_TYPE_ALLPASS ||
+                            params->type == BIQUAD_TYPE_ALLPASS_FO);
+
+  if (has_standard_freq) {
+    if (params->freq <= 0.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Frequency must be > 0");
+      }
+      return -1;
+    }
+    if (params->freq >= nyquist) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Frequency must be < samplerate/2");
+      }
+      return -1;
+    }
+  }
+
   // 0. Enforce steepness type constraints
   if (params->type == BIQUAD_TYPE_LOWPASS ||
       params->type == BIQUAD_TYPE_HIGHPASS) {
@@ -369,38 +401,6 @@ static int biquad_config_validate(const filter_config_t* config,
         config_error_set(
             err, CONFIG_ERR_INVALID_FILTER,
             "Highshelf/Lowshelf does not support Bandwidth steepness type");
-      }
-      return -1;
-    }
-  }
-
-  // 1. Check Frequency (matching Rust validate_config match block 1)
-  bool has_standard_freq = (params->type == BIQUAD_TYPE_HIGHPASS ||
-                            params->type == BIQUAD_TYPE_LOWPASS ||
-                            params->type == BIQUAD_TYPE_HIGHPASS_FO ||
-                            params->type == BIQUAD_TYPE_LOWPASS_FO ||
-                            params->type == BIQUAD_TYPE_PEAKING ||
-                            params->type == BIQUAD_TYPE_HIGHSHELF ||
-                            params->type == BIQUAD_TYPE_LOWSHELF ||
-                            params->type == BIQUAD_TYPE_HIGHSHELF_FO ||
-                            params->type == BIQUAD_TYPE_LOWSHELF_FO ||
-                            params->type == BIQUAD_TYPE_NOTCH ||
-                            params->type == BIQUAD_TYPE_BANDPASS ||
-                            params->type == BIQUAD_TYPE_ALLPASS ||
-                            params->type == BIQUAD_TYPE_ALLPASS_FO);
-
-  if (has_standard_freq) {
-    if (params->freq <= 0.0) {
-      if (err) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Frequency must be > 0");
-      }
-      return -1;
-    }
-    if (params->freq >= nyquist) {
-      if (err) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Frequency must be < samplerate/2");
       }
       return -1;
     }
@@ -719,6 +719,12 @@ static void biquad_choose_split(size_t channels, size_t depth,
         s2[c][k] = f->z2;                                                \
       }                                                                  \
     }                                                                    \
+    for (size_t c1 = 0; c1 < C; c1++) {                                  \
+      for (size_t c2 = c1 + 1; c2 < C; c2++) {                           \
+        assert(channel_of[members[c1]] != channel_of[members[c2]] &&     \
+               "each cascade of a group must filter a different channel");\
+      }                                                                  \
+    }                                                                    \
     double pipe[C][S];                                                   \
     memset(pipe, 0, sizeof(pipe));                                       \
     size_t ramp = (S - 1 < n) ? (S - 1) : n;                             \
@@ -910,15 +916,13 @@ bool biquad_filter_update_parameters(biquad_filter_t* filter,
   if (!filter || !config) return false;
   if (config->type != FILTER_TYPE_BIQUAD) return false;
   biquad_coefficients_t new_coeffs;
-  if (biquad_coefficients_compute(&config->parameters.biquad, sample_rate,
-                                  &new_coeffs)) {
-    filter->coeffs = new_coeffs;
-    filter->type = config->parameters.biquad.type;
-    filter->neg_a1 = -new_coeffs.a1;
-    filter->neg_a2 = -new_coeffs.a2;
-    return true;
-  }
-  return false;
+  bool stable = biquad_coefficients_compute(&config->parameters.biquad,
+                                            sample_rate, &new_coeffs);
+  filter->coeffs = new_coeffs;
+  filter->type = config->parameters.biquad.type;
+  filter->neg_a1 = -new_coeffs.a1;
+  filter->neg_a2 = -new_coeffs.a2;
+  return stable;
 }
 
 /**

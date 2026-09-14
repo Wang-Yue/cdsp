@@ -30,7 +30,7 @@ bool wav_write_header(FILE* f, size_t channels, binary_sample_format_t format,
        format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE || channels > 2);
   bool is_float = (format == BINARY_SAMPLE_FORMAT_F32_LE ||
                    format == BINARY_SAMPLE_FORMAT_F64_LE);
-  bool needs_fact = is_float || extensible;
+  bool needs_fact = is_seekable && (is_float || extensible);
   size_t fmt_size = extensible ? 40 : 16;
   size_t header_size = 12 + (8 + fmt_size) + (needs_fact ? 12 : 0) + 8;
   uint8_t header[128];

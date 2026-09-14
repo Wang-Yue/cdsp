@@ -176,17 +176,17 @@ static void* volume_filter_create(const char* name,
   // pipeline volume filters from config are seeded from target_volume(fader).
   double initial_vol = 0.0;
   if (proc_params) {
+    if (processing_parameters_get_pause_count(proc_params) == 0) {
+      // At cold start before any processing has occurred, sync current volume
+      // to preset target volume for all fader slots (matching upstream
+      // processing_params.sync_volumes_to_target() before pipeline build).
+      double target = processing_parameters_get_target_volume_for_fader(
+          proc_params, filter->fader);
+      processing_parameters_set_current_volume_for_fader(proc_params, target,
+                                                         filter->fader);
+    }
     if (name &&
         (strcmp(name, "master_volume") == 0 || strcmp(name, "default") == 0)) {
-      if (processing_parameters_get_pause_count(proc_params) == 0) {
-        // At cold start before any processing has occurred, sync current volume
-        // to preset target volume (matching upstream
-        // processing_params.sync_volumes_to_target() before pipeline build).
-        double target = processing_parameters_get_target_volume_for_fader(
-            proc_params, filter->fader);
-        processing_parameters_set_current_volume_for_fader(proc_params, target,
-                                                           filter->fader);
-      }
       initial_vol = processing_parameters_get_current_volume_for_fader(
           proc_params, filter->fader);
     } else {

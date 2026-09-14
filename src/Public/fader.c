@@ -64,10 +64,12 @@ float cdsp_adjust_fader_volume_clamped(dsp_engine_t* engine, cdsp_fader_t fader,
                                        float delta, float min_db,
                                        float max_db) {
   float current = cdsp_get_fader_volume(engine, fader);
+  if (isnan(delta) || max_db < min_db) {
+    return current;
+  }
   float new_vol = current + delta;
   if (new_vol < min_db) new_vol = min_db;
   if (new_vol > max_db) new_vol = max_db;
-  new_vol = clamp_volume_db(new_vol);
   cdsp_set_fader_volume(engine, fader, new_vol, false);
   return new_vol;
 }

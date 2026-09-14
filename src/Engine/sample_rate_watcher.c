@@ -25,12 +25,12 @@ sample_rate_watcher_t* sample_rate_watcher_create(double target_rate,
       (sample_rate_watcher_t*)calloc(1, sizeof(sample_rate_watcher_t));
   if (!watcher) return NULL;
   watcher->target_rate = target_rate;
-  watcher->measure_interval = measure_interval > 0.1 ? measure_interval : 1.0;
+  watcher->measure_interval = measure_interval > 0.0 ? measure_interval : 1.0;
   watcher->stop_on_rate_change = stop_on_rate_change;
   watcher->captured_frames = 0;
   watcher->last_reset_ns = 0;
   watcher->deviation_count = 0;
-  watcher->last_measured_rate = target_rate;
+  watcher->last_measured_rate = 0.0;
   return watcher;
 }
 
@@ -95,6 +95,5 @@ bool sample_rate_watcher_get_stop_on_rate_change(
 double sample_rate_watcher_get_last_measured_rate(
     const sample_rate_watcher_t* watcher) {
   if (!watcher) return 0.0;
-  return watcher->last_measured_rate > 0.0 ? watcher->last_measured_rate
-                                           : watcher->target_rate;
+  return watcher->last_measured_rate;
 }

@@ -566,8 +566,17 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
     cap_labels_node =
         cJSON_GetObjectItemCaseSensitive(cap_obj, "channel_labels");
   }
-  parse_labels_array(cap_labels_node, &cap->labels, &cap->labels_count,
-                     &cap->has_labels);
+  if (cap_labels_node) {
+    if (parse_labels_array_strict(cap_labels_node, &cap->labels,
+                                  &cap->labels_count, &cap->has_labels) != 0) {
+      if (err) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_DEVICE,
+            "Invalid 'labels' array in capture device: elements must be strings or null");
+      }
+      return -1;
+    }
+  }
   devices->capture.labels = cap->labels;
   devices->capture.labels_count = cap->labels_count;
   devices->capture.has_labels = cap->has_labels;
@@ -1183,8 +1192,17 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
     play_labels_node =
         cJSON_GetObjectItemCaseSensitive(play_obj, "channel_labels");
   }
-  parse_labels_array(play_labels_node, &play->labels, &play->labels_count,
-                     &play->has_labels);
+  if (play_labels_node) {
+    if (parse_labels_array_strict(play_labels_node, &play->labels,
+                                  &play->labels_count, &play->has_labels) != 0) {
+      if (err) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_DEVICE,
+            "Invalid 'labels' array in playback device: elements must be strings or null");
+      }
+      return -1;
+    }
+  }
 
   // Copy flat temp to union configuration
   playback_device_config_t* final_play = &devices->playback;

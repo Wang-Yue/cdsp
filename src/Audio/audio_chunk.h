@@ -145,6 +145,15 @@ audio_chunk_t* round_robin_chunk_pool_next(round_robin_chunk_pool_t* pool);
 void round_robin_chunk_pool_free(round_robin_chunk_pool_t* pool);
 
 /**
+ * @brief Sets the used channels mask on all chunks in the pool.
+ *
+ * @param pool Pointer to the pool.
+ * @param used_channels Array of booleans indicating used channels, or NULL to clear.
+ */
+void round_robin_chunk_pool_set_used_channels(round_robin_chunk_pool_t* pool,
+                                              const bool* used_channels);
+
+/**
  * @brief Sums multiple audio channels of a chunk into a single buffer.
  *
  * This function performs a vector addition to sum the samples from all

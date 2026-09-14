@@ -356,6 +356,19 @@ static int dsp_engine_get_capture_rate(void* ctx) {
   return rate;
 }
 
+static double dsp_engine_get_signal_range(void* ctx) {
+  if (!ctx) return 0.0;
+  dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
+  pthread_mutex_lock(&impl->state_mutex);
+  processing_parameters_t* params =
+      impl->session.active
+          ? dsp_session_get_processing_params(impl->session.active)
+          : NULL;
+  float range = params ? processing_parameters_get_signal_range(params) : 0.0f;
+  pthread_mutex_unlock(&impl->state_mutex);
+  return (double)range;
+}
+
 static bool dsp_engine_get_processing_status(void* ctx, double* out_rate_adjust,
                                              double* out_buffer_level,
                                              uint64_t* out_clipped_samples,
@@ -519,6 +532,45 @@ static bool dsp_engine_get_signal_levels_since(void* ctx, bool is_capture,
   return true;
 }
 
+static bool dsp_engine_get_global_peaks(void* ctx, bool is_capture,
+                                        float* out_peaks,
+                                        size_t* out_channels) {
+  if (!ctx) return false;
+  dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
+  pthread_mutex_lock(&impl->state_mutex);
+  processing_parameters_t* p =
+      dsp_session_get_processing_params(impl->session.active);
+  if (!p) {
+    pthread_mutex_unlock(&impl->state_mutex);
+    if (out_channels) *out_channels = 0;
+    return false;
+  }
+  size_t ch = is_capture ? processing_parameters_get_capture_channels(p)
+                         : processing_parameters_get_playback_channels(p);
+  if (out_channels) *out_channels = ch;
+  if (out_peaks && ch > 0) {
+    if (is_capture) {
+      processing_parameters_get_capture_global_peaks(p, out_peaks, ch);
+    } else {
+      processing_parameters_get_playback_global_peaks(p, out_peaks, ch);
+    }
+  }
+  pthread_mutex_unlock(&impl->state_mutex);
+  return true;
+}
+
+static void dsp_engine_reset_global_peaks(void* ctx) {
+  if (!ctx) return;
+  dsp_engine_impl_t* impl = (dsp_engine_impl_t*)ctx;
+  pthread_mutex_lock(&impl->state_mutex);
+  processing_parameters_t* p =
+      dsp_session_get_processing_params(impl->session.active);
+  if (p) {
+    processing_parameters_reset_global_peaks(p);
+  }
+  pthread_mutex_unlock(&impl->state_mutex);
+}
+
 static void enable_history_buffers(dsp_engine_impl_t* impl) {
   if (!impl) return;
   if (impl->buffers.capture) {
@@ -530,8 +582,8 @@ static void enable_history_buffers(dsp_engine_impl_t* impl) {
 }
 
 static bool dsp_engine_get_spectrum(void* ctx, bool is_capture,
-                                    const size_t* channel, float min_freq,
-                                    float max_freq, uint32_t n_bins,
+                                    const size_t* channel, double min_freq,
+                                    double max_freq, uint32_t n_bins,
                                     spectrum_t* out_spec) {
   if (!ctx || !out_spec) return false;
   out_spec->error_message[0] = '\0';
@@ -805,6 +857,7 @@ dsp_engine_t* dsp_engine_create(void) {
   impl->iface.get_state = dsp_engine_get_state;
   impl->iface.get_stop_reason = dsp_engine_get_stop_reason;
   impl->iface.get_capture_rate = dsp_engine_get_capture_rate;
+  impl->iface.get_signal_range = dsp_engine_get_signal_range;
   impl->iface.get_processing_status = dsp_engine_get_processing_status;
   impl->iface.reset_clipped_samples = dsp_engine_reset_clipped_samples;
   impl->iface.get_active_config_json = dsp_engine_get_active_config_json;
@@ -812,6 +865,8 @@ dsp_engine_t* dsp_engine_create(void) {
   impl->iface.get_vu_levels = dsp_engine_get_vu_levels;
   impl->iface.get_chunk_generation = dsp_engine_get_chunk_generation;
   impl->iface.get_signal_levels_since = dsp_engine_get_signal_levels_since;
+  impl->iface.get_global_peaks = dsp_engine_get_global_peaks;
+  impl->iface.reset_global_peaks = dsp_engine_reset_global_peaks;
   impl->iface.get_available_devices = dsp_engine_get_available_devices;
   impl->iface.get_device_capabilities = dsp_engine_get_device_capabilities;
   impl->iface.get_spectrum = dsp_engine_get_spectrum;

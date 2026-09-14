@@ -67,10 +67,7 @@ double* raw_read_text_samples(const char* path, size_t skip_lines,
   for (size_t i = 0; i < skip_lines; i++) {
     char* line = raw_read_dynamic_line(f);
     if (!line) {
-      set_error(err_buf, err_len, "Failed to skip %zu lines in file '%s'",
-                skip_lines, path);
-      fclose(f);
-      return NULL;
+      break;
     }
     free(line);
   }
@@ -149,12 +146,6 @@ double* raw_read_text_samples(const char* path, size_t skip_lines,
   }
 
   fclose(f);
-  if (count == 0) {
-    set_error(err_buf, err_len, "No coefficients found in file '%s'", path);
-    free(result);
-    return NULL;
-  }
-
   *out_count = count;
   return result;
 }

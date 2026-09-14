@@ -72,32 +72,16 @@ static void configure(const lookahead_limiter_config_t *params, int sample_rate,
   double attack = params ? params->attack : 0.0;
   double release = params ? params->release : 0.0;
   double attack_s = compute_time_samples(attack, attack_unit, sample_rate);
-  if (isnan(attack_s) || attack_s <= 0.0) {
-    *out_attack_samples = 0;
-  } else if (attack_s >= (double)sample_rate) {
-    *out_attack_samples = sample_rate;
-  } else {
-    *out_attack_samples = (int)round(attack_s);
-  }
+  *out_attack_samples = (attack_s > 0.0) ? (int)round(attack_s) : 0;
   double release_samples =
       compute_time_samples(release, release_unit, sample_rate);
-  if (release_samples > 0.0 && !isnan(release_samples)) {
-    *out_release_coeff = exp(-1.0 / release_samples);
-  } else {
-    *out_release_coeff = 0.0;
-  }
+  *out_release_coeff = exp(-1.0 / release_samples);
 }
 
 static size_t calculate_envelope(lookahead_gain_t *lg, const double *detection,
                                  size_t len) {
   if (len > lg->gain_capacity) {
-    double *new_gain = (double *)realloc(lg->gain, len * sizeof(double));
-    if (new_gain) {
-      lg->gain = new_gain;
-      lg->gain_capacity = len;
-    } else {
-      len = lg->gain_capacity;
-    }
+    len = lg->gain_capacity;
   }
 
   double peak = 1.0;
@@ -329,13 +313,16 @@ static void lookahead_gain_transfer_state_common(void *dest_ptr,
     dest->history_read_idx = 0;
     dest->history_write_idx = 0;
 
-    // Flush the lookahead window with silence.
-    // `lookahead_window_get` reads exactly the newest `attack_samples` entries,
-    // so pushing that many zeros clears the whole window. `attack_samples` is
-    // validated to be at most one second and the capacity is at least the
-    // sample rate, so this cannot wrap past the start of the ring.
-    for (int i = 0; i < dest->attack_samples; i++) {
-      history_push(dest, 0.0);
+    // If limiter parameters changed, pad the lookahead window with silence
+    // to prevent stale samples from causing artifacts with new parameters.
+    // When parameters are unchanged, preserve the full history.
+    bool params_changed = (dest->attack_samples != src->attack_samples ||
+                           dest->limit != src->limit ||
+                           dest->release_coeff != src->release_coeff);
+    if (params_changed) {
+      for (int i = 0; i < dest->attack_samples; i++) {
+        history_push(dest, 0.0);
+      }
     }
   }
 }

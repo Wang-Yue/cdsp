@@ -768,7 +768,7 @@ TEST(ParseFullConfigWithMixerAndFilter) {
       "        },\n"
       "        {\n"
       "            \"type\": \"Filter\",\n"
-      "            \"channel\": 0,\n"
+      "            \"channels\": [0],\n"
       "            \"names\": [\"mygain\"]\n"
       "        }\n"
       "    ]\n"
@@ -900,7 +900,7 @@ TEST(RejectWavS24_4_RJ) {
   ASSERT_TRUE(config == NULL);
 }
 
-TEST(RejectStdoutWavHeaderS24_4_RJ_LE) {
+TEST(RejectFileWavHeaderS24_4_RJ_LE) {
   const char* json =
       "{\n"
       "    \"devices\": {\n"
@@ -913,7 +913,8 @@ TEST(RejectStdoutWavHeaderS24_4_RJ_LE) {
       "            \"channels\": 2\n"
       "        },\n"
       "        \"playback\": {\n"
-      "            \"type\": \"Stdout\",\n"
+      "            \"type\": \"File\",\n"
+      "            \"filename\": \"/dev/null\",\n"
       "            \"channels\": 2,\n"
       "            \"format\": \"S24_4_RJ_LE\",\n"
       "            \"wav_header\": true\n"
@@ -930,7 +931,7 @@ TEST(RejectStdoutWavHeaderS24_4_RJ_LE) {
   ASSERT_TRUE(config == NULL);
 }
 
-TEST(RejectMissingResamplerWhenRatesDiffer) {
+TEST(AcceptMissingResamplerWhenRatesDiffer) {
   const char* json =
       "{\n"
       "    \"devices\": {\n"
@@ -955,11 +956,9 @@ TEST(RejectMissingResamplerWhenRatesDiffer) {
   config_error_t err;
   config_error_init(&err);
   int res = dsp_config_parse_json(json, &config, &err);
-  ASSERT_EQ(-1, res);
-  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
-  ASSERT_TRUE(strstr(err.message, "requires a resampler to be configured") !=
-              NULL);
-  ASSERT_TRUE(config == NULL);
+  ASSERT_EQ(0, res);
+  ASSERT_TRUE(config != NULL);
+  dsp_config_free(config);
 }
 
 TEST(WavFileOverrideWithoutResampler) {
@@ -1674,8 +1673,8 @@ TEST(PipelineRejectsFractionalChannel) {
       "    },\n"
       "    \"filters\": {\"g1\": {\"type\": \"Gain\", \"parameters\": "
       "{\"gain\": 0.0}}},\n"
-      "    \"pipeline\": [{\"type\": \"Filter\", \"name\": \"g1\", "
-      "\"channel\": 1.5}]\n"
+      "    \"pipeline\": [{\"type\": \"Filter\", \"names\": [\"g1\"], "
+      "\"channels\": [1.5]}]\n"
       "}";
   dsp_config_t* config = NULL;
   config_error_t err;

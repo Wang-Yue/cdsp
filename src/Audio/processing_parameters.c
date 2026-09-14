@@ -242,6 +242,7 @@ struct processing_parameters {
   atomic_double_t
       measured_capture_rate;        /**< Measured capture sample rate (Hz). */
   atomic_double_t buffer_level;     /**< Current buffer level. */
+  atomic_float_t signal_range;      /**< Peak-to-peak signal range. */
   _Atomic uint64_t clipped_samples; /**< Cumulative count of clipped samples. */
   atomic_double_t processing_load;  /**< Audio processing load (0.0 to 1.0). */
   atomic_double_t
@@ -320,6 +321,16 @@ void processing_parameters_set_resampler_load(processing_parameters_t* params,
   if (params) atomic_double_set(&params->resampler_load, value);
 }
 
+float processing_parameters_get_signal_range(
+    const processing_parameters_t* params) {
+  return params ? atomic_float_get(&params->signal_range) : 0.0f;
+}
+
+void processing_parameters_set_signal_range(processing_parameters_t* params,
+                                            float range) {
+  if (params) atomic_float_set(&params->signal_range, range);
+}
+
 processing_parameters_t* processing_parameters_create(
     size_t capture_channels, size_t playback_channels) {
   processing_parameters_t* params =
@@ -383,9 +394,10 @@ processing_parameters_t* processing_parameters_create(
     }
   }
 
-  atomic_double_init(&params->rate_adjust, 1.0);
+  atomic_double_init(&params->rate_adjust, 0.0);
   atomic_double_init(&params->measured_capture_rate, 0.0);
   atomic_double_init(&params->buffer_level, 0.0);
+  atomic_float_init(&params->signal_range, 0.0f);
   atomic_init(&params->clipped_samples, 0ULL);
   atomic_double_init(&params->processing_load, 0.0);
   atomic_double_init(&params->resampler_load, 0.0);
@@ -640,10 +652,7 @@ static float update_levels_internal(const audio_chunk_t* chunk,
 
     float peak = dsp_ops_peak_absolute(buffer, frame_count);
     if (global_peaks) {
-      float cur_global = atomic_float_get(&global_peaks[i]);
-      if (peak > cur_global) {
-        atomic_float_set(&global_peaks[i], peak);
-      }
+      atomic_float_fetch_max(&global_peaks[i], peak);
     }
     float peak_db = float_to_db(peak);
     atomic_float_set(&peak_storage[i], peak_db);

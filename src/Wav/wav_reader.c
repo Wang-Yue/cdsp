@@ -63,6 +63,11 @@ bool wav_read_header(FILE* f, wav_info_t* info, char* err_msg,
   uint16_t block_align = 0;
   uint16_t valid_bits = 0;
   size_t container_bytes = 0;
+  struct {
+    uint8_t id[4];
+    uint64_t size;
+  } ds64_table[16];
+  uint32_t ds64_table_count = 0;
 
   uint8_t chunk_id[4];
   while (fread(chunk_id, 1, 4, f) == 4) {
@@ -84,8 +89,9 @@ bool wav_read_header(FILE* f, wav_info_t* info, char* err_msg,
         }
         continue;
       }
-      uint8_t ds64_payload[24];
-      if (fread(ds64_payload, 1, 24, f) != 24) {
+      uint8_t ds64_payload[28];
+      size_t read_bytes = chunk_size < 28 ? chunk_size : 28;
+      if (fread(ds64_payload, 1, read_bytes, f) != read_bytes) {
         set_error(err_msg, err_msg_len, "Failed to read ds64 chunk payload");
         return false;
       }
@@ -98,8 +104,38 @@ bool wav_read_header(FILE* f, wav_info_t* info, char* err_msg,
                        ((uint64_t)ds64_payload[14] << 48) |
                        ((uint64_t)ds64_payload[15] << 56);
 
-      if (chunk_size > 24) {
-        uint32_t remaining = chunk_size - 24;
+      uint32_t table_length = 0;
+      if (read_bytes >= 28) {
+        table_length = (uint32_t)ds64_payload[24] |
+                       ((uint32_t)ds64_payload[25] << 8) |
+                       ((uint32_t)ds64_payload[26] << 16) |
+                       ((uint32_t)ds64_payload[27] << 24);
+      }
+
+      uint32_t bytes_read = (uint32_t)read_bytes;
+      for (uint32_t i = 0; i < table_length; i++) {
+        if (bytes_read + 12 > chunk_size) {
+          break;
+        }
+        uint8_t entry_buf[12];
+        if (fread(entry_buf, 1, 12, f) != 12) {
+          break;
+        }
+        bytes_read += 12;
+        if (ds64_table_count < 16) {
+          memcpy(ds64_table[ds64_table_count].id, entry_buf, 4);
+          ds64_table[ds64_table_count].size =
+              (uint64_t)entry_buf[4] | ((uint64_t)entry_buf[5] << 8) |
+              ((uint64_t)entry_buf[6] << 16) | ((uint64_t)entry_buf[7] << 24) |
+              ((uint64_t)entry_buf[8] << 32) | ((uint64_t)entry_buf[9] << 40) |
+              ((uint64_t)entry_buf[10] << 48) |
+              ((uint64_t)entry_buf[11] << 56);
+          ds64_table_count++;
+        }
+      }
+
+      if (chunk_size > bytes_read) {
+        uint32_t remaining = chunk_size - bytes_read;
         uint32_t pad = (chunk_size & 1);
         if (cdsp_fseek64(f, remaining + pad, SEEK_CUR) != 0) {
           set_error(err_msg, err_msg_len, "Failed to seek past ds64 chunk");
@@ -107,10 +143,19 @@ bool wav_read_header(FILE* f, wav_info_t* info, char* err_msg,
         }
       }
     } else if (memcmp(chunk_id, "fmt ", 4) == 0) {
+      if (found_fmt) {
+        // Honor first fmt chunk, skip any subsequent fmt chunks
+        uint32_t pad = chunk_size & 1;
+        if (cdsp_fseek64(f, (int64_t)chunk_size + pad, SEEK_CUR) != 0) {
+          set_error(err_msg, err_msg_len, "Failed to seek past duplicate fmt chunk");
+          return false;
+        }
+        continue;
+      }
       found_fmt = true;
-      if (chunk_size < 16) {
+      if (chunk_size != 16 && chunk_size != 18 && chunk_size != 40) {
         set_error(err_msg, err_msg_len,
-                  "Invalid fmt chunk size %u (must be at least 16)",
+                  "Invalid fmt chunk size %u (must be 16, 18, or 40)",
                   chunk_size);
         return false;
       }
@@ -137,9 +182,9 @@ bool wav_read_header(FILE* f, wav_info_t* info, char* err_msg,
 
       bool is_extended = (audio_format == 0xFFFE);
       if (is_extended) {
-        if (chunk_size < 40) {
+        if (chunk_size != 40) {
           set_error(err_msg, err_msg_len,
-                    "extended fmt chunk must be at least 40 bytes, got %u",
+                    "extended fmt chunk must be 40 bytes, got %u",
                     chunk_size);
           return false;
         }
@@ -169,7 +214,7 @@ bool wav_read_header(FILE* f, wav_info_t* info, char* err_msg,
         set_error(err_msg, err_msg_len, "Invalid channel count 0 in fmt chunk");
         return false;
       }
-      if (block_align == 0 || (block_align % channels) != 0) {
+      if (block_align == 0) {
         set_error(err_msg, err_msg_len,
                   "Invalid block align %d for %d channels", block_align,
                   channels);
@@ -178,6 +223,17 @@ bool wav_read_header(FILE* f, wav_info_t* info, char* err_msg,
       container_bytes = block_align / channels;
       uint16_t bytes_per_sample = (uint16_t)container_bytes;
       if (valid_bits == 0) valid_bits = bits_per_sample;
+
+      if (is_extended && valid_bits != bits_per_sample &&
+          !(audio_format == 1 && bits_per_sample == 32 &&
+            bytes_per_sample == 4 && valid_bits == 24)) {
+        set_error(
+            err_msg, err_msg_len,
+            "Unsupported WAV sample format in EXTENSIBLE: %d valid bits for %d "
+            "bits in %d bytes",
+            valid_bits, bits_per_sample, bytes_per_sample);
+        return false;
+      }
 
       if (audio_format == 1) {
         if (bits_per_sample == 16 && bytes_per_sample == 2)
@@ -230,24 +286,12 @@ bool wav_read_header(FILE* f, wav_info_t* info, char* err_msg,
         break;
       }
     } else if (memcmp(chunk_id, "data", 4) == 0) {
+      uint64_t current_chunk_payload_offset = (uint64_t)cdsp_ftell64(f);
       if (!found_data) {
         found_data = true;
-        data_start_offset = (uint64_t)cdsp_ftell64(f);
+        data_start_offset = current_chunk_payload_offset;
         if (is_rf64 && chunk_size == 0xFFFFFFFF) {
           data_bytes = rf64_data_size;
-        } else if (chunk_size == 0xFFFFFFFF) {
-          // Plain RIFF streaming placeholder: determine file length if seekable
-          int64_t cur_pos = cdsp_ftell64(f);
-          int64_t file_size = -1;
-          if (cur_pos >= 0 && cdsp_fseek64(f, 0, SEEK_END) == 0) {
-            file_size = cdsp_ftell64(f);
-            cdsp_fseek64(f, cur_pos, SEEK_SET);
-          }
-          if (file_size > cur_pos) {
-            data_bytes = (uint64_t)(file_size - cur_pos);
-          } else {
-            data_bytes = 0xFFFFFFFF;
-          }
         } else {
           data_bytes = chunk_size;
         }
@@ -263,13 +307,24 @@ bool wav_read_header(FILE* f, wav_info_t* info, char* err_msg,
       uint64_t skip_len =
           (chunk_size == 0xFFFFFFFF) ? rf64_data_size : (uint64_t)chunk_size;
       uint64_t skip_padded = (skip_len + 1) & ~1ULL;
-      if (cdsp_fseek64(f, (int64_t)data_start_offset + (int64_t)skip_padded,
+      if (cdsp_fseek64(f,
+                       (int64_t)current_chunk_payload_offset +
+                           (int64_t)skip_padded,
                        SEEK_SET) != 0) {
         break;
       }
     } else {
-      uint32_t pad = chunk_size & 1;
-      if (cdsp_fseek64(f, (int64_t)chunk_size + pad, SEEK_CUR) != 0) {
+      uint64_t actual_chunk_size = (uint64_t)chunk_size;
+      if (is_rf64 && chunk_size == 0xFFFFFFFF) {
+        for (uint32_t i = 0; i < ds64_table_count; i++) {
+          if (memcmp(chunk_id, ds64_table[i].id, 4) == 0) {
+            actual_chunk_size = ds64_table[i].size;
+            break;
+          }
+        }
+      }
+      uint64_t pad = actual_chunk_size & 1ULL;
+      if (cdsp_fseek64(f, (int64_t)(actual_chunk_size + pad), SEEK_CUR) != 0) {
         set_error(err_msg, err_msg_len, "Failed to seek past unknown chunk");
         return false;
       }
@@ -383,7 +438,20 @@ double* wav_read_channel_samples(const char* path, int channel,
     return NULL;
   }
 
-  size_t num_frames = (size_t)(info.data_bytes / bytes_per_frame);
+  uint64_t data_bytes = info.data_bytes;
+  if (!info.is_rf64 && data_bytes == 0xFFFFFFFF) {
+    int64_t cur_pos = cdsp_ftell64(f);
+    int64_t file_size = -1;
+    if (cur_pos >= 0 && cdsp_fseek64(f, 0, SEEK_END) == 0) {
+      file_size = cdsp_ftell64(f);
+      cdsp_fseek64(f, cur_pos, SEEK_SET);
+    }
+    if (file_size > (int64_t)info.data_start_offset) {
+      data_bytes = (uint64_t)(file_size - (int64_t)info.data_start_offset);
+    }
+  }
+
+  size_t num_frames = (size_t)(data_bytes / bytes_per_frame);
   if (num_frames == 0) {
     set_error(err_msg, err_msg_len, "WAV file '%s' has 0 audio frames", path);
     fclose(f);

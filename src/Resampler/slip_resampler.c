@@ -216,6 +216,11 @@ static resampler_error_t slip_resampler_process(void* impl_ptr,
   slip_resampler_t* impl = (slip_resampler_t*)impl_ptr;
   if (!impl || !input || !output) return RESAMPLER_ERR_INVALID_PARAMETER;
 
+  if (audio_chunk_get_channels(input) != impl->channels ||
+      audio_chunk_get_channels(output) != impl->channels) {
+    return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
+  }
+
   size_t frames_to_read = audio_chunk_get_valid_frames(input);
   if (frames_to_read > impl->needed_input_size) {
     frames_to_read = impl->needed_input_size;

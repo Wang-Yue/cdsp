@@ -133,12 +133,6 @@ static biquad_filter_t* create_section(const char* sec_name, biquad_type_t type,
  */
 static int biquad_combo_config_validate(const filter_config_t* config,
                                         int sample_rate, config_error_t* err) {
-  if (sample_rate <= 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                     "BiquadCombo: sample_rate must be greater than 0, got %d",
-                     sample_rate);
-    return -1;
-  }
   if (!config || config->type != FILTER_TYPE_BIQUAD_COMBO) return -1;
   const biquad_combo_config_t* params = &config->parameters.biquad_combo;
   if (!params) return 0;
@@ -161,12 +155,6 @@ static int biquad_combo_config_validate(const filter_config_t* config,
                          "Butterworth order must be larger than zero");
         return -1;
       }
-      if (params->order > BIQUAD_COMBO_MAX_ORDER) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Butterworth order must be <= %d",
-                         BIQUAD_COMBO_MAX_ORDER);
-        return -1;
-      }
       break;
     case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
     case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS:
@@ -186,11 +174,6 @@ static int biquad_combo_config_validate(const filter_config_t* config,
                          "LR order must be an even non-zero number");
         return -1;
       }
-      if (params->order > BIQUAD_COMBO_MAX_ORDER) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "LR order must be <= %d", BIQUAD_COMBO_MAX_ORDER);
-        return -1;
-      }
       break;
     case BIQUAD_COMBO_TYPE_TILT:
       if (!params->has_gain) {
@@ -204,6 +187,11 @@ static int biquad_combo_config_validate(const filter_config_t* config,
       }
       if (params->gain >= 100.0) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Gain must be < 100");
+        return -1;
+      }
+      if (3500.0 >= nyquist) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Frequency must be < samplerate/2");
         return -1;
       }
       break;

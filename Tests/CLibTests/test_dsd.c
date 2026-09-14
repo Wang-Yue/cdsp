@@ -861,9 +861,8 @@ TEST(DSDEncoderSilencePrefill) {
   audio_chunk_set_valid_frames(chunk32, 10);
   dsd_encoder_fill_silence(enc_nat32, chunk32);
   for (size_t t = 0; t < 10; t++) {
-    float fval = (float)audio_chunk_get_channel(chunk32, 0)[t];
-    uint32_t u32;
-    memcpy(&u32, &fval, sizeof(uint32_t));
+    uint32_t u32 =
+        pcm_sample_encode_dsd_u32(audio_chunk_get_channel(chunk32, 0)[t]);
     ASSERT_EQ((int)u32, 0x69696969);
   }
   audio_chunk_free(chunk32);
@@ -989,9 +988,8 @@ TEST(DSDEncoderGoldenCorrectness) {
       0xABD5D6D6, 0xACD9AB35, 0x2B2594AA, 0x50B12A28, 0x29444491, 0x0A112112,
       0x20A22221, 0x24910944, 0xA4515232, 0x64C9994D};
   for (size_t i = 0; i < 64; i++) {
-    float fval = (float)audio_chunk_get_channel(chunk32, 0)[i];
-    uint32_t u32;
-    memcpy(&u32, &fval, sizeof(uint32_t));
+    uint32_t u32 =
+        pcm_sample_encode_dsd_u32(audio_chunk_get_channel(chunk32, 0)[i]);
     ASSERT_EQ((int)u32, (int)golden32[i]);
   }
 

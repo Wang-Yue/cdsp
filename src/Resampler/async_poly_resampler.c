@@ -59,11 +59,6 @@ static inline int poly_interpolation_nbr_points(poly_interpolation_t interp) {
   }
 }
 
-static void* async_poly_resampler_create_from_profile(
-    size_t channels, size_t input_rate, size_t output_rate,
-    resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
-    fixed_async_t fixed, config_error_t* err);
-
 typedef struct async_poly_resampler async_poly_resampler_t;
 
 struct async_poly_resampler {
@@ -640,16 +635,6 @@ static int async_poly_resampler_config_validate(
       return -1;
     }
   }
-  if (config->has_profile) {
-    if (strcmp(config->profile, "VeryFast") != 0 &&
-        strcmp(config->profile, "Fast") != 0 &&
-        strcmp(config->profile, "Balanced") != 0 &&
-        strcmp(config->profile, "Accurate") != 0) {
-      config_error_set(err, CONFIG_ERR_VALIDATION,
-                       "AsyncPoly: invalid profile %s", config->profile);
-      return -1;
-    }
-  }
   return 0;
 }
 
@@ -672,21 +657,13 @@ static void* async_poly_resampler_create(const resampler_config_t* config,
   if (!config || config->type != RESAMPLER_TYPE_ASYNC_POLY) return NULL;
 
   fixed_async_t fixed_mode = FIXED_ASYNC_INPUT;
+  poly_interpolation_t interp = POLY_INTERPOLATION_CUBIC;
   if (config->has_interpolation) {
-    poly_interpolation_t interp =
-        poly_interpolation_from_string(config->interpolation);
-    return async_poly_resampler_create_impl(channels, input_rate, output_rate,
-                                            interp, chunk_size, 1.1, fixed_mode,
-                                            err);
-  } else {
-    resampler_profile_t prof = RESAMPLER_PROFILE_BALANCED;
-    if (config->has_profile) {
-      prof = resampler_profile_from_string(config->profile);
-    }
-    return async_poly_resampler_create_from_profile(
-        channels, input_rate, output_rate, prof, chunk_size, 1.1, fixed_mode,
-        err);
+    interp = poly_interpolation_from_string(config->interpolation);
   }
+  return async_poly_resampler_create_impl(channels, input_rate, output_rate,
+                                          interp, chunk_size, 1.1, fixed_mode,
+                                          err);
 }
 
 static size_t async_poly_resampler_get_output_delay(const void* impl) {
@@ -735,29 +712,3 @@ const resampler_vtable_t g_async_poly_resampler_vtable = {
     .get_output_delay = async_poly_resampler_get_output_delay,
     .reset = async_poly_resampler_reset,
     .free = async_poly_resampler_free};
-
-static void* async_poly_resampler_create_from_profile(
-    size_t channels, size_t input_rate, size_t output_rate,
-    resampler_profile_t profile, size_t chunk_size, double max_relative_ratio,
-    fixed_async_t fixed, config_error_t* err) {
-  poly_interpolation_t interp = POLY_INTERPOLATION_CUBIC;
-  switch (profile) {
-    case RESAMPLER_PROFILE_VERY_FAST:
-      interp = POLY_INTERPOLATION_LINEAR;
-      break;
-    case RESAMPLER_PROFILE_FAST:
-      interp = POLY_INTERPOLATION_CUBIC;
-      break;
-    case RESAMPLER_PROFILE_BALANCED:
-      interp = POLY_INTERPOLATION_QUINTIC;
-      break;
-    case RESAMPLER_PROFILE_ACCURATE:
-      interp = POLY_INTERPOLATION_SEPTIC;
-      break;
-    default:
-      break;
-  }
-  return async_poly_resampler_create_impl(channels, input_rate, output_rate,
-                                          interp, chunk_size,
-                                          max_relative_ratio, fixed, err);
-}

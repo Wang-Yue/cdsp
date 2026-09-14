@@ -135,8 +135,7 @@ static void gain_filter_process(void* instance, mutable_waveform_t waveform,
   gain_filter_t* filter = (gain_filter_t*)instance;
   if (!filter || !waveform || count == 0) return;
   if (filter->muted) {
-    // If muted, we clear the buffer to output silence.
-    dsp_ops_clear(waveform, count);
+    dsp_ops_scalar_multiply(waveform, 0.0, count);
   } else if (filter->linear_gain != 1.0) {
     // Apply linear scaling factor.
     dsp_ops_scalar_multiply(waveform, filter->linear_gain, count);
@@ -144,7 +143,8 @@ static void gain_filter_process(void* instance, mutable_waveform_t waveform,
 }
 
 double gain_filter_process_single(gain_filter_t* filter, double sample) {
-  if (!filter || filter->muted) return 0.0;
+  if (!filter) return sample;
+  if (filter->muted) return sample * 0.0;
   return sample * filter->linear_gain;
 }
 

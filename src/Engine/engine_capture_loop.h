@@ -58,6 +58,7 @@ typedef struct {
   size_t chunk_size;
   size_t channels;
   size_t samplerate;
+  const bool* used_channels;
   double silence_threshold_db;
   double silence_timeout_seconds;
   bool stop_on_rate_change;
