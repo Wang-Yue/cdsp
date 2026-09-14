@@ -2578,6 +2578,12 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
     cdsp_sleep_ms(10);
   }
 
+  if (!rate_change_stopped) {
+    engine->stop(engine->ctx);
+    engine->free(engine->ctx);
+    wasapi_complete_rate_change(target_sr);
+    wasapi_set_both_rates(48000);
+  }
   ASSERT_TRUE(rate_change_stopped);
   if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
     ASSERT_EQ(target_sr, stop_reason.format_change_rate);
@@ -4563,6 +4569,12 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
     cdsp_sleep_ms(10);
   }
 
+  if (!rate_change_stopped) {
+    engine->stop(engine->ctx);
+    engine->free(engine->ctx);
+    wasapi_complete_rate_change(target_sr);
+    wasapi_set_both_rates(48000);
+  }
   ASSERT_TRUE(rate_change_stopped);
   ASSERT_EQ(STOP_REASON_CAPTURE_FORMAT_CHANGE, stop_reason.type);
   ASSERT_EQ(target_sr, stop_reason.format_change_rate);
@@ -4710,6 +4722,12 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
     cdsp_sleep_ms(10);
   }
 
+  if (!rate_change_stopped) {
+    engine->stop(engine->ctx);
+    engine->free(engine->ctx);
+    wasapi_complete_rate_change(target_sr);
+    wasapi_set_both_rates(48000);
+  }
   ASSERT_TRUE(rate_change_stopped);
   ASSERT_EQ(STOP_REASON_PLAYBACK_FORMAT_CHANGE, stop_reason.type);
   ASSERT_EQ(target_sr, stop_reason.format_change_rate);

@@ -49,19 +49,19 @@ struct wasapi_capture {
   size_t blockalign;
   bool com_initialized;
 
-  IMMDeviceEnumerator* enumerator;
-  IMMDevice* mm_device;
-  IAudioClient* client;
-  IAudioCaptureClient* capture_client;
-  IAudioSessionControl* session_control;
-  IAudioSessionEvents* session_events_listener;
+  IMMDeviceEnumerator *enumerator;
+  IMMDevice *mm_device;
+  IAudioClient *client;
+  IAudioCaptureClient *capture_client;
+  IAudioSessionControl *session_control;
+  IAudioSessionEvents *session_events_listener;
   UINT32 buffer_frame_count;
   REFERENCE_TIME def_period;
   HANDLE event_handle;
   cdsp_sem_t semaphore;
 
-  spsc_byte_ring_buffer_t* ring_buffer;
-  uint8_t* decode_buf;
+  spsc_byte_ring_buffer_t *ring_buffer;
+  uint8_t *decode_buf;
   size_t decode_buf_cap;
 
   pthread_t inner_thread;
@@ -73,9 +73,10 @@ struct wasapi_capture {
   _Atomic bool has_pending_rate_change;
 };
 
-static void wasapi_capture_on_format_change(void* parent, double new_rate) {
-  wasapi_capture_t* capture = (wasapi_capture_t*)parent;
-  if (!capture) return;
+static void wasapi_capture_on_format_change(void *parent, double new_rate) {
+  wasapi_capture_t *capture = (wasapi_capture_t *)parent;
+  if (!capture)
+    return;
   capture->pending_rate = new_rate;
   atomic_store_explicit(&capture->has_pending_rate_change, true,
                         memory_order_release);
@@ -84,8 +85,9 @@ static void wasapi_capture_on_format_change(void* parent, double new_rate) {
 /**
  * @brief get_next_packet_size matching wasapi-rs api.rs.
  */
-static inline bool wasapi_capture_get_next_packet_size(
-    IAudioCaptureClient* capture_client, bool exclusive, UINT32* out_frames) {
+static inline bool
+wasapi_capture_get_next_packet_size(IAudioCaptureClient *capture_client,
+                                    bool exclusive, UINT32 *out_frames) {
   if (exclusive) {
     return false;
   }
@@ -103,8 +105,8 @@ static inline bool wasapi_capture_get_next_packet_size(
  * @brief read_from_device matching wasapi-rs api.rs.
  */
 static inline bool wasapi_capture_read_from_device(
-    IAudioCaptureClient* capture_client, uint8_t* data, size_t max_bytes,
-    size_t bytes_per_frame, UINT32* out_frames_read, DWORD* out_flags) {
+    IAudioCaptureClient *capture_client, uint8_t *data, size_t max_bytes,
+    size_t bytes_per_frame, UINT32 *out_frames_read, DWORD *out_flags) {
   size_t data_len_in_frames = max_bytes / bytes_per_frame;
   if (data_len_in_frames == 0) {
     *out_frames_read = 0;
@@ -112,7 +114,7 @@ static inline bool wasapi_capture_read_from_device(
     return true;
   }
 
-  BYTE* buffer_ptr = NULL;
+  BYTE *buffer_ptr = NULL;
   UINT32 nbr_frames_returned = 0;
   DWORD flags = 0;
   UINT64 index = 0;
@@ -150,15 +152,15 @@ static inline bool wasapi_capture_read_from_device(
  * @brief capture_loop matching CamillaDSP device.rs:capture_loop (lines
  * 634-838).
  */
-static void* wasapi_capture_loop(void* arg) {
-  wasapi_capture_t* capture = (wasapi_capture_t*)arg;
+static void *wasapi_capture_loop(void *arg) {
+  wasapi_capture_t *capture = (wasapi_capture_t *)arg;
   bool com_ok = SUCCEEDED(CoInitializeEx(NULL, COINIT_MULTITHREADED));
 
   size_t blockalign = capture->blockalign;
   bool inactive = false;
 
   size_t data_buf_size = 8 * blockalign * 1024;
-  uint8_t* data = (uint8_t*)malloc(data_buf_size);
+  uint8_t *data = (uint8_t *)malloc(data_buf_size);
   if (!data) {
     logger_error(&g_wasapi_logger,
                  "Capture failed to allocate %zu byte transfer buffer",
@@ -177,7 +179,8 @@ static void* wasapi_capture_loop(void* arg) {
   REFERENCE_TIME def_time = 0, min_time = 0;
   IAudioClient_GetDevicePeriod(capture->client, &def_time, &min_time);
   uint64_t poll_delay_us = (uint64_t)(def_time / 10);
-  if (poll_delay_us == 0) poll_delay_us = 1000;
+  if (poll_delay_us == 0)
+    poll_delay_us = 1000;
 
   if (!capture->event_handle) {
     logger_debug(&g_wasapi_logger,
@@ -220,6 +223,12 @@ static void* wasapi_capture_loop(void* arg) {
       logger_debug(&g_wasapi_logger, "Stopping inner capture loop on request.");
       break;
     }
+    if (atomic_load_explicit(&capture->has_pending_rate_change,
+                             memory_order_acquire)) {
+      logger_debug(&g_wasapi_logger,
+                   "Stopping inner capture loop due to pending rate change.");
+      break;
+    }
 
     if (capture->event_handle) {
       DWORD wait_res = WaitForSingleObject(capture->event_handle, 250);
@@ -252,17 +261,7 @@ static void* wasapi_capture_loop(void* arg) {
       hr = IAudioClient_GetCurrentPadding(capture->client, &frames_ready);
       logger_trace(&g_wasapi_logger,
                    "Capture, nbr frames ready after sleep: %u.", frames_ready);
-      if (FAILED(hr)) {
-        if (!atomic_load_explicit(&capture->has_pending_rate_change,
-                                  memory_order_acquire)) {
-          logger_error(&g_wasapi_logger,
-                       "WASAPI capture GetCurrentPadding failed (hr=0x%08lX), "
-                       "stopping stream.",
-                       (unsigned long)hr);
-        }
-        break;
-      }
-      if (frames_ready > 0) {
+      if (SUCCEEDED(hr) && frames_ready > 0) {
         no_frames_counter = 0;
       } else {
         no_frames_counter++;
@@ -306,7 +305,6 @@ static void* wasapi_capture_loop(void* arg) {
                  available_frames);
 
     if (available_frames > 0) {
-      bool error_occurred = false;
       while (true) {
         UINT32 nbr_frames_read = 0;
         DWORD flags = 0;
@@ -317,10 +315,6 @@ static void* wasapi_capture_loop(void* arg) {
                                    memory_order_acquire)) {
             break;
           }
-          logger_error(
-              &g_wasapi_logger,
-              "WASAPI capture read_from_device failed, stopping stream.");
-          error_occurred = true;
           break;
         }
 
@@ -352,7 +346,8 @@ static void* wasapi_capture_loop(void* arg) {
           UINT32 next_frames = 0;
           if (wasapi_capture_get_next_packet_size(capture->capture_client,
                                                   false, &next_frames)) {
-            if (next_frames == 0) break;
+            if (next_frames == 0)
+              break;
             logger_trace(&g_wasapi_logger,
                          "Capture, additional packet available with %u frames.",
                          next_frames);
@@ -362,31 +357,19 @@ static void* wasapi_capture_loop(void* arg) {
           }
         } else {
           UINT32 padding = 0;
-          HRESULT hr_pad =
-              IAudioClient_GetCurrentPadding(capture->client, &padding);
-          if (SUCCEEDED(hr_pad)) {
-            if (padding == 0) break;
+          if (SUCCEEDED(
+                  IAudioClient_GetCurrentPadding(capture->client, &padding))) {
+            if (padding == 0)
+              break;
             logger_trace(
                 &g_wasapi_logger,
                 "Capture, more frames available, current padding is %u frames.",
                 padding);
             available_frames = padding;
           } else {
-            if (atomic_load_explicit(&capture->has_pending_rate_change,
-                                     memory_order_acquire)) {
-              break;
-            }
-            logger_error(&g_wasapi_logger,
-                         "WASAPI capture GetCurrentPadding failed "
-                         "(hr=0x%08lX), stopping stream.",
-                         (unsigned long)hr_pad);
-            error_occurred = true;
             break;
           }
         }
-      }
-      if (error_occurred) {
-        break;
       }
     }
   }
@@ -406,9 +389,10 @@ static void* wasapi_capture_loop(void* arg) {
 // MARK: - open_capture matching CamillaDSP device.rs:open_capture (lines
 // 408-479)
 
-static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
-  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
-  if (!capture) return false;
+static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
+  wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
+  if (!capture)
+    return false;
 
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   capture->com_initialized = SUCCEEDED(init_hr);
@@ -431,7 +415,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
     goto error_cleanup;
   }
   bool exclusive = capture->exclusive;
-  const char* direction_name = capture->loopback ? "Render" : "Capture";
+  const char *direction_name = capture->loopback ? "Render" : "Capture";
 
   WAVEFORMATEXTENSIBLE wfx;
   bool is_std_wfx = false;
@@ -457,7 +441,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
 
   HRESULT hr =
       IAudioClient_GetService(capture->client, &IID_IAudioCaptureClient,
-                              (void**)&capture->capture_client);
+                              (void **)&capture->capture_client);
   if (FAILED(hr)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -490,7 +474,7 @@ static bool wasapi_capture_open(void* ctx, backend_error_t* err) {
 
   capture->decode_buf_cap =
       (size_t)capture->chunk_size * capture->blockalign * 2;
-  capture->decode_buf = (uint8_t*)malloc(capture->decode_buf_cap);
+  capture->decode_buf = (uint8_t *)malloc(capture->decode_buf_cap);
 
   atomic_store_explicit(&capture->thread_running, true, memory_order_release);
   if (pthread_create(&capture->inner_thread, NULL, wasapi_capture_loop,
@@ -520,7 +504,7 @@ error_cleanup:
     capture->semaphore = NULL;
   }
   wasapi_cleanup_device_resources(
-      &capture->client, (IUnknown**)&capture->capture_client,
+      &capture->client, (IUnknown **)&capture->capture_client,
       &capture->session_control, &capture->session_events_listener,
       &capture->event_handle, &capture->mm_device, &capture->enumerator,
       &capture->com_initialized);
@@ -529,10 +513,11 @@ error_cleanup:
 
 // MARK: - wasapi_capture_read matching CamillaDSP device.rs (lines 1381-1420)
 
-static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
-                                backend_error_t* err) {
-  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
-  if (!capture) return false;
+static bool wasapi_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
+                                backend_error_t *err) {
+  wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
+  if (!capture)
+    return false;
   return audio_backend_ring_buffer_read(
       capture->ring_buffer, capture->decode_buf, capture->decode_buf_cap,
       capture->blockalign, frames, (binary_sample_format_t)capture->bin_fmt,
@@ -540,16 +525,19 @@ static bool wasapi_capture_read(void* ctx, size_t frames, audio_chunk_t* chunk,
       &capture->has_pending_rate_change, chunk, err);
 }
 
-static void wasapi_capture_close(void* ctx) {
-  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
-  if (!capture) return;
+static void wasapi_capture_close(void *ctx) {
+  wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
+  if (!capture)
+    return;
 
   if (capture->inner_thread_created) {
     atomic_store_explicit(&capture->stopped, true, memory_order_release);
     atomic_store_explicit(&capture->thread_running, false,
                           memory_order_release);
-    if (capture->event_handle) SetEvent(capture->event_handle);
-    if (capture->semaphore) cdsp_sem_signal(capture->semaphore);
+    if (capture->event_handle)
+      SetEvent(capture->event_handle);
+    if (capture->semaphore)
+      cdsp_sem_signal(capture->semaphore);
     pthread_join(capture->inner_thread, NULL);
     capture->inner_thread_created = false;
   }
@@ -567,48 +555,52 @@ static void wasapi_capture_close(void* ctx) {
     capture->semaphore = NULL;
   }
   wasapi_cleanup_device_resources(
-      &capture->client, (IUnknown**)&capture->capture_client,
+      &capture->client, (IUnknown **)&capture->capture_client,
       &capture->session_control, &capture->session_events_listener,
       &capture->event_handle, &capture->mm_device, &capture->enumerator,
       &capture->com_initialized);
 }
 
-static bool wasapi_capture_get_pending_rate_change(void* ctx,
-                                                   double* out_rate) {
-  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
-  if (!capture) return false;
+static bool wasapi_capture_get_pending_rate_change(void *ctx,
+                                                   double *out_rate) {
+  wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
+  if (!capture)
+    return false;
   return wasapi_check_and_resolve_pending_rate(
       capture->device, !capture->loopback, capture->pending_rate,
       &capture->has_pending_rate_change, out_rate);
 }
 
-static bool wasapi_capture_pitch_control_supported(void* ctx) {
+static bool wasapi_capture_pitch_control_supported(void *ctx) {
   (void)ctx;
   return false;
 }
 
-static void wasapi_capture_set_pitch(void* ctx, double multiplier) {
+static void wasapi_capture_set_pitch(void *ctx, double multiplier) {
   (void)ctx;
   (void)multiplier;
 }
 
-static bool wasapi_capture_wait(void* ctx, uint32_t timeout_ms) {
-  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
-  if (!capture || !capture->semaphore) return false;
+static bool wasapi_capture_wait(void *ctx, uint32_t timeout_ms) {
+  wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
+  if (!capture || !capture->semaphore)
+    return false;
   if (atomic_load_explicit(&capture->stopped, memory_order_acquire))
     return false;
   return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 
-static void wasapi_capture_set_is_paused(void* ctx, bool paused) {
-  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
-  if (!capture) return;
+static void wasapi_capture_set_is_paused(void *ctx, bool paused) {
+  wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
+  if (!capture)
+    return;
   atomic_store_explicit(&capture->paused, paused, memory_order_release);
 }
 
-static void wasapi_capture_stop(void* ctx) {
-  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
-  if (!capture) return;
+static void wasapi_capture_stop(void *ctx) {
+  wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
+  if (!capture)
+    return;
   atomic_store_explicit(&capture->stopped, true, memory_order_release);
   atomic_store_explicit(&capture->thread_running, false, memory_order_release);
   if (capture->event_handle) {
@@ -619,23 +611,25 @@ static void wasapi_capture_stop(void* ctx) {
   }
 }
 
-static void wasapi_capture_destroy(void* ctx) {
-  wasapi_capture_t* capture = (wasapi_capture_t*)ctx;
+static void wasapi_capture_destroy(void *ctx) {
+  wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
   if (capture) {
     wasapi_capture_close(capture);
     free(capture);
   }
 }
 
-static capture_backend_t* wasapi_capture_create(
-    const capture_device_config_t* config, int sample_rate, int chunk_size,
-    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+static capture_backend_t *
+wasapi_capture_create(const capture_device_config_t *config, int sample_rate,
+                      int chunk_size, bool full_duplex,
+                      processing_parameters_t *params, backend_error_t *err) {
   (void)full_duplex;
   (void)params;
   (void)err;
-  wasapi_capture_t* capture =
-      (wasapi_capture_t*)calloc(1, sizeof(wasapi_capture_t));
-  if (!capture) return NULL;
+  wasapi_capture_t *capture =
+      (wasapi_capture_t *)calloc(1, sizeof(wasapi_capture_t));
+  if (!capture)
+    return NULL;
 
   wasapi_extract_device_name(config->cfg.wasapi.has_device,
                              config->cfg.wasapi.device, capture->device,
@@ -652,8 +646,8 @@ static capture_backend_t* wasapi_capture_create(
   capture->polling =
       config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
 
-  capture_backend_t* backend =
-      (capture_backend_t*)calloc(1, sizeof(capture_backend_t));
+  capture_backend_t *backend =
+      (capture_backend_t *)calloc(1, sizeof(capture_backend_t));
   if (!backend) {
     free(capture);
     return NULL;
@@ -677,4 +671,4 @@ const capture_backend_vtable_t g_wasapi_capture_vtable = {
     .stop = wasapi_capture_stop,
     .destroy = wasapi_capture_destroy};
 
-#endif  // ENABLE_WASAPI
+#endif // ENABLE_WASAPI

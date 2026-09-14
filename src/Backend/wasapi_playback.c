@@ -49,18 +49,18 @@ struct wasapi_playback {
   size_t blockalign;
   bool com_initialized;
 
-  IMMDeviceEnumerator* enumerator;
-  IMMDevice* mm_device;
-  IAudioClient* client;
-  IAudioRenderClient* render_client;
-  IAudioSessionControl* session_control;
-  IAudioSessionEvents* session_events_listener;
+  IMMDeviceEnumerator *enumerator;
+  IMMDevice *mm_device;
+  IAudioClient *client;
+  IAudioRenderClient *render_client;
+  IAudioSessionControl *session_control;
+  IAudioSessionEvents *session_events_listener;
   UINT32 buffer_frame_count;
   REFERENCE_TIME def_period;
   HANDLE event_handle;
 
-  spsc_byte_ring_buffer_t* ring_buffer;
-  uint8_t* write_buf;
+  spsc_byte_ring_buffer_t *ring_buffer;
+  uint8_t *write_buf;
   size_t write_buf_cap;
 
   pthread_t inner_thread;
@@ -72,9 +72,10 @@ struct wasapi_playback {
   _Atomic bool has_pending_rate_change;
 };
 
-static void wasapi_playback_on_format_change(void* parent, double new_rate) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)parent;
-  if (!playback) return;
+static void wasapi_playback_on_format_change(void *parent, double new_rate) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)parent;
+  if (!playback)
+    return;
   playback->pending_rate = new_rate;
   atomic_store_explicit(&playback->has_pending_rate_change, true,
                         memory_order_release);
@@ -84,7 +85,7 @@ static void wasapi_playback_on_format_change(void* parent, double new_rate) {
  * @brief get_available_space_in_frames matching wasapi-rs api.rs.
  */
 static inline UINT32 wasapi_audio_client_get_available_space_in_frames(
-    IAudioClient* client, bool exclusive, bool events_timing) {
+    IAudioClient *client, bool exclusive, bool events_timing) {
   if (exclusive && events_timing) {
     UINT32 buffer_frame_count = 0;
     IAudioClient_GetBufferSize(client, &buffer_frame_count);
@@ -107,8 +108,8 @@ static inline UINT32 wasapi_audio_client_get_available_space_in_frames(
  * @brief playback_loop matching CamillaDSP device.rs:playback_loop (lines
  * 494-625).
  */
-static void* wasapi_playback_loop(void* arg) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)arg;
+static void *wasapi_playback_loop(void *arg) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)arg;
   bool com_ok = SUCCEEDED(CoInitializeEx(NULL, COINIT_MULTITHREADED));
 
   size_t chunksize = (size_t)playback->chunk_size;
@@ -151,7 +152,8 @@ static void* wasapi_playback_loop(void* arg) {
   REFERENCE_TIME def_time = 0, min_time = 0;
   IAudioClient_GetDevicePeriod(playback->client, &def_time, &min_time);
   uint64_t poll_delay_us = (uint64_t)(def_time / 10);
-  if (poll_delay_us == 0) poll_delay_us = 1000;
+  if (poll_delay_us == 0)
+    poll_delay_us = 1000;
 
   if (!playback->event_handle) {
     logger_debug(&g_wasapi_logger,
@@ -175,6 +177,12 @@ static void* wasapi_playback_loop(void* arg) {
     if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
       logger_debug(&g_wasapi_logger,
                    "Stopping inner playback loop on request.");
+      break;
+    }
+    if (atomic_load_explicit(&playback->has_pending_rate_change,
+                             memory_order_acquire)) {
+      logger_debug(&g_wasapi_logger,
+                   "Stopping inner playback loop due to pending rate change.");
       break;
     }
 
@@ -218,7 +226,7 @@ static void* wasapi_playback_loop(void* arg) {
       size_t frames_from_ring = frames_to_write - silence_frames;
       size_t bytes_from_ring = frames_from_ring * blockalign;
 
-      BYTE* bufferptr = NULL;
+      BYTE *bufferptr = NULL;
       HRESULT hr = IAudioRenderClient_GetBuffer(
           playback->render_client, (UINT32)frames_to_write, &bufferptr);
       if (SUCCEEDED(hr) && bufferptr) {
@@ -246,9 +254,19 @@ static void* wasapi_playback_loop(void* arg) {
         IAudioRenderClient_ReleaseBuffer(playback->render_client,
                                          (UINT32)frames_to_write, 0);
       } else {
-        logger_error(&g_wasapi_logger,
-                     "IAudioRenderClient_GetBuffer failed: hr=0x%08lX",
-                     (unsigned long)hr);
+        for (int retry = 0; retry < 10; retry++) {
+          if (atomic_load_explicit(&playback->has_pending_rate_change,
+                                   memory_order_acquire)) {
+            break;
+          }
+          cdsp_sleep_ms(5);
+        }
+        if (!atomic_load_explicit(&playback->has_pending_rate_change,
+                                  memory_order_acquire)) {
+          logger_error(&g_wasapi_logger,
+                       "IAudioRenderClient_GetBuffer failed: hr=0x%08lX",
+                       (unsigned long)hr);
+        }
         break;
       }
     }
@@ -302,9 +320,10 @@ static void* wasapi_playback_loop(void* arg) {
 // MARK: - open_playback matching CamillaDSP device.rs:open_playback (lines
 // 334-406)
 
-static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
-  if (!playback) return false;
+static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
+  if (!playback)
+    return false;
 
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   playback->com_initialized = SUCCEEDED(init_hr);
@@ -344,7 +363,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
 
   HRESULT hr =
       IAudioClient_GetService(playback->client, &IID_IAudioRenderClient,
-                              (void**)&playback->render_client);
+                              (void **)&playback->render_client);
   if (FAILED(hr)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -371,7 +390,7 @@ static bool wasapi_playback_open(void* ctx, backend_error_t* err) {
 
   playback->write_buf_cap =
       (size_t)playback->chunk_size * playback->blockalign * 2;
-  playback->write_buf = (uint8_t*)malloc(playback->write_buf_cap);
+  playback->write_buf = (uint8_t *)malloc(playback->write_buf_cap);
 
   atomic_store_explicit(&playback->thread_running, true, memory_order_release);
   if (pthread_create(&playback->inner_thread, NULL, wasapi_playback_loop,
@@ -397,7 +416,7 @@ error_cleanup:
     playback->ring_buffer = NULL;
   }
   wasapi_cleanup_device_resources(
-      &playback->client, (IUnknown**)&playback->render_client,
+      &playback->client, (IUnknown **)&playback->render_client,
       &playback->session_control, &playback->session_events_listener,
       &playback->event_handle, &playback->mm_device, &playback->enumerator,
       &playback->com_initialized);
@@ -406,16 +425,18 @@ error_cleanup:
 
 // MARK: - wasapi_playback_write matching CamillaDSP device.rs (lines 1033-1078)
 
-static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
-                                  backend_error_t* err) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
-  if (!playback) return false;
+static bool wasapi_playback_write(void *ctx, const audio_chunk_t *chunk,
+                                  backend_error_t *err) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
+  if (!playback)
+    return false;
 
   DWORD sleep_duration_us =
       (DWORD)(1000000ULL * (unsigned long long)playback->chunk_size /
               (unsigned long long)playback->sample_rate / 2ULL);
   DWORD sleep_duration_ms = sleep_duration_us / 1000;
-  if (sleep_duration_ms == 0) sleep_duration_ms = 1;
+  if (sleep_duration_ms == 0)
+    sleep_duration_ms = 1;
 
   return audio_backend_ring_buffer_write(
       playback->ring_buffer, playback->write_buf, playback->write_buf_cap,
@@ -425,15 +446,17 @@ static bool wasapi_playback_write(void* ctx, const audio_chunk_t* chunk,
       &playback->has_pending_rate_change, err);
 }
 
-static void wasapi_playback_close(void* ctx) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
-  if (!playback) return;
+static void wasapi_playback_close(void *ctx) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
+  if (!playback)
+    return;
 
   if (playback->inner_thread_created) {
     atomic_store_explicit(&playback->stopped, true, memory_order_release);
     atomic_store_explicit(&playback->thread_running, false,
                           memory_order_release);
-    if (playback->event_handle) SetEvent(playback->event_handle);
+    if (playback->event_handle)
+      SetEvent(playback->event_handle);
     pthread_join(playback->inner_thread, NULL);
     playback->inner_thread_created = false;
   }
@@ -447,64 +470,69 @@ static void wasapi_playback_close(void* ctx) {
     playback->ring_buffer = NULL;
   }
   wasapi_cleanup_device_resources(
-      &playback->client, (IUnknown**)&playback->render_client,
+      &playback->client, (IUnknown **)&playback->render_client,
       &playback->session_control, &playback->session_events_listener,
       &playback->event_handle, &playback->mm_device, &playback->enumerator,
       &playback->com_initialized);
 }
 
-static size_t wasapi_playback_get_buffer_level(void* ctx) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
+static size_t wasapi_playback_get_buffer_level(void *ctx) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
   if (!playback || !playback->ring_buffer || playback->blockalign == 0)
     return 0;
   return spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
          playback->blockalign;
 }
 
-static bool wasapi_playback_get_pending_rate_change(void* ctx,
-                                                    double* out_rate) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
-  if (!playback) return false;
+static bool wasapi_playback_get_pending_rate_change(void *ctx,
+                                                    double *out_rate) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
+  if (!playback)
+    return false;
   return wasapi_check_and_resolve_pending_rate(
       playback->device, false, playback->pending_rate,
       &playback->has_pending_rate_change, out_rate);
 }
 
-static bool wasapi_playback_prefill_silence(void* ctx, size_t frames,
-                                            backend_error_t* err) {
+static bool wasapi_playback_prefill_silence(void *ctx, size_t frames,
+                                            backend_error_t *err) {
   (void)err;
-  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
-  if (!playback) return false;
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
+  if (!playback)
+    return false;
   atomic_store_explicit(&playback->target_level, (int)frames,
                         memory_order_release);
   return true;
 }
 
-static bool wasapi_playback_get_is_paused(void* ctx) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
-  if (!playback) return false;
+static bool wasapi_playback_get_is_paused(void *ctx) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
+  if (!playback)
+    return false;
   return atomic_load_explicit(&playback->paused, memory_order_acquire);
 }
 
-static void wasapi_playback_set_is_paused(void* ctx, bool paused) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
-  if (!playback) return;
+static void wasapi_playback_set_is_paused(void *ctx, bool paused) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
+  if (!playback)
+    return;
   atomic_store_explicit(&playback->paused, paused, memory_order_release);
 }
 
-static bool wasapi_playback_pitch_control_supported(void* ctx) {
+static bool wasapi_playback_pitch_control_supported(void *ctx) {
   (void)ctx;
   return false;
 }
 
-static void wasapi_playback_set_pitch(void* ctx, double multiplier) {
+static void wasapi_playback_set_pitch(void *ctx, double multiplier) {
   (void)ctx;
   (void)multiplier;
 }
 
-static void wasapi_playback_stop(void* ctx) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
-  if (!playback) return;
+static void wasapi_playback_stop(void *ctx) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
+  if (!playback)
+    return;
   atomic_store_explicit(&playback->stopped, true, memory_order_release);
   atomic_store_explicit(&playback->thread_running, false, memory_order_release);
   if (playback->event_handle) {
@@ -512,23 +540,25 @@ static void wasapi_playback_stop(void* ctx) {
   }
 }
 
-static void wasapi_playback_destroy(void* ctx) {
-  wasapi_playback_t* playback = (wasapi_playback_t*)ctx;
+static void wasapi_playback_destroy(void *ctx) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
   if (playback) {
     wasapi_playback_close(playback);
     free(playback);
   }
 }
 
-static playback_backend_t* wasapi_playback_create(
-    const playback_device_config_t* config, int sample_rate, int chunk_size,
-    bool full_duplex, processing_parameters_t* params, backend_error_t* err) {
+static playback_backend_t *
+wasapi_playback_create(const playback_device_config_t *config, int sample_rate,
+                       int chunk_size, bool full_duplex,
+                       processing_parameters_t *params, backend_error_t *err) {
   (void)full_duplex;
   (void)params;
   (void)err;
-  wasapi_playback_t* playback =
-      (wasapi_playback_t*)calloc(1, sizeof(wasapi_playback_t));
-  if (!playback) return NULL;
+  wasapi_playback_t *playback =
+      (wasapi_playback_t *)calloc(1, sizeof(wasapi_playback_t));
+  if (!playback)
+    return NULL;
 
   wasapi_extract_device_name(config->cfg.wasapi.has_device,
                              config->cfg.wasapi.device, playback->device,
@@ -547,8 +577,8 @@ static playback_backend_t* wasapi_playback_create(
                                            : 0);
 
   atomic_init(&playback->paused, false);
-  playback_backend_t* backend =
-      (playback_backend_t*)calloc(1, sizeof(playback_backend_t));
+  playback_backend_t *backend =
+      (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
   if (!backend) {
     free(playback);
     return NULL;
@@ -573,4 +603,4 @@ const playback_backend_vtable_t g_wasapi_playback_vtable = {
     .stop = wasapi_playback_stop,
     .destroy = wasapi_playback_destroy};
 
-#endif  // ENABLE_WASAPI
+#endif // ENABLE_WASAPI

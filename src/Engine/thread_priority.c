@@ -19,13 +19,15 @@ struct realtime_thread_handle {
   thread_time_constraint_policy_data_t previous_policy;
 };
 
-realtime_thread_handle_t* promote_current_thread_to_realtime(
-    const char* name, size_t buffer_frames, size_t sample_rate) {
+realtime_thread_handle_t *
+promote_current_thread_to_realtime(const char *name, size_t buffer_frames,
+                                   size_t sample_rate) {
 #ifdef CDSP_TEST
   (void)name;
   (void)buffer_frames;
   (void)sample_rate;
-  return (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
+  return (realtime_thread_handle_t *)calloc(1,
+                                            sizeof(realtime_thread_handle_t));
 #else
   if (sample_rate == 0) {
     logger_warn(&g_logger,
@@ -78,11 +80,11 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
   uint32_t computation_mach = (uint32_t)((computation_ns * denom) / numer);
   uint32_t constraint_mach = (uint32_t)((constraint_ns * denom) / numer);
 
-  thread_time_constraint_policy_data_t policy = {
-      .period = period_mach,
-      .computation = computation_mach,
-      .constraint = constraint_mach,
-      .preemptible = 1};
+  thread_time_constraint_policy_data_t policy = {.period = period_mach,
+                                                 .computation =
+                                                     computation_mach,
+                                                 .constraint = constraint_mach,
+                                                 .preemptible = 1};
 
   mach_msg_type_number_t count =
       sizeof(thread_time_constraint_policy_data_t) / sizeof(integer_t);
@@ -103,8 +105,8 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
                 name ? name : "unknown", period_ns / 1000000.0,
                 computation_ns / 1000000.0, constraint_ns / 1000000.0);
 
-    realtime_thread_handle_t* handle =
-        (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
+    realtime_thread_handle_t *handle =
+        (realtime_thread_handle_t *)calloc(1, sizeof(realtime_thread_handle_t));
     if (handle) {
       handle->thread = thread;
       handle->previous_policy = prev_policy;
@@ -121,8 +123,9 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
 #endif
 }
 
-void demote_current_thread_from_realtime(realtime_thread_handle_t* handle) {
-  if (!handle) return;
+void demote_current_thread_from_realtime(realtime_thread_handle_t *handle) {
+  if (!handle)
+    return;
 #ifndef CDSP_TEST
   mach_msg_type_number_t count =
       sizeof(thread_time_constraint_policy_data_t) / sizeof(integer_t);
@@ -174,9 +177,9 @@ typedef struct {
   RtPriorityThreadInfoInternal thread_info;
 } RtPriorityHandleInternal;
 
-static bool get_rtkit_property(DBusConnection* conn, const char* prop_name,
-                               int64_t* out_val, DBusError* err) {
-  DBusMessage* msg = dbus_message_new_method_call(
+static bool get_rtkit_property(DBusConnection *conn, const char *prop_name,
+                               int64_t *out_val, DBusError *err) {
+  DBusMessage *msg = dbus_message_new_method_call(
       "org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1",
       "org.freedesktop.DBus.Properties", "Get");
   if (!msg) {
@@ -185,7 +188,7 @@ static bool get_rtkit_property(DBusConnection* conn, const char* prop_name,
     return false;
   }
 
-  const char* iface = "org.freedesktop.RealtimeKit1";
+  const char *iface = "org.freedesktop.RealtimeKit1";
   if (!dbus_message_append_args(msg, DBUS_TYPE_STRING, &iface, DBUS_TYPE_STRING,
                                 &prop_name, DBUS_TYPE_INVALID)) {
     dbus_message_unref(msg);
@@ -194,12 +197,13 @@ static bool get_rtkit_property(DBusConnection* conn, const char* prop_name,
     return false;
   }
 
-  DBusMessage* reply =
+  DBusMessage *reply =
       dbus_connection_send_with_reply_and_block(conn, msg, 10000, err);
   dbus_message_unref(msg);
 
   if (dbus_error_is_set(err)) {
-    if (reply) dbus_message_unref(reply);
+    if (reply)
+      dbus_message_unref(reply);
     return false;
   }
 
@@ -239,9 +243,9 @@ static bool get_rtkit_property(DBusConnection* conn, const char* prop_name,
   return success;
 }
 
-static bool rtkit_set_realtime(DBusConnection* conn, uint64_t thread,
-                               uint64_t pid, uint32_t prio, DBusError* err) {
-  DBusMessage* m;
+static bool rtkit_set_realtime(DBusConnection *conn, uint64_t thread,
+                               uint64_t pid, uint32_t prio, DBusError *err) {
+  DBusMessage *m;
   pid_t my_pid = getpid();
   if ((uint64_t)my_pid == pid) {
     m = dbus_message_new_method_call(
@@ -284,22 +288,24 @@ static bool rtkit_set_realtime(DBusConnection* conn, uint64_t thread,
     }
   }
 
-  DBusMessage* reply =
+  DBusMessage *reply =
       dbus_connection_send_with_reply_and_block(conn, m, 10000, err);
   dbus_message_unref(m);
 
   if (dbus_error_is_set(err)) {
-    if (reply) dbus_message_unref(reply);
+    if (reply)
+      dbus_message_unref(reply);
     return false;
   }
 
-  if (reply) dbus_message_unref(reply);
+  if (reply)
+    dbus_message_unref(reply);
   return true;
 }
 
-static bool get_limits(DBusConnection* conn, int64_t* max_prio,
-                       uint64_t* max_rttime, struct rlimit* current_limit,
-                       DBusError* err) {
+static bool get_limits(DBusConnection *conn, int64_t *max_prio,
+                       uint64_t *max_rttime, struct rlimit *current_limit,
+                       DBusError *err) {
   int64_t val_prio;
   if (!get_rtkit_property(conn, "MaxRealtimePriority", &val_prio, err)) {
     return false;
@@ -331,7 +337,7 @@ static bool get_limits(DBusConnection* conn, int64_t* max_prio,
   return true;
 }
 
-static bool set_limits(uint64_t request, uint64_t max, DBusError* err) {
+static bool set_limits(uint64_t request, uint64_t max, DBusError *err) {
   struct rlimit new_limit;
   new_limit.rlim_cur = (rlim_t)request;
   new_limit.rlim_max = (rlim_t)max;
@@ -344,8 +350,9 @@ static bool set_limits(uint64_t request, uint64_t max, DBusError* err) {
   return true;
 }
 
-static bool get_current_thread_info_internal(
-    RtPriorityThreadInfoInternal* out_info, DBusError* err) {
+static bool
+get_current_thread_info_internal(RtPriorityThreadInfoInternal *out_info,
+                                 DBusError *err) {
   long thread_id = syscall(SYS_gettid);
   pthread_t pthread_id = pthread_self();
   struct sched_param param;
@@ -368,10 +375,10 @@ static bool get_current_thread_info_internal(
   return true;
 }
 
-static bool set_real_time_hard_limit_internal(DBusConnection* conn,
+static bool set_real_time_hard_limit_internal(DBusConnection *conn,
                                               uint32_t audio_buffer_frames,
                                               uint32_t audio_samplerate_hz,
-                                              DBusError* err) {
+                                              DBusError *err) {
   uint32_t buffer_frames = audio_buffer_frames > 0 ? audio_buffer_frames
                                                    : (audio_samplerate_hz / 20);
   uint64_t budget_us =
@@ -389,9 +396,9 @@ static bool set_real_time_hard_limit_internal(DBusConnection* conn,
 }
 
 static bool promote_thread_to_real_time_internal(
-    DBusConnection* conn, RtPriorityThreadInfoInternal thread_info,
+    DBusConnection *conn, RtPriorityThreadInfoInternal thread_info,
     uint32_t audio_buffer_frames, uint32_t audio_samplerate_hz,
-    RtPriorityHandleInternal* out_handle, DBusError* err) {
+    RtPriorityHandleInternal *out_handle, DBusError *err) {
   out_handle->thread_info = thread_info;
 
   if (!set_real_time_hard_limit_internal(conn, audio_buffer_frames,
@@ -420,9 +427,9 @@ static bool promote_thread_to_real_time_internal(
 }
 
 static bool promote_current_thread_to_real_time_internal(
-    DBusConnection* conn, uint32_t audio_buffer_frames,
-    uint32_t audio_samplerate_hz, RtPriorityHandleInternal* out_handle,
-    DBusError* err) {
+    DBusConnection *conn, uint32_t audio_buffer_frames,
+    uint32_t audio_samplerate_hz, RtPriorityHandleInternal *out_handle,
+    DBusError *err) {
   RtPriorityThreadInfoInternal thread_info;
   if (!get_current_thread_info_internal(&thread_info, err)) {
     return false;
@@ -433,13 +440,15 @@ static bool promote_current_thread_to_real_time_internal(
 }
 #endif
 
-realtime_thread_handle_t* promote_current_thread_to_realtime(
-    const char* name, size_t buffer_frames, size_t sample_rate) {
+realtime_thread_handle_t *
+promote_current_thread_to_realtime(const char *name, size_t buffer_frames,
+                                   size_t sample_rate) {
 #ifdef CDSP_TEST
   (void)name;
   (void)buffer_frames;
   (void)sample_rate;
-  return (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
+  return (realtime_thread_handle_t *)calloc(1,
+                                            sizeof(realtime_thread_handle_t));
 #else
   pthread_t thread = pthread_self();
   struct sched_param param;
@@ -449,9 +458,10 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
 #define SCHED_RESET_ON_FORK 0x40000000
 #endif
 
-  realtime_thread_handle_t* handle =
-      (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
-  if (!handle) return NULL;
+  realtime_thread_handle_t *handle =
+      (realtime_thread_handle_t *)calloc(1, sizeof(realtime_thread_handle_t));
+  if (!handle)
+    return NULL;
   handle->pthread_id = thread;
 
   // 1. Try native POSIX scheduling first with SCHED_RESET_ON_FORK.
@@ -460,9 +470,9 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
     handle->sched_param = param;
 
     int rt_priority = 10;
-    const char* env_prio = getenv("CAMILLADSP_RT_PRIORITY");
+    const char *env_prio = getenv("CAMILLADSP_RT_PRIORITY");
     if (env_prio && *env_prio) {
-      char* endptr = NULL;
+      char *endptr = NULL;
       long val = strtol(env_prio, &endptr, 10);
       if (endptr != env_prio && *endptr == '\0' && val >= 1 && val <= 99) {
         rt_priority = (int)val;
@@ -493,7 +503,7 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
   DBusError dbus_err;
   dbus_error_init(&dbus_err);
 
-  DBusConnection* conn = dbus_bus_get_private(DBUS_BUS_SYSTEM, &dbus_err);
+  DBusConnection *conn = dbus_bus_get_private(DBUS_BUS_SYSTEM, &dbus_err);
   if (dbus_error_is_set(&dbus_err)) {
     logger_warn(&g_logger, "[%s] Failed to connect to system D-Bus: %s",
                 name ? name : "unknown", dbus_err.message);
@@ -532,8 +542,9 @@ fallback:
 #endif
 }
 
-void demote_current_thread_from_realtime(realtime_thread_handle_t* handle) {
-  if (!handle) return;
+void demote_current_thread_from_realtime(realtime_thread_handle_t *handle) {
+  if (!handle)
+    return;
 #ifndef CDSP_TEST
   struct sched_param param = handle->sched_param;
   int rc = pthread_setschedparam(handle->pthread_id,
@@ -559,24 +570,27 @@ struct realtime_thread_handle {
 };
 
 #ifndef CDSP_TEST
-typedef HANDLE(WINAPI* AvSetMmThreadCharacteristicsWFn)(LPCWSTR, LPDWORD);
-typedef BOOL(WINAPI* AvRevertMmThreadCharacteristicsFn)(HANDLE);
+typedef HANDLE(WINAPI *AvSetMmThreadCharacteristicsWFn)(LPCWSTR, LPDWORD);
+typedef BOOL(WINAPI *AvRevertMmThreadCharacteristicsFn)(HANDLE);
 #endif
 
-realtime_thread_handle_t* promote_current_thread_to_realtime(
-    const char* name, size_t buffer_frames, size_t sample_rate) {
+realtime_thread_handle_t *
+promote_current_thread_to_realtime(const char *name, size_t buffer_frames,
+                                   size_t sample_rate) {
 #ifdef CDSP_TEST
   (void)name;
   (void)buffer_frames;
   (void)sample_rate;
-  return (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
+  return (realtime_thread_handle_t *)calloc(1,
+                                            sizeof(realtime_thread_handle_t));
 #else
   (void)buffer_frames;
   (void)sample_rate;
 
-  realtime_thread_handle_t* handle =
-      (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
-  if (!handle) return NULL;
+  realtime_thread_handle_t *handle =
+      (realtime_thread_handle_t *)calloc(1, sizeof(realtime_thread_handle_t));
+  if (!handle)
+    return NULL;
 
   HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
   if (avrt_module) {
@@ -590,10 +604,10 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
         task_handle = set_fn(L"Audio", &task_index);
       }
       if (task_handle) {
-        logger_info(
-            &g_logger,
-            "[%s] Thread promoted to Windows MMCSS (Pro Audio/Audio task, index=%lu)",
-            name ? name : "unknown", task_index);
+        logger_info(&g_logger,
+                    "[%s] Thread promoted to Windows MMCSS (Pro Audio/Audio "
+                    "task, index=%lu)",
+                    name ? name : "unknown", task_index);
         handle->task_handle = task_handle;
         return handle;
       } else {
@@ -624,8 +638,9 @@ realtime_thread_handle_t* promote_current_thread_to_realtime(
 #endif
 }
 
-void demote_current_thread_from_realtime(realtime_thread_handle_t* handle) {
-  if (!handle) return;
+void demote_current_thread_from_realtime(realtime_thread_handle_t *handle) {
+  if (!handle)
+    return;
 #ifndef CDSP_TEST
   if (handle->task_handle) {
     HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
@@ -649,15 +664,18 @@ struct realtime_thread_handle {
   int dummy;
 };
 
-realtime_thread_handle_t* promote_current_thread_to_realtime(
-    const char* name, size_t buffer_frames, size_t sample_rate) {
+realtime_thread_handle_t *
+promote_current_thread_to_realtime(const char *name, size_t buffer_frames,
+                                   size_t sample_rate) {
   (void)name;
   (void)buffer_frames;
   (void)sample_rate;
-  return (realtime_thread_handle_t*)calloc(1, sizeof(realtime_thread_handle_t));
+  return (realtime_thread_handle_t *)calloc(1,
+                                            sizeof(realtime_thread_handle_t));
 }
 
-void demote_current_thread_from_realtime(realtime_thread_handle_t* handle) {
-  if (handle) free(handle);
+void demote_current_thread_from_realtime(realtime_thread_handle_t *handle) {
+  if (handle)
+    free(handle);
 }
 #endif

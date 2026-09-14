@@ -28,35 +28,35 @@ const logger_t g_wasapi_logger = {"dsp.backend.wasapi"};
 #define KSAUDIO_SPEAKER_STEREO (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT)
 #endif
 #ifndef KSAUDIO_SPEAKER_QUAD
-#define KSAUDIO_SPEAKER_QUAD                                      \
-  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT | \
+#define KSAUDIO_SPEAKER_QUAD                                                   \
+  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT |              \
    SPEAKER_BACK_RIGHT)
 #endif
 #ifndef KSAUDIO_SPEAKER_SURROUND
-#define KSAUDIO_SPEAKER_SURROUND                                     \
-  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER | \
+#define KSAUDIO_SPEAKER_SURROUND                                               \
+  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |           \
    SPEAKER_BACK_CENTER)
 #endif
 #ifndef KSAUDIO_SPEAKER_5POINT1
-#define KSAUDIO_SPEAKER_5POINT1                                      \
-  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER | \
+#define KSAUDIO_SPEAKER_5POINT1                                                \
+  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |           \
    SPEAKER_LOW_FREQUENCY | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT)
 #endif
 #ifndef KSAUDIO_SPEAKER_7POINT1
-#define KSAUDIO_SPEAKER_7POINT1                                      \
-  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER | \
-   SPEAKER_LOW_FREQUENCY | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT |  \
+#define KSAUDIO_SPEAKER_7POINT1                                                \
+  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |           \
+   SPEAKER_LOW_FREQUENCY | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT |            \
    SPEAKER_FRONT_LEFT_OF_CENTER | SPEAKER_FRONT_RIGHT_OF_CENTER)
 #endif
 #ifndef KSAUDIO_SPEAKER_5POINT1_SURROUND
-#define KSAUDIO_SPEAKER_5POINT1_SURROUND                             \
-  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER | \
+#define KSAUDIO_SPEAKER_5POINT1_SURROUND                                       \
+  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |           \
    SPEAKER_LOW_FREQUENCY | SPEAKER_SIDE_LEFT | SPEAKER_SIDE_RIGHT)
 #endif
 #ifndef KSAUDIO_SPEAKER_7POINT1_SURROUND
-#define KSAUDIO_SPEAKER_7POINT1_SURROUND                             \
-  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER | \
-   SPEAKER_LOW_FREQUENCY | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT |  \
+#define KSAUDIO_SPEAKER_7POINT1_SURROUND                                       \
+  (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |           \
+   SPEAKER_LOW_FREQUENCY | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT |            \
    SPEAKER_SIDE_LEFT | SPEAKER_SIDE_RIGHT)
 #endif
 
@@ -67,14 +67,14 @@ const logger_t g_wasapi_logger = {"dsp.backend.wasapi"};
 #define CUSTOM_SPEAKER_4POINT1 (KSAUDIO_SPEAKER_QUAD | SPEAKER_LOW_FREQUENCY)
 #endif
 #ifndef CUSTOM_SPEAKER_4POINT1_SURROUND
-#define CUSTOM_SPEAKER_4POINT1_SURROUND \
+#define CUSTOM_SPEAKER_4POINT1_SURROUND                                        \
   (KSAUDIO_SPEAKER_SURROUND | SPEAKER_LOW_FREQUENCY)
 #endif
 #ifndef CUSTOM_SPEAKER_6POINT1
 #define CUSTOM_SPEAKER_6POINT1 (KSAUDIO_SPEAKER_5POINT1 | SPEAKER_BACK_CENTER)
 #endif
 #ifndef CUSTOM_SPEAKER_6POINT1_SURROUND
-#define CUSTOM_SPEAKER_6POINT1_SURROUND \
+#define CUSTOM_SPEAKER_6POINT1_SURROUND                                        \
   (KSAUDIO_SPEAKER_5POINT1_SURROUND | SPEAKER_BACK_CENTER)
 #endif
 
@@ -87,8 +87,9 @@ static const PROPERTYKEY PKEY_Device_FriendlyName = {
     14};
 #endif
 
-static HRESULT STDMETHODCALLTYPE session_QueryInterface(
-    IAudioSessionEvents* This, REFIID riid, void** ppvObject) {
+static HRESULT
+    STDMETHODCALLTYPE session_QueryInterface(IAudioSessionEvents *This,
+                                             REFIID riid, void **ppvObject) {
   if (IsEqualIID(riid, &IID_IAudioSessionEvents) ||
       IsEqualIID(riid, &IID_IUnknown)) {
     *ppvObject = This;
@@ -99,13 +100,13 @@ static HRESULT STDMETHODCALLTYPE session_QueryInterface(
   return E_NOINTERFACE;
 }
 
-static ULONG STDMETHODCALLTYPE session_AddRef(IAudioSessionEvents* This) {
-  CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
+static ULONG STDMETHODCALLTYPE session_AddRef(IAudioSessionEvents *This) {
+  CDSPAudioSessionEvents *self = (CDSPAudioSessionEvents *)This;
   return InterlockedIncrement(&self->ref_count);
 }
 
-static ULONG STDMETHODCALLTYPE session_Release(IAudioSessionEvents* This) {
-  CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
+static ULONG STDMETHODCALLTYPE session_Release(IAudioSessionEvents *This) {
+  CDSPAudioSessionEvents *self = (CDSPAudioSessionEvents *)This;
   ULONG rc = InterlockedDecrement(&self->ref_count);
   if (rc == 0) {
     free(self);
@@ -114,21 +115,21 @@ static ULONG STDMETHODCALLTYPE session_Release(IAudioSessionEvents* This) {
 }
 
 static HRESULT STDMETHODCALLTYPE session_OnDisplayNameChanged(
-    IAudioSessionEvents* This, LPCWSTR NewDisplayName, LPCGUID EventContext) {
+    IAudioSessionEvents *This, LPCWSTR NewDisplayName, LPCGUID EventContext) {
   (void)This;
   (void)NewDisplayName;
   (void)EventContext;
   return S_OK;
 }
 static HRESULT STDMETHODCALLTYPE session_OnIconPathChanged(
-    IAudioSessionEvents* This, LPCWSTR NewIconPath, LPCGUID EventContext) {
+    IAudioSessionEvents *This, LPCWSTR NewIconPath, LPCGUID EventContext) {
   (void)This;
   (void)NewIconPath;
   (void)EventContext;
   return S_OK;
 }
 static HRESULT STDMETHODCALLTYPE
-session_OnSimpleVolumeChanged(IAudioSessionEvents* This, float NewVolume,
+session_OnSimpleVolumeChanged(IAudioSessionEvents *This, float NewVolume,
                               BOOL NewMute, LPCGUID EventContext) {
   (void)This;
   (void)NewVolume;
@@ -137,7 +138,7 @@ session_OnSimpleVolumeChanged(IAudioSessionEvents* This, float NewVolume,
   return S_OK;
 }
 static HRESULT STDMETHODCALLTYPE session_OnChannelVolumeChanged(
-    IAudioSessionEvents* This, DWORD ChannelCount,
+    IAudioSessionEvents *This, DWORD ChannelCount,
     float NewChannelVolumeArray[], DWORD ChangedChannel, LPCGUID EventContext) {
   (void)This;
   (void)ChannelCount;
@@ -147,28 +148,28 @@ static HRESULT STDMETHODCALLTYPE session_OnChannelVolumeChanged(
   return S_OK;
 }
 static HRESULT STDMETHODCALLTYPE session_OnGroupingParamChanged(
-    IAudioSessionEvents* This, LPCGUID NewGroupingParam, LPCGUID EventContext) {
+    IAudioSessionEvents *This, LPCGUID NewGroupingParam, LPCGUID EventContext) {
   (void)This;
   (void)NewGroupingParam;
   (void)EventContext;
   return S_OK;
 }
 static HRESULT STDMETHODCALLTYPE
-session_OnStateChanged(IAudioSessionEvents* This, AudioSessionState NewState) {
+session_OnStateChanged(IAudioSessionEvents *This, AudioSessionState NewState) {
   (void)This;
   (void)NewState;
   return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE session_OnSessionDisconnected(
-    IAudioSessionEvents* This, AudioSessionDisconnectReason DisconnectReason) {
-  CDSPAudioSessionEvents* self = (CDSPAudioSessionEvents*)This;
+    IAudioSessionEvents *This, AudioSessionDisconnectReason DisconnectReason) {
+  CDSPAudioSessionEvents *self = (CDSPAudioSessionEvents *)This;
   logger_debug(&g_wasapi_logger, "Disconnected, reason: %d.",
                (int)DisconnectReason);
   if (self->callback) {
-    self->callback(
-        self->parent,
-        (DisconnectReason == DisconnectReasonFormatChanged) ? 0.0 : -1.0);
+    self->callback(self->parent,
+                   (DisconnectReason == DisconnectReasonFormatChanged) ? 0.0
+                                                                       : -1.0);
   }
   return S_OK;
 }
@@ -185,28 +186,31 @@ static IAudioSessionEventsVtbl g_session_events_vtbl = {
     session_OnStateChanged,
     session_OnSessionDisconnected};
 
-IAudioSessionEvents* wasapi_session_events_create(
-    void* parent, wasapi_format_change_callback_t callback) {
-  CDSPAudioSessionEvents* events =
-      (CDSPAudioSessionEvents*)calloc(1, sizeof(CDSPAudioSessionEvents));
-  if (!events) return NULL;
+IAudioSessionEvents *
+wasapi_session_events_create(void *parent,
+                             wasapi_format_change_callback_t callback) {
+  CDSPAudioSessionEvents *events =
+      (CDSPAudioSessionEvents *)calloc(1, sizeof(CDSPAudioSessionEvents));
+  if (!events)
+    return NULL;
   events->lpVtbl = &g_session_events_vtbl;
   events->ref_count = 1;
   events->parent = parent;
   events->callback = callback;
-  return (IAudioSessionEvents*)events;
+  return (IAudioSessionEvents *)events;
 }
 
-void wasapi_register_session_events(IAudioClient* client, void* parent,
+void wasapi_register_session_events(IAudioClient *client, void *parent,
                                     wasapi_format_change_callback_t callback,
-                                    IAudioSessionControl** out_control,
-                                    IAudioSessionEvents** out_listener) {
-  if (!client || !out_control || !out_listener) return;
+                                    IAudioSessionControl **out_control,
+                                    IAudioSessionEvents **out_listener) {
+  if (!client || !out_control || !out_listener)
+    return;
   *out_control = NULL;
   *out_listener = NULL;
 
   IAudioClient_GetService(client, &IID_IAudioSessionControl,
-                          (void**)out_control);
+                          (void **)out_control);
   if (*out_control) {
     *out_listener = wasapi_session_events_create(parent, callback);
     if (*out_listener) {
@@ -216,8 +220,8 @@ void wasapi_register_session_events(IAudioClient* client, void* parent,
   }
 }
 
-void wasapi_unregister_session_events(IAudioSessionControl** control,
-                                      IAudioSessionEvents** listener) {
+void wasapi_unregister_session_events(IAudioSessionControl **control,
+                                      IAudioSessionEvents **listener) {
   if (control && *control) {
     if (listener && *listener) {
       IAudioSessionControl_UnregisterAudioSessionNotification(*control,
@@ -231,18 +235,26 @@ void wasapi_unregister_session_events(IAudioSessionControl** control,
 }
 
 bool wasapi_check_and_resolve_pending_rate(
-    const char* device, bool is_capture, double pending_rate,
-    _Atomic bool* has_pending_rate_change, double* out_rate) {
-  if (!has_pending_rate_change) return false;
+    const char *device, bool is_capture, double pending_rate,
+    _Atomic bool *has_pending_rate_change, double *out_rate) {
+  if (!has_pending_rate_change)
+    return false;
   if (atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
     logger_debug(&g_wasapi_logger,
                  "get_pending_rate_change detected flag: pending_rate=%f",
                  pending_rate);
     double rate = pending_rate;
     if (rate <= 0.0) {
-      rate = wasapi_device_get_current_mix_rate(device, is_capture);
+      for (int i = 0; i < 100; i++) {
+        rate = wasapi_device_get_current_mix_rate(device, is_capture);
+        if (rate > 0.0)
+          break;
+        cdsp_sleep_ms(50);
+      }
     }
     atomic_store_explicit(has_pending_rate_change, false, memory_order_release);
+    logger_debug(&g_wasapi_logger,
+                 "get_pending_rate_change evaluated final rate=%f", rate);
     if (rate > 0.0) {
       if (out_rate) {
         *out_rate = rate;
@@ -268,97 +280,97 @@ uint32_t wasapi_make_simple_channelmask(size_t channels) {
 
 size_t wasapi_make_channelmasks(size_t channels, DWORD masks[8]) {
   switch (channels) {
-    case 1:
-      masks[0] = KSAUDIO_SPEAKER_MONO;
-      masks[1] = wasapi_make_simple_channelmask(1);
-      masks[2] = 0;
-      return 3;
-    case 2:
-      masks[0] = KSAUDIO_SPEAKER_STEREO;
+  case 1:
+    masks[0] = KSAUDIO_SPEAKER_MONO;
+    masks[1] = wasapi_make_simple_channelmask(1);
+    masks[2] = 0;
+    return 3;
+  case 2:
+    masks[0] = KSAUDIO_SPEAKER_STEREO;
+    masks[1] = 0;
+    return 2;
+  case 3:
+    masks[0] = CUSTOM_SPEAKER_2POINT1;
+    masks[1] = wasapi_make_simple_channelmask(3);
+    masks[2] = 0;
+    return 3;
+  case 4:
+    masks[0] = KSAUDIO_SPEAKER_QUAD;
+    masks[1] = KSAUDIO_SPEAKER_SURROUND;
+    masks[2] = wasapi_make_simple_channelmask(4);
+    masks[3] = 0;
+    return 4;
+  case 5:
+    masks[0] = CUSTOM_SPEAKER_4POINT1;
+    masks[1] = CUSTOM_SPEAKER_4POINT1_SURROUND;
+    masks[2] = wasapi_make_simple_channelmask(5);
+    masks[3] = 0;
+    return 4;
+  case 6:
+    masks[0] = KSAUDIO_SPEAKER_5POINT1_SURROUND;
+    masks[1] = KSAUDIO_SPEAKER_5POINT1;
+    masks[2] = wasapi_make_simple_channelmask(6);
+    masks[3] = 0;
+    return 4;
+  case 7:
+    masks[0] = CUSTOM_SPEAKER_6POINT1_SURROUND;
+    masks[1] = CUSTOM_SPEAKER_6POINT1;
+    masks[2] = wasapi_make_simple_channelmask(7);
+    masks[3] = 0;
+    return 4;
+  case 8:
+    masks[0] = KSAUDIO_SPEAKER_7POINT1_SURROUND;
+    masks[1] = KSAUDIO_SPEAKER_7POINT1;
+    masks[2] = wasapi_make_simple_channelmask(8);
+    masks[3] = 0;
+    return 4;
+  default:
+    if (channels >= 9 && channels <= 18) {
+      masks[0] = wasapi_make_simple_channelmask(channels);
       masks[1] = 0;
       return 2;
-    case 3:
-      masks[0] = CUSTOM_SPEAKER_2POINT1;
-      masks[1] = wasapi_make_simple_channelmask(3);
-      masks[2] = 0;
-      return 3;
-    case 4:
-      masks[0] = KSAUDIO_SPEAKER_QUAD;
-      masks[1] = KSAUDIO_SPEAKER_SURROUND;
-      masks[2] = wasapi_make_simple_channelmask(4);
-      masks[3] = 0;
-      return 4;
-    case 5:
-      masks[0] = CUSTOM_SPEAKER_4POINT1;
-      masks[1] = CUSTOM_SPEAKER_4POINT1_SURROUND;
-      masks[2] = wasapi_make_simple_channelmask(5);
-      masks[3] = 0;
-      return 4;
-    case 6:
-      masks[0] = KSAUDIO_SPEAKER_5POINT1_SURROUND;
-      masks[1] = KSAUDIO_SPEAKER_5POINT1;
-      masks[2] = wasapi_make_simple_channelmask(6);
-      masks[3] = 0;
-      return 4;
-    case 7:
-      masks[0] = CUSTOM_SPEAKER_6POINT1_SURROUND;
-      masks[1] = CUSTOM_SPEAKER_6POINT1;
-      masks[2] = wasapi_make_simple_channelmask(7);
-      masks[3] = 0;
-      return 4;
-    case 8:
-      masks[0] = KSAUDIO_SPEAKER_7POINT1_SURROUND;
-      masks[1] = KSAUDIO_SPEAKER_7POINT1;
-      masks[2] = wasapi_make_simple_channelmask(8);
-      masks[3] = 0;
-      return 4;
-    default:
-      if (channels >= 9 && channels <= 18) {
-        masks[0] = wasapi_make_simple_channelmask(channels);
-        masks[1] = 0;
-        return 2;
-      }
-      masks[0] = 0;
-      return 1;
+    }
+    masks[0] = 0;
+    return 1;
   }
 }
 
 void wasapi_build_wave_format(binary_sample_format_t fmt, int samplerate,
                               int channels, uint32_t channel_mask,
-                              bool has_mask, WAVEFORMATEXTENSIBLE* out_wfx) {
+                              bool has_mask, WAVEFORMATEXTENSIBLE *out_wfx) {
   memset(out_wfx, 0, sizeof(WAVEFORMATEXTENSIBLE));
   int storebits = 32;
   int validbits = 32;
   bool is_float = false;
 
   switch (fmt) {
-    case BINARY_SAMPLE_FORMAT_S16_LE:
-      storebits = 16;
-      validbits = 16;
-      is_float = false;
-      break;
-    case BINARY_SAMPLE_FORMAT_S24_3_LE:
-      storebits = 24;
-      validbits = 24;
-      is_float = false;
-      break;
-    case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
-      storebits = 32;
-      validbits = 24;
-      is_float = false;
-      break;
-    case BINARY_SAMPLE_FORMAT_S32_LE:
-      storebits = 32;
-      validbits = 32;
-      is_float = false;
-      break;
-    case BINARY_SAMPLE_FORMAT_F32_LE:
-      storebits = 32;
-      validbits = 32;
-      is_float = true;
-      break;
-    default:
-      break;
+  case BINARY_SAMPLE_FORMAT_S16_LE:
+    storebits = 16;
+    validbits = 16;
+    is_float = false;
+    break;
+  case BINARY_SAMPLE_FORMAT_S24_3_LE:
+    storebits = 24;
+    validbits = 24;
+    is_float = false;
+    break;
+  case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
+    storebits = 32;
+    validbits = 24;
+    is_float = false;
+    break;
+  case BINARY_SAMPLE_FORMAT_S32_LE:
+    storebits = 32;
+    validbits = 32;
+    is_float = false;
+    break;
+  case BINARY_SAMPLE_FORMAT_F32_LE:
+    storebits = 32;
+    validbits = 32;
+    is_float = true;
+    break;
+  default:
+    break;
   }
 
   uint32_t blockalign = (uint32_t)(channels * storebits / 8);
@@ -381,15 +393,15 @@ void wasapi_build_wave_format(binary_sample_format_t fmt, int samplerate,
 }
 
 bool wasapi_is_supported_exclusive_with_quirks(
-    IAudioClient* client, const WAVEFORMATEXTENSIBLE* in_wfx,
-    WAVEFORMATEXTENSIBLE* out_wfx, bool* out_is_std_wfx) {
+    IAudioClient *client, const WAVEFORMATEXTENSIBLE *in_wfx,
+    WAVEFORMATEXTENSIBLE *out_wfx, bool *out_is_std_wfx) {
   WAVEFORMATEXTENSIBLE wave_fmt = *in_wfx;
 
   // 1. Direct query (In exclusive mode, ppClosestMatch must be NULL per WASAPI
   // spec)
   HRESULT hr =
       IAudioClient_IsFormatSupported(client, AUDCLNT_SHAREMODE_EXCLUSIVE,
-                                     (const WAVEFORMATEX*)&wave_fmt, NULL);
+                                     (const WAVEFORMATEX *)&wave_fmt, NULL);
   if (SUCCEEDED(hr) && hr == S_OK) {
     *out_wfx = wave_fmt;
     *out_is_std_wfx = false;
@@ -429,7 +441,7 @@ bool wasapi_is_supported_exclusive_with_quirks(
   for (size_t i = 0; i < mask_count; i++) {
     wave_fmt.dwChannelMask = masks[i];
     hr = IAudioClient_IsFormatSupported(client, AUDCLNT_SHAREMODE_EXCLUSIVE,
-                                        (const WAVEFORMATEX*)&wave_fmt, NULL);
+                                        (const WAVEFORMATEX *)&wave_fmt, NULL);
     if (SUCCEEDED(hr) && hr == S_OK) {
       *out_wfx = wave_fmt;
       *out_is_std_wfx = false;
@@ -441,84 +453,90 @@ bool wasapi_is_supported_exclusive_with_quirks(
 }
 
 bool wasapi_get_supported_wave_format_with_channel_mask(
-    IAudioClient* client, wasapi_sample_format_t sample_format, int samplerate,
+    IAudioClient *client, wasapi_sample_format_t sample_format, int samplerate,
     int channels, bool exclusive, uint32_t channel_mask, bool has_mask,
-    WAVEFORMATEXTENSIBLE* out_wfx, bool* out_is_std_wfx,
-    binary_sample_format_t* out_bin_fmt) {
+    WAVEFORMATEXTENSIBLE *out_wfx, bool *out_is_std_wfx,
+    binary_sample_format_t *out_bin_fmt) {
   if (exclusive) {
     switch (sample_format) {
-      case WASAPI_SAMPLE_FORMAT_S16: {
-        WAVEFORMATEXTENSIBLE wfx;
-        wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S16_LE, samplerate,
-                                 channels, channel_mask, has_mask, &wfx);
-        if (wasapi_is_supported_exclusive_with_quirks(client, &wfx, out_wfx,
-                                                      out_is_std_wfx)) {
-          if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_S16_LE;
-          return true;
-        }
-        return false;
+    case WASAPI_SAMPLE_FORMAT_S16: {
+      WAVEFORMATEXTENSIBLE wfx;
+      wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S16_LE, samplerate,
+                               channels, channel_mask, has_mask, &wfx);
+      if (wasapi_is_supported_exclusive_with_quirks(client, &wfx, out_wfx,
+                                                    out_is_std_wfx)) {
+        if (out_bin_fmt)
+          *out_bin_fmt = BINARY_SAMPLE_FORMAT_S16_LE;
+        return true;
       }
-      case WASAPI_SAMPLE_FORMAT_S32: {
-        WAVEFORMATEXTENSIBLE wfx;
-        wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S32_LE, samplerate,
-                                 channels, channel_mask, has_mask, &wfx);
-        if (wasapi_is_supported_exclusive_with_quirks(client, &wfx, out_wfx,
-                                                      out_is_std_wfx)) {
-          if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_S32_LE;
-          return true;
-        }
-        return false;
+      return false;
+    }
+    case WASAPI_SAMPLE_FORMAT_S32: {
+      WAVEFORMATEXTENSIBLE wfx;
+      wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S32_LE, samplerate,
+                               channels, channel_mask, has_mask, &wfx);
+      if (wasapi_is_supported_exclusive_with_quirks(client, &wfx, out_wfx,
+                                                    out_is_std_wfx)) {
+        if (out_bin_fmt)
+          *out_bin_fmt = BINARY_SAMPLE_FORMAT_S32_LE;
+        return true;
       }
-      case WASAPI_SAMPLE_FORMAT_F32: {
-        WAVEFORMATEXTENSIBLE wfx;
-        wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_F32_LE, samplerate,
-                                 channels, channel_mask, has_mask, &wfx);
-        if (wasapi_is_supported_exclusive_with_quirks(client, &wfx, out_wfx,
-                                                      out_is_std_wfx)) {
-          if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_F32_LE;
-          return true;
-        }
-        return false;
+      return false;
+    }
+    case WASAPI_SAMPLE_FORMAT_F32: {
+      WAVEFORMATEXTENSIBLE wfx;
+      wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_F32_LE, samplerate,
+                               channels, channel_mask, has_mask, &wfx);
+      if (wasapi_is_supported_exclusive_with_quirks(client, &wfx, out_wfx,
+                                                    out_is_std_wfx)) {
+        if (out_bin_fmt)
+          *out_bin_fmt = BINARY_SAMPLE_FORMAT_F32_LE;
+        return true;
       }
-      case WASAPI_SAMPLE_FORMAT_S24: {
-        // Try S24_3_LE first
-        WAVEFORMATEXTENSIBLE wfx24_3;
-        wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S24_3_LE, samplerate,
-                                 channels, channel_mask, has_mask, &wfx24_3);
-        if (wasapi_is_supported_exclusive_with_quirks(client, &wfx24_3, out_wfx,
-                                                      out_is_std_wfx)) {
-          if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_S24_3_LE;
-          return true;
-        }
-        // Fallback to S24_4_LJ_LE
-        WAVEFORMATEXTENSIBLE wfx24_4;
-        wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S24_4_LJ_LE, samplerate,
-                                 channels, channel_mask, has_mask, &wfx24_4);
-        if (wasapi_is_supported_exclusive_with_quirks(client, &wfx24_4, out_wfx,
-                                                      out_is_std_wfx)) {
-          if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
-          return true;
-        }
-        return false;
+      return false;
+    }
+    case WASAPI_SAMPLE_FORMAT_S24: {
+      // Try S24_3_LE first
+      WAVEFORMATEXTENSIBLE wfx24_3;
+      wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S24_3_LE, samplerate,
+                               channels, channel_mask, has_mask, &wfx24_3);
+      if (wasapi_is_supported_exclusive_with_quirks(client, &wfx24_3, out_wfx,
+                                                    out_is_std_wfx)) {
+        if (out_bin_fmt)
+          *out_bin_fmt = BINARY_SAMPLE_FORMAT_S24_3_LE;
+        return true;
       }
-      default:
-        return false;
+      // Fallback to S24_4_LJ_LE
+      WAVEFORMATEXTENSIBLE wfx24_4;
+      wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_S24_4_LJ_LE, samplerate,
+                               channels, channel_mask, has_mask, &wfx24_4);
+      if (wasapi_is_supported_exclusive_with_quirks(client, &wfx24_4, out_wfx,
+                                                    out_is_std_wfx)) {
+        if (out_bin_fmt)
+          *out_bin_fmt = BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
+        return true;
+      }
+      return false;
+    }
+    default:
+      return false;
     }
   } else {
     // Shared mode: standard 32-bit float extensible
     WAVEFORMATEXTENSIBLE wfx;
     wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_F32_LE, samplerate, channels,
                              0, false, &wfx);
-    WAVEFORMATEX* closest = NULL;
+    WAVEFORMATEX *closest = NULL;
     HRESULT hr = IAudioClient_IsFormatSupported(
-        client, AUDCLNT_SHAREMODE_SHARED, (const WAVEFORMATEX*)&wfx, &closest);
+        client, AUDCLNT_SHAREMODE_SHARED, (const WAVEFORMATEX *)&wfx, &closest);
     if (closest) {
       CoTaskMemFree(closest);
     }
     if (SUCCEEDED(hr) && hr == S_OK) {
       *out_wfx = wfx;
       *out_is_std_wfx = false;
-      if (out_bin_fmt) *out_bin_fmt = BINARY_SAMPLE_FORMAT_F32_LE;
+      if (out_bin_fmt)
+        *out_bin_fmt = BINARY_SAMPLE_FORMAT_F32_LE;
       return true;
     }
     return false;
@@ -526,11 +544,11 @@ bool wasapi_get_supported_wave_format_with_channel_mask(
 }
 
 bool wasapi_get_device_format(
-    IAudioClient* client, int samplerate, int channels,
+    IAudioClient *client, int samplerate, int channels,
     wasapi_sample_format_t requested_format, bool has_requested_format,
-    bool exclusive, const char* direction_name, WAVEFORMATEXTENSIBLE* out_wfx,
-    bool* out_is_std_wfx, binary_sample_format_t* out_bin_fmt,
-    backend_error_t* err) {
+    bool exclusive, const char *direction_name, WAVEFORMATEXTENSIBLE *out_wfx,
+    bool *out_is_std_wfx, binary_sample_format_t *out_bin_fmt,
+    backend_error_t *err) {
   wasapi_sample_format_t temp_format = requested_format;
   bool has_temp = has_requested_format;
   if (!has_temp && !exclusive) {
@@ -582,15 +600,16 @@ bool wasapi_get_device_format(
   return false;
 }
 
-bool wasapi_initialize_stream(IAudioClient* client,
-                              const WAVEFORMATEXTENSIBLE* wfx, int samplerate,
+bool wasapi_initialize_stream(IAudioClient *client,
+                              const WAVEFORMATEXTENSIBLE *wfx, int samplerate,
                               size_t blockalign, bool exclusive, bool polling,
-                              bool loopback, REFERENCE_TIME* out_def_period,
-                              HANDLE* out_event_handle,
-                              UINT32* out_buffer_frame_count,
-                              const char* direction_name,
-                              backend_error_t* err) {
-  if (!client || !wfx) return false;
+                              bool loopback, REFERENCE_TIME *out_def_period,
+                              HANDLE *out_event_handle,
+                              UINT32 *out_buffer_frame_count,
+                              const char *direction_name,
+                              backend_error_t *err) {
+  if (!client || !wfx)
+    return false;
 
   if (loopback && exclusive) {
     if (err) {
@@ -640,7 +659,7 @@ bool wasapi_initialize_stream(IAudioClient* client,
 
   HRESULT hr =
       IAudioClient_Initialize(client, mode, streamflags, buffer_duration,
-                              period, (const WAVEFORMATEX*)wfx, NULL);
+                              period, (const WAVEFORMATEX *)wfx, NULL);
   if (FAILED(hr)) {
     if (err) {
       char msg[256];
@@ -691,12 +710,12 @@ bool wasapi_initialize_stream(IAudioClient* client,
   return true;
 }
 
-IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
-                              const char* devname, bool is_capture,
+IMMDevice *wasapi_find_device(IMMDeviceEnumerator *enumerator,
+                              const char *devname, bool is_capture,
                               bool loopback) {
   EDataFlow flow = (loopback || !is_capture) ? eRender : eCapture;
   if (!devname || devname[0] == '\0' || strcmp(devname, "default") == 0) {
-    IMMDevice* device = NULL;
+    IMMDevice *device = NULL;
     HRESULT hr = IMMDeviceEnumerator_GetDefaultAudioEndpoint(enumerator, flow,
                                                              eConsole, &device);
     if (SUCCEEDED(hr)) {
@@ -709,27 +728,29 @@ IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
     wchar_t w_id[256] = {0};
     MultiByteToWideChar(CP_UTF8, 0, devname, -1, w_id, 256);
     w_id[255] = L'\0';
-    IMMDevice* device = NULL;
+    IMMDevice *device = NULL;
     HRESULT hr = IMMDeviceEnumerator_GetDevice(enumerator, w_id, &device);
     if (SUCCEEDED(hr) && device) {
       return device;
     }
   }
 
-  IMMDeviceCollection* collection = NULL;
+  IMMDeviceCollection *collection = NULL;
   HRESULT hr = IMMDeviceEnumerator_EnumAudioEndpoints(
       enumerator, flow, DEVICE_STATE_ACTIVE, &collection);
-  if (FAILED(hr) || !collection) return NULL;
+  if (FAILED(hr) || !collection)
+    return NULL;
 
   UINT count = 0;
   IMMDeviceCollection_GetCount(collection, &count);
-  IMMDevice* found = NULL;
+  IMMDevice *found = NULL;
   for (UINT i = 0; i < count; i++) {
-    IMMDevice* dev = NULL;
+    IMMDevice *dev = NULL;
     IMMDeviceCollection_Item(collection, i, &dev);
-    if (!dev) continue;
+    if (!dev)
+      continue;
 
-    IPropertyStore* properties = NULL;
+    IPropertyStore *properties = NULL;
     HRESULT hr_prop = IMMDevice_OpenPropertyStore(dev, STGM_READ, &properties);
     if (SUCCEEDED(hr_prop)) {
       PROPVARIANT var;
@@ -768,20 +789,21 @@ IMMDevice* wasapi_find_device(IMMDeviceEnumerator* enumerator,
   return found;
 }
 
-bool wasapi_create_device_and_client(const char* devname, bool is_capture,
+bool wasapi_create_device_and_client(const char *devname, bool is_capture,
                                      bool loopback,
-                                     IMMDeviceEnumerator** out_enumerator,
-                                     IMMDevice** out_device,
-                                     IAudioClient** out_client,
-                                     backend_error_t* err) {
-  if (!out_enumerator || !out_device || !out_client) return false;
+                                     IMMDeviceEnumerator **out_enumerator,
+                                     IMMDevice **out_device,
+                                     IAudioClient **out_client,
+                                     backend_error_t *err) {
+  if (!out_enumerator || !out_device || !out_client)
+    return false;
   *out_enumerator = NULL;
   *out_device = NULL;
   *out_client = NULL;
 
   HRESULT hr =
       CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
-                       &IID_IMMDeviceEnumerator, (void**)out_enumerator);
+                       &IID_IMMDeviceEnumerator, (void **)out_enumerator);
   if (FAILED(hr)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -801,7 +823,7 @@ bool wasapi_create_device_and_client(const char* devname, bool is_capture,
   }
 
   hr = IMMDevice_Activate(*out_device, &IID_IAudioClient, CLSCTX_ALL, NULL,
-                          (void**)out_client);
+                          (void **)out_client);
   if (FAILED(hr)) {
     SAFE_RELEASE(*out_device);
     SAFE_RELEASE(*out_enumerator);
@@ -815,11 +837,11 @@ bool wasapi_create_device_and_client(const char* devname, bool is_capture,
 }
 
 void wasapi_cleanup_device_resources(
-    IAudioClient** client, IUnknown** sub_client,
-    IAudioSessionControl** session_control,
-    IAudioSessionEvents** session_events_listener, HANDLE* event_handle,
-    IMMDevice** mm_device, IMMDeviceEnumerator** enumerator,
-    bool* com_initialized) {
+    IAudioClient **client, IUnknown **sub_client,
+    IAudioSessionControl **session_control,
+    IAudioSessionEvents **session_events_listener, HANDLE *event_handle,
+    IMMDevice **mm_device, IMMDeviceEnumerator **enumerator,
+    bool *com_initialized) {
   if (client && *client) {
     IAudioClient_Stop(*client);
   }
@@ -846,9 +868,10 @@ void wasapi_cleanup_device_resources(
   }
 }
 
-void wasapi_extract_device_name(bool has_device, const char* config_device,
-                                char* out_device, size_t max_len) {
-  if (!out_device || max_len == 0) return;
+void wasapi_extract_device_name(bool has_device, const char *config_device,
+                                char *out_device, size_t max_len) {
+  if (!out_device || max_len == 0)
+    return;
   if (has_device && config_device && config_device[0] != '\0' &&
       strcmp(config_device, "default") != 0) {
     snprintf(out_device, max_len, "%s", config_device);
@@ -857,16 +880,17 @@ void wasapi_extract_device_name(bool has_device, const char* config_device,
   }
 }
 
-double wasapi_device_get_current_mix_rate(const char* device_name,
+double wasapi_device_get_current_mix_rate(const char *device_name,
                                           bool is_capture) {
   HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   bool com_ok = SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
 
-  IMMDeviceEnumerator* enumerator = NULL;
+  IMMDeviceEnumerator *enumerator = NULL;
   hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
-                        &IID_IMMDeviceEnumerator, (void**)&enumerator);
+                        &IID_IMMDeviceEnumerator, (void **)&enumerator);
   if (FAILED(hr)) {
-    if (com_ok) CoUninitialize();
+    if (com_ok)
+      CoUninitialize();
     return 0.0;
   }
 
@@ -876,15 +900,15 @@ double wasapi_device_get_current_mix_rate(const char* device_name,
       device_name[0] != '\0' ? device_name : "default", (int)is_capture);
 
   double rate = 0.0;
-  for (int i = 0; i < 2; i++) {
-    IMMDevice* mm_device =
+  for (int i = 0; i < 40; i++) {
+    IMMDevice *mm_device =
         wasapi_find_device(enumerator, device_name, is_capture, false);
     if (mm_device) {
-      IAudioClient* client = NULL;
+      IAudioClient *client = NULL;
       hr = IMMDevice_Activate(mm_device, &IID_IAudioClient, CLSCTX_ALL, NULL,
-                              (void**)&client);
+                              (void **)&client);
       if (SUCCEEDED(hr) && client) {
-        WAVEFORMATEX* wfx = NULL;
+        WAVEFORMATEX *wfx = NULL;
         hr = IAudioClient_GetMixFormat(client, &wfx);
         if (SUCCEEDED(hr) && wfx) {
           rate = (double)wfx->nSamplesPerSec;
@@ -906,18 +930,17 @@ double wasapi_device_get_current_mix_rate(const char* device_name,
     } else {
       logger_trace(&g_wasapi_logger, "wasapi_find_device failed");
     }
-    if (i == 0) {
-      cdsp_sleep_ms(10);
-    }
+    cdsp_sleep_ms(100);
   }
 
   SAFE_RELEASE(enumerator);
-  if (com_ok) CoUninitialize();
+  if (com_ok)
+    CoUninitialize();
   return rate;
 }
 
 REFERENCE_TIME wasapi_calculate_aligned_period_near(
-    IAudioClient* client, REFERENCE_TIME desired_period, uint32_t align_bytes,
+    IAudioClient *client, REFERENCE_TIME desired_period, uint32_t align_bytes,
     int samplerate, int block_align) {
   REFERENCE_TIME def_period = 0, min_period = 0;
   HRESULT hr = IAudioClient_GetDevicePeriod(client, &def_period, &min_period);
@@ -960,19 +983,19 @@ REFERENCE_TIME wasapi_calculate_aligned_period_near(
 
 DWORD wasapi_get_default_channel_mask(int channels) {
   switch (channels) {
-    case 1:
-      return KSAUDIO_SPEAKER_MONO;
-    case 2:
-      return KSAUDIO_SPEAKER_STEREO;
-    case 4:
-      return KSAUDIO_SPEAKER_QUAD;
-    case 6:
-      return KSAUDIO_SPEAKER_5POINT1_SURROUND;
-    case 8:
-      return KSAUDIO_SPEAKER_7POINT1_SURROUND;
-    default:
-      return wasapi_make_simple_channelmask((size_t)channels);
+  case 1:
+    return KSAUDIO_SPEAKER_MONO;
+  case 2:
+    return KSAUDIO_SPEAKER_STEREO;
+  case 4:
+    return KSAUDIO_SPEAKER_QUAD;
+  case 6:
+    return KSAUDIO_SPEAKER_5POINT1_SURROUND;
+  case 8:
+    return KSAUDIO_SPEAKER_7POINT1_SURROUND;
+  default:
+    return wasapi_make_simple_channelmask((size_t)channels);
   }
 }
 
-#endif  // ENABLE_WASAPI
+#endif // ENABLE_WASAPI

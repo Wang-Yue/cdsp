@@ -63,12 +63,12 @@ static void sha1_transform(uint32_t state[5], const unsigned char buffer[64]) {
   state[4] += e;
 }
 
-static void CC_SHA1(const void* data, CC_LONG len, unsigned char* digest) {
+static void CC_SHA1(const void *data, CC_LONG len, unsigned char *digest) {
   uint32_t state[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476,
                        0xC3D2E1F0};
   unsigned char buffer[64];
   uint64_t total_bits = (uint64_t)len * 8;
-  const unsigned char* d = (const unsigned char*)data;
+  const unsigned char *d = (const unsigned char *)data;
   CC_LONG offset = 0;
   CC_LONG remaining_len = len;
   while (remaining_len >= 64) {
@@ -106,10 +106,12 @@ static void CC_SHA1(const void* data, CC_LONG len, unsigned char* digest) {
 
 #include <ctype.h>
 
-static const char* strcasestr_custom(const char* haystack, const char* needle) {
-  if (!haystack || !needle) return NULL;
+static const char *strcasestr_custom(const char *haystack, const char *needle) {
+  if (!haystack || !needle)
+    return NULL;
   size_t nlen = strlen(needle);
-  if (nlen == 0) return haystack;
+  if (nlen == 0)
+    return haystack;
   while (*haystack) {
     if (cdsp_strncasecmp(haystack, needle, nlen) == 0) {
       return haystack;
@@ -119,17 +121,20 @@ static const char* strcasestr_custom(const char* haystack, const char* needle) {
   return NULL;
 }
 
-bool ws_handle_handshake(const char* request, socket_t client_fd) {
-  if (!request || IS_INVALID_SOCKET(client_fd)) return false;
+bool ws_handle_handshake(const char *request, socket_t client_fd) {
+  if (!request || IS_INVALID_SOCKET(client_fd))
+    return false;
 
   // RFC 6455 §4.2.1: Request must be GET and HTTP/1.1 or higher
-  const char* line_end = strstr(request, "\r\n");
-  if (!line_end) line_end = strchr(request, '\n');
-  if (!line_end) return false;
+  const char *line_end = strstr(request, "\r\n");
+  if (!line_end)
+    line_end = strchr(request, '\n');
+  if (!line_end)
+    return false;
 
   if (strncmp(request, "GET ", 4) != 0 ||
       !strcasestr_custom(request, "HTTP/1.1")) {
-    const char* bad_request =
+    const char *bad_request =
         "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
     send(client_fd, bad_request, (int)strlen(bad_request), 0);
     return false;
@@ -140,23 +145,25 @@ bool ws_handle_handshake(const char* request, socket_t client_fd) {
   char ws_key[64] = "";
   char ws_version[32] = "";
 
-  const char* p = line_end;
-  while (*p == '\r' || *p == '\n') p++;
+  const char *p = line_end;
+  while (*p == '\r' || *p == '\n')
+    p++;
 
   while (*p) {
-    if (*p == '\r' || *p == '\n') break;
+    if (*p == '\r' || *p == '\n')
+      break;
 
-    const char* next_line = strstr(p, "\r\n");
+    const char *next_line = strstr(p, "\r\n");
     size_t line_len = next_line ? (size_t)(next_line - p) : strlen(p);
-    const char* colon = (const char*)memchr(p, ':', line_len);
+    const char *colon = (const char *)memchr(p, ':', line_len);
     if (colon) {
       size_t name_len = (size_t)(colon - p);
-      const char* val_start = colon + 1;
+      const char *val_start = colon + 1;
       while (val_start < p + line_len &&
              (*val_start == ' ' || *val_start == '\t')) {
         val_start++;
       }
-      const char* val_end = p + line_len;
+      const char *val_end = p + line_len;
       while (val_end > val_start &&
              (val_end[-1] == ' ' || val_end[-1] == '\t')) {
         val_end--;
@@ -172,8 +179,7 @@ bool ws_handle_handshake(const char* request, socket_t client_fd) {
             has_upgrade_websocket = true;
           }
         }
-      } else if (name_len == 10 &&
-                 cdsp_strncasecmp(p, "Connection", 10) == 0) {
+      } else if (name_len == 10 && cdsp_strncasecmp(p, "Connection", 10) == 0) {
         char val[128];
         if (val_len < sizeof(val)) {
           memcpy(val, val_start, val_len);
@@ -197,21 +203,23 @@ bool ws_handle_handshake(const char* request, socket_t client_fd) {
       }
     }
 
-    if (!next_line) break;
+    if (!next_line)
+      break;
     p = next_line + 2;
   }
 
-  // RFC 6455 §4.4: Sec-WebSocket-Version must be 13; if not, reject with version 13
+  // RFC 6455 §4.4: Sec-WebSocket-Version must be 13; if not, reject with
+  // version 13
   if (strcmp(ws_version, "13") != 0) {
-    const char* bad_version =
-        "HTTP/1.1 400 Bad Request\r\n"
-        "Sec-WebSocket-Version: 13\r\n"
-        "Connection: close\r\n\r\n";
+    const char *bad_version = "HTTP/1.1 400 Bad Request\r\n"
+                              "Sec-WebSocket-Version: 13\r\n"
+                              "Connection: close\r\n\r\n";
     send(client_fd, bad_version, (int)strlen(bad_version), 0);
     return false;
   }
 
-  // Validate Sec-WebSocket-Key is 16 bytes base64-encoded (24 characters, '==' padding)
+  // Validate Sec-WebSocket-Key is 16 bytes base64-encoded (24 characters, '=='
+  // padding)
   bool valid_key =
       (strlen(ws_key) == 24 && ws_key[22] == '=' && ws_key[23] == '=');
   if (valid_key) {
@@ -225,7 +233,7 @@ bool ws_handle_handshake(const char* request, socket_t client_fd) {
   }
 
   if (!has_upgrade_websocket || !has_connection_upgrade || !valid_key) {
-    const char* bad_request =
+    const char *bad_request =
         "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
     send(client_fd, bad_request, (int)strlen(bad_request), 0);
     return false;

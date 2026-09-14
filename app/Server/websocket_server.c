@@ -25,12 +25,13 @@
 
 static const logger_t server_logger = {"dsp.server.websocket"};
 
-static inline cJSON* safe_create_float_array(const float* numbers, int count) {
+static inline cJSON *safe_create_float_array(const float *numbers, int count) {
   if (count <= 0 || !numbers) {
     return cJSON_CreateArray();
   }
-  cJSON* array = cJSON_CreateArray();
-  if (!array) return NULL;
+  cJSON *array = cJSON_CreateArray();
+  if (!array)
+    return NULL;
   for (int i = 0; i < count; i++) {
     float val = numbers[i];
     if (isnan(val)) {
@@ -69,28 +70,34 @@ static inline cJSON* safe_create_float_array(const float* numbers, int count) {
 #define poll_sockets poll
 #endif
 
-static bool is_valid_utf8(const unsigned char* s, size_t len) {
+static bool is_valid_utf8(const unsigned char *s, size_t len) {
   size_t i = 0;
   while (i < len) {
     if (s[i] <= 0x7F) {
       i++;
     } else if ((s[i] & 0xE0) == 0xC0) {
-      if (i + 1 >= len || (s[i + 1] & 0xC0) != 0x80) return false;
-      if (s[i] < 0xC2) return false;
+      if (i + 1 >= len || (s[i + 1] & 0xC0) != 0x80)
+        return false;
+      if (s[i] < 0xC2)
+        return false;
       i += 2;
     } else if ((s[i] & 0xF0) == 0xE0) {
       if (i + 2 >= len || (s[i + 1] & 0xC0) != 0x80 ||
           (s[i + 2] & 0xC0) != 0x80)
         return false;
-      if (s[i] == 0xE0 && (s[i + 1] < 0xA0)) return false;
-      if (s[i] == 0xED && (s[i + 1] >= 0xA0)) return false;
+      if (s[i] == 0xE0 && (s[i + 1] < 0xA0))
+        return false;
+      if (s[i] == 0xED && (s[i + 1] >= 0xA0))
+        return false;
       i += 3;
     } else if ((s[i] & 0xF8) == 0xF0) {
       if (i + 3 >= len || (s[i + 1] & 0xC0) != 0x80 ||
           (s[i + 2] & 0xC0) != 0x80 || (s[i + 3] & 0xC0) != 0x80)
         return false;
-      if (s[i] == 0xF0 && (s[i + 1] < 0x90)) return false;
-      if (s[i] == 0xF4 && (s[i + 1] > 0x8F)) return false;
+      if (s[i] == 0xF0 && (s[i + 1] < 0x90))
+        return false;
+      if (s[i] == 0xF4 && (s[i + 1] > 0x8F))
+        return false;
       i += 4;
     } else {
       return false;
@@ -106,16 +113,19 @@ static bool is_valid_close_code(uint16_t code) {
   // 3000..4999 (registered / private use)
   // Reserved/forbidden to appear on wire: < 1000, 1004, 1005, 1006, 1015, >=
   // 5000.
-  if (code < 1000 || code >= 5000) return false;
+  if (code < 1000 || code >= 5000)
+    return false;
   if (code == 1004 || code == 1005 || code == 1006 || code == 1015)
     return false;
-  if (code >= 1000 && code <= 1011) return true;
-  if (code >= 3000 && code <= 4999) return true;
+  if (code >= 1000 && code <= 1011)
+    return true;
+  if (code >= 3000 && code <= 4999)
+    return true;
   return false;
 }
 
-void dyn_string_init(dyn_string_t* ds, size_t initial_cap) {
-  ds->data = (char*)calloc(initial_cap, sizeof(char));
+void dyn_string_init(dyn_string_t *ds, size_t initial_cap) {
+  ds->data = (char *)calloc(initial_cap, sizeof(char));
   if (ds->data) {
     ds->data[0] = '\0';
     ds->capacity = initial_cap;
@@ -125,15 +135,17 @@ void dyn_string_init(dyn_string_t* ds, size_t initial_cap) {
   ds->length = 0;
 }
 
-void dyn_string_free(dyn_string_t* ds) {
-  if (ds->data) free(ds->data);
+void dyn_string_free(dyn_string_t *ds) {
+  if (ds->data)
+    free(ds->data);
   ds->data = NULL;
   ds->capacity = 0;
   ds->length = 0;
 }
 
-void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...) {
-  if (!ds->data || ds->capacity == 0) return;
+void dyn_string_printf(dyn_string_t *ds, const char *fmt, ...) {
+  if (!ds->data || ds->capacity == 0)
+    return;
   va_list args;
   va_start(args, fmt);
 
@@ -149,8 +161,9 @@ void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...) {
 
   if ((size_t)needed >= ds->capacity) {
     size_t new_cap = ds->capacity * 2;
-    if (new_cap <= (size_t)needed) new_cap = (size_t)needed + 1;
-    char* new_data = (char*)realloc(ds->data, new_cap);
+    if (new_cap <= (size_t)needed)
+      new_cap = (size_t)needed + 1;
+    char *new_data = (char *)realloc(ds->data, new_cap);
     if (!new_data) {
       va_end(args);
       return;
@@ -165,17 +178,20 @@ void dyn_string_printf(dyn_string_t* ds, const char* fmt, ...) {
 }
 
 float db_to_amplitude(float db) {
-  if (!isfinite(db) || db <= -200.0f) return 0.0f;
+  if (!isfinite(db) || db <= -200.0f)
+    return 0.0f;
   return powf(10.0f, db / 20.0f);
 }
 
 float amplitude_to_db(float amp) {
-  if (amp <= 0.0f || !isfinite(amp)) return -INFINITY;
+  if (amp <= 0.0f || !isfinite(amp))
+    return -INFINITY;
   return 20.0f * log10f(amp);
 }
 
-void client_session_clear(client_session_t* session) {
-  if (!session) return;
+void client_session_clear(client_session_t *session) {
+  if (!session)
+    return;
   if (session->vu_pb_rms) {
     free(session->vu_pb_rms);
     session->vu_pb_rms = NULL;
@@ -216,16 +232,18 @@ void client_session_clear(client_session_t* session) {
 }
 
 static float smoothing_alpha(float delta_ms, float time_constant_ms) {
-  if (time_constant_ms <= 0.0f) return 1.0f;
+  if (time_constant_ms <= 0.0f)
+    return 1.0f;
   float delta_sec = delta_ms / 1000.0f;
   float time_constant_sec = time_constant_ms / 1000.0f;
   return 1.0f - expf(-delta_sec / time_constant_sec);
 }
 
-websocket_server_t* websocket_server_create(uint16_t port, const char* host) {
-  websocket_server_t* server =
-      (websocket_server_t*)calloc(1, sizeof(websocket_server_t));
-  if (!server) return NULL;
+websocket_server_t *websocket_server_create(uint16_t port, const char *host) {
+  websocket_server_t *server =
+      (websocket_server_t *)calloc(1, sizeof(websocket_server_t));
+  if (!server)
+    return NULL;
   server->port = port;
   if (host && host[0]) {
     strncpy(server->host, host, sizeof(server->host) - 1);
@@ -245,8 +263,8 @@ websocket_server_t* websocket_server_create(uint16_t port, const char* host) {
   return server;
 }
 
-void websocket_server_set_engine(websocket_server_t* server,
-                                 dsp_engine_t* engine) {
+void websocket_server_set_engine(websocket_server_t *server,
+                                 dsp_engine_t *engine) {
   if (server) {
     server->engine = engine;
   }
@@ -254,9 +272,9 @@ void websocket_server_set_engine(websocket_server_t* server,
 
 uint64_t get_time_ms(void) { return cdsp_time_now_ns() / 1000000ULL; }
 
-static void remove_client_session(websocket_server_t* server,
-                                  struct pollfd* fds, socket_t* client_fds,
-                                  char (*last_state)[64], int* num_clients,
+static void remove_client_session(websocket_server_t *server,
+                                  struct pollfd *fds, socket_t *client_fds,
+                                  char (*last_state)[64], int *num_clients,
                                   int index) {
   CLOSE_SOCKET(client_fds[index]);
   pthread_mutex_lock(&server->sessions_mutex);
@@ -274,8 +292,8 @@ static void remove_client_session(websocket_server_t* server,
   (*num_clients)--;
 }
 
-static void* server_thread_func(void* arg) {
-  websocket_server_t* server = (websocket_server_t*)arg;
+static void *server_thread_func(void *arg) {
+  websocket_server_t *server = (websocket_server_t *)arg;
   socket_t client_fds[32];
   char last_state[32][64];
   int num_clients = 0;
@@ -293,7 +311,7 @@ static void* server_thread_func(void* arg) {
 
     bool any_subscribed = false;
     for (int i = 0; i < polled_clients; i++) {
-      client_session_t* s = &server->client_sessions[i];
+      client_session_t *s = &server->client_sessions[i];
       if (s->state_subscribed || s->vu_subscribed ||
           s->signal_levels_subscribed || s->spectrum_subscribed) {
         any_subscribed = true;
@@ -307,24 +325,24 @@ static void* server_thread_func(void* arg) {
 
     typedef struct {
       socket_t fd;
-      char* msg;
+      char *msg;
     } pending_send_t;
 
     pending_send_t pending[128];
     size_t pending_count = 0;
 
-#define QUEUE_PENDING(target_fd, str)            \
-  do {                                           \
-    char* m_ = (str);                            \
-    if (m_) {                                    \
-      if (pending_count < 128) {                 \
-        pending[pending_count].fd = (target_fd); \
-        pending[pending_count].msg = m_;         \
-        pending_count++;                         \
-      } else {                                   \
-        free(m_);                                \
-      }                                          \
-    }                                            \
+#define QUEUE_PENDING(target_fd, str)                                          \
+  do {                                                                         \
+    char *m_ = (str);                                                          \
+    if (m_) {                                                                  \
+      if (pending_count < 128) {                                               \
+        pending[pending_count].fd = (target_fd);                               \
+        pending[pending_count].msg = m_;                                       \
+        pending_count++;                                                       \
+      } else {                                                                 \
+        free(m_);                                                              \
+      }                                                                        \
+    }                                                                          \
   } while (0)
 
     uint64_t now = get_time_ms();
@@ -337,7 +355,7 @@ static void* server_thread_func(void* arg) {
       has_status = true;
     }
 
-    const char* state_str = "Inactive";
+    const char *state_str = "Inactive";
     if (has_status) {
       state_str = ws_processing_state_to_string(status.state);
     }
@@ -345,29 +363,29 @@ static void* server_thread_func(void* arg) {
     uint64_t cap_gen = cdsp_get_chunk_generation(server->engine, true);
     uint64_t pb_gen = cdsp_get_chunk_generation(server->engine, false);
 
-    float* current_cap_peak = NULL;
-    float* current_cap_rms = NULL;
-    float* current_pb_peak = NULL;
-    float* current_pb_rms = NULL;
+    float *current_cap_peak = NULL;
+    float *current_cap_rms = NULL;
+    float *current_pb_peak = NULL;
+    float *current_pb_rms = NULL;
     size_t cap_channels = 0;
     size_t pb_channels = 0;
 
-    float* cap_pk_buf = NULL;
-    float* cap_rms_buf = NULL;
-    float* pb_pk_buf = NULL;
-    float* pb_rms_buf = NULL;
+    float *cap_pk_buf = NULL;
+    float *cap_rms_buf = NULL;
+    float *pb_pk_buf = NULL;
+    float *pb_rms_buf = NULL;
 
     cdsp_vu_levels_t vu_query = {0};
     if (server->engine && cdsp_get_vu_levels(server->engine, &vu_query)) {
       cap_channels = vu_query.capture_channels;
       pb_channels = vu_query.playback_channels;
       if (cap_channels > 0) {
-        cap_pk_buf = (float*)malloc(cap_channels * sizeof(float));
-        cap_rms_buf = (float*)malloc(cap_channels * sizeof(float));
+        cap_pk_buf = (float *)malloc(cap_channels * sizeof(float));
+        cap_rms_buf = (float *)malloc(cap_channels * sizeof(float));
       }
       if (pb_channels > 0) {
-        pb_pk_buf = (float*)malloc(pb_channels * sizeof(float));
-        pb_rms_buf = (float*)malloc(pb_channels * sizeof(float));
+        pb_pk_buf = (float *)malloc(pb_channels * sizeof(float));
+        pb_rms_buf = (float *)malloc(pb_channels * sizeof(float));
       }
       cdsp_vu_levels_t vu = {
           .playback_rms = pb_rms_buf,
@@ -384,8 +402,8 @@ static void* server_thread_func(void* arg) {
 
       if (cap_channels > 0 && current_cap_peak && current_cap_rms) {
         if (server->capture_global_peaks_count != cap_channels) {
-          float* new_peaks = (float*)realloc(server->capture_global_peaks,
-                                             cap_channels * sizeof(float));
+          float *new_peaks = (float *)realloc(server->capture_global_peaks,
+                                              cap_channels * sizeof(float));
           if (new_peaks) {
             server->capture_global_peaks = new_peaks;
             memset(server->capture_global_peaks, 0,
@@ -407,8 +425,8 @@ static void* server_thread_func(void* arg) {
 
       if (pb_channels > 0 && current_pb_peak && current_pb_rms) {
         if (server->playback_global_peaks_count != pb_channels) {
-          float* new_peaks = (float*)realloc(server->playback_global_peaks,
-                                             pb_channels * sizeof(float));
+          float *new_peaks = (float *)realloc(server->playback_global_peaks,
+                                              pb_channels * sizeof(float));
           if (new_peaks) {
             server->playback_global_peaks = new_peaks;
             memset(server->playback_global_peaks, 0,
@@ -430,13 +448,13 @@ static void* server_thread_func(void* arg) {
     }
 
     for (int i = 0; i < num_clients; i++) {
-      client_session_t* session = &server->client_sessions[i];
+      client_session_t *session = &server->client_sessions[i];
 
       if (session->state_subscribed &&
           strcmp(session->last_state, state_str) != 0) {
         strncpy(session->last_state, state_str,
                 sizeof(session->last_state) - 1);
-        cJSON* root = cJSON_CreateObject();
+        cJSON *root = cJSON_CreateObject();
         cJSON_AddStringToObject(root, "reply", "StateEvent");
         cJSON_AddStringToObject(root, "result", "Ok");
         cJSON_AddItemToObject(
@@ -465,8 +483,8 @@ static void* server_thread_func(void* arg) {
 
           if (pb_channels > 0 && current_pb_peak && current_pb_rms) {
             if (session->vu_pb_channels != pb_channels) {
-              float* new_rms = (float*)calloc(pb_channels, sizeof(float));
-              float* new_peak = (float*)calloc(pb_channels, sizeof(float));
+              float *new_rms = (float *)calloc(pb_channels, sizeof(float));
+              float *new_peak = (float *)calloc(pb_channels, sizeof(float));
               if (new_rms && new_peak) {
                 size_t copy_count = session->vu_pb_channels < pb_channels
                                         ? session->vu_pb_channels
@@ -489,8 +507,10 @@ static void* server_thread_func(void* arg) {
                 session->vu_pb_peak = new_peak;
                 session->vu_pb_channels = pb_channels;
               } else {
-                if (new_rms) free(new_rms);
-                if (new_peak) free(new_peak);
+                if (new_rms)
+                  free(new_rms);
+                if (new_peak)
+                  free(new_peak);
               }
             } else {
               for (size_t k = 0; k < pb_channels; k++) {
@@ -518,8 +538,8 @@ static void* server_thread_func(void* arg) {
 
           if (cap_channels > 0 && current_cap_peak && current_cap_rms) {
             if (session->vu_cap_channels != cap_channels) {
-              float* new_rms = (float*)calloc(cap_channels, sizeof(float));
-              float* new_peak = (float*)calloc(cap_channels, sizeof(float));
+              float *new_rms = (float *)calloc(cap_channels, sizeof(float));
+              float *new_peak = (float *)calloc(cap_channels, sizeof(float));
               if (new_rms && new_peak) {
                 size_t copy_count = session->vu_cap_channels < cap_channels
                                         ? session->vu_cap_channels
@@ -542,8 +562,10 @@ static void* server_thread_func(void* arg) {
                 session->vu_cap_peak = new_peak;
                 session->vu_cap_channels = cap_channels;
               } else {
-                if (new_rms) free(new_rms);
-                if (new_peak) free(new_peak);
+                if (new_rms)
+                  free(new_rms);
+                if (new_peak)
+                  free(new_peak);
               }
             } else {
               for (size_t k = 0; k < cap_channels; k++) {
@@ -576,10 +598,10 @@ static void* server_thread_func(void* arg) {
             session->vu_max_rate > 0.0f ? 1000.0f / session->vu_max_rate : 0.0f;
         if (session->vu_pending_publish &&
             (now - session->last_vu_push_time >= interval)) {
-          cJSON* root = cJSON_CreateObject();
+          cJSON *root = cJSON_CreateObject();
           cJSON_AddStringToObject(root, "reply", "VuLevelsEvent");
           cJSON_AddStringToObject(root, "result", "Ok");
-          cJSON* val_value = cJSON_CreateObject();
+          cJSON *val_value = cJSON_CreateObject();
           cJSON_AddItemToObject(root, "value", val_value);
           cJSON_AddItemToObject(
               val_value, "playback_rms",
@@ -618,10 +640,10 @@ static void* server_thread_func(void* arg) {
 
         if (send_pb && pb_channels > 0 && pb_changed) {
           session->last_sig_pb_generation = pb_gen;
-          cJSON* root = cJSON_CreateObject();
+          cJSON *root = cJSON_CreateObject();
           cJSON_AddStringToObject(root, "reply", "SignalLevelsEvent");
           cJSON_AddStringToObject(root, "result", "Ok");
-          cJSON* val_value = cJSON_CreateObject();
+          cJSON *val_value = cJSON_CreateObject();
           cJSON_AddItemToObject(root, "value", val_value);
           cJSON_AddStringToObject(val_value, "side", "playback");
           cJSON_AddItemToObject(
@@ -635,10 +657,10 @@ static void* server_thread_func(void* arg) {
         }
         if (send_cap && cap_channels > 0 && cap_changed) {
           session->last_sig_cap_generation = cap_gen;
-          cJSON* root = cJSON_CreateObject();
+          cJSON *root = cJSON_CreateObject();
           cJSON_AddStringToObject(root, "reply", "SignalLevelsEvent");
           cJSON_AddStringToObject(root, "result", "Ok");
-          cJSON* val_value = cJSON_CreateObject();
+          cJSON *val_value = cJSON_CreateObject();
           cJSON_AddItemToObject(root, "value", val_value);
           cJSON_AddStringToObject(val_value, "side", "capture");
           cJSON_AddItemToObject(
@@ -655,7 +677,7 @@ static void* server_thread_func(void* arg) {
       if (session->spectrum_subscribed) {
         if (!server || !server->engine ||
             cdsp_get_state(server->engine) == CDSP_PROCESSING_STATE_INACTIVE) {
-          cJSON* root = cJSON_CreateObject();
+          cJSON *root = cJSON_CreateObject();
           cJSON_AddStringToObject(root, "reply", "SpectrumEvent");
           cJSON_AddStringToObject(root, "result", "ProcessingStopped");
           QUEUE_PENDING(client_fds[i], cJSON_PrintUnformatted(root));
@@ -665,7 +687,8 @@ static void* server_thread_func(void* arg) {
           int cap_rate = (server && server->engine)
                              ? cdsp_get_capture_rate(server->engine)
                              : 44100;
-          if (cap_rate <= 0) cap_rate = 44100;
+          if (cap_rate <= 0)
+            cap_rate = 44100;
           float min_freq = session->spectrum_min_freq > 0.0f
                                ? session->spectrum_min_freq
                                : 20.0f;
@@ -682,8 +705,8 @@ static void* server_thread_func(void* arg) {
                                                               : hop_interval_ms;
           if (now - session->last_spectrum_push_time >= interval) {
             size_t n_bins = session->spectrum_n_bins;
-            float* p_freqs = (float*)malloc(n_bins * sizeof(float));
-            float* p_mags = (float*)malloc(n_bins * sizeof(float));
+            float *p_freqs = (float *)malloc(n_bins * sizeof(float));
+            float *p_mags = (float *)malloc(n_bins * sizeof(float));
             cdsp_spectrum_t spec = {
                 .frequencies = p_freqs,
                 .magnitudes = p_mags,
@@ -692,7 +715,7 @@ static void* server_thread_func(void* arg) {
             cdsp_spectrum_side_t side_val = session->spectrum_is_capture
                                                 ? CDSP_SPECTRUM_SIDE_CAPTURE
                                                 : CDSP_SPECTRUM_SIDE_PLAYBACK;
-            const size_t* chan_ptr = (session->spectrum_channel == (size_t)-1)
+            const size_t *chan_ptr = (session->spectrum_channel == (size_t)-1)
                                          ? NULL
                                          : &session->spectrum_channel;
             bool spec_ok =
@@ -701,7 +724,7 @@ static void* server_thread_func(void* arg) {
                                   session->spectrum_min_freq,
                                   session->spectrum_max_freq, n_bins, &spec);
             if (spec_ok) {
-              cJSON* root = cJSON_CreateObject();
+              cJSON *root = cJSON_CreateObject();
               cJSON_AddStringToObject(root, "reply", "SpectrumEvent");
               cJSON_AddStringToObject(root, "result", "Ok");
               cJSON_AddItemToObject(root, "value", serialize_spectrum(&spec));
@@ -709,16 +732,22 @@ static void* server_thread_func(void* arg) {
               cJSON_Delete(root);
               session->last_spectrum_push_time = now;
             }
-            if (p_freqs) free(p_freqs);
-            if (p_mags) free(p_mags);
+            if (p_freqs)
+              free(p_freqs);
+            if (p_mags)
+              free(p_mags);
           }
         }
       }
     }
-    if (cap_pk_buf) free(cap_pk_buf);
-    if (cap_rms_buf) free(cap_rms_buf);
-    if (pb_pk_buf) free(pb_pk_buf);
-    if (pb_rms_buf) free(pb_rms_buf);
+    if (cap_pk_buf)
+      free(cap_pk_buf);
+    if (cap_rms_buf)
+      free(cap_rms_buf);
+    if (pb_pk_buf)
+      free(pb_pk_buf);
+    if (pb_rms_buf)
+      free(pb_rms_buf);
     pthread_mutex_unlock(&server->sessions_mutex);
 
     for (size_t k = 0; k < pending_count; k++) {
@@ -734,9 +763,9 @@ static void* server_thread_func(void* arg) {
                       num_clients);
 #ifdef _WIN32
           DWORD timeout_ms = 2000;
-          setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout_ms,
+          setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout_ms,
                      sizeof(timeout_ms));
-          setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout_ms,
+          setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout_ms,
                      sizeof(timeout_ms));
 #else
           struct timeval tv;
@@ -749,7 +778,7 @@ static void* server_thread_func(void* arg) {
           last_state[num_clients][0] = '\0';
 
           pthread_mutex_lock(&server->sessions_mutex);
-          client_session_t* session = &server->client_sessions[num_clients];
+          client_session_t *session = &server->client_sessions[num_clients];
           *session = (client_session_t){0};
           uint64_t now_ms = get_time_ms();
           session->last_cap_peak_time = now_ms;
@@ -780,7 +809,7 @@ static void* server_thread_func(void* arg) {
           }
 
           pthread_mutex_lock(&server->sessions_mutex);
-          client_session_t* session = &server->client_sessions[i];
+          client_session_t *session = &server->client_sessions[i];
           if (session->rx_len + (size_t)n > 64 * 1024 * 1024) {
             pthread_mutex_unlock(&server->sessions_mutex);
             ws_send_close_frame(client_fds[i], 1009);
@@ -793,8 +822,9 @@ static void* server_thread_func(void* arg) {
 
           if (session->rx_len + (size_t)n >= session->rx_cap) {
             size_t new_cap = session->rx_len + (size_t)n + 4096;
-            if (new_cap < 8192) new_cap = 8192;
-            char* new_buf = (char*)realloc(session->rx_buf, new_cap);
+            if (new_cap < 8192)
+              new_cap = 8192;
+            char *new_buf = (char *)realloc(session->rx_buf, new_cap);
             if (!new_buf) {
               pthread_mutex_unlock(&server->sessions_mutex);
               ws_send_close_frame(client_fds[i], 1011);
@@ -815,10 +845,10 @@ static void* server_thread_func(void* arg) {
 
           // Process HTTP handshake if WebSocket connection not yet established
           if (!session->is_websocket) {
-            const char* header_end = strstr(session->rx_buf, "\r\n\r\n");
+            const char *header_end = strstr(session->rx_buf, "\r\n\r\n");
             if (header_end) {
               size_t req_len = (size_t)(header_end + 4 - session->rx_buf);
-              char* req_str = (char*)malloc(req_len + 1);
+              char *req_str = (char *)malloc(req_len + 1);
               if (req_str) {
                 memcpy(req_str, session->rx_buf, req_len);
                 req_str[req_len] = '\0';
@@ -840,7 +870,7 @@ static void* server_thread_func(void* arg) {
                 }
               }
             } else if (session->rx_len > 8192) {
-              const char* bad_request =
+              const char *bad_request =
                   "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
               send(client_fds[i], bad_request, (int)strlen(bad_request), 0);
               pthread_mutex_unlock(&server->sessions_mutex);
@@ -853,13 +883,13 @@ static void* server_thread_func(void* arg) {
           }
 
           if (!session->is_websocket) {
-            const char* end_ptr = NULL;
-            cJSON* test_json =
+            const char *end_ptr = NULL;
+            cJSON *test_json =
                 cJSON_ParseWithOpts(session->rx_buf, &end_ptr, false);
             if (test_json) {
               cJSON_Delete(test_json);
               size_t consumed = (size_t)(end_ptr - session->rx_buf);
-              char* cmd_copy = (char*)malloc(consumed + 1);
+              char *cmd_copy = (char *)malloc(consumed + 1);
               if (cmd_copy) {
                 memcpy(cmd_copy, session->rx_buf, consumed);
                 cmd_copy[consumed] = '\0';
@@ -892,7 +922,7 @@ static void* server_thread_func(void* arg) {
 
           // Process all complete WebSocket frames in the buffer
           while (session->rx_len >= 2) {
-            const unsigned char* rxb = (const unsigned char*)session->rx_buf;
+            const unsigned char *rxb = (const unsigned char *)session->rx_buf;
             // RFC 6455 §5.2: Reserved bits must be 0
             if ((rxb[0] & 0x70) != 0) {
               pthread_mutex_unlock(&server->sessions_mutex);
@@ -939,7 +969,8 @@ static void* server_thread_func(void* arg) {
             } else if (p_len == 127) {
               needed_header = 10;
             }
-            if (masked) needed_header += 4;
+            if (masked)
+              needed_header += 4;
 
             if (session->rx_len < needed_header) {
               // Incomplete header, wait for more bytes from socket
@@ -948,11 +979,10 @@ static void* server_thread_func(void* arg) {
 
             size_t payload_len = 0;
             size_t header_len = 0;
-            unsigned char* mask = NULL;
+            unsigned char *mask = NULL;
             bool fin = false;
-            if (!ws_parse_frame_header_ext(rxb, session->rx_len,
-                                           &payload_len, &header_len,
-                                           &mask, &opcode, &fin)) {
+            if (!ws_parse_frame_header_ext(rxb, session->rx_len, &payload_len,
+                                           &header_len, &mask, &opcode, &fin)) {
               pthread_mutex_unlock(&server->sessions_mutex);
               ws_send_close_frame(client_fds[i], 1002);
               remove_client_session(server, fds, client_fds, last_state,
@@ -963,7 +993,8 @@ static void* server_thread_func(void* arg) {
               break;
             }
 
-            // RFC 6455 §5.5: Control frames must be <= 125 bytes and unfragmented
+            // RFC 6455 §5.5: Control frames must be <= 125 bytes and
+            // unfragmented
             if ((opcode & 0x08) != 0 && (payload_len > 125 || !fin)) {
               pthread_mutex_unlock(&server->sessions_mutex);
               ws_send_close_frame(client_fds[i], 1002);
@@ -992,7 +1023,7 @@ static void* server_thread_func(void* arg) {
             }
 
             // Extract complete frame payload without blocking
-            char* payload = (char*)malloc(payload_len + 1);
+            char *payload = (char *)malloc(payload_len + 1);
             if (!payload) {
               pthread_mutex_unlock(&server->sessions_mutex);
               ws_send_close_frame(client_fds[i], 1011);
@@ -1050,7 +1081,7 @@ static void* server_thread_func(void* arg) {
                 }
                 // RFC 6455 §5.5.1: Validate UTF-8 of close reason
                 if (payload_len > 2 &&
-                    !is_valid_utf8((const unsigned char*)(payload + 2),
+                    !is_valid_utf8((const unsigned char *)(payload + 2),
                                    payload_len - 2)) {
                   free(payload);
                   pthread_mutex_unlock(&server->sessions_mutex);
@@ -1114,7 +1145,7 @@ static void* server_thread_func(void* arg) {
               size_t needed = session->frag_len + payload_len + 1;
               if (needed > session->frag_cap) {
                 size_t new_cap = needed < 65536 ? 65536 : needed * 2;
-                char* new_buf = (char*)realloc(session->frag_buf, new_cap);
+                char *new_buf = (char *)realloc(session->frag_buf, new_cap);
                 if (!new_buf) {
                   free(payload);
                   pthread_mutex_unlock(&server->sessions_mutex);
@@ -1139,7 +1170,7 @@ static void* server_thread_func(void* arg) {
                 continue;
               }
 
-              char* full_msg = session->frag_buf;
+              char *full_msg = session->frag_buf;
               uint8_t orig_op = session->frag_opcode;
               session->frag_buf = NULL;
               session->frag_cap = 0;
@@ -1147,7 +1178,7 @@ static void* server_thread_func(void* arg) {
               session->frag_opcode = 0;
 
               if (orig_op == 0x01 &&
-                  !is_valid_utf8((const unsigned char*)full_msg,
+                  !is_valid_utf8((const unsigned char *)full_msg,
                                  strlen(full_msg))) {
                 free(full_msg);
                 pthread_mutex_unlock(&server->sessions_mutex);
@@ -1160,8 +1191,8 @@ static void* server_thread_func(void* arg) {
                 break;
               }
 
-              logger_debug(&server_logger,
-                           "Received fragmented WS message: %s", full_msg);
+              logger_debug(&server_logger, "Received fragmented WS message: %s",
+                           full_msg);
               dyn_string_t ds;
               dyn_string_init(&ds, 4096);
               websocket_server_handle_command(server, i, full_msg, &ds);
@@ -1174,8 +1205,7 @@ static void* server_thread_func(void* arg) {
               free(full_msg);
             } else {
               if (opcode == 0x01 &&
-                  !is_valid_utf8((const unsigned char*)payload,
-                                 payload_len)) {
+                  !is_valid_utf8((const unsigned char *)payload, payload_len)) {
                 free(payload);
                 pthread_mutex_unlock(&server->sessions_mutex);
                 ws_send_close_frame(client_fds[i], 1007);
@@ -1186,8 +1216,7 @@ static void* server_thread_func(void* arg) {
                 client_removed = true;
                 break;
               }
-              logger_debug(&server_logger, "Received WS frame: %s",
-                           payload);
+              logger_debug(&server_logger, "Received WS frame: %s", payload);
               dyn_string_t ds;
               dyn_string_init(&ds, 4096);
               websocket_server_handle_command(server, i, payload, &ds);
@@ -1214,7 +1243,7 @@ static void* server_thread_func(void* arg) {
   return NULL;
 }
 
-bool websocket_server_start(websocket_server_t* server) {
+bool websocket_server_start(websocket_server_t *server) {
   if (!server || atomic_load_explicit(&server->running, memory_order_acquire))
     return false;
 
@@ -1239,7 +1268,7 @@ bool websocket_server_start(websocket_server_t* server) {
 
   int opt = 1;
 #ifdef _WIN32
-  setsockopt(server->server_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt,
+  setsockopt(server->server_fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&opt,
              sizeof(opt));
 #else
   setsockopt(server->server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -1251,7 +1280,7 @@ bool websocket_server_start(websocket_server_t* server) {
   inet_pton(AF_INET, server->host, &addr.sin_addr);
 
   if (IS_SOCKET_ERROR(
-          bind(server->server_fd, (struct sockaddr*)&addr, sizeof(addr)))) {
+          bind(server->server_fd, (struct sockaddr *)&addr, sizeof(addr)))) {
     logger_error(&server_logger, "Failed to bind WebSocket server on %s:%d",
                  server->host, server->port);
     CLOSE_SOCKET(server->server_fd);
@@ -1294,7 +1323,7 @@ bool websocket_server_start(websocket_server_t* server) {
   return true;
 }
 
-void websocket_server_stop(websocket_server_t* server) {
+void websocket_server_stop(websocket_server_t *server) {
   if (!server || !atomic_load_explicit(&server->running, memory_order_acquire))
     return;
   logger_info(&server_logger, "Stopping WebSocket control server");
@@ -1309,12 +1338,15 @@ void websocket_server_stop(websocket_server_t* server) {
 #endif
 }
 
-void websocket_server_free(websocket_server_t* server) {
-  if (!server) return;
+void websocket_server_free(websocket_server_t *server) {
+  if (!server)
+    return;
   websocket_server_stop(server);
 
-  if (server->capture_global_peaks) free(server->capture_global_peaks);
-  if (server->playback_global_peaks) free(server->playback_global_peaks);
+  if (server->capture_global_peaks)
+    free(server->capture_global_peaks);
+  if (server->playback_global_peaks)
+    free(server->playback_global_peaks);
 
   for (size_t i = 0; i < 32; i++) {
     client_session_clear(&server->client_sessions[i]);
@@ -1324,57 +1356,64 @@ void websocket_server_free(websocket_server_t* server) {
   free(server);
 }
 
-bool websocket_server_get_client_vu_subscribed(const websocket_server_t* server,
+bool websocket_server_get_client_vu_subscribed(const websocket_server_t *server,
                                                int client_idx) {
-  if (!server || client_idx < 0 || client_idx >= 32) return false;
-  pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
+  if (!server || client_idx < 0 || client_idx >= 32)
+    return false;
+  pthread_mutex_lock((pthread_mutex_t *)&server->sessions_mutex);
   bool res = server->client_sessions[client_idx].vu_subscribed;
-  pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
+  pthread_mutex_unlock((pthread_mutex_t *)&server->sessions_mutex);
   return res;
 }
 
-float websocket_server_get_client_vu_max_rate(const websocket_server_t* server,
+float websocket_server_get_client_vu_max_rate(const websocket_server_t *server,
                                               int client_idx) {
-  if (!server || client_idx < 0 || client_idx >= 32) return 0.0f;
-  pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
+  if (!server || client_idx < 0 || client_idx >= 32)
+    return 0.0f;
+  pthread_mutex_lock((pthread_mutex_t *)&server->sessions_mutex);
   float res = server->client_sessions[client_idx].vu_max_rate;
-  pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
+  pthread_mutex_unlock((pthread_mutex_t *)&server->sessions_mutex);
   return res;
 }
 
-float websocket_server_get_client_vu_attack(const websocket_server_t* server,
+float websocket_server_get_client_vu_attack(const websocket_server_t *server,
                                             int client_idx) {
-  if (!server || client_idx < 0 || client_idx >= 32) return 0.0f;
-  pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
+  if (!server || client_idx < 0 || client_idx >= 32)
+    return 0.0f;
+  pthread_mutex_lock((pthread_mutex_t *)&server->sessions_mutex);
   float res = server->client_sessions[client_idx].vu_attack;
-  pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
+  pthread_mutex_unlock((pthread_mutex_t *)&server->sessions_mutex);
   return res;
 }
 
-float websocket_server_get_client_vu_release(const websocket_server_t* server,
+float websocket_server_get_client_vu_release(const websocket_server_t *server,
                                              int client_idx) {
-  if (!server || client_idx < 0 || client_idx >= 32) return 0.0f;
-  pthread_mutex_lock((pthread_mutex_t*)&server->sessions_mutex);
+  if (!server || client_idx < 0 || client_idx >= 32)
+    return 0.0f;
+  pthread_mutex_lock((pthread_mutex_t *)&server->sessions_mutex);
   float res = server->client_sessions[client_idx].vu_release;
-  pthread_mutex_unlock((pthread_mutex_t*)&server->sessions_mutex);
+  pthread_mutex_unlock((pthread_mutex_t *)&server->sessions_mutex);
   return res;
 }
 
-void websocket_server_set_client_vu_subscribed(websocket_server_t* server,
+void websocket_server_set_client_vu_subscribed(websocket_server_t *server,
                                                int client_idx,
                                                bool subscribed) {
-  if (!server || client_idx < 0 || client_idx >= 32) return;
+  if (!server || client_idx < 0 || client_idx >= 32)
+    return;
   pthread_mutex_lock(&server->sessions_mutex);
   server->client_sessions[client_idx].vu_subscribed = subscribed;
   pthread_mutex_unlock(&server->sessions_mutex);
 }
 
-bool websocket_server_is_exit_requested(const websocket_server_t* server) {
-  if (!server) return false;
+bool websocket_server_is_exit_requested(const websocket_server_t *server) {
+  if (!server)
+    return false;
   return atomic_load_explicit(&server->exit_requested, memory_order_acquire);
 }
 
-void websocket_server_request_exit(websocket_server_t* server) {
-  if (!server) return;
+void websocket_server_request_exit(websocket_server_t *server) {
+  if (!server)
+    return;
   atomic_store_explicit(&server->exit_requested, true, memory_order_release);
 }

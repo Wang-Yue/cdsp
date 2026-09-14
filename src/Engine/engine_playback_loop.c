@@ -45,10 +45,10 @@
 static const logger_t g_logger = {"dsp.playback"};
 
 struct engine_playback_loop {
-  engine_shared_state_t* shared;
-  playback_backend_t* playback;
-  processing_parameters_t* processing_params;
-  dsd_encoder_t* dsd_encoder;
+  engine_shared_state_t *shared;
+  playback_backend_t *playback;
+  processing_parameters_t *processing_params;
+  dsd_encoder_t *dsd_encoder;
   size_t pipeline_rate;
   size_t chunk_size;
   bool capture_pitch_supported;
@@ -76,8 +76,8 @@ struct engine_playback_loop {
  * changed).
  * @param average The average buffer level, used for logging.
  */
-static void apply_speed(engine_playback_loop_t* loop, double speed,
-                        double* last_speed, double average) {
+static void apply_speed(engine_playback_loop_t *loop, double speed,
+                        double *last_speed, double average) {
   bool changed = fabs(speed - *last_speed) > 0.000001;
   if (changed) {
     *last_speed = speed;
@@ -88,7 +88,7 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
     } else if (loop->shared) {
       engine_shared_state_set_resampler_ratio(loop->shared, speed);
     }
-    const char* method_str = loop->capture_pitch_supported    ? "capture pitch"
+    const char *method_str = loop->capture_pitch_supported    ? "capture pitch"
                              : loop->playback_pitch_supported ? "playback pitch"
                                                               : "resampler";
     logger_debug(&g_logger, "Rate adjust: buffer=%f target=%d speed=%f via %s",
@@ -104,9 +104,9 @@ static void apply_speed(engine_playback_loop_t* loop, double speed,
  *
  * @param loop Pointer to the playback loop structure.
  */
-static void log_rate_adjust_mode(engine_playback_loop_t* loop) {
+static void log_rate_adjust_mode(engine_playback_loop_t *loop) {
   if (loop->rate_adjust_enabled) {
-    const char* method_str =
+    const char *method_str =
         loop->capture_pitch_supported    ? "capture clock pitch"
         : loop->playback_pitch_supported ? "playback clock pitch"
                                          : "resampler ratio";
@@ -121,13 +121,15 @@ static void log_rate_adjust_mode(engine_playback_loop_t* loop) {
   }
 }
 
-engine_playback_loop_t* engine_playback_loop_create(
-    const engine_playback_loop_config_t* config) {
-  if (!config) return NULL;
+engine_playback_loop_t *
+engine_playback_loop_create(const engine_playback_loop_config_t *config) {
+  if (!config)
+    return NULL;
 
-  engine_playback_loop_t* loop =
-      (engine_playback_loop_t*)calloc(1, sizeof(engine_playback_loop_t));
-  if (!loop) return NULL;
+  engine_playback_loop_t *loop =
+      (engine_playback_loop_t *)calloc(1, sizeof(engine_playback_loop_t));
+  if (!loop)
+    return NULL;
   loop->shared = config->shared;
   loop->playback = config->playback;
   loop->processing_params = config->processing_params;
@@ -146,8 +148,9 @@ engine_playback_loop_t* engine_playback_loop_create(
   return loop;
 }
 
-void engine_playback_loop_free(engine_playback_loop_t* loop) {
-  if (!loop) return;
+void engine_playback_loop_free(engine_playback_loop_t *loop) {
+  if (!loop)
+    return;
   free(loop);
 }
 
@@ -159,7 +162,7 @@ void engine_playback_loop_free(engine_playback_loop_t* loop) {
  * @return true if a format change occurred and an engine stop was requested,
  * false otherwise.
  */
-static bool playback_loop_check_format_change(engine_playback_loop_t* loop) {
+static bool playback_loop_check_format_change(engine_playback_loop_t *loop) {
   double rate = 0.0;
   if (playback_backend_get_pending_rate_change(loop->playback, &rate)) {
     if (!loop->has_last_observed_playback_pending_rate ||
@@ -193,8 +196,8 @@ static bool playback_loop_check_format_change(engine_playback_loop_t* loop) {
  * @param last_speed Pointer to last applied speed ratio.
  */
 static void playback_loop_update_rate_adjust(
-    engine_playback_loop_t* loop, pi_rate_controller_t* rate_controller,
-    averager_t* averager, stopwatch_t* stopwatch, double* last_speed) {
+    engine_playback_loop_t *loop, pi_rate_controller_t *rate_controller,
+    averager_t *averager, stopwatch_t *stopwatch, double *last_speed) {
   // Calculate total buffer level: frames in hardware playback buffer plus
   // processed queue frames (matching upstream CamillaDSP).
   size_t ring_fill = playback_backend_get_buffer_level(loop->playback);
@@ -230,7 +233,7 @@ static void playback_loop_update_rate_adjust(
  *
  * @param loop Pointer to the playback loop context.
  */
-static void playback_loop_drain_hardware_buffer(engine_playback_loop_t* loop) {
+static void playback_loop_drain_hardware_buffer(engine_playback_loop_t *loop) {
   logger_info(&g_logger, "Draining playback hardware buffer...");
   size_t last_level = 0;
   uint64_t last_change_ns = cdsp_time_now_ns();
@@ -267,8 +270,9 @@ static void playback_loop_drain_hardware_buffer(engine_playback_loop_t* loop) {
   logger_info(&g_logger, "Playback hardware buffer drained");
 }
 
-void engine_playback_loop_run(engine_playback_loop_t* loop) {
-  if (!loop) return;
+void engine_playback_loop_run(engine_playback_loop_t *loop) {
+  if (!loop)
+    return;
   logger_info(&g_logger, "Playback thread started");
 
   backend_error_t berr;
@@ -311,12 +315,12 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     return;
   }
 
-  realtime_thread_handle_t* rt_handle = promote_current_thread_to_realtime(
+  realtime_thread_handle_t *rt_handle = promote_current_thread_to_realtime(
       "Playback", loop->chunk_size, loop->pipeline_rate);
   log_rate_adjust_mode(loop);
 
   double last_speed = 1.0;
-  pi_rate_controller_t* rate_controller = NULL;
+  pi_rate_controller_t *rate_controller = NULL;
   averager_t averager = {0};
   stopwatch_t stopwatch = {0};
 
@@ -329,7 +333,7 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
   }
 
   bool reached_eos = true;
-  audio_chunk_t* chunk = NULL;
+  audio_chunk_t *chunk = NULL;
   bool was_paused = false;
   // Ref: engine_state_management.md - Section 3.2: Steady-State Audio Loops &
   // Section 3.6: Immediate Abort Teardown Dequeue chunks from processed_queue.
@@ -397,19 +401,6 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
     bool ok = playback_backend_write(loop->playback, chunk, &err);
     if (!ok || err.type != BACKEND_ERROR_NONE) {
-      // Clean EOF on Plain-WAV 4 GB Limit (Ref: engine_state_management.md
-      // §4.2) When writing to a standard 32-bit RIFF WAV file without RF64
-      // extensions, reaching the 4 GB (2^32 bytes) address limit causes
-      // playback_backend_write to stop accepting data and return false with
-      // err.type == BACKEND_ERROR_NONE. This represents a normal, expected
-      // file-boundary completion (End-Of-Stream) rather than an unrecoverable
-      // device failure. We set reached_eos = true and break out cleanly,
-      // allowing the supervisor to transition to STOP_REASON_DONE rather than
-      // logging a false-alarm hardware error.
-      if (err.type == BACKEND_ERROR_NONE) {
-        reached_eos = true;
-        break;
-      }
       // Ref: engine_state_management.md - Section 4.1: Prevention of
       // False-Alarm Shutdown Errors (Loop Guards)
       if (engine_shared_state_should_stop(loop->shared)) {
@@ -434,6 +425,19 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
           reached_eos = false;
           break;
         }
+      }
+      // Clean EOF on Plain-WAV 4 GB Limit (Ref: engine_state_management.md
+      // §4.2) When writing to a standard 32-bit RIFF WAV file without RF64
+      // extensions, reaching the 4 GB (2^32 bytes) address limit causes
+      // playback_backend_write to stop accepting data and return false with
+      // err.type == BACKEND_ERROR_NONE. This represents a normal, expected
+      // file-boundary completion (End-Of-Stream) rather than an unrecoverable
+      // device failure. We set reached_eos = true and break out cleanly,
+      // allowing the supervisor to transition to STOP_REASON_DONE rather than
+      // logging a false-alarm hardware error.
+      if (err.type == BACKEND_ERROR_NONE) {
+        reached_eos = true;
+        break;
       }
       // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
       // Step 1: Playback thread detects a hardware write error. Requests stop
@@ -469,7 +473,8 @@ void engine_playback_loop_run(engine_playback_loop_t* loop) {
     demote_current_thread_from_realtime(rt_handle);
   }
 
-  if (rate_controller) pi_rate_controller_free(rate_controller);
+  if (rate_controller)
+    pi_rate_controller_free(rate_controller);
   if (loop->shared) {
     // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown
     // (Queue Drain) Step 3: Sets state to INACTIVE via
