@@ -22,6 +22,7 @@
  */
 #include "Mixer/mixer.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,8 +40,8 @@ static const logger_t g_logger = {"dsp.mixer"};
  * channel.
  */
 typedef struct {
-  size_t in_channel;  ///< Input channel index.
-  double gain;        ///< Linear gain multiplier (negative if inverted).
+  size_t in_channel; ///< Input channel index.
+  double gain;       ///< Linear gain multiplier (negative if inverted).
 } prepared_source_t;
 
 /**
@@ -48,19 +49,19 @@ typedef struct {
  * channel.
  */
 typedef struct {
-  size_t count;                ///< Number of active contributing sources.
-  prepared_source_t* sources;  ///< Array of prepared source contributions.
+  size_t count;               ///< Number of active contributing sources.
+  prepared_source_t *sources; ///< Array of prepared source contributions.
 } prepared_source_list_t;
 
 /// Mixer that changes channel count and routes/sums audio between channels.
 /// Mixer that changes channel count and routes/sums audio between channels.
 struct mixer_s {
-  size_t chunk_size;    ///< Maximum number of frames per processing chunk.
-  char* name;           ///< Unique name of the mixer instance.
-  size_t channels_in;   ///< Expected number of input channels.
-  size_t channels_out;  ///< Number of output channels produced.
-  prepared_source_list_t*
-      mapping;  ///< Array of length channels_out defining source routing.
+  size_t chunk_size;   ///< Maximum number of frames per processing chunk.
+  char *name;          ///< Unique name of the mixer instance.
+  size_t channels_in;  ///< Expected number of input channels.
+  size_t channels_out; ///< Number of output channels produced.
+  prepared_source_list_t
+      *mapping; ///< Array of length channels_out defining source routing.
 };
 
 /**
@@ -73,9 +74,9 @@ struct mixer_s {
  * @param mixer Pointer to mixer instance.
  * @param config Configuration containing mapping rules.
  */
-static bool populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
+static bool populate_mapping(mixer_t *mixer, const mixer_config_t *config) {
   for (size_t i = 0; i < config->mapping_count; i++) {
-    const mixer_mapping_t* map = &config->mapping[i];
+    const mixer_mapping_t *map = &config->mapping[i];
     if (map->dest >= mixer->channels_out || map->mute) {
       continue;
     }
@@ -89,13 +90,14 @@ static bool populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
         valid_count++;
       }
     }
-    if (valid_count == 0) continue;
+    if (valid_count == 0)
+      continue;
 
     // Allocate prepared source array for this destination channel
     assert(!mixer->mapping[dest].sources &&
            "Duplicate dest mappings must be rejected by validation");
     mixer->mapping[dest].sources =
-        (prepared_source_t*)calloc(valid_count, sizeof(prepared_source_t));
+        (prepared_source_t *)calloc(valid_count, sizeof(prepared_source_t));
     if (!mixer->mapping[dest].sources) {
       mixer->mapping[dest].count = 0;
       return false;
@@ -104,7 +106,7 @@ static bool populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
 
     size_t idx = 0;
     for (size_t j = 0; j < map->sources_count; j++) {
-      const mixer_source_t* src = &map->sources[j];
+      const mixer_source_t *src = &map->sources[j];
       if (src->mute || (size_t)src->channel >= mixer->channels_in) {
         continue;
       }
@@ -131,10 +133,11 @@ static bool populate_mapping(mixer_t* mixer, const mixer_config_t* config) {
   return true;
 }
 
-mixer_t* mixer_create(const char* name, const mixer_config_t* config,
-                      size_t chunk_size, config_error_t* err) {
-  if (mixer_config_validate(config, err) != 0) return NULL;
-  mixer_t* mixer = (mixer_t*)calloc(1, sizeof(mixer_t));
+mixer_t *mixer_create(const char *name, const mixer_config_t *config,
+                      size_t chunk_size, config_error_t *err) {
+  if (mixer_config_validate(config, err) != 0)
+    return NULL;
+  mixer_t *mixer = (mixer_t *)calloc(1, sizeof(mixer_t));
   if (!mixer) {
     logger_error(&g_logger, "Failed to allocate mixer_t for '%s'",
                  name ? name : "unnamed");
@@ -145,7 +148,7 @@ mixer_t* mixer_create(const char* name, const mixer_config_t* config,
   mixer->name = name ? strdup(name) : strdup("mixer");
   mixer->channels_in = (size_t)config->channels_in;
   mixer->channels_out = (size_t)config->channels_out;
-  mixer->mapping = (prepared_source_list_t*)calloc(
+  mixer->mapping = (prepared_source_list_t *)calloc(
       mixer->channels_out, sizeof(prepared_source_list_t));
   if (!mixer->mapping) {
     logger_error(&g_logger,
@@ -174,9 +177,10 @@ mixer_t* mixer_create(const char* name, const mixer_config_t* config,
 /// `input` and `output` must reference distinct buffers — the mixer
 /// accumulates into the output and reads input concurrently, so aliasing
 /// would corrupt the result.
-mixer_error_t mixer_process(mixer_t* mixer, const audio_chunk_t* input,
-                            audio_chunk_t* output) {
-  if (!mixer || !input || !output) return MIXER_ERR_INPUT_SIZE_MISMATCH;
+mixer_error_t mixer_process(mixer_t *mixer, const audio_chunk_t *input,
+                            audio_chunk_t *output) {
+  if (!mixer || !input || !output)
+    return MIXER_ERR_INPUT_SIZE_MISMATCH;
   size_t frames = audio_chunk_get_valid_frames(input);
   if (frames > mixer->chunk_size) {
     logger_warn(&g_logger,
@@ -210,17 +214,20 @@ mixer_error_t mixer_process(mixer_t* mixer, const audio_chunk_t* input,
   // cache locality
   for (size_t out_ch = 0; out_ch < mixer->channels_out; out_ch++) {
     mutable_waveform_t dst = audio_chunk_get_channel(output, out_ch);
-    if (!dst) continue;
+    if (!dst)
+      continue;
 
     dsp_ops_clear(dst, frames);
 
-    prepared_source_list_t* list = &mixer->mapping[out_ch];
+    prepared_source_list_t *list = &mixer->mapping[out_ch];
     for (size_t i = 0; i < list->count; i++) {
-      prepared_source_t* src = &list->sources[i];
+      prepared_source_t *src = &list->sources[i];
       // Skip if mapped source channel is not present in input chunk
-      if (src->in_channel >= audio_chunk_get_channels(input)) continue;
+      if (src->in_channel >= audio_chunk_get_channels(input))
+        continue;
       waveform_t src_ptr = audio_chunk_get_channel(input, src->in_channel);
-      if (!src_ptr) continue;
+      if (!src_ptr)
+        continue;
 
       // Optimize direct unity gain addition vs multiply-accumulate to save
       // instruction cycles
@@ -236,11 +243,13 @@ mixer_error_t mixer_process(mixer_t* mixer, const audio_chunk_t* input,
   return MIXER_OK;
 }
 
-audio_chunk_t* mixer_process_chunk(mixer_t* mixer, const audio_chunk_t* input) {
-  if (!mixer || !input) return NULL;
-  audio_chunk_t* output = audio_chunk_create(
+audio_chunk_t *mixer_process_chunk(mixer_t *mixer, const audio_chunk_t *input) {
+  if (!mixer || !input)
+    return NULL;
+  audio_chunk_t *output = audio_chunk_create(
       audio_chunk_get_valid_frames(input), mixer->channels_out);
-  if (!output) return NULL;
+  if (!output)
+    return NULL;
   if (mixer_process(mixer, input, output) != MIXER_OK) {
     audio_chunk_free(output);
     return NULL;
@@ -248,9 +257,11 @@ audio_chunk_t* mixer_process_chunk(mixer_t* mixer, const audio_chunk_t* input) {
   return output;
 }
 
-void mixer_free(mixer_t* mixer) {
-  if (!mixer) return;
-  if (mixer->name) free(mixer->name);
+void mixer_free(mixer_t *mixer) {
+  if (!mixer)
+    return;
+  if (mixer->name)
+    free(mixer->name);
   if (mixer->mapping) {
     for (size_t i = 0; i < mixer->channels_out; i++) {
       if (mixer->mapping[i].sources) {
@@ -262,19 +273,19 @@ void mixer_free(mixer_t* mixer) {
   free(mixer);
 }
 
-size_t mixer_get_channels_in(const mixer_t* mixer) {
+size_t mixer_get_channels_in(const mixer_t *mixer) {
   return mixer ? mixer->channels_in : 0;
 }
 
-size_t mixer_get_channels_out(const mixer_t* mixer) {
+size_t mixer_get_channels_out(const mixer_t *mixer) {
   return mixer ? mixer->channels_out : 0;
 }
 
-const char* mixer_get_name(const mixer_t* mixer) {
+const char *mixer_get_name(const mixer_t *mixer) {
   return mixer ? mixer->name : NULL;
 }
 
-int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
+int mixer_config_validate(const mixer_config_t *mixer, config_error_t *err) {
   if (!mixer) {
     config_error_set(err, CONFIG_ERR_INVALID_MIXER, "Null mixer configuration");
     return -1;
@@ -290,9 +301,10 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
     return -1;
   }
 
-  bool* seen_dests = (bool*)calloc(
+  bool *seen_dests = (bool *)calloc(
       mixer->channels_out > 0 ? mixer->channels_out : 1, sizeof(bool));
-  if (!seen_dests) return -1;
+  if (!seen_dests)
+    return -1;
 
   for (size_t i = 0; i < mixer->mapping_count; i++) {
     size_t dest = mixer->mapping[i].dest;
@@ -327,7 +339,7 @@ int mixer_config_validate(const mixer_config_t* mixer, config_error_t* err) {
     // CamillaDSP loads and plays, so this is only a warning. The port's own
     // `populate_mapping` accumulates a flat source list per destination and
     // sums duplicates the same way.
-    bool* seen_sources = (bool*)calloc(
+    bool *seen_sources = (bool *)calloc(
         mixer->channels_in > 0 ? mixer->channels_in : 1, sizeof(bool));
     if (!seen_sources) {
       free(seen_dests);
