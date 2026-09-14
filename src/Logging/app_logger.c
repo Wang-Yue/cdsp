@@ -12,7 +12,7 @@
 #include "Config/log_level.h"
 #include "Engine/cdsp_sem.h"
 
-static FILE* g_log_file = NULL;
+static FILE *g_log_file = NULL;
 static pthread_mutex_t g_log_file_mutex = PTHREAD_MUTEX_INITIALIZER;
 static char g_log_file_path[1024] = {0};
 static size_t g_log_max_size = 0;
@@ -37,9 +37,11 @@ static void rotate_log_file_locked(void) {
     for (size_t i = g_log_keep_count - 1; i >= 1; i--) {
       snprintf(old_name, sizeof(old_name), "%s.%zu", g_log_file_path, i);
       snprintf(new_name, sizeof(new_name), "%s.%zu", g_log_file_path, i + 1);
+      remove(new_name);
       rename(old_name, new_name);
     }
     snprintf(new_name, sizeof(new_name), "%s.1", g_log_file_path);
+    remove(new_name);
     rename(g_log_file_path, new_name);
   } else {
     time_t t = time(NULL);
@@ -53,6 +55,7 @@ static void rotate_log_file_locked(void) {
     strftime(time_suffix, sizeof(time_suffix), "%Y-%m-%d_%H-%M-%S", &tm_info);
     char rot_name[1120];
     snprintf(rot_name, sizeof(rot_name), "%s.%s", g_log_file_path, time_suffix);
+    remove(rot_name);
     rename(g_log_file_path, rot_name);
   }
 
@@ -67,8 +70,9 @@ void app_logger_set_logfile_rotation(size_t max_size_bytes, size_t keep_count) {
   pthread_mutex_unlock(&g_log_file_mutex);
 }
 
-void app_logger_set_logfile(const char* path) {
-  if (!path || path[0] == '\0') return;
+void app_logger_set_logfile(const char *path) {
+  if (!path || path[0] == '\0')
+    return;
   pthread_mutex_lock(&g_log_file_mutex);
   if (g_log_file && g_log_file != stderr && g_log_file != stdout) {
     fclose(g_log_file);
@@ -89,8 +93,8 @@ void app_logger_set_logfile(const char* path) {
 }
 
 struct app_logger_s {
-  log_record_t* storage;
-  _Atomic uint64_t* sequences;
+  log_record_t *storage;
+  _Atomic uint64_t *sequences;
   size_t capacity;
   size_t mask;
   _Atomic uint64_t write_index;
@@ -102,13 +106,13 @@ struct app_logger_s {
   pthread_mutex_t worker_mutex;
   pthread_mutex_t callback_mutex;
   cdsp_log_callback_t callback;
-  void* callback_user_data;
+  void *callback_user_data;
 };
 
 /// Process-wide log-level gate. Stored as an atomic uint8_t so the
 /// real-time audio path can read it without locks.
 static _Atomic uint8_t g_current_log_level = LOG_LEVEL_INFO;
-static app_logger_t* g_shared_logger = NULL;
+static app_logger_t *g_shared_logger = NULL;
 static pthread_once_t g_logger_once = PTHREAD_ONCE_INIT;
 
 log_level_t app_logger_get_level(void) {
@@ -134,9 +138,10 @@ void app_logger_set_level(log_level_t level) {
  * @param msg The printf-like format string.
  * @param args Array of exactly 4 log arguments.
  */
-static void format_log_message(char* out, size_t out_cap, const char* msg,
+static void format_log_message(char *out, size_t out_cap, const char *msg,
                                const log_argument_t args[4]) {
-  if (!out || out_cap == 0) return;
+  if (!out || out_cap == 0)
+    return;
   if (!msg) {
     out[0] = '\0';
     return;
@@ -144,7 +149,7 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
 
   size_t out_len = 0;
   int arg_idx = 0;
-  const char* p = msg;
+  const char *p = msg;
 
   while (*p != '\0') {
     if (*p != '%') {
@@ -176,8 +181,8 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
     }
 
     // We have a potential format specifier starting at p
-    const char* spec_start = p;
-    const char* q = p + 1;
+    const char *spec_start = p;
+    const char *q = p + 1;
     while (*q && strchr("-+ #0'0123456789.hljztLq", *q)) {
       q++;
     }
@@ -197,7 +202,7 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
     // Check if we have an argument available
     if (arg_idx >= 4 || args[arg_idx].type == LOG_ARG_NONE) {
       // No argument left; copy the specifier literally
-      for (const char* s = spec_start; s <= q; s++) {
+      for (const char *s = spec_start; s <= q; s++) {
         if (out_len + 1 < out_cap) {
           out[out_len++] = *s;
           out[out_len] = '\0';
@@ -216,12 +221,12 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
         if (conv == 'c') {
           snprintf(tmp, sizeof(tmp), "%c", (int)arg.val.i);
         } else if (conv == 'p') {
-          snprintf(tmp, sizeof(tmp), "%p", (void*)(uintptr_t)arg.val.i);
+          snprintf(tmp, sizeof(tmp), "%p", (void *)(uintptr_t)arg.val.i);
         } else {
           // Build format specifier with "ll" length modifier
           char fmt[64];
           size_t flen = 0;
-          for (const char* s = spec_start; s < q && flen < sizeof(fmt) - 5;
+          for (const char *s = spec_start; s < q && flen < sizeof(fmt) - 5;
                s++) {
             if (!strchr("hljztqL", *s)) {
               fmt[flen++] = *s;
@@ -247,7 +252,7 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
       if (arg.type == LOG_ARG_DOUBLE) {
         char fmt[64];
         size_t flen = 0;
-        for (const char* s = spec_start; s < q && flen < sizeof(fmt) - 3; s++) {
+        for (const char *s = spec_start; s < q && flen < sizeof(fmt) - 3; s++) {
           if (!strchr("lL", *s)) {
             fmt[flen++] = *s;
           }
@@ -264,7 +269,7 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
       if (arg.type == LOG_ARG_STRING) {
         char fmt[64];
         size_t flen = 0;
-        for (const char* s = spec_start; s < q && flen < sizeof(fmt) - 3; s++) {
+        for (const char *s = spec_start; s < q && flen < sizeof(fmt) - 3; s++) {
           if (*s != 'l') {
             fmt[flen++] = *s;
           }
@@ -280,7 +285,7 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
     }
 
     // Append tmp to out
-    for (const char* s = tmp; *s != '\0'; s++) {
+    for (const char *s = tmp; *s != '\0'; s++) {
       if (out_len + 1 < out_cap) {
         out[out_len++] = *s;
         out[out_len] = '\0';
@@ -292,23 +297,24 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
 
   // Append any unconsumed arguments
   for (; arg_idx < 4; arg_idx++) {
-    if (args[arg_idx].type == LOG_ARG_NONE) break;
+    if (args[arg_idx].type == LOG_ARG_NONE)
+      break;
     char tmp[4096];
     tmp[0] = '\0';
     switch (args[arg_idx].type) {
-      case LOG_ARG_NONE:
-        break;
-      case LOG_ARG_INT:
-        snprintf(tmp, sizeof(tmp), " %lld", (long long)args[arg_idx].val.i);
-        break;
-      case LOG_ARG_DOUBLE:
-        snprintf(tmp, sizeof(tmp), " %.6f", args[arg_idx].val.d);
-        break;
-      case LOG_ARG_STRING:
-        snprintf(tmp, sizeof(tmp), " %s", args[arg_idx].val.s);
-        break;
+    case LOG_ARG_NONE:
+      break;
+    case LOG_ARG_INT:
+      snprintf(tmp, sizeof(tmp), " %lld", (long long)args[arg_idx].val.i);
+      break;
+    case LOG_ARG_DOUBLE:
+      snprintf(tmp, sizeof(tmp), " %.6f", args[arg_idx].val.d);
+      break;
+    case LOG_ARG_STRING:
+      snprintf(tmp, sizeof(tmp), " %s", args[arg_idx].val.s);
+      break;
     }
-    for (const char* s = tmp; *s != '\0'; s++) {
+    for (const char *s = tmp; *s != '\0'; s++) {
       if (out_len + 1 < out_cap) {
         out[out_len++] = *s;
         out[out_len] = '\0';
@@ -326,8 +332,8 @@ static void format_log_message(char* out, size_t out_cap, const char* msg,
  * @param arg Pointer to the app_logger_t instance.
  * @return NULL.
  */
-static void* worker_thread_func(void* arg) {
-  app_logger_t* logger = (app_logger_t*)arg;
+static void *worker_thread_func(void *arg) {
+  app_logger_t *logger = (app_logger_t *)arg;
   while (true) {
     cdsp_sem_wait(logger->semaphore);
 
@@ -353,29 +359,29 @@ static void* worker_thread_func(void* arg) {
         // Advance read index.
         atomic_store_explicit(&logger->read_index, r + 1, memory_order_relaxed);
 
-        const char* lvl_str;
+        const char *lvl_str;
         switch (rec.level) {
-          case LOG_LEVEL_OFF:
-            lvl_str = "OFF";
-            break;
-          case LOG_LEVEL_ERROR:
-            lvl_str = "ERROR";
-            break;
-          case LOG_LEVEL_WARN:
-            lvl_str = "WARN";
-            break;
-          case LOG_LEVEL_INFO:
-            lvl_str = "INFO";
-            break;
-          case LOG_LEVEL_DEBUG:
-            lvl_str = "DEBUG";
-            break;
-          case LOG_LEVEL_TRACE:
-            lvl_str = "TRACE";
-            break;
-          default:
-            lvl_str = "UNKNOWN";
-            break;
+        case LOG_LEVEL_OFF:
+          lvl_str = "OFF";
+          break;
+        case LOG_LEVEL_ERROR:
+          lvl_str = "ERROR";
+          break;
+        case LOG_LEVEL_WARN:
+          lvl_str = "WARN";
+          break;
+        case LOG_LEVEL_INFO:
+          lvl_str = "INFO";
+          break;
+        case LOG_LEVEL_DEBUG:
+          lvl_str = "DEBUG";
+          break;
+        case LOG_LEVEL_TRACE:
+          lvl_str = "TRACE";
+          break;
+        default:
+          lvl_str = "UNKNOWN";
+          break;
         }
         char formatted_msg[4096];
         log_argument_t args[4] = {rec.arg1, rec.arg2, rec.arg3, rec.arg4};
@@ -383,7 +389,7 @@ static void* worker_thread_func(void* arg) {
                            args);
 
         cdsp_log_callback_t cb = NULL;
-        void* cb_ctx = NULL;
+        void *cb_ctx = NULL;
         pthread_mutex_lock(&logger->callback_mutex);
         cb = logger->callback;
         cb_ctx = logger->callback_user_data;
@@ -400,7 +406,7 @@ static void* worker_thread_func(void* arg) {
           localtime_s(&tm_info, &t);
           strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_info);
           usec = 0;
-#elif defined(__APPLE__) || defined(__linux__) || \
+#elif defined(__APPLE__) || defined(__linux__) ||                              \
     (defined(_POSIX_TIMERS) && (_POSIX_TIMERS > 0))
           struct timespec ts;
           clock_gettime(CLOCK_REALTIME, &ts);
@@ -421,7 +427,7 @@ static void* worker_thread_func(void* arg) {
               g_log_current_size >= g_log_max_size) {
             rotate_log_file_locked();
           }
-          FILE* out = g_log_file ? g_log_file : stderr;
+          FILE *out = g_log_file ? g_log_file : stderr;
           int written =
               fprintf(out, "%s.%06ld %-5s [%s] %s\n", time_buf, usec, lvl_str,
                       rec.label ? rec.label : "", formatted_msg);
@@ -443,8 +449,9 @@ static void* worker_thread_func(void* arg) {
   return NULL;
 }
 
-static void free_logger_internal(app_logger_t* logger) {
-  if (!logger) return;
+static void free_logger_internal(app_logger_t *logger) {
+  if (!logger)
+    return;
   cdsp_sem_destroy(logger->semaphore);
   free(logger->storage);
   free(logger->sequences);
@@ -461,13 +468,14 @@ static void free_logger_internal(app_logger_t* logger) {
 static void init_shared_logger(void) {
   // Intentionally empty/default-init to guarantee safe singleton instance
   // publication before thread activation.
-  g_shared_logger = (app_logger_t*)calloc(1, sizeof(app_logger_t));
-  if (!g_shared_logger) return;
+  g_shared_logger = (app_logger_t *)calloc(1, sizeof(app_logger_t));
+  if (!g_shared_logger)
+    return;
   g_shared_logger->capacity = 512;
   g_shared_logger->mask = 511;
   g_shared_logger->storage =
-      (log_record_t*)calloc(g_shared_logger->capacity, sizeof(log_record_t));
-  g_shared_logger->sequences = (_Atomic uint64_t*)calloc(
+      (log_record_t *)calloc(g_shared_logger->capacity, sizeof(log_record_t));
+  g_shared_logger->sequences = (_Atomic uint64_t *)calloc(
       g_shared_logger->capacity, sizeof(_Atomic uint64_t));
   if (!g_shared_logger->storage || !g_shared_logger->sequences) {
     free_logger_internal(g_shared_logger);
@@ -490,25 +498,27 @@ static void init_shared_logger(void) {
 
 void app_logger_init(void) { (void)app_logger_get_shared(); }
 
-app_logger_t* app_logger_get_shared(void) {
+app_logger_t *app_logger_get_shared(void) {
   pthread_once(&g_logger_once, init_shared_logger);
   return g_shared_logger;
 }
 
-void app_logger_set_callback(cdsp_log_callback_t callback, void* user_data) {
-  app_logger_t* logger = app_logger_get_shared();
-  if (!logger) return;
+void app_logger_set_callback(cdsp_log_callback_t callback, void *user_data) {
+  app_logger_t *logger = app_logger_get_shared();
+  if (!logger)
+    return;
   pthread_mutex_lock(&logger->callback_mutex);
   logger->callback = callback;
   logger->callback_user_data = user_data;
   pthread_mutex_unlock(&logger->callback_mutex);
 }
 
-void app_logger_log(app_logger_t* logger, log_level_t level, const char* label,
-                    const char* message, log_argument_t arg1,
+void app_logger_log(app_logger_t *logger, log_level_t level, const char *label,
+                    const char *message, log_argument_t arg1,
                     log_argument_t arg2, log_argument_t arg3,
                     log_argument_t arg4) {
-  if (!logger || level > app_logger_get_level()) return;
+  if (!logger || level > app_logger_get_level())
+    return;
   // Lazily start the background worker thread when the first log occurs.
   // Use compare-and-swap to ensure only one thread starts the worker.
   bool expected = false;
@@ -564,8 +574,9 @@ void app_logger_log(app_logger_t* logger, log_level_t level, const char* label,
   cdsp_sem_signal(logger->semaphore);
 }
 
-void app_logger_flush_and_stop(app_logger_t* logger) {
-  if (!logger) return;
+void app_logger_flush_and_stop(app_logger_t *logger) {
+  if (!logger)
+    return;
   pthread_mutex_lock(&logger->worker_mutex);
   if (atomic_load_explicit(&logger->is_started, memory_order_acquire)) {
     atomic_store_explicit(&logger->should_exit, true, memory_order_release);
@@ -587,13 +598,14 @@ void app_logger_flush_and_stop(app_logger_t* logger) {
   pthread_mutex_unlock(&g_log_file_mutex);
 }
 
-void app_logger_log_raw_str(const logger_t* logger, log_level_t level,
-                            const char* msg, const char* str) {
-  if (!logger || !msg || !str || level > app_logger_get_level()) return;
+void app_logger_log_raw_str(const logger_t *logger, log_level_t level,
+                            const char *msg, const char *str) {
+  if (!logger || !msg || !str || level > app_logger_get_level())
+    return;
 
-  app_logger_t* shared = app_logger_get_shared();
+  app_logger_t *shared = app_logger_get_shared();
   cdsp_log_callback_t cb = NULL;
-  void* cb_ctx = NULL;
+  void *cb_ctx = NULL;
   if (shared) {
     pthread_mutex_lock(&shared->callback_mutex);
     cb = shared->callback;
@@ -604,41 +616,41 @@ void app_logger_log_raw_str(const logger_t* logger, log_level_t level,
   size_t msg_len = strlen(msg);
   size_t str_len = strlen(str);
   size_t full_len = msg_len + 1 + str_len + 1;
-  char* full_msg = (char*)malloc(full_len);
+  char *full_msg = (char *)malloc(full_len);
   if (full_msg) {
     snprintf(full_msg, full_len, "%s %s", msg, str);
   }
 
-  const char* label = (logger && logger->label) ? logger->label : "";
-  const char* out_str = full_msg ? full_msg : msg;
+  const char *label = (logger && logger->label) ? logger->label : "";
+  const char *out_str = full_msg ? full_msg : msg;
 
   if (cb) {
     cb(level, label, out_str, cb_ctx);
   } else {
-    const char* lvl_str;
+    const char *lvl_str;
     switch (level) {
-      case LOG_LEVEL_ERROR:
-        lvl_str = "ERROR";
-        break;
-      case LOG_LEVEL_WARN:
-        lvl_str = "WARN";
-        break;
-      case LOG_LEVEL_DEBUG:
-        lvl_str = "DEBUG";
-        break;
-      case LOG_LEVEL_TRACE:
-        lvl_str = "TRACE";
-        break;
-      default:
-        lvl_str = "INFO";
-        break;
+    case LOG_LEVEL_ERROR:
+      lvl_str = "ERROR";
+      break;
+    case LOG_LEVEL_WARN:
+      lvl_str = "WARN";
+      break;
+    case LOG_LEVEL_DEBUG:
+      lvl_str = "DEBUG";
+      break;
+    case LOG_LEVEL_TRACE:
+      lvl_str = "TRACE";
+      break;
+    default:
+      lvl_str = "INFO";
+      break;
     }
     pthread_mutex_lock(&g_log_file_mutex);
     if (g_log_file && g_log_max_size > 0 &&
         g_log_current_size >= g_log_max_size) {
       rotate_log_file_locked();
     }
-    FILE* out = g_log_file ? g_log_file : stderr;
+    FILE *out = g_log_file ? g_log_file : stderr;
     int written = fprintf(out, "[%s] %s: %s\n", lvl_str, label, out_str);
     if (written > 0 && g_log_file) {
       g_log_current_size += (size_t)written;
