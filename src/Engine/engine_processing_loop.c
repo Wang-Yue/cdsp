@@ -62,6 +62,7 @@ struct engine_processing_loop {
   _Atomic(pipeline_t*) next_pipeline;
   audio_chunk_t* resampler_scratch;
   audio_chunk_t* pipeline_scratch;
+  _Atomic bool transfer_filter_state;
   round_robin_chunk_pool_t* scratch_pool;
   audio_chunk_t* pending_scratch;
 
@@ -103,6 +104,7 @@ engine_processing_loop_t* engine_processing_loop_create(
   loop->processed_drop_counter = 0;
 
   atomic_store(&loop->next_pipeline, NULL);
+  atomic_store(&loop->transfer_filter_state, true);
 
   return loop;
 }
@@ -120,8 +122,10 @@ void engine_processing_loop_free(engine_processing_loop_t* loop) {
 }
 
 void engine_processing_loop_set_pipeline(engine_processing_loop_t* loop,
-                                         pipeline_t* new_pipeline) {
+                                         pipeline_t* new_pipeline,
+                                         bool transfer_filter_state) {
   if (loop) {
+    atomic_store(&loop->transfer_filter_state, transfer_filter_state);
     pipeline_t* old = atomic_exchange(&loop->next_pipeline, new_pipeline);
     if (old) {
       pipeline_free(old);
@@ -194,7 +198,9 @@ static void processing_loop_check_pipeline_swap(
   pipeline_t* next_pipeline = atomic_exchange(&loop->next_pipeline, NULL);
   if (next_pipeline) {
     if (loop->active_pipeline) {
-      pipeline_transfer_state(next_pipeline, loop->active_pipeline);
+      bool transfer_filters = atomic_load(&loop->transfer_filter_state);
+      pipeline_transfer_state(next_pipeline, loop->active_pipeline,
+                              transfer_filters);
       pipeline_t* uncollected = engine_shared_state_retire_pipeline(
           loop->shared, loop->active_pipeline);
       if (uncollected) {

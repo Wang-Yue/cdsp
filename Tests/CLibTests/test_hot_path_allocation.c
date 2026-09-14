@@ -1084,7 +1084,8 @@ static void reload_iter_c(int i, void* ctx) {
   pipeline_reload_test_ctx_t* c = (pipeline_reload_test_ctx_t*)ctx;
 
   // 1. Enqueue chunk & signal captured semaphore
-  engine_processing_loop_set_pipeline(c->loop, c->reloaded_pipelines[i + 1]);
+  engine_processing_loop_set_pipeline(c->loop, c->reloaded_pipelines[i + 1],
+                                      true);
   engine_shared_state_enqueue_captured(c->shared, c->input_chunk);
 
   // 4. Wait for processing completion
@@ -1187,7 +1188,7 @@ TEST(PipelineReload_AllocationFree) {
   pthread_create(&thread, NULL, test_processing_thread_run, loop);
 
   // Warmup / get thread ID
-  engine_processing_loop_set_pipeline(loop, reloaded_pipelines[0]);
+  engine_processing_loop_set_pipeline(loop, reloaded_pipelines[0], true);
   engine_shared_state_enqueue_captured(shared, ctx.input_chunk);
 
   cdsp_sem_wait(ctx.thread_id_sem);

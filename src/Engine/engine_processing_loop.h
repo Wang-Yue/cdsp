@@ -101,6 +101,7 @@ void engine_processing_loop_run(engine_processing_loop_t* loop);
  * @param new_pipeline Pointer to the new pipeline.
  */
 void engine_processing_loop_set_pipeline(engine_processing_loop_t* loop,
-                                         pipeline_t* new_pipeline);
+                                         pipeline_t* new_pipeline,
+                                         bool transfer_filter_state);
 
 #endif  // CLIB_ENGINE_ENGINE_PROCESSING_LOOP_H

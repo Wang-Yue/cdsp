@@ -17,25 +17,24 @@ Per project design principles, a deviation from upstream is admitted **only when
 | 5 | **Resampler** | Variable-input pull model (`Fixed::Output`) | Fixed-input push model (`Fixed::Both`, `FIXED_ASYNC_INPUT`) | Zero allocation, deterministic HAL/ASIO callbacks |
 | 6 | **Lifecycle** | Heap allocation & disk I/O on real-time audio thread | Background control thread compilation & atomic swap | Hard real-time safety, zero audio dropouts |
 | 7 | **Filters** | Re-uses delay states `s1`/`s2` across biquad sub-type changes | Zeroes state when topological sub-type changes | Eliminates loud pop/thump transients |
-| 8 | **State Continuity** | Unconditional state wipe on reload (`*self = Self::from_config`) | Retains state when structural dimensions are unchanged | Seamless parameter updates without dropouts |
-| 9 | **Queue Topology** | Multi-producer crossbeam channel scheduling overhead | Wait-free power-of-two SPSC ring buffers | 1247.7x real-time throughput (25% faster) |
-| 10 | **Precision** | Single-precision (`f32`) cutoffs, config, and biquads | Double-precision (`double`) computation & storage | Sub-LSB numerical noise < 1e-15, exact anti-aliasing cutoff |
-| 11 | **Interpolation** | Expanded polynomial powers in async **sinc** (upstream adopted Horner for async poly) | Horner form with hardware FMA | Higher SIMD throughput and lower rounding error |
-| 12 | **Dynamic Range** | Arbitrary `-200 dB` / `-300 dB` hard-coded math clamps | Mathematical `-inf` internally, clamped only on JSON output | Exact mathematical purity + RFC 8259 JSON compliance |
-| 13 | **Metering** | Divides partial-chunk RMS power by buffer capacity | Divides power by `valid_frames` | Prevents zero-tail measurement dilution |
-| 14 | **Metering** | Scalar accumulation or intermediate buffer allocations | Single-pass SIMD vectorization in `dsp_ops` | 2x faster calculation, zero allocation |
-| 15 | **Convolution** | Inner-loop division by `fft_len` per sample | Precomputed reciprocal multiplication (`inv_scale`) | ~10x faster scaling in frequency domain |
-| 16 | **Sanitization** | NaNs propagate freely through feedback & conversions | Feedback/sample sanitization & non-finite parameter rejection | Prevents runaway oscillation & NaN math |
-| 17 | **Metering** | Clipped samples counted only at integer output | Floating-point peak saturation monitored across pipeline | Catches inter-stage digital clipping early |
-| 18 | **Driver Events** | PipeWire rate change ignored in direct capture | Graph rate change actively captured & reported | Dynamic sample rate renegotiation |
-| 19 | **Formats** | Limited to standard PCM audio formats | Native DSD and DoP (DSD over PCM) subsystem support | High-resolution audiophile format playback |
-| 20 | **Spectrum** | Sums window normalization in `f64` | Computes & sums window normalization in `float` | Maximum performance and SIMD throughput in real-time metering |
-| 21 | **Queue Overflow** | Blocking back-pressure on full queue | Drop-on-full, non-blocking (§2.6) | Never stalls a driver callback thread |
-| 22 | **Validation** | Accepts degenerate/out-of-range params | Stricter rejection at validation time (§5) | Fails fast instead of producing NaN/singular filters |
-| 23 | **Pending** | — | Accidental deviations awaiting disposition (§6) | *Not enhancements; to be fixed or justified* |
+| 8 | **Queue Topology** | Multi-producer crossbeam channel scheduling overhead | Wait-free power-of-two SPSC ring buffers | 1247.7x real-time throughput (25% faster) |
+| 9 | **Precision** | Single-precision (`f32`) cutoffs, config, and biquads | Double-precision (`double`) computation & storage | Sub-LSB numerical noise < 1e-15, exact anti-aliasing cutoff |
+| 10 | **Interpolation** | Expanded polynomial powers in async **sinc** (upstream adopted Horner for async poly) | Horner form with hardware FMA | Higher SIMD throughput and lower rounding error |
+| 11 | **Dynamic Range** | Arbitrary `-200 dB` / `-300 dB` hard-coded math clamps | Mathematical `-inf` internally, clamped only on JSON output | Exact mathematical purity + RFC 8259 JSON compliance |
+| 12 | **Metering** | Divides partial-chunk RMS power by buffer capacity | Divides power by `valid_frames` | Prevents zero-tail measurement dilution |
+| 13 | **Metering** | Scalar accumulation or intermediate buffer allocations | Single-pass SIMD vectorization in `dsp_ops` | 2x faster calculation, zero allocation |
+| 14 | **Convolution** | Inner-loop division by `fft_len` per sample | Precomputed reciprocal multiplication (`inv_scale`) | ~10x faster scaling in frequency domain |
+| 15 | **Sanitization** | NaNs propagate freely through feedback & conversions | Feedback/sample sanitization & non-finite parameter rejection | Prevents runaway oscillation & NaN math |
+| 16 | **Metering** | Clipped samples counted only at integer output | Floating-point peak saturation monitored across pipeline | Catches inter-stage digital clipping early |
+| 17 | **Driver Events** | PipeWire rate change ignored in direct capture | Graph rate change actively captured & reported | Dynamic sample rate renegotiation |
+| 18 | **Formats** | Limited to standard PCM audio formats | Native DSD and DoP (DSD over PCM) subsystem support | High-resolution audiophile format playback |
+| 19 | **Spectrum** | Sums window normalization in `f64` | Computes & sums window normalization in `float` | Maximum performance and SIMD throughput in real-time metering |
+| 20 | **Queue Overflow** | Blocking back-pressure on full queue | Drop-on-full, non-blocking (§2.5) | Never stalls a driver callback thread |
+| 21 | **Validation** | Accepts degenerate/out-of-range params | Stricter rejection at validation time (§5) | Fails fast instead of producing NaN/singular filters |
+| 22 | **Pending** | — | Accidental deviations awaiting disposition (§6) | *Not enhancements; to be fixed or justified* |
 
 > [!NOTE]
-> Rows 1, 4 and §3.7 were corrected on 2026-09-14 following a line-by-line port audit against `camilladsp@b438410` and `rubato@1d1da5c`; sections 2.6, 5 and 6 were added by the same audit. Full findings: [`audit/PORT_AUDIT.md`](audit/PORT_AUDIT.md).
+> Rows 1, 4 and §3.7 were corrected on 2026-09-14 following a line-by-line port audit against `camilladsp@b438410` and `rubato@1d1da5c`; sections 2.5, 5 and 6 were added by the same audit. Full findings: [`audit/PORT_AUDIT.md`](audit/PORT_AUDIT.md).
 
 ---
 
@@ -86,17 +85,12 @@ Per project design principles, a deviation from upstream is admitted **only when
 * **`cdsp` Enhancement**: In [`Filters/biquad.c`](../src/Filters/biquad.c), `cdsp` zeroes the internal state when the filter sub-type changes.
 * **Why `cdsp` Is Better**: Feeding the internal state of a Lowpass filter into a Highpass filter produces an immediate high-energy acoustic transient (loud pop) that can damage loudspeakers and hearing. Resetting state on filter topological changes is sound DSP engineering.
 
-### 2.4 Structural Resize Invariant for Seamless State Continuity
-* **Upstream Behavior**: Upstream unconditionally discards all filter state via `*self = Self::from_config(...)` on any parameter reload.
-* **`cdsp` Enhancement**: `cdsp` retains state when structural dimensions are unchanged (delay length, combo cascade size, dither profile/scale) and flushes state only when dimensions change.
-* **Why `cdsp` Is Better**: Upstream's unconditional state wipe was an incidental shortcut of Rust's serde ergonomics (`*self = Self::from_config`), not a deliberate acoustic decision. Resetting state during smooth parameter adjustments creates unnecessary dropouts, while keeping state across dimensional resizes corrupts audio. `cdsp`'s Structural Resize Invariant provides seamless parameter transitions while guaranteeing safe structural changes.
-
-### 2.5 Wait-Free SPSC Power-of-Two Ring Buffers
+### 2.4 Wait-Free SPSC Power-of-Two Ring Buffers
 * **Upstream Behavior**: Upstream uses multi-producer channels with dynamic allocation and locking mechanisms.
 * **`cdsp` Enhancement**: In [`Utils/lock_free_ring_buffer.h`](../src/Utils/lock_free_ring_buffer.h) and [`Engine/audio_sync_queue.h`](../src/Engine/audio_sync_queue.h), `cdsp` implements power-of-two single-producer single-consumer ring buffers with bitmask indexing and acquire-release atomic ordering.
 * **Why `cdsp` Is Better**: Bypasses scheduling overhead and achieves a **25% increase in raw data throughput** (1247.7x real-time speed vs 995.1x) with cache-aligned structures.
 
-### 2.6 Drop-on-Full Queue Overflow Policy
+### 2.5 Drop-on-Full Queue Overflow Policy
 * **Upstream Behavior**: Upstream applies **blocking back-pressure** — a full queue blocks the producer until the consumer drains it (`coreaudio_backend/device.rs:1208-1212`, `processing.rs:27-43`).
 * **`cdsp` Enhancement**: [`Engine/engine_capture_loop.c:282-294`](../src/Engine/engine_capture_loop.c) and [`Engine/engine_processing_loop.c:304-320`](../src/Engine/engine_processing_loop.c) drop the chunk and continue rather than block.
 * **Why `cdsp` Is Better**: Blocking inside a CoreAudio HAL or ASIO driver callback stalls the driver's real-time thread and cascades into a hardware-level overrun affecting the entire audio graph. Dropping a chunk degrades locally and recoverably instead. The full rationale and state-machine interaction is in [`engine_state_management.md` §3.2](engine_state_management.md).
