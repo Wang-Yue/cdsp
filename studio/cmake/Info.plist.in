@@ -37,7 +37,7 @@
 	<key>NSRequiresAquaSystemAppearance</key>
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>MonitorQt requires access to the microphone and audio input devices for real-time audio capture, monitoring, and DSP room correction.</string>
+	<string>CDSP Studio requires access to the microphone and audio input devices for real-time audio capture, monitoring, and DSP room correction.</string>
 	<key>LSUIElement</key>
 	<true/>
 </dict>

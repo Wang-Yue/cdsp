@@ -183,7 +183,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     resize(1100, 780);
     setMinimumSize(960, 680);
-    setWindowTitle("DSP Monitor");
+    setWindowTitle("CDSP Studio");
     setWindowIcon(AppIcon::getAppIcon());
     setWindowFlag(Qt::WindowFullscreenButtonHint, false);
     MacUtils::disableFullScreen(this);
@@ -525,15 +525,15 @@ void MainWindow::setupMenuBar() {
     connect(settingsAct, &QAction::triggered, [this]() { handleNavigationTag("general_settings"); });
     fileMenu->addAction(settingsAct);
 
-    auto aboutAct = new QAction("About CDSP Monitor", this);
+    auto aboutAct = new QAction("About CDSP Studio", this);
     aboutAct->setMenuRole(QAction::AboutRole);
     connect(aboutAct, &QAction::triggered, [this]() {
-        QMessageBox::about(this, "About CDSP Monitor",
-                           "CDSP Monitor\n\nA cross-platform Qt audio DSP monitoring and pipeline controller.");
+        QMessageBox::about(this, "About CDSP Studio",
+                           "CDSP Studio\n\nA cross-platform audio DSP monitoring, equalization, and pipeline controller.");
     });
     fileMenu->addAction(aboutAct);
 
-    auto quitAct = new QAction("Quit CDSP Monitor", this);
+    auto quitAct = new QAction("Quit CDSP Studio", this);
     quitAct->setShortcut(QKeySequence::Quit);
     quitAct->setMenuRole(QAction::QuitRole);
     connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
@@ -617,9 +617,9 @@ void MainWindow::setupMenuBar() {
 
     // 5. Help Menu
     auto helpMenu = bar->addMenu("&Help");
-    auto helpAct = new QAction("CDSP Monitor Help", this);
+    auto helpAct = new QAction("CDSP Studio Help", this);
     connect(helpAct, &QAction::triggered,
-            []() { QDesktopServices::openUrl(QUrl("https://github.com/Wang-Yue/Monitor-Qt")); });
+            []() { QDesktopServices::openUrl(QUrl("https://github.com/Wang-Yue/cdsp-studio")); });
     helpMenu->addAction(helpAct);
 }
 
@@ -630,7 +630,7 @@ void MainWindow::setupTrayIcon() {
 
     m_trayIcon = new QSystemTrayIcon(this);
     m_trayIcon->setIcon(AppIcon::getAppIcon());
-    m_trayIcon->setToolTip("CDSP Monitor");
+    m_trayIcon->setToolTip("CDSP Studio");
 
     m_trayMenu = new QMenu(this);
 
@@ -663,7 +663,7 @@ void MainWindow::setupTrayIcon() {
 
     m_trayMenu->addSeparator();
 
-    auto quitAct = m_trayMenu->addAction("Quit CDSP Monitor");
+    auto quitAct = m_trayMenu->addAction("Quit CDSP Studio");
     connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
 
     m_trayIcon->setContextMenu(m_trayMenu);

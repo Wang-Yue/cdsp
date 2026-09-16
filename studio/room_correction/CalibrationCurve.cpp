@@ -181,7 +181,7 @@ bool CalibrationCurve::writeFRD(const std::string& path, const std::string& comm
         return false;
 
     file << "* Frequency Response Data\n";
-    file << "* Exported by DSPMonitor\n";
+    file << "* Exported by CDSP Studio\n";
 
     if (!comment.empty()) {
         std::stringstream ss(comment);

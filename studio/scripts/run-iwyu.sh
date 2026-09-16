@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# run-iwyu.sh - Run Include-What-You-Use (IWYU) on the Monitor-Qt project
+# run-iwyu.sh - Run Include-What-You-Use (IWYU) on the CDSP Studio project
 # ==============================================================================
 set -euo pipefail
 

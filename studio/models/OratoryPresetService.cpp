@@ -98,7 +98,7 @@ void OratoryPresetService::fetchIndex(
 
     QUrl url("https://api.github.com/repos/jaakkopasanen/AutoEq/git/trees/master:results/oratory1990?recursive=1");
     QNetworkRequest request(url);
-    request.setRawHeader("User-Agent", "DSPMonitor");
+    request.setRawHeader("User-Agent", "CDSP-Studio");
 
     QNetworkReply* reply = m_networkManager.get(request);
     QPointer<OratoryPresetService> weakThis(this);
@@ -165,7 +165,7 @@ void OratoryPresetService::fetchPreset(const OratoryIndexEntry& entry,
 
     QUrl url(rawUrlStr);
     QNetworkRequest request(url);
-    request.setRawHeader("User-Agent", "DSPMonitor");
+    request.setRawHeader("User-Agent", "CDSP-Studio");
 
     QNetworkReply* reply = m_networkManager.get(request);
     connect(reply, &QNetworkReply::finished, [reply, entry, callback]() {

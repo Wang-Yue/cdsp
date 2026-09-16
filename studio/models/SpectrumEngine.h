@@ -32,7 +32,7 @@ public:
     SpectrumData data;
 
     void loadSettings() {
-        QSettings s("DSPMonitor", "MonitorQt");
+        QSettings s;
         isCapture = s.value("spectrum_is_capture", true).toBool();
         int ch = s.value("spectrum_channel", -1).toInt();
         if (ch >= 0)
@@ -52,7 +52,7 @@ public:
     }
 
     void saveSettings() const {
-        QSettings s("DSPMonitor", "MonitorQt");
+        QSettings s;
         s.setValue("spectrum_is_capture", isCapture);
         s.setValue("spectrum_channel", channel.has_value() ? channel.value() : -1);
         s.setValue("spectrum_n_bins", static_cast<int>(nBins));

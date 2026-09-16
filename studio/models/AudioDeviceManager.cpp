@@ -169,7 +169,7 @@ void AudioDeviceManager::stopDeviceChangeListener() {
 }
 
 void AudioDeviceManager::loadSavedConfigs() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     captureConfig = loadConfig(s, "captureConfig", captureConfig);
     playbackConfig = loadConfig(s, "playbackConfig", playbackConfig);
     m_captureDeviceConfigs = loadConfigMap(s, "captureDeviceConfigs", captureConfig);
@@ -178,7 +178,7 @@ void AudioDeviceManager::loadSavedConfigs() {
 }
 
 void AudioDeviceManager::saveConfigs() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     saveConfig(s, "captureConfig", captureConfig);
     saveConfig(s, "playbackConfig", playbackConfig);
     saveConfigMap(s, "captureDeviceConfigs", m_captureDeviceConfigs);

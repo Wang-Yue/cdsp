@@ -33,7 +33,7 @@ public:
     AudioSamplesData samples;
 
     void loadSettings() {
-        QSettings s("DSPMonitor", "MonitorQt");
+        QSettings s;
         isCapture = s.value("vectorscope_is_capture", true).toBool();
         window = static_cast<VectorScopeWindow>(
             s.value("vectorscope_window", static_cast<int>(VectorScopeWindow::Fast)).toInt());
@@ -45,7 +45,7 @@ public:
     }
 
     void saveSettings() const {
-        QSettings s("DSPMonitor", "MonitorQt");
+        QSettings s;
         s.setValue("vectorscope_is_capture", isCapture);
         s.setValue("vectorscope_window", static_cast<int>(window));
         s.setValue("vectorscope_show_particles", showParticles);

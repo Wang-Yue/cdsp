@@ -7,10 +7,10 @@
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
-    app.setApplicationName("CDSP Monitor - Qt");
-    app.setOrganizationName("DSPMonitor");
-    app.setOrganizationDomain("dspmonitor.io");
-    app.setDesktopFileName("com.wangyue.monitorqt");
+    app.setApplicationName("CDSP Studio");
+    app.setOrganizationName("CDSP");
+    app.setOrganizationDomain("cdsp.io");
+    app.setDesktopFileName("com.wangyue.cdspstudio");
     app.setQuitOnLastWindowClosed(false);
     app.setWindowIcon(AppIcon::getAppIcon());
 

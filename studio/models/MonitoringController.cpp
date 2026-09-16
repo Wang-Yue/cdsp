@@ -26,7 +26,7 @@ MonitoringController::MonitoringController(std::shared_ptr<CDSPEngine> engine, s
         levels = std::make_shared<LevelState>();
     }
 
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     m_showLevelMetersInDashboard = s.value("show_levels_in_dashboard", true).toBool();
     m_showSpectrumInDashboard = s.value("show_spectrum_in_dashboard", true).toBool();
     m_showSpectrogramInDashboard = s.value("show_spectrogram_in_dashboard", true).toBool();
@@ -75,7 +75,7 @@ void MonitoringController::stop() {
 
 void MonitoringController::setPollingRate(double rateHz) {
     m_pollingRate = rateHz;
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     s.setValue("pollingRate", rateHz);
     int intervalMs = static_cast<int>(1000.0 / std::max(1.0, rateHz));
     m_pollTimer.setInterval(intervalMs);
@@ -87,7 +87,7 @@ void MonitoringController::setShowLevelMetersInDashboard(bool show) {
         m_settings->showLevelMetersInDashboard = show;
         m_settings->savePreferences();
     } else {
-        QSettings("DSPMonitor", "MonitorQt").setValue("show_levels_in_dashboard", show);
+        QSettings().setValue("show_levels_in_dashboard", show);
     }
     emit dashboardVisibilityChanged();
 }
@@ -98,7 +98,7 @@ void MonitoringController::setShowSpectrumInDashboard(bool show) {
         m_settings->showSpectrumInDashboard = show;
         m_settings->savePreferences();
     } else {
-        QSettings("DSPMonitor", "MonitorQt").setValue("show_spectrum_in_dashboard", show);
+        QSettings().setValue("show_spectrum_in_dashboard", show);
     }
     emit dashboardVisibilityChanged();
 }
@@ -109,7 +109,7 @@ void MonitoringController::setShowSpectrogramInDashboard(bool show) {
         m_settings->showSpectrogramInDashboard = show;
         m_settings->savePreferences();
     } else {
-        QSettings("DSPMonitor", "MonitorQt").setValue("show_spectrogram_in_dashboard", show);
+        QSettings().setValue("show_spectrogram_in_dashboard", show);
     }
     emit dashboardVisibilityChanged();
 }
@@ -120,7 +120,7 @@ void MonitoringController::setShowVectorScopeInDashboard(bool show) {
         m_settings->showVectorScopeInDashboard = show;
         m_settings->savePreferences();
     } else {
-        QSettings("DSPMonitor", "MonitorQt").setValue("show_vectorscope_in_dashboard", show);
+        QSettings().setValue("show_vectorscope_in_dashboard", show);
     }
     emit dashboardVisibilityChanged();
 }
@@ -131,7 +131,7 @@ void MonitoringController::setShowAnalogVUInDashboard(bool show) {
         m_settings->showAnalogVUInDashboard = show;
         m_settings->savePreferences();
     } else {
-        QSettings("DSPMonitor", "MonitorQt").setValue("show_analog_vu_in_dashboard", show);
+        QSettings().setValue("show_analog_vu_in_dashboard", show);
     }
     emit dashboardVisibilityChanged();
 }
@@ -142,7 +142,7 @@ void MonitoringController::setShowSignalGraphInDashboard(bool show) {
         m_settings->showSignalGraphInDashboard = show;
         m_settings->savePreferences();
     } else {
-        QSettings("DSPMonitor", "MonitorQt").setValue("show_signal_graph_in_dashboard", show);
+        QSettings().setValue("show_signal_graph_in_dashboard", show);
     }
     emit dashboardVisibilityChanged();
 }

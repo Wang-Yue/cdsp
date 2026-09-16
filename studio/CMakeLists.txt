@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MonitorQt LANGUAGES C CXX)
+project(cdsp-studio LANGUAGES C CXX)
 
 # ==============================================================================
 # Global Build & Language Configuration
@@ -39,7 +39,7 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent Multimedia)
 find_package(Threads REQUIRED)
 
-# Extra platform-specific dependencies for MonitorQt UI
+# Extra platform-specific dependencies for cdsp-studio UI
 set(EXTRA_PLATFORM_LIBS "")
 if(APPLE)
     find_library(COCOA_LIB Cocoa REQUIRED)
@@ -77,13 +77,13 @@ elseif(WIN32)
 endif()
 
 # ==============================================================================
-# Target: MonitorQt
+# Target: cdsp-studio
 # ==============================================================================
-add_executable(MonitorQt WIN32 ${SOURCES})
+add_executable(cdsp-studio WIN32 ${SOURCES})
 
-target_include_directories(MonitorQt PRIVATE src)
+target_include_directories(cdsp-studio PRIVATE src)
 
-target_link_libraries(MonitorQt PRIVATE
+target_link_libraries(cdsp-studio PRIVATE
     Qt6::Core
     Qt6::Widgets
     Qt6::Network
@@ -98,7 +98,7 @@ target_link_libraries(MonitorQt PRIVATE
 # Build Optimization: Precompiled Headers (PCH) & Unity Build
 # ==============================================================================
 if(ENABLE_PCH)
-    target_precompile_headers(MonitorQt PRIVATE
+    target_precompile_headers(cdsp-studio PRIVATE
         <QtCore>
         <QtGui>
         <QtWidgets>
@@ -117,7 +117,7 @@ if(ENABLE_PCH)
 endif()
 
 if(ENABLE_UNITY_BUILD)
-    set_target_properties(MonitorQt PROPERTIES
+    set_target_properties(cdsp-studio PROPERTIES
         UNITY_BUILD ON
         UNITY_BUILD_BATCH_SIZE 8
         UNITY_BUILD_MODE BATCH
@@ -133,22 +133,27 @@ endif()
 # Platform Properties & Link Options
 # ==============================================================================
 if(APPLE)
-    set_target_properties(MonitorQt PROPERTIES
+    set_target_properties(cdsp-studio PROPERTIES
         MACOSX_BUNDLE TRUE
+        OUTPUT_NAME "CDSP Studio"
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in"
-        MACOSX_BUNDLE_BUNDLE_NAME "MonitorQt"
+        MACOSX_BUNDLE_BUNDLE_NAME "CDSP Studio"
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.0"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.wangyue.monitorqt"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.wangyue.cdspstudio"
         MACOSX_BUNDLE_ICON_FILE "app.icns"
         MACOSX_BUNDLE_COPYRIGHT "Copyright © 2026 Wang Yue. All rights reserved."
     )
 
-    target_link_options(MonitorQt PRIVATE -Wl,-dead_strip)
+    target_link_options(cdsp-studio PRIVATE -Wl,-dead_strip)
 
-    add_custom_command(TARGET MonitorQt POST_BUILD
-        COMMAND codesign --force --sign - $<TARGET_FILE:MonitorQt>
-        COMMENT "Ad-hoc signing MonitorQt executable..."
+    add_custom_command(TARGET cdsp-studio POST_BUILD
+        COMMAND codesign --force --sign - $<TARGET_FILE:cdsp-studio>
+        COMMENT "Ad-hoc signing cdsp-studio executable..."
+    )
+elseif(WIN32)
+    set_target_properties(cdsp-studio PROPERTIES
+        OUTPUT_NAME "CDSPStudio"
     )
 endif()
 
@@ -159,7 +164,7 @@ endif()
 find_program(IWYU_BIN NAMES include-what-you-use)
 if(ENABLE_IWYU)
     if(IWYU_BIN)
-        message(STATUS "Include-What-You-Use enabled for MonitorQt")
+        message(STATUS "Include-What-You-Use enabled for cdsp-studio")
         set(IWYU_MAPPING_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/iwyu.imp")
         set(IWYU_OPTIONS
             ${IWYU_BIN}
@@ -170,7 +175,7 @@ if(ENABLE_IWYU)
         if(APPLE AND CMAKE_OSX_SYSROOT)
             list(APPEND IWYU_OPTIONS -isysroot ${CMAKE_OSX_SYSROOT})
         endif()
-        set_target_properties(MonitorQt PROPERTIES
+        set_target_properties(cdsp-studio PROPERTIES
             CXX_INCLUDE_WHAT_YOU_USE "${IWYU_OPTIONS}"
         )
     else()
@@ -181,21 +186,21 @@ endif()
 # Standalone targets to check or fix includes across the project
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh")
     add_custom_target(
-        iwyu-qt
+        iwyu-studio
         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh" --check
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        COMMENT "Analyzing MonitorQt includes with Include-What-You-Use..."
+        COMMENT "Analyzing cdsp-studio includes with Include-What-You-Use..."
         USES_TERMINAL
     )
     add_custom_target(
-        iwyu-check-qt
+        iwyu-check-studio
         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh" --check
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        COMMENT "Analyzing MonitorQt includes with Include-What-You-Use..."
+        COMMENT "Analyzing cdsp-studio includes with Include-What-You-Use..."
         USES_TERMINAL
     )
     add_custom_target(
-        iwyu-fix-qt
+        iwyu-fix-studio
         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh" --fix
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         COMMENT "Applying Include-What-You-Use include fixes automatically..."
@@ -210,16 +215,16 @@ find_program(CLANG_FORMAT_BIN NAMES clang-format)
 if(CLANG_FORMAT_BIN)
     file(GLOB_RECURSE ALL_PROJECT_SOURCES "src/*.cpp" "src/*.h")
     add_custom_target(
-        format-qt
+        format-studio
         COMMAND ${CLANG_FORMAT_BIN} -i -style=file ${ALL_PROJECT_SOURCES}
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Running clang-format on MonitorQt source and header files..."
+        COMMENT "Running clang-format on cdsp-studio source and header files..."
     )
     add_custom_target(
-        format-check-qt
+        format-check-studio
         COMMAND ${CLANG_FORMAT_BIN} --dry-run -Werror -style=file ${ALL_PROJECT_SOURCES}
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Checking MonitorQt code formatting with clang-format..."
+        COMMENT "Checking cdsp-studio code formatting with clang-format..."
     )
 endif()
 
@@ -228,26 +233,26 @@ endif()
 # ==============================================================================
 if(UNIX AND NOT APPLE)
     include(GNUInstallDirs)
-    install(TARGETS MonitorQt
+    install(TARGETS cdsp-studio
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/cmake/com.wangyue.monitorqt.desktop"
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/cmake/com.wangyue.cdspstudio.desktop"
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
     )
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app.png"
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
-        RENAME com.wangyue.monitorqt.png
+        RENAME com.wangyue.cdspstudio.png
     )
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app.png"
         DESTINATION ${CMAKE_INSTALL_DATADIR}/pixmaps
-        RENAME com.wangyue.monitorqt.png
+        RENAME com.wangyue.cdspstudio.png
     )
 
     # Post-install: Grant cap_sys_nice=ep capability for Real-Time priority scheduling (SCHED_FIFO)
     install(CODE "
         find_program(SETCAP_BIN setcap)
         if(SETCAP_BIN)
-            set(TARGET_BIN \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/MonitorQt\")
+            set(TARGET_BIN \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/cdsp-studio\")
             if(EXISTS \"\${TARGET_BIN}\")
                 message(STATUS \"Applying cap_sys_nice=ep capability to \${TARGET_BIN}...\")
                 execute_process(

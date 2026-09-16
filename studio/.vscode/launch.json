@@ -5,12 +5,21 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug MonitorQt",
+            "name": "Debug cdsp-studio",
             "type": "lldb-dap",
             "request": "launch",
-            "program": "${workspaceFolder}/build/MonitorQt",
+            "program": "${workspaceFolder}/build/cdsp-studio.app/Contents/MacOS/cdsp-studio",
+            "osx": {
+                "program": "${workspaceFolder}/build/cdsp-studio.app/Contents/MacOS/cdsp-studio"
+            },
+            "linux": {
+                "program": "${workspaceFolder}/build/cdsp-studio"
+            },
+            "windows": {
+                "program": "${workspaceFolder}/build/cdsp-studio.exe"
+            },
             "cwd": "${workspaceFolder}",
-            "preLaunchTask": "Build MonitorQt",
+            "preLaunchTask": "Build cdsp-studio",
             "stopOnEntry": false,
             "args": []
         }

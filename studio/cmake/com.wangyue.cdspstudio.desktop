@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=CDSP Monitor
-GenericName=Audio DSP Monitor
+Name=CDSP Studio
+GenericName=Audio DSP Studio
 Comment=Real-time audio DSP monitoring, equalizer, and room correction utility
-Exec=MonitorQt
-Icon=com.wangyue.monitorqt
+Exec=cdsp-studio
+Icon=com.wangyue.cdspstudio
 Terminal=false
 Categories=AudioVideo;Audio;
 StartupNotify=true
-StartupWMClass=MonitorQt
+StartupWMClass=cdsp-studio

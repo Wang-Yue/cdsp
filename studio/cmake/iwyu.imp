@@ -1,4 +1,4 @@
-# Include-What-You-Use (IWYU) mapping file for Monitor-Qt
+# Include-What-You-Use (IWYU) mapping file for CDSP Studio
 # References qt6.imp and contains libc++, macOS SDK, and cdsp mappings.
 
 [

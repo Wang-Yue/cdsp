@@ -2,9 +2,9 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build MonitorQt",
+            "label": "Build cdsp-studio",
             "type": "shell",
-            "command": "cmake -S ${workspaceFolder} -B ${workspaceFolder}/build -DCMAKE_BUILD_TYPE=Debug && cmake --build ${workspaceFolder}/build --target MonitorQt --parallel",
+            "command": "cmake -S ${workspaceFolder} -B ${workspaceFolder}/build -DCMAKE_BUILD_TYPE=Debug && cmake --build ${workspaceFolder}/build --target cdsp-studio --parallel",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

@@ -29,7 +29,7 @@ void PipelineStore::ensureDefaultPresets() {
 // MARK: - Pipeline Stage Management & Persistence
 
 void PipelineStore::savePipelineStages() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     QJsonArray stagesArr;
     for (const auto& st : stages)
         stagesArr.append(st.toJson());
@@ -37,7 +37,7 @@ void PipelineStore::savePipelineStages() {
 }
 
 void PipelineStore::loadPipelineStages() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     QString stagesKey = s.contains("pipelineStages") ? "pipelineStages" : (s.contains("stages") ? "stages" : "");
     if (!stagesKey.isEmpty()) {
         stages.clear();
@@ -131,7 +131,7 @@ void PipelineStore::moveStage(int from, int to) {
 // MARK: - EQ Preset Persistence & Management
 
 void PipelineStore::saveEQPresets() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     QJsonArray eqArr;
     for (const auto& eq : eqPresets)
         eqArr.append(eq.toJson());
@@ -139,7 +139,7 @@ void PipelineStore::saveEQPresets() {
 }
 
 std::vector<EQPreset> PipelineStore::loadEQPresets() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     if (!s.contains("eqPresets")) {
         return {};
     }
@@ -212,7 +212,7 @@ void PipelineStore::deleteEQPreset(const QUuid& id) {
 // MARK: - Convolution Preset Persistence & Management
 
 void PipelineStore::saveConvPresets() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     QJsonArray convArr;
     for (const auto& conv : convPresets)
         convArr.append(conv.toJson());
@@ -220,7 +220,7 @@ void PipelineStore::saveConvPresets() {
 }
 
 std::vector<ConvolutionPreset> PipelineStore::loadConvPresets() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     if (!s.contains("convPresets")) {
         return {};
     }

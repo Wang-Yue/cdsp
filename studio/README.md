@@ -1,7 +1,7 @@
-# CDSP Monitor (Qt)
+# CDSP Studio
 
 <p align="center">
-  <strong>A high-performance, cross-platform audio DSP monitoring and pipeline control interface.</strong>
+  <strong>A high-performance, cross-platform audio DSP monitoring, equalization, and pipeline control suite.</strong>
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@
 
 ## Overview
 
-**Monitor-Qt** is the cross-platform Qt 6 / C++ port of [**CamillaDSP-Monitor**](https://github.com/Wang-Yue/CamillaDSP-Monitor) (originally developed for macOS). It brings real-time audio DSP monitoring, interactive pipeline editing, acoustic analysis, and headphone equalization to **macOS**, **Windows**, and **Linux**.
+**CDSP Studio** is the cross-platform Qt 6 / C++ port and evolution of [**CamillaDSP-Monitor**](https://github.com/Wang-Yue/CamillaDSP-Monitor). It brings real-time audio DSP monitoring, interactive pipeline editing, acoustic analysis, room correction, and headphone equalization to **macOS**, **Windows**, and **Linux**.
 
 The application is powered directly by [**cdsp**](https://github.com/Wang-Yue/cdsp) — a lightweight, high-performance C implementation of CamillaDSP with multi-threaded pipeline execution and hardware SIMD acceleration.
 
@@ -23,13 +23,13 @@ The application is powered directly by [**cdsp**](https://github.com/Wang-Yue/cd
 
 ## Screenshots
 
-![Monitor-Qt visualization dashboard](Visualization.png)
+![CDSP Studio visualization dashboard](Visualization.png)
 
-![Monitor-Qt parametric equalizer diagram](EQDiagram.png)
+![CDSP Studio parametric equalizer diagram](EQDiagram.png)
 
-![Monitor-Qt audio device settings (Linux)](DeviceSetting.png)
+![CDSP Studio audio device settings (Linux)](DeviceSetting.png)
 
-![Monitor-Qt dashboard (Linux)](Dashboard.png)
+![CDSP Studio dashboard (Linux)](Dashboard.png)
 
 ---
 
@@ -68,7 +68,7 @@ The application is powered directly by [**cdsp**](https://github.com/Wang-Yue/cd
 
 ## Audio Backends & Acceleration
 
-Monitor-Qt automatically leverages optimal platform audio APIs and hardware SIMD acceleration:
+CDSP Studio automatically leverages optimal platform audio APIs and hardware SIMD acceleration:
 
 | Platform | Audio Backend | Hardware Acceleration | Concurrency |
 | :--- | :--- | :--- | :--- |
@@ -130,7 +130,7 @@ cmake --build build
 ## Project Structure
 
 ```text
-Monitor-Qt/
+cdsp-studio/
 ├── CMakeLists.txt              # CMake build configuration and platform dependencies
 ├── plugins/
 │   └── alsa_rate_notify/       # ALSA PCM plugin for dynamic sample rate notification (Linux)
@@ -153,10 +153,10 @@ The codebase enforces consistent styling with `clang-format`:
 
 ```bash
 # Format all C/C++ files
-cmake --build build --target format-qt
+cmake --build build --target format-studio
 
 # Check formatting compliance
-cmake --build build --target format-check-qt
+cmake --build build --target format-check-studio
 ```
 
 ---

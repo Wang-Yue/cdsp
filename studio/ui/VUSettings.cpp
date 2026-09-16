@@ -9,7 +9,7 @@ VUSettings::VUSettings() {
 }
 
 void VUSettings::load() {
-    QSettings settings("DSPMonitor", "MonitorQt");
+    QSettings settings;
     radiusScale = settings.value("vu_radius_scale", 1.20).toDouble();
     pivotY = settings.value("vu_pivot_y", 1.55).toDouble();
     needleExtension = settings.value("vu_needle_extension", 45.0).toDouble();
@@ -32,7 +32,7 @@ void VUSettings::load() {
 }
 
 void VUSettings::save() const {
-    QSettings settings("DSPMonitor", "MonitorQt");
+    QSettings settings;
     settings.setValue("vu_radius_scale", radiusScale);
     settings.setValue("vu_pivot_y", pivotY);
     settings.setValue("vu_needle_extension", needleExtension);

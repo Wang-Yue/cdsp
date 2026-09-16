@@ -31,7 +31,7 @@ public:
     double timeWindow = 10.0;
 
     void loadSettings() {
-        QSettings s("DSPMonitor", "MonitorQt");
+        QSettings s;
         isCapture = s.value("spectrogram_is_capture", true).toBool();
         int ch = s.value("spectrogram_channel", -1).toInt();
         if (ch >= 0)
@@ -48,7 +48,7 @@ public:
     }
 
     void saveSettings() const {
-        QSettings s("DSPMonitor", "MonitorQt");
+        QSettings s;
         s.setValue("spectrogram_is_capture", isCapture);
         s.setValue("spectrogram_channel", channel.has_value() ? channel.value() : -1);
         s.setValue("spectrogram_n_bins", static_cast<int>(nBins));

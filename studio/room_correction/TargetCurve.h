@@ -111,7 +111,7 @@ public:
         if (!file.is_open())
             return false;
         file << "* Target Curve Data\n";
-        file << "* Exported by DSPMonitor\n";
+        file << "* Exported by CDSP Studio\n";
         if (!comment.empty()) {
             std::stringstream ss(comment);
             std::string line;

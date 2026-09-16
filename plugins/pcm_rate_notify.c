@@ -353,7 +353,7 @@ static int rn_hw_params(snd_pcm_ioplug_t* io, snd_pcm_hw_params_t* params) {
         return err;
     }
 
-    // 5. Now wait for cdsp/Monitor-Qt to restart and capture at the new rate.
+    // 5. Now wait for CDSP Studio to restart and capture at the new rate.
     // When cdsp probes formats with format: null, the ALSA kernel will only offer the player's format!
     for (int i = 0; i < rec->retry_count; i++) {
         if (is_capture_active_at_rate(rec->ctl_card, rec->ctl_device, rate)) {

@@ -112,7 +112,7 @@ void AudioSettings::notifyChange() {
 }
 
 void AudioSettings::loadPreferences() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     chunkSize = s.value("chunksize", 1024).toInt();
     if (chunkSize <= 0)
         chunkSize = 1024;
@@ -202,7 +202,7 @@ void AudioSettings::loadPreferences() {
 }
 
 void AudioSettings::savePreferences() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     s.setValue("chunksize", chunkSize);
     s.setValue("enableRateAdjust", enableRateAdjust);
     s.setValue("resamplerEnabled", resamplerEnabled);
@@ -253,7 +253,7 @@ void AudioSettings::savePreferences() {
 }
 
 void AudioSettings::saveFaderPreferences() {
-    QSettings s("DSPMonitor", "MonitorQt");
+    QSettings s;
     s.setValue("volume", volume);
     s.setValue("isMuted", isMuted);
     s.setValue("fader1Volume", fader1Volume);
