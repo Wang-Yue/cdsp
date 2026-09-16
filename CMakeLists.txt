@@ -176,7 +176,7 @@ endif()
 file(GLOB_RECURSE DSP_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
 if(ENABLE_WEBSOCKET)
-    file(GLOB SERVER_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/app/Server/*.c")
+    file(GLOB SERVER_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/app/server/*.c")
 else()
     set(SERVER_SRCS "")
 endif()
@@ -429,7 +429,7 @@ add_executable(cdsp app/main.c ${SERVER_SRCS})
 target_link_libraries(cdsp PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,dsp>")
 target_include_directories(cdsp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/app
-    ${CMAKE_CURRENT_SOURCE_DIR}/app/Server
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/server
 )
 
 # -----------------------------------------------------------------------------
@@ -440,10 +440,10 @@ if(BUILD_TESTING)
 
     # Optional Rust Harness Build (if cargo is installed)
     find_program(CARGO_EXECUTABLE cargo)
-    if(CARGO_EXECUTABLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Tests/RustHarnesses/Cargo.toml")
+    if(CARGO_EXECUTABLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/rust_harnesses/Cargo.toml")
         add_custom_target(test-rust-build
             COMMAND ${CARGO_EXECUTABLE} build --release
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/Tests/RustHarnesses
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/rust_harnesses
             COMMENT "Building Rust harness binaries..."
         )
     endif()
@@ -455,7 +455,7 @@ if(BUILD_TESTING)
         CDSP_COMBINED_TEST_SUITE
     )
 
-    file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests/test_*.c")
+    file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_*.c")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_runner_main\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_filter_benchmark\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_dsd_benchmark\\.c$")
@@ -469,15 +469,15 @@ if(BUILD_TESTING)
     endif()
 
     add_executable(test_runner
-        Tests/CLibTests/test_runner_main.c
+        tests/test_runner_main.c
         ${TEST_SRCS}
         ${SERVER_SRCS}
     )
     target_link_libraries(test_runner PRIVATE dsp_test)
     target_include_directories(test_runner PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
         ${CMAKE_CURRENT_SOURCE_DIR}/app
-        ${CMAKE_CURRENT_SOURCE_DIR}/app/Server
+        ${CMAKE_CURRENT_SOURCE_DIR}/app/server
     )
     target_compile_definitions(test_runner PRIVATE CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
 
@@ -505,7 +505,7 @@ if(BUILD_TESTING)
             -DTEST_EXECUTABLE=$<TARGET_FILE:test_runner>
             -DCTEST_FILE=${CDSP_DISCOVERED_TESTS_FILE}
             -DLIBARCHER_PATH=${LIBARCHER_PATH}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/Tools/CdspDiscoverTests.cmake
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CdspDiscoverTests.cmake
         COMMENT "Discovering CTest test cases from test_runner..."
         VERBATIM
     )
@@ -534,9 +534,9 @@ if(BUILD_BENCHMARKS)
 
     set(BENCH_TARGETS "")
     foreach(bench_name ${BENCHMARK_NAMES})
-        add_executable(${bench_name} Tests/CLibTests/${bench_name}.c)
+        add_executable(${bench_name} tests/${bench_name}.c)
         target_link_libraries(${bench_name} PRIVATE dsp)
-        target_include_directories(${bench_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Tests/CLibTests)
+        target_include_directories(${bench_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
         target_compile_definitions(${bench_name} PRIVATE CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
         list(APPEND BENCH_TARGETS ${bench_name})
     endforeach()
@@ -613,7 +613,7 @@ endif()
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(Python3_FOUND)
     add_custom_target(callgraph-audit
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Tools/generate_callgraph.py
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_callgraph.py
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Running Static Call Graph Audit..."
     )
@@ -627,7 +627,7 @@ if(CLANG_FORMAT_BIN)
     )
     list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/build/.*")
     list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/\\.build/.*")
-    list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/Tests/RustHarnesses/.*")
+    list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/tests/rust_harnesses/.*")
 
     add_custom_target(format
         COMMAND ${CLANG_FORMAT_BIN} -i ${ALL_C_AND_H_FILES}
@@ -641,7 +641,7 @@ find_program(IWYU_TOOL_BIN NAMES iwyu_tool iwyu_tool.py PATHS /usr/local/bin /op
 find_program(FIX_INCLUDES_BIN NAMES fix_includes.py fix_includes PATHS /usr/local/bin /opt/homebrew/bin)
 if(IWYU_TOOL_BIN)
     add_custom_target(iwyu
-        COMMAND ${IWYU_TOOL_BIN} -p ${CMAKE_BINARY_DIR} -- -Xiwyu --mapping_file=${CMAKE_CURRENT_SOURCE_DIR}/Tools/iwyu.imp -Xiwyu --no_fwd_decls
+        COMMAND ${IWYU_TOOL_BIN} -p ${CMAKE_BINARY_DIR} -- -Xiwyu --mapping_file=${CMAKE_CURRENT_SOURCE_DIR}/tools/iwyu.imp -Xiwyu --no_fwd_decls
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Running Include-What-You-Use analysis..."
     )
@@ -673,9 +673,9 @@ install(DIRECTORY include/
 )
 
 set_source_files_properties(
-    src/DSD/dsd_encoder.c
-    src/DSD/sigma_delta_modulator.c
-    Tests/CLibTests/test_dsd.c
-    Tests/CLibTests/test_resampler_matrix.c
+    src/dsd/dsd_encoder.c
+    src/dsd/sigma_delta_modulator.c
+    tests/test_dsd.c
+    tests/test_resampler_matrix.c
     PROPERTIES COMPILE_OPTIONS "-fno-associative-math"
 )

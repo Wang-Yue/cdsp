@@ -20,17 +20,17 @@
 #include <objbase.h>
 #endif
 
-#include "Logging/app_logger.h"
 #include "cdsp/cdsp_pub_types.h"
 #include "cdsp/config.h"
 #include "cdsp/fader.h"
 #include "cdsp/general.h"
 #include "cdsp/processing.h"
 #include "cdsp/state.h"
+#include "logging/app_logger.h"
 #ifdef ENABLE_WEBSOCKET
-#include "Server/websocket_server.h"
+#include "server/websocket_server.h"
 #endif
-#include "Utils/cdsp_time.h"
+#include "utils/cdsp_time.h"
 
 #define CDSP_EXIT_OK 0
 #define CDSP_EXIT_BAD_CONFIG 101
@@ -88,39 +88,48 @@ static void sig_usr1_handler(int sig) {
 }
 #endif
 
-static bool parse_gain_value(const char* str, double* out_val) {
-  if (!str || *str == '\0') return false;
-  char* endptr = NULL;
+static bool parse_gain_value(const char *str, double *out_val) {
+  if (!str || *str == '\0')
+    return false;
+  char *endptr = NULL;
   double val = strtod(str, &endptr);
-  if (endptr == str || *endptr != '\0') return false;
-  if (val < -120.0 || val > 20.0) return false;
+  if (endptr == str || *endptr != '\0')
+    return false;
+  if (val < -120.0 || val > 20.0)
+    return false;
   *out_val = val;
   return true;
 }
 
-static bool parse_positive_int(const char* str, int* out_val) {
-  if (!str || *str == '\0') return false;
-  char* endptr = NULL;
+static bool parse_positive_int(const char *str, int *out_val) {
+  if (!str || *str == '\0')
+    return false;
+  char *endptr = NULL;
   long val = strtol(str, &endptr, 10);
-  if (endptr == str || *endptr != '\0' || val < 1) return false;
+  if (endptr == str || *endptr != '\0' || val < 1)
+    return false;
   *out_val = (int)val;
   return true;
 }
 
-static bool is_valid_format(const char* str) {
-  if (!str) return false;
+static bool is_valid_format(const char *str) {
+  if (!str)
+    return false;
   return (strcmp(str, "S16_LE") == 0 || strcmp(str, "S24_3_LE") == 0 ||
           strcmp(str, "S24_4_LJ_LE") == 0 || strcmp(str, "S24_4_RJ_LE") == 0 ||
           strcmp(str, "S32_LE") == 0 || strcmp(str, "F32_LE") == 0 ||
           strcmp(str, "F64_LE") == 0);
 }
 
-static bool is_valid_ip(const char* ip) {
-  if (!ip || *ip == '\0') return false;
+static bool is_valid_ip(const char *ip) {
+  if (!ip || *ip == '\0')
+    return false;
   struct in_addr addr4;
-  if (inet_pton(AF_INET, ip, &addr4) == 1) return true;
+  if (inet_pton(AF_INET, ip, &addr4) == 1)
+    return true;
   struct in6_addr addr6;
-  if (inet_pton(AF_INET6, ip, &addr6) == 1) return true;
+  if (inet_pton(AF_INET6, ip, &addr6) == 1)
+    return true;
   return false;
 }
 
@@ -210,7 +219,7 @@ static void print_usage(void) {
       "File, Stdout\n");
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
 #if defined(ENABLE_ASIO) || defined(ENABLE_WASAPI)
   CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 #endif
@@ -226,24 +235,24 @@ int main(int argc, char** argv) {
   signal(SIGUSR1, sig_usr1_handler);
 #endif
 
-  const char* config_path = NULL;
-  const char* state_file_path = NULL;
+  const char *config_path = NULL;
+  const char *state_file_path = NULL;
   bool check_only = false;
 #ifdef ENABLE_WEBSOCKET
   uint16_t port = 0;
   bool has_port = false;
-  const char* bind_address = "127.0.0.1";
+  const char *bind_address = "127.0.0.1";
   bool has_address = false;
   bool wait_config = false;
-  const char* cert_path = NULL;
-  const char* cert_pass = NULL;
+  const char *cert_path = NULL;
+  const char *cert_pass = NULL;
 #else
   const bool wait_config = false;
   const bool has_port = false;
   const bool has_address = false;
 #endif
   bool no_config = false;
-  const char* log_level_str = "info";
+  const char *log_level_str = "info";
   bool has_loglevel = false;
   int verbosity_count = 0;
   bool has_logfile = false;
@@ -265,11 +274,11 @@ int main(int argc, char** argv) {
 
   int samplerate_override = -1;
   int channels_override = -1;
-  const char* format_override = NULL;
+  const char *format_override = NULL;
   int extra_samples_override = -1;
 
   for (int i = 1; i < argc; i++) {
-    const char* arg = argv[i];
+    const char *arg = argv[i];
     if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0) {
       print_usage();
       return CDSP_EXIT_OK;
@@ -311,7 +320,7 @@ int main(int argc, char** argv) {
     } else if (strcmp(arg, "-p") == 0 || strcmp(arg, "--port") == 0) {
 #ifdef ENABLE_WEBSOCKET
       if (i + 1 < argc && argv[i + 1][0] != '-') {
-        char* endptr = NULL;
+        char *endptr = NULL;
         long p = strtol(argv[++i], &endptr, 10);
         if (endptr == argv[i] || *endptr != '\0' || p < 0 || p >= 65535) {
           fprintf(stderr,
@@ -394,7 +403,7 @@ int main(int argc, char** argv) {
       }
     } else if (strcmp(arg, "-o") == 0 || strcmp(arg, "--logfile") == 0) {
       if (i + 1 < argc && argv[i + 1][0] != '-') {
-        const char* logfile_path = argv[++i];
+        const char *logfile_path = argv[++i];
         app_logger_set_logfile(logfile_path);
         has_logfile = true;
       } else {
@@ -403,7 +412,7 @@ int main(int argc, char** argv) {
       }
     } else if (strcmp(arg, "--log_rotate_size") == 0) {
       if (i + 1 < argc && argv[i + 1][0] != '-') {
-        char* endptr = NULL;
+        char *endptr = NULL;
         long sz = strtol(argv[++i], &endptr, 10);
         if (endptr == argv[i] || *endptr != '\0' || sz < 1000) {
           fprintf(stderr,
@@ -420,7 +429,7 @@ int main(int argc, char** argv) {
       }
     } else if (strcmp(arg, "--log_keep_nbr") == 0) {
       if (i + 1 < argc && argv[i + 1][0] != '-') {
-        char* endptr = NULL;
+        char *endptr = NULL;
         long nbr = strtol(argv[++i], &endptr, 10);
         if (endptr == argv[i] || *endptr != '\0' || nbr < 0) {
           fprintf(stderr, "Error: Invalid log_keep_nbr '%s'\n", argv[i]);
@@ -629,9 +638,8 @@ int main(int argc, char** argv) {
       return CDSP_EXIT_BAD_CONFIG;
     }
     if (!state_file_path) {
-      fprintf(stderr,
-              "Error: The argument '--no_config' requires '--statefile "
-              "<STATEFILE>'\n");
+      fprintf(stderr, "Error: The argument '--no_config' requires '--statefile "
+                      "<STATEFILE>'\n");
       return CDSP_EXIT_BAD_CONFIG;
     }
     if (config_path) {
@@ -679,20 +687,22 @@ int main(int argc, char** argv) {
                          format_override, extra_samples_override);
 
   if (check_only) {
-    char* result = NULL;
+    char *result = NULL;
     cdsp_config_error_type_t is_error = CDSP_CONFIG_ERR_NONE;
     if (cdsp_validate_config_file_with_overrides(
             config_path, samplerate_override, channels_override,
             format_override, extra_samples_override, &result, &is_error) &&
         is_error == CDSP_CONFIG_ERR_NONE) {
       printf("Config is valid\n");
-      if (result) free(result);
+      if (result)
+        free(result);
       app_logger_flush_and_stop(app_logger_get_shared());
       return CDSP_EXIT_OK;
     } else {
       printf("Config is not valid\n");
       printf("%s\n", result ? result : "Invalid config");
-      if (result) free(result);
+      if (result)
+        free(result);
       app_logger_flush_and_stop(app_logger_get_shared());
       return CDSP_EXIT_BAD_CONFIG;
     }
@@ -702,8 +712,8 @@ int main(int argc, char** argv) {
   logger_info(&g_logger, "Running on %s, %s", CDSP_OS_NAME, CDSP_ARCH_NAME);
 
   // Load state file if present
-  char* allocated_config_path = NULL;
-  cdsp_state_t* loaded_state = cdsp_state_create();
+  char *allocated_config_path = NULL;
+  cdsp_state_t *loaded_state = cdsp_state_create();
   bool has_loaded_state = false;
   if (state_file_path && loaded_state) {
     if (cdsp_state_load(state_file_path, loaded_state)) {
@@ -765,7 +775,7 @@ int main(int argc, char** argv) {
   if (state_file_path) {
     bool state_changed = !has_loaded_state;
     if (has_loaded_state) {
-      const char* loaded_cfg = cdsp_state_get_config_path(loaded_state);
+      const char *loaded_cfg = cdsp_state_get_config_path(loaded_state);
       if ((config_path &&
            (!loaded_cfg || strcmp(config_path, loaded_cfg) != 0)) ||
           (!config_path && loaded_cfg)) {
@@ -779,9 +789,10 @@ int main(int argc, char** argv) {
       }
     }
     if (state_changed) {
-      cdsp_state_t* state_to_save = cdsp_state_create();
+      cdsp_state_t *state_to_save = cdsp_state_create();
       if (state_to_save) {
-        if (config_path) cdsp_state_set_config_path(state_to_save, config_path);
+        if (config_path)
+          cdsp_state_set_config_path(state_to_save, config_path);
         for (int i = 0; i < CDSP_FADER_COUNT; i++) {
           cdsp_state_set_volume(state_to_save, i, initial_gains[i]);
           cdsp_state_set_mute(state_to_save, i, initial_mutes[i]);
@@ -818,11 +829,12 @@ int main(int argc, char** argv) {
     }
   }
 
-  dsp_engine_t* engine = cdsp_engine_create();
+  dsp_engine_t *engine = cdsp_engine_create();
   if (!engine) {
     logger_error(&g_logger, "Failed to allocate dsp_engine_t: out of memory");
     fprintf(stderr, "Error starting engine: Failed to allocate engine\n");
-    if (allocated_config_path) free(allocated_config_path);
+    if (allocated_config_path)
+      free(allocated_config_path);
     app_logger_flush_and_stop(app_logger_get_shared());
     return CDSP_EXIT_PROCESSING_ERROR;
   }
@@ -851,7 +863,8 @@ int main(int argc, char** argv) {
       logger_error(&g_logger, "Failed to configure engine: %s", berr.message);
       fprintf(stderr, "Error starting engine: %s\n", berr.message);
       cdsp_engine_free(engine);
-      if (allocated_config_path) free(allocated_config_path);
+      if (allocated_config_path)
+        free(allocated_config_path);
       app_logger_flush_and_stop(app_logger_get_shared());
       return CDSP_EXIT_BAD_CONFIG;
     }
@@ -859,13 +872,12 @@ int main(int argc, char** argv) {
     logger_info(
         &g_logger,
         "Starting engine in inactive state (waiting for websocket config)");
-    fprintf(stderr,
-            "Starting engine in inactive state (waiting for websocket "
-            "configuration)...\n");
+    fprintf(stderr, "Starting engine in inactive state (waiting for websocket "
+                    "configuration)...\n");
   }
 
 #ifdef ENABLE_WEBSOCKET
-  websocket_server_t* server = NULL;
+  websocket_server_t *server = NULL;
   if (has_port) {
     server = websocket_server_create(port, bind_address);
     websocket_server_set_engine(server, engine);
@@ -912,10 +924,12 @@ int main(int argc, char** argv) {
   }
 
 #ifdef ENABLE_WEBSOCKET
-  if (server) websocket_server_free(server);
+  if (server)
+    websocket_server_free(server);
 #endif
   cdsp_engine_free(engine);
-  if (allocated_config_path) free(allocated_config_path);
+  if (allocated_config_path)
+    free(allocated_config_path);
   logger_info(&g_logger, "Application exit clean");
   fprintf(stderr, "Engine stopped.\n");
   app_logger_flush_and_stop(app_logger_get_shared());

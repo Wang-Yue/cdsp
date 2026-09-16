@@ -1,0 +1,249 @@
+#include "cdsp/general.h"
+
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+
+#include "config/log_level.h"
+#include "engine/dsp_engine.h"
+#include "logging/app_logger.h"
+
+const char *cdsp_get_version(void) { return "5.0.0"; }
+
+void cdsp_get_supported_device_types(char ***out_playback_types,
+                                     size_t *out_playback_count,
+                                     char ***out_capture_types,
+                                     size_t *out_capture_count) {
+  if (!out_playback_types || !out_playback_count || !out_capture_types ||
+      !out_capture_count) {
+    return;
+  }
+
+  // Count playback types
+  size_t pb_count = 0;
+#if defined(ENABLE_COREAUDIO)
+  pb_count++;
+#endif
+#if defined(ENABLE_ALSA)
+  pb_count++;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  pb_count++;
+#endif
+#if defined(ENABLE_WASAPI)
+  pb_count++;
+#endif
+#if defined(ENABLE_ASIO)
+  pb_count++;
+#endif
+  pb_count += 2; // File, Stdout
+
+  // Count capture types
+  size_t cap_count = 0;
+#if defined(ENABLE_COREAUDIO)
+  cap_count++;
+#endif
+#if defined(ENABLE_ALSA)
+  cap_count++;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  cap_count++;
+#endif
+#if defined(ENABLE_WASAPI)
+  cap_count++;
+#endif
+#if defined(ENABLE_ASIO)
+  cap_count++;
+#endif
+  cap_count += 4; // RawFile, WavFile, Stdin, SignalGenerator
+
+  char **pb_arr = (char **)calloc(pb_count, sizeof(char *));
+  char **cap_arr = (char **)calloc(cap_count, sizeof(char *));
+  if (!pb_arr || !cap_arr) {
+    if (pb_arr)
+      free(pb_arr);
+    if (cap_arr)
+      free(cap_arr);
+    *out_playback_types = NULL;
+    *out_playback_count = 0;
+    *out_capture_types = NULL;
+    *out_capture_count = 0;
+    return;
+  }
+
+#define SAFE_STRDUP(arr, idx, str)                                             \
+  do {                                                                         \
+    arr[idx] = strdup(str);                                                    \
+    if (!arr[idx]) {                                                           \
+      cdsp_free_device_types(pb_arr, pb_idx);                                  \
+      cdsp_free_device_types(cap_arr, cap_idx);                                \
+      *out_playback_types = NULL;                                              \
+      *out_playback_count = 0;                                                 \
+      *out_capture_types = NULL;                                               \
+      *out_capture_count = 0;                                                  \
+      return;                                                                  \
+    }                                                                          \
+    idx++;                                                                     \
+  } while (0)
+
+  size_t pb_idx = 0;
+  size_t cap_idx = 0;
+  SAFE_STRDUP(pb_arr, pb_idx, "File");
+  SAFE_STRDUP(pb_arr, pb_idx, "Stdout");
+#if defined(ENABLE_ALSA)
+  SAFE_STRDUP(pb_arr, pb_idx, "Alsa");
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  SAFE_STRDUP(pb_arr, pb_idx, "PipeWire");
+#endif
+#if defined(ENABLE_COREAUDIO)
+  SAFE_STRDUP(pb_arr, pb_idx, "CoreAudio");
+#endif
+#if defined(ENABLE_WASAPI)
+  SAFE_STRDUP(pb_arr, pb_idx, "Wasapi");
+#endif
+#if defined(ENABLE_ASIO)
+  SAFE_STRDUP(pb_arr, pb_idx, "Asio");
+#endif
+
+  SAFE_STRDUP(cap_arr, cap_idx, "RawFile");
+  SAFE_STRDUP(cap_arr, cap_idx, "WavFile");
+  SAFE_STRDUP(cap_arr, cap_idx, "Stdin");
+  SAFE_STRDUP(cap_arr, cap_idx, "SignalGenerator");
+#if defined(ENABLE_ALSA)
+  SAFE_STRDUP(cap_arr, cap_idx, "Alsa");
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  SAFE_STRDUP(cap_arr, cap_idx, "PipeWire");
+#endif
+#if defined(ENABLE_COREAUDIO)
+  SAFE_STRDUP(cap_arr, cap_idx, "CoreAudio");
+#endif
+#if defined(ENABLE_WASAPI)
+  SAFE_STRDUP(cap_arr, cap_idx, "Wasapi");
+#endif
+#if defined(ENABLE_ASIO)
+  SAFE_STRDUP(cap_arr, cap_idx, "Asio");
+#endif
+
+#undef SAFE_STRDUP
+
+  *out_playback_types = pb_arr;
+  *out_playback_count = pb_count;
+  *out_capture_types = cap_arr;
+  *out_capture_count = cap_count;
+}
+
+void cdsp_free_device_types(char **types, size_t count) {
+  if (!types)
+    return;
+  for (size_t i = 0; i < count; i++) {
+    free(types[i]);
+  }
+  free(types);
+}
+
+dsp_engine_t *cdsp_engine_create(void) { return dsp_engine_create(); }
+
+void cdsp_engine_free(dsp_engine_t *engine) {
+  if (engine && engine->free)
+    engine->free(engine->ctx);
+}
+
+void cdsp_engine_poll(dsp_engine_t *engine) {
+  if (engine && engine->poll)
+    engine->poll(engine->ctx);
+}
+
+static bool is_valid_log_level_string(const char *s) {
+  if (!s)
+    return false;
+  if (strcasecmp(s, "off") == 0)
+    return true;
+  if (strcasecmp(s, "error") == 0)
+    return true;
+  if (strcasecmp(s, "warn") == 0 || strcasecmp(s, "warning") == 0)
+    return true;
+  if (strcasecmp(s, "info") == 0)
+    return true;
+  if (strcasecmp(s, "debug") == 0)
+    return true;
+  if (strcasecmp(s, "trace") == 0)
+    return true;
+  return false;
+}
+
+void cdsp_set_log_level(const char *level_str) {
+  if (!is_valid_log_level_string(level_str)) {
+    app_logger_log(app_logger_get_shared(), LOG_LEVEL_WARN, "Public",
+                   "Unknown log level; ignoring request",
+                   log_arg_string(level_str ? level_str : "(null)"),
+                   log_arg_none(), log_arg_none(), log_arg_none());
+    return;
+  }
+  app_logger_set_level(log_level_from_string(level_str));
+}
+
+static uint32_t g_public_update_interval_ms = 1000;
+
+void cdsp_set_update_interval(dsp_engine_t *engine, uint32_t interval_ms) {
+  (void)engine;
+  g_public_update_interval_ms = interval_ms;
+}
+
+uint32_t cdsp_get_update_interval(const dsp_engine_t *engine) {
+  (void)engine;
+  return g_public_update_interval_ms;
+}
+
+static cdsp_log_callback_fn g_pub_log_cb = NULL;
+static void *g_pub_log_ctx = NULL;
+
+static void internal_pub_log_adapter(log_level_t level, const char *label,
+                                     const char *message, void *user_data) {
+  (void)user_data;
+  if (g_pub_log_cb) {
+    const char *lvl_str;
+    switch (level) {
+    case LOG_LEVEL_OFF:
+      lvl_str = "OFF";
+      break;
+    case LOG_LEVEL_ERROR:
+      lvl_str = "ERROR";
+      break;
+    case LOG_LEVEL_WARN:
+      lvl_str = "WARN";
+      break;
+    case LOG_LEVEL_INFO:
+      lvl_str = "INFO";
+      break;
+    case LOG_LEVEL_DEBUG:
+      lvl_str = "DEBUG";
+      break;
+    case LOG_LEVEL_TRACE:
+      lvl_str = "TRACE";
+      break;
+    default:
+      lvl_str = "UNKNOWN";
+      break;
+    }
+    g_pub_log_cb(lvl_str, label ? label : "", message ? message : "",
+                 g_pub_log_ctx);
+  }
+}
+
+void cdsp_set_log_callback(cdsp_log_callback_fn callback, void *user_data) {
+  g_pub_log_cb = callback;
+  g_pub_log_ctx = user_data;
+  if (callback) {
+    app_logger_set_callback(internal_pub_log_adapter, NULL);
+  } else {
+    app_logger_set_callback(NULL, NULL);
+  }
+}
+
+void cdsp_stop(dsp_engine_t *engine) {
+  if (engine && engine->stop) {
+    engine->stop(engine->ctx);
+  }
+}

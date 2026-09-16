@@ -24,8 +24,8 @@ extern "C" {
  * @param out_vu Pointer to the caller-allocated VU levels structure.
  * @return true on success, false on failure.
  */
-CDSP_API bool cdsp_get_vu_levels(const dsp_engine_t* engine,
-                                 cdsp_vu_levels_t* out_vu);
+CDSP_API bool cdsp_get_vu_levels(const dsp_engine_t *engine,
+                                 cdsp_vu_levels_t *out_vu);
 
 /**
  * @brief Get the chunk generation counter for capture or playback.
@@ -34,7 +34,7 @@ CDSP_API bool cdsp_get_vu_levels(const dsp_engine_t* engine,
  * @param is_capture true for capture stream, false for playback stream.
  * @return Monotonically increasing chunk generation sequence number.
  */
-CDSP_API uint64_t cdsp_get_chunk_generation(const dsp_engine_t* engine,
+CDSP_API uint64_t cdsp_get_chunk_generation(const dsp_engine_t *engine,
                                             bool is_capture);
 
 /**
@@ -50,10 +50,10 @@ CDSP_API uint64_t cdsp_get_chunk_generation(const dsp_engine_t* engine,
  * @param out_channels Output pointer to receive channel count.
  * @return true on success, false on failure or inactive engine.
  */
-CDSP_API bool cdsp_get_signal_levels_since(const dsp_engine_t* engine,
+CDSP_API bool cdsp_get_signal_levels_since(const dsp_engine_t *engine,
                                            bool is_capture, bool is_rms,
-                                           uint64_t since_ms, float* out_levels,
-                                           size_t* out_channels);
+                                           uint64_t since_ms, float *out_levels,
+                                           size_t *out_channels);
 
 /**
  * @brief Get the optional channel labels configured for playback and capture.
@@ -70,21 +70,21 @@ CDSP_API bool cdsp_get_signal_levels_since(const dsp_engine_t* engine,
  * @param out_capture_count Output count of capture channels.
  * @return true on success, false on failure (or if no labels are configured).
  */
-CDSP_API bool cdsp_get_channel_labels(const dsp_engine_t* engine,
-                                      char*** out_playback_labels,
-                                      size_t* out_playback_count,
-                                      char*** out_capture_labels,
-                                      size_t* out_capture_count);
+CDSP_API bool cdsp_get_channel_labels(const dsp_engine_t *engine,
+                                      char ***out_playback_labels,
+                                      size_t *out_playback_count,
+                                      char ***out_capture_labels,
+                                      size_t *out_capture_count);
 
 /**
  * @brief Free channel labels arrays and strings.
  * @param labels The array of strings.
  * @param count The number of channels/elements.
  */
-CDSP_API void cdsp_free_channel_labels(char** labels, size_t count);
+CDSP_API void cdsp_free_channel_labels(char **labels, size_t count);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  // CDSP_PUBLIC_SIGNAL_LEVELS_H
+#endif // CDSP_PUBLIC_SIGNAL_LEVELS_H

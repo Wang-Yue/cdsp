@@ -19,9 +19,9 @@ extern "C" {
  * with size >= `n_bins` floats).
  */
 typedef struct {
-  float* frequencies;      /**< Center frequencies of output bins in Hz
+  float *frequencies;      /**< Center frequencies of output bins in Hz
                               (caller-allocated). */
-  float* magnitudes;       /**< Peak magnitude in dBFS (caller-allocated). */
+  float *magnitudes;       /**< Peak magnitude in dBFS (caller-allocated). */
   size_t count;            /**< Actual number of bins populated. */
   char error_message[128]; /**< Error message on failure. */
 } cdsp_spectrum_t;
@@ -42,13 +42,13 @@ typedef struct {
  * @param out_spec Pointer to the caller-allocated spectrum structure.
  * @return true on success, false on failure (e.g. processing not running).
  */
-CDSP_API bool cdsp_get_spectrum(dsp_engine_t* engine, cdsp_spectrum_side_t side,
-                                const size_t* channel, float min_freq,
+CDSP_API bool cdsp_get_spectrum(dsp_engine_t *engine, cdsp_spectrum_side_t side,
+                                const size_t *channel, float min_freq,
                                 float max_freq, size_t n_bins,
-                                cdsp_spectrum_t* out_spec);
+                                cdsp_spectrum_t *out_spec);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  // CDSP_PUBLIC_SPECTRUM_H
+#endif // CDSP_PUBLIC_SPECTRUM_H

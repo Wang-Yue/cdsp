@@ -1,0 +1,305 @@
+// AudioHistoryBuffer — stores recent audio samples for spectrum analysis and
+// vector scope (matching upstream CamillaDSP spectrum::AudioRingBuffer with
+// lock-free / wait-free seqlock synchronization for real-time audio threads).
+#include "audio/audio_history_buffer.h"
+
+#include <stdatomic.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "audio/audio_chunk.h"
+#include "utils/cdsp_memory.h"
+#include "utils/cdsp_time.h"
+#include "utils/float_helpers.h"
+
+struct audio_history_buffer {
+  size_t channels;
+  size_t capacity;
+  _Atomic bool enabled;
+  _Atomic uint64_t write_pos __attribute__((aligned(64)));
+  _Atomic uint64_t total_written __attribute__((aligned(64)));
+  _Atomic uint64_t write_seq __attribute__((aligned(64)));
+  float *data;
+};
+
+// --- Internal Helper Functions ---
+
+/**
+ * @brief Converts a contiguous segment of double-precision samples to
+ * single-precision float and writes them into a ring buffer with wrap-around
+ * handling.
+ *
+ * @param src Input double-precision source array.
+ * @param dst Destination single-precision ring buffer.
+ * @param start_idx Starting write index in the destination ring buffer.
+ * @param count Total number of samples to convert and write.
+ * @param cap Capacity of the destination ring buffer.
+ */
+static inline void copy_double_to_float_segment(const double *src, float *dst,
+                                                size_t start_idx, size_t count,
+                                                size_t cap) {
+  size_t first = cap - start_idx;
+  if (first > count)
+    first = count;
+  size_t second = count - first;
+
+  dsp_ops_double_to_float(src, dst + start_idx, first);
+  if (second > 0) {
+    dsp_ops_double_to_float(src + first, dst, second);
+  }
+}
+
+/**
+ * @brief Reads a contiguous segment of float samples from a ring buffer into a
+ * destination buffer with wrap-around handling.
+ *
+ * @param ch_src Source single-precision ring buffer.
+ * @param dest Output buffer for copied samples.
+ * @param start Starting read index in the source ring buffer.
+ * @param count Total number of samples to read.
+ * @param cap Capacity of the source ring buffer.
+ */
+static inline void read_channel_segment(const float *ch_src, float *dest,
+                                        size_t start, size_t count,
+                                        size_t cap) {
+  size_t first = cap - start;
+  if (first > count)
+    first = count;
+  size_t second = count - first;
+
+  memcpy(dest, ch_src + start, first * sizeof(float));
+  if (second > 0) {
+    memcpy(dest + first, ch_src, second * sizeof(float));
+  }
+}
+
+/**
+ * @brief Vector-accumulates float samples from a ring buffer into an existing
+ * destination buffer with wrap-around handling.
+ *
+ * @param ch_src Source single-precision ring buffer to accumulate.
+ * @param dest Output buffer to add samples into in-place.
+ * @param start Starting read index in the source ring buffer.
+ * @param count Total number of samples to accumulate.
+ * @param cap Capacity of the source ring buffer.
+ */
+static inline void add_channel_segment(const float *ch_src, float *dest,
+                                       size_t start, size_t count, size_t cap) {
+  size_t first = cap - start;
+  if (first > count)
+    first = count;
+  size_t second = count - first;
+
+  dsp_ops_float_add(ch_src + start, dest, first);
+  if (second > 0) {
+    dsp_ops_float_add(ch_src, dest + first, second);
+  }
+}
+
+/**
+ * @brief Multiplies all elements of a float vector by a scalar value in-place.
+ *
+ * @param dest Buffer of float samples to scale in-place.
+ * @param count Total number of samples to scale.
+ * @param scale Scalar multiplication factor.
+ */
+static inline void scale_vector(float *dest, size_t count, float scale) {
+  dsp_ops_float_scalar_multiply(dest, scale, count);
+}
+
+// --- Public API ---
+
+size_t
+audio_history_buffer_get_channels(const audio_history_buffer_t *history) {
+  return history ? history->channels : 0;
+}
+
+audio_history_buffer_t *audio_history_buffer_create(void) {
+  audio_history_buffer_t *history =
+      (audio_history_buffer_t *)cdsp_aligned_alloc(
+          64, sizeof(audio_history_buffer_t));
+  if (history) {
+    memset(history, 0, sizeof(audio_history_buffer_t));
+    history->capacity = AUDIO_HISTORY_BUFFER_CAPACITY;
+    atomic_init(&history->enabled, true);
+    atomic_init(&history->write_pos, 0);
+    atomic_init(&history->total_written, 0);
+    atomic_init(&history->write_seq, 0);
+  }
+  return history;
+}
+
+void audio_history_buffer_set_enabled(audio_history_buffer_t *history,
+                                      bool enabled) {
+  if (history) {
+    atomic_store_explicit(&history->enabled, enabled, memory_order_relaxed);
+  }
+}
+
+bool audio_history_buffer_is_enabled(const audio_history_buffer_t *history) {
+  return history ? atomic_load_explicit(&history->enabled, memory_order_relaxed)
+                 : false;
+}
+
+static void
+audio_history_buffer_clear_internal(audio_history_buffer_t *history) {
+  if (!history)
+    return;
+  if (history->data) {
+    cdsp_aligned_free(history->data);
+    history->data = NULL;
+  }
+  history->channels = 0;
+  atomic_store_explicit(&history->write_pos, 0, memory_order_relaxed);
+  atomic_store_explicit(&history->total_written, 0, memory_order_relaxed);
+  atomic_store_explicit(&history->write_seq, 0, memory_order_relaxed);
+}
+
+void audio_history_buffer_reset(audio_history_buffer_t *history,
+                                size_t channels) {
+  if (!history)
+    return;
+  audio_history_buffer_clear_internal(history);
+
+  if (channels > 0) {
+    history->channels = channels;
+    history->capacity = AUDIO_HISTORY_BUFFER_CAPACITY;
+    atomic_store_explicit(&history->write_pos, 0, memory_order_relaxed);
+    atomic_store_explicit(&history->total_written, 0, memory_order_relaxed);
+    atomic_store_explicit(&history->write_seq, 0, memory_order_relaxed);
+
+    size_t total_samples = channels * history->capacity;
+    history->data =
+        (float *)cdsp_aligned_alloc(64, total_samples * sizeof(float));
+    if (!history->data) {
+      audio_history_buffer_clear_internal(history);
+      return;
+    }
+    memset(history->data, 0, total_samples * sizeof(float));
+  }
+}
+
+void audio_history_buffer_free(audio_history_buffer_t *history) {
+  if (!history)
+    return;
+  audio_history_buffer_clear_internal(history);
+  cdsp_aligned_free(history);
+}
+
+void audio_history_buffer_append(audio_history_buffer_t *history,
+                                 const audio_chunk_t *chunk) {
+  if (!history || !chunk)
+    return;
+  if (!atomic_load_explicit(&history->enabled, memory_order_relaxed))
+    return;
+  size_t n_frames = audio_chunk_get_valid_frames(chunk);
+  size_t n_ch = audio_chunk_get_channels(chunk);
+  if (n_frames == 0 || n_ch == 0)
+    return;
+
+  if (history->channels != n_ch || !history->data) {
+    audio_history_buffer_reset(history, n_ch);
+    if (!history->data)
+      return;
+  }
+
+  uint64_t seq =
+      atomic_load_explicit(&history->write_seq, memory_order_relaxed);
+  atomic_store_explicit(&history->write_seq, seq + 1, memory_order_release);
+
+  uint64_t pos =
+      atomic_load_explicit(&history->write_pos, memory_order_relaxed);
+  size_t cap = history->capacity;
+  size_t mask = cap - 1;
+
+  size_t frames_to_copy = n_frames;
+  size_t offset_in_chunk = 0;
+  if (frames_to_copy > cap) {
+    offset_in_chunk = frames_to_copy - cap;
+    frames_to_copy = cap;
+  }
+
+  size_t start_idx = (size_t)((pos + n_frames - frames_to_copy) & mask);
+
+  for (size_t ch = 0; ch < n_ch; ch++) {
+    const double *ch_data = audio_chunk_get_channel(chunk, ch);
+    if (!ch_data)
+      continue;
+    copy_double_to_float_segment(ch_data + offset_in_chunk,
+                                 history->data + (ch * cap), start_idx,
+                                 frames_to_copy, cap);
+  }
+
+  atomic_store_explicit(&history->write_pos, (pos + n_frames) & mask,
+                        memory_order_release);
+  atomic_fetch_add_explicit(&history->total_written, n_frames,
+                            memory_order_release);
+  atomic_store_explicit(&history->write_seq, seq + 2, memory_order_release);
+}
+
+audio_history_buffer_status_t
+audio_history_buffer_read_latest(const audio_history_buffer_t *history,
+                                 float *dest, size_t count,
+                                 const size_t *channel, bool *enough_data) {
+  if (enough_data)
+    *enough_data = false;
+  if (!history)
+    return AUDIO_HISTORY_BUFFER_ERROR_EMPTY;
+  if (history->channels == 0 || !history->data) {
+    return AUDIO_HISTORY_BUFFER_ERROR_EMPTY;
+  }
+  if (channel && *channel >= history->channels) {
+    return AUDIO_HISTORY_BUFFER_ERROR_OUT_OF_RANGE;
+  }
+  if (!dest || count == 0)
+    return AUDIO_HISTORY_BUFFER_OK;
+
+  size_t cap = history->capacity;
+  if (count > cap)
+    return AUDIO_HISTORY_BUFFER_ERROR_OUT_OF_RANGE;
+  size_t mask = cap - 1;
+
+  for (int retry = 0; retry < 100; retry++) {
+    uint64_t seq_before =
+        atomic_load_explicit(&history->write_seq, memory_order_acquire);
+    if (seq_before & 1) {
+      cdsp_sleep_us(10);
+      continue;
+    }
+
+    uint64_t total =
+        atomic_load_explicit(&history->total_written, memory_order_acquire);
+    if (total < (uint64_t)count) {
+      return AUDIO_HISTORY_BUFFER_OK;
+    }
+
+    uint64_t pos =
+        atomic_load_explicit(&history->write_pos, memory_order_acquire);
+    size_t start = (size_t)((pos + cap - (count & mask)) & mask);
+
+    if (channel) {
+      read_channel_segment(history->data + (*channel * cap), dest, start, count,
+                           cap);
+    } else {
+      read_channel_segment(history->data, dest, start, count, cap);
+      for (size_t ch = 1; ch < history->channels; ch++) {
+        add_channel_segment(history->data + (ch * cap), dest, start, count,
+                            cap);
+      }
+      if (history->channels > 1) {
+        scale_vector(dest, count, 1.0f / (float)history->channels);
+      }
+    }
+
+    uint64_t seq_after =
+        atomic_load_explicit(&history->write_seq, memory_order_acquire);
+    if (seq_after == seq_before) {
+      if (enough_data)
+        *enough_data = true;
+      return AUDIO_HISTORY_BUFFER_OK;
+    }
+    cdsp_sleep_us(10);
+  }
+
+  return AUDIO_HISTORY_BUFFER_OK;
+}

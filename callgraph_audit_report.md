@@ -18,7 +18,7 @@ In real-time audio DSP systems, meeting strict low-latency constraints (e.g. 512
 3. **Protection Against Implicit Lock & Allocation Contamination During Refactoring**:
    As codebases grow, developers may inadvertently call utility functions or third-party helpers that internally acquire locks or allocate memory. Static AST Call Graph analysis recursively inspects 100% of reachable call trees from the audio loop entry points, ensuring new additions do not accidentally introduce hidden locks or heap allocations into steady-state audio streaming.
 4. **Automated CI/CD Concurrency & Memory Governance**:
-   Documented architectural promises must be continuously verified. Integrating static call graph auditing into `Tools/generate_callgraph.py` automatically enforces lock-free and allocation-free invariants on every build and pull request.
+   Documented architectural promises must be continuously verified. Integrating static call graph auditing into `tools/generate_callgraph.py` automatically enforces lock-free and allocation-free invariants on every build and pull request.
 
 ---
 
@@ -134,10 +134,10 @@ graph TD
 
 ## 5. How to Re-generate This Audit Report
 
-Run the AST callgraph analysis tool in `Tools/generate_callgraph.py`:
+Run the AST callgraph analysis tool in `tools/generate_callgraph.py`:
 
 ```bash
-python3 Tools/generate_callgraph.py
+python3 tools/generate_callgraph.py
 ```
 
 It parses the C AST across `Engine/`, `Audio/`, `DSD/`, `Pipeline/`, `Resampler/`, `Filters/`, `Mixer/`, `Utils/`, `Backend/`, and `Logging/` to verify lock reachability, dynamic heap allocations (`malloc`/`free`), multiline signatures, and generates JSON/Mermaid call graph topologies.

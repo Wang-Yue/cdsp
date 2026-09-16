@@ -34,9 +34,9 @@ typedef struct {
  * @param out_count Output count of devices found.
  * @return true on success, false on failure.
  */
-CDSP_API bool cdsp_get_available_devices(const char* backend, bool is_input,
-                                         cdsp_device_info_t** out_devices,
-                                         size_t* out_count);
+CDSP_API bool cdsp_get_available_devices(const char *backend, bool is_input,
+                                         cdsp_device_info_t **out_devices,
+                                         size_t *out_count);
 
 /**
  * @brief Get detailed capabilities for a specific audio device.
@@ -52,19 +52,19 @@ CDSP_API bool cdsp_get_available_devices(const char* backend, bool is_input,
  * fails.
  * @return true on success, false on failure.
  */
-CDSP_API bool cdsp_get_device_capabilities(const char* backend,
-                                           const char* device, bool is_capture,
-                                           cdsp_device_descriptor_t** out_desc,
-                                           cdsp_device_error_t* out_err);
+CDSP_API bool cdsp_get_device_capabilities(const char *backend,
+                                           const char *device, bool is_capture,
+                                           cdsp_device_descriptor_t **out_desc,
+                                           cdsp_device_error_t *out_err);
 
 /**
  * @brief Free the audio device capability descriptor structure.
  * @param desc Pointer to the descriptor structure.
  */
-CDSP_API void cdsp_free_device_capabilities(cdsp_device_descriptor_t* desc);
+CDSP_API void cdsp_free_device_capabilities(cdsp_device_descriptor_t *desc);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  // CDSP_PUBLIC_DEVICES_H
+#endif // CDSP_PUBLIC_DEVICES_H

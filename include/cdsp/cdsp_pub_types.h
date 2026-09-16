@@ -54,10 +54,10 @@ typedef struct {
  * @brief VU level snapshot for playback and capture.
  */
 typedef struct {
-  float* playback_rms;  /**< Caller-allocated array for playback RMS levels. */
-  float* playback_peak; /**< Caller-allocated array for playback peak levels. */
-  float* capture_rms;   /**< Caller-allocated array for capture RMS levels. */
-  float* capture_peak;  /**< Caller-allocated array for capture peak levels. */
+  float *playback_rms;  /**< Caller-allocated array for playback RMS levels. */
+  float *playback_peak; /**< Caller-allocated array for playback peak levels. */
+  float *capture_rms;   /**< Caller-allocated array for capture RMS levels. */
+  float *capture_peak;  /**< Caller-allocated array for capture peak levels. */
   size_t playback_channels; /**< Total playback channels populated. */
   size_t capture_channels;  /**< Total capture channels populated. */
 } cdsp_vu_levels_t;
@@ -110,7 +110,7 @@ typedef struct {
  */
 typedef struct {
   int samplerate;
-  char** formats;
+  char **formats;
   size_t formats_count;
 } cdsp_samplerate_capability_t;
 
@@ -119,7 +119,7 @@ typedef struct {
  */
 typedef struct {
   int channels;
-  cdsp_samplerate_capability_t* samplerates;
+  cdsp_samplerate_capability_t *samplerates;
   size_t samplerates_count;
 } cdsp_channel_capability_t;
 
@@ -127,8 +127,8 @@ typedef struct {
  * @brief Set of capabilities for a specific access mode.
  */
 typedef struct {
-  char mode[64];  // e.g. "Unified", "Shared", "Exclusive"
-  cdsp_channel_capability_t* capabilities;
+  char mode[64]; // e.g. "Unified", "Shared", "Exclusive"
+  cdsp_channel_capability_t *capabilities;
   size_t capabilities_count;
 } cdsp_device_capability_set_t;
 
@@ -138,7 +138,7 @@ typedef struct {
 typedef struct {
   char name[256];
   char description[256];
-  cdsp_device_capability_set_t* capability_sets;
+  cdsp_device_capability_set_t *capability_sets;
   size_t capability_sets_count;
 } cdsp_device_descriptor_t;
 
@@ -159,7 +159,7 @@ typedef enum {
  * @brief Public representation of captured or playback audio samples.
  */
 typedef struct {
-  float** channels;      /**< Caller-allocated array of channel pointers. */
+  float **channels;      /**< Caller-allocated array of channel pointers. */
   size_t channels_count; /**< Number of channels populated. */
   size_t frames;         /**< Number of frames written per channel. */
 } cdsp_audio_samples_t;
@@ -168,4 +168,4 @@ typedef struct {
 }
 #endif
 
-#endif  // CDSP_PUBLIC_TYPES_H
+#endif // CDSP_PUBLIC_TYPES_H

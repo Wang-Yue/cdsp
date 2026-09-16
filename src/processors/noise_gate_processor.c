@@ -1,0 +1,351 @@
+/**
+ * @file noise_gate_processor.c
+ * @brief Implementation of the noise gate processor.
+ *
+ * Implementation details:
+ * - Real-time processing (`noise_gate_processor_process`):
+ *   1. Sums monitored channels into scratch buffer using vDSP_vaddD or scalar
+ * loop.
+ *   2. Envelope Detection: Computes instantaneous dB loudness and smooths it
+ * using attack filter when level rises, and release filter when level falls.
+ *   3. Gate Threshold Logic: If loudness is below threshold, sets scratch
+ * buffer gain to precomputed linear attenuation factor; otherwise sets gain
+ * to 1.0 (unity).
+ *   4. Multiplies processed channel waveforms by the computed gain curve using
+ * vDSP_vmulD or scalar loop.
+ */
+
+#include "processors/noise_gate_processor.h"
+
+#include "audio/audio_chunk.h"
+#include "config/config_error.h"
+#include "config/filter_config_types.h"
+#include "config/processor_config_types.h"
+#include "logging/app_logger.h"
+#include "processors/processor.h"
+#include "utils/double_helpers.h"
+
+static const logger_t g_logger = {"noise_gate_processor"};
+
+struct noise_gate_processor {
+  char name[64];            ///< Unique name of the noise gate instance.
+  size_t *monitor_channels; ///< Array of channel indices monitored for level
+                            ///< detection.
+  size_t monitor_channels_count; ///< Number of monitored channels.
+  size_t *process_channels; ///< Array of channel indices to apply gating to.
+  size_t process_channels_count; ///< Number of processed channels.
+  double attack;    ///< Exponential smoothing coefficient for attack phase.
+  double release;   ///< Exponential smoothing coefficient for release phase.
+  double threshold; ///< Gating threshold in dB.
+  double factor;    ///< Linear attenuation gain applied when gate is closed.
+  double *scratch;  ///< Pre-allocated scratch buffer for level detection.
+  size_t scratch_capacity; ///< Capacity of scratch buffer in frames.
+  double prev_loudness;    ///< State variable tracking previous sample envelope
+                           ///< loudness.
+  bool channel_warning_logged; ///< Track if we already logged a channel
+                               ///< mismatch warning.
+};
+
+typedef struct noise_gate_processor noise_gate_processor_t;
+
+/**
+ * @brief Gets the name of the noise gate processor.
+ *
+ * @param processor Pointer to the noise gate processor.
+ * @return The unique name of the processor instance.
+ */
+static const char *noise_gate_processor_get_name(const void *impl) {
+  const noise_gate_processor_t *processor =
+      (const noise_gate_processor_t *)impl;
+  return processor ? processor->name : "";
+}
+
+#include <math.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+/**
+ * @brief Validates noise gate processor parameters.
+ *
+ * @param config Pointer to the processor configuration to validate.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int noise_gate_config_validate(const processor_config_t *config,
+                                      int sample_rate, config_error_t *err) {
+  (void)sample_rate;
+  if (!config || config->type != PROCESSOR_TYPE_NOISE_GATE)
+    return -1;
+  const noise_gate_config_t *p = &config->parameters.noise_gate;
+  if (p->channels == 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "NoiseGate: channels must be > 0, got 0");
+    return -1;
+  }
+  if (p->attack <= 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "NoiseGate: attack must be > 0, got %g", p->attack);
+    return -1;
+  }
+  if (p->release <= 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "NoiseGate: release must be > 0, got %g", p->release);
+    return -1;
+  }
+  for (size_t i = 0; i < p->monitor_channels_count; i++) {
+    if (p->monitor_channels[i] >= p->channels) {
+      config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                       "NoiseGate: monitor channel %zu is invalid (max: %zu)",
+                       p->monitor_channels[i], p->channels - 1);
+      return -1;
+    }
+  }
+  for (size_t i = 0; i < p->process_channels_count; i++) {
+    if (p->process_channels[i] >= p->channels) {
+      config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                       "NoiseGate: process channel %zu is invalid (max: %zu)",
+                       p->process_channels[i], p->channels - 1);
+      return -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @brief Frees all resources associated with the noise gate processor.
+ *
+ * @param processor Pointer to noise gate processor to free.
+ */
+static void noise_gate_processor_free(void *impl) {
+  noise_gate_processor_t *processor = (noise_gate_processor_t *)impl;
+  if (!processor)
+    return;
+  free(processor->monitor_channels);
+  free(processor->process_channels);
+  free(processor->scratch);
+  free(processor);
+}
+
+/**
+ * @brief Creates a new noise gate processor.
+ *
+ * @param name Unique name for this noise gate instance.
+ * @param config Noise gate parameters configuration.
+ * @param sample_rate Audio sample rate in Hz.
+ * @param chunk_size Maximum number of frames per processing chunk.
+ * @param err Optional pointer to receive configuration error detail on failure.
+ * @return Pointer to newly allocated noise_gate_processor_t, or NULL on
+ * failure.
+ */
+static double compute_time_seconds(double value, time_unit_t unit,
+                                   int sample_rate) {
+  switch (unit) {
+  case TIME_UNIT_US:
+    return value / 1000000.0;
+  case TIME_UNIT_MS:
+    return value / 1000.0;
+  case TIME_UNIT_S:
+    return value;
+  case TIME_UNIT_SAMPLES:
+    return value / (double)sample_rate;
+  }
+  return 0.0;
+}
+
+static void *noise_gate_processor_create(const char *name,
+                                         const processor_config_t *config,
+                                         int sample_rate, size_t chunk_size,
+                                         config_error_t *err) {
+  if (!config || config->type != PROCESSOR_TYPE_NOISE_GATE)
+    return NULL;
+  const noise_gate_config_t *params = &config->parameters.noise_gate;
+  if (noise_gate_config_validate(config, sample_rate, err) != 0)
+    return NULL;
+  if (sample_rate <= 0 || chunk_size == 0)
+    return NULL;
+
+  noise_gate_processor_t *processor =
+      (noise_gate_processor_t *)calloc(1, sizeof(noise_gate_processor_t));
+  if (!processor)
+    return NULL;
+
+  if (name) {
+    strncpy(processor->name, name, sizeof(processor->name) - 1);
+    processor->name[sizeof(processor->name) - 1] = '\0';
+  } else {
+    strcpy(processor->name, "noisegate");
+  }
+
+  processor->scratch_capacity = chunk_size;
+  processor->scratch = (double *)calloc(chunk_size, sizeof(double));
+  if (!processor->scratch) {
+    noise_gate_processor_free(processor);
+    return NULL;
+  }
+
+  if (params->monitor_channels_count > 0 && params->monitor_channels) {
+    processor->monitor_channels_count = params->monitor_channels_count;
+    processor->monitor_channels =
+        (size_t *)calloc(processor->monitor_channels_count, sizeof(size_t));
+    if (processor->monitor_channels) {
+      memcpy(processor->monitor_channels, params->monitor_channels,
+             processor->monitor_channels_count * sizeof(size_t));
+    }
+  } else {
+    processor->monitor_channels_count = params->channels;
+    processor->monitor_channels =
+        (size_t *)calloc(processor->monitor_channels_count, sizeof(size_t));
+    if (processor->monitor_channels) {
+      for (size_t i = 0; i < processor->monitor_channels_count; i++) {
+        processor->monitor_channels[i] = i;
+      }
+    }
+  }
+
+  if (params->process_channels_count > 0 && params->process_channels) {
+    processor->process_channels_count = params->process_channels_count;
+    processor->process_channels =
+        (size_t *)calloc(processor->process_channels_count, sizeof(size_t));
+    if (processor->process_channels) {
+      memcpy(processor->process_channels, params->process_channels,
+             processor->process_channels_count * sizeof(size_t));
+    }
+  } else {
+    processor->process_channels_count = params->channels;
+    processor->process_channels =
+        (size_t *)calloc(processor->process_channels_count, sizeof(size_t));
+    if (processor->process_channels) {
+      for (size_t i = 0; i < processor->process_channels_count; i++) {
+        processor->process_channels[i] = i;
+      }
+    }
+  }
+
+  if (!processor->monitor_channels || !processor->process_channels) {
+    noise_gate_processor_free(processor);
+    return NULL;
+  }
+
+  double srate = (double)sample_rate;
+  double attack_seconds =
+      compute_time_seconds(params->attack, params->attack_unit, sample_rate);
+  double release_seconds =
+      compute_time_seconds(params->release, params->release_unit, sample_rate);
+  processor->attack =
+      attack_seconds > 0.0 ? exp(-1.0 / srate / attack_seconds) : 0.0;
+  processor->release =
+      release_seconds > 0.0 ? exp(-1.0 / srate / release_seconds) : 0.0;
+  processor->threshold = params->threshold;
+  processor->factor = double_from_db(-params->attenuation);
+  processor->prev_loudness = 0.0;
+
+  return processor;
+}
+
+/**
+ * @brief Applies noise gating to audio chunk in place.
+ *
+ * Evaluates monitored channels, computes envelope loudness and gate threshold
+ * gain, and applies linear attenuation to processed channels when gate is
+ * closed.
+ *
+ * @param processor Pointer to noise gate processor.
+ * @param chunk Audio chunk to process in place.
+ */
+static void noise_gate_processor_process(void *impl, audio_chunk_t *chunk) {
+  noise_gate_processor_t *processor = (noise_gate_processor_t *)impl;
+  if (!processor || !chunk || !processor->scratch)
+    return;
+  size_t count = audio_chunk_get_valid_frames(chunk);
+  if (count > processor->scratch_capacity)
+    count = processor->scratch_capacity;
+  if (count == 0 || processor->monitor_channels_count == 0)
+    return;
+
+  size_t ch_count = audio_chunk_get_channels(chunk);
+  bool mismatch = false;
+  for (size_t i = 0; i < processor->monitor_channels_count; i++) {
+    if (processor->monitor_channels[i] >= ch_count) {
+      mismatch = true;
+      break;
+    }
+  }
+  if (!mismatch) {
+    for (size_t i = 0; i < processor->process_channels_count; i++) {
+      if (processor->process_channels[i] >= ch_count) {
+        mismatch = true;
+        break;
+      }
+    }
+  }
+  if (mismatch) {
+    if (!processor->channel_warning_logged) {
+      logger_error(
+          &g_logger,
+          "Noise Gate channel indices out of bounds for chunk channels (%zu)",
+          ch_count);
+      processor->channel_warning_logged = true;
+    }
+    return;
+  }
+
+  // Step 1: Sum monitored channels into scratch buffer to evaluate overall
+  // signal level (creating a mono sum for sidechain level detection).
+  audio_chunk_sum_channels(chunk, processor->monitor_channels,
+                           processor->monitor_channels_count,
+                           processor->scratch, count);
+
+  // Step 2: Envelope Detection (Loudness Estimation with Attack/Release
+  // Smoothing)
+  double prev = processor->prev_loudness;
+  for (size_t i = 0; i < count; i++) {
+    double val = double_to_db(fabs(processor->scratch[i]) + 1e-9);
+    prev = double_smooth_envelope(val, prev, processor->attack,
+                                  processor->release);
+    processor->scratch[i] = prev;
+  }
+  processor->prev_loudness = prev;
+
+  // Step 3: Gate Threshold Logic
+  // For each sample, compare the smoothed envelope level against the threshold.
+  for (size_t i = 0; i < count; i++) {
+    if (processor->scratch[i] < processor->threshold) {
+      // Below threshold: gate closed, apply the pre-calculated linear
+      // attenuation factor.
+      processor->scratch[i] = processor->factor;
+    } else {
+      // Above or equal to threshold: gate open, pass signal through (unity
+      // gain).
+      processor->scratch[i] = 1.0;
+    }
+  }
+
+  // Step 4: Apply gating gain curve to all processed channels
+  audio_chunk_apply_gain(chunk, processor->process_channels,
+                         processor->process_channels_count, processor->scratch,
+                         count);
+}
+
+/**
+ * @brief Transfers running envelope loudness state from src to dest.
+ *
+ * @param dest The destination noise gate processor instance.
+ * @param src The source noise gate processor instance.
+ */
+static void noise_gate_processor_transfer_state(void *dest_ptr,
+                                                const void *src_ptr) {
+  noise_gate_processor_t *dest = (noise_gate_processor_t *)dest_ptr;
+  const noise_gate_processor_t *src = (const noise_gate_processor_t *)src_ptr;
+  if (!dest || !src || dest == src)
+    return;
+  dest->prev_loudness = src->prev_loudness;
+}
+
+const processor_vtable_t g_noise_gate_vtable = {
+    .validate = noise_gate_config_validate,
+    .create = noise_gate_processor_create,
+    .process = noise_gate_processor_process,
+    .get_name = noise_gate_processor_get_name,
+    .transfer_state = noise_gate_processor_transfer_state,
+    .free = noise_gate_processor_free};

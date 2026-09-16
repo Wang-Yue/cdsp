@@ -1,0 +1,1692 @@
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
+#include <math.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "audio/audio_chunk.h"
+#include "audio/processing_parameters.h"
+#include "audio/sample_conversion.h"
+#include "backend/audio_backend.h"
+#include "backend/backend_error.h"
+#include "config/configuration.h"
+#include "config/engine_config_types.h"
+#include "config/filter_config_types.h"
+#include "config/mixer_config_types.h"
+#include "config/processor_config_types.h"
+#include "config/resampler_config_types.h"
+#include "dsd/dsd_decoder.h"
+#include "dsd/dsd_encoder.h"
+#include "engine/cdsp_sem.h"
+#include "engine/engine_capture_loop.h"
+#include "engine/engine_playback_loop.h"
+#include "engine/engine_processing_loop.h"
+#include "engine/engine_shared_state.h"
+#include "filters/biquad.h"
+#include "filters/biquad_combo.h"
+#include "filters/clipper.h"
+#include "filters/convolution.h"
+#include "filters/delay.h"
+#include "filters/diffeq.h"
+#include "filters/dither.h"
+#include "filters/filter.h"
+#include "filters/gain.h"
+#include "filters/lookahead_limiter.h"
+#include "filters/loudness.h"
+#include "filters/volume.h"
+#include "logging/app_logger.h"
+#include "mixer/mixer.h"
+#include "pipeline/pipeline.h"
+#include "processors/processor.h"
+#include "resampler/audio_resampler.h"
+#include "test_support.h"
+#include "utils/cdsp_time.h"
+#include "utils/double_helpers.h"
+#include "utils/lock_free_ring_buffer.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) ||           \
+    defined(__SANITIZE_MEMORY__) || defined(__SANITIZE_LEAK__) ||              \
+    (defined(__has_feature) &&                                                 \
+     (__has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||   \
+      __has_feature(memory_sanitizer) || __has_feature(leak_sanitizer) ||      \
+      __has_feature(cfi) || __has_feature(control_flow_integrity) ||           \
+      __has_feature(undefined_behavior_sanitizer)))
+#define CDSP_SANITIZER_ACTIVE 1
+#else
+#define CDSP_SANITIZER_ACTIVE 0
+#endif
+
+typedef void (*malloc_logger_t)(uint32_t type, uintptr_t arg1, uintptr_t arg2,
+                                uintptr_t arg3, uintptr_t result,
+                                uint32_t num_hot_frames_to_skip);
+
+#if (defined(__linux__) || defined(_WIN32)) && !CDSP_SANITIZER_ACTIVE
+static malloc_logger_t g_custom_malloc_logger = NULL;
+#endif
+
+#if defined(__linux__) && !CDSP_SANITIZER_ACTIVE
+#include <unistd.h>
+
+static void *(*real_malloc)(size_t) = NULL;
+static void *(*real_calloc)(size_t, size_t) = NULL;
+static void *(*real_realloc)(void *, size_t) = NULL;
+static void (*real_free)(void *) = NULL;
+
+static char bootstrap_buffer[8192];
+static size_t bootstrap_offset = 0;
+static _Thread_local bool in_bootstrap = false;
+
+static void *bootstrap_malloc(size_t size) {
+  size_t aligned_size = (size + 15) & ~15;
+  if (bootstrap_offset + aligned_size > sizeof(bootstrap_buffer)) {
+    const char *msg = "FATAL: out of bootstrap memory in malloc wrapper\n";
+    write(2, msg, strlen(msg));
+    abort();
+  }
+  void *ptr = bootstrap_buffer + bootstrap_offset;
+  bootstrap_offset += aligned_size;
+  return ptr;
+}
+#if defined(__clang__)
+#define CDSP_NO_SANITIZE_CFI __attribute__((no_sanitize("cfi")))
+#else
+#define CDSP_NO_SANITIZE_CFI
+#endif
+
+CDSP_NO_SANITIZE_CFI static void init_real_allocators(void) {
+  if (real_malloc)
+    return;
+  if (in_bootstrap)
+    return;
+  in_bootstrap = true;
+  real_malloc = (void *(*)(size_t))dlsym(RTLD_NEXT, "malloc");
+  real_calloc = (void *(*)(size_t, size_t))dlsym(RTLD_NEXT, "calloc");
+  real_realloc = (void *(*)(void *, size_t))dlsym(RTLD_NEXT, "realloc");
+  real_free = (void (*)(void *))dlsym(RTLD_NEXT, "free");
+  in_bootstrap = false;
+  if (!real_malloc || !real_calloc || !real_realloc || !real_free) {
+    const char *msg = "FATAL: failed to find real allocators via dlsym\n";
+    write(2, msg, strlen(msg));
+    abort();
+  }
+}
+
+CDSP_NO_SANITIZE_CFI void *malloc(size_t size) {
+  if (!real_malloc) {
+    init_real_allocators();
+    if (!real_malloc)
+      return bootstrap_malloc(size);
+  }
+  void *ptr = real_malloc(size);
+  malloc_logger_t logger = atomic_load_explicit(
+      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
+  if (logger) {
+    logger(2, 0, (uintptr_t)size, 0, (uintptr_t)ptr, 0);
+  }
+  return ptr;
+}
+
+CDSP_NO_SANITIZE_CFI void *calloc(size_t num, size_t size) {
+  size_t total = num * size;
+  if (!real_calloc) {
+    init_real_allocators();
+    if (!real_calloc) {
+      void *ptr = bootstrap_malloc(total);
+      if (ptr)
+        memset(ptr, 0, total);
+      return ptr;
+    }
+  }
+  void *ptr = real_calloc(num, size);
+  malloc_logger_t logger = atomic_load_explicit(
+      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
+  if (logger) {
+    logger(2, 0, (uintptr_t)total, 0, (uintptr_t)ptr, 0);
+  }
+  return ptr;
+}
+
+CDSP_NO_SANITIZE_CFI void *realloc(void *ptr, size_t size) {
+  if (ptr >= (void *)bootstrap_buffer &&
+      ptr < (void *)(bootstrap_buffer + sizeof(bootstrap_buffer))) {
+    void *new_ptr = bootstrap_malloc(size);
+    if (new_ptr && ptr) {
+      memcpy(new_ptr, ptr, size);
+    }
+    return new_ptr;
+  }
+  if (!real_realloc) {
+    init_real_allocators();
+  }
+  void *new_ptr = real_realloc(ptr, size);
+  malloc_logger_t logger = atomic_load_explicit(
+      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
+  if (logger) {
+    logger(2, 0, (uintptr_t)size, 0, (uintptr_t)new_ptr, 0);
+  }
+  return new_ptr;
+}
+
+CDSP_NO_SANITIZE_CFI void free(void *ptr) {
+  if (!ptr)
+    return;
+  if (ptr >= (void *)bootstrap_buffer &&
+      ptr < (void *)(bootstrap_buffer + sizeof(bootstrap_buffer))) {
+    return;
+  }
+  if (!real_free) {
+    init_real_allocators();
+  }
+  if (real_free) {
+    real_free(ptr);
+  }
+  malloc_logger_t logger = atomic_load_explicit(
+      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
+  if (logger) {
+    logger(4, 0, 0, 0, (uintptr_t)ptr, 0);
+  }
+}
+#endif // defined(__linux__) && !CDSP_SANITIZER_ACTIVE
+
+#if defined(_WIN32) && !CDSP_SANITIZER_ACTIVE
+// Declarations of real functions (resolved by linker)
+void *__real_malloc(size_t size);
+void *__real_calloc(size_t num, size_t size);
+void *__real_realloc(void *ptr, size_t size);
+void __real_free(void *ptr);
+
+void *__wrap_malloc(size_t size) {
+  void *ptr = __real_malloc(size);
+  malloc_logger_t logger = atomic_load_explicit(
+      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
+  if (logger) {
+    logger(2, 0, (uintptr_t)size, 0, (uintptr_t)ptr, 0);
+  }
+  return ptr;
+}
+
+void *__wrap_calloc(size_t num, size_t size) {
+  size_t total = num * size;
+  void *ptr = __real_calloc(num, size);
+  malloc_logger_t logger = atomic_load_explicit(
+      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
+  if (logger) {
+    logger(2, 0, (uintptr_t)total, 0, (uintptr_t)ptr, 0);
+  }
+  return ptr;
+}
+
+void *__wrap_realloc(void *ptr, size_t size) {
+  void *new_ptr = __real_realloc(ptr, size);
+  malloc_logger_t logger = atomic_load_explicit(
+      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
+  if (logger) {
+    logger(2, 0, (uintptr_t)size, 0, (uintptr_t)new_ptr, 0);
+  }
+  return new_ptr;
+}
+
+void __wrap_free(void *ptr) {
+  __real_free(ptr);
+  malloc_logger_t logger = atomic_load_explicit(
+      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
+  if (logger) {
+    logger(4, 0, 0, 0, (uintptr_t)ptr, 0);
+  }
+}
+#endif // _WIN32
+
+#if !CDSP_SANITIZER_ACTIVE
+static _Atomic uint64_t g_alloc_counter = 0;
+static _Atomic uintptr_t g_watched_thread = 0;
+static malloc_logger_t g_prev_logger = NULL;
+
+static void my_malloc_logger(uint32_t type, uintptr_t arg1, uintptr_t arg2,
+                             uintptr_t arg3, uintptr_t result,
+                             uint32_t num_hot_frames_to_skip) {
+  (void)arg1;
+  (void)arg2;
+  (void)arg3;
+  (void)num_hot_frames_to_skip;
+  if ((type & 2) != 0 && result != 0) {
+    uintptr_t watched =
+        atomic_load_explicit(&g_watched_thread, memory_order_acquire);
+    if (watched != 0 && (uintptr_t)pthread_self() == watched) {
+      atomic_fetch_add_explicit(&g_alloc_counter, 1, memory_order_relaxed);
+      printf("[ALLOC_LOGGER] Watched thread allocation: size=%lu, ptr=%p\n",
+             (unsigned long)arg2, (void *)result);
+    }
+  }
+  if (g_prev_logger) {
+    g_prev_logger(type, arg1, arg2, arg3, result, num_hot_frames_to_skip);
+  }
+}
+#endif // !CDSP_SANITIZER_ACTIVE
+
+typedef void (*test_iter_func_t)(int iter, void *ctx);
+
+typedef struct {
+  test_iter_func_t body;
+  int warmup;
+  int iterations;
+  void *ctx;
+} loop_ctx_t;
+
+static void run_test_loop(void *arg) {
+  loop_ctx_t *l = (loop_ctx_t *)arg;
+  for (int i = 0; i < l->iterations; i++) {
+    l->body(l->warmup + i, l->ctx);
+  }
+}
+
+static bool count_allocations(void (*body)(void *), void *ctx,
+                              uint64_t *out_count) {
+#if CDSP_SANITIZER_ACTIVE
+  (void)body;
+  (void)ctx;
+  (void)out_count;
+  return false;
+#elif defined(__linux__) || defined(_WIN32)
+  uintptr_t my_thread = (uintptr_t)pthread_self();
+  atomic_store_explicit(&g_alloc_counter, 0, memory_order_relaxed);
+  atomic_store_explicit(&g_watched_thread, my_thread, memory_order_release);
+  atomic_store_explicit((_Atomic malloc_logger_t *)&g_custom_malloc_logger,
+                        my_malloc_logger, memory_order_release);
+
+  body(ctx);
+
+  atomic_store_explicit((_Atomic malloc_logger_t *)&g_custom_malloc_logger,
+                        NULL, memory_order_release);
+  atomic_store_explicit(&g_watched_thread, 0, memory_order_release);
+  *out_count = atomic_load_explicit(&g_alloc_counter, memory_order_relaxed);
+  return true;
+#else // macOS
+  void *handle = dlopen(NULL, RTLD_LAZY);
+  if (!handle)
+    return false;
+  malloc_logger_t *logger_ptr =
+      (malloc_logger_t *)dlsym(handle, "malloc_logger");
+  if (!logger_ptr) {
+    dlclose(handle);
+    return false;
+  }
+
+  uintptr_t my_thread = (uintptr_t)pthread_self();
+  g_prev_logger = *logger_ptr;
+  atomic_store_explicit(&g_alloc_counter, 0, memory_order_relaxed);
+  atomic_store_explicit(&g_watched_thread, my_thread, memory_order_release);
+  *logger_ptr = my_malloc_logger;
+
+  body(ctx);
+
+  *logger_ptr = g_prev_logger;
+  atomic_store_explicit(&g_watched_thread, 0, memory_order_release);
+  *out_count = atomic_load_explicit(&g_alloc_counter, memory_order_relaxed);
+  dlclose(handle);
+  return true;
+#endif
+}
+
+static void assert_allocation_free(const char *label, int warmup,
+                                   int iterations, test_iter_func_t body,
+                                   void *ctx) {
+  for (int i = 0; i < warmup; i++) {
+    body(i, ctx);
+  }
+  loop_ctx_t lctx = {body, warmup, iterations, ctx};
+  uint64_t count = 0;
+  if (!count_allocations(run_test_loop, &lctx, &count)) {
+    printf("malloc_logger unavailable — running unmetered: %s\n", label);
+    run_test_loop(&lctx);
+    return;
+  }
+  printf("[%s] allocations=%llu over %d iterations\n", label,
+         (unsigned long long)count, iterations);
+  ASSERT_EQ(0, count);
+}
+
+static bool count_allocations_on_thread(void (*body)(void *), void *ctx,
+                                        uintptr_t thread_id,
+                                        uint64_t *out_count) {
+#if CDSP_SANITIZER_ACTIVE
+  (void)body;
+  (void)ctx;
+  (void)thread_id;
+  (void)out_count;
+  return false;
+#elif defined(__linux__) || defined(_WIN32)
+  atomic_store_explicit(&g_alloc_counter, 0, memory_order_relaxed);
+  atomic_store_explicit(&g_watched_thread, thread_id, memory_order_release);
+  atomic_store_explicit((_Atomic malloc_logger_t *)&g_custom_malloc_logger,
+                        my_malloc_logger, memory_order_release);
+
+  body(ctx);
+
+  atomic_store_explicit((_Atomic malloc_logger_t *)&g_custom_malloc_logger,
+                        NULL, memory_order_release);
+  atomic_store_explicit(&g_watched_thread, 0, memory_order_release);
+  *out_count = atomic_load_explicit(&g_alloc_counter, memory_order_relaxed);
+  return true;
+#else // macOS
+  void *handle = dlopen(NULL, RTLD_LAZY);
+  if (!handle)
+    return false;
+  malloc_logger_t *logger_ptr =
+      (malloc_logger_t *)dlsym(handle, "malloc_logger");
+  if (!logger_ptr) {
+    dlclose(handle);
+    return false;
+  }
+
+  g_prev_logger = *logger_ptr;
+  atomic_store_explicit(&g_alloc_counter, 0, memory_order_relaxed);
+  atomic_store_explicit(&g_watched_thread, thread_id, memory_order_release);
+  *logger_ptr = my_malloc_logger;
+
+  body(ctx);
+
+  *logger_ptr = g_prev_logger;
+  atomic_store_explicit(&g_watched_thread, 0, memory_order_release);
+  *out_count = atomic_load_explicit(&g_alloc_counter, memory_order_relaxed);
+  dlclose(handle);
+  return true;
+#endif
+}
+
+static void assert_allocation_free_on_thread(const char *label,
+                                             uintptr_t thread_id, int warmup,
+                                             int iterations,
+                                             test_iter_func_t body, void *ctx) {
+  for (int i = 0; i < warmup; i++) {
+    body(i, ctx);
+  }
+  cdsp_sleep_ms(50);
+  loop_ctx_t lctx = {body, warmup, iterations, ctx};
+  uint64_t count = 0;
+  if (!count_allocations_on_thread(run_test_loop, &lctx, thread_id, &count)) {
+    printf("malloc_logger unavailable — running unmetered: %s\n", label);
+    run_test_loop(&lctx);
+    return;
+  }
+  printf("[%s] allocations=%llu over %d iterations\n", label,
+         (unsigned long long)count, iterations);
+  ASSERT_EQ(0, count);
+}
+
+static audio_chunk_t **make_random_chunks(int count, int channels, int frames,
+                                          double scale) {
+  audio_chunk_t **chunks =
+      (audio_chunk_t **)calloc(count, sizeof(audio_chunk_t *));
+  for (int i = 0; i < count; i++) {
+    chunks[i] = audio_chunk_create(frames, channels);
+    for (int ch = 0; ch < channels; ch++) {
+      double *wv = audio_chunk_get_channel(chunks[i], ch);
+      for (int f = 0; f < frames; f++) {
+        wv[f] = ((double)rand() / RAND_MAX) * 2.0 * scale - scale;
+      }
+    }
+    audio_chunk_set_valid_frames(chunks[i], frames);
+  }
+  return chunks;
+}
+
+static void free_chunks(audio_chunk_t **chunks, int count) {
+  if (!chunks)
+    return;
+  for (int i = 0; i < count; i++) {
+    if (chunks[i])
+      audio_chunk_free(chunks[i]);
+  }
+  free(chunks);
+}
+
+static void fill_sine(mutable_waveform_t buf, int frames, double freq_hz,
+                      double sample_rate) {
+  for (int i = 0; i < frames; i++) {
+    buf[i] = sin(2.0 * M_PI * freq_hz * (double)i / sample_rate);
+  }
+}
+
+// MARK: - Resamplers
+
+typedef struct {
+  resampler_t *resampler;
+  audio_chunk_t **inputs;
+  int input_count;
+  audio_chunk_t *output;
+} resampler_test_ctx_t;
+
+static void resampler_iter(int i, void *ctx) {
+  resampler_test_ctx_t *c = (resampler_test_ctx_t *)ctx;
+  resampler_process(c->resampler, c->inputs[i % c->input_count], c->output);
+}
+
+static void run_resampler_hot_path(resampler_t *resampler, int channels,
+                                   const char *label) {
+  int cs = (int)resampler_get_chunk_size(resampler);
+  int max_out = (int)resampler_get_max_output_frames(resampler);
+  audio_chunk_t **inputs = make_random_chunks(32, channels, cs, 1.0);
+  audio_chunk_t *output = audio_chunk_create(max_out, channels);
+  resampler_test_ctx_t ctx = {resampler, inputs, 32, output};
+  assert_allocation_free(label, 0, 30, resampler_iter, &ctx);
+  free_chunks(inputs, 32);
+  audio_chunk_free(output);
+}
+
+TEST(Synchronous_Stereo) {
+  resampler_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.type = RESAMPLER_TYPE_SYNCHRONOUS;
+
+  resampler_t *res =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
+  ASSERT_TRUE(res != NULL);
+  run_resampler_hot_path(res, 2, "Synchronous stereo");
+  resampler_free(res);
+}
+
+TEST(AsyncPoly_Stereo) {
+  resampler_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.type = RESAMPLER_TYPE_ASYNC_POLY;
+  strcpy(cfg.interpolation, "Cubic");
+  cfg.has_interpolation = true;
+
+  resampler_t *res =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
+  ASSERT_TRUE(res != NULL);
+  run_resampler_hot_path(res, 2, "AsyncPoly stereo");
+  resampler_free(res);
+}
+
+TEST(AsyncSinc_Stereo) {
+  resampler_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.type = RESAMPLER_TYPE_ASYNC_SINC;
+  strcpy(cfg.profile, "Accurate");
+  cfg.has_profile = true;
+
+  resampler_t *res =
+      resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL);
+  ASSERT_TRUE(res != NULL);
+  run_resampler_hot_path(res, 2, "AsyncSinc stereo");
+  resampler_free(res);
+}
+
+// MARK: - Filters
+
+typedef struct {
+  void *filter;
+  void (*process)(void *, double *, size_t);
+  double *wave;
+  size_t frames;
+} filter_test_ctx_t;
+
+static void bq_process_wrap(void *f, double *w, size_t n) {
+  g_biquad_vtable.process(f, w, n);
+}
+static void conv_process_wrap(void *f, double *w, size_t n) {
+  g_convolution_vtable.process(f, w, n);
+}
+static void gain_process_wrap(void *f, double *w, size_t n) {
+  g_gain_vtable.process(f, w, n);
+}
+static void loud_process_wrap(void *f, double *w, size_t n) {
+  g_loudness_vtable.process(f, w, n);
+}
+static void delay_process_wrap(void *f, double *w, size_t n) {
+  g_delay_vtable.process(f, w, n);
+}
+static void combo_process_wrap(void *f, double *w, size_t n) {
+  g_biquad_combo_vtable.process(f, w, n);
+}
+static void diffeq_process_wrap(void *f, double *w, size_t n) {
+  g_diffeq_vtable.process(f, w, n);
+}
+static void dither_process_wrap(void *f, double *w, size_t n) {
+  g_dither_vtable.process(f, w, n);
+}
+static void limit_process_wrap(void *f, double *w, size_t n) {
+  g_clipper_vtable.process(f, w, n);
+}
+static void look_process_wrap(void *f, double *w, size_t n) {
+  g_lookahead_limiter_vtable.process(f, w, n);
+}
+
+static void filter_iter(int i, void *ctx) {
+  (void)i;
+  filter_test_ctx_t *c = (filter_test_ctx_t *)ctx;
+  c->process(c->filter, c->wave, c->frames);
+}
+
+TEST(Biquad_AllocationFree) {
+  biquad_config_t params = {
+      .type = BIQUAD_TYPE_LOWPASS, .freq = 1000.0, .q = 0.707};
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
+                         .parameters.biquad = params};
+  biquad_filter_t *filter = (biquad_filter_t *)g_biquad_vtable.create(
+      "bq", &cfg, 44100, 0, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(1024, sizeof(double));
+  fill_sine(wave, 1024, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, bq_process_wrap, wave, 1024};
+  assert_allocation_free("Biquad", 0, 30, filter_iter, &ctx);
+  free(wave);
+  g_biquad_vtable.free(filter);
+}
+
+TEST(Convolution_AllocationFree) {
+  int chunk_size = 1024;
+  int ir_len = 4096;
+  double *ir = (double *)calloc(ir_len, sizeof(double));
+  for (int i = 0; i < ir_len; i++) {
+    ir[i] = (i == 0 ? 1.0 : 0.0) + 0.001 * cos((double)i * 0.01);
+  }
+  convolution_config_t params = {
+      .type = CONV_TYPE_VALUES, .values = ir, .values_count = ir_len};
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+  void *filter =
+      g_convolution_vtable.create("conv", &cfg, 0, chunk_size, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(chunk_size, sizeof(double));
+  fill_sine(wave, chunk_size, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, conv_process_wrap, wave, chunk_size};
+  assert_allocation_free("Convolution", 3, 30, filter_iter, &ctx);
+  free(wave);
+  free(ir);
+  g_convolution_vtable.free(filter);
+}
+
+TEST(Gain_AllocationFree) {
+  gain_config_t params = {
+      .gain = -6.0, .has_gain = true, .scale = GAIN_SCALE_DB};
+  filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
+  void *filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(1024, sizeof(double));
+  fill_sine(wave, 1024, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, gain_process_wrap, wave, 1024};
+  assert_allocation_free("Gain", 0, 30, filter_iter, &ctx);
+  free(wave);
+  g_gain_vtable.free(filter);
+}
+
+static void vol_iter(int i, void *ctx) {
+  (void)i;
+  filter_test_ctx_t *c = (filter_test_ctx_t *)ctx;
+  volume_filter_t *vf = (volume_filter_t *)c->filter;
+  volume_filter_prepare_chunk(vf);
+  g_volume_vtable.process(vf, c->wave, c->frames);
+  volume_filter_advance_ramp(vf);
+}
+
+TEST(Volume_AllocationFree) {
+  processing_parameters_t *proc_params = processing_parameters_create(2, 2);
+  processing_parameters_set_target_volume_for_fader(proc_params, -6.0,
+                                                    FADER_MAIN);
+  processing_parameters_set_muted_for_fader(proc_params, false, FADER_MAIN);
+  volume_config_t params = {.ramp_time_ms = 0.0,
+                            .has_ramp_time_ms = true,
+                            .limit = 50.0,
+                            .has_limit = true,
+                            .fader = FADER_MAIN};
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME,
+                         .parameters.volume = params};
+  volume_filter_t *filter = (volume_filter_t *)g_volume_vtable.create(
+      "vol", &cfg, 44100, 1024, proc_params, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(1024, sizeof(double));
+  fill_sine(wave, 1024, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, NULL, wave, 1024};
+  assert_allocation_free("Volume", 0, 30, vol_iter, &ctx);
+  free(wave);
+  g_volume_vtable.free(filter);
+  processing_parameters_free(proc_params);
+}
+
+TEST(Loudness_AllocationFree) {
+  processing_parameters_t *proc_params = processing_parameters_create(2, 2);
+  processing_parameters_set_current_volume_for_fader(proc_params, -45.0,
+                                                     FADER_MAIN);
+  loudness_config_t params = {.reference_level = -25.0,
+                              .has_reference_level = true,
+                              .high_boost = 10.0,
+                              .has_high_boost = true,
+                              .low_boost = 10.0,
+                              .has_low_boost = true,
+                              .attenuate_mid = false};
+  filter_config_t cfg = {.type = FILTER_TYPE_LOUDNESS,
+                         .parameters.loudness = params};
+  void *filter =
+      g_loudness_vtable.create("loud", &cfg, 44100, 0, proc_params, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(1024, sizeof(double));
+  fill_sine(wave, 1024, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, loud_process_wrap, wave, 1024};
+  assert_allocation_free("Loudness", 0, 30, filter_iter, &ctx);
+  free(wave);
+  g_loudness_vtable.free(filter);
+  processing_parameters_free(proc_params);
+}
+
+TEST(Delay_AllocationFree) {
+  delay_config_t params = {
+      .delay = 5.5, .delay_unit = DELAY_UNIT_SAMPLES, .subsample = true};
+  filter_config_t cfg = {.type = FILTER_TYPE_DELAY, .parameters.delay = params};
+  void *filter = g_delay_vtable.create("del", &cfg, 44100, 0, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(1024, sizeof(double));
+  fill_sine(wave, 1024, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, delay_process_wrap, wave, 1024};
+  assert_allocation_free("Delay", 0, 30, filter_iter, &ctx);
+  free(wave);
+  g_delay_vtable.free(filter);
+}
+
+TEST(BiquadCombo_AllocationFree) {
+  peq_band_t bands[5] = {
+      {.freq = 80.0, .q = 0.707, .gain = 3.0},
+      {.freq = 250.0, .q = 1.5, .gain = -2.0},
+      {.freq = 1000.0, .q = 2.0, .gain = 1.5},
+      {.freq = 4000.0, .q = 1.0, .gain = -1.0},
+      {.freq = 12000.0, .q = 0.707, .gain = 2.5},
+  };
+  biquad_combo_config_t params = {
+      .type = BIQUAD_COMBO_TYPE_N_POINT_PEQ,
+      .bands = bands,
+      .bands_count = 5,
+  };
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD_COMBO,
+                         .parameters.biquad_combo = params};
+  void *filter =
+      g_biquad_combo_vtable.create("combo", &cfg, 44100, 0, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(1024, sizeof(double));
+  fill_sine(wave, 1024, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, combo_process_wrap, wave, 1024};
+  assert_allocation_free("BiquadCombo", 0, 30, filter_iter, &ctx);
+  free(wave);
+  g_biquad_combo_vtable.free(filter);
+}
+
+TEST(DiffEq_AllocationFree) {
+  double a[] = {1.0, -1.864844640491105, 0.8818236057002321};
+  double b[] = {0.004244741301241303, 0.008489482602482605,
+                0.004244741301241303};
+  diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
+  filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
+                         .parameters.diff_eq = params};
+  void *filter = g_diffeq_vtable.create("diffeq", &cfg, 0, 0, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(1024, sizeof(double));
+  fill_sine(wave, 1024, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, diffeq_process_wrap, wave, 1024};
+  assert_allocation_free("DiffEq", 0, 30, filter_iter, &ctx);
+  free(wave);
+  g_diffeq_vtable.free(filter);
+}
+
+TEST(Dither_AllocationFree) {
+  dither_config_t params = {.type = DITHER_TYPE_GESEMANN_441, .bits = 16};
+  filter_config_t cfg = {.type = FILTER_TYPE_DITHER,
+                         .parameters.dither = params};
+  void *filter = g_dither_vtable.create("dither", &cfg, 0, 0, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(1024, sizeof(double));
+  fill_sine(wave, 1024, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, dither_process_wrap, wave, 1024};
+  assert_allocation_free("Dither", 0, 30, filter_iter, &ctx);
+  free(wave);
+  g_dither_vtable.free(filter);
+}
+
+TEST(Clipper_AllocationFree) {
+  clipper_config_t params = {.clip_limit = -1.5, .soft_clip = true};
+  filter_config_t cfg = {.type = FILTER_TYPE_CLIPPER,
+                         .parameters.clipper = params};
+  void *filter = g_clipper_vtable.create("clipper", &cfg, 0, 0, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(1024, sizeof(double));
+  fill_sine(wave, 1024, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, limit_process_wrap, wave, 1024};
+  assert_allocation_free("Clipper", 0, 30, filter_iter, &ctx);
+  free(wave);
+  g_clipper_vtable.free(filter);
+}
+
+TEST(LookaheadLimiter_AllocationFree) {
+  lookahead_limiter_config_t params = {.limit = -1.0,
+                                       .attack = 4.0,
+                                       .attack_unit = TIME_UNIT_SAMPLES,
+                                       .release = 20.0,
+                                       .release_unit = TIME_UNIT_SAMPLES};
+  filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
+                         .parameters.lookahead_limiter = params};
+  void *filter = g_lookahead_limiter_vtable.create("lookahead", &cfg, 44100,
+                                                   1024, NULL, NULL);
+  ASSERT_TRUE(filter != NULL);
+  double *wave = (double *)calloc(1024, sizeof(double));
+  fill_sine(wave, 1024, 1000.0, 44100.0);
+  filter_test_ctx_t ctx = {filter, look_process_wrap, wave, 1024};
+  assert_allocation_free("LookaheadLimiter", 0, 30, filter_iter, &ctx);
+  free(wave);
+  g_lookahead_limiter_vtable.free(filter);
+}
+
+// MARK: - Processors
+
+typedef struct {
+  void *proc;
+  void (*process)(void *, audio_chunk_t *);
+  audio_chunk_t *chunk;
+} proc_test_ctx_t;
+
+static void dsp_proc_wrap(void *p, audio_chunk_t *c) {
+  dsp_processor_process((dsp_processor_t *)p, c);
+}
+
+static void proc_iter(int i, void *ctx) {
+  (void)i;
+  proc_test_ctx_t *c = (proc_test_ctx_t *)ctx;
+  c->process(c->proc, c->chunk);
+}
+
+TEST(Compressor_AllocationFree) {
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0, 1};
+  compressor_config_t params = {.channels = 2,
+                                .monitor_channels = mon_ch,
+                                .monitor_channels_count = 1,
+                                .process_channels = proc_ch,
+                                .process_channels_count = 2,
+                                .attack = 0.005,
+                                .attack_unit = TIME_UNIT_S,
+                                .release = 0.05,
+                                .release_unit = TIME_UNIT_S,
+                                .threshold = -10.0,
+                                .factor = 3.0,
+                                .makeup_gain = 2.0,
+                                .has_makeup_gain = true,
+                                .soft_clip = true,
+                                .clip_limit = -1.0,
+                                .has_clip_limit = true};
+  processor_config_t config = {.type = PROCESSOR_TYPE_COMPRESSOR,
+                               .parameters.compressor = params};
+  dsp_processor_t *proc =
+      dsp_processor_create("comp", &config, 44100, 1024, NULL);
+  ASSERT_TRUE(proc != NULL);
+  audio_chunk_t *chunk = audio_chunk_create(1024, 2);
+  for (size_t f = 0; f < 1024; f++) {
+    audio_chunk_get_channel(chunk, 0)[f] = 0.5;
+    audio_chunk_get_channel(chunk, 1)[f] = 0.5;
+  }
+  audio_chunk_set_valid_frames(chunk, 1024);
+  proc_test_ctx_t ctx = {proc, dsp_proc_wrap, chunk};
+  assert_allocation_free("Compressor", 0, 30, proc_iter, &ctx);
+  audio_chunk_free(chunk);
+  dsp_processor_free(proc);
+}
+
+TEST(NoiseGate_AllocationFree) {
+  size_t mon_ch[] = {0};
+  size_t proc_ch[] = {0, 1};
+  noise_gate_config_t params = {.channels = 2,
+                                .monitor_channels = mon_ch,
+                                .monitor_channels_count = 1,
+                                .process_channels = proc_ch,
+                                .process_channels_count = 2,
+                                .attack = 0.005,
+                                .attack_unit = TIME_UNIT_S,
+                                .release = 0.05,
+                                .release_unit = TIME_UNIT_S,
+                                .threshold = -20.0,
+                                .attenuation = 12.0};
+  processor_config_t config = {.type = PROCESSOR_TYPE_NOISE_GATE,
+                               .parameters.noise_gate = params};
+  dsp_processor_t *proc =
+      dsp_processor_create("gate", &config, 44100, 1024, NULL);
+  ASSERT_TRUE(proc != NULL);
+  audio_chunk_t *chunk = audio_chunk_create(1024, 2);
+  for (size_t f = 0; f < 1024; f++) {
+    audio_chunk_get_channel(chunk, 0)[f] = 0.5;
+    audio_chunk_get_channel(chunk, 1)[f] = 0.5;
+  }
+  audio_chunk_set_valid_frames(chunk, 1024);
+  proc_test_ctx_t ctx = {proc, dsp_proc_wrap, chunk};
+  assert_allocation_free("NoiseGate", 0, 30, proc_iter, &ctx);
+  audio_chunk_free(chunk);
+  dsp_processor_free(proc);
+}
+
+TEST(RACE_AllocationFree) {
+  race_config_t params = {.channels = 2,
+                          .channel_a = 0,
+                          .channel_b = 1,
+                          .delay = 12.0,
+                          .subsample_delay = false,
+                          .has_subsample_delay = true,
+                          .delay_unit = DELAY_UNIT_SAMPLES,
+                          .has_delay_unit = true,
+                          .attenuation = 6.0};
+  processor_config_t config = {.type = PROCESSOR_TYPE_RACE,
+                               .parameters.race = params};
+  dsp_processor_t *proc = dsp_processor_create("race", &config, 44100, 0, NULL);
+  ASSERT_TRUE(proc != NULL);
+  audio_chunk_t *chunk = audio_chunk_create(1024, 2);
+  for (size_t f = 0; f < 1024; f++) {
+    audio_chunk_get_channel(chunk, 0)[f] = 0.5;
+    audio_chunk_get_channel(chunk, 1)[f] = 0.5;
+  }
+  audio_chunk_set_valid_frames(chunk, 1024);
+  proc_test_ctx_t ctx = {proc, dsp_proc_wrap, chunk};
+  assert_allocation_free("RACE", 0, 30, proc_iter, &ctx);
+  audio_chunk_free(chunk);
+  dsp_processor_free(proc);
+}
+
+// MARK: - Mixer
+
+typedef struct {
+  mixer_t *mixer;
+  audio_chunk_t **inputs;
+  int input_count;
+  audio_chunk_t *output;
+} mixer_test_ctx_t;
+
+static void mixer_iter(int i, void *ctx) {
+  mixer_test_ctx_t *c = (mixer_test_ctx_t *)ctx;
+  mixer_process(c->mixer, c->inputs[i % c->input_count], c->output);
+}
+
+TEST(Mixer_2to4_AllocationFree) {
+  mixer_source_t s00 = {
+      .channel = 0, .gain = 0.0, .has_gain = true, .scale = GAIN_SCALE_DB};
+  mixer_source_t s11 = {
+      .channel = 1, .gain = 0.0, .has_gain = true, .scale = GAIN_SCALE_DB};
+  mixer_source_t s20 = {
+      .channel = 0, .gain = -3.0, .has_gain = true, .scale = GAIN_SCALE_DB};
+  mixer_source_t s21 = {
+      .channel = 1, .gain = -3.0, .has_gain = true, .scale = GAIN_SCALE_DB};
+  mixer_source_t s2_srcs[] = {s20, s21};
+  mixer_source_t s31 = {
+      .channel = 1, .gain = -6.0, .has_gain = true, .scale = GAIN_SCALE_DB};
+  mixer_mapping_t maps[4] = {
+      {.dest = 0, .sources_count = 1, .sources = &s00},
+      {.dest = 1, .sources_count = 1, .sources = &s11},
+      {.dest = 2, .sources_count = 2, .sources = s2_srcs},
+      {.dest = 3, .sources_count = 1, .sources = &s31}};
+  mixer_config_t config = {
+      .channels_in = 2, .channels_out = 4, .mapping_count = 4, .mapping = maps};
+  mixer_t *mixer = mixer_create("mixer", &config, 1024, NULL);
+  ASSERT_TRUE(mixer != NULL);
+  audio_chunk_t **inputs = make_random_chunks(32, 2, 1024, 1.0);
+  audio_chunk_t *output = audio_chunk_create(1024, 4);
+  mixer_test_ctx_t ctx = {mixer, inputs, 32, output};
+  assert_allocation_free("Mixer 2->4", 0, 30, mixer_iter, &ctx);
+  free_chunks(inputs, 32);
+  audio_chunk_free(output);
+  mixer_free(mixer);
+}
+
+// MARK: - DoP
+
+typedef struct {
+  dsd_encoder_t *encoder;
+  audio_chunk_t **chunks;
+  int chunk_count;
+} dsd_enc_test_ctx_t;
+
+static void dsd_enc_iter(int i, void *ctx) {
+  dsd_enc_test_ctx_t *c = (dsd_enc_test_ctx_t *)ctx;
+  dsd_encoder_encode(c->encoder, c->chunks[i % c->chunk_count]);
+}
+
+TEST(DoPEncoder_AllocationFree) {
+  dsd_encoder_t *encoder = dsd_encoder_create(2, 176400, DSD_MODE_DOP, 16,
+                                              SDM_FILTER_SDM4, 20000.0, false);
+  ASSERT_TRUE(encoder != NULL);
+  audio_chunk_t **inputs = make_random_chunks(32, 2, 1024, 0.5);
+  dsd_enc_test_ctx_t ctx = {encoder, inputs, 32};
+  assert_allocation_free("DSD encoder", 0, 30, dsd_enc_iter, &ctx);
+  free_chunks(inputs, 32);
+  dsd_encoder_free(encoder);
+}
+
+typedef struct {
+  dsd_decoder_t *decoder;
+  audio_chunk_t **chunks;
+  int chunk_count;
+} dsd_dec_test_ctx_t;
+
+static void dsd_dec_iter(int i, void *ctx) {
+  dsd_dec_test_ctx_t *c = (dsd_dec_test_ctx_t *)ctx;
+  dsd_decoder_process(c->decoder, c->chunks[i % c->chunk_count]);
+}
+
+TEST(DoPDecoder_AllocationFree) {
+  dsd_decoder_t *decoder =
+      dsd_decoder_create(2, 176400.0, DSD_MODE_DOP, 16, false, 20000.0, false);
+  ASSERT_TRUE(decoder != NULL);
+  int total_chunks = 36;
+  audio_chunk_t **chunks =
+      (audio_chunk_t **)calloc(total_chunks, sizeof(audio_chunk_t *));
+  int global_frame_idx = 0;
+  for (int i = 0; i < total_chunks; i++) {
+    chunks[i] = audio_chunk_create(1024, 2);
+    for (int t = 0; t < 1024; t++) {
+      uint32_t marker = (global_frame_idx % 2 == 0) ? 0x05 : 0xFA;
+      uint32_t val24 = (marker << 16) | 0x6969;
+      int32_t int_val = (int32_t)(val24 << 8) >> 8;
+      double f = (double)int_val / 8388608.0;
+      audio_chunk_get_channel(chunks[i], 0)[t] = f;
+      audio_chunk_get_channel(chunks[i], 1)[t] = f;
+      global_frame_idx++;
+    }
+    audio_chunk_set_valid_frames(chunks[i], 1024);
+  }
+  dsd_dec_test_ctx_t ctx = {decoder, chunks, total_chunks};
+  assert_allocation_free("DoP decoder", 0, 30, dsd_dec_iter, &ctx);
+  free_chunks(chunks, total_chunks);
+  dsd_decoder_free(decoder);
+}
+
+TEST(NativeDSDDecoder_AllocationFree) {
+  dsd_decoder_t *decoder = dsd_decoder_create(2, 88200.0, DSD_MODE_NATIVE, 32,
+                                              false, 20000.0, false);
+  ASSERT_TRUE(decoder != NULL);
+  int total_chunks = 36;
+  audio_chunk_t **chunks =
+      (audio_chunk_t **)calloc(total_chunks, sizeof(audio_chunk_t *));
+  for (int i = 0; i < total_chunks; i++) {
+    chunks[i] = audio_chunk_create(1024, 2);
+    for (int t = 0; t < 1024; t++) {
+      double f = pcm_sample_decode_dsd_u32(0x69696969);
+      audio_chunk_get_channel(chunks[i], 0)[t] = f;
+      audio_chunk_get_channel(chunks[i], 1)[t] = f;
+    }
+    audio_chunk_set_valid_frames(chunks[i], 1024);
+  }
+  dsd_dec_test_ctx_t ctx = {decoder, chunks, total_chunks};
+  assert_allocation_free("Native DSD decoder", 0, 30, dsd_dec_iter, &ctx);
+  free_chunks(chunks, total_chunks);
+  dsd_decoder_free(decoder);
+}
+
+static void logger_iter(int i, void *ctx) {
+  (void)ctx;
+  logger_t logger = logger_create("test.alloc.free");
+  logger_info(&logger, "Test event: int=%d, float=%f, static=%s", i,
+              3.14159 + i, "Static string argument value");
+}
+
+TEST(Logger_AllocationFree) {
+  assert_allocation_free("Logger various arguments", 1, 30, logger_iter, NULL);
+}
+
+typedef struct {
+  processing_parameters_t *params;
+  audio_chunk_t **chunks;
+  int chunk_count;
+} proc_params_test_ctx_t;
+
+static void proc_params_iter(int i, void *ctx) {
+  proc_params_test_ctx_t *c = (proc_params_test_ctx_t *)ctx;
+  processing_parameters_update_capture_levels(c->params,
+                                              c->chunks[i % c->chunk_count]);
+  processing_parameters_update_playback_levels(c->params,
+                                               c->chunks[i % c->chunk_count]);
+}
+
+TEST(ProcessingParameters_AllocationFree) {
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  ASSERT_TRUE(params != NULL);
+  audio_chunk_t **chunks = make_random_chunks(32, 2, 1024, 1.0);
+  proc_params_test_ctx_t ctx = {params, chunks, 32};
+  assert_allocation_free("ProcessingParameters updateLevels", 0, 30,
+                         proc_params_iter, &ctx);
+  free_chunks(chunks, 32);
+  processing_parameters_free(params);
+}
+
+typedef struct {
+  engine_processing_loop_t *loop;
+  engine_shared_state_t *shared;
+  pipeline_t **reloaded_pipelines;
+  audio_chunk_t *input_chunk;
+  cdsp_sem_t thread_id_sem;
+  cdsp_sem_t processed_sem;
+  _Atomic uintptr_t watched_thread_id;
+} pipeline_reload_test_ctx_t;
+
+static void on_chunk_captured_cb(void *ctx, const audio_chunk_t *chunk) {
+  (void)ctx;
+  (void)chunk;
+}
+
+static void on_chunk_processed_cb(void *ctx, const audio_chunk_t *chunk) {
+  (void)chunk;
+  pipeline_reload_test_ctx_t *c = (pipeline_reload_test_ctx_t *)ctx;
+  uintptr_t tid = (uintptr_t)pthread_self();
+  uintptr_t expected = 0;
+  if (atomic_compare_exchange_strong(&c->watched_thread_id, &expected, tid)) {
+    cdsp_sem_signal(c->thread_id_sem);
+  }
+  cdsp_sem_signal(c->processed_sem);
+}
+
+static void *test_processing_thread_run(void *arg) {
+  engine_processing_loop_run((engine_processing_loop_t *)arg);
+  return NULL;
+}
+
+static void reload_iter_c(int i, void *ctx) {
+  pipeline_reload_test_ctx_t *c = (pipeline_reload_test_ctx_t *)ctx;
+
+  // 1. Enqueue chunk & signal captured semaphore
+  engine_processing_loop_set_pipeline(c->loop, c->reloaded_pipelines[i + 1],
+                                      true);
+  engine_shared_state_enqueue_captured(c->shared, c->input_chunk);
+
+  // 4. Wait for processing completion
+  cdsp_sem_wait(c->processed_sem);
+
+  // 5. Clean up queues
+  void *processed =
+      spsc_queue_dequeue(engine_shared_state_get_processed_queue(c->shared));
+  (void)processed;
+
+  pipeline_t *garbage = engine_shared_state_collect_retired_pipeline(c->shared);
+  if (garbage) {
+    pipeline_free(garbage);
+  }
+}
+
+static void init_default_config(dsp_config_t *config) {
+  memset(config, 0, sizeof(dsp_config_t));
+  config->devices.samplerate = 44100;
+  config->devices.chunksize = 1024;
+#if defined(ENABLE_COREAUDIO)
+  config->devices.capture.type = AUDIO_BACKEND_TYPE_CORE_AUDIO;
+  config->devices.capture.cfg.coreaudio.channels = 2;
+  config->devices.playback.type = AUDIO_BACKEND_TYPE_CORE_AUDIO;
+  config->devices.playback.cfg.coreaudio.channels = 2;
+#elif defined(ENABLE_ALSA)
+  config->devices.capture.type = AUDIO_BACKEND_TYPE_ALSA;
+  config->devices.capture.cfg.alsa.channels = 2;
+  config->devices.playback.type = AUDIO_BACKEND_TYPE_ALSA;
+  config->devices.playback.cfg.alsa.channels = 2;
+#elif defined(ENABLE_WASAPI)
+  config->devices.capture.type = AUDIO_BACKEND_TYPE_WASAPI;
+  config->devices.capture.cfg.wasapi.channels = 2;
+  config->devices.playback.type = AUDIO_BACKEND_TYPE_WASAPI;
+  config->devices.playback.cfg.wasapi.channels = 2;
+#else
+  config->devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  config->devices.capture.cfg.raw_file.channels = 2;
+  config->devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  config->devices.playback.cfg.raw_file.channels = 2;
+#endif
+}
+
+TEST(PipelineReload_AllocationFree) {
+  dsp_config_t config;
+  init_default_config(&config);
+
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  pipeline_t *initial_pipeline = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(initial_pipeline != NULL);
+
+  // Pre-create 30 pipelines
+  pipeline_t *reloaded_pipelines[30];
+  for (int i = 0; i < 30; i++) {
+    reloaded_pipelines[i] = pipeline_create(&config, params, 0, NULL);
+    ASSERT_TRUE(reloaded_pipelines[i] != NULL);
+  }
+
+  engine_shared_state_t *shared = engine_shared_state_create(32, 32);
+  ASSERT_TRUE(shared != NULL);
+  engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
+
+  audio_chunk_t *resampler_scratch = audio_chunk_create(1024, 2);
+  audio_chunk_t *pipeline_scratch = audio_chunk_create(1024, 2);
+
+  round_robin_chunk_pool_t *scratch_pool =
+      round_robin_chunk_pool_create(32, 1024, 2);
+
+  pipeline_reload_test_ctx_t ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.shared = shared;
+  ctx.reloaded_pipelines = reloaded_pipelines;
+  ctx.input_chunk = audio_chunk_create(1024, 2);
+  audio_chunk_set_valid_frames(ctx.input_chunk, 1024);
+
+  ctx.thread_id_sem = cdsp_sem_create();
+  ctx.processed_sem = cdsp_sem_create();
+  atomic_init(&ctx.watched_thread_id, 0);
+
+  engine_processing_loop_config_t proc_cfg = {
+      .shared = shared,
+      .processing_params = params,
+      .pipeline_rate = 44100,
+      .resampler = NULL,
+      .pipeline = initial_pipeline,
+      .resampler_scratch = resampler_scratch,
+      .pipeline_scratch = pipeline_scratch,
+      .scratch_pool = scratch_pool,
+      .on_chunk_captured = on_chunk_captured_cb,
+      .on_chunk_captured_ctx = NULL,
+      .on_chunk_processed = on_chunk_processed_cb,
+      .on_chunk_processed_ctx = &ctx,
+  };
+  engine_processing_loop_t *loop = engine_processing_loop_create(&proc_cfg);
+  ASSERT_TRUE(loop != NULL);
+  ctx.loop = loop;
+
+  // Spawn processing loop thread
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_processing_thread_run, loop);
+
+  // Warmup / get thread ID
+  engine_processing_loop_set_pipeline(loop, reloaded_pipelines[0], true);
+  engine_shared_state_enqueue_captured(shared, ctx.input_chunk);
+
+  cdsp_sem_wait(ctx.thread_id_sem);
+  cdsp_sem_wait(ctx.processed_sem);
+
+  // Clean up queues after warmup
+  void *processed =
+      spsc_queue_dequeue(engine_shared_state_get_processed_queue(shared));
+  (void)processed;
+  pipeline_t *garbage = engine_shared_state_collect_retired_pipeline(shared);
+  if (garbage) {
+    pipeline_free(garbage);
+  }
+
+  uintptr_t tid = atomic_load(&ctx.watched_thread_id);
+
+  // Run measured iterations
+  assert_allocation_free_on_thread("Pipeline C hot reload", tid, 0, 20,
+                                   reload_iter_c, &ctx);
+
+  // Stop the thread
+  engine_shared_state_request_stop(
+      shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+  pthread_join(thread, NULL);
+
+  // Cleanup
+  engine_processing_loop_free(loop);
+  for (int i = 21; i < 30; i++) {
+    pipeline_free(reloaded_pipelines[i]);
+  }
+
+  audio_chunk_free(ctx.input_chunk);
+  audio_chunk_free(resampler_scratch);
+  audio_chunk_free(pipeline_scratch);
+  round_robin_chunk_pool_free(scratch_pool);
+  engine_shared_state_free(shared);
+  processing_parameters_free(params);
+
+  cdsp_sem_destroy(ctx.thread_id_sem);
+  cdsp_sem_destroy(ctx.processed_sem);
+}
+
+typedef struct {
+  pipeline_t *pipeline;
+  audio_chunk_t *input;
+  audio_chunk_t *output;
+} pipeline_test_ctx_t;
+
+static void pipeline_iter(int i, void *ctx) {
+  (void)i;
+  pipeline_test_ctx_t *c = (pipeline_test_ctx_t *)ctx;
+  pipeline_error_t err = pipeline_process(c->pipeline, c->input, c->output);
+  (void)err;
+}
+
+TEST(Pipeline_AllocationFree) {
+  dsp_config_t config;
+  memset(&config, 0, sizeof(dsp_config_t));
+  config.devices.samplerate = 48000;
+  config.devices.chunksize = 1024;
+  config.devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  config.devices.capture.cfg.raw_file.channels = 4;
+  config.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  config.devices.playback.cfg.raw_file.channels = 2;
+
+  named_filter_config_t filters[10];
+  memset(filters, 0, sizeof(filters));
+
+  for (int i = 0; i < 8; i++) {
+    snprintf(filters[i].name, sizeof(filters[i].name), "bq_%d", i + 1);
+    filters[i].filter.type = FILTER_TYPE_BIQUAD;
+    filters[i].filter.parameters.biquad.type = BIQUAD_TYPE_PEAKING;
+    filters[i].filter.parameters.biquad.freq = 1000.0 * (i + 1);
+    filters[i].filter.parameters.biquad.q = 0.707;
+    filters[i].filter.parameters.biquad.gain = 1.0;
+  }
+
+  double ir[1024];
+  for (int i = 0; i < 1024; i++) {
+    ir[i] = i == 0 ? 1.0 : 0.0;
+  }
+
+  strcpy(filters[8].name, "conv_1");
+  filters[8].filter.type = FILTER_TYPE_CONV;
+  filters[8].filter.parameters.conv.type = CONV_TYPE_VALUES;
+  filters[8].filter.parameters.conv.values = ir;
+  filters[8].filter.parameters.conv.values_count = 1024;
+
+  strcpy(filters[9].name, "conv_2");
+  filters[9].filter.type = FILTER_TYPE_CONV;
+  filters[9].filter.parameters.conv.type = CONV_TYPE_VALUES;
+  filters[9].filter.parameters.conv.values = ir;
+  filters[9].filter.parameters.conv.values_count = 1024;
+
+  config.filters = filters;
+  config.filters_count = 10;
+
+  mixer_source_t src0[2] = {
+      {.channel = 0, .gain = 0.0, .has_gain = true, .scale = GAIN_SCALE_DB},
+      {.channel = 2, .gain = -6.0, .has_gain = true, .scale = GAIN_SCALE_DB}};
+  mixer_source_t src1[2] = {
+      {.channel = 1, .gain = 0.0, .has_gain = true, .scale = GAIN_SCALE_DB},
+      {.channel = 3, .gain = -6.0, .has_gain = true, .scale = GAIN_SCALE_DB}};
+  mixer_mapping_t maps[2] = {
+      {.dest = 0, .sources_count = 2, .sources = src0, .mute = false},
+      {.dest = 1, .sources_count = 2, .sources = src1, .mute = false}};
+  named_mixer_config_t mixer_cfg;
+  memset(&mixer_cfg, 0, sizeof(mixer_cfg));
+  strcpy(mixer_cfg.name, "mix");
+  mixer_cfg.mixer.channels_in = 4;
+  mixer_cfg.mixer.channels_out = 2;
+  mixer_cfg.mixer.mapping_count = 2;
+  mixer_cfg.mixer.mapping = maps;
+
+  config.mixers = &mixer_cfg;
+  config.mixers_count = 1;
+
+  pipeline_step_config_t steps[3];
+  memset(steps, 0, sizeof(steps));
+
+  steps[0].type = PIPELINE_STEP_TYPE_FILTER;
+  steps[0].has_channel = false;
+  char *pre_names[10];
+  for (int i = 0; i < 10; i++) {
+    pre_names[i] = filters[i].name;
+  }
+  steps[0].names = pre_names;
+  steps[0].names_count = 10;
+
+  steps[1].type = PIPELINE_STEP_TYPE_MIXER;
+  strcpy(steps[1].name, "mix");
+  steps[1].has_name = true;
+
+  steps[2].type = PIPELINE_STEP_TYPE_FILTER;
+  steps[2].has_channel = false;
+  char *post_names[10];
+  for (int i = 0; i < 10; i++) {
+    post_names[i] = filters[i].name;
+  }
+  steps[2].names = post_names;
+  steps[2].names_count = 10;
+
+  config.pipeline = steps;
+  config.pipeline_count = 3;
+
+  processing_parameters_t *params = processing_parameters_create(4, 2);
+  ASSERT_TRUE(params != NULL);
+
+  pipeline_t *pipeline = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(pipeline != NULL);
+
+  audio_chunk_t *input = audio_chunk_create(1024, 4);
+  audio_chunk_t *output = audio_chunk_create(1024, 2);
+
+  for (size_t ch = 0; ch < 4; ch++) {
+    mutable_waveform_t w = audio_chunk_get_channel(input, ch);
+    for (size_t t = 0; t < 1024; t++) {
+      w[t] = 0.05 * (double)(t % 20 - 10);
+    }
+  }
+  audio_chunk_set_valid_frames(input, 1024);
+
+  pipeline_test_ctx_t ctx = {pipeline, input, output};
+  assert_allocation_free("Pipeline C (Single-Threaded)", 0, 30, pipeline_iter,
+                         &ctx);
+
+  audio_chunk_free(input);
+  audio_chunk_free(output);
+  pipeline_free(pipeline);
+  processing_parameters_free(params);
+}
+
+typedef struct {
+  engine_capture_loop_t *loop;
+  engine_shared_state_t *shared;
+  cdsp_sem_t thread_id_sem;
+  _Atomic uintptr_t watched_thread_id;
+} capture_loop_test_ctx_t;
+
+static void *test_capture_thread_run(void *arg) {
+  capture_loop_test_ctx_t *ctx = (capture_loop_test_ctx_t *)arg;
+  atomic_store(&ctx->watched_thread_id, (uintptr_t)pthread_self());
+  cdsp_sem_signal(ctx->thread_id_sem);
+  engine_capture_loop_run(ctx->loop);
+  return NULL;
+}
+
+static void capture_loop_iter(int i, void *arg) {
+  (void)i;
+  capture_loop_test_ctx_t *ctx = (capture_loop_test_ctx_t *)arg;
+  audio_chunk_t *chunk =
+      engine_shared_state_dequeue_captured_blocking(ctx->shared);
+  (void)chunk;
+}
+
+typedef struct {
+  engine_processing_loop_t *loop;
+  engine_shared_state_t *shared;
+  audio_chunk_t *input_chunk;
+  cdsp_sem_t thread_id_sem;
+  cdsp_sem_t processed_sem;
+  _Atomic uintptr_t watched_thread_id;
+} processing_loop_test_ctx_t;
+
+static void on_proc_chunk_processed_cb(void *ctx_ptr,
+                                       const audio_chunk_t *chunk) {
+  (void)chunk;
+  processing_loop_test_ctx_t *c = (processing_loop_test_ctx_t *)ctx_ptr;
+  uintptr_t tid = (uintptr_t)pthread_self();
+  uintptr_t expected = 0;
+  if (atomic_compare_exchange_strong(&c->watched_thread_id, &expected, tid)) {
+    cdsp_sem_signal(c->thread_id_sem);
+  }
+  cdsp_sem_signal(c->processed_sem);
+}
+
+static void processing_loop_iter(int i, void *ctx_ptr) {
+  (void)i;
+  processing_loop_test_ctx_t *c = (processing_loop_test_ctx_t *)ctx_ptr;
+  engine_shared_state_enqueue_captured(c->shared, c->input_chunk);
+  cdsp_sem_wait(c->processed_sem);
+  void *processed =
+      spsc_queue_dequeue(engine_shared_state_get_processed_queue(c->shared));
+  (void)processed;
+}
+
+TEST(EngineProcessingLoop_AllocationFree) {
+  dsp_config_t config;
+  init_default_config(&config);
+
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  pipeline_t *pipeline = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(pipeline != NULL);
+
+  engine_shared_state_t *shared = engine_shared_state_create(32, 32);
+  ASSERT_TRUE(shared != NULL);
+  engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
+
+  audio_chunk_t *resampler_scratch = audio_chunk_create(1024, 2);
+  audio_chunk_t *pipeline_scratch = audio_chunk_create(1024, 2);
+  round_robin_chunk_pool_t *scratch_pool =
+      round_robin_chunk_pool_create(32, 1024, 2);
+
+  processing_loop_test_ctx_t ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.shared = shared;
+  ctx.input_chunk = audio_chunk_create(1024, 2);
+  audio_chunk_set_valid_frames(ctx.input_chunk, 1024);
+  ctx.thread_id_sem = cdsp_sem_create();
+  ctx.processed_sem = cdsp_sem_create();
+  atomic_init(&ctx.watched_thread_id, 0);
+
+  engine_processing_loop_config_t proc_cfg = {
+      .shared = shared,
+      .processing_params = params,
+      .pipeline_rate = 44100,
+      .resampler = NULL,
+      .pipeline = pipeline,
+      .resampler_scratch = resampler_scratch,
+      .pipeline_scratch = pipeline_scratch,
+      .scratch_pool = scratch_pool,
+      .on_chunk_captured = NULL,
+      .on_chunk_captured_ctx = NULL,
+      .on_chunk_processed = on_proc_chunk_processed_cb,
+      .on_chunk_processed_ctx = &ctx,
+  };
+  engine_processing_loop_t *loop = engine_processing_loop_create(&proc_cfg);
+  ASSERT_TRUE(loop != NULL);
+  ctx.loop = loop;
+
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_processing_thread_run, loop);
+
+  // Warmup 1 chunk to register thread ID
+  engine_shared_state_enqueue_captured(shared, ctx.input_chunk);
+  cdsp_sem_wait(ctx.thread_id_sem);
+  cdsp_sem_wait(ctx.processed_sem);
+  void *warmup_processed =
+      spsc_queue_dequeue(engine_shared_state_get_processed_queue(shared));
+  (void)warmup_processed;
+
+  uintptr_t tid = atomic_load(&ctx.watched_thread_id);
+
+  // Note: Warmup = 2 is required because during the thread startup sequence
+  // prior to entering the steady-state audio loop, one-time lazy allocations
+  // occur: 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O
+  // buffers on fopen/read). 2) OS kernel/Mach thread QoS class state setup (via
+  // promote_current_thread_to_realtime). Once the startup sequence finishes,
+  // steady-state audio loops run 100% allocation-free.
+  assert_allocation_free_on_thread("EngineProcessingLoop", tid, 2, 20,
+                                   processing_loop_iter, &ctx);
+
+  engine_shared_state_request_stop(
+      shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+  pthread_join(thread, NULL);
+
+  engine_processing_loop_free(loop);
+  audio_chunk_free(ctx.input_chunk);
+  audio_chunk_free(resampler_scratch);
+  audio_chunk_free(pipeline_scratch);
+  round_robin_chunk_pool_free(scratch_pool);
+  engine_shared_state_free(shared);
+  processing_parameters_free(params);
+  cdsp_sem_destroy(ctx.thread_id_sem);
+  cdsp_sem_destroy(ctx.processed_sem);
+}
+
+TEST(EngineCaptureLoop_AllocationFree) {
+  backend_error_t err;
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  cap_cfg.cfg.raw_file.channels = 2;
+#ifdef _WIN32
+  snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
+           "NUL");
+#else
+  snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
+           "/dev/null");
+#endif
+  cap_cfg.cfg.raw_file.has_filename = true;
+  cap_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
+  cap_cfg.cfg.raw_file.has_format = true;
+
+  capture_backend_t *capture =
+      create_capture_backend(&cap_cfg, 48000, 1024, false, NULL, &err);
+  ASSERT_TRUE(capture != NULL);
+  ASSERT_TRUE(capture_backend_open(capture, &err));
+
+  engine_shared_state_t *shared = engine_shared_state_create(32, 32);
+  ASSERT_TRUE(shared != NULL);
+  engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
+
+  round_robin_chunk_pool_t *chunk_pool =
+      round_robin_chunk_pool_create(32, 1024, 2);
+  ASSERT_TRUE(chunk_pool != NULL);
+
+  engine_capture_loop_config_t cap_loop_cfg = {
+      .shared = shared,
+      .capture = capture,
+      .processing_params = NULL,
+      .dsd_decoder = NULL,
+      .chunk_pool = chunk_pool,
+      .chunk_size = 1024,
+      .channels = 2,
+      .samplerate = 48000,
+      .silence_threshold_db = -100.0,
+      .silence_timeout_seconds = 0.0,
+      .stop_on_rate_change = false,
+      .rate_measure_interval_s = 1.0,
+  };
+
+  engine_capture_loop_t *loop = engine_capture_loop_create(&cap_loop_cfg);
+  ASSERT_TRUE(loop != NULL);
+
+  capture_loop_test_ctx_t ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.loop = loop;
+  ctx.shared = shared;
+  ctx.thread_id_sem = cdsp_sem_create();
+  atomic_init(&ctx.watched_thread_id, 0);
+
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_capture_thread_run, &ctx);
+
+  cdsp_sem_wait(ctx.thread_id_sem);
+  uintptr_t tid = atomic_load(&ctx.watched_thread_id);
+
+  // Note: Warmup = 2 is required because during the thread startup sequence
+  // prior to entering the steady-state audio loop, one-time lazy allocations
+  // occur: 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O
+  // buffers on fopen/read). 2) OS kernel/Mach thread QoS class state setup (via
+  // promote_current_thread_to_realtime). Once the startup sequence finishes,
+  // steady-state audio loops run 100% allocation-free.
+  assert_allocation_free_on_thread("EngineCaptureLoop", tid, 2, 20,
+                                   capture_loop_iter, &ctx);
+
+  engine_shared_state_request_stop(
+      shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+  pthread_join(thread, NULL);
+
+  engine_capture_loop_free(loop);
+  round_robin_chunk_pool_free(chunk_pool);
+  engine_shared_state_free(shared);
+  capture_backend_close(capture);
+  capture_backend_free(capture);
+  cdsp_sem_destroy(ctx.thread_id_sem);
+}
+
+typedef struct {
+  engine_playback_loop_t *loop;
+  engine_shared_state_t *shared;
+  cdsp_sem_t thread_id_sem;
+  round_robin_chunk_pool_t *pool;
+  _Atomic uintptr_t watched_thread_id;
+} playback_loop_test_ctx_t;
+
+static void *test_playback_thread_run(void *arg) {
+  playback_loop_test_ctx_t *ctx = (playback_loop_test_ctx_t *)arg;
+  atomic_store(&ctx->watched_thread_id, (uintptr_t)pthread_self());
+  cdsp_sem_signal(ctx->thread_id_sem);
+  engine_playback_loop_run(ctx->loop);
+  return NULL;
+}
+
+static void playback_loop_iter(int i, void *arg) {
+  (void)i;
+  playback_loop_test_ctx_t *ctx = (playback_loop_test_ctx_t *)arg;
+  audio_chunk_t *chunk = round_robin_chunk_pool_next(ctx->pool);
+  audio_chunk_set_valid_frames(chunk, 1024);
+  engine_shared_state_enqueue_processed(ctx->shared, chunk);
+}
+
+TEST(EnginePlaybackLoop_AllocationFree) {
+  backend_error_t err;
+  playback_device_config_t play_cfg;
+  memset(&play_cfg, 0, sizeof(play_cfg));
+  play_cfg.type = AUDIO_BACKEND_TYPE_FILE;
+  play_cfg.cfg.raw_file.channels = 2;
+#ifdef _WIN32
+  snprintf(play_cfg.cfg.raw_file.filename,
+           sizeof(play_cfg.cfg.raw_file.filename), "NUL");
+#else
+  snprintf(play_cfg.cfg.raw_file.filename,
+           sizeof(play_cfg.cfg.raw_file.filename), "/dev/null");
+#endif
+  play_cfg.cfg.raw_file.has_filename = true;
+  play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
+  play_cfg.cfg.raw_file.has_format = true;
+
+  playback_backend_t *playback =
+      create_playback_backend(&play_cfg, 48000, 1024, false, NULL, &err);
+  ASSERT_TRUE(playback != NULL);
+  ASSERT_TRUE(playback_backend_open(playback, &err));
+
+  engine_shared_state_t *shared = engine_shared_state_create(32, 32);
+  ASSERT_TRUE(shared != NULL);
+  engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
+
+  round_robin_chunk_pool_t *pool = round_robin_chunk_pool_create(32, 1024, 2);
+  ASSERT_TRUE(pool != NULL);
+
+  engine_playback_loop_config_t play_loop_cfg = {
+      .shared = shared,
+      .playback = playback,
+      .processing_params = NULL,
+      .pipeline_rate = 48000,
+      .chunk_size = 1024,
+      .rate_adjust_enabled = false,
+      .adjust_period = 10.0,
+      .target_level = 0,
+  };
+
+  engine_playback_loop_t *loop = engine_playback_loop_create(&play_loop_cfg);
+  ASSERT_TRUE(loop != NULL);
+
+  playback_loop_test_ctx_t ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.loop = loop;
+  ctx.shared = shared;
+  ctx.pool = pool;
+  ctx.thread_id_sem = cdsp_sem_create();
+  atomic_init(&ctx.watched_thread_id, 0);
+
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_playback_thread_run, &ctx);
+
+  cdsp_sem_wait(ctx.thread_id_sem);
+  uintptr_t tid = atomic_load(&ctx.watched_thread_id);
+
+  // Note: Warmup = 2 is required because during the thread startup sequence
+  // prior to entering the steady-state audio loop, one-time lazy allocations
+  // occur: 1) C stdlib stdio stream buffer allocations (e.g. 32KB/64KB I/O
+  // buffers on fopen/write). 2) OS kernel/Mach thread QoS class state setup
+  // (via promote_current_thread_to_realtime). Once the startup sequence
+  // finishes, steady-state audio loops run 100% allocation-free.
+  assert_allocation_free_on_thread("EnginePlaybackLoop", tid, 2, 20,
+                                   playback_loop_iter, &ctx);
+
+  engine_shared_state_request_stop(
+      shared, (processing_stop_reason_t){.type = STOP_REASON_NONE});
+  pthread_join(thread, NULL);
+
+  engine_playback_loop_free(loop);
+  round_robin_chunk_pool_free(pool);
+  engine_shared_state_free(shared);
+  playback_backend_close(playback);
+  playback_backend_free(playback);
+  cdsp_sem_destroy(ctx.thread_id_sem);
+}
+
+TEST_MAIN()

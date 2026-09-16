@@ -42,15 +42,15 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 
 ### 1.1 Defensive Volume Tail Gain on Oversized Chunks
 * **Upstream Behavior**: Upstream volume filters iterate strictly up to `chunk_size`. If an upstream capture backend delivers an oversized chunk or hardware buffer slice expansion, samples beyond `chunk_size` are left completely unattenuated at full scale (`gain = 1.0`).
-* **`cdsp` Enhancement**: In [`Filters/volume.c`](../src/Filters/volume.c), `volume_filter_process` applies `final_gain` to all residual samples extending beyond `chunk_size`.
+* **`cdsp` Enhancement**: In [`../src/filters/volume.c`](../src/filters/volume.c), `volume_filter_process` applies `final_gain` to all residual samples extending beyond `chunk_size`.
 * **Why `cdsp` Is Better**: Leaving trailing audio frames unscaled at unity gain during high attenuation or muting produces sudden acoustic blasts. Defensive tail gain scaling guarantees consistent level control across all delivered frames.
 
 ### 1.2 Partial-Chunk Processing Restricted to `valid_frames`
 * **Upstream Behavior**: Upstream advances processing across the full buffer capacity (`chunk_size`), including zero-padded tail frames on the stream's final partial chunk.
 * **`cdsp` Enhancement**: `cdsp` restricts processing to `valid_frames`. Audited call sites:
-  - **Dynamics envelopes**: [`Processors/compressor_processor.c`](../src/Processors/compressor_processor.c), [`Processors/noise_gate_processor.c`](../src/Processors/noise_gate_processor.c), [`Filters/lookahead_limiter.c`](../src/Filters/lookahead_limiter.c), plus [`Processors/lookahead_limiter_processor.c`](../src/Processors/lookahead_limiter_processor.c) and [`Processors/race_processor.c`](../src/Processors/race_processor.c).
-  - **Mixer and pipeline steps**: `Mixer/mixer.c`, `Pipeline/pipeline.c` (filter and biquad steps) vs upstream `mixer.rs`, `pipeline.rs`.
-  - **Convolution**: `Filters/convolution.c` convolves `valid_frames` and splits `count > chunk_size` into sub-blocks, vs upstream's whole-buffer `process_waveform` (`fftconv.rs`).
+  - **Dynamics envelopes**: [`../src/processors/compressor_processor.c`](../src/processors/compressor_processor.c), [`../src/processors/noise_gate_processor.c`](../src/processors/noise_gate_processor.c), [`../src/filters/lookahead_limiter.c`](../src/filters/lookahead_limiter.c), plus [`../src/processors/lookahead_limiter_processor.c`](../src/processors/lookahead_limiter_processor.c) and [`../src/processors/race_processor.c`](../src/processors/race_processor.c).
+  - **Mixer and pipeline steps**: `../src/mixer/mixer.c`, `../src/pipeline/pipeline.c` (filter and biquad steps) vs upstream `mixer.rs`, `pipeline.rs`.
+  - **Convolution**: `../src/filters/convolution.c` convolves `valid_frames` and splits `count > chunk_size` into sub-blocks, vs upstream's whole-buffer `process_waveform` (`fftconv.rs`).
 * **Why `cdsp` Is Better**: Processing trailing zero padding causes envelope detectors to artificially decay/release into silence at stream termination. Restricting progression to valid frames preserves the true signal level and dynamics state. For stateful filters, it avoids polluting filter state with padding at the end of a stream.
 
 ---
@@ -60,23 +60,23 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 ### 2.1 Deterministic Fixed-Input Resampling Architecture
 * **Upstream Behavior**: Upstream CamillaDSP configures Rubato resamplers in `FixedSync::Output` and `FixedAsync::Output` mode (fixed output chunk, variable input chunk requested via `input_frames_next()`).
 * **`cdsp` Enhancement**: `cdsp` uses fixed input chunk sizes across all resamplers:
-  - Synchronous resampler: [`Resampler/synchronous_resampler.c`](../src/Resampler/synchronous_resampler.c) uses `FixedSync::Both` ($K \cdot M \to K \cdot L$) with `num_subchunks = 1`.
-  - Slip & Async resamplers: [`Resampler/slip_resampler.c`](../src/Resampler/slip_resampler.c) and [`Resampler/async_poly_resampler.c`](../src/Resampler/async_poly_resampler.c) operate in `FIXED_ASYNC_INPUT` mode.
+  - Synchronous resampler: [`../src/resampler/synchronous_resampler.c`](../src/resampler/synchronous_resampler.c) uses `FixedSync::Both` ($K \cdot M \to K \cdot L$) with `num_subchunks = 1`.
+  - Slip & Async resamplers: [`../src/resampler/slip_resampler.c`](../src/resampler/slip_resampler.c) and [`../src/resampler/async_poly_resampler.c`](../src/resampler/async_poly_resampler.c) operate in `FIXED_ASYNC_INPUT` mode.
 * **Why `cdsp` Is Better**: macOS CoreAudio HAL callbacks and Windows ASIO drivers strictly deliver fixed-size hardware buffers. Variable-input pull models require buffer stashing and circular copies inside platform backends. `cdsp`'s fixed-input architecture guarantees that every OS audio callback consumes a deterministic input block with zero reallocations, bounded ring-buffer latency, and deterministic real-time scheduling. In synchronous mode, `FixedSync::Both` achieves a steeper anti-aliasing cutoff ($0.987 \times \text{Nyquist}$ vs $0.954 \times \text{Nyquist}$).
 
 ### 2.2 Hard Real-Time Zero-Allocation Hot-Reload Architecture
 * **Upstream Behavior**: Upstream compiles new pipelines, allocates heap memory, and reads impulse-response files from disk on the audio processing thread during reloads (`src/processing.rs`).
-* **`cdsp` Enhancement**: In [`Engine/dsp_session.c`](../src/Engine/dsp_session.c), `cdsp` compiles pipelines, parses configurations, and loads impulse response files on the background control thread. The audio processing thread performs only an atomic pointer swap and state transfer.
+* **`cdsp` Enhancement**: In [`../src/engine/dsp_session.c`](../src/engine/dsp_session.c), `cdsp` compiles pipelines, parses configurations, and loads impulse response files on the background control thread. The audio processing thread performs only an atomic pointer swap and state transfer.
 * **Why `cdsp` Is Better**: Performing disk I/O and heap allocations on a real-time audio processing thread violates hard real-time programming contracts and causes buffer underruns, clicks, and dropouts under system load. `cdsp` guarantees **zero allocation, zero deallocation, and zero disk I/O on the audio thread**.
 
 ### 2.3 Wait-Free SPSC Power-of-Two Ring Buffers
 * **Upstream Behavior**: Upstream uses multi-producer channels with dynamic allocation and locking mechanisms.
-* **`cdsp` Enhancement**: In [`Utils/lock_free_ring_buffer.h`](../src/Utils/lock_free_ring_buffer.h) and [`Engine/audio_sync_queue.h`](../src/Engine/audio_sync_queue.h), `cdsp` implements power-of-two single-producer single-consumer ring buffers with bitmask indexing and acquire-release atomic ordering.
+* **`cdsp` Enhancement**: In [`../src/utils/lock_free_ring_buffer.h`](../src/utils/lock_free_ring_buffer.h) and [`../src/engine/audio_sync_queue.h`](../src/engine/audio_sync_queue.h), `cdsp` implements power-of-two single-producer single-consumer ring buffers with bitmask indexing and acquire-release atomic ordering.
 * **Why `cdsp` Is Better**: Bypasses scheduling overhead and achieves a **25% increase in raw data throughput** (1247.7x real-time speed vs 995.1x) with cache-aligned structures.
 
 ### 2.4 Drop-on-Full Queue Overflow Policy
 * **Upstream Behavior**: Upstream applies **blocking back-pressure** — a full queue blocks the producer until the consumer drains it (`coreaudio_backend/device.rs`, `processing.rs`).
-* **`cdsp` Enhancement**: [`Engine/engine_capture_loop.c`](../src/Engine/engine_capture_loop.c) and [`Engine/engine_processing_loop.c`](../src/Engine/engine_processing_loop.c) drop the chunk and continue rather than block.
+* **`cdsp` Enhancement**: [`../src/engine/engine_capture_loop.c`](../src/engine/engine_capture_loop.c) and [`../src/engine/engine_processing_loop.c`](../src/engine/engine_processing_loop.c) drop the chunk and continue rather than block.
 * **Why `cdsp` Is Better**: Blocking inside a CoreAudio HAL or ASIO driver callback stalls the driver's real-time thread and cascades into a hardware-level overrun affecting the entire audio graph. Dropping a chunk degrades locally and recoverably instead.
 
 ---
@@ -85,57 +85,57 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 
 ### 3.1 Full Double-Precision Filter & Resampler Design
 * **Upstream Behavior**: Upstream computes anti-alias cutoffs and processes biquad filter coefficients in single-precision (`f32`).
-* **`cdsp` Enhancement**: `cdsp` uses IEEE 754 double precision (`double` / `f64`) for coefficient calculation, cutoff frequencies, volume ramps, and configuration storage ([`Filters/biquad.c`](../src/Filters/biquad.c), [`Resampler/synchronous_resampler.c`](../src/Resampler/synchronous_resampler.c)).
+* **`cdsp` Enhancement**: `cdsp` uses IEEE 754 double precision (`double` / `f64`) for coefficient calculation, cutoff frequencies, volume ramps, and configuration storage ([`../src/filters/biquad.c`](../src/filters/biquad.c), [`../src/resampler/synchronous_resampler.c`](../src/resampler/synchronous_resampler.c)).
 * **Why `cdsp` Is Better**: Prevents coefficient quantization distortion, preserves sub-LSB numerical noise below `1e-15`, and avoids high-Q biquad pole migration near Nyquist.
 
 ### 3.2 Horner Form with Hardware Fused Multiply-Add (FMA)
 * **Scope**: Applies to the **async sinc** resampler.
 * **Upstream Behavior**: Async sinc polynomial interpolation (`asynchro_sinc.rs`, `interp_cubic` / `interp_quad`) evaluates expanded polynomial powers $a + b \cdot t + c \cdot t^2 + d \cdot t^3$.
-* **`cdsp` Enhancement**: In [`Resampler/async_sinc_resampler.c`](../src/Resampler/async_sinc_resampler.c), `cdsp` evaluates polynomials in nested Horner form: $a + t \cdot (b + t \cdot (c + t \cdot d))$ using hardware Fused Multiply-Add instructions.
+* **`cdsp` Enhancement**: In [`../src/resampler/async_sinc_resampler.c`](../src/resampler/async_sinc_resampler.c), `cdsp` evaluates polynomials in nested Horner form: $a + t \cdot (b + t \cdot (c + t \cdot d))$ using hardware Fused Multiply-Add instructions.
 * **Why `cdsp` Is Better**: Evaluating Horner form with FMA executes in fewer CPU cycles and incurs only a single rounding error at the final step, providing superior accuracy over expanded powers.
 
 ### 3.3 Mathematical `-inf` in DSP Math with Safe RFC 8259 JSON Clamping
 * **Upstream Behavior**: Upstream hard-codes constant lower floors: `-200.0 dB` in `linear_to_db` and `1e-30` (`-300.0 dB`) in spectrum power calculation.
 * **`cdsp` Enhancement**:
-  - **Internal DSP**: In [`Audio/processing_parameters.c`](../src/Audio/processing_parameters.c), [`Utils/float_helpers.h`](../src/Utils/float_helpers.h), and [`Audio/spectrum_analyzer.c`](../src/Audio/spectrum_analyzer.c), `cdsp` retains pure IEEE 754 mathematical `-INFINITY` for zero-amplitude inputs.
-  - **JSON Serialization Boundary**: In [`Server/websocket_server.c`](../app/Server/websocket_server.c) and [`Server/ws_rpc_dispatcher.c`](../app/Server/ws_rpc_dispatcher.c), numbers are clamped to `-200.0f` only when serializing for the WebSocket RPC API.
+  - **Internal DSP**: In [`../src/audio/processing_parameters.c`](../src/audio/processing_parameters.c), [`../src/utils/float_helpers.h`](../src/utils/float_helpers.h), and [`../src/audio/spectrum_analyzer.c`](../src/audio/spectrum_analyzer.c), `cdsp` retains pure IEEE 754 mathematical `-INFINITY` for zero-amplitude inputs.
+  - **JSON Serialization Boundary**: In [`Server/websocket_server.c`](../app/server/websocket_server.c) and [`Server/ws_rpc_dispatcher.c`](../app/server/ws_rpc_dispatcher.c), numbers are clamped to `-200.0f` only when serializing for the WebSocket RPC API.
 * **Why `cdsp` Is Better**: Internal DSP mathematics remains completely free of arbitrary constant noise floors and software clamps, while JSON consumers never receive illegal non-finite tokens that violate RFC 8259.
 
 ### 3.4 Partial-Chunk Accurate RMS Metering
 * **Upstream Behavior**: Computes RMS by dividing sample sum-of-squares by the total chunk capacity, even for partial chunks at stream termination.
-* **`cdsp` Enhancement**: In [`Audio/processing_parameters.c`](../src/Audio/processing_parameters.c), `cdsp` divides sum-of-squares by `valid_frames`.
+* **`cdsp` Enhancement**: In [`../src/audio/processing_parameters.c`](../src/audio/processing_parameters.c), `cdsp` divides sum-of-squares by `valid_frames`.
 * **Why `cdsp` Is Better**: Avoids zero-tail dilution on the final audio chunk, reporting the exact signal level.
 
 ### 3.5 Single-Pass SIMD Vectorization for Telemetry Metering
 * **Upstream Behavior**: Upstream meters peak and RMS using scalar loops and intermediate allocations.
-* **`cdsp` Enhancement**: In [`Utils/float_helpers.h`](../src/Utils/float_helpers.h), `dsp_ops_rms`, `dsp_ops_peak_absolute`, and `dsp_ops_min_max` use single-pass float vectorization (`fmaxf`, `sqrtf`, compiler auto-vectorization across AVX/NEON).
+* **`cdsp` Enhancement**: In [`../src/utils/float_helpers.h`](../src/utils/float_helpers.h), `dsp_ops_rms`, `dsp_ops_peak_absolute`, and `dsp_ops_min_max` use single-pass float vectorization (`fmaxf`, `sqrtf`, compiler auto-vectorization across AVX/NEON).
 * **Why `cdsp` Is Better**: Executes ~2x faster across SIMD lanes while delivering ample precision for audio telemetry without intermediate memory buffers.
 
 ### 3.6 Precomputed Reciprocal Scaling for FFT Partitioned Convolution
 * **Upstream Behavior**: Upstream performs sample-by-sample division by `fft_len` inside the time-domain synthesis loops.
-* **`cdsp` Enhancement**: In [`Filters/convolution.c`](../src/Filters/convolution.c), `cdsp` precomputes `inv_scale = 1.0 / (double)fft_len` during filter compilation, replacing inner-loop divisions with fast reciprocal multiplications.
+* **`cdsp` Enhancement**: In [`../src/filters/convolution.c`](../src/filters/convolution.c), `cdsp` precomputes `inv_scale = 1.0 / (double)fft_len` during filter compilation, replacing inner-loop divisions with fast reciprocal multiplications.
 * **Why `cdsp` Is Better**: Floating-point division requires 10–20 clock cycles per sample, whereas multiplication requires 1–3 clock cycles and vectorizes cleanly, resulting in ~10x faster normalization.
 
 ### 3.7 Defensive Numerical Sanitization & Singularity Protection
-* **EPS Clamps**: In [`Filters/biquad.c`](../src/Filters/biquad.c), `cdsp` clamps `|sin_w0|`, `A`, `|slope_s|`, `|q|` and the shelf `term` to a floor of `1e-12` to eliminate division-by-zero singularities.
+* **EPS Clamps**: In [`../src/filters/biquad.c`](../src/filters/biquad.c), `cdsp` clamps `|sin_w0|`, `A`, `|slope_s|`, `|q|` and the shelf `term` to a floor of `1e-12` to eliminate division-by-zero singularities.
 * **Impulse Tail Scaling**: Linearly scales truncated impulse response tails to zero, eliminating DC step discontinuities.
-* **Non-finite Sample Sanitization**: In [`Audio/sample_conversion.h`](../src/Audio/sample_conversion.h) and [`Processors/race_processor.c`](../src/Processors/race_processor.c), `cdsp` sanitizes NaN/Inf samples on format conversion and in the RACE feedback loop.
+* **Non-finite Sample Sanitization**: In [`../src/audio/sample_conversion.h`](../src/audio/sample_conversion.h) and [`../src/processors/race_processor.c`](../src/processors/race_processor.c), `cdsp` sanitizes NaN/Inf samples on format conversion and in the RACE feedback loop.
 * **Defensive Parameter Validation & Sanitization**:
-  - [`Filters/gain.c`](../src/Filters/gain.c) — rejects non-finite `gain`.
-  - [`Public/fader.c`](../src/Public/fader.c) — maps `NaN` volume inputs to `-150.0 dB` (muted) defensively to protect loudspeakers.
-  - [`Processors/race_processor.c`](../src/Processors/race_processor.c) — rejects non-finite or non-positive `attenuation` and `delay`.
-  - [`Filters/lookahead_limiter.c`](../src/Filters/lookahead_limiter.c) — rejects non-finite `limit`, `attack`, `release`, or `lookahead`.
-  - [`Filters/clipper.c`](../src/Filters/clipper.c) — rejects clipper limits that underflow to zero.
+  - [`../src/filters/gain.c`](../src/filters/gain.c) — rejects non-finite `gain`.
+  - [`../src/public/fader.c`](../src/public/fader.c) — maps `NaN` volume inputs to `-150.0 dB` (muted) defensively to protect loudspeakers.
+  - [`../src/processors/race_processor.c`](../src/processors/race_processor.c) — rejects non-finite or non-positive `attenuation` and `delay`.
+  - [`../src/filters/lookahead_limiter.c`](../src/filters/lookahead_limiter.c) — rejects non-finite `limit`, `attack`, `release`, or `lookahead`.
+  - [`../src/filters/clipper.c`](../src/filters/clipper.c) — rejects clipper limits that underflow to zero.
   - All processor validators additionally reject `channels == 0`.
 
 ### 3.8 Spectrum Analyzer Window Normalization in Single Precision
 * **Upstream Behavior**: Upstream CamillaDSP (`src/spectrum.rs`) maps window values to `f64` and accumulates them in double precision.
-* **`cdsp` Enhancement**: In [`Audio/spectrum_analyzer.c`](../src/Audio/spectrum_analyzer.c), `cdsp` computes and accumulates the symmetric Hann window in single precision (`float`).
+* **`cdsp` Enhancement**: In [`../src/audio/spectrum_analyzer.c`](../src/audio/spectrum_analyzer.c), `cdsp` computes and accumulates the symmetric Hann window in single precision (`float`).
 * **Why `cdsp` Is Better**: Keeping the window buffer and its normalization sum entirely in single-precision `float` avoids conversion overhead, aligns with the single-precision `real_fftf` transform pipeline, and provides maximum SIMD throughput in real-time spectrum analysis.
 
 ### 3.9 Async Sinc Resampler Buffer Headroom and Ramped Ratio
 * **Upstream Behavior**: Upstream Rubato sizes async buffers using exact truncating bounds (`+10.0` / `+2.0 + len/2`).
-* **`cdsp` Enhancement**: In [`Resampler/async_sinc_resampler.c`](../src/Resampler/async_sinc_resampler.c), `cdsp` sizes internal working scratch buffers with an extra `+16` frame safety margin (`ceil(...) + 16`) and provides smooth ramped ratio transitions.
+* **`cdsp` Enhancement**: In [`../src/resampler/async_sinc_resampler.c`](../src/resampler/async_sinc_resampler.c), `cdsp` sizes internal working scratch buffers with an extra `+16` frame safety margin (`ceil(...) + 16`) and provides smooth ramped ratio transitions.
 * **Why `cdsp` Is Better**: The extra 16-frame guard band ensures SIMD vector operations (AVX/NEON) have aligned padding and never read/write out of bounds during extreme dynamic ratio swings.
 
 ---
@@ -144,17 +144,17 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 
 ### 4.1 Inter-Stage Floating-Point Peak Saturation Metering
 * **Upstream Behavior**: Clipped samples are counted only during integer format conversion at the final audio backend.
-* **`cdsp` Enhancement**: In [`Engine/engine_processing_loop.c`](../src/Engine/engine_processing_loop.c), peak saturation is monitored directly on floating-point audio data (`|sample| > 1.0`).
+* **`cdsp` Enhancement**: In [`../src/engine/engine_processing_loop.c`](../src/engine/engine_processing_loop.c), peak saturation is monitored directly on floating-point audio data (`|sample| > 1.0`).
 * **Why `cdsp` Is Better**: Catches inter-stage digital clipping across pipeline filters and mixers even if subsequent stages attenuate the signal before format conversion.
 
 ### 4.2 PipeWire Dynamic Graph Rate Change Reporting
 * **Upstream Behavior**: PipeWire direct capture does not inspect or propagate graph sample rate changes.
-* **`cdsp` Enhancement**: In [`Backend/pipewire_backend.c`](../src/Backend/pipewire_backend.c), `cdsp` tracks graph rate changes via `capture_backend_get_pending_rate_change()`, reporting them to the engine supervisor for seamless dynamic re-configuration.
+* **`cdsp` Enhancement**: In [`../src/backend/pipewire_backend.c`](../src/backend/pipewire_backend.c), `cdsp` tracks graph rate changes via `capture_backend_get_pending_rate_change()`, reporting them to the engine supervisor for seamless dynamic re-configuration.
 * **Why `cdsp` Is Better**: Dynamically detects sample rate shifts in PipeWire graphs and notifies the supervisor instead of continuing with mismatched clock rates.
 
 ### 4.3 Native DSD and DoP (DSD over PCM) Subsystem Support
 * **Upstream Behavior**: Upstream CamillaDSP is strictly limited to PCM audio formats.
-* **`cdsp` Enhancement**: [`DSD/`](../src/DSD) implements high-performance Native DSD and DoP (DSD over PCM) encoding/decoding supporting up to DSD256 with SDM-6 modulators.
+* **`cdsp` Enhancement**: [`../src/dsd`](../src/dsd) implements high-performance Native DSD and DoP (DSD over PCM) encoding/decoding supporting up to DSD256 with SDM-6 modulators.
 * **Why `cdsp` Is Better**: Expands high-end audiophile format support without sacrificing real-time speed, processing carrier streams up to 45x faster than real-time.
 
 ---
@@ -163,5 +163,6 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 
 | Check | Location | Upstream |
 |---|---|---|
-| Empty convolution coefficients are a hard error | `Filters/convolution.c` | Deliberately non-fatal: one silent segment (`fftconv.rs`) |
-| LookaheadLimiter config_diff escalation on parameter change | `Config/config_diff.c` | Escalates to `Pipeline` rebuild on *any* config change if limiter is present |
+| Empty convolution coefficients are a hard error | `../src/filters/convolution.c` | Deliberately non-fatal: one silent segment (`fftconv.rs`) |
+| LookaheadLimiter config_diff escalation on parameter change | `../src/config/config_diff.c` | Escalates to `Pipeline` rebuild on *any* config change if limiter is present |
+

@@ -1,0 +1,104 @@
+// SilenceCounter — counts consecutive silent chunks against a dB threshold.
+#include "audio/silence_counter.h"
+
+#include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+#include "config/engine_config_types.h"
+#include "logging/app_logger.h"
+
+struct silence_counter {
+  size_t limit_chunks;
+  float threshold_linear;
+  size_t silent_chunks;
+};
+
+static const logger_t g_logger = {"dsp.silence_counter"};
+
+silence_counter_t *silence_counter_create(double threshold_db,
+                                          double timeout_seconds,
+                                          size_t samplerate, size_t chunksize) {
+  silence_counter_t *counter =
+      (silence_counter_t *)calloc(1, sizeof(silence_counter_t));
+  if (!counter) {
+    logger_error(&g_logger, "Memory allocation failed for silence_counter_t");
+    return NULL;
+  }
+  silence_counter_init(counter, threshold_db, timeout_seconds, samplerate,
+                       chunksize);
+  return counter;
+}
+
+void silence_counter_free(silence_counter_t *counter) {
+  if (counter)
+    free(counter);
+}
+
+size_t silence_counter_get_limit_chunks(const silence_counter_t *counter) {
+  return counter ? counter->limit_chunks : 0;
+}
+
+size_t silence_counter_get_silent_chunks(const silence_counter_t *counter) {
+  return counter ? counter->silent_chunks : 0;
+}
+
+void silence_counter_init(silence_counter_t *counter, double threshold_db,
+                          double timeout_seconds, size_t samplerate,
+                          size_t chunksize) {
+  if (!counter)
+    return;
+  counter->threshold_linear = (float)pow(10.0, threshold_db / 20.0);
+  counter->silent_chunks = 0;
+  // Convert the timeout duration from seconds to the number of audio chunks.
+  if (timeout_seconds > 0.0 && chunksize > 0 && isfinite(timeout_seconds) &&
+      samplerate > 0) {
+    double limit =
+        round((timeout_seconds * (double)samplerate) / (double)chunksize);
+    counter->limit_chunks =
+        (limit > (double)SIZE_MAX) ? SIZE_MAX : (size_t)limit;
+  } else {
+    counter->limit_chunks = 0;
+  }
+  logger_debug(&g_logger,
+               "Silence counter initialized (threshold=%.1fdB (%.6f linear), "
+               "timeout=%.2fs, "
+               "limit_chunks=%zu)",
+               threshold_db, counter->threshold_linear, timeout_seconds,
+               counter->limit_chunks);
+}
+
+/// Feed the next chunk's value range (maxval - minval). Returns the
+/// engine state the capture loop should drive to.
+processing_state_t silence_counter_update(silence_counter_t *counter,
+                                          float value_range) {
+  if (!counter || counter->limit_chunks == 0) {
+    return PROCESSING_STATE_RUNNING;
+  }
+  // Reset counter if signal level is above the silence threshold.
+  if (value_range > counter->threshold_linear) {
+    if (counter->silent_chunks > counter->limit_chunks) {
+      logger_info(&g_logger,
+                  "Audio signal restored above threshold (value_range=%.6f > "
+                  "threshold=%.6f), resuming",
+                  value_range, counter->threshold_linear);
+    }
+    counter->silent_chunks = 0;
+    return PROCESSING_STATE_RUNNING;
+  }
+  // Increment silent chunk count, bounding it to avoid overflow.
+  processing_state_t state = PROCESSING_STATE_RUNNING;
+  if (counter->silent_chunks == counter->limit_chunks) {
+    logger_info(&g_logger,
+                "Silence timeout reached (silent_chunks=%zu, "
+                "limit_chunks=%zu), requesting pause",
+                counter->silent_chunks, counter->limit_chunks);
+  }
+  if (counter->silent_chunks >= counter->limit_chunks) {
+    state = PROCESSING_STATE_PAUSED;
+  }
+  if (counter->silent_chunks <= counter->limit_chunks) {
+    counter->silent_chunks++;
+  }
+  return state;
+}

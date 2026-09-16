@@ -1,0 +1,163 @@
+#if defined(__linux__)
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#endif
+#define _DARWIN_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
+#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+#include "filters/biquad.h"
+#include "filters/convolution.h"
+#include "filters/diffeq.h"
+#include "filters/filter.h"
+#include "test_support.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#define CHUNK_SIZE 1024
+#define SAMPLE_RATE 48000
+#define NBR_FRAMES (160 * CHUNK_SIZE)
+
+static double fetch_rust_filter_benchmark(const char *filter_type, size_t param,
+                                          size_t chunk_size, size_t iters) {
+  char args[256];
+  snprintf(args, sizeof(args), "bench %s %zu %zu %zu", filter_type, param,
+           chunk_size, iters);
+  return test_run_rust_harness_bench("cdsp_filter_compare", args);
+}
+
+static void run_filter_benchmark(const char *label, const char *rust_type,
+                                 size_t rust_param, void *filter,
+                                 void (*process_fn)(void *, double *, size_t)) {
+  printf("Running %s_Benchmark...\n", label);
+  fflush(stdout);
+
+  double *buffer = (double *)calloc(CHUNK_SIZE, sizeof(double));
+
+  // Warm-up
+  for (int i = 0; i < 100; i++) {
+    process_fn(filter, buffer, CHUNK_SIZE);
+  }
+
+  int iters = 5000;
+  struct timespec start, end_time;
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  for (int i = 0; i < iters; i++) {
+    process_fn(filter, buffer, CHUNK_SIZE);
+  }
+  clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+  double elapsed_ns = (double)(end_time.tv_sec - start.tv_sec) * 1e9 +
+                      (double)(end_time.tv_nsec - start.tv_nsec);
+  double c_ns_per_frame = elapsed_ns / (double)(CHUNK_SIZE * iters);
+
+  double cdsp_ns_per_frame =
+      fetch_rust_filter_benchmark(rust_type, rust_param, CHUNK_SIZE, iters);
+
+  printf("\n==================================================\n");
+  printf("Filter Benchmark: %s\n", label);
+  printf("--------------------------------------------------\n");
+  printf("Engine                   |        ns/frame\n");
+  printf("--------------------------------------------------\n");
+  printf("C %-22s | %15.1f\n", label, c_ns_per_frame);
+  if (!isnan(cdsp_ns_per_frame)) {
+    printf("CamillaDSP (Rust)        | %15.1f\n", cdsp_ns_per_frame);
+  } else {
+    printf("CamillaDSP (Rust)        |             N/A\n");
+  }
+  printf("--------------------------------------------------\n");
+  if (!isnan(cdsp_ns_per_frame)) {
+    printf("Relative Speedup        : %14.2fx\n",
+           cdsp_ns_per_frame / c_ns_per_frame);
+  }
+  printf("==================================================\n\n");
+  fflush(stdout);
+
+  free(buffer);
+}
+
+static void process_conv(void *f, double *w, size_t n) {
+  g_convolution_vtable.process(f, w, n);
+}
+
+static void process_biquad(void *f, double *w, size_t n) {
+  g_biquad_vtable.process(f, w, n);
+}
+
+static void process_diffeq(void *f, double *w, size_t n) {
+  g_diffeq_vtable.process(f, w, n);
+}
+
+TEST(Convolution_1024_Benchmark) {
+  double *coeffs = (double *)calloc(1024, sizeof(double));
+  convolution_config_t params = {
+      .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 1024};
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+  void *f =
+      g_convolution_vtable.create("conv-1024", &cfg, 0, CHUNK_SIZE, NULL, NULL);
+  run_filter_benchmark("FftConv_1024", "conv", 1024, f, process_conv);
+  g_convolution_vtable.free(f);
+  free(coeffs);
+}
+
+TEST(Convolution_4096_Benchmark) {
+  double *coeffs = (double *)calloc(4096, sizeof(double));
+  convolution_config_t params = {
+      .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 4096};
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+  void *f =
+      g_convolution_vtable.create("conv-4096", &cfg, 0, CHUNK_SIZE, NULL, NULL);
+  run_filter_benchmark("FftConv_4096", "conv", 4096, f, process_conv);
+  g_convolution_vtable.free(f);
+  free(coeffs);
+}
+
+TEST(Convolution_16384_Benchmark) {
+  double *coeffs = (double *)calloc(16384, sizeof(double));
+  convolution_config_t params = {
+      .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 16384};
+  filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
+  void *f = g_convolution_vtable.create("conv-16384", &cfg, 0, CHUNK_SIZE, NULL,
+                                        NULL);
+  run_filter_benchmark("FftConv_16384", "conv", 16384, f, process_conv);
+  g_convolution_vtable.free(f);
+  free(coeffs);
+}
+
+TEST(Biquad_Benchmark) {
+  biquad_config_t params = {.type = BIQUAD_TYPE_FREE,
+                            .b0 = 0.21476322779271284,
+                            .b1 = 0.4295264555854257,
+                            .b2 = 0.21476322779271284,
+                            .a1 = -0.1462978543780541,
+                            .a2 = 0.005350765548905586};
+  filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD,
+                         .parameters.biquad = params};
+  void *f = g_biquad_vtable.create("biquad", &cfg, 44100, 0, NULL, NULL);
+  run_filter_benchmark("Biquad", "biquad", 44100, f, process_biquad);
+  g_biquad_vtable.free(f);
+}
+
+TEST(DiffEq_Benchmark) {
+  double a[] = {1.0, -0.1462978543780541, 0.005350765548905586};
+  double b[] = {0.21476322779271284, 0.4295264555854257, 0.21476322779271284};
+  diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
+  filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
+                         .parameters.diff_eq = params};
+  void *f = g_diffeq_vtable.create("diffeq", &cfg, 0, 0, NULL, NULL);
+  run_filter_benchmark("DiffEq", "diffeq", 44100, f, process_diffeq);
+  g_diffeq_vtable.free(f);
+}
+
+TEST_MAIN()

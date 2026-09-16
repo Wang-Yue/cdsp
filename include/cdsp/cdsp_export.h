@@ -22,4 +22,4 @@
 #endif
 #endif
 
-#endif  // CDSP_EXPORT_H
+#endif // CDSP_EXPORT_H

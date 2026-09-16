@@ -63,7 +63,7 @@ for san in "${SANITIZERS[@]}"; do
 
     EXTRA_ENV=()
     if [ "$san" = "thread" ]; then
-        EXTRA_ENV+=(TSAN_OPTIONS="suppressions=${CDSP_DIR}/Tools/tsan_suppressions.txt:second_deadlock_stack=1:ignore_noninstrumented_modules=1")
+        EXTRA_ENV+=(TSAN_OPTIONS="suppressions=${CDSP_DIR}/tools/tsan_suppressions.txt:second_deadlock_stack=1:ignore_noninstrumented_modules=1")
         if [ "$OS" = "Linux" ]; then
             ARCHER_PATH="$(${CC:-clang} -print-file-name=libarcher.so 2>/dev/null || true)"
             if [ -f "$ARCHER_PATH" ]; then

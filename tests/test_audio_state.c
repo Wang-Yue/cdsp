@@ -1,0 +1,223 @@
+#include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "audio/audio_chunk.h"
+#include "audio/processing_parameters.h"
+#include "test_support.h"
+#include "utils/double_helpers.h"
+#include "utils/float_helpers.h"
+
+TEST(ProcessingParametersGettersSetters) {
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  ASSERT_TRUE(params != NULL);
+
+  processing_parameters_set_target_volume(params, -10.0);
+  ASSERT_DOUBLE_EQ(-10.0, processing_parameters_get_target_volume(params));
+
+  processing_parameters_set_current_volume(params, -12.0);
+  ASSERT_DOUBLE_EQ(-12.0, processing_parameters_get_current_volume(params));
+
+  processing_parameters_set_muted(params, true);
+  ASSERT_TRUE(processing_parameters_is_muted(params));
+
+  float cap_peak[] = {-3.0f, -4.0f};
+  processing_parameters_set_capture_signal_peak(params, cap_peak, 2);
+  float out_cap_peak[2] = {0};
+  processing_parameters_get_capture_signal_peak(params, out_cap_peak, 2);
+  ASSERT_NEAR(-3.0f, out_cap_peak[0], 1e-5);
+  ASSERT_NEAR(-4.0f, out_cap_peak[1], 1e-5);
+
+  float cap_rms[] = {-10.0f, -11.0f};
+  processing_parameters_set_capture_signal_rms(params, cap_rms, 2);
+  float out_cap_rms[2] = {0};
+  processing_parameters_get_capture_signal_rms(params, out_cap_rms, 2);
+  ASSERT_NEAR(-10.0f, out_cap_rms[0], 1e-5);
+  ASSERT_NEAR(-11.0f, out_cap_rms[1], 1e-5);
+
+  float pb_peak[] = {-1.0f, -2.0f};
+  processing_parameters_set_playback_signal_peak(params, pb_peak, 2);
+  float out_pb_peak[2] = {0};
+  processing_parameters_get_playback_signal_peak(params, out_pb_peak, 2);
+  ASSERT_NEAR(-1.0f, out_pb_peak[0], 1e-5);
+  ASSERT_NEAR(-2.0f, out_pb_peak[1], 1e-5);
+
+  float pb_rms[] = {-8.0f, -9.0f};
+  processing_parameters_set_playback_signal_rms(params, pb_rms, 2);
+  float out_pb_rms[2] = {0};
+  processing_parameters_get_playback_signal_rms(params, out_pb_rms, 2);
+  ASSERT_NEAR(-8.0f, out_pb_rms[0], 1e-5);
+  ASSERT_NEAR(-9.0f, out_pb_rms[1], 1e-5);
+
+  processing_parameters_free(params);
+}
+
+TEST(ProcessingParametersMultiChannelSetters) {
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  ASSERT_TRUE(params != NULL);
+
+  float cap_peak[] = {-5.0f, -6.0f};
+  processing_parameters_set_capture_signal_peak(params, cap_peak, 2);
+  float out_cap_peak[2] = {0};
+  processing_parameters_get_capture_signal_peak(params, out_cap_peak, 2);
+  ASSERT_NEAR(-5.0f, out_cap_peak[0], 1e-5);
+  ASSERT_NEAR(-6.0f, out_cap_peak[1], 1e-5);
+
+  float cap_rms[] = {-15.0f, -16.0f};
+  processing_parameters_set_capture_signal_rms(params, cap_rms, 2);
+  float out_cap_rms[2] = {0};
+  processing_parameters_get_capture_signal_rms(params, out_cap_rms, 2);
+  ASSERT_NEAR(-15.0f, out_cap_rms[0], 1e-5);
+  ASSERT_NEAR(-16.0f, out_cap_rms[1], 1e-5);
+
+  float pb_peak[] = {-2.0f, -3.0f};
+  processing_parameters_set_playback_signal_peak(params, pb_peak, 2);
+  float out_pb_peak[2] = {0};
+  processing_parameters_get_playback_signal_peak(params, out_pb_peak, 2);
+  ASSERT_NEAR(-2.0f, out_pb_peak[0], 1e-5);
+  ASSERT_NEAR(-3.0f, out_pb_peak[1], 1e-5);
+
+  float pb_rms[] = {-12.0f, -13.0f};
+  processing_parameters_set_playback_signal_rms(params, pb_rms, 2);
+  float out_pb_rms[2] = {0};
+  processing_parameters_get_playback_signal_rms(params, out_pb_rms, 2);
+  ASSERT_NEAR(-12.0f, out_pb_rms[0], 1e-5);
+  ASSERT_NEAR(-13.0f, out_pb_rms[1], 1e-5);
+
+  processing_parameters_free(params);
+}
+
+TEST(ProcessingParametersUpdateLevels) {
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  audio_chunk_t *chunk = audio_chunk_create(1024, 2);
+  audio_chunk_set_valid_frames(chunk, 1024);
+
+  for (size_t ch = 0; ch < 2; ch++) {
+    mutable_waveform_t buf = audio_chunk_get_channel(chunk, ch);
+    for (size_t t = 0; t < 1024; t++) {
+      buf[t] = 1.0;
+    }
+  }
+
+  float loudest_cap =
+      processing_parameters_update_capture_levels(params, chunk);
+  ASSERT_NEAR(0.0f, loudest_cap, 1e-3);
+  float out_cap_peak[2] = {0};
+  processing_parameters_get_capture_signal_peak(params, out_cap_peak, 2);
+  ASSERT_NEAR(0.0f, out_cap_peak[0], 1e-3);
+  float out_cap_rms[2] = {0};
+  processing_parameters_get_capture_signal_rms(params, out_cap_rms, 2);
+  ASSERT_NEAR(0.0f, out_cap_rms[0], 1e-3);
+
+  float loudest_pb =
+      processing_parameters_update_playback_levels(params, chunk);
+  ASSERT_NEAR(0.0f, loudest_pb, 1e-3);
+  float out_pb_peak[2] = {0};
+  processing_parameters_get_playback_signal_peak(params, out_pb_peak, 2);
+  ASSERT_NEAR(0.0f, out_pb_peak[0], 1e-3);
+  float out_pb_rms[2] = {0};
+  processing_parameters_get_playback_signal_rms(params, out_pb_rms, 2);
+  ASSERT_NEAR(0.0f, out_pb_rms[0], 1e-3);
+
+  audio_chunk_free(chunk);
+  processing_parameters_free(params);
+}
+
+TEST(ProcessingParametersChunkLevelHistory1024) {
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  ASSERT_TRUE(params != NULL);
+
+  audio_chunk_t *chunk = audio_chunk_create(512, 2);
+  audio_chunk_set_valid_frames(chunk, 512);
+
+  // Channel 0: 0.5 amplitude (-6.0206 dB)
+  // Channel 1: 1.0 amplitude (0.0 dB)
+  mutable_waveform_t buf0 = audio_chunk_get_channel(chunk, 0);
+  mutable_waveform_t buf1 = audio_chunk_get_channel(chunk, 1);
+  for (size_t t = 0; t < 512; t++) {
+    buf0[t] = 0.5;
+    buf1[t] = 1.0;
+  }
+
+  // Push 1,500 chunks to test wrapping around the 1,024 history capacity
+  for (int i = 0; i < 1500; i++) {
+    processing_parameters_update_capture_levels(params, chunk);
+    processing_parameters_update_playback_levels(params, chunk);
+  }
+
+  float cap_peaks[2] = {0};
+  processing_parameters_get_capture_signal_peak_since(params, 0, cap_peaks, 2);
+  ASSERT_NEAR(-6.0206f, cap_peaks[0], 1e-2);
+  ASSERT_NEAR(0.0f, cap_peaks[1], 1e-2);
+
+  float cap_rms[2] = {0};
+  processing_parameters_get_capture_signal_rms_since(params, 0, cap_rms, 2);
+  ASSERT_NEAR(-6.0206f, cap_rms[0], 1e-2);
+  ASSERT_NEAR(0.0f, cap_rms[1], 1e-2);
+
+  float pb_peaks[2] = {0};
+  processing_parameters_get_playback_signal_peak_since(params, 0, pb_peaks, 2);
+  ASSERT_NEAR(-6.0206f, pb_peaks[0], 1e-2);
+  ASSERT_NEAR(0.0f, pb_peaks[1], 1e-2);
+
+  float pb_rms[2] = {0};
+  processing_parameters_get_playback_signal_rms_since(params, 0, pb_rms, 2);
+  ASSERT_NEAR(-6.0206f, pb_rms[0], 1e-2);
+  ASSERT_NEAR(0.0f, pb_rms[1], 1e-2);
+
+  // Future timestamp should return silent levels (-inf dB)
+  float future_peaks[2] = {0};
+  processing_parameters_get_capture_signal_peak_since(
+      params, 0xFFFFFFFFFFFFFFULL, future_peaks, 2);
+  ASSERT_TRUE(isinf(future_peaks[0]) && future_peaks[0] < 0.0f);
+  ASSERT_TRUE(isinf(future_peaks[1]) && future_peaks[1] < 0.0f);
+
+  audio_chunk_free(chunk);
+  processing_parameters_free(params);
+}
+
+TEST(DSPOpsScalarMultiply) {
+  double buffer[] = {1.0, 2.0, 3.0};
+  dsp_ops_scalar_multiply(buffer, 2.0, 3);
+  ASSERT_DOUBLE_EQ(2.0, buffer[0]);
+  ASSERT_DOUBLE_EQ(4.0, buffer[1]);
+  ASSERT_DOUBLE_EQ(6.0, buffer[2]);
+}
+
+TEST(DSPOpsAdd) {
+  double a[] = {1.0, 2.0, 3.0};
+  double b[] = {4.0, 5.0, 6.0};
+  dsp_ops_add(a, b, 2);
+  ASSERT_DOUBLE_EQ(5.0, b[0]);
+  ASSERT_DOUBLE_EQ(7.0, b[1]);
+  ASSERT_DOUBLE_EQ(6.0, b[2]);
+}
+
+TEST(DSPOpsMultiply) {
+  double a[] = {1.0, 2.0, 3.0};
+  double b[] = {4.0, 5.0, 6.0};
+  double result[] = {0.0, 0.0, 0.0};
+  for (int i = 0; i < 3; i++)
+    result[i] = b[i];
+  dsp_ops_multiply(a, result, 2);
+  ASSERT_DOUBLE_EQ(4.0, result[0]);
+  ASSERT_DOUBLE_EQ(10.0, result[1]);
+  ASSERT_DOUBLE_EQ(6.0, result[2]);
+}
+
+TEST(DSPOpsMultiplyAdd) {
+  double a[] = {1.0, 2.0, 3.0};
+  double acc[] = {4.0, 5.0, 6.0};
+  dsp_ops_multiply_add(a, 2.0, acc, 2);
+  ASSERT_DOUBLE_EQ(6.0, acc[0]);
+  ASSERT_DOUBLE_EQ(9.0, acc[1]);
+  ASSERT_DOUBLE_EQ(6.0, acc[2]);
+}
+
+TEST(DSPOpsPeakAndRMS) {
+  double buffer[] = {1.0, -2.0, 3.0};
+  ASSERT_NEAR(3.0f, dsp_ops_peak_absolute(buffer, 3), 1e-5);
+  ASSERT_NEAR((float)sqrt(14.0 / 3.0), dsp_ops_rms(buffer, 3), 1e-5);
+}
+
+TEST_MAIN()
