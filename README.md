@@ -152,7 +152,41 @@ A major architectural contrast lies in how integration and external control are 
   - This allows host applications (like `CamillaDSP-Monitor` via Swift FFI or `Monitor-Qt` via direct C++ link) to embed the DSP processing engine **directly in-process** as a static or dynamic library (`libdsp.a`). 
   - Parameter changes (such as muting, panning, or changing volume) bypass IPC serialization entirely and update the engine's atomic register slots directly, eliminating TCP/IPC socket latency and loopback jitter.
 
-### 2.8 Intentional Behavioral Divergences & Architectural Enhancements
+### 2.8 Driverless macOS Audio Loopback (macOS 14.2+)
+
+Routing system or application audio into real-time DSP pipelines on macOS has historically required installing third-party virtual loopback audio drivers (such as *BlackHole* or *Loopback*). While functional, virtual drivers introduce administrative friction (requiring system permissions and driver installations), decouple clock domains (introducing asynchronous clock drift between virtual and physical devices), and incur substantial buffer latency (often 30ms – 80ms).
+
+`cdsp` extends the native `CoreAudio` capture backend with direct macOS 14.2+ CoreAudio Audio Hardware Tapping (`CATapDescription` / `AudioHardwareCreateProcessTap`), activated simply with `"loopback": true` (matching WASAPI and PipeWire loopback semantics):
+
+```json
+{
+  "capture": {
+    "type": "CoreAudio",
+    "channels": 2,
+    "device": "DX3 Pro+",
+    "loopback": true,
+    "format": "FLOAT32LE",
+    "sample_rate": 48000
+  },
+  "playback": {
+    "type": "CoreAudio",
+    "channels": 2,
+    "device": "DX3 Pro+",
+    "format": "FLOAT32LE",
+    "sample_rate": 48000
+  }
+}
+```
+
+#### Key Capabilities:
+- **100% Driverless & Rootless**: Completely eliminates virtual kernel extensions and HAL `.driver` plugins. Users simply select their physical DAC as the macOS system default output device without any extra drivers.
+- **Minimal Latency**: Intercepts audio frames directly within the physical device's native hardware IO cycle. Eliminates intermediate virtual driver ring buffers, inter-thread context switches, and dynamic clock-drift resamplers for the lowest possible round-trip delay.
+- **Zero Clock Drift**: Capturing the loopback tap of a physical DAC runs both capture and playback loops against the identical hardware crystal oscillator ($1:1$), avoiding buffer drift and eliminating the CPU overhead of asynchronous resampling.
+- **Per-Application & Process Capture**: In addition to hardware device taps, `cdsp` supports targeted process tapping by naming the capture device as `"app:app_name"` (e.g. `"app:Google Chrome"`, `"app:Music"`, `"app:Spotify"`), routing sound from specific applications directly into the DSP pipeline while all running applications are dynamically exposed in the capture device registry and capability APIs.
+- **Strict Bit-Perfect Verification & Dynamic Rate Reporting**: `cdsp` strictly verifies that the configured sample rate matches the physical DAC's nominal rate on initialization (disallowing implicit CoreAudio sample rate conversion), while monitoring hardware sample rate transitions via `rate_change_watcher` to report `CAPTURE_FORMAT_CHANGE` events to the external supervisor (`cdsp-studio`).
+- **Anti-Feedback Loop & Auto-Mute**: Automatically isolates `cdsp`'s own process ID and sets `CATapMuted` on the tapped device stream, preventing un-DSP'd raw audio leakage to the DAC and eliminating acoustic feedback.
+
+### 2.9 Intentional Behavioral Divergences & Architectural Enhancements
 
 `cdsp` maintains rigorous line-by-line DSP and protocol parity with upstream *CamillaDSP* and *Rubato*. A behavioral divergence from upstream is admitted only when **`cdsp` does strictly better**—such as eliminating acoustic and speaker safety hazards, guaranteeing hard real-time execution safety (zero allocations and zero disk I/O on the audio thread), preventing transient pops across filter changes, preserving state continuity across reloads, and achieving higher numerical precision.
 

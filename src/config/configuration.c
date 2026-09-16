@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "backend/file_backend.h"
 #include "config/resampler_config_types.h"
@@ -538,6 +539,29 @@ int dsp_config_validate(const dsp_config_t *config, config_error_t *err) {
       return -1;
     }
   }
+
+#if defined(ENABLE_COREAUDIO)
+  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_CORE_AUDIO &&
+      config->devices.playback.type == AUDIO_BACKEND_TYPE_CORE_AUDIO &&
+      config->devices.capture.cfg.coreaudio.loopback &&
+      config->devices.has_resampler) {
+    const char *cap_dev = config->devices.capture.cfg.coreaudio.has_device
+                              ? config->devices.capture.cfg.coreaudio.device
+                              : "";
+    const char *pb_dev = config->devices.playback.cfg.coreaudio.has_device
+                             ? config->devices.playback.cfg.coreaudio.device
+                             : "";
+    if (strcasecmp(cap_dev, pb_dev) == 0) {
+      config_error_set(
+          err, CONFIG_ERR_INVALID_DEVICE,
+          "Resampling is not supported when CoreAudio loopback captures from "
+          "the "
+          "playback device. Both capture and playback share the same hardware "
+          "clock and sample rate");
+      return -1;
+    }
+  }
+#endif
 
   // Validate pipeline structure and channel routing
   return pipeline_config_validate(config, err);

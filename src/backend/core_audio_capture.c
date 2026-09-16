@@ -17,20 +17,22 @@
 #if defined(ENABLE_COREAUDIO)
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
+#include <math.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "audio/audio_chunk.h"
 #include "backend/backend_error.h"
 #include "backend/core_audio_device.h"
+#include "backend/core_audio_tap_bridge.h"
 #include "config/engine_config_types.h"
 #include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
+#include "utils/cdsp_time.h"
 #include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.capture"};
@@ -42,6 +44,11 @@ struct core_audio_capture {
   size_t chunk_size;
   char sample_format[16];
   bool has_sample_format;
+
+  /** @brief True when loopback capture (device tap) is active. */
+  bool loopback;
+  /** @brief Device tap composition handle backing this loopback capture. */
+  cdsp_tap_handle_t tap;
 
   AudioUnit audio_unit;
   spsc_byte_ring_buffer_t *ring_buffer;
@@ -261,7 +268,7 @@ static void core_audio_capture_close(void *ctx) {
   while (atomic_load_explicit(&capture->active_callbacks,
                               memory_order_acquire) > 0 &&
          timeout_count-- > 0) {
-    usleep(500);
+    cdsp_sleep_us(500);
   }
   if (capture->audio_unit) {
     AudioComponentInstanceDispose(capture->audio_unit);
@@ -271,6 +278,11 @@ static void core_audio_capture_close(void *ctx) {
   if (capture->read_scratch) {
     free(capture->read_scratch);
     capture->read_scratch = NULL;
+  }
+  // Destroy the tap only after the AudioUnit bound to the aggregate is gone,
+  // otherwise the HAL still holds a client on the device being torn down.
+  if (capture->loopback) {
+    cdsp_tap_destroy_handle(&capture->tap);
   }
   capture->opened_device_id = 0;
 }
@@ -289,6 +301,14 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
   atomic_store_explicit(&capture->callback_error_count, 0,
                         memory_order_relaxed);
   atomic_store_explicit(&capture->last_callback_error, 0, memory_order_relaxed);
+
+  // In CoreAudio Loopback (Device Tap) mode, create the tap and wrapping
+  // aggregate.
+  if (capture->loopback) {
+    if (!cdsp_tap_open(capture->device_name, &capture->tap, err)) {
+      return false;
+    }
+  }
 
   // Set up component query for HAL Output Audio Unit.
   AudioComponentDescription desc = {
@@ -340,9 +360,12 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
     goto cleanup;
   }
 
-  AudioDeviceID dev_id = core_audio_device_id_for_name(
-      capture->device_name[0] ? capture->device_name : NULL,
-      CORE_AUDIO_SCOPE_INPUT);
+  AudioDeviceID dev_id =
+      capture->loopback
+          ? capture->tap.aggregate_dev_id
+          : core_audio_device_id_for_name(
+                capture->device_name[0] ? capture->device_name : NULL,
+                CORE_AUDIO_SCOPE_INPUT);
   if (dev_id == 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_DEVICE_NOT_FOUND,
@@ -410,6 +433,13 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
     goto cleanup;
   }
   logger_debug(&g_logger, "Set capture stream format.");
+
+  if (capture->loopback) {
+    if (!cdsp_tap_apply_channel_map(capture->audio_unit, &capture->tap,
+                                    capture->channels, err)) {
+      goto cleanup;
+    }
+  }
 
   // Set the maximum frames per slice on the AudioUnit.
   UInt32 max_frames = (UInt32)capture->chunk_size;
@@ -680,6 +710,10 @@ static capture_backend_t *core_audio_capture_create(
   if (config_device && config_device[0] != '\0') {
     strncpy(capture->device_name, config_device,
             sizeof(capture->device_name) - 1);
+  }
+  if (config->type == AUDIO_BACKEND_TYPE_CORE_AUDIO) {
+    capture->loopback = config->cfg.coreaudio.loopback ||
+                        cdsp_tap_is_app_device(capture->device_name);
   }
   size_t config_channels = capture_device_config_get_channels(config);
   capture->channels = config_channels;

@@ -1154,7 +1154,7 @@ void core_audio_device_stop_and_destroy_ioproc(
     int timeout_count = 1000; // 500ms max (1000 * 500us)
     while (atomic_load_explicit(active_callbacks, memory_order_acquire) > 0 &&
            timeout_count-- > 0) {
-      usleep(500);
+      cdsp_sleep_us(500);
     }
   }
   AudioDeviceDestroyIOProcID(device_id, io_proc_id);

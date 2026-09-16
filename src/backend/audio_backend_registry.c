@@ -26,9 +26,9 @@ int audio_backend_registry_get_available_devices(const char *backend,
     return 0;
   if (strcasecmp(backend, "coreaudio") == 0) {
 #if defined(ENABLE_COREAUDIO)
-    char names[32][256];
+    char names[256][256];
     int count =
-        core_audio_capabilities_available_device_names(input, names, 32);
+        core_audio_capabilities_available_device_names(input, names, 256);
     if (out_devices && count > max_devices)
       count = max_devices;
     for (int i = 0; i < count; i++) {

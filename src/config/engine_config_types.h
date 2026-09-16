@@ -587,6 +587,8 @@ typedef struct {
   bool has_device;                  /**< True if custom device is specified. */
   coreaudio_sample_format_t format; /**< Sample format. */
   bool has_format;                  /**< True if format is specified. */
+  bool loopback;     /**< Loopback capture (record output/tap). */
+  bool has_loopback; /**< True if loopback is specified. */
 } coreaudio_capture_config_t;
 
 /**

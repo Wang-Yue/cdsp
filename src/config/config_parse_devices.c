@@ -384,8 +384,8 @@ static int parse_capture(const cJSON *cap_obj, devices_config_t *devices,
       return -1;
   } else if (strcmp(type_str, "CoreAudio") == 0) {
     static const char *const allowed[] = {
-        "type",           "channels",   "device",        "format", "labels",
-        "channel_labels", "bypass_dop", "dop_cutoff_hz", NULL};
+        "type",           "channels",   "device",        "format",   "labels",
+        "channel_labels", "bypass_dop", "dop_cutoff_hz", "loopback", NULL};
     if (validate_unknown_fields(cap_obj, allowed, "CoreAudio capture", err) !=
         0)
       return -1;
@@ -683,6 +683,8 @@ static int parse_capture(const cJSON *cap_obj, devices_config_t *devices,
     final_cap->cfg.coreaudio.format =
         temp.has_format ? temp.format : COREAUDIO_SAMPLE_FORMAT_INVALID;
     final_cap->cfg.coreaudio.has_format = temp.has_format;
+    final_cap->cfg.coreaudio.loopback = temp.loopback;
+    final_cap->cfg.coreaudio.has_loopback = temp.has_loopback;
     break;
 #endif
 #if defined(ENABLE_ALSA)

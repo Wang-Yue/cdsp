@@ -680,6 +680,8 @@ bool devices_config_equal(const devices_config_t *a,
       return false;
     if (a->capture.cfg.coreaudio.format != b->capture.cfg.coreaudio.format)
       return false;
+    if (a->capture.cfg.coreaudio.loopback != b->capture.cfg.coreaudio.loopback)
+      return false;
     break;
 #endif
 #if defined(ENABLE_ALSA)
@@ -871,6 +873,9 @@ bool devices_config_equal(const devices_config_t *a,
       return false;
     if (a->playback.cfg.coreaudio.exclusive !=
         b->playback.cfg.coreaudio.exclusive)
+      return false;
+    if (a->playback.cfg.coreaudio.target_level !=
+        b->playback.cfg.coreaudio.target_level)
       return false;
     break;
 #endif

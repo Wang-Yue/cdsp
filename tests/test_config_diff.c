@@ -386,4 +386,41 @@ TEST(ConfigDiffPipeWireAutoconnectTo) {
 }
 #endif
 
+#if defined(ENABLE_COREAUDIO)
+TEST(ConfigDiffCoreAudioLoopback) {
+  const char *cfg_no_loopback =
+      "{\n"
+      "    \"devices\": {\"samplerate\": 44100, \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"CoreAudio\", \"channels\": 2, "
+      "\"device\": \"BlackHole 2ch\", \"loopback\": false},\n"
+      "        \"playback\": {\"type\": \"CoreAudio\", \"channels\": 2, "
+      "\"device\": \"Mac Studio Speakers\"}\n"
+      "    }\n"
+      "}";
+
+  const char *cfg_with_loopback =
+      "{\n"
+      "    \"devices\": {\"samplerate\": 44100, \"chunksize\": 1024,\n"
+      "        \"capture\": {\"type\": \"CoreAudio\", \"channels\": 2, "
+      "\"device\": \"BlackHole 2ch\", \"loopback\": true},\n"
+      "        \"playback\": {\"type\": \"CoreAudio\", \"channels\": 2, "
+      "\"device\": \"Mac Studio Speakers\"}\n"
+      "    }\n"
+      "}";
+
+  dsp_config_t *c1 = NULL, *c2 = NULL;
+  config_error_t err;
+  config_error_init(&err);
+
+  ASSERT_EQ(0, dsp_config_parse_json(cfg_no_loopback, &c1, &err));
+  ASSERT_EQ(0, dsp_config_parse_json(cfg_with_loopback, &c2, &err));
+
+  config_change_type_t res = config_diff(c1, c2);
+  ASSERT_EQ(CONFIG_CHANGE_DEVICES, res);
+
+  dsp_config_free(c1);
+  dsp_config_free(c2);
+}
+#endif
+
 TEST_MAIN()

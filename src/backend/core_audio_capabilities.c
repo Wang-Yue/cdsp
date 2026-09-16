@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "backend/core_audio_device.h"
+#include "backend/core_audio_tap_bridge.h"
 #include "config/engine_config_types.h"
 
 // MARK: - Discovery
@@ -60,6 +61,21 @@ int core_audio_capabilities_available_device_names(bool is_capture,
       res++;
     }
   }
+
+  // When enumerating capture devices on macOS 14.2+, also expose available app
+  // taps
+  if (is_capture && cdsp_tap_is_supported() && res < max_names) {
+    char app_names[128][256];
+    int app_count = cdsp_tap_get_available_app_names(app_names, 128);
+    for (int i = 0; i < app_count && res < max_names; i++) {
+      if (app_names[i][0] != '\0') {
+        strncpy(out_names[res], app_names[i], 255);
+        out_names[res][255] = '\0';
+        res++;
+      }
+    }
+  }
+
   return res;
 }
 
@@ -140,10 +156,19 @@ format_string_for_asbd(const AudioStreamBasicDescription *asbd) {
 audio_device_descriptor_t *
 core_audio_capabilities_describe(const char *device_name, bool is_capture,
                                  device_error_t *err) {
-  core_audio_scope_t scope =
-      is_capture ? CORE_AUDIO_SCOPE_INPUT : CORE_AUDIO_SCOPE_OUTPUT;
-  // Look up the internal HAL AudioDeviceID for the given device name.
-  AudioDeviceID id = core_audio_device_id_for_name(device_name, scope);
+  bool is_app = cdsp_tap_is_app_device(device_name);
+  AudioDeviceID id = kAudioObjectUnknown;
+  core_audio_scope_t scope = CORE_AUDIO_SCOPE_OUTPUT;
+
+  if (is_app) {
+    if (!cdsp_tap_resolve_app_device(device_name, is_capture, &id, err)) {
+      return NULL;
+    }
+  } else {
+    scope = is_capture ? CORE_AUDIO_SCOPE_INPUT : CORE_AUDIO_SCOPE_OUTPUT;
+    id = core_audio_device_id_for_name(device_name, scope);
+  }
+
   if (id == 0) {
     if (err) {
       device_error_init(err, DEVICE_ERROR_NOT_FOUND, "Device not found");
@@ -161,8 +186,8 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
     return NULL;
   }
 
-  // Get the actual device name from HAL.
-  if (!core_audio_device_name(id, desc->name, sizeof(desc->name))) {
+  // Get the actual device name from HAL (or use device_name for app taps).
+  if (is_app || !core_audio_device_name(id, desc->name, sizeof(desc->name))) {
     if (device_name) {
       strncpy(desc->name, device_name, sizeof(desc->name) - 1);
     }

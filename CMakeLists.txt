@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(cdsp VERSION 5.0.0 LANGUAGES C)
 
+if(APPLE)
+    enable_language(OBJC)
+endif()
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -174,6 +178,13 @@ endif()
 # Source Files Selection
 # -----------------------------------------------------------------------------
 file(GLOB_RECURSE DSP_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
+if(APPLE)
+    file(GLOB_RECURSE DSP_OBJC_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.m")
+    list(APPEND DSP_SRCS ${DSP_OBJC_SRCS})
+    if(DSP_OBJC_SRCS)
+        set_source_files_properties(${DSP_OBJC_SRCS} PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    endif()
+endif()
 
 if(ENABLE_WEBSOCKET)
     file(GLOB SERVER_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/app/server/*.c")
@@ -226,7 +237,7 @@ endif()
 # -----------------------------------------------------------------------------
 if(ENABLE_COREAUDIO)
     target_compile_definitions(dsp PUBLIC ENABLE_COREAUDIO)
-    target_link_libraries(dsp PUBLIC "-framework CoreAudio" "-framework AudioToolbox")
+    target_link_libraries(dsp PUBLIC "-framework CoreAudio" "-framework AudioToolbox" "-framework Foundation")
 endif()
 
 if(ENABLE_ACCELERATE)

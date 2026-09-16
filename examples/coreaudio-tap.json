@@ -1,0 +1,21 @@
+{
+  "devices": {
+    "samplerate": 48000,
+    "chunksize": 64,
+    "silence_timeout_s": 6,
+    "silence_threshold": -84,
+    "capture": {
+      "type": "CoreAudio",
+      "device": "DX3 Pro+",
+      "channels": 2,
+      "loopback": true
+    },
+    "playback": {
+      "type": "CoreAudio",
+      "device": "DX3 Pro+",
+      "channels": 2,
+      "exclusive": false
+    }
+  },
+  "pipeline": []
+}

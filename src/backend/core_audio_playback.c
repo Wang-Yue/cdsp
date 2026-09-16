@@ -22,13 +22,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "audio/audio_chunk.h"
 #include "backend/backend_error.h"
 #include "backend/core_audio_device.h"
 #include "config/engine_config_types.h"
 #include "logging/app_logger.h"
+#include "utils/cdsp_time.h"
 #include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};
@@ -233,7 +233,7 @@ static void core_audio_playback_close(void *ctx) {
   while (atomic_load_explicit(&playback->active_callbacks,
                               memory_order_acquire) > 0 &&
          timeout_count-- > 0) {
-    usleep(500);
+    cdsp_sleep_us(500);
   }
   if (playback->audio_unit) {
     AudioComponentInstanceDispose(playback->audio_unit);

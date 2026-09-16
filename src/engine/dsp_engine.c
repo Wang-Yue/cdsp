@@ -767,11 +767,11 @@ static bool dsp_engine_get_available_devices(void *ctx, const char *backend,
   (void)ctx;
   if (!out_devices || !out_count)
     return false;
-  audio_device_t *devs = (audio_device_t *)calloc(32, sizeof(audio_device_t));
+  audio_device_t *devs = (audio_device_t *)calloc(256, sizeof(audio_device_t));
   if (!devs)
     return false;
-  int n =
-      audio_backend_registry_get_available_devices(backend, is_input, devs, 32);
+  int n = audio_backend_registry_get_available_devices(backend, is_input, devs,
+                                                       256);
   if (n < 0) {
     free(devs);
     *out_devices = NULL;
