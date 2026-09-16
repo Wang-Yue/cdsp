@@ -87,6 +87,12 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t* core,
 
   bool multithreaded =
       config->devices.has_multithreaded ? config->devices.multithreaded : false;
+  if (multithreaded) {
+    logger_info(&g_logger, "Multithreading enabled with %d worker threads",
+                config->devices.has_worker_threads
+                    ? config->devices.worker_threads
+                    : 0);
+  }
 
   double capture_rate = (double)(config->devices.has_capture_samplerate
                                      ? config->devices.capture_samplerate
@@ -303,6 +309,13 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
                                                 size_t pipeline_rate,
                                                 audio_backend_error_t* err) {
   // Prep for Step 8: Instantiate the loop orchestrators.
+  const bool* used_channels =
+      pipeline_get_used_capture_channels(core->pipeline, NULL);
+  if (used_channels && core->capture_chunk_pool) {
+    round_robin_chunk_pool_set_used_channels(core->capture_chunk_pool,
+                                             used_channels);
+  }
+
   engine_capture_loop_config_t cap_cfg = {
       .shared = core->shared,
       .capture = core->capture,
@@ -314,6 +327,7 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
       .samplerate = (size_t)(config->devices.has_capture_samplerate
                                  ? config->devices.capture_samplerate
                                  : config->devices.samplerate),
+      .used_channels = used_channels,
       .silence_threshold_db = config->devices.has_silence_threshold
                                   ? config->devices.silence_threshold
                                   : 0.0,
@@ -366,7 +380,8 @@ static bool engine_session_spawn_worker_threads(dsp_session_t* core,
   double adjust_period = config->devices.has_adjust_interval_s
                              ? config->devices.adjust_interval_s
                              : 10.0;
-  int target_level = config->devices.has_target_level
+  int target_level = (config->devices.has_target_level &&
+                      config->devices.target_level > 0)
                          ? config->devices.target_level
                          : (int)playback_chunk_size;
 

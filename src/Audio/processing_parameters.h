@@ -155,6 +155,22 @@ void processing_parameters_set_resampler_load(processing_parameters_t* params,
                                               double value);
 
 /**
+ * @brief Gets the signal range of the most recent capture chunk.
+ * @param params Pointer to the processing parameters.
+ * @return Peak-to-peak signal range (0.0 to 2.0).
+ */
+float processing_parameters_get_signal_range(
+    const processing_parameters_t* params);
+
+/**
+ * @brief Sets the signal range of the most recent capture chunk.
+ * @param params Pointer to the processing parameters.
+ * @param range Peak-to-peak signal range.
+ */
+void processing_parameters_set_signal_range(processing_parameters_t* params,
+                                            float range);
+
+/**
  * @brief Creates a new processing parameters instance.
  *
  * @param capture_channels Number of capture channels.

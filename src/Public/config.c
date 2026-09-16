@@ -263,7 +263,7 @@ static bool apply_cjson_overrides(cJSON* root, int samplerate_override,
     }
   }
 
-  if (samplerate_override > 0) {
+  if (samplerate_override > 0 && strcmp(cap_type, "WavFile") != 0) {
     cJSON* resampler = cJSON_GetObjectItem(devices, "resampler");
     cJSON* old_sr = cJSON_GetObjectItem(devices, "samplerate");
     double cfg_rate = old_sr ? old_sr->valuedouble : 0.0;

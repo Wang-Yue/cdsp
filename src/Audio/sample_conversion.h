@@ -377,11 +377,19 @@ static inline double pcm_sample_decode_f32_bytes(const uint8_t* src) {
 }
 
 /**
- * @brief Decode a raw 32-bit DSD container bit pattern to a double sample
- * without checking isfinite() to preserve raw DSD bits.
+ * @brief Encode a double sample containing 32 raw DSD bits back to uint32_t.
+ */
+static inline uint32_t pcm_sample_encode_dsd_u32(double val) {
+  if (val <= 0.0) return 0;
+  if (val >= 4294967295.0) return 0xFFFFFFFFU;
+  return (uint32_t)(uint64_t)val;
+}
+
+/**
+ * @brief Decode a raw 32-bit DSD container bit pattern to an exact integer-valued double sample.
  */
 static inline double pcm_sample_decode_dsd_u32(uint32_t bits) {
-  return (double)pcm_sample_f32_from_u32(bits);
+  return (double)bits;
 }
 
 // MARK: - 64-Bit Floating-Point Format (F64)
@@ -525,7 +533,7 @@ static inline double pcm_sample_decode_dsd_u16_be_bytes(const uint8_t* src) {
  */
 static inline void pcm_sample_encode_dsd_u32_le_bytes(double val,
                                                       uint8_t* dst) {
-  uint32_t u32 = pcm_sample_u32_from_f32((float)val);
+  uint32_t u32 = pcm_sample_encode_dsd_u32(val);
   dst[0] = (uint8_t)(u32 & 0xFF);
   dst[1] = (uint8_t)((u32 >> 8) & 0xFF);
   dst[2] = (uint8_t)((u32 >> 16) & 0xFF);
@@ -554,7 +562,7 @@ static inline double pcm_sample_decode_dsd_u32_le_bytes(const uint8_t* src) {
  */
 static inline void pcm_sample_encode_dsd_u32_be_bytes(double val,
                                                       uint8_t* dst) {
-  uint32_t u32 = pcm_sample_u32_from_f32((float)val);
+  uint32_t u32 = pcm_sample_encode_dsd_u32(val);
   dst[0] = (uint8_t)((u32 >> 24) & 0xFF);
   dst[1] = (uint8_t)((u32 >> 16) & 0xFF);
   dst[2] = (uint8_t)((u32 >> 8) & 0xFF);
@@ -604,6 +612,119 @@ static inline double pcm_sample_decode_dsd_u32_reversed_bytes(
                  ((uint32_t)pcm_reverse_bits_u8(src[2]) << 8) |
                  (uint32_t)pcm_reverse_bits_u8(src[3]);
   return pcm_sample_decode_dsd_u32(u32);
+}
+
+// MARK: - Big-Endian PCM & Float Formats
+
+static inline void pcm_sample_encode_s16_be_bytes(double val, uint8_t* dst) {
+  int16_t s16 = pcm_sample_encode_s16(val);
+  dst[0] = (uint8_t)(((uint16_t)s16 >> 8) & 0xFF);
+  dst[1] = (uint8_t)((uint16_t)s16 & 0xFF);
+}
+
+static inline double pcm_sample_decode_s16_be_bytes(const uint8_t* src) {
+  int16_t val = (int16_t)(((uint16_t)src[0] << 8) | (uint16_t)src[1]);
+  return pcm_sample_decode_s16(val);
+}
+
+static inline void pcm_sample_encode_s24_3be_bytes(double val, uint8_t* dst) {
+  int32_t s24 = pcm_sample_encode_s24(val);
+  dst[0] = (uint8_t)((s24 >> 16) & 0xFF);
+  dst[1] = (uint8_t)((s24 >> 8) & 0xFF);
+  dst[2] = (uint8_t)(s24 & 0xFF);
+}
+
+static inline double pcm_sample_decode_s24_3be_bytes(const uint8_t* src) {
+  int32_t val = ((int32_t)(int8_t)src[0] << 16) | ((int32_t)src[1] << 8) |
+                (int32_t)src[2];
+  return pcm_sample_decode_s24(val);
+}
+
+static inline void pcm_sample_encode_s24_4_rj_be_bytes(double val,
+                                                       uint8_t* dst) {
+  int32_t s24 = pcm_sample_encode_s24(val);
+  dst[0] = (uint8_t)((s24 < 0) ? 0xFF : 0x00);
+  dst[1] = (uint8_t)((s24 >> 16) & 0xFF);
+  dst[2] = (uint8_t)((s24 >> 8) & 0xFF);
+  dst[3] = (uint8_t)(s24 & 0xFF);
+}
+
+static inline double pcm_sample_decode_s24_4_rj_be_bytes(const uint8_t* src) {
+  int32_t val = ((int32_t)(int8_t)src[1] << 16) | ((int32_t)src[2] << 8) |
+                (int32_t)src[3];
+  return pcm_sample_decode_s24(val);
+}
+
+static inline void pcm_sample_encode_s24_4_lj_be_bytes(double val,
+                                                       uint8_t* dst) {
+  int32_t s24 = pcm_sample_encode_s24(val);
+  dst[0] = (uint8_t)((s24 >> 16) & 0xFF);
+  dst[1] = (uint8_t)((s24 >> 8) & 0xFF);
+  dst[2] = (uint8_t)(s24 & 0xFF);
+  dst[3] = 0;
+}
+
+static inline double pcm_sample_decode_s24_4_lj_be_bytes(const uint8_t* src) {
+  int32_t s32 = ((int32_t)(int8_t)src[0] << 24) | ((int32_t)src[1] << 16) |
+                ((int32_t)src[2] << 8) | (int32_t)src[3];
+  return pcm_sample_decode_s32(s32);
+}
+
+static inline void pcm_sample_encode_s32_be_bytes(double val, uint8_t* dst) {
+  int32_t s32 = pcm_sample_encode_s32(val);
+  dst[0] = (uint8_t)((s32 >> 24) & 0xFF);
+  dst[1] = (uint8_t)((s32 >> 16) & 0xFF);
+  dst[2] = (uint8_t)((s32 >> 8) & 0xFF);
+  dst[3] = (uint8_t)(s32 & 0xFF);
+}
+
+static inline double pcm_sample_decode_s32_be_bytes(const uint8_t* src) {
+  int32_t val = ((int32_t)(int8_t)src[0] << 24) | ((int32_t)src[1] << 16) |
+                ((int32_t)src[2] << 8) | (int32_t)src[3];
+  return pcm_sample_decode_s32(val);
+}
+
+static inline void pcm_sample_encode_f32_be_bytes(double val, uint8_t* dst) {
+  float f = (float)pcm_clamp_sample(val);
+  uint32_t u;
+  memcpy(&u, &f, sizeof(float));
+  dst[0] = (uint8_t)((u >> 24) & 0xFF);
+  dst[1] = (uint8_t)((u >> 16) & 0xFF);
+  dst[2] = (uint8_t)((u >> 8) & 0xFF);
+  dst[3] = (uint8_t)(u & 0xFF);
+}
+
+static inline double pcm_sample_decode_f32_be_bytes(const uint8_t* src) {
+  uint32_t u = ((uint32_t)src[0] << 24) | ((uint32_t)src[1] << 16) |
+               ((uint32_t)src[2] << 8) | (uint32_t)src[3];
+  float f;
+  memcpy(&f, &u, sizeof(float));
+  return pcm_clamp_sample((double)f);
+}
+
+static inline void pcm_sample_encode_f64_be_bytes(double val, uint8_t* dst) {
+  double d = pcm_clamp_sample(val);
+  uint64_t u;
+  memcpy(&u, &d, sizeof(double));
+  dst[0] = (uint8_t)((u >> 56) & 0xFF);
+  dst[1] = (uint8_t)((u >> 48) & 0xFF);
+  dst[2] = (uint8_t)((u >> 40) & 0xFF);
+  dst[3] = (uint8_t)((u >> 32) & 0xFF);
+  dst[4] = (uint8_t)((u >> 24) & 0xFF);
+  dst[5] = (uint8_t)((u >> 16) & 0xFF);
+  dst[6] = (uint8_t)((u >> 8) & 0xFF);
+  dst[7] = (uint8_t)(u & 0xFF);
+}
+
+static inline double pcm_sample_decode_f64_be_bytes(const uint8_t* src) {
+  uint64_t u =
+      ((uint64_t)src[0] << 56) | ((uint64_t)src[1] << 48) |
+      ((uint64_t)src[2] << 40) | ((uint64_t)src[3] << 32) |
+      ((uint64_t)src[4] << 24) | ((uint64_t)src[5] << 16) |
+      ((uint64_t)src[6] << 8) | (uint64_t)src[7];
+  double d;
+  memcpy(&d, &u, sizeof(double));
+  return pcm_clamp_sample(d);
 }
 
 #endif  // CLIB_AUDIO_SAMPLE_CONVERSION_H

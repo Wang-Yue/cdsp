@@ -338,6 +338,38 @@ static int biquad_config_validate(const filter_config_t* config,
   const biquad_config_t* params = &config->parameters.biquad;
   double nyquist = (double)sample_rate / 2.0;
 
+  // 1. Check Frequency (matching Rust validate_config match block 1)
+  bool has_standard_freq = (params->type == BIQUAD_TYPE_HIGHPASS ||
+                            params->type == BIQUAD_TYPE_LOWPASS ||
+                            params->type == BIQUAD_TYPE_HIGHPASS_FO ||
+                            params->type == BIQUAD_TYPE_LOWPASS_FO ||
+                            params->type == BIQUAD_TYPE_PEAKING ||
+                            params->type == BIQUAD_TYPE_HIGHSHELF ||
+                            params->type == BIQUAD_TYPE_LOWSHELF ||
+                            params->type == BIQUAD_TYPE_HIGHSHELF_FO ||
+                            params->type == BIQUAD_TYPE_LOWSHELF_FO ||
+                            params->type == BIQUAD_TYPE_NOTCH ||
+                            params->type == BIQUAD_TYPE_BANDPASS ||
+                            params->type == BIQUAD_TYPE_ALLPASS ||
+                            params->type == BIQUAD_TYPE_ALLPASS_FO);
+
+  if (has_standard_freq) {
+    if (params->freq <= 0.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Frequency must be > 0");
+      }
+      return -1;
+    }
+    if (params->freq >= nyquist) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Frequency must be < samplerate/2");
+      }
+      return -1;
+    }
+  }
+
   // 0. Enforce steepness type constraints
   if (params->type == BIQUAD_TYPE_LOWPASS ||
       params->type == BIQUAD_TYPE_HIGHPASS) {
@@ -369,38 +401,6 @@ static int biquad_config_validate(const filter_config_t* config,
         config_error_set(
             err, CONFIG_ERR_INVALID_FILTER,
             "Highshelf/Lowshelf does not support Bandwidth steepness type");
-      }
-      return -1;
-    }
-  }
-
-  // 1. Check Frequency (matching Rust validate_config match block 1)
-  bool has_standard_freq = (params->type == BIQUAD_TYPE_HIGHPASS ||
-                            params->type == BIQUAD_TYPE_LOWPASS ||
-                            params->type == BIQUAD_TYPE_HIGHPASS_FO ||
-                            params->type == BIQUAD_TYPE_LOWPASS_FO ||
-                            params->type == BIQUAD_TYPE_PEAKING ||
-                            params->type == BIQUAD_TYPE_HIGHSHELF ||
-                            params->type == BIQUAD_TYPE_LOWSHELF ||
-                            params->type == BIQUAD_TYPE_HIGHSHELF_FO ||
-                            params->type == BIQUAD_TYPE_LOWSHELF_FO ||
-                            params->type == BIQUAD_TYPE_NOTCH ||
-                            params->type == BIQUAD_TYPE_BANDPASS ||
-                            params->type == BIQUAD_TYPE_ALLPASS ||
-                            params->type == BIQUAD_TYPE_ALLPASS_FO);
-
-  if (has_standard_freq) {
-    if (params->freq <= 0.0) {
-      if (err) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Frequency must be > 0");
-      }
-      return -1;
-    }
-    if (params->freq >= nyquist) {
-      if (err) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Frequency must be < samplerate/2");
       }
       return -1;
     }
@@ -719,6 +719,12 @@ static void biquad_choose_split(size_t channels, size_t depth,
         s2[c][k] = f->z2;                                                \
       }                                                                  \
     }                                                                    \
+    for (size_t c1 = 0; c1 < C; c1++) {                                  \
+      for (size_t c2 = c1 + 1; c2 < C; c2++) {                           \
+        assert(channel_of[members[c1]] != channel_of[members[c2]] &&     \
+               "each cascade of a group must filter a different channel");\
+      }                                                                  \
+    }                                                                    \
     double pipe[C][S];                                                   \
     memset(pipe, 0, sizeof(pipe));                                       \
     size_t ramp = (S - 1 < n) ? (S - 1) : n;                             \
@@ -904,26 +910,63 @@ void biquad_process_mono_cascade(biquad_filter_t** stages, size_t num_stages,
   }
 }
 
+/**
+ * @brief Estimates the peak excursion the stored state will produce on its own.
+ *
+ * With the input removed, the state rings out through the denominator
+ * alone. The estimate comes from the energy of the zero-input response:
+ * A^2 = (2 * (1 + a2) * (s1^2 + s2^2) - 4 * a1 * s1 * s2) / ((1 + a2)^2 - a1^2).
+ * Denominator factors as (1 + a2 - a1) * (1 + a2 + a1), the stability triangle.
+ *
+ * @param coeffs Biquad coefficients.
+ * @param s1 Internal state z1.
+ * @param s2 Internal state z2.
+ * @return Estimated peak ring amplitude.
+ */
+static double biquad_state_ring_estimate(const biquad_coefficients_t* coeffs,
+                                         double s1, double s2) {
+  if (!coeffs) return 0.0;
+  double a1 = coeffs->a1;
+  double a2 = coeffs->a2;
+  double denom = (1.0 + a2 - a1) * (1.0 + a2 + a1);
+  if (denom <= 0.0) {
+    return INFINITY;
+  }
+  double num = 2.0 * (1.0 + a2) * (s1 * s1 + s2 * s2) - 4.0 * a1 * s1 * s2;
+  if (num < 0.0) num = 0.0;
+  return sqrt(num / denom);
+}
+
 bool biquad_filter_update_parameters(biquad_filter_t* filter,
                                      const filter_config_t* config,
                                      int sample_rate) {
   if (!filter || !config) return false;
   if (config->type != FILTER_TYPE_BIQUAD) return false;
   biquad_coefficients_t new_coeffs;
-  if (biquad_coefficients_compute(&config->parameters.biquad, sample_rate,
-                                  &new_coeffs)) {
-    filter->coeffs = new_coeffs;
-    filter->type = config->parameters.biquad.type;
-    filter->neg_a1 = -new_coeffs.a1;
-    filter->neg_a2 = -new_coeffs.a2;
-    return true;
+  bool stable = biquad_coefficients_compute(&config->parameters.biquad,
+                                            sample_rate, &new_coeffs);
+  if (!stable) return false;
+
+  double s1 = filter->z1;
+  double s2 = filter->z2;
+  double old_est = biquad_state_ring_estimate(&filter->coeffs, s1, s2);
+  double new_est = biquad_state_ring_estimate(&new_coeffs, s1, s2);
+  double scale = (new_est > 0.0) ? (old_est / new_est) : 1.0;
+  if (isfinite(scale) && scale < 1.0) {
+    filter->z1 = s1 * scale;
+    filter->z2 = s2 * scale;
   }
-  return false;
+
+  filter->coeffs = new_coeffs;
+  filter->type = config->parameters.biquad.type;
+  filter->neg_a1 = -new_coeffs.a1;
+  filter->neg_a2 = -new_coeffs.a2;
+  return true;
 }
 
 /**
  * @brief Transfers internal history state (delay line registers) from src to
- * dest.
+ * dest, scaling down if the new coefficients ring louder from the stored state.
  *
  * @param dest The destination biquad filter instance.
  * @param src The source biquad filter instance.
@@ -933,14 +976,20 @@ static void biquad_filter_transfer_state(void* dest_ptr, const void* src_ptr) {
   const biquad_filter_t* src = (const biquad_filter_t*)src_ptr;
   if (!dest || !src) return;
 
-  if (dest->type != src->type) {
-    dest->z1 = 0.0;
-    dest->z2 = 0.0;
-    return;
+  double s1 = src->z1;
+  double s2 = src->z2;
+
+  double src_est = biquad_state_ring_estimate(&src->coeffs, s1, s2);
+  double dest_est = biquad_state_ring_estimate(&dest->coeffs, s1, s2);
+
+  double scale = (dest_est > 0.0) ? (src_est / dest_est) : 1.0;
+  if (isfinite(scale) && scale < 1.0) {
+    s1 *= scale;
+    s2 *= scale;
   }
 
-  dest->z1 = src->z1;
-  dest->z2 = src->z2;
+  dest->z1 = s1;
+  dest->z2 = s2;
 }
 
 const char* biquad_filter_get_name(const biquad_filter_t* filter) {

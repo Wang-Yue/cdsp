@@ -26,8 +26,7 @@ void biquad_process_mono_cascade(biquad_filter_t** stages, size_t num_stages,
                                  double* waveform, size_t n_frames);
 
 /**
- * @brief Clones a biquad filter instance (copying coefficients and resetting
- * state).
+ * @brief Clones a biquad filter instance (copying coefficients and state).
  */
 biquad_filter_t* biquad_filter_clone(const biquad_filter_t* src);
 

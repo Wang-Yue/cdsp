@@ -200,13 +200,10 @@ TEST(SampleConversion_DSD_U8_RoundTrip) {
 TEST(SampleConversion_DSD_U32_RoundTrip) {
   uint32_t patterns[] = {0x3F800000, 0xBF800000, 0x00000000,
                          0x96696996, 0x12345678, 0xDEADBEEF};
-  double expected_doubles[] = {1.0, -1.0, 0.0};
 
   for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
     double decoded = pcm_sample_decode_dsd_u32(patterns[i]);
-    if (i < 3) {
-      ASSERT_NEAR(expected_doubles[i], decoded, 1e-15);
-    }
+    ASSERT_NEAR((double)patterns[i], decoded, 1e-15);
 
     // BE bytes
     uint8_t buf_be[4];

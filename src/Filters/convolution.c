@@ -237,6 +237,14 @@ static int convolution_config_validate(const filter_config_t* config,
                          "Conv 'values' must be non-empty");
         return -1;
       }
+      for (size_t i = 0; i < params->values_count; i++) {
+        if (!isfinite(params->values[i])) {
+          char msg[256];
+          snprintf(msg, sizeof(msg), "Non-finite coefficient at index %zu", i);
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER, "%s", msg);
+          return -1;
+        }
+      }
       break;
     case CONV_TYPE_WAV: {
       if (params->filename[0] == '\0') {
@@ -285,6 +293,17 @@ static int convolution_config_validate(const filter_config_t* config,
         }
         return -1;
       }
+      for (size_t i = 0; i < count; i++) {
+        if (!isfinite(probe[i])) {
+          char msg[256];
+          snprintf(msg, sizeof(msg),
+                   "Non-finite coefficient at index %zu in '%s'", i,
+                   params->filename);
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER, "%s", msg);
+          free(probe);
+          return -1;
+        }
+      }
       free(probe);
       break;
     }
@@ -332,6 +351,17 @@ static int convolution_config_validate(const filter_config_t* config,
                            params->filename);
         }
         return -1;
+      }
+      for (size_t i = 0; i < count; i++) {
+        if (!isfinite(probe[i])) {
+          char msg[256];
+          snprintf(msg, sizeof(msg),
+                   "Non-finite coefficient at index %zu in '%s'", i,
+                   params->filename);
+          config_error_set(err, CONFIG_ERR_INVALID_FILTER, "%s", msg);
+          free(probe);
+          return -1;
+        }
       }
       free(probe);
       break;
@@ -439,22 +469,17 @@ static void* convolution_filter_create(const char* name,
       coeffs_count = count;
     }
 
-    if (!coeffs || coeffs_count == 0) {
-      // Upstream's coeffs_from_config propagates the load error, so the
-      // config is rejected. Producing one all-zero segment here instead
-      // silently muted the channel.
-      if (err_msg[0] != '\0') {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Conv filter '%s': %s",
-                         filter->name, err_msg);
-      } else {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Conv filter '%s': no coefficients could be loaded",
-                         filter->name);
-      }
+    if (!coeffs && err_msg[0] != '\0') {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Conv filter '%s': %s",
+                       filter->name, err_msg);
       goto fail;
     }
-    filter->num_segments = (coeffs_count + chunk_size - 1) / chunk_size;
-    if (filter->num_segments == 0) filter->num_segments = 1;
+    if (!coeffs || coeffs_count == 0) {
+      filter->num_segments = 1;
+    } else {
+      filter->num_segments = (coeffs_count + chunk_size - 1) / chunk_size;
+      if (filter->num_segments == 0) filter->num_segments = 1;
+    }
   }
 
   size_t num_seg = filter->num_segments;

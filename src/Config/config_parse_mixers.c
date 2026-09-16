@@ -38,6 +38,13 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
                        sizeof(nm->name) - 1);
       return -1;
     }
+    for (int prev = 0; prev < m; prev++) {
+      if (strcmp(config->mixers[prev].name, m_name) == 0) {
+        config_error_set(err, CONFIG_ERR_PARSE, "Duplicate mixer name '%s'",
+                         m_name);
+        return -1;
+      }
+    }
     strncpy(nm->name, m_name, sizeof(nm->name) - 1);
     nm->name[sizeof(nm->name) - 1] = '\0';
 
@@ -48,8 +55,7 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
     }
 
     static const char* const allowed_mixer_keys[] = {
-        "channels",    "channels_in", "channels_out",   "mapping",
-        "description", "labels",      "channel_labels", NULL};
+        "channels", "mapping", "description", "labels", NULL};
     if (validate_unknown_fields(mixer_child, allowed_mixer_keys,
                                 "mixer definition", err) != 0) {
       return -1;
@@ -64,34 +70,39 @@ int config_parse_mixers(const cJSON* mixers_obj, dsp_config_t* config,
     }
     const cJSON* m_labels_node =
         cJSON_GetObjectItemCaseSensitive(mixer_child, "labels");
-    if (!m_labels_node) {
-      m_labels_node =
-          cJSON_GetObjectItemCaseSensitive(mixer_child, "channel_labels");
+    if (m_labels_node) {
+      if (parse_labels_array_strict(m_labels_node, &m_conf->labels,
+                                    &m_conf->labels_count,
+                                    &m_conf->has_labels) != 0) {
+        if (err) {
+          config_error_set(
+              err, CONFIG_ERR_INVALID_MIXER,
+              "Invalid 'labels' array in mixer '%s': elements must be strings or null",
+              m_name);
+        }
+        return -1;
+      }
     }
-    parse_labels_array(m_labels_node, &m_conf->labels, &m_conf->labels_count,
-                       &m_conf->has_labels);
 
     cJSON* channels_obj =
         cJSON_GetObjectItemCaseSensitive(mixer_child, "channels");
-    if (cJSON_IsObject(channels_obj)) {
-      static const char* const allowed_channels_keys[] = {"in", "out", NULL};
-      if (validate_unknown_fields(channels_obj, allowed_channels_keys,
-                                  "mixer channels", err) != 0) {
-        return -1;
-      }
-      if (parse_json_size_t_strict(channels_obj, "in", "mixer channels",
-                                   &m_conf->channels_in, NULL, err) != 0 ||
-          parse_json_size_t_strict(channels_obj, "out", "mixer channels",
-                                   &m_conf->channels_out, NULL, err) != 0) {
-        return -1;
-      }
-    } else {
-      if (parse_json_size_t_strict(mixer_child, "channels_in", "mixer",
-                                   &m_conf->channels_in, NULL, err) != 0 ||
-          parse_json_size_t_strict(mixer_child, "channels_out", "mixer",
-                                   &m_conf->channels_out, NULL, err) != 0) {
-        return -1;
-      }
+    if (!channels_obj || !cJSON_IsObject(channels_obj)) {
+      config_error_set(
+          err, CONFIG_ERR_PARSE,
+          "missing or invalid required field 'channels' in mixer '%s'",
+          nm->name);
+      return -1;
+    }
+    static const char* const allowed_channels_keys[] = {"in", "out", NULL};
+    if (validate_unknown_fields(channels_obj, allowed_channels_keys,
+                                "mixer channels", err) != 0) {
+      return -1;
+    }
+    if (parse_json_size_t_strict(channels_obj, "in", "mixer channels",
+                                 &m_conf->channels_in, NULL, err) != 0 ||
+        parse_json_size_t_strict(channels_obj, "out", "mixer channels",
+                                 &m_conf->channels_out, NULL, err) != 0) {
+      return -1;
     }
 
     if (m_conf->channels_in == 0 || m_conf->channels_out == 0) {

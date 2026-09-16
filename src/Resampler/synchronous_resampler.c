@@ -89,13 +89,6 @@
 #include "Utils/cdsp_memory.h"
 #include "Utils/double_helpers.h"
 
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC push_options
-#pragma GCC optimize("O3,fast-math,finite-math-only")
-#elif defined(__clang__)
-#pragma float_control(precise, off, push)
-#endif
-
 typedef struct synchronous_resampler synchronous_resampler_t;
 
 struct synchronous_resampler {

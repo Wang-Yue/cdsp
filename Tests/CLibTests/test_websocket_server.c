@@ -251,7 +251,7 @@ static bool mock_spectrum_should_fail = false;
 static const char* mock_spectrum_error = NULL;
 
 static bool mock_get_spectrum(void* ctx, bool is_capture, const size_t* channel,
-                              float min_freq, float max_freq, uint32_t n_bins,
+                              double min_freq, double max_freq, uint32_t n_bins,
                               spectrum_t* out_spec) {
   (void)ctx;
   (void)is_capture;
@@ -1412,7 +1412,7 @@ TEST(WebSocket_ChannelLabelsMixerAndFallback) {
       "  },\n"
       "  \"pipeline\": [\n"
       "    {\"type\": \"Mixer\", \"name\": \"m1\"},\n"
-      "    {\"type\": \"Filter\", \"channel\": 0, \"names\": [\"gain\"]},\n"
+      "    {\"type\": \"Filter\", \"channels\": [0], \"names\": [\"gain\"]},\n"
       "    {\"type\": \"Mixer\", \"name\": \"m2\"}\n"
       "  ]\n"
       "}");
@@ -1724,7 +1724,7 @@ TEST(WebSocket_ReadAndValidateConfigDefaultsAndValidation) {
       "\\\"filename\\\":\\\"/dev/null\\\",\\\"format\\\":\\\"S16_LE\\\"},"
       "\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2,"
       "\\\"filename\\\":\\\"/dev/null\\\",\\\"format\\\":\\\"S16_LE\\\"}},"
-      "\\\"pipeline\\\":[{\\\"type\\\":\\\"Filter\\\",\\\"channel\\\":99,"
+      "\\\"pipeline\\\":[{\\\"type\\\":\\\"Filter\\\",\\\"channels\\\":[99],"
       "\\\"names\\\":[]}]}\"}";
   memset(resp, 0, sizeof(resp));
   websocket_server_handle_command(server, 0, invalid_pipe_cfg, resp,
@@ -1745,7 +1745,7 @@ TEST(WebSocket_ReadAndValidateConfigDefaultsAndValidation) {
       "\\\"filename\\\":\\\"/dev/null\\\",\\\"format\\\":\\\"S16_LE\\\"},"
       "\\\"playback\\\":{\\\"type\\\":\\\"File\\\",\\\"channels\\\":2,"
       "\\\"filename\\\":\\\"/dev/null\\\",\\\"format\\\":\\\"S16_LE\\\"}},"
-      "\\\"pipeline\\\":[{\\\"type\\\":\\\"Filter\\\",\\\"channel\\\":99,"
+      "\\\"pipeline\\\":[{\\\"type\\\":\\\"Filter\\\",\\\"channels\\\":[99],"
       "\\\"names\\\":[]}]}\"}";
   memset(resp, 0, sizeof(resp));
   websocket_server_handle_command(server, 0, validate_cmd, resp, sizeof(resp));

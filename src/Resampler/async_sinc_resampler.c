@@ -906,9 +906,17 @@ static int async_sinc_resampler_config_validate(
           "oversampling_factor, window, and interpolation are all required");
       return -1;
     }
-    if (config->oversampling_factor == 0) {
-      config_error_set(err, CONFIG_ERR_VALIDATION,
-                       "AsyncSinc: oversampling_factor must be positive");
+    int min_oversampling = 1;
+    if (strcasecmp(config->interpolation, "Quadratic") == 0) {
+      min_oversampling = 2;
+    } else if (strcasecmp(config->interpolation, "Cubic") == 0) {
+      min_oversampling = 3;
+    }
+    if (config->oversampling_factor < min_oversampling) {
+      config_error_set(
+          err, CONFIG_ERR_VALIDATION,
+          "oversampling_factor must be at least %d for %s interpolation, got %d",
+          min_oversampling, config->interpolation, config->oversampling_factor);
       return -1;
     }
     if (config->sinc_len == 0) {

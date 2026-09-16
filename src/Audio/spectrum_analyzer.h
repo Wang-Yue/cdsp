@@ -91,7 +91,7 @@ size_t spectrum_analyzer_get_fft_n(const spectrum_analyzer_t* analyzer);
 spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
                                             audio_history_buffer_t* buffer,
                                             const size_t* channel,
-                                            float min_freq, float max_freq,
+                                            double min_freq, double max_freq,
                                             size_t n_bins, size_t samplerate,
                                             spectrum_result_t* out_result);
 

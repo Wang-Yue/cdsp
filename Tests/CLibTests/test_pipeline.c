@@ -1097,7 +1097,7 @@ TEST(PipelineReload_StatePreserved) {
   ASSERT_TRUE(pipeline3 != NULL);
 
   // 10. Transfer state from pipeline1 (after it processed chunk 1) to pipeline3
-  pipeline_transfer_state(pipeline3, pipeline1);
+  pipeline_transfer_state(pipeline3, pipeline1, true);
 
   // 11. Process zero chunk through pipeline 3 (should seamlessly continue
   // decay)
@@ -1212,7 +1212,7 @@ TEST(Pipeline_TransferState_ParallelStepToBiquadProcessor) {
 
   // Transfer state from unlowered parallel step in pipe_a_fresh to lowered
   // biquad processor in pipe_b
-  pipeline_transfer_state(pipe_b, pipe_a_fresh);
+  pipeline_transfer_state(pipe_b, pipe_a_fresh, true);
 
   audio_chunk_t* out_b = audio_chunk_create(1024, 2);
   pipeline_process(pipe_b, zero_chunk, out_b);
@@ -1301,7 +1301,7 @@ TEST(Pipeline_TransferState_MultipleBiquadSteps) {
   audio_chunk_t* dummy = audio_chunk_create(1024, 2);
   pipeline_process(pipe1_fresh, impulse, dummy);
 
-  pipeline_transfer_state(pipe2, pipe1_fresh);
+  pipeline_transfer_state(pipe2, pipe1_fresh, true);
 
   audio_chunk_t* out2 = audio_chunk_create(1024, 2);
   pipeline_process(pipe2, zero_chunk, out2);

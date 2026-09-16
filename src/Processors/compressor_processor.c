@@ -102,20 +102,9 @@ static int compressor_config_validate(const processor_config_t* config,
                      "Compressor: release must be > 0, got %g", p->release);
     return -1;
   }
-  // Upstream's `validate_compressor` puts no constraint on `factor` at all
-  // (compressor.rs:247-278), and `factor < 1.0` is a meaningful setting there:
-  // the gain curve `-(val - threshold) * (factor - 1) / factor` becomes
-  // positive above the threshold, i.e. upward expansion. Rejecting it made the
-  // port refuse a config that real CamillaDSP loads and plays.
-  //
-  // `factor == 0.0` is the one value that is not merely unusual but broken: it
-  // divides by zero, giving +inf dB and pinning every sample above the
-  // threshold to full scale. Upstream would do the same, but that is a speaker
-  // hazard rather than a feature, so it stays rejected as a deliberate
-  // one-value divergence.
-  if (p->factor == 0.0) {
+  if (p->factor <= 0.0 || !isfinite(p->factor)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
-                     "Compressor: factor must not be 0");
+                     "Compressor: factor must be positive and > 0");
     return -1;
   }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {

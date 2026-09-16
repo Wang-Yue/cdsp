@@ -436,9 +436,7 @@ bool pipeline_compute_used_capture_channels(const dsp_config_t* config,
     if (step->bypassed) continue;
     if (step->type == PIPELINE_STEP_TYPE_MIXER) {
       first_mixer = dsp_config_get_mixer(config, step->name);
-      if (first_mixer) {
-        break;
-      }
+      break;
     }
   }
 

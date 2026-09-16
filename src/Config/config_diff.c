@@ -8,16 +8,6 @@
 #include "Config/processor_config_types.h"
 #include "Config/resampler_config_types.h"
 
-struct config_change {
-  config_change_type_t type;
-  char** filters;
-  size_t filters_count;
-  char** mixers;
-  size_t mixers_count;
-  char** processors;
-  size_t processors_count;
-};
-
 static bool safe_streq(const char* s1, const char* s2) {
   if (s1 == s2) return true;
   if (!s1 || !s2) return false;
@@ -904,86 +894,47 @@ static bool pipeline_step_equal(const pipeline_step_config_t* a,
 }
 
 config_change_type_t config_diff(const dsp_config_t* current,
-                                 const dsp_config_t* new_conf,
-                                 config_change_t* out_change) {
-  if (!out_change) return CONFIG_CHANGE_DEVICES;
+                                 const dsp_config_t* new_conf) {
   if (!current || !new_conf) {
-    out_change->type = CONFIG_CHANGE_DEVICES;
     return CONFIG_CHANGE_DEVICES;
   }
 
   // If devices config (sample rate, chunk size, backend config) changes,
   // we must rebuild the entire audio backend and pipeline.
   if (!devices_config_equal(&current->devices, &new_conf->devices)) {
-    out_change->type = CONFIG_CHANGE_DEVICES;
     return CONFIG_CHANGE_DEVICES;
   }
 
   // If pipeline steps count or details change, we must rebuild the pipeline.
   if (current->pipeline_count != new_conf->pipeline_count) {
-    out_change->type = CONFIG_CHANGE_PIPELINE;
     return CONFIG_CHANGE_PIPELINE;
   }
   for (size_t i = 0; i < current->pipeline_count; i++) {
     if (!pipeline_step_equal(&current->pipeline[i], &new_conf->pipeline[i])) {
-      out_change->type = CONFIG_CHANGE_PIPELINE;
       return CONFIG_CHANGE_PIPELINE;
     }
   }
 
-  char** changed_filters = NULL;
-  char** changed_mixers = NULL;
-  char** changed_processors = NULL;
-  size_t cf_count = 0;
-  size_t cm_count = 0;
-  size_t cp_count = 0;
-
-  // Check if any mixers changed (upstream short-circuits immediately to
-  // MixerParameters)
-  bool mixers_changed = (current->mixers_count != new_conf->mixers_count);
-  if (new_conf->mixers_count > 0 || current->mixers_count > 0) {
-    size_t alloc_count = new_conf->mixers_count > current->mixers_count
-                             ? new_conf->mixers_count
-                             : current->mixers_count;
-    changed_mixers = calloc(alloc_count > 0 ? alloc_count : 1, sizeof(char*));
-    if (!changed_mixers) goto error_cleanup;
+  // Check if any mixers changed (upstream short-circuits immediately to MixerParameters)
+  if (current->mixers_count != new_conf->mixers_count) {
+    return CONFIG_CHANGE_MIXER_PARAMETERS;
   }
   for (size_t i = 0; i < new_conf->mixers_count; i++) {
     mixer_config_t* old_m =
         dsp_config_get_mixer(current, new_conf->mixers[i].name);
     if (!old_m || !mixer_config_equal(old_m, &new_conf->mixers[i].mixer)) {
-      mixers_changed = true;
-      char* name_copy = strdup(new_conf->mixers[i].name);
-      if (!name_copy) goto error_cleanup;
-      changed_mixers[cm_count++] = name_copy;
+      return CONFIG_CHANGE_MIXER_PARAMETERS;
     }
   }
-  if (!mixers_changed) {
-    for (size_t i = 0; i < current->mixers_count; i++) {
-      if (!dsp_config_get_mixer(new_conf, current->mixers[i].name)) {
-        mixers_changed = true;
-        break;
-      }
+  for (size_t i = 0; i < current->mixers_count; i++) {
+    if (!dsp_config_get_mixer(new_conf, current->mixers[i].name)) {
+      return CONFIG_CHANGE_MIXER_PARAMETERS;
     }
   }
-  if (mixers_changed) {
-    out_change->type = CONFIG_CHANGE_MIXER_PARAMETERS;
-    out_change->mixers = changed_mixers;
-    out_change->mixers_count = cm_count;
-    return CONFIG_CHANGE_MIXER_PARAMETERS;
-  }
-  if (changed_mixers) {
-    free(changed_mixers);
-    changed_mixers = NULL;
-  }
 
-  // If we reach here, mixers did not change.
-  // We check which filters and processors had their parameters modified.
+  // Check filters and processors for structural type changes vs parameter changes
+  bool params_changed = false;
 
-  if (new_conf->filters_count > 0) {
-    changed_filters = calloc(new_conf->filters_count, sizeof(char*));
-    if (!changed_filters) goto error_cleanup;
-  }
   for (size_t i = 0; i < new_conf->filters_count; i++) {
     const named_filter_config_t* new_nf = &new_conf->filters[i];
     const named_filter_config_t* old_nf = NULL;
@@ -994,30 +945,21 @@ config_change_type_t config_diff(const dsp_config_t* current,
       }
     }
     if (!old_nf) {
-      // The pipeline didn't change, any added filter isn't included and can be
-      // skipped
+      // The pipeline didn't change, any added filter isn't included and can be skipped
       continue;
     }
     if (old_nf->filter.type != new_nf->filter.type) {
-      out_change->type = CONFIG_CHANGE_PIPELINE;
-      goto cleanup_pipeline;
+      return CONFIG_CHANGE_PIPELINE;
     }
     if (!filter_config_equal(&old_nf->filter, &new_nf->filter) ||
         !safe_streq(old_nf->description, new_nf->description)) {
       if (old_nf->filter.type == FILTER_TYPE_LOOKAHEAD_LIMITER) {
-        out_change->type = CONFIG_CHANGE_PIPELINE;
-        goto cleanup_pipeline;
+        return CONFIG_CHANGE_PIPELINE;
       }
-      char* name_copy = strdup(new_nf->name);
-      if (!name_copy) goto error_cleanup;
-      changed_filters[cf_count++] = name_copy;
+      params_changed = true;
     }
   }
 
-  if (new_conf->processors_count > 0) {
-    changed_processors = calloc(new_conf->processors_count, sizeof(char*));
-    if (!changed_processors) goto error_cleanup;
-  }
   for (size_t i = 0; i < new_conf->processors_count; i++) {
     const named_processor_config_t* new_np = &new_conf->processors[i];
     const named_processor_config_t* old_np = NULL;
@@ -1028,122 +970,23 @@ config_change_type_t config_diff(const dsp_config_t* current,
       }
     }
     if (!old_np) {
-      // The pipeline didn't change, any added processor isn't included and can
-      // be skipped
+      // The pipeline didn't change, any added processor isn't included and can be skipped
       continue;
     }
     if (old_np->processor.type != new_np->processor.type) {
-      out_change->type = CONFIG_CHANGE_PIPELINE;
-      goto cleanup_pipeline;
+      return CONFIG_CHANGE_PIPELINE;
     }
     if (!processor_config_equal(&old_np->processor, &new_np->processor) ||
         !safe_streq(old_np->description, new_np->description)) {
-      char* name_copy = strdup(new_np->name);
-      if (!name_copy) goto error_cleanup;
-      changed_processors[cp_count++] = name_copy;
+      params_changed = true;
     }
   }
 
-  // If no parameters changed, check top-level title / description.
-  if (cf_count == 0 && cp_count == 0) {
-    if (changed_filters) free(changed_filters);
-    if (changed_processors) free(changed_processors);
-    if (!safe_streq(current->title, new_conf->title) ||
-        !safe_streq(current->description, new_conf->description)) {
-      out_change->type = CONFIG_CHANGE_FILTER_PARAMETERS;
-      out_change->filters = NULL;
-      out_change->filters_count = 0;
-      out_change->processors = NULL;
-      out_change->processors_count = 0;
-      return CONFIG_CHANGE_FILTER_PARAMETERS;
-    }
-    out_change->type = CONFIG_CHANGE_NONE;
-    return CONFIG_CHANGE_NONE;
+  if (params_changed ||
+      !safe_streq(current->title, new_conf->title) ||
+      !safe_streq(current->description, new_conf->description)) {
+    return CONFIG_CHANGE_FILTER_PARAMETERS;
   }
 
-  out_change->filters = changed_filters;
-  out_change->filters_count = cf_count;
-  out_change->processors = changed_processors;
-  out_change->processors_count = cp_count;
-  out_change->type = CONFIG_CHANGE_FILTER_PARAMETERS;
-
-  return out_change->type;
-
-cleanup_pipeline:
-  if (changed_filters) {
-    for (size_t j = 0; j < cf_count; j++) free(changed_filters[j]);
-    free(changed_filters);
-  }
-  if (changed_processors) {
-    for (size_t j = 0; j < cp_count; j++) free(changed_processors[j]);
-    free(changed_processors);
-  }
-  return CONFIG_CHANGE_PIPELINE;
-
-error_cleanup:
-  if (changed_filters) {
-    for (size_t i = 0; i < cf_count; i++) free(changed_filters[i]);
-    free(changed_filters);
-  }
-  if (changed_mixers) {
-    for (size_t i = 0; i < cm_count; i++) free(changed_mixers[i]);
-    free(changed_mixers);
-  }
-  if (changed_processors) {
-    for (size_t i = 0; i < cp_count; i++) free(changed_processors[i]);
-    free(changed_processors);
-  }
-  out_change->type = CONFIG_CHANGE_PIPELINE;
-  return CONFIG_CHANGE_PIPELINE;
-}
-
-config_change_t* config_change_create(void) {
-  config_change_t* change = calloc(1, sizeof(struct config_change));
-  return change;
-}
-
-void config_change_free(config_change_t* change) {
-  if (!change) return;
-  if (change->filters) {
-    for (size_t i = 0; i < change->filters_count; i++) free(change->filters[i]);
-    free(change->filters);
-  }
-  if (change->mixers) {
-    for (size_t i = 0; i < change->mixers_count; i++) free(change->mixers[i]);
-    free(change->mixers);
-  }
-  if (change->processors) {
-    for (size_t i = 0; i < change->processors_count; i++)
-      free(change->processors[i]);
-    free(change->processors);
-  }
-  free(change);
-}
-
-char** config_change_take_filters(config_change_t* change, size_t* out_count) {
-  if (!change || !out_count) return NULL;
-  char** res = change->filters;
-  *out_count = change->filters_count;
-  change->filters = NULL;
-  change->filters_count = 0;
-  return res;
-}
-
-char** config_change_take_mixers(config_change_t* change, size_t* out_count) {
-  if (!change || !out_count) return NULL;
-  char** res = change->mixers;
-  *out_count = change->mixers_count;
-  change->mixers = NULL;
-  change->mixers_count = 0;
-  return res;
-}
-
-char** config_change_take_processors(config_change_t* change,
-                                     size_t* out_count) {
-  if (!change || !out_count) return NULL;
-  char** res = change->processors;
-  *out_count = change->processors_count;
-  change->processors = NULL;
-  change->processors_count = 0;
-  return res;
+  return CONFIG_CHANGE_NONE;
 }

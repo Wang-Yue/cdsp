@@ -87,9 +87,6 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
     cJSON* capture = cJSON_GetObjectItem(devices, "capture");
     if (capture) {
       capture_labels_arr = cJSON_GetObjectItem(capture, "labels");
-      if (!capture_labels_arr) {
-        capture_labels_arr = cJSON_GetObjectItem(capture, "channel_labels");
-      }
     }
   }
 
@@ -111,9 +108,6 @@ bool cdsp_get_channel_labels(const dsp_engine_t* engine,
             cJSON* mixer = cJSON_GetObjectItem(mixers, name_node->valuestring);
             if (mixer && cJSON_IsObject(mixer)) {
               cJSON* labels_node = cJSON_GetObjectItem(mixer, "labels");
-              if (!labels_node) {
-                labels_node = cJSON_GetObjectItem(mixer, "channel_labels");
-              }
               if (labels_node && cJSON_IsArray(labels_node)) {
                 playback_labels_arr = labels_node;
               } else {
@@ -151,9 +145,12 @@ void cdsp_free_channel_labels(char** labels, size_t count) {
 
 bool cdsp_get_global_peaks(const dsp_engine_t* engine, bool is_capture,
                            float* out_peaks, size_t* out_channels) {
-  if (!engine) return false;
-  return cdsp_get_signal_levels_since(engine, is_capture, false, 0, out_peaks,
-                                      out_channels);
+  if (!engine || !engine->get_global_peaks) return false;
+  return engine->get_global_peaks(engine->ctx, is_capture, out_peaks,
+                                  out_channels);
 }
 
-void cdsp_reset_global_peaks(dsp_engine_t* engine) { (void)engine; }
+void cdsp_reset_global_peaks(dsp_engine_t* engine) {
+  if (!engine || !engine->reset_global_peaks) return;
+  engine->reset_global_peaks(engine->ctx);
+}

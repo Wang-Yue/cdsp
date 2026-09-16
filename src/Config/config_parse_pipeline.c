@@ -64,14 +64,12 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
 
     if (step->type == PIPELINE_STEP_TYPE_FILTER) {
       static const char* const allowed_filter_step_keys[] = {
-          "type",     "name",     "names",       "channel",
-          "channels", "bypassed", "description", NULL};
+          "type", "names", "channels", "bypassed", "description", NULL};
       if (validate_unknown_fields(step_obj, allowed_filter_step_keys,
                                   "Filter pipeline step", err) != 0) {
         return -1;
       }
-      if (!cJSON_HasObjectItem(step_obj, "names") &&
-          !cJSON_HasObjectItem(step_obj, "name")) {
+      if (!cJSON_HasObjectItem(step_obj, "names")) {
         config_error_set(err, CONFIG_ERR_PARSE,
                          "missing field 'names' in Filter pipeline step");
         return -1;
@@ -115,11 +113,17 @@ int config_parse_pipeline(const cJSON* pipe_arr, dsp_config_t* config,
     }
 
     cJSON* names_arr = cJSON_GetObjectItemCaseSensitive(step_obj, "names");
-    if (names_arr && cJSON_IsArray(names_arr)) {
-      step->has_names = true;
+    if (names_arr) {
+      if (parse_labels_array_strict(names_arr, &step->names, &step->names_count,
+                                    &step->has_names) != 0) {
+        if (err) {
+          config_error_set(
+              err, CONFIG_ERR_INVALID_PIPELINE,
+              "Invalid 'names' array in pipeline step: elements must be strings");
+        }
+        return -1;
+      }
     }
-    bool dummy;
-    parse_labels_array(names_arr, &step->names, &step->names_count, &dummy);
 
     cJSON* channels_arr =
         cJSON_GetObjectItemCaseSensitive(step_obj, "channels");

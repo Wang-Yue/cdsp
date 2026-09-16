@@ -78,8 +78,10 @@ pipeline_error_t pipeline_process(pipeline_t* pipeline,
  *
  * @param dest The destination pipeline instance (newly built).
  * @param src The source pipeline instance (currently active).
+ * @param transfer_filters True if filter/processor states should be transferred.
  */
-void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src);
+void pipeline_transfer_state(pipeline_t* dest, const pipeline_t* src,
+                             bool transfer_filters);
 
 /**
  * @brief Destroy and free the pipeline.

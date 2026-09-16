@@ -63,29 +63,47 @@ static int compare_named_processors(const void* a, const void* b) {
  */
 void parse_labels_array(const cJSON* labels_arr, char*** out_labels,
                         size_t* out_count, bool* out_has_labels) {
-  if (!cJSON_IsArray(labels_arr)) return;
+  parse_labels_array_strict(labels_arr, out_labels, out_count, out_has_labels);
+}
+
+int parse_labels_array_strict(const cJSON* labels_arr, char*** out_labels,
+                              size_t* out_count, bool* out_has_labels) {
+  if (!labels_arr) return 0;
+  if (!cJSON_IsArray(labels_arr)) return -1;
   int size = cJSON_GetArraySize(labels_arr);
-  if (size <= 0) return;
+  if (size < 0) return -1;
+  if (size == 0) {
+    *out_labels = NULL;
+    *out_count = 0;
+    if (out_has_labels) *out_has_labels = true;
+    return 0;
+  }
 
   char** arr = (char**)calloc(size, sizeof(char*));
-  if (!arr) return;
+  if (!arr) return -1;
 
   for (int k = 0; k < size; k++) {
     cJSON* el = cJSON_GetArrayItem(labels_arr, k);
     if (cJSON_IsString(el) && el->valuestring) {
       arr[k] = strdup(el->valuestring);
+      if (!arr[k]) {
+        for (int j = 0; j < k; j++) free(arr[j]);
+        free(arr);
+        return -1;
+      }
     } else if (cJSON_IsNull(el)) {
       arr[k] = NULL;
     } else {
       for (int j = 0; j < k; j++) free(arr[j]);
       free(arr);
-      return;
+      return -1;
     }
   }
 
   *out_labels = arr;
   *out_count = (size_t)size;
-  *out_has_labels = true;
+  if (out_has_labels) *out_has_labels = true;
+  return 0;
 }
 
 double* parse_double_array(const cJSON* arr, size_t* out_count) {
@@ -105,7 +123,7 @@ double* parse_double_array(const cJSON* arr, size_t* out_count) {
   }
   for (int i = 0; i < size; i++) {
     cJSON* el = cJSON_GetArrayItem(arr, i);
-    if (!cJSON_IsNumber(el)) {
+    if (!cJSON_IsNumber(el) || !isfinite(el->valuedouble)) {
       free(values);
       *out_count = 0;
       return NULL;
@@ -351,9 +369,15 @@ int dsp_config_parse_json_with_dir_and_overrides_ext(
     return -1;
   }
 
-  parse_json_str(root, "title", config->title, sizeof(config->title));
-  parse_json_str(root, "description", config->description,
-                 sizeof(config->description));
+  if (parse_json_str_strict(root, "title", "root configuration", config->title,
+                            sizeof(config->title), NULL, err) != 0 ||
+      parse_json_str_strict(root, "description", "root configuration",
+                            config->description, sizeof(config->description),
+                            NULL, err) != 0) {
+    cJSON_Delete(root);
+    dsp_config_free(config);
+    return -1;
+  }
 
   cJSON* devices_obj = cJSON_GetObjectItemCaseSensitive(root, "devices");
   if (!devices_obj) {

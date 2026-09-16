@@ -336,6 +336,12 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
                      "Sample rate must be positive");
     return -1;
   }
+  if (config->devices.has_capture_samplerate &&
+      config->devices.capture_samplerate == 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                     "Capture sample rate must be positive");
+    return -1;
+  }
   if (config->devices.chunksize == 0) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "Chunk size must be positive");
@@ -352,19 +358,14 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
                      "Playback channels must be positive");
     return -1;
   }
-  bool has_wav_header = false;
-  binary_sample_format_t pb_fmt = BINARY_SAMPLE_FORMAT_INVALID;
   if (config->devices.playback.type == AUDIO_BACKEND_TYPE_FILE) {
-    has_wav_header = config->devices.playback.cfg.raw_file.wav_header;
-    pb_fmt = config->devices.playback.cfg.raw_file.format;
-  } else if (config->devices.playback.type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
-    has_wav_header = config->devices.playback.cfg.stdout_out.wav_header;
-    pb_fmt = config->devices.playback.cfg.stdout_out.format;
-  }
-  if (has_wav_header && pb_fmt == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
-    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                     "Wav files do not support the S24_4_RJ_LE sample format");
-    return -1;
+    if (config->devices.playback.cfg.raw_file.wav_header &&
+        config->devices.playback.cfg.raw_file.format ==
+            BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "Wav files do not support the S24_4_RJ_LE sample format");
+      return -1;
+    }
   }
 
   if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE) {
@@ -501,6 +502,13 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
     return -1;
   }
 
+  if (config->devices.has_rate_measure_interval_s &&
+      config->devices.rate_measure_interval_s <= 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                     "rate_measure_interval_s must be positive and > 0");
+    return -1;
+  }
+
   if (config->devices.has_resampler) {
     if (resampler_config_validate(&config->devices.resampler, err) != 0) {
       return -1;
@@ -511,12 +519,13 @@ int dsp_config_validate(const dsp_config_t* config, config_error_t* err) {
                         ? config->devices.capture_samplerate
                         : config->devices.samplerate;
   if (!config->devices.has_resampler &&
-      cap_rate != config->devices.samplerate) {
-    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                     "Different capture_samplerate (%zu) and samplerate (%zu) "
-                     "requires a resampler to be configured",
-                     cap_rate, config->devices.samplerate);
-    return -1;
+      config->devices.has_capture_samplerate &&
+      config->devices.capture_samplerate != config->devices.samplerate) {
+    logger_warn(
+        &g_logger,
+        "Resampling is disabled and capture_samplerate is different than "
+        "samplerate, ignoring capture_samplerate.");
+    cap_rate = config->devices.samplerate;
   }
 
   if (config->devices.has_resampler &&

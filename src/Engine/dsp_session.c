@@ -128,10 +128,19 @@ bool dsp_session_is_stop_requested(const dsp_session_t* core,
       }
       pthread_mutex_unlock((pthread_mutex_t*)&core->config_mutex);
       if (elapsed > timeout_sec) {
-        engine_shared_state_set_state(core->shared, PROCESSING_STATE_STALLED);
-        logger_warn(&g_logger,
-                    "Watchdog: capture device stalled (no data for %.3fs)",
-                    elapsed);
+        if (engine_shared_state_get_state(core->shared) != PROCESSING_STATE_STALLED) {
+          engine_shared_state_set_state(core->shared, PROCESSING_STATE_STALLED);
+          logger_warn(&g_logger,
+                      "Watchdog: capture device stalled (no data for %.3fs)",
+                      elapsed);
+        }
+        if (core->processing_params) {
+          processing_parameters_bump_pause_count(core->processing_params);
+          processing_parameters_set_measured_capture_rate(core->processing_params,
+                                                          0.0);
+          processing_parameters_set_signal_range(core->processing_params, 0.0f);
+          processing_parameters_set_rate_adjust(core->processing_params, 0.0);
+        }
       }
     }
   }
@@ -318,22 +327,11 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
 
   // 1. Perform configuration diffing.
   // Evaluate the changes between the running config and the new config.
-  config_change_t* change = config_change_create();
-  if (!change) {
-    if (err) {
-      err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
-      strcpy(err->message,
-             "Failed to allocate memory for configuration diffing");
-    }
-    return false;
-  }
-  config_change_type_t change_type =
-      config_diff(old_config, new_config, change);
+  config_change_type_t change_type = config_diff(old_config, new_config);
 
   if (change_type == CONFIG_CHANGE_NONE) {
     logger_info(&g_logger, "No changes in config.");
     dsp_config_free(new_config);  // new config is identical, discard it
-    config_change_free(change);
     return true;
   }
 
@@ -342,7 +340,7 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
   // rebuild the entire pipeline structure. We create the new pipeline and
   // instruct the processing loop thread to swap it. This avoids audio backend
   // restarts.
-  config_change_free(change);
+  bool transfer_filters = (change_type == CONFIG_CHANGE_FILTER_PARAMETERS);
 
   config_error_t cerr;
   config_error_init(&cerr);
@@ -359,7 +357,8 @@ bool dsp_session_reload_config(dsp_session_t* core, dsp_config_t* new_config,
   }
 
   if (core->processing_loop) {
-    engine_processing_loop_set_pipeline(core->processing_loop, new_pipeline);
+    engine_processing_loop_set_pipeline(core->processing_loop, new_pipeline,
+                                        transfer_filters);
   } else {
     pipeline_free(new_pipeline);
     if (err) {

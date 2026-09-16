@@ -41,6 +41,7 @@ struct engine_capture_loop {
   size_t chunk_size;
   size_t channels;
   size_t samplerate;
+  bool* used_channels;
 
   silence_counter_t* silence_counter;
   round_robin_chunk_pool_t* chunk_pool;
@@ -78,6 +79,13 @@ engine_capture_loop_t* engine_capture_loop_create(
   loop->chunk_size = config->chunk_size;
   loop->channels = config->channels;
   loop->samplerate = config->samplerate;
+  if (config->used_channels && config->channels > 0) {
+    loop->used_channels = (bool*)calloc(config->channels, sizeof(bool));
+    if (loop->used_channels) {
+      memcpy(loop->used_channels, config->used_channels,
+             config->channels * sizeof(bool));
+    }
+  }
   loop->silence_counter = silence_counter_create(
       config->silence_threshold_db, config->silence_timeout_seconds,
       config->samplerate, config->chunk_size);
@@ -112,6 +120,9 @@ void engine_capture_loop_free(engine_capture_loop_t* loop) {
   }
   if (loop->rate_watcher) {
     sample_rate_watcher_free(loop->rate_watcher);
+  }
+  if (loop->used_channels) {
+    free(loop->used_channels);
   }
   free(loop);
 }
@@ -155,7 +166,6 @@ static void capture_loop_send_paused_tick_if_due(engine_capture_loop_t* loop) {
   if (engine_shared_state_get_state(loop->shared) != PROCESSING_STATE_PAUSED) {
     return;
   }
-  sample_rate_watcher_reset(loop->rate_watcher);
 
   // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume
   // Flow Step 2: Periodic 0-Frame Ticks are enqueued downstream every 200ms
@@ -390,7 +400,11 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t* loop,
   // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause & Resume
   // Flow Step 1-2 (Auto-Pause) & Step 3 (Auto-Resume): Set engine state and
   // toggle capture hardware backend is_paused status accordingly.
-  float value_range = (float)audio_chunk_get_value_range(chunk);
+  float value_range =
+      (float)audio_chunk_get_value_range_used(chunk, loop->used_channels);
+  if (loop->processing_params) {
+    processing_parameters_set_signal_range(loop->processing_params, value_range);
+  }
   processing_state_t desired =
       silence_counter_update(loop->silence_counter, value_range);
   processing_state_t current = engine_shared_state_get_state(loop->shared);

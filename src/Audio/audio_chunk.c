@@ -166,6 +166,14 @@ void round_robin_chunk_pool_free(round_robin_chunk_pool_t* pool) {
   free(pool);
 }
 
+void round_robin_chunk_pool_set_used_channels(round_robin_chunk_pool_t* pool,
+                                              const bool* used_channels) {
+  if (!pool || !pool->pool) return;
+  for (size_t i = 0; i < pool->capacity; i++) {
+    audio_chunk_set_used_channels(pool->pool[i], used_channels);
+  }
+}
+
 void audio_chunk_sum_channels(const audio_chunk_t* chunk,
                               const size_t* channels, size_t channels_count,
                               double* out_sum, size_t frames) {
@@ -263,6 +271,48 @@ static inline bool audio_channel_decode_stereo(const uint8_t* src,
         ch1[f] = pcm_sample_decode_f64_bytes(src + 8);
       }
       break;
+    case BINARY_SAMPLE_FORMAT_S16_BE:
+      for (size_t f = 0; f < frames; f++, src += 4) {
+        ch0[f] = pcm_sample_decode_s16_be_bytes(src);
+        ch1[f] = pcm_sample_decode_s16_be_bytes(src + 2);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_3_BE:
+      for (size_t f = 0; f < frames; f++, src += 6) {
+        ch0[f] = pcm_sample_decode_s24_3be_bytes(src);
+        ch1[f] = pcm_sample_decode_s24_3be_bytes(src + 3);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_4_RJ_BE:
+      for (size_t f = 0; f < frames; f++, src += 8) {
+        ch0[f] = pcm_sample_decode_s24_4_rj_be_bytes(src);
+        ch1[f] = pcm_sample_decode_s24_4_rj_be_bytes(src + 4);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_BE:
+      for (size_t f = 0; f < frames; f++, src += 8) {
+        ch0[f] = pcm_sample_decode_s24_4_lj_be_bytes(src);
+        ch1[f] = pcm_sample_decode_s24_4_lj_be_bytes(src + 4);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S32_BE:
+      for (size_t f = 0; f < frames; f++, src += 8) {
+        ch0[f] = pcm_sample_decode_s32_be_bytes(src);
+        ch1[f] = pcm_sample_decode_s32_be_bytes(src + 4);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_F32_BE:
+      for (size_t f = 0; f < frames; f++, src += 8) {
+        ch0[f] = pcm_sample_decode_f32_be_bytes(src);
+        ch1[f] = pcm_sample_decode_f32_be_bytes(src + 4);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_F64_BE:
+      for (size_t f = 0; f < frames; f++, src += 16) {
+        ch0[f] = pcm_sample_decode_f64_be_bytes(src);
+        ch1[f] = pcm_sample_decode_f64_be_bytes(src + 8);
+      }
+      break;
     case BINARY_SAMPLE_FORMAT_DSD_U8:
       for (size_t f = 0; f < frames; f++, src += 2) {
         ch0[f] = pcm_sample_decode_dsd_u8(src[0]);
@@ -352,6 +402,48 @@ static inline bool audio_channel_encode_stereo(const double* restrict ch0,
         pcm_sample_encode_f64_bytes(ch1[f], dst + 8);
       }
       break;
+    case BINARY_SAMPLE_FORMAT_S16_BE:
+      for (size_t f = 0; f < frames; f++, dst += 4) {
+        pcm_sample_encode_s16_be_bytes(ch0[f], dst);
+        pcm_sample_encode_s16_be_bytes(ch1[f], dst + 2);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_3_BE:
+      for (size_t f = 0; f < frames; f++, dst += 6) {
+        pcm_sample_encode_s24_3be_bytes(ch0[f], dst);
+        pcm_sample_encode_s24_3be_bytes(ch1[f], dst + 3);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_4_RJ_BE:
+      for (size_t f = 0; f < frames; f++, dst += 8) {
+        pcm_sample_encode_s24_4_rj_be_bytes(ch0[f], dst);
+        pcm_sample_encode_s24_4_rj_be_bytes(ch1[f], dst + 4);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_BE:
+      for (size_t f = 0; f < frames; f++, dst += 8) {
+        pcm_sample_encode_s24_4_lj_be_bytes(ch0[f], dst);
+        pcm_sample_encode_s24_4_lj_be_bytes(ch1[f], dst + 4);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S32_BE:
+      for (size_t f = 0; f < frames; f++, dst += 8) {
+        pcm_sample_encode_s32_be_bytes(ch0[f], dst);
+        pcm_sample_encode_s32_be_bytes(ch1[f], dst + 4);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_F32_BE:
+      for (size_t f = 0; f < frames; f++, dst += 8) {
+        pcm_sample_encode_f32_be_bytes(ch0[f], dst);
+        pcm_sample_encode_f32_be_bytes(ch1[f], dst + 4);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_F64_BE:
+      for (size_t f = 0; f < frames; f++, dst += 16) {
+        pcm_sample_encode_f64_be_bytes(ch0[f], dst);
+        pcm_sample_encode_f64_be_bytes(ch1[f], dst + 8);
+      }
+      break;
     case BINARY_SAMPLE_FORMAT_DSD_U8:
       for (size_t f = 0; f < frames; f++, dst += 2) {
         dst[0] = pcm_sample_encode_dsd_u8(ch0[f]);
@@ -436,6 +528,41 @@ static inline bool audio_channel_decode(const uint8_t* src,
         dst[f] = pcm_sample_decode_f64_bytes(src + f * byte_stride);
       }
       break;
+    case BINARY_SAMPLE_FORMAT_S16_BE:
+      for (size_t f = 0; f < frames; f++) {
+        dst[f] = pcm_sample_decode_s16_be_bytes(src + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_3_BE:
+      for (size_t f = 0; f < frames; f++) {
+        dst[f] = pcm_sample_decode_s24_3be_bytes(src + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_4_RJ_BE:
+      for (size_t f = 0; f < frames; f++) {
+        dst[f] = pcm_sample_decode_s24_4_rj_be_bytes(src + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_BE:
+      for (size_t f = 0; f < frames; f++) {
+        dst[f] = pcm_sample_decode_s24_4_lj_be_bytes(src + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S32_BE:
+      for (size_t f = 0; f < frames; f++) {
+        dst[f] = pcm_sample_decode_s32_be_bytes(src + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_F32_BE:
+      for (size_t f = 0; f < frames; f++) {
+        dst[f] = pcm_sample_decode_f32_be_bytes(src + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_F64_BE:
+      for (size_t f = 0; f < frames; f++) {
+        dst[f] = pcm_sample_decode_f64_be_bytes(src + f * byte_stride);
+      }
+      break;
     case BINARY_SAMPLE_FORMAT_DSD_U8:
       for (size_t f = 0; f < frames; f++) {
         dst[f] = pcm_sample_decode_dsd_u8(*(src + f * byte_stride));
@@ -474,9 +601,9 @@ static inline bool audio_channel_decode(const uint8_t* src,
 }
 
 static inline bool audio_channel_encode(const double* restrict src,
-                                        binary_sample_format_t fmt,
-                                        size_t frames, size_t byte_stride,
-                                        uint8_t* dst) {
+                                         binary_sample_format_t fmt,
+                                         size_t frames, size_t byte_stride,
+                                         uint8_t* dst) {
   switch (fmt) {
     case BINARY_SAMPLE_FORMAT_S16_LE:
       for (size_t f = 0; f < frames; f++) {
@@ -511,6 +638,41 @@ static inline bool audio_channel_encode(const double* restrict src,
     case BINARY_SAMPLE_FORMAT_F64_LE:
       for (size_t f = 0; f < frames; f++) {
         pcm_sample_encode_f64_bytes(src[f], dst + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S16_BE:
+      for (size_t f = 0; f < frames; f++) {
+        pcm_sample_encode_s16_be_bytes(src[f], dst + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_3_BE:
+      for (size_t f = 0; f < frames; f++) {
+        pcm_sample_encode_s24_3be_bytes(src[f], dst + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_4_RJ_BE:
+      for (size_t f = 0; f < frames; f++) {
+        pcm_sample_encode_s24_4_rj_be_bytes(src[f], dst + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S24_4_LJ_BE:
+      for (size_t f = 0; f < frames; f++) {
+        pcm_sample_encode_s24_4_lj_be_bytes(src[f], dst + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_S32_BE:
+      for (size_t f = 0; f < frames; f++) {
+        pcm_sample_encode_s32_be_bytes(src[f], dst + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_F32_BE:
+      for (size_t f = 0; f < frames; f++) {
+        pcm_sample_encode_f32_be_bytes(src[f], dst + f * byte_stride);
+      }
+      break;
+    case BINARY_SAMPLE_FORMAT_F64_BE:
+      for (size_t f = 0; f < frames; f++) {
+        pcm_sample_encode_f64_be_bytes(src[f], dst + f * byte_stride);
       }
       break;
     case BINARY_SAMPLE_FORMAT_DSD_U8:

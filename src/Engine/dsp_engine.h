@@ -77,6 +77,13 @@ struct dsp_engine {
   int (*get_capture_rate)(void* ctx);
 
   /**
+   * @brief Query the peak-to-peak signal range of the most recent capture chunk.
+   * @param ctx Pointer to internal engine context.
+   * @return Peak-to-peak signal range (0.0 to 2.0).
+   */
+  double (*get_signal_range)(void* ctx);
+
+  /**
    * @brief Query processing statistics, load metrics, and clip counts.
    * @param ctx Pointer to internal engine context.
    * @param out_rate_adjust Output pointer for resampler rate adjustment factor.
@@ -226,7 +233,7 @@ struct dsp_engine {
    * of bounds.
    */
   bool (*get_spectrum)(void* ctx, bool is_capture, const size_t* channel,
-                       float min_freq, float max_freq, uint32_t n_bins,
+                       double min_freq, double max_freq, uint32_t n_bins,
                        spectrum_t* out_spec);
 
   /**
@@ -272,6 +279,23 @@ struct dsp_engine {
   bool (*get_signal_levels_since)(void* ctx, bool is_capture, bool is_rms,
                                   uint64_t since_ms, float* out_levels,
                                   size_t* out_channels);
+
+  /**
+   * @brief Fetch linear peak levels since start or last reset.
+   * @param ctx Pointer to internal engine context.
+   * @param is_capture true for capture stream, false for playback stream.
+   * @param out_peaks Output array allocated by caller.
+   * @param out_channels Output pointer to receive channel count.
+   * @return true on success, false if engine is inactive.
+   */
+  bool (*get_global_peaks)(void* ctx, bool is_capture, float* out_peaks,
+                           size_t* out_channels);
+
+  /**
+   * @brief Reset global peak accumulators.
+   * @param ctx Pointer to internal engine context.
+   */
+  void (*reset_global_peaks)(void* ctx);
 
   /**
    * @brief Stop processing core (WebSocket: Stop).

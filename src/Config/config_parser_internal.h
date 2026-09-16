@@ -28,6 +28,18 @@ void parse_labels_array(const cJSON* labels_arr, char*** out_labels,
                         size_t* out_count, bool* out_has_labels);
 
 /**
+ * @brief Parses an array of string labels with strict error reporting.
+ *
+ * @param labels_arr The cJSON array containing the labels.
+ * @param out_labels Output pointer to store allocated array of string pointers.
+ * @param out_count Output pointer to store the size of the parsed labels array.
+ * @param out_has_labels Output pointer set to true if labels were present.
+ * @return 0 on success, -1 on failure.
+ */
+int parse_labels_array_strict(const cJSON* labels_arr, char*** out_labels,
+                              size_t* out_count, bool* out_has_labels);
+
+/**
  * @brief Parses an array of double numbers from a cJSON array.
  *
  * @param arr The cJSON array containing floating point values.
@@ -196,9 +208,10 @@ static inline int parse_json_double_strict(const cJSON* obj, const char* key,
   if (present) *present = false;
   const cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, key);
   if (!item || cJSON_IsNull(item)) return 0;
-  if (!cJSON_IsNumber(item)) {
-    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a number",
-                     key, section_name ? section_name : "object");
+  if (!cJSON_IsNumber(item) || !isfinite(item->valuedouble)) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "field '%s' in %s must be a finite number", key,
+                     section_name ? section_name : "object");
     return -1;
   }
   if (dest) *dest = item->valuedouble;

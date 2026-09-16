@@ -5,6 +5,7 @@
 
 #include "Audio/audio_history_buffer.h"
 #include "FFT/real_fft.h"
+#include "Utils/cdsp_memory.h"
 #include "Utils/float_helpers.h"
 
 typedef struct {
@@ -14,8 +15,8 @@ typedef struct {
 } bin_range_t;
 
 typedef struct {
-  float min_freq;
-  float max_freq;
+  double min_freq;
+  double max_freq;
   size_t n_bins;
   size_t samplerate;
   float* frequencies;
@@ -65,8 +66,8 @@ static size_t next_power_of_two(size_t v) {
   return v;
 }
 
-static size_t spectrum_fft_length_for(float min_freq, size_t samplerate) {
-  double min_len = ceil((double)samplerate / (double)min_freq);
+static size_t spectrum_fft_length_for(double min_freq, size_t samplerate) {
+  double min_len = ceil((double)samplerate / min_freq);
   size_t len = (min_len > 1.0) ? (size_t)min_len : 1;
   size_t p2 = next_power_of_two(len);
   if (p2 > AUDIO_HISTORY_BUFFER_CAPACITY) {
@@ -81,21 +82,29 @@ static bool spectrum_analyzer_reconfigure_fft(spectrum_analyzer_t* analyzer,
   real_fftf_t* new_setup = real_fftf_create(new_n);
   if (!new_setup) return false;
 
-  float* new_window = (float*)calloc(new_n, sizeof(float));
-  float* new_data = (float*)calloc(new_n, sizeof(float));
-  complexf_t* new_spec = (complexf_t*)calloc(new_n / 2 + 1, sizeof(complexf_t));
-  float* new_mags = (float*)calloc(new_n / 2 + 1, sizeof(float));
-  float* new_db_mags = (float*)calloc(new_n / 2 + 1, sizeof(float));
+  float* new_window = (float*)cdsp_aligned_alloc(64, new_n * sizeof(float));
+  float* new_data = (float*)cdsp_aligned_alloc(64, new_n * sizeof(float));
+  complexf_t* new_spec =
+      (complexf_t*)cdsp_aligned_alloc(64, (new_n / 2 + 1) * sizeof(complexf_t));
+  float* new_mags =
+      (float*)cdsp_aligned_alloc(64, (new_n / 2 + 1) * sizeof(float));
+  float* new_db_mags =
+      (float*)cdsp_aligned_alloc(64, (new_n / 2 + 1) * sizeof(float));
 
   if (!new_window || !new_data || !new_spec || !new_mags || !new_db_mags) {
     real_fftf_free(new_setup);
-    if (new_window) free(new_window);
-    if (new_data) free(new_data);
-    if (new_spec) free(new_spec);
-    if (new_mags) free(new_mags);
-    if (new_db_mags) free(new_db_mags);
+    if (new_window) cdsp_aligned_free(new_window);
+    if (new_data) cdsp_aligned_free(new_data);
+    if (new_spec) cdsp_aligned_free(new_spec);
+    if (new_mags) cdsp_aligned_free(new_mags);
+    if (new_db_mags) cdsp_aligned_free(new_db_mags);
     return false;
   }
+  memset(new_window, 0, new_n * sizeof(float));
+  memset(new_data, 0, new_n * sizeof(float));
+  memset(new_spec, 0, (new_n / 2 + 1) * sizeof(complexf_t));
+  memset(new_mags, 0, (new_n / 2 + 1) * sizeof(float));
+  memset(new_db_mags, 0, (new_n / 2 + 1) * sizeof(float));
 
   // Compute symmetric Hann window (accumulated in float for performance)
   // (src/spectrum.rs:152-156)
@@ -113,11 +122,11 @@ static bool spectrum_analyzer_reconfigure_fft(spectrum_analyzer_t* analyzer,
   }
 
   if (analyzer->fft_setup) real_fftf_free(analyzer->fft_setup);
-  if (analyzer->window) free(analyzer->window);
-  if (analyzer->data) free(analyzer->data);
-  if (analyzer->spec) free(analyzer->spec);
-  if (analyzer->magnitudes) free(analyzer->magnitudes);
-  if (analyzer->db_magnitudes) free(analyzer->db_magnitudes);
+  if (analyzer->window) cdsp_aligned_free(analyzer->window);
+  if (analyzer->data) cdsp_aligned_free(analyzer->data);
+  if (analyzer->spec) cdsp_aligned_free(analyzer->spec);
+  if (analyzer->magnitudes) cdsp_aligned_free(analyzer->magnitudes);
+  if (analyzer->db_magnitudes) cdsp_aligned_free(analyzer->db_magnitudes);
 
   analyzer->fft_n = new_n;
   analyzer->fft_setup = new_setup;
@@ -179,11 +188,11 @@ spectrum_analyzer_t* spectrum_analyzer_create(void) {
 void spectrum_analyzer_free(spectrum_analyzer_t* analyzer) {
   if (!analyzer) return;
   if (analyzer->fft_setup) real_fftf_free(analyzer->fft_setup);
-  if (analyzer->window) free(analyzer->window);
-  if (analyzer->data) free(analyzer->data);
-  if (analyzer->spec) free(analyzer->spec);
-  if (analyzer->magnitudes) free(analyzer->magnitudes);
-  if (analyzer->db_magnitudes) free(analyzer->db_magnitudes);
+  if (analyzer->window) cdsp_aligned_free(analyzer->window);
+  if (analyzer->data) cdsp_aligned_free(analyzer->data);
+  if (analyzer->spec) cdsp_aligned_free(analyzer->spec);
+  if (analyzer->magnitudes) cdsp_aligned_free(analyzer->magnitudes);
+  if (analyzer->db_magnitudes) cdsp_aligned_free(analyzer->db_magnitudes);
   if (analyzer->plan.frequencies) free(analyzer->plan.frequencies);
   if (analyzer->plan.ranges) free(analyzer->plan.ranges);
   if (analyzer->out_magnitudes) free(analyzer->out_magnitudes);
@@ -193,12 +202,12 @@ void spectrum_analyzer_free(spectrum_analyzer_t* analyzer) {
 spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t* analyzer,
                                             audio_history_buffer_t* buffer,
                                             const size_t* channel,
-                                            float min_freq, float max_freq,
+                                            double min_freq, double max_freq,
                                             size_t n_bins, size_t samplerate,
                                             spectrum_result_t* out_result) {
   if (!analyzer || !buffer || !out_result) return SPECTRUM_ERROR_INVALID_PARAM;
-  if (samplerate == 0 || n_bins < 2 || min_freq <= 0.0f ||
-      max_freq <= min_freq) {
+  if (samplerate == 0 || n_bins < 2 || min_freq <= 0.0 ||
+      max_freq <= min_freq || min_freq >= (double)samplerate) {
     return SPECTRUM_ERROR_INVALID_PARAM;
   }
 

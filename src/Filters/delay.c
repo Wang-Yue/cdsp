@@ -45,6 +45,13 @@ static void build_delay(double delay_samples, bool subsample,
                         bool* out_has_coeffs) {
   *out_has_coeffs = false;
   out_params->type = BIQUAD_TYPE_FREE;
+  if (!isfinite(delay_samples) || delay_samples < 0.0) {
+    *out_integer_delay = 0;
+    return;
+  }
+  if (delay_samples > 100000000.0) {
+    delay_samples = 100000000.0;
+  }
   if (subsample) {
     // If the delay is very small, we can't design a stable Thiran filter.
     if (delay_samples < 0.1) {
@@ -149,6 +156,13 @@ static int delay_config_validate(const filter_config_t* config, int sample_rate,
   if (!config || config->type != FILTER_TYPE_DELAY) return -1;
   const delay_config_t* params = &config->parameters.delay;
   if (!params) return 0;
+  if (!isfinite(params->delay)) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Delay must be a finite number");
+    }
+    return -1;
+  }
   if (params->delay < 0.0) {
     if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,

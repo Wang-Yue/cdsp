@@ -39,6 +39,13 @@ int config_parse_filters(const cJSON* filters_obj, dsp_config_t* config,
                        sizeof(nf->name) - 1);
       return -1;
     }
+    for (int prev = 0; prev < f; prev++) {
+      if (strcmp(config->filters[prev].name, f_name) == 0) {
+        config_error_set(err, CONFIG_ERR_PARSE, "Duplicate filter name '%s'",
+                         f_name);
+        return -1;
+      }
+    }
     strncpy(nf->name, f_name, sizeof(nf->name) - 1);
     nf->name[sizeof(nf->name) - 1] = '\0';
 
@@ -927,6 +934,13 @@ int config_parse_processors(const cJSON* processors_obj, dsp_config_t* config,
                        "Processor name '%s' exceeds maximum length of %zu",
                        p_name, sizeof(np->name) - 1);
       return -1;
+    }
+    for (int prev = 0; prev < p; prev++) {
+      if (strcmp(config->processors[prev].name, p_name) == 0) {
+        config_error_set(err, CONFIG_ERR_PARSE, "Duplicate processor name '%s'",
+                         p_name);
+        return -1;
+      }
     }
     strncpy(np->name, p_name, sizeof(np->name) - 1);
     np->name[sizeof(np->name) - 1] = '\0';

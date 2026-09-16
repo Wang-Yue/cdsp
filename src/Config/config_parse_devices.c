@@ -174,10 +174,10 @@ static int parse_resampler(const cJSON* res_obj, devices_config_t* devices,
                                &res->f_cutoff, &res->has_f_cutoff, err) != 0) {
     return -1;
   }
-  if (res->has_f_cutoff && res->f_cutoff <= 0.0) {
+  if (res->has_f_cutoff && (res->f_cutoff <= 0.0 || res->f_cutoff > 1.0)) {
     config_error_set(
         err, CONFIG_ERR_PARSE,
-        "field 'f_cutoff' in AsyncSinc resampler must be positive");
+        "field 'f_cutoff' in AsyncSinc resampler must be in (0, 1]");
     return -1;
   }
   return 0;
@@ -566,8 +566,17 @@ static int parse_capture(const cJSON* cap_obj, devices_config_t* devices,
     cap_labels_node =
         cJSON_GetObjectItemCaseSensitive(cap_obj, "channel_labels");
   }
-  parse_labels_array(cap_labels_node, &cap->labels, &cap->labels_count,
-                     &cap->has_labels);
+  if (cap_labels_node) {
+    if (parse_labels_array_strict(cap_labels_node, &cap->labels,
+                                  &cap->labels_count, &cap->has_labels) != 0) {
+      if (err) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_DEVICE,
+            "Invalid 'labels' array in capture device: elements must be strings or null");
+      }
+      return -1;
+    }
+  }
   devices->capture.labels = cap->labels;
   devices->capture.labels_count = cap->labels_count;
   devices->capture.has_labels = cap->has_labels;
@@ -1183,8 +1192,17 @@ static int parse_playback(const cJSON* play_obj, devices_config_t* devices,
     play_labels_node =
         cJSON_GetObjectItemCaseSensitive(play_obj, "channel_labels");
   }
-  parse_labels_array(play_labels_node, &play->labels, &play->labels_count,
-                     &play->has_labels);
+  if (play_labels_node) {
+    if (parse_labels_array_strict(play_labels_node, &play->labels,
+                                  &play->labels_count, &play->has_labels) != 0) {
+      if (err) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_DEVICE,
+            "Invalid 'labels' array in playback device: elements must be strings or null");
+      }
+      return -1;
+    }
+  }
 
   // Copy flat temp to union configuration
   playback_device_config_t* final_play = &devices->playback;
@@ -1443,21 +1461,35 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
     dev->target_level = (int)tl_val;
     dev->has_target_level = true;
   }
-  if (parse_json_double(dev_obj, "adjust_interval_s",
-                        &dev->adjust_interval_s)) {
-    dev->has_adjust_interval_s = true;
+  if (parse_json_double_strict(dev_obj, "adjust_interval_s", "devices",
+                               &dev->adjust_interval_s,
+                               &dev->has_adjust_interval_s, err) != 0) {
+    return -1;
   }
-  if (parse_json_double(dev_obj, "silence_threshold",
-                        &dev->silence_threshold)) {
-    dev->has_silence_threshold = true;
+  if (dev->has_adjust_interval_s && dev->adjust_interval_s <= 0.0) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "field 'adjust_interval_s' in devices must be positive");
+    return -1;
   }
-  if (parse_json_double(dev_obj, "silence_timeout_s",
-                        &dev->silence_timeout_s)) {
-    dev->has_silence_timeout_s = true;
+  if (parse_json_double_strict(dev_obj, "silence_threshold", "devices",
+                               &dev->silence_threshold,
+                               &dev->has_silence_threshold, err) != 0) {
+    return -1;
+  }
+  if (parse_json_double_strict(dev_obj, "silence_timeout_s", "devices",
+                               &dev->silence_timeout_s,
+                               &dev->has_silence_timeout_s, err) != 0) {
+    return -1;
   }
   if (parse_json_size_t_strict(dev_obj, "capture_samplerate", "devices",
                                &dev->capture_samplerate,
                                &dev->has_capture_samplerate, err) != 0) {
+    return -1;
+  }
+  if (dev->has_capture_samplerate && dev->capture_samplerate == 0) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "field 'capture_samplerate' in devices must be positive");
     return -1;
   }
   if (parse_json_double_strict(dev_obj, "volume_ramp_time_ms", "devices",
@@ -1471,13 +1503,19 @@ int config_parse_devices(const cJSON* dev_obj, dsp_config_t* config,
     return -1;
   }
   if (parse_json_bool_strict(dev_obj, "stop_on_rate_change", "devices",
-                             &dev->stop_on_rate_change,
-                             &dev->has_stop_on_rate_change, err) != 0) {
+                              &dev->stop_on_rate_change,
+                              &dev->has_stop_on_rate_change, err) != 0) {
     return -1;
   }
   if (parse_json_double_strict(dev_obj, "rate_measure_interval_s", "devices",
                                &dev->rate_measure_interval_s,
                                &dev->has_rate_measure_interval_s, err) != 0) {
+    return -1;
+  }
+  if (dev->has_rate_measure_interval_s && dev->rate_measure_interval_s <= 0.0) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "field 'rate_measure_interval_s' in devices must be positive");
     return -1;
   }
   if (parse_json_bool_strict(dev_obj, "multithreaded", "devices",

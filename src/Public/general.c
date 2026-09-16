@@ -172,7 +172,7 @@ void cdsp_set_log_level(const char* level_str) {
   app_logger_set_level(log_level_from_string(level_str));
 }
 
-static uint32_t g_public_update_interval_ms = 100;
+static uint32_t g_public_update_interval_ms = 1000;
 
 void cdsp_set_update_interval(dsp_engine_t* engine, uint32_t interval_ms) {
   (void)engine;

@@ -181,10 +181,12 @@ int resampler_config_validate(const resampler_config_t* config,
     return -1;
   }
   if (config->has_f_cutoff &&
-      (config->f_cutoff <= 0.0 || config->f_cutoff > 1.0)) {
-    config_error_set(err, CONFIG_ERR_INVALID_RESAMPLER,
-                     "f_cutoff must be in (0.0, 1.0], got %g",
-                     config->f_cutoff);
+      (config->f_cutoff <= 0.0 || config->f_cutoff > 1.0 ||
+       !isfinite(config->f_cutoff))) {
+    config_error_set(
+        err, CONFIG_ERR_INVALID_RESAMPLER,
+        "f_cutoff must be larger than 0 and no larger than 1.0, got %g",
+        config->f_cutoff);
     return -1;
   }
 

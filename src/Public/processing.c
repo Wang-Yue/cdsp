@@ -46,6 +46,9 @@ int cdsp_get_capture_rate(const dsp_engine_t* engine) {
 }
 
 double cdsp_get_signal_range(const dsp_engine_t* engine) {
+  if (engine && engine->get_signal_range) {
+    return engine->get_signal_range(engine->ctx);
+  }
   if (engine && engine->get_vu_levels) {
     vu_levels_t vu_query = {0};
     if (engine->get_vu_levels(engine->ctx, &vu_query)) {

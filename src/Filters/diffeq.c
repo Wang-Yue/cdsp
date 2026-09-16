@@ -218,10 +218,9 @@ static void* diffeq_filter_create(const char* name,
   // Normalize coefficients by a[0] so a[0] becomes 1.0
   double a0 = filter->a[0];
   if (isfinite(a0) && a0 != 0.0 && a0 != 1.0) {
-    double scale = 1.0 / a0;
     for (size_t i = 0; i < len; i++) {
-      filter->a[i] *= scale;
-      filter->b[i] *= scale;
+      filter->a[i] /= a0;
+      filter->b[i] /= a0;
     }
   }
 

@@ -40,7 +40,7 @@ static const char* base_json =
     "    \"pipeline\": [\n"
     "        {\n"
     "            \"type\": \"Filter\",\n"
-    "            \"channel\": 0,\n"
+    "            \"channels\": [0],\n"
     "            \"names\": [\"my_gain\"]\n"
     "        }\n"
     "    ]\n"
@@ -58,17 +58,9 @@ TEST(ConfigDiffEqual) {
   ASSERT_EQ(0, r1);
   ASSERT_EQ(0, r2);
 
-  config_change_t* change = config_change_create();
-  ASSERT_TRUE(change != NULL);
-  config_change_type_t res = config_diff(c1, c2, change);
+  config_change_type_t res = config_diff(c1, c2);
   ASSERT_EQ(CONFIG_CHANGE_NONE, res);
 
-  size_t filters_count = 0;
-  char** filters = config_change_take_filters(change, &filters_count);
-  ASSERT_EQ(0, filters_count);
-  ASSERT_TRUE(filters == NULL);
-
-  config_change_free(change);
   dsp_config_free(c1);
   dsp_config_free(c2);
 }
@@ -104,12 +96,9 @@ TEST(ConfigDiffDevices) {
   ASSERT_EQ(0, r1);
   ASSERT_EQ(0, r2);
 
-  config_change_t* change = config_change_create();
-  ASSERT_TRUE(change != NULL);
-  config_change_type_t res = config_diff(c1, c2, change);
+  config_change_type_t res = config_diff(c1, c2);
   ASSERT_EQ(CONFIG_CHANGE_DEVICES, res);
 
-  config_change_free(change);
   dsp_config_free(c1);
   dsp_config_free(c2);
 }
@@ -144,7 +133,7 @@ TEST(ConfigDiffFilterParams) {
       "    \"pipeline\": [\n"
       "        {\n"
       "            \"type\": \"Filter\",\n"
-      "            \"channel\": 0,\n"
+      "            \"channels\": [0],\n"
       "            \"names\": [\"my_gain\"]\n"
       "        }\n"
       "    ]\n"
@@ -160,23 +149,9 @@ TEST(ConfigDiffFilterParams) {
   ASSERT_EQ(0, r1);
   ASSERT_EQ(0, r2);
 
-  config_change_t* change = config_change_create();
-  ASSERT_TRUE(change != NULL);
-  config_change_type_t res = config_diff(c1, c2, change);
+  config_change_type_t res = config_diff(c1, c2);
   ASSERT_EQ(CONFIG_CHANGE_FILTER_PARAMETERS, res);
 
-  size_t filters_count = 0;
-  char** filters = config_change_take_filters(change, &filters_count);
-  ASSERT_EQ(1, filters_count);
-  ASSERT_STR_EQ("my_gain", filters[0]);
-
-  // Clean up returned name list since ownership was transferred to us
-  for (size_t i = 0; i < filters_count; i++) {
-    free(filters[i]);
-  }
-  free(filters);
-
-  config_change_free(change);
   dsp_config_free(c1);
   dsp_config_free(c2);
 }
@@ -203,9 +178,9 @@ TEST(ConfigDiffDictionaryOrderIndependent) {
       "        }\n"
       "    },\n"
       "    \"pipeline\": [\n"
-      "        {\"type\": \"Filter\", \"channel\": 0, \"names\": "
+      "        {\"type\": \"Filter\", \"channels\": [0], \"names\": "
       "[\"first_filter\"]},\n"
-      "        {\"type\": \"Filter\", \"channel\": 1, \"names\": "
+      "        {\"type\": \"Filter\", \"channels\": [1], \"names\": "
       "[\"second_filter\"]}\n"
       "    ]\n"
       "}";
@@ -231,9 +206,9 @@ TEST(ConfigDiffDictionaryOrderIndependent) {
       "        }\n"
       "    },\n"
       "    \"pipeline\": [\n"
-      "        {\"type\": \"Filter\", \"channel\": 0, \"names\": "
+      "        {\"type\": \"Filter\", \"channels\": [0], \"names\": "
       "[\"first_filter\"]},\n"
-      "        {\"type\": \"Filter\", \"channel\": 1, \"names\": "
+      "        {\"type\": \"Filter\", \"channels\": [1], \"names\": "
       "[\"second_filter\"]}\n"
       "    ]\n"
       "}";
@@ -248,12 +223,9 @@ TEST(ConfigDiffDictionaryOrderIndependent) {
   ASSERT_EQ(0, r1);
   ASSERT_EQ(0, r2);
 
-  config_change_t* change = config_change_create();
-  ASSERT_TRUE(change != NULL);
-  config_change_type_t res = config_diff(c1, c2, change);
+  config_change_type_t res = config_diff(c1, c2);
   ASSERT_EQ(CONFIG_CHANGE_NONE, res);
 
-  config_change_free(change);
   dsp_config_free(c1);
   dsp_config_free(c2);
 }
@@ -346,28 +318,12 @@ TEST(ConfigDiffMixerDescriptionAndLabels) {
   ASSERT_EQ(0, dsp_config_parse_json(diff_labels_json, &c_labels, &err));
 
   // Description change must detect mixer change
-  config_change_t* ch1 = config_change_create();
-  config_change_type_t res1 = config_diff(c_base, c_desc, ch1);
+  config_change_type_t res1 = config_diff(c_base, c_desc);
   ASSERT_EQ(CONFIG_CHANGE_MIXER_PARAMETERS, res1);
-  size_t cm1_count = 0;
-  char** cm1 = config_change_take_mixers(ch1, &cm1_count);
-  ASSERT_EQ(1, cm1_count);
-  ASSERT_STR_EQ("mymixer", cm1[0]);
-  free(cm1[0]);
-  free(cm1);
-  config_change_free(ch1);
 
   // Labels change must detect mixer change
-  config_change_t* ch2 = config_change_create();
-  config_change_type_t res2 = config_diff(c_base, c_labels, ch2);
+  config_change_type_t res2 = config_diff(c_base, c_labels);
   ASSERT_EQ(CONFIG_CHANGE_MIXER_PARAMETERS, res2);
-  size_t cm2_count = 0;
-  char** cm2 = config_change_take_mixers(ch2, &cm2_count);
-  ASSERT_EQ(1, cm2_count);
-  ASSERT_STR_EQ("mymixer", cm2[0]);
-  free(cm2[0]);
-  free(cm2);
-  config_change_free(ch2);
 
   dsp_config_free(c_base);
   dsp_config_free(c_desc);
@@ -415,22 +371,16 @@ TEST(ConfigDiffPipeWireAutoconnectTo) {
   ASSERT_EQ(0, dsp_config_parse_json(cfg_target, &c_target, &err));
 
   // Changing autoconnect_to from "" to null must trigger full reload
-  config_change_t* ch1 = config_change_create();
-  config_change_type_t res1 = config_diff(c_empty, c_null, ch1);
+  config_change_type_t res1 = config_diff(c_empty, c_null);
   ASSERT_EQ(CONFIG_CHANGE_DEVICES, res1);
-  config_change_free(ch1);
 
   // Changing autoconnect_to from null to "" must trigger full reload
-  config_change_t* ch2 = config_change_create();
-  config_change_type_t res2 = config_diff(c_null, c_empty, ch2);
+  config_change_type_t res2 = config_diff(c_null, c_empty);
   ASSERT_EQ(CONFIG_CHANGE_DEVICES, res2);
-  config_change_free(ch2);
 
   // Changing autoconnect_to from "" to target node must trigger full reload
-  config_change_t* ch3 = config_change_create();
-  config_change_type_t res3 = config_diff(c_empty, c_target, ch3);
+  config_change_type_t res3 = config_diff(c_empty, c_target);
   ASSERT_EQ(CONFIG_CHANGE_DEVICES, res3);
-  config_change_free(ch3);
 
   dsp_config_free(c_empty);
   dsp_config_free(c_null);

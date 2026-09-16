@@ -392,6 +392,14 @@ cJSON* cdsp_yaml_to_json(const char* yaml_str, char** out_err) {
       depth = 1;
     } else {
       while (depth > 1 && indent < stack[depth - 1].indent) {
+        if (is_list_item && depth > 1 &&
+            indent >= stack[depth - 1].indent - 2 &&
+            stack[depth - 1].node &&
+            (stack[depth - 1].node->type & 0xFF) == cJSON_Object &&
+            stack[depth - 1].node->child == NULL) {
+          stack[depth - 1].indent = indent;
+          break;
+        }
         depth--;
       }
     }

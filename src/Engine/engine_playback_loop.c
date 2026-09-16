@@ -325,8 +325,10 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
   stopwatch_t stopwatch = {0};
 
   if (loop->rate_adjust_enabled) {
+    int ctrl_target_level =
+        loop->target_level > 0 ? loop->target_level : (int)loop->chunk_size;
     rate_controller = pi_rate_controller_create_default(
-        (int)loop->pipeline_rate, loop->adjust_period, loop->target_level);
+        (int)loop->pipeline_rate, loop->adjust_period, ctrl_target_level);
     averager_init(&averager);
     stopwatch_init(&stopwatch);
     stopwatch_restart(&stopwatch);

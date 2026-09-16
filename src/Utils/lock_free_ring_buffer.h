@@ -10,10 +10,8 @@
  *
  * Real-time discipline:
  * All hot-path methods are wait-free, allocation-free, and free of
- * runtime calls or syscalls that could block. The producer always succeeds
- * — if the consumer is so far behind that the buffer is full, the
- * oldest unread data is silently overwritten (matching the original
- * lock-based design's drop-on-overflow behaviour).
+ * runtime calls or syscalls that could block. When full, push operations
+ * refuse/short-write rather than blocking.
  */
 
 #ifndef CLIB_UTILS_LOCK_FREE_RING_BUFFER_H
@@ -361,6 +359,27 @@ static inline float atomic_float_get(const atomic_float_t* a) {
  */
 static inline void atomic_float_set(atomic_float_t* a, float value) {
   atomic_float_store(a, value, memory_order_release);
+}
+
+/**
+ * @brief Atomically update an atomic float to max(current, value).
+ *
+ * @param a Pointer to the atomic float.
+ * @param value Candidate maximum value.
+ */
+static inline void atomic_float_fetch_max(atomic_float_t* a, float value) {
+  float cur = atomic_float_load(a, memory_order_relaxed);
+  while (value > cur) {
+    uint32_t expected_u, desired_u;
+    memcpy(&expected_u, &cur, sizeof(uint32_t));
+    memcpy(&desired_u, &value, sizeof(uint32_t));
+    if (atomic_compare_exchange_weak_explicit(&a->bits, &expected_u, desired_u,
+                                              memory_order_release,
+                                              memory_order_relaxed)) {
+      break;
+    }
+    memcpy(&cur, &expected_u, sizeof(float));
+  }
 }
 
 #endif  // CLIB_UTILS_LOCK_FREE_RING_BUFFER_H

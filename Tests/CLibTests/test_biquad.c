@@ -4,6 +4,7 @@
 
 #include "Config/filter_config_types.h"
 #include "Filters/biquad.h"
+#include "Filters/biquad_internal.h"
 #include "Filters/filter.h"
 #include "Utils/double_helpers.h"
 #include "test_support.h"
@@ -661,6 +662,203 @@ TEST(BiquadCascadesMultiChannel) {
       g_biquad_vtable.free(cascades[c][s]);
     }
   }
+}
+
+TEST(StateGuardTamesSubsonicTakeover) {
+  int fs = 48000;
+  filter_config_t old_cfg = {
+      .type = FILTER_TYPE_BIQUAD,
+      .parameters.biquad = {.type = BIQUAD_TYPE_PEAKING,
+                            .steepness_type = STEEPNESS_TYPE_Q,
+                            .freq = 1000.0,
+                            .q = 4.0,
+                            .gain = 12.0}};
+  filter_config_t new_cfg = {
+      .type = FILTER_TYPE_BIQUAD,
+      .parameters.biquad = {.type = BIQUAD_TYPE_HIGHPASS,
+                            .steepness_type = STEEPNESS_TYPE_Q,
+                            .freq = 25.0,
+                            .q = 3.0}};
+
+  biquad_filter_t* old_filter = (biquad_filter_t*)g_biquad_vtable.create(
+      "test", &old_cfg, fs, 0, NULL, NULL);
+  biquad_filter_t* guarded = (biquad_filter_t*)g_biquad_vtable.create(
+      "test", &new_cfg, fs, 0, NULL, NULL);
+  biquad_filter_t* unguarded = (biquad_filter_t*)g_biquad_vtable.create(
+      "test", &new_cfg, fs, 0, NULL, NULL);
+  ASSERT_TRUE(old_filter != NULL);
+  ASSERT_TRUE(guarded != NULL);
+  ASSERT_TRUE(unguarded != NULL);
+
+  // Settle old filter on a sine well inside its passband
+  for (int n = 0; n < fs; n++) {
+    double t = (double)n / (double)fs;
+    biquad_filter_process_single(old_filter, 0.5 * sin(2.0 * M_PI * 800.0 * t));
+  }
+
+  // Unguarded keeps raw state
+  unguarded->z1 = old_filter->z1;
+  unguarded->z2 = old_filter->z2;
+
+  // Guarded scales state via transfer_state
+  g_biquad_vtable.transfer_state(guarded, old_filter);
+
+  ASSERT_TRUE(fabs(guarded->z1) < fabs(unguarded->z1));
+
+  // Ring both out on silence and compare peak excursions
+  double guarded_peak = 0.0;
+  double unguarded_peak = 0.0;
+  for (int n = 0; n < fs; n++) {
+    double g_out = fabs(biquad_filter_process_single(guarded, 0.0));
+    double u_out = fabs(biquad_filter_process_single(unguarded, 0.0));
+    if (g_out > guarded_peak) guarded_peak = g_out;
+    if (u_out > unguarded_peak) unguarded_peak = u_out;
+  }
+
+  ASSERT_TRUE(unguarded_peak > 4.0);
+  ASSERT_TRUE(guarded_peak < 1.0);
+
+  g_biquad_vtable.free(old_filter);
+  g_biquad_vtable.free(guarded);
+  g_biquad_vtable.free(unguarded);
+}
+
+TEST(StateGuardLeavesOrdinaryChangesAlone) {
+  int fs = 48000;
+  struct {
+    biquad_config_t from;
+    biquad_config_t to;
+  } changes[] = {
+      {{.type = BIQUAD_TYPE_HIGHPASS,
+        .steepness_type = STEEPNESS_TYPE_Q,
+        .freq = 200.0,
+        .q = 0.7},
+       {.type = BIQUAD_TYPE_LOWPASS,
+        .steepness_type = STEEPNESS_TYPE_Q,
+        .freq = 200.0,
+        .q = 0.7}},
+      {{.type = BIQUAD_TYPE_LOWPASS,
+        .steepness_type = STEEPNESS_TYPE_Q,
+        .freq = 500.0,
+        .q = 10.0},
+       {.type = BIQUAD_TYPE_LOWPASS,
+        .steepness_type = STEEPNESS_TYPE_Q,
+        .freq = 500.0,
+        .q = 0.5}},
+      {{.type = BIQUAD_TYPE_PEAKING,
+        .steepness_type = STEEPNESS_TYPE_Q,
+        .freq = 1000.0,
+        .q = 4.0,
+        .gain = 12.0},
+       {.type = BIQUAD_TYPE_PEAKING,
+        .steepness_type = STEEPNESS_TYPE_Q,
+        .freq = 1000.0,
+        .q = 4.0,
+        .gain = -12.0}},
+      {{.type = BIQUAD_TYPE_LOWPASS,
+        .steepness_type = STEEPNESS_TYPE_Q,
+        .freq = 80.0,
+        .q = 0.7},
+       {.type = BIQUAD_TYPE_LOWPASS,
+        .steepness_type = STEEPNESS_TYPE_Q,
+        .freq = 60.0,
+        .q = 0.7}},
+  };
+
+  for (size_t i = 0; i < sizeof(changes) / sizeof(changes[0]); i++) {
+    filter_config_t from_cfg = {.type = FILTER_TYPE_BIQUAD,
+                                .parameters.biquad = changes[i].from};
+    filter_config_t to_cfg = {.type = FILTER_TYPE_BIQUAD,
+                              .parameters.biquad = changes[i].to};
+
+    biquad_filter_t* bq_from = (biquad_filter_t*)g_biquad_vtable.create(
+        "test", &from_cfg, fs, 0, NULL, NULL);
+    biquad_filter_t* bq_to = (biquad_filter_t*)g_biquad_vtable.create(
+        "test", &to_cfg, fs, 0, NULL, NULL);
+
+    for (int n = 0; n < fs; n++) {
+      double t = (double)n / (double)fs;
+      biquad_filter_process_single(bq_from, 0.5 * sin(2.0 * M_PI * 200.0 * t));
+    }
+
+    double s1 = bq_from->z1;
+    double s2 = bq_from->z2;
+
+    g_biquad_vtable.transfer_state(bq_to, bq_from);
+
+    double kept = bq_to->z1 / s1;
+    ASSERT_TRUE(kept > 0.7 && kept <= 1.0);
+    ASSERT_TRUE(is_close(bq_to->z2 / s2, kept, 1e-6));
+
+    g_biquad_vtable.free(bq_from);
+    g_biquad_vtable.free(bq_to);
+  }
+}
+
+TEST(StateGuardIsExactWhenPolesDoNotMove) {
+  int fs = 48000;
+  filter_config_t hp_cfg = {
+      .type = FILTER_TYPE_BIQUAD,
+      .parameters.biquad = {.type = BIQUAD_TYPE_HIGHPASS,
+                            .steepness_type = STEEPNESS_TYPE_Q,
+                            .freq = 200.0,
+                            .q = 0.7}};
+  filter_config_t lp_cfg = {
+      .type = FILTER_TYPE_BIQUAD,
+      .parameters.biquad = {.type = BIQUAD_TYPE_LOWPASS,
+                            .steepness_type = STEEPNESS_TYPE_Q,
+                            .freq = 200.0,
+                            .q = 0.7}};
+
+  biquad_filter_t* hp = (biquad_filter_t*)g_biquad_vtable.create(
+      "test", &hp_cfg, fs, 0, NULL, NULL);
+  biquad_filter_t* lp = (biquad_filter_t*)g_biquad_vtable.create(
+      "test", &lp_cfg, fs, 0, NULL, NULL);
+
+  for (int n = 0; n < fs; n++) {
+    double t = (double)n / (double)fs;
+    biquad_filter_process_single(hp, 0.5 * sin(2.0 * M_PI * 100.0 * t));
+  }
+
+  double s1 = hp->z1;
+  double s2 = hp->z2;
+
+  g_biquad_vtable.transfer_state(lp, hp);
+
+  ASSERT_EQ(lp->z1, s1);
+  ASSERT_EQ(lp->z2, s2);
+
+  g_biquad_vtable.free(hp);
+  g_biquad_vtable.free(lp);
+}
+
+TEST(StateGuardHandlesZeroState) {
+  int fs = 48000;
+  filter_config_t lp_cfg = {
+      .type = FILTER_TYPE_BIQUAD,
+      .parameters.biquad = {.type = BIQUAD_TYPE_LOWPASS,
+                            .steepness_type = STEEPNESS_TYPE_Q,
+                            .freq = 1000.0,
+                            .q = 0.7}};
+  filter_config_t hp_cfg = {
+      .type = FILTER_TYPE_BIQUAD,
+      .parameters.biquad = {.type = BIQUAD_TYPE_HIGHPASS,
+                            .steepness_type = STEEPNESS_TYPE_Q,
+                            .freq = 25.0,
+                            .q = 3.0}};
+
+  biquad_filter_t* lp = (biquad_filter_t*)g_biquad_vtable.create(
+      "test", &lp_cfg, fs, 0, NULL, NULL);
+  biquad_filter_t* hp = (biquad_filter_t*)g_biquad_vtable.create(
+      "test", &hp_cfg, fs, 0, NULL, NULL);
+
+  g_biquad_vtable.transfer_state(hp, lp);
+
+  ASSERT_EQ(hp->z1, 0.0);
+  ASSERT_EQ(hp->z2, 0.0);
+
+  g_biquad_vtable.free(lp);
+  g_biquad_vtable.free(hp);
 }
 
 TEST_MAIN()
