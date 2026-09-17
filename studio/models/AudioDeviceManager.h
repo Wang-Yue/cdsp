@@ -88,8 +88,8 @@ private:
 
     DeviceConfig& config(bool isCapture) { return isCapture ? captureConfig : playbackConfig; }
     const DeviceConfig& config(bool isCapture) const { return isCapture ? captureConfig : playbackConfig; }
-    const std::vector<AudioDevice>& deviceList(bool isCapture, bool isWasapiLoopback = false) const {
-        return (isWasapiLoopback || !isCapture) ? playbackDevices : captureDevices;
+    const std::vector<AudioDevice>& deviceList(bool isCapture, bool isLoopback = false) const {
+        return (isLoopback || !isCapture) ? playbackDevices : captureDevices;
     }
     std::map<std::string, DeviceConfig>& deviceConfigCache(bool isCapture) {
         return isCapture ? m_captureDeviceConfigs : m_playbackDeviceConfigs;

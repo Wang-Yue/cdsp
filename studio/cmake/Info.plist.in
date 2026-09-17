@@ -38,6 +38,8 @@
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>CDSP Studio requires access to the microphone and audio input devices for real-time audio capture, monitoring, and DSP room correction.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>CDSP Studio requires access to system audio capture for real-time process tapping, DSP filtering, and room correction.</string>
 	<key>LSUIElement</key>
 	<true/>
 </dict>

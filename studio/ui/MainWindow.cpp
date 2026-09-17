@@ -528,8 +528,9 @@ void MainWindow::setupMenuBar() {
     auto aboutAct = new QAction("About CDSP Studio", this);
     aboutAct->setMenuRole(QAction::AboutRole);
     connect(aboutAct, &QAction::triggered, [this]() {
-        QMessageBox::about(this, "About CDSP Studio",
-                           "CDSP Studio\n\nA cross-platform audio DSP monitoring, equalization, and pipeline controller.");
+        QMessageBox::about(
+            this, "About CDSP Studio",
+            "CDSP Studio\n\nA cross-platform audio DSP monitoring, equalization, and pipeline controller.");
     });
     fileMenu->addAction(aboutAct);
 

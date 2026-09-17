@@ -303,11 +303,15 @@ bool AudioDeviceManager::isDeviceAvailable(const DeviceConfig& cfg, bool isCaptu
     if (!name || name->empty())
         return true;
 
-    bool isWasapiLoopback = false;
-#if defined(ENABLE_WASAPI)
-    isWasapiLoopback = (isCapture && cfg.backend == AudioBackendType::WASAPI && cfg.loopback);
+    bool isLoopback = false;
+#if defined(ENABLE_COREAUDIO)
+    isLoopback = (isCapture && cfg.backend == AudioBackendType::CoreAudio && cfg.loopback);
 #endif
-    const auto& list = deviceList(isCapture, isWasapiLoopback);
+#if defined(ENABLE_WASAPI)
+    if (!isLoopback)
+        isLoopback = (isCapture && cfg.backend == AudioBackendType::WASAPI && cfg.loopback);
+#endif
+    const auto& list = deviceList(isCapture, isLoopback);
     return std::any_of(list.begin(), list.end(),
                        [&](const AudioDevice& d) { return d.id == *name || d.name == *name; });
 }
@@ -326,11 +330,15 @@ void AudioDeviceManager::validateDevicePresence(DeviceConfig& cfg, bool isCaptur
     if (!name || name->empty())
         return;
 
-    bool isWasapiLoopback = false;
-#if defined(ENABLE_WASAPI)
-    isWasapiLoopback = (isCapture && cfg.backend == AudioBackendType::WASAPI && cfg.loopback);
+    bool isLoopback = false;
+#if defined(ENABLE_COREAUDIO)
+    isLoopback = (isCapture && cfg.backend == AudioBackendType::CoreAudio && cfg.loopback);
 #endif
-    const auto& list = (isWasapiLoopback || !isCapture) ? pbList : capList;
+#if defined(ENABLE_WASAPI)
+    if (!isLoopback)
+        isLoopback = (isCapture && cfg.backend == AudioBackendType::WASAPI && cfg.loopback);
+#endif
+    const auto& list = (isLoopback || !isCapture) ? pbList : capList;
     bool found =
         std::any_of(list.begin(), list.end(), [&](const AudioDevice& d) { return d.id == *name || d.name == *name; });
 
@@ -398,6 +406,11 @@ std::optional<AudioDeviceDescriptor> AudioDeviceManager::queryDeviceCapabilities
     std::string backendLower = toLowerStr(audioBackendTypeToString(cfg.backend));
     std::string devName = cfg.deviceName().value_or("");
     bool isQueryCapture = isCapture;
+#if defined(ENABLE_COREAUDIO)
+    if (cfg.backend == AudioBackendType::CoreAudio && cfg.loopback) {
+        isQueryCapture = false;
+    }
+#endif
 #if defined(ENABLE_WASAPI)
     if (cfg.backend == AudioBackendType::WASAPI && cfg.loopback) {
         isQueryCapture = false;

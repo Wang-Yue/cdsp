@@ -566,6 +566,15 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     m_dopCutoffHint->setFont(hintFont);
     m_capCoreAudioForm->addRow(m_dopCutoffHint);
 
+    m_capCoreAudioLoopbackCheck = new QCheckBox(tr("CoreAudio Loopback (Capture from Playback Device)"), w);
+    connect(m_capCoreAudioLoopbackCheck, &QCheckBox::toggled, [this](bool) {
+        if (!m_isRefreshing) {
+            applySettings();
+            refreshUi();
+        }
+    });
+    m_capCoreAudioForm->addRow(m_capCoreAudioLoopbackCheck);
+
     m_capWasapiExclusiveCheck = new QCheckBox(tr("WASAPI Exclusive Mode"), w);
     connect(m_capWasapiExclusiveCheck, &QCheckBox::toggled, [this](bool) {
         if (!m_isRefreshing)
@@ -1310,6 +1319,10 @@ static int getPbStackIndex(AudioBackendType backend) {
 void DevicePickerView::refreshUi() {
     m_isRefreshing = true;
 
+    bool isCapCoreAudio = false;
+#if defined(ENABLE_COREAUDIO)
+    isCapCoreAudio = m_devices->captureConfig.backend == AudioBackendType::CoreAudio;
+#endif
     bool isCapPw = false;
 #if defined(ENABLE_PIPEWIRE)
     isCapPw = m_devices->captureConfig.backend == AudioBackendType::PipeWire;
@@ -1341,7 +1354,8 @@ void DevicePickerView::refreshUi() {
 
     // 1. Refresh Capture Devices List & CoreAudio controls
     if (!isCapPw) {
-        bool isLoopback = (isCapWasapi && m_devices->captureConfig.loopback);
+        bool isLoopback =
+            (isCapWasapi && m_devices->captureConfig.loopback) || (isCapCoreAudio && m_devices->captureConfig.loopback);
         const auto& capDevs = isLoopback ? m_devices->playbackDevices : m_devices->captureDevices;
         populateDeviceList(m_capDeviceList, m_capWarningLabel, capDevs, m_devices->captureConfig.deviceName());
     } else {
@@ -1471,6 +1485,7 @@ void DevicePickerView::refreshUi() {
     if (cutoffIdx >= 0)
         m_dopCutoffCombo->setCurrentIndex(cutoffIdx);
 
+    m_capCoreAudioLoopbackCheck->setChecked(m_devices->captureConfig.loopback);
     m_capWasapiLoopbackCheck->setChecked(m_devices->captureConfig.loopback);
     m_capWasapiExclusiveCheck->setChecked(m_devices->captureConfig.exclusive && !m_devices->captureConfig.loopback);
     m_capWasapiExclusiveCheck->setEnabled(!m_devices->captureConfig.loopback);
@@ -1479,6 +1494,7 @@ void DevicePickerView::refreshUi() {
     m_capAlsaThreadedCheck->setChecked(m_devices->captureConfig.threaded);
 
     if (m_capCoreAudioForm) {
+        m_capCoreAudioForm->setRowVisible(m_capCoreAudioLoopbackCheck, isCapCoreAudio);
         m_capCoreAudioForm->setRowVisible(m_capWasapiExclusiveCheck, isCapWasapi);
         m_capCoreAudioForm->setRowVisible(m_capWasapiLoopbackCheck, isCapWasapi);
         m_capCoreAudioForm->setRowVisible(m_capWasapiPollingCheck, isCapWasapi);
@@ -1961,7 +1977,9 @@ void DevicePickerView::applySettings() {
         if (m_dopCutoffCombo->currentIndex() >= 0) {
             capCfg.dopCutoffHz = m_dopCutoffCombo->currentData().toDouble();
         }
-        if (m_capWasapiLoopbackCheck && m_capWasapiLoopbackCheck->isVisible()) {
+        if (m_capCoreAudioLoopbackCheck && m_capCoreAudioLoopbackCheck->isVisible()) {
+            capCfg.loopback = m_capCoreAudioLoopbackCheck->isChecked();
+        } else if (m_capWasapiLoopbackCheck && m_capWasapiLoopbackCheck->isVisible()) {
             capCfg.loopback = m_capWasapiLoopbackCheck->isChecked();
             capCfg.exclusive = capCfg.loopback ? false : m_capWasapiExclusiveCheck->isChecked();
         } else if (m_capPwLoopbackCheck && m_capPwLoopbackCheck->isVisible()) {

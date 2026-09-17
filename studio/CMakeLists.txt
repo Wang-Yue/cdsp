@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(cdsp-studio LANGUAGES C CXX)
 
+if(APPLE)
+    enable_language(OBJC OBJCXX)
+endif()
+
 # ==============================================================================
 # Global Build & Language Configuration
 # ==============================================================================
@@ -43,17 +47,37 @@ find_package(Threads REQUIRED)
 set(EXTRA_PLATFORM_LIBS "")
 if(APPLE)
     find_library(COCOA_LIB Cocoa REQUIRED)
-    list(APPEND EXTRA_PLATFORM_LIBS ${COCOA_LIB})
+    find_library(AVFOUNDATION_LIB AVFoundation REQUIRED)
+    list(APPEND EXTRA_PLATFORM_LIBS ${COCOA_LIB} ${AVFOUNDATION_LIB})
 endif()
 
 # Fetch Wang-Yue/cdsp (DSP processing engine)
+set(LOCAL_CDSP_PATH "")
+if(CDSP_SOURCE_DIR AND EXISTS "${CDSP_SOURCE_DIR}/CMakeLists.txt")
+    set(LOCAL_CDSP_PATH "${CDSP_SOURCE_DIR}")
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../cdsp/CMakeLists.txt")
+    get_filename_component(LOCAL_CDSP_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cdsp" ABSOLUTE)
+elseif(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/cdsp/CMakeLists.txt")
+    set(LOCAL_CDSP_PATH "$ENV{HOME}/cdsp")
+endif()
+
 include(FetchContent)
-FetchContent_Declare(
-    cdsp
-    GIT_REPOSITORY https://github.com/Wang-Yue/cdsp.git
-    GIT_TAG        main
-    EXCLUDE_FROM_ALL
-)
+if(LOCAL_CDSP_PATH)
+    message(STATUS "Using local cdsp from: ${LOCAL_CDSP_PATH}")
+    FetchContent_Declare(
+        cdsp
+        SOURCE_DIR     "${LOCAL_CDSP_PATH}"
+        EXCLUDE_FROM_ALL
+    )
+else()
+    message(STATUS "Fetching cdsp from GitHub repository")
+    FetchContent_Declare(
+        cdsp
+        GIT_REPOSITORY https://github.com/Wang-Yue/cdsp.git
+        GIT_TAG        main
+        EXCLUDE_FROM_ALL
+    )
+endif()
 FetchContent_MakeAvailable(cdsp)
 
 # ==============================================================================

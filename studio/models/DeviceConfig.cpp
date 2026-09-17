@@ -17,7 +17,7 @@ const DeviceCapabilitySet* DeviceConfig::activeCapabilitySet() const {
         return nullptr;
     if (exclusive) {
         for (const auto& set : capabilities.capability_sets) {
-            if (set.mode == "Exclusive" || set.mode == "Direct")
+            if (set.mode == "Exclusive")
                 return &set;
         }
     } else {
@@ -30,20 +30,7 @@ const DeviceCapabilitySet* DeviceConfig::activeCapabilitySet() const {
 }
 
 DeviceCapabilitySet* DeviceConfig::activeCapabilitySet() {
-    if (capabilities.capability_sets.empty())
-        return nullptr;
-    if (exclusive) {
-        for (auto& set : capabilities.capability_sets) {
-            if (set.mode == "Exclusive" || set.mode == "Direct")
-                return &set;
-        }
-    } else {
-        for (auto& set : capabilities.capability_sets) {
-            if (set.mode == "Shared")
-                return &set;
-        }
-    }
-    return &capabilities.capability_sets[0];
+    return const_cast<DeviceCapabilitySet*>(static_cast<const DeviceConfig*>(this)->activeCapabilitySet());
 }
 
 void DeviceConfig::updateRate(int newRate) {
@@ -290,6 +277,7 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.coreAudio.channels = channels;
         cap.coreAudio.device = deviceName();
         cap.coreAudio.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        cap.coreAudio.loopback = loopback;
         cap.coreAudio.bypassDoP = bypassDoP;
         cap.coreAudio.dopCutoffHz = dopCutoffHz;
         break;

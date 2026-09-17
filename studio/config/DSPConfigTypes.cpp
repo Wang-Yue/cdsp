@@ -789,6 +789,8 @@ CoreAudioCaptureConfig CoreAudioCaptureConfig::fromJson(const QJsonObject& json)
         cfg.device = json["device"].toString().toStdString();
     if (json.contains("format"))
         cfg.format = json["format"].toString().toStdString();
+    if (json.contains("loopback"))
+        cfg.loopback = json["loopback"].toBool();
     if (json.contains("bypass_dop"))
         cfg.bypassDoP = json["bypass_dop"].toBool();
     if (json.contains("dop_cutoff_hz"))
@@ -809,6 +811,8 @@ QJsonObject CoreAudioCaptureConfig::toJson() const {
         obj["device"] = QString::fromStdString(device.value());
     if (format.has_value())
         obj["format"] = QString::fromStdString(format.value());
+    if (loopback.has_value())
+        obj["loopback"] = loopback.value();
     if (bypassDoP.has_value())
         obj["bypass_dop"] = bypassDoP.value();
     if (dopCutoffHz.has_value())

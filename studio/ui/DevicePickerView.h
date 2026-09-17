@@ -88,7 +88,8 @@ private:
     QComboBox* m_dopCutoffCombo = nullptr;
     QLabel* m_dopCutoffHint = nullptr;
 
-    // Capture WASAPI / ASIO / ALSA / PipeWire
+    // Capture CoreAudio / WASAPI / ASIO / ALSA / PipeWire
+    QCheckBox* m_capCoreAudioLoopbackCheck = nullptr;
     QCheckBox* m_capWasapiExclusiveCheck = nullptr;
     QCheckBox* m_capWasapiLoopbackCheck = nullptr;
     QCheckBox* m_capWasapiPollingCheck = nullptr;
