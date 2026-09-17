@@ -66,7 +66,7 @@ foreach(TEST_NAME IN LISTS TEST_LIST)
     if("${TEST_NAME}" MATCHES "(CoreAudio|ALSA|PipeWire|WASAPI|ASIO)")
         string(APPEND TEST_PROPERTIES " RESOURCE_LOCK \"audio_hardware\"")
     endif()
-    if("${TEST_NAME}" MATCHES "(CoreAudio|Tap)")
+    if("${TEST_NAME}" MATCHES "(CoreAudio|Tap|SampleRateChange|ASIO)")
         string(APPEND TEST_PROPERTIES " RUN_SERIAL TRUE")
     endif()
 
