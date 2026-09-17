@@ -55,12 +55,25 @@ static void test_handle_command(websocket_server_t *server, int client_idx,
 #include "test_support.h"
 
 static processing_parameters_t *mock_params = NULL;
+static pthread_mutex_t g_mock_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void set_mock_params(processing_parameters_t *new_params) {
+  pthread_mutex_lock(&g_mock_mutex);
+  processing_parameters_t *old = mock_params;
+  mock_params = new_params;
+  pthread_mutex_unlock(&g_mock_mutex);
+  if (old) {
+    processing_parameters_free(old);
+  }
+}
 
 static bool mock_get_status(void *ctx, state_update_t *out_status) {
   (void)ctx;
   if (out_status) {
+    pthread_mutex_lock(&g_mock_mutex);
     out_status->state =
         mock_params ? PROCESSING_STATE_RUNNING : PROCESSING_STATE_INACTIVE;
+    pthread_mutex_unlock(&g_mock_mutex);
     out_status->stop_reason.type = STOP_REASON_NONE;
   }
   return true;
@@ -77,8 +90,11 @@ static bool mock_get_processing_status(void *ctx, double *out_rate_adjust,
                                        double *out_processing_load,
                                        double *out_resampler_load) {
   (void)ctx;
-  if (!mock_params)
+  pthread_mutex_lock(&g_mock_mutex);
+  if (!mock_params) {
+    pthread_mutex_unlock(&g_mock_mutex);
     return false;
+  }
   if (out_rate_adjust)
     *out_rate_adjust = processing_parameters_get_rate_adjust(mock_params);
   if (out_buffer_level)
@@ -91,20 +107,28 @@ static bool mock_get_processing_status(void *ctx, double *out_rate_adjust,
         processing_parameters_get_processing_load(mock_params);
   if (out_resampler_load)
     *out_resampler_load = processing_parameters_get_resampler_load(mock_params);
+  pthread_mutex_unlock(&g_mock_mutex);
   return true;
 }
 
 static void mock_reset_clipped_samples(void *ctx) {
   (void)ctx;
+  pthread_mutex_lock(&g_mock_mutex);
   if (mock_params) {
     processing_parameters_reset_clipped_samples(mock_params);
   }
+  pthread_mutex_unlock(&g_mock_mutex);
 }
 
 static bool mock_get_vu_levels(void *ctx, vu_levels_t *out_vu) {
   (void)ctx;
-  if (!mock_params || !out_vu)
+  if (!out_vu)
     return false;
+  pthread_mutex_lock(&g_mock_mutex);
+  if (!mock_params) {
+    pthread_mutex_unlock(&g_mock_mutex);
+    return false;
+  }
   size_t pb_ch = processing_parameters_get_playback_channels(mock_params);
   size_t cap_ch = processing_parameters_get_capture_channels(mock_params);
   out_vu->playback_channels = pb_ch;
@@ -120,30 +144,37 @@ static bool mock_get_vu_levels(void *ctx, vu_levels_t *out_vu) {
   }
   if (out_vu->capture_rms && cap_ch > 0) {
     processing_parameters_get_capture_signal_rms(mock_params,
-                                                 out_vu->capture_rms, cap_ch);
+                                                  out_vu->capture_rms, cap_ch);
   }
   if (out_vu->capture_peak && cap_ch > 0) {
     processing_parameters_get_capture_signal_peak(mock_params,
                                                   out_vu->capture_peak, cap_ch);
   }
+  pthread_mutex_unlock(&g_mock_mutex);
   return true;
 }
 
 static float mock_get_fader_volume(void *ctx, fader_t fader) {
   (void)ctx;
+  float vol = 0.0f;
+  pthread_mutex_lock(&g_mock_mutex);
   if (mock_params) {
-    return (float)processing_parameters_get_target_volume_for_fader(mock_params,
-                                                                    fader);
+    vol = (float)processing_parameters_get_target_volume_for_fader(mock_params,
+                                                                   fader);
   }
-  return 0.0f;
+  pthread_mutex_unlock(&g_mock_mutex);
+  return vol;
 }
 
 static bool mock_is_fader_muted(void *ctx, fader_t fader) {
   (void)ctx;
+  bool muted = false;
+  pthread_mutex_lock(&g_mock_mutex);
   if (mock_params) {
-    return processing_parameters_is_muted_for_fader(mock_params, fader);
+    muted = processing_parameters_is_muted_for_fader(mock_params, fader);
   }
-  return false;
+  pthread_mutex_unlock(&g_mock_mutex);
+  return muted;
 }
 
 static audio_backend_error_type_t simulated_error_type =
@@ -174,6 +205,7 @@ static bool mock_set_config_json(void *ctx, const char *json_str,
 static void mock_set_fader_volume(void *ctx, fader_t fader, float db,
                                   bool instant) {
   (void)ctx;
+  pthread_mutex_lock(&g_mock_mutex);
   if (mock_params) {
     processing_parameters_set_target_volume_for_fader(mock_params, db, fader);
     if (instant) {
@@ -181,13 +213,16 @@ static void mock_set_fader_volume(void *ctx, fader_t fader, float db,
                                                          fader);
     }
   }
+  pthread_mutex_unlock(&g_mock_mutex);
 }
 
 static void mock_set_fader_mute(void *ctx, fader_t fader, bool mute) {
   (void)ctx;
+  pthread_mutex_lock(&g_mock_mutex);
   if (mock_params) {
     processing_parameters_set_muted_for_fader(mock_params, mute, fader);
   }
+  pthread_mutex_unlock(&g_mock_mutex);
 }
 
 static char *mock_active_config = NULL;
@@ -284,9 +319,13 @@ static bool mock_get_spectrum(void *ctx, bool is_capture, const size_t *channel,
 
 static uint64_t mock_get_chunk_generation(void *ctx, bool is_capture) {
   (void)ctx;
-  if (!mock_params)
-    return 0;
-  return processing_parameters_get_chunk_generation(mock_params, is_capture);
+  uint64_t gen = 0;
+  pthread_mutex_lock(&g_mock_mutex);
+  if (mock_params) {
+    gen = processing_parameters_get_chunk_generation(mock_params, is_capture);
+  }
+  pthread_mutex_unlock(&g_mock_mutex);
+  return gen;
 }
 
 static dsp_engine_t mock_engine = {
@@ -2059,7 +2098,7 @@ TEST(test_websocket_fragmentation_and_limits) {
 }
 
 TEST(test_websocket_event_cadence_and_generations) {
-  mock_params = processing_parameters_create(2, 2);
+  set_mock_params(processing_parameters_create(2, 2));
   ASSERT_TRUE(mock_params != NULL);
 
   websocket_server_t *server = websocket_server_create(54326, "127.0.0.1");
@@ -2137,8 +2176,7 @@ TEST(test_websocket_event_cadence_and_generations) {
   free(frame);
 
   // Transition state: make mock_params NULL so mock_get_status returns INACTIVE
-  processing_parameters_free(mock_params);
-  mock_params = NULL;
+  set_mock_params(NULL);
 
   // Immediate StateEvent should arrive promptly
   frame = test_recv_ws_frame(sock, &opcode, &len);
@@ -2166,7 +2204,7 @@ TEST(test_websocket_event_cadence_and_generations) {
   free(frame);
 
   // 2. Subscribe to SignalLevels (playback)
-  mock_params = processing_parameters_create(2, 2);
+  set_mock_params(processing_parameters_create(2, 2));
   const char *sub_sig =
       "{\"command\":\"SubscribeSignalLevels\",\"value\":\"playback\"}";
   test_send_ws_client_frame(sock, 0x01, true, sub_sig, strlen(sub_sig));
@@ -2190,7 +2228,11 @@ TEST(test_websocket_event_cadence_and_generations) {
       w[s] = 0.5f;
   }
   audio_chunk_set_valid_frames(chunk, 64);
-  processing_parameters_update_playback_levels(mock_params, chunk);
+  pthread_mutex_lock(&g_mock_mutex);
+  if (mock_params) {
+    processing_parameters_update_playback_levels(mock_params, chunk);
+  }
+  pthread_mutex_unlock(&g_mock_mutex);
 
   // Read SignalLevelsEvent triggered by generation increment
   frame = test_recv_ws_frame(sock, &opcode, &len);
@@ -2222,8 +2264,7 @@ TEST(test_websocket_event_cadence_and_generations) {
 
   // 3. VU subscription with capture-only pipeline (pb_channels == 0,
   // cap_channels == 2)
-  processing_parameters_free(mock_params);
-  mock_params = processing_parameters_create(2, 0);
+  set_mock_params(processing_parameters_create(2, 0));
 
   const char *sub_vu =
       "{\"command\":\"SubscribeVuLevels\",\"value\":{\"max_rate\":100.0}}";
@@ -2247,7 +2288,11 @@ TEST(test_websocket_event_cadence_and_generations) {
       w[s] = 0.25f;
   }
   audio_chunk_set_valid_frames(cap_chunk, 64);
-  processing_parameters_update_capture_levels(mock_params, cap_chunk);
+  pthread_mutex_lock(&g_mock_mutex);
+  if (mock_params) {
+    processing_parameters_update_capture_levels(mock_params, cap_chunk);
+  }
+  pthread_mutex_unlock(&g_mock_mutex);
 
   // Read VuLevelsEvent: verify capture has 2 channels and playback has 0
   // channels
@@ -2272,10 +2317,7 @@ TEST(test_websocket_event_cadence_and_generations) {
   websocket_server_stop(server);
   websocket_server_free(server);
 
-  if (mock_params) {
-    processing_parameters_free(mock_params);
-    mock_params = NULL;
-  }
+  set_mock_params(NULL);
 }
 
 TEST(WebSocket_DefaultUpdateInterval) {
