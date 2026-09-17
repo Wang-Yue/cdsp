@@ -13,9 +13,11 @@ if [ "$OS" = "Darwin" ]; then
         if [ -x "/opt/homebrew/opt/llvm/bin/clang" ]; then
             export CC="/opt/homebrew/opt/llvm/bin/clang"
             export AR="/opt/homebrew/opt/llvm/bin/llvm-ar"
+            export RANLIB="/opt/homebrew/opt/llvm/bin/llvm-ranlib"
         elif [ -x "/usr/local/opt/llvm/bin/clang" ]; then
             export CC="/usr/local/opt/llvm/bin/clang"
             export AR="/usr/local/opt/llvm/bin/llvm-ar"
+            export RANLIB="/usr/local/opt/llvm/bin/llvm-ranlib"
         else
             echo "⚠️ Warning: Homebrew LLVM not found at /opt/homebrew/opt/llvm or /usr/local/opt/llvm."
             echo "   Xcode clang may fail with sanitizers on macOS. Install via: brew install llvm"
@@ -27,6 +29,9 @@ elif [ "$OS" = "Linux" ]; then
     fi
     if [ -z "$AR" ] && command -v llvm-ar >/dev/null 2>&1; then
         export AR="llvm-ar"
+    fi
+    if [ -z "$RANLIB" ] && command -v llvm-ranlib >/dev/null 2>&1; then
+        export RANLIB="llvm-ranlib"
     fi
 fi
 
@@ -62,6 +67,13 @@ for san in "${SANITIZERS[@]}"; do
     echo "================================================================="
 
     EXTRA_ENV=()
+    CMAKE_ARGS=("-B" "$BUILD_DIR" "-DENABLE_SANITIZER=$san" "-DCMAKE_BUILD_TYPE=Debug")
+    if [ -n "$AR" ]; then
+        CMAKE_ARGS+=("-DCMAKE_AR=$AR")
+    fi
+    if [ -n "$RANLIB" ]; then
+        CMAKE_ARGS+=("-DCMAKE_RANLIB=$RANLIB")
+    fi
     if [ "$san" = "thread" ]; then
         EXTRA_ENV+=(TSAN_OPTIONS="suppressions=${CDSP_DIR}/tools/tsan_suppressions.txt:second_deadlock_stack=1:ignore_noninstrumented_modules=1")
         if [ "$OS" = "Linux" ]; then
@@ -72,7 +84,7 @@ for san in "${SANITIZERS[@]}"; do
         fi
     fi
 
-    if cmake -B "$BUILD_DIR" -DENABLE_SANITIZER="$san" -DCMAKE_BUILD_TYPE=Debug && \
+    if cmake "${CMAKE_ARGS[@]}" && \
        cmake --build "$BUILD_DIR" -j"$JOBS" && \
        env "${EXTRA_ENV[@]}" ctest --test-dir "$BUILD_DIR" --output-on-failure -j"$JOBS"; then
         echo "✅ Sanitizer [$san] PASSED"
