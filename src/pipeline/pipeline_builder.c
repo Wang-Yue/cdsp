@@ -435,14 +435,8 @@ static bool build_filter_step(const pipeline_step_config_t *step,
         goto cleanup;
       }
 
-      bool can_parallelize = false;
-#if defined(ENABLE_LIBDISPATCH) || defined(ENABLE_OPENMP)
-      if (pipeline->multithreaded) {
-        can_parallelize = true;
-      }
-#endif
       size_t count = pipeline->steps_count;
-      if (can_parallelize && count > 0 &&
+      if (pipeline->multithreaded && count > 0 &&
           pipeline->steps[count - 1].type == EXEC_STEP_PARALLEL_FILTERS) {
         if (!merge_parallel_filter_chains(&pipeline->steps[count - 1], chains,
                                           channels_count, err)) {
