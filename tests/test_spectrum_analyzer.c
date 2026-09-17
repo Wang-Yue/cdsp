@@ -240,6 +240,7 @@ TEST(DynamicFftLength) {
   ASSERT_EQ(4096, spectrum_analyzer_get_fft_n(analyzer));
 
   audio_history_buffer_free(buffer);
+  spectrum_analyzer_free(analyzer);
 }
 
 TEST(SpectrumAnalyzer_NBinsLessThanTwo_Rejected) {
