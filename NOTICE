@@ -1,0 +1,15 @@
+CDSP - High-Performance C Audio Processing Engine
+Copyright (C) 2026 Yue Wang <https://github.com/Wang-Yue/cdsp>
+
+This project contains code ported, adapted, and derived from CamillaDSP:
+Copyright (C) 2026 Henrik Enquist and CamillaDSP contributors <https://github.com/HEnquist/camilladsp>
+
+Upstream CamillaDSP is dual-licensed under:
+- GNU General Public License version 3 (GPLv3)
+- Mozilla Public License Version 2.0 (MPL-2.0)
+
+This derivative C implementation is conveyed and licensed under the terms of the GNU General Public License version 3 (GPLv3) as published by the Free Software Foundation.
+
+This software also links against and utilizes FFTW:
+Copyright (C) Matteo Frigo and Massachusetts Institute of Technology
+Distributed under the GNU General Public License version 2 or later.
