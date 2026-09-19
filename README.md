@@ -25,8 +25,12 @@ Rather than introducing platform-specific forks or breaking modifications into t
 - **Shared Configuration Format**: The C engine parses and executes the exact same JSON configuration files.
 - **WebSocket API Compatibility**: The control protocol implements the identical WebSocket interface, including format querying, volume control, level-meter streaming, and live pipeline reloading.
 
-### 1.3 Novel Codebase & Licensing
-The engine links against and utilizes FFTW for high-performance FFT and convolution routines. Consequently, CDSP is licensed and distributed under the GNU General Public License (GPLv3).
+### 1.3 Code Lineage, Derivation & Licensing
+CDSP is an alternative C implementation engineered for high-throughput, lock-free real-time digital signal processing. Portions of the audio processing pipelines, platform backends, and configuration handling are ported and derived from upstream CamillaDSP (authored by Henrik Enquist and contributors, dual-licensed under GPLv3 and MPL-2.0). 
+
+Additionally, the engine links against and utilizes FFTW for high-performance FFT and convolution routines. 
+
+In accordance with the requirements of GPLv3 (including Section 5 modification notices), CDSP is licensed and distributed under the GNU General Public License (GPLv3). Full copyright notices for the original upstream works and contributors are preserved in the [NOTICE](NOTICE) and [LICENSE](LICENSE) files.
 
 ### 1.4 Design Safety and C Portability
 The alternative codebase focuses entirely on the C engine (`CDSP`) to achieve maximum cross-platform portability across macOS, Linux, and Windows. To ensure design safety and correctness during the initial development:
