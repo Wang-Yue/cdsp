@@ -264,9 +264,15 @@ map_backend_error_type(audio_backend_error_type_t type) {
     return CDSP_BACKEND_ERR_DEVICE_BUSY;
   case AUDIO_BACKEND_ERR_CONFIG_READ:
     return CDSP_BACKEND_ERR_CONFIG_READ;
-  default:
+  case AUDIO_BACKEND_ERR_COMMAND_SEND:
+  case AUDIO_BACKEND_ERR_INVALID_SAMPLERATE:
+  case AUDIO_BACKEND_ERR_SPECTRUM_COMPUTE:
+  case AUDIO_BACKEND_ERR_ENGINE_NOT_RUNNING:
+  case AUDIO_BACKEND_ERR_BUFFER_EMPTY:
     return CDSP_BACKEND_ERR_UNKNOWN;
   }
+  CDSP_UNREACHABLE();
+  return CDSP_BACKEND_ERR_UNKNOWN;
 }
 
 static bool apply_cjson_overrides(cJSON *root, int samplerate_override,

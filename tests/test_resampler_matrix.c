@@ -86,6 +86,18 @@ typedef struct {
 } row_t;
 
 typedef enum {
+  RESAMPLER_IMPL_SWIFT_SYNC = 0,
+  RESAMPLER_IMPL_SWIFT_POLY,
+  RESAMPLER_IMPL_SWIFT_SINC,
+  RESAMPLER_IMPL_SWIFT_SLIP,
+  RESAMPLER_IMPL_RUBATO_FFT,
+  RESAMPLER_IMPL_RUBATO_POLY,
+  RESAMPLER_IMPL_RUBATO_SINC,
+  RESAMPLER_IMPL_RUBATO_SLIP,
+  RESAMPLER_IMPL_COUNT
+} resampler_impl_t;
+
+typedef enum {
   METRIC_SINAD = 0,
   METRIC_ALIASING,
   METRIC_PASSBAND,
@@ -408,46 +420,46 @@ static double *run_rubato(const char *mode, int in_rate, int out_rate,
   return read_raw_f64(out_path, out_count);
 }
 
-static double *run_process(int impl_id, const double *input, size_t input_count,
-                           int in_rate, int out_rate, size_t *out_count) {
+static double *run_process(resampler_impl_t impl, const double *input,
+                           size_t input_count, int in_rate, int out_rate,
+                           size_t *out_count) {
   resampler_config_t cfg;
-  switch (impl_id) {
-  case 0:
+  switch (impl) {
+  case RESAMPLER_IMPL_SWIFT_SYNC:
     resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SYNCHRONOUS);
     break;
-  case 1:
+  case RESAMPLER_IMPL_SWIFT_POLY:
     resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
     strncpy(cfg.interpolation, "Septic", sizeof(cfg.interpolation) - 1);
     cfg.has_interpolation = true;
     break;
-  case 2:
+  case RESAMPLER_IMPL_SWIFT_SINC:
     resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
     strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
     cfg.has_profile = true;
     break;
-  case 3:
+  case RESAMPLER_IMPL_SWIFT_SLIP:
     resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SLIP);
     break;
-
-  case 5:
+  case RESAMPLER_IMPL_RUBATO_FFT:
     if (!check_rubato_available())
       return NULL;
     return run_rubato("fft", in_rate, out_rate, input, input_count, out_count);
-  case 6:
+  case RESAMPLER_IMPL_RUBATO_POLY:
     if (!check_rubato_available())
       return NULL;
     return run_rubato("poly-septic", in_rate, out_rate, input, input_count,
                       out_count);
-  case 7:
+  case RESAMPLER_IMPL_RUBATO_SINC:
     if (!check_rubato_available())
       return NULL;
     return run_rubato("sinc-accurate", in_rate, out_rate, input, input_count,
                       out_count);
-  case 8:
+  case RESAMPLER_IMPL_RUBATO_SLIP:
     if (!check_rubato_available())
       return NULL;
     return run_rubato("slip", in_rate, out_rate, input, input_count, out_count);
-  default:
+  case RESAMPLER_IMPL_COUNT:
     return NULL;
   }
 
@@ -461,7 +473,8 @@ static double *run_process(int impl_id, const double *input, size_t input_count,
   return out;
 }
 
-static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
+static cell_t measure_quality_cell(int in_rate, int out_rate,
+                                   resampler_impl_t impl) {
   cell_t c;
   memset(&c, 0, sizeof(c));
   size_t cs = MATRIX_BENCH_CHUNK_SIZE;
@@ -481,7 +494,7 @@ static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
     double *signal = make_sine(in_rate, test_freq, nbr_in);
     size_t out_count = 0;
     double *out =
-        run_process(impl_id, signal, nbr_in, in_rate, out_rate, &out_count);
+        run_process(impl, signal, nbr_in, in_rate, out_rate, &out_count);
     if (out && out_count > out_skip) {
       double rms_val = compute_rms(out + out_skip, out_count - out_skip);
       c.aliasing_db = double_to_db(rms_val / sqrt(0.5));
@@ -499,7 +512,7 @@ static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
     double *signal = make_sine(in_rate, fractions[i] * min_ny, nbr_in);
     size_t out_count = 0;
     double *out =
-        run_process(impl_id, signal, nbr_in, in_rate, out_rate, &out_count);
+        run_process(impl, signal, nbr_in, in_rate, out_rate, &out_count);
     if (out && out_count > out_skip) {
       double rms_val = compute_rms(out + out_skip, out_count - out_skip);
       double dev = fabs(double_to_db(rms_val / sqrt(0.5)));
@@ -522,7 +535,7 @@ static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
   if (imp_signal) {
     imp_signal[(imp_chunks / 2) * chunk_in] = 1.0;
     size_t imp_out_count = 0;
-    double *imp_out = run_process(impl_id, imp_signal, imp_count, in_rate,
+    double *imp_out = run_process(impl, imp_signal, imp_count, in_rate,
                                   out_rate, &imp_out_count);
     if (imp_out && imp_out_count > 0) {
       double asym = impulse_asymmetry(imp_out, imp_out_count, 256);
@@ -540,11 +553,11 @@ static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
   if (sin_signal) {
     size_t up_count = 0;
     double *up_out =
-        run_process(impl_id, sin_signal, nbr_in, in_rate, out_rate, &up_count);
+        run_process(impl, sin_signal, nbr_in, in_rate, out_rate, &up_count);
     if (up_out && up_count > 0) {
       size_t down_count = 0;
-      double *down_out = run_process(impl_id, up_out, up_count, out_rate,
-                                     in_rate, &down_count);
+      double *down_out =
+          run_process(impl, up_out, up_count, out_rate, in_rate, &down_count);
       if (down_out && down_count > 0) {
         size_t skip = 4 * chunk_in;
         size_t fit_len = 8192 > chunk_in ? 8192 : chunk_in;
@@ -568,28 +581,31 @@ static cell_t measure_quality_cell(int in_rate, int out_rate, int impl_id) {
   return c;
 }
 
-static bool measure_swift_perf(int in_rate, int out_rate, int impl_id,
+static bool measure_swift_perf(int in_rate, int out_rate, resampler_impl_t impl,
                                double *out_ns_per_frame, double *out_rtf) {
   resampler_config_t cfg;
-  switch (impl_id) {
-  case 0:
+  switch (impl) {
+  case RESAMPLER_IMPL_SWIFT_SYNC:
     resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SYNCHRONOUS);
     break;
-  case 1:
+  case RESAMPLER_IMPL_SWIFT_POLY:
     resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
     strncpy(cfg.interpolation, "Septic", sizeof(cfg.interpolation) - 1);
     cfg.has_interpolation = true;
     break;
-  case 2:
+  case RESAMPLER_IMPL_SWIFT_SINC:
     resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
     strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
     cfg.has_profile = true;
     break;
-  case 3:
+  case RESAMPLER_IMPL_SWIFT_SLIP:
     resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SLIP);
     break;
-
-  default:
+  case RESAMPLER_IMPL_RUBATO_FFT:
+  case RESAMPLER_IMPL_RUBATO_POLY:
+  case RESAMPLER_IMPL_RUBATO_SINC:
+  case RESAMPLER_IMPL_RUBATO_SLIP:
+  case RESAMPLER_IMPL_COUNT:
     return false;
   }
 
@@ -748,43 +764,55 @@ static row_t compute_row_for_rate_pair(int index, int in_rate, int out_rate,
   r.index = index;
   r.label = label;
 
-  r.swift_sync = measure_quality_cell(in_rate, out_rate, 0);
-  r.swift_poly = measure_quality_cell(in_rate, out_rate, 1);
-  r.swift_sinc = measure_quality_cell(in_rate, out_rate, 2);
+  r.swift_sync =
+      measure_quality_cell(in_rate, out_rate, RESAMPLER_IMPL_SWIFT_SYNC);
+  r.swift_poly =
+      measure_quality_cell(in_rate, out_rate, RESAMPLER_IMPL_SWIFT_POLY);
+  r.swift_sinc =
+      measure_quality_cell(in_rate, out_rate, RESAMPLER_IMPL_SWIFT_SINC);
   if (in_rate == out_rate) {
-    r.swift_slip = measure_quality_cell(in_rate, out_rate, 3);
+    r.swift_slip =
+        measure_quality_cell(in_rate, out_rate, RESAMPLER_IMPL_SWIFT_SLIP);
   }
 
   if (rubato_ok) {
-    r.rubato_fft = measure_quality_cell(in_rate, out_rate, 5);
-    r.rubato_poly = measure_quality_cell(in_rate, out_rate, 6);
-    r.rubato_sinc = measure_quality_cell(in_rate, out_rate, 7);
+    r.rubato_fft =
+        measure_quality_cell(in_rate, out_rate, RESAMPLER_IMPL_RUBATO_FFT);
+    r.rubato_poly =
+        measure_quality_cell(in_rate, out_rate, RESAMPLER_IMPL_RUBATO_POLY);
+    r.rubato_sinc =
+        measure_quality_cell(in_rate, out_rate, RESAMPLER_IMPL_RUBATO_SINC);
     if (in_rate == out_rate) {
-      r.rubato_slip = measure_quality_cell(in_rate, out_rate, 8);
+      r.rubato_slip =
+          measure_quality_cell(in_rate, out_rate, RESAMPLER_IMPL_RUBATO_SLIP);
     }
   }
 
   double ns = 0.0, rtf = 0.0;
-  if (measure_swift_perf(in_rate, out_rate, 0, &ns, &rtf)) {
+  if (measure_swift_perf(in_rate, out_rate, RESAMPLER_IMPL_SWIFT_SYNC, &ns,
+                         &rtf)) {
     r.swift_sync.ns_per_out_frame = ns;
     r.swift_sync.has_ns_per_out_frame = true;
     r.swift_sync.rtf_per_iter = rtf;
     r.swift_sync.has_rtf_per_iter = true;
   }
-  if (measure_swift_perf(in_rate, out_rate, 1, &ns, &rtf)) {
+  if (measure_swift_perf(in_rate, out_rate, RESAMPLER_IMPL_SWIFT_POLY, &ns,
+                         &rtf)) {
     r.swift_poly.ns_per_out_frame = ns;
     r.swift_poly.has_ns_per_out_frame = true;
     r.swift_poly.rtf_per_iter = rtf;
     r.swift_poly.has_rtf_per_iter = true;
   }
-  if (measure_swift_perf(in_rate, out_rate, 2, &ns, &rtf)) {
+  if (measure_swift_perf(in_rate, out_rate, RESAMPLER_IMPL_SWIFT_SINC, &ns,
+                         &rtf)) {
     r.swift_sinc.ns_per_out_frame = ns;
     r.swift_sinc.has_ns_per_out_frame = true;
     r.swift_sinc.rtf_per_iter = rtf;
     r.swift_sinc.has_rtf_per_iter = true;
   }
   if (in_rate == out_rate &&
-      measure_swift_perf(in_rate, out_rate, 3, &ns, &rtf)) {
+      measure_swift_perf(in_rate, out_rate, RESAMPLER_IMPL_SWIFT_SLIP, &ns,
+                         &rtf)) {
     r.swift_slip.ns_per_out_frame = ns;
     r.swift_slip.has_ns_per_out_frame = true;
     r.swift_slip.rtf_per_iter = rtf;

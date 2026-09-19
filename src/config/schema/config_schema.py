@@ -250,11 +250,11 @@ ENUM_AUDIO_BACKEND_TYPE = EnumType(
     name="audio_backend_type",
     c_type="audio_backend_type_t",
     variants=[
-        ("AUDIO_BACKEND_TYPE_CORE_AUDIO", "CoreAudio"),
-        ("AUDIO_BACKEND_TYPE_ALSA", "Alsa"),
-        ("AUDIO_BACKEND_TYPE_PIPEWIRE", "PipeWire"),
-        ("AUDIO_BACKEND_TYPE_WASAPI", "Wasapi"),
-        ("AUDIO_BACKEND_TYPE_ASIO", "Asio"),
+        ("AUDIO_BACKEND_TYPE_CORE_AUDIO", "CoreAudio", [], "ENABLE_COREAUDIO"),
+        ("AUDIO_BACKEND_TYPE_ALSA", "Alsa", [], "ENABLE_ALSA"),
+        ("AUDIO_BACKEND_TYPE_PIPEWIRE", "PipeWire", [], "ENABLE_PIPEWIRE"),
+        ("AUDIO_BACKEND_TYPE_WASAPI", "Wasapi", [], "ENABLE_WASAPI"),
+        ("AUDIO_BACKEND_TYPE_ASIO", "Asio", [], "ENABLE_ASIO"),
         ("AUDIO_BACKEND_TYPE_FILE", "File", ["RawFile", "WavFile"]),
         ("AUDIO_BACKEND_TYPE_STDIN_OUT", "Stdin", ["Stdout"]),
         ("AUDIO_BACKEND_TYPE_GENERATOR", "SignalGenerator"),
@@ -301,7 +301,8 @@ ENUM_COREAUDIO_SAMPLE_FORMAT = EnumType(
         ("COREAUDIO_SAMPLE_FORMAT_S32", "S32"),
         ("COREAUDIO_SAMPLE_FORMAT_F32", "F32"),
     ],
-    invalid_val="COREAUDIO_SAMPLE_FORMAT_INVALID"
+    invalid_val="COREAUDIO_SAMPLE_FORMAT_INVALID",
+    guard="ENABLE_COREAUDIO"
 )
 
 ENUM_ALSA_SAMPLE_FORMAT = EnumType(
@@ -320,7 +321,8 @@ ENUM_ALSA_SAMPLE_FORMAT = EnumType(
         ("ALSA_SAMPLE_FORMAT_DSD_U32_LE", "DSD_U32_LE"),
         ("ALSA_SAMPLE_FORMAT_DSD_U32_BE", "DSD_U32_BE"),
     ],
-    invalid_val="ALSA_SAMPLE_FORMAT_INVALID"
+    invalid_val="ALSA_SAMPLE_FORMAT_INVALID",
+    guard="ENABLE_ALSA"
 )
 
 ENUM_WASAPI_SAMPLE_FORMAT = EnumType(
@@ -332,7 +334,8 @@ ENUM_WASAPI_SAMPLE_FORMAT = EnumType(
         ("WASAPI_SAMPLE_FORMAT_S32", "S32"),
         ("WASAPI_SAMPLE_FORMAT_F32", "F32"),
     ],
-    invalid_val="WASAPI_SAMPLE_FORMAT_INVALID"
+    invalid_val="WASAPI_SAMPLE_FORMAT_INVALID",
+    guard="ENABLE_WASAPI"
 )
 
 ENUM_ASIO_SAMPLE_FORMAT = EnumType(
@@ -347,7 +350,8 @@ ENUM_ASIO_SAMPLE_FORMAT = EnumType(
         ("ASIO_SAMPLE_FORMAT_F64_LE", "F64_LE"),
         ("ASIO_SAMPLE_FORMAT_DSD_INT8", "DSD_INT8"),
     ],
-    invalid_val="ASIO_SAMPLE_FORMAT_INVALID"
+    invalid_val="ASIO_SAMPLE_FORMAT_INVALID",
+    guard="ENABLE_ASIO"
 )
 
 ENUM_BINARY_SAMPLE_FORMAT = EnumType(
@@ -355,19 +359,12 @@ ENUM_BINARY_SAMPLE_FORMAT = EnumType(
     c_type="binary_sample_format_t",
     variants=[
         ("BINARY_SAMPLE_FORMAT_S16_LE", "S16_LE"),
-        ("BINARY_SAMPLE_FORMAT_S16_BE", "S16_BE"),
         ("BINARY_SAMPLE_FORMAT_S24_3_LE", "S24_3_LE"),
-        ("BINARY_SAMPLE_FORMAT_S24_3_BE", "S24_3_BE"),
         ("BINARY_SAMPLE_FORMAT_S24_4_RJ_LE", "S24_4_RJ_LE"),
-        ("BINARY_SAMPLE_FORMAT_S24_4_RJ_BE", "S24_4_RJ_BE"),
         ("BINARY_SAMPLE_FORMAT_S24_4_LJ_LE", "S24_4_LJ_LE"),
-        ("BINARY_SAMPLE_FORMAT_S24_4_LJ_BE", "S24_4_LJ_BE"),
         ("BINARY_SAMPLE_FORMAT_S32_LE", "S32_LE"),
-        ("BINARY_SAMPLE_FORMAT_S32_BE", "S32_BE"),
         ("BINARY_SAMPLE_FORMAT_F32_LE", "F32_LE"),
-        ("BINARY_SAMPLE_FORMAT_F32_BE", "F32_BE"),
         ("BINARY_SAMPLE_FORMAT_F64_LE", "F64_LE"),
-        ("BINARY_SAMPLE_FORMAT_F64_BE", "F64_BE"),
         ("BINARY_SAMPLE_FORMAT_DSD_U8", "DSD_U8"),
         ("BINARY_SAMPLE_FORMAT_DSD_U16_LE", "DSD_U16_LE"),
         ("BINARY_SAMPLE_FORMAT_DSD_U16_BE", "DSD_U16_BE"),
@@ -909,7 +906,8 @@ STRUCT_COREAUDIO_CAPTURE = StructType(
         Field("format", ENUM_COREAUDIO_SAMPLE_FORMAT, has_flag=True),
         Field("loopback", TYPE_BOOL, has_flag=True, default=False),
     ],
-    allowed_extra_keys=CAPTURE_EXTRA_KEYS
+    allowed_extra_keys=CAPTURE_EXTRA_KEYS,
+    guard="ENABLE_COREAUDIO"
 )
 
 STRUCT_COREAUDIO_PLAYBACK = StructType(
@@ -922,7 +920,8 @@ STRUCT_COREAUDIO_PLAYBACK = StructType(
         Field("exclusive", TYPE_BOOL, has_flag=True, default=False),
         Field("target_level", TYPE_INT, has_flag=True),
     ],
-    allowed_extra_keys=PLAYBACK_EXTRA_KEYS
+    allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
+    guard="ENABLE_COREAUDIO"
 )
 
 STRUCT_ALSA_CAPTURE = StructType(
@@ -937,7 +936,8 @@ STRUCT_ALSA_CAPTURE = StructType(
         Field("link_mute_control", StringType(256), has_flag=True),
         Field("threaded", TYPE_BOOL, has_flag=True, default=True),
     ],
-    allowed_extra_keys=CAPTURE_EXTRA_KEYS
+    allowed_extra_keys=CAPTURE_EXTRA_KEYS,
+    guard="ENABLE_ALSA"
 )
 
 STRUCT_ALSA_PLAYBACK = StructType(
@@ -950,7 +950,8 @@ STRUCT_ALSA_PLAYBACK = StructType(
         Field("target_level", TYPE_INT, has_flag=True),
         Field("threaded", TYPE_BOOL, has_flag=True, default=True),
     ],
-    allowed_extra_keys=PLAYBACK_EXTRA_KEYS
+    allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
+    guard="ENABLE_ALSA"
 )
 
 STRUCT_PIPEWIRE_CAPTURE = StructType(
@@ -965,7 +966,8 @@ STRUCT_PIPEWIRE_CAPTURE = StructType(
         Field("autoconnect_to", StringType(256), has_flag=True),
         Field("loopback", TYPE_BOOL, has_flag=True, default=False),
     ],
-    allowed_extra_keys=CAPTURE_EXTRA_KEYS
+    allowed_extra_keys=CAPTURE_EXTRA_KEYS,
+    guard="ENABLE_PIPEWIRE"
 )
 
 STRUCT_PIPEWIRE_PLAYBACK = StructType(
@@ -980,7 +982,8 @@ STRUCT_PIPEWIRE_PLAYBACK = StructType(
         Field("autoconnect_to", StringType(256), has_flag=True),
         Field("target_level", TYPE_INT, has_flag=True),
     ],
-    allowed_extra_keys=PLAYBACK_EXTRA_KEYS
+    allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
+    guard="ENABLE_PIPEWIRE"
 )
 
 STRUCT_STDIN_CAPTURE = StructType(
@@ -1018,7 +1021,8 @@ STRUCT_WASAPI_CAPTURE = StructType(
         Field("loopback", TYPE_BOOL, has_flag=True, default=False),
         Field("polling", TYPE_BOOL, has_flag=True, default=False),
     ],
-    allowed_extra_keys=CAPTURE_EXTRA_KEYS
+    allowed_extra_keys=CAPTURE_EXTRA_KEYS,
+    guard="ENABLE_WASAPI"
 )
 
 STRUCT_WASAPI_PLAYBACK = StructType(
@@ -1032,7 +1036,8 @@ STRUCT_WASAPI_PLAYBACK = StructType(
         Field("polling", TYPE_BOOL, has_flag=True, default=False),
         Field("target_level", TYPE_INT, has_flag=True),
     ],
-    allowed_extra_keys=PLAYBACK_EXTRA_KEYS
+    allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
+    guard="ENABLE_WASAPI"
 )
 
 STRUCT_ASIO_CAPTURE = StructType(
@@ -1043,7 +1048,8 @@ STRUCT_ASIO_CAPTURE = StructType(
         Field("device", StringType(256), has_flag=True),
         Field("format", ENUM_ASIO_SAMPLE_FORMAT, has_flag=True),
     ],
-    allowed_extra_keys=CAPTURE_EXTRA_KEYS
+    allowed_extra_keys=CAPTURE_EXTRA_KEYS,
+    guard="ENABLE_ASIO"
 )
 
 STRUCT_ASIO_PLAYBACK = StructType(
@@ -1054,7 +1060,8 @@ STRUCT_ASIO_PLAYBACK = StructType(
         Field("device", StringType(256), has_flag=True),
         Field("format", ENUM_ASIO_SAMPLE_FORMAT, has_flag=True),
     ],
-    allowed_extra_keys=PLAYBACK_EXTRA_KEYS
+    allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
+    guard="ENABLE_ASIO"
 )
 
 STRUCT_WAV_FILE_CAPTURE = StructType(

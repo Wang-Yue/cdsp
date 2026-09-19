@@ -1,7 +1,8 @@
-// Errors raised by AudioResampler implementations during construction
-// and the per-chunk process(...) call.
-
 #include "resampler/resampler_error.h"
+
+#include <assert.h>
+
+#include "utils/cdsp_macros.h"
 
 /// Returns a description string for the given resampler error.
 const char *resampler_error_description(resampler_error_t err) {
@@ -18,7 +19,7 @@ const char *resampler_error_description(resampler_error_t err) {
     return "Resampler invalid parameter";
   case RESAMPLER_ERR_INITIALIZATION_FAILED:
     return "Resampler initialization failed";
-  default:
-    return "Unknown resampler error";
   }
+  CDSP_UNREACHABLE();
+  return "Unknown resampler error";
 }

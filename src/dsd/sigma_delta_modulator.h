@@ -75,8 +75,7 @@ sdm_step_direct(int order, float *s, float *d, const float *a, const float *g,
                 float x, float *prev_y) {
   float y = *prev_y;
   bool bit;
-  switch (order) {
-  case 6: {
+  if (order == 6) {
     d[0] = s[0] - g[0] * s[1] + x - y;
     float v = x + a[0] * d[0];
     d[1] = s[1] + s[0] - g[1] * s[2];
@@ -90,9 +89,7 @@ sdm_step_direct(int order, float *s, float *d, const float *a, const float *g,
     d[5] = s[5] + s[4];
     v += a[5] * d[5];
     bit = (v >= 0.0f);
-    break;
-  }
-  case 4: {
+  } else if (order == 4) {
     d[0] = s[0] - g[0] * s[1] + x - y;
     float v = x + a[0] * d[0];
     d[1] = s[1] + s[0] - g[1] * s[2];
@@ -102,9 +99,7 @@ sdm_step_direct(int order, float *s, float *d, const float *a, const float *g,
     d[3] = s[3] + s[2];
     v += a[3] * d[3];
     bit = (v >= 0.0f);
-    break;
-  }
-  case 5: {
+  } else if (order == 5) {
     d[0] = s[0] - g[0] * s[1] + x - y;
     float v = x + a[0] * d[0];
     d[1] = s[1] + s[0] - g[1] * s[2];
@@ -116,9 +111,7 @@ sdm_step_direct(int order, float *s, float *d, const float *a, const float *g,
     d[4] = s[4] + s[3];
     v += a[4] * d[4];
     bit = (v >= 0.0f);
-    break;
-  }
-  case 7: {
+  } else if (order == 7) {
     d[0] = s[0] - g[0] * s[1] + x - y;
     float v = x + a[0] * d[0];
     d[1] = s[1] + s[0] - g[1] * s[2];
@@ -134,9 +127,7 @@ sdm_step_direct(int order, float *s, float *d, const float *a, const float *g,
     d[6] = s[6] + s[5];
     v += a[6] * d[6];
     bit = (v >= 0.0f);
-    break;
-  }
-  case 8: {
+  } else if (order == 8) {
     d[0] = s[0] - g[0] * s[1] + x - y;
     float v = x + a[0] * d[0];
     d[1] = s[1] + s[0] - g[1] * s[2];
@@ -154,9 +145,7 @@ sdm_step_direct(int order, float *s, float *d, const float *a, const float *g,
     d[7] = s[7] + s[6];
     v += a[7] * d[7];
     bit = (v >= 0.0f);
-    break;
-  }
-  default: {
+  } else {
     d[0] = s[0] - g[0] * s[1] + x - y;
     float v = x + a[0] * d[0];
     int i = 1;
@@ -168,8 +157,6 @@ sdm_step_direct(int order, float *s, float *d, const float *a, const float *g,
     d[i] = s[i] + s[i - 1];
     v += a[i] * d[i];
     bit = (v >= 0.0f);
-    break;
-  }
   }
   *prev_y = bit ? 1.0f : -1.0f;
   return bit;

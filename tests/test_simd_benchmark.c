@@ -308,7 +308,7 @@ static void benchmark_op_at_size(bench_op_id_t op_id, size_t size_idx) {
       case OP_FLT_VDBCON:
         dsp_ops_float_vdbcon(fa1, ref_f, fa_out_c, count);
         break;
-      default:
+      case OP_COUNT:
         break;
       }
     }
@@ -405,7 +405,7 @@ static void benchmark_op_at_size(bench_op_id_t op_id, size_t size_idx) {
         case OP_FLT_VDBCON:
           vDSP_vdbcon(fa1, 1, &ref_f, fa_out_lib, 1, count, 1);
           break;
-        default:
+        case OP_COUNT:
           break;
         }
       }
@@ -466,7 +466,16 @@ static void benchmark_op_at_size(bench_op_id_t op_id, size_t size_idx) {
         case OP_FLT_SCALAR_MUL:
           cblas_sscal((int)count, scalar_f, fa_out_lib, 1);
           break;
-        default:
+        case OP_DBL_MUL:
+        case OP_DBL_CLIP:
+        case OP_DBL_COMPLEX_MUL:
+        case OP_DBL_TO_FLT:
+        case OP_FLT_MUL:
+        case OP_FLT_HANN:
+        case OP_FLT_MAX:
+        case OP_FLT_ZVABS:
+        case OP_FLT_VDBCON:
+        case OP_COUNT:
           break;
         }
       }

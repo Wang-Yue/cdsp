@@ -1,5 +1,6 @@
 #include "filters/filter.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -45,9 +46,11 @@ static const filter_vtable_t *filter_vtable_from_type(filter_type_t type) {
     return &g_loudness_vtable;
   case FILTER_TYPE_VOLUME:
     return &g_volume_vtable;
-  default:
+  case FILTER_TYPE_INVALID:
     return NULL;
   }
+  CDSP_UNREACHABLE();
+  return NULL;
 }
 
 static filter_instance_type_t
@@ -76,8 +79,9 @@ filter_instance_type_from_config(filter_type_t type) {
   case FILTER_TYPE_VOLUME:
     return FILTER_INSTANCE_VOLUME;
   case FILTER_TYPE_INVALID:
-    break;
+    return FILTER_INSTANCE_BIQUAD;
   }
+  CDSP_UNREACHABLE();
   return FILTER_INSTANCE_BIQUAD;
 }
 
@@ -159,9 +163,9 @@ static const char *filter_instance_type_to_string(filter_instance_type_t type) {
     return "Loudness";
   case FILTER_INSTANCE_VOLUME:
     return "Volume";
-  default:
-    return "Unknown";
   }
+  CDSP_UNREACHABLE();
+  return "Unknown";
 }
 
 void filter_transfer_state(filter_t *dest, const filter_t *src) {

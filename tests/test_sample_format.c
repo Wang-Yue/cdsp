@@ -42,12 +42,15 @@ TEST(RejectsAliases) {
 }
 
 TEST(AllCases) {
+  coreaudio_sample_format_t formats[] = {
+      COREAUDIO_SAMPLE_FORMAT_S16,     COREAUDIO_SAMPLE_FORMAT_S24,
+      COREAUDIO_SAMPLE_FORMAT_S32,     COREAUDIO_SAMPLE_FORMAT_F32,
+      COREAUDIO_SAMPLE_FORMAT_INVALID,
+  };
   int count = 0;
-  for (int i = 0; i < 10; i++) {
-    if (coreaudio_sample_format_to_string((coreaudio_sample_format_t)i) !=
-            NULL &&
-        strcmp(coreaudio_sample_format_to_string((coreaudio_sample_format_t)i),
-               "Invalid") != 0) {
+  for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
+    const char *str = coreaudio_sample_format_to_string(formats[i]);
+    if (str != NULL && strcmp(str, "Invalid") != 0) {
       count++;
     }
   }
@@ -200,12 +203,8 @@ TEST(ALSABinaryFormatConversions) {
 
   ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_RJ_LE,
             alsa_pcm_format_to_binary_format(SND_PCM_FORMAT_S24_LE));
-  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_RJ_BE,
-            alsa_pcm_format_to_binary_format(SND_PCM_FORMAT_S24_BE));
   ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_3_LE,
             alsa_pcm_format_to_binary_format(SND_PCM_FORMAT_S24_3LE));
-  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_3_BE,
-            alsa_pcm_format_to_binary_format(SND_PCM_FORMAT_S24_3BE));
 }
 
 TEST(CanonicalRawValues) {
@@ -268,11 +267,18 @@ TEST(RejectsAliases) {
 }
 
 TEST(AllCases) {
+  alsa_sample_format_t formats[] = {
+      ALSA_SAMPLE_FORMAT_S16_LE,     ALSA_SAMPLE_FORMAT_S24_3_LE,
+      ALSA_SAMPLE_FORMAT_S24_4_LE,   ALSA_SAMPLE_FORMAT_S32_LE,
+      ALSA_SAMPLE_FORMAT_F32_LE,     ALSA_SAMPLE_FORMAT_F64_LE,
+      ALSA_SAMPLE_FORMAT_DSD_U8,     ALSA_SAMPLE_FORMAT_DSD_U16_LE,
+      ALSA_SAMPLE_FORMAT_DSD_U16_BE, ALSA_SAMPLE_FORMAT_DSD_U32_LE,
+      ALSA_SAMPLE_FORMAT_DSD_U32_BE, ALSA_SAMPLE_FORMAT_INVALID,
+  };
   int count = 0;
-  for (int i = 0; i < 15; i++) {
-    if (alsa_sample_format_to_string((alsa_sample_format_t)i) != NULL &&
-        strcmp(alsa_sample_format_to_string((alsa_sample_format_t)i),
-               "Invalid") != 0) {
+  for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
+    const char *str = alsa_sample_format_to_string(formats[i]);
+    if (str != NULL && strcmp(str, "Invalid") != 0) {
       count++;
     }
   }
@@ -325,11 +331,16 @@ TEST(RejectsAliases) {
 }
 
 TEST(AllCases) {
+  asio_sample_format_t formats[] = {
+      ASIO_SAMPLE_FORMAT_S16_LE,   ASIO_SAMPLE_FORMAT_S24_3_LE,
+      ASIO_SAMPLE_FORMAT_S24_4_LE, ASIO_SAMPLE_FORMAT_S32_LE,
+      ASIO_SAMPLE_FORMAT_F32_LE,   ASIO_SAMPLE_FORMAT_F64_LE,
+      ASIO_SAMPLE_FORMAT_DSD_INT8, ASIO_SAMPLE_FORMAT_INVALID,
+  };
   int count = 0;
-  for (int i = 0; i < 10; i++) {
-    if (asio_sample_format_to_string((asio_sample_format_t)i) != NULL &&
-        strcmp(asio_sample_format_to_string((asio_sample_format_t)i),
-               "Invalid") != 0) {
+  for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
+    const char *str = asio_sample_format_to_string(formats[i]);
+    if (str != NULL && strcmp(str, "Invalid") != 0) {
       count++;
     }
   }

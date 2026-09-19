@@ -865,10 +865,8 @@ static void dispatch_pass(biquad_filter_t ***cascades, double **waveforms,
     biquad_canon_kernel_##C##_8(cascades, waveforms, channel_of, members,      \
                                 start, n_frames);                              \
     break;                                                                     \
-  default:                                                                     \
-    assert(0 && "depth is clamped to MAX_DEPTH");                              \
-    break;                                                                     \
-  }
+  }                                                                            \
+  assert((depth >= 1 && depth <= 8) && "depth is clamped to MAX_DEPTH");
 
   switch (members_count) {
   case 1:
@@ -883,10 +881,9 @@ static void dispatch_pass(biquad_filter_t ***cascades, double **waveforms,
   case 4:
     DISPATCH_DEPTH(4);
     break;
-  default:
-    assert(0 && "members_count is clamped to MAX_CHANNELS");
-    break;
   }
+  assert((members_count >= 1 && members_count <= 4) &&
+         "members_count is clamped to MAX_CHANNELS");
 #undef DISPATCH_DEPTH
 }
 

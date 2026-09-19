@@ -223,9 +223,6 @@ static void internal_pub_log_adapter(log_level_t level, const char *label,
     case LOG_LEVEL_TRACE:
       lvl_str = "TRACE";
       break;
-    default:
-      lvl_str = "UNKNOWN";
-      break;
     }
     g_pub_log_cb(lvl_str, label ? label : "", message ? message : "",
                  g_pub_log_ctx);

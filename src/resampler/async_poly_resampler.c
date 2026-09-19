@@ -12,6 +12,7 @@
 
 #include "resampler/async_poly_resampler.h"
 
+#include <assert.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -59,9 +60,11 @@ static inline int poly_interpolation_nbr_points(poly_interpolation_t interp) {
     return 6;
   case POLY_INTERPOLATION_SEPTIC:
     return 8;
-  default:
+  case POLY_INTERPOLATION_LAST:
     return 4;
   }
+  CDSP_UNREACHABLE();
+  return 4;
 }
 
 typedef struct async_poly_resampler async_poly_resampler_t;
@@ -480,10 +483,12 @@ async_poly_resampler_process(void *impl, const audio_chunk_t *input,
   case POLY_INTERPOLATION_SEPTIC:
     run_septic(resampler, output_frames, output);
     break;
-  default:
+  case POLY_INTERPOLATION_LAST:
     run_cubic(resampler, output_frames, output);
     break;
   }
+  assert(resampler->interpolation < POLY_INTERPOLATION_LAST &&
+         "Invalid poly_interpolation_t");
 
   resampler->last_index = final_idx - (double)resampler->needed_input_size;
   resampler->resample_ratio = resampler->target_ratio;

@@ -633,9 +633,8 @@ format_string_for_asbd_local(const AudioStreamBasicDescription *asbd) {
       return "S24";
     case 32:
       return "S32";
-    default:
-      return "";
     }
+    return "";
   }
   return "";
 }
@@ -701,6 +700,8 @@ binary_sample_format_t core_audio_device_asbd_to_binary_format(
   bool is_float = (asbd->mFormatFlags & kAudioFormatFlagIsFloat) != 0;
   bool is_signed = (asbd->mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0;
   bool is_be = (asbd->mFormatFlags & kAudioFormatFlagIsBigEndian) != 0;
+  if (is_be)
+    return BINARY_SAMPLE_FORMAT_INVALID;
   uint32_t bits = asbd->mBitsPerChannel;
   uint32_t bytes_per_channel =
       (asbd->mChannelsPerFrame > 0)
@@ -709,29 +710,26 @@ binary_sample_format_t core_audio_device_asbd_to_binary_format(
 
   if (is_float) {
     if (bits == 32)
-      return is_be ? BINARY_SAMPLE_FORMAT_F32_BE : BINARY_SAMPLE_FORMAT_F32_LE;
+      return BINARY_SAMPLE_FORMAT_F32_LE;
     if (bits == 64)
-      return is_be ? BINARY_SAMPLE_FORMAT_F64_BE : BINARY_SAMPLE_FORMAT_F64_LE;
+      return BINARY_SAMPLE_FORMAT_F64_LE;
   } else if (is_signed) {
     if (bits == 16) {
-      return is_be ? BINARY_SAMPLE_FORMAT_S16_BE : BINARY_SAMPLE_FORMAT_S16_LE;
+      return BINARY_SAMPLE_FORMAT_S16_LE;
     } else if (bits == 24) {
       if (bytes_per_channel == 3) {
-        return is_be ? BINARY_SAMPLE_FORMAT_S24_3_BE
-                     : BINARY_SAMPLE_FORMAT_S24_3_LE;
+        return BINARY_SAMPLE_FORMAT_S24_3_LE;
       } else if (bytes_per_channel == 4) {
         bool is_aligned_high =
             (asbd->mFormatFlags & kAudioFormatFlagIsAlignedHigh) != 0;
         if (is_aligned_high) {
-          return is_be ? BINARY_SAMPLE_FORMAT_S24_4_LJ_BE
-                       : BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
+          return BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
         } else {
-          return is_be ? BINARY_SAMPLE_FORMAT_S24_4_RJ_BE
-                       : BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
+          return BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
         }
       }
     } else if (bits == 32) {
-      return is_be ? BINARY_SAMPLE_FORMAT_S32_BE : BINARY_SAMPLE_FORMAT_S32_LE;
+      return BINARY_SAMPLE_FORMAT_S32_LE;
     }
   }
   return BINARY_SAMPLE_FORMAT_INVALID;

@@ -1,6 +1,7 @@
 #include "backend/alsa_device.h"
 
 #if defined(ENABLE_ALSA)
+#include <assert.h>
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
@@ -26,6 +27,8 @@ size_t alsa_format_sample_size(snd_pcm_format_t format) {
 
 snd_pcm_format_t alsa_sample_format_to_pcm_format(alsa_sample_format_t fmt) {
   switch (fmt) {
+  case ALSA_SAMPLE_FORMAT_INVALID:
+    return SND_PCM_FORMAT_UNKNOWN;
   case ALSA_SAMPLE_FORMAT_S16_LE:
     return SND_PCM_FORMAT_S16_LE;
   case ALSA_SAMPLE_FORMAT_S24_3_LE:
@@ -48,37 +51,25 @@ snd_pcm_format_t alsa_sample_format_to_pcm_format(alsa_sample_format_t fmt) {
     return SND_PCM_FORMAT_DSD_U32_LE;
   case ALSA_SAMPLE_FORMAT_DSD_U32_BE:
     return SND_PCM_FORMAT_DSD_U32_BE;
-  default:
-    return SND_PCM_FORMAT_UNKNOWN;
   }
+  CDSP_UNREACHABLE();
+  return SND_PCM_FORMAT_UNKNOWN;
 }
 
 binary_sample_format_t alsa_pcm_format_to_binary_format(snd_pcm_format_t fmt) {
   switch (fmt) {
   case SND_PCM_FORMAT_S16_LE:
     return BINARY_SAMPLE_FORMAT_S16_LE;
-  case SND_PCM_FORMAT_S16_BE:
-    return BINARY_SAMPLE_FORMAT_S16_BE;
   case SND_PCM_FORMAT_S24_3LE:
     return BINARY_SAMPLE_FORMAT_S24_3_LE;
-  case SND_PCM_FORMAT_S24_3BE:
-    return BINARY_SAMPLE_FORMAT_S24_3_BE;
   case SND_PCM_FORMAT_S24_LE:
     return BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
-  case SND_PCM_FORMAT_S24_BE:
-    return BINARY_SAMPLE_FORMAT_S24_4_RJ_BE;
   case SND_PCM_FORMAT_S32_LE:
     return BINARY_SAMPLE_FORMAT_S32_LE;
-  case SND_PCM_FORMAT_S32_BE:
-    return BINARY_SAMPLE_FORMAT_S32_BE;
   case SND_PCM_FORMAT_FLOAT_LE:
     return BINARY_SAMPLE_FORMAT_F32_LE;
-  case SND_PCM_FORMAT_FLOAT_BE:
-    return BINARY_SAMPLE_FORMAT_F32_BE;
   case SND_PCM_FORMAT_FLOAT64_LE:
     return BINARY_SAMPLE_FORMAT_F64_LE;
-  case SND_PCM_FORMAT_FLOAT64_BE:
-    return BINARY_SAMPLE_FORMAT_F64_BE;
   case SND_PCM_FORMAT_DSD_U8:
     return BINARY_SAMPLE_FORMAT_DSD_U8;
   case SND_PCM_FORMAT_DSD_U16_LE:
@@ -89,9 +80,8 @@ binary_sample_format_t alsa_pcm_format_to_binary_format(snd_pcm_format_t fmt) {
     return BINARY_SAMPLE_FORMAT_DSD_U32_LE;
   case SND_PCM_FORMAT_DSD_U32_BE:
     return BINARY_SAMPLE_FORMAT_DSD_U32_BE;
-  default:
-    return BINARY_SAMPLE_FORMAT_INVALID;
   }
+  return BINARY_SAMPLE_FORMAT_INVALID;
 }
 
 int alsa_apply_format(snd_pcm_t *pcm, snd_pcm_hw_params_t *hwp, bool has_format,
@@ -400,9 +390,11 @@ const char *alsa_state_desc(snd_pcm_state_t state) {
     return "SND_PCM_STATE_SUSPENDED, Hardware is suspended";
   case SND_PCM_STATE_DISCONNECTED:
     return "SND_PCM_STATE_DISCONNECTED, Hardware is disconnected";
-  default:
-    return "Unknown ALSA PCM state";
+  case SND_PCM_STATE_LAST:
+    return "SND_PCM_STATE_LAST";
   }
+  CDSP_UNREACHABLE();
+  return "Unknown ALSA PCM state";
 }
 
 int alsa_device_open_and_configure_hw(

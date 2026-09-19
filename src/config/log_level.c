@@ -1,5 +1,6 @@
 #include "config/log_level.h"
 
+#include <assert.h>
 #include <strings.h>
 
 /// Compact byte encoding for `Atomic<UInt8>` storage in
@@ -18,9 +19,9 @@ uint8_t log_level_to_raw_byte(log_level_t level) {
     return 4;
   case LOG_LEVEL_TRACE:
     return 5;
-  default:
-    return 3;
   }
+  assert(0 && "Invalid log_level");
+  return 3;
 }
 
 log_level_t log_level_from_raw_byte(uint8_t raw_byte) {
@@ -37,9 +38,9 @@ log_level_t log_level_from_raw_byte(uint8_t raw_byte) {
     return LOG_LEVEL_DEBUG;
   case 5:
     return LOG_LEVEL_TRACE;
-  default:
-    return LOG_LEVEL_INFO;
   }
+  assert(0 && "Invalid raw_byte");
+  return LOG_LEVEL_INFO;
 }
 
 const char *log_level_to_string(log_level_t level) {
@@ -56,9 +57,9 @@ const char *log_level_to_string(log_level_t level) {
     return "Debug";
   case LOG_LEVEL_TRACE:
     return "Trace";
-  default:
-    return "Info";
   }
+  assert(0 && "Invalid log_level");
+  return "Info";
 }
 
 log_level_t log_level_from_string(const char *str) {

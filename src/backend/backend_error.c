@@ -2,8 +2,11 @@
 
 #include "backend/backend_error.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "utils/cdsp_macros.h"
 
 /// Initialize a backend error structure with error type and message.
 void backend_error_init(backend_error_t *err, backend_error_type_t type,
@@ -28,32 +31,31 @@ const char *backend_error_description(const backend_error_t *err, char *out_buf,
   case BACKEND_ERROR_NONE:
     snprintf(out_buf, buf_len, "%s",
              err->message[0] ? err->message : "No error");
-    break;
+    return out_buf;
   case BACKEND_ERROR_DEVICE_NOT_FOUND:
     snprintf(out_buf, buf_len, "Device not found: %s", err->message);
-    break;
+    return out_buf;
   case BACKEND_ERROR_DEVICE_BUSY:
     snprintf(out_buf, buf_len, "Device busy: %s", err->message);
-    break;
+    return out_buf;
   case BACKEND_ERROR_INITIALIZATION_FAILED:
     snprintf(out_buf, buf_len, "Initialization failed: %s", err->message);
-    break;
+    return out_buf;
   case BACKEND_ERROR_READ_ERROR:
     snprintf(out_buf, buf_len, "Read error: %s", err->message);
-    break;
+    return out_buf;
   case BACKEND_ERROR_WRITE_ERROR:
     snprintf(out_buf, buf_len, "Write error: %s", err->message);
-    break;
+    return out_buf;
   case BACKEND_ERROR_READ_EOF:
     snprintf(out_buf, buf_len, "End of file/stream: %s", err->message);
-    break;
+    return out_buf;
   case BACKEND_ERROR_INVALID_CHANNELS:
     snprintf(out_buf, buf_len, "Invalid channels count: %s", err->message);
-    break;
-  default:
-    snprintf(out_buf, buf_len, "Unknown error: %s", err->message);
-    break;
+    return out_buf;
   }
+  CDSP_UNREACHABLE();
+  snprintf(out_buf, buf_len, "Unknown error: %s", err->message);
   return out_buf;
 }
 

@@ -131,9 +131,8 @@ format_string_for_asbd(const AudioStreamBasicDescription *asbd) {
       return "S24";
     case 32:
       return "S32";
-    default:
-      return "";
     }
+    return "";
   }
   return "";
 }

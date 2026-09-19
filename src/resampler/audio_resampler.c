@@ -16,6 +16,7 @@
 
 static const logger_t g_logger = {"dsp.resampler"};
 
+#include <assert.h>
 #include <stdlib.h>
 
 static const resampler_vtable_t *
@@ -29,9 +30,9 @@ resampler_vtable_from_type(resampler_type_t type) {
     return &g_async_poly_resampler_vtable;
   case RESAMPLER_TYPE_SLIP:
     return &g_slip_resampler_vtable;
-  default:
-    return NULL;
   }
+  CDSP_UNREACHABLE();
+  return NULL;
 }
 
 static resampler_impl_type_t
@@ -46,6 +47,7 @@ resampler_impl_type_from_config(resampler_type_t type) {
   case RESAMPLER_TYPE_SLIP:
     return RESAMPLER_IMPL_SLIP;
   }
+  CDSP_UNREACHABLE();
   return RESAMPLER_IMPL_SYNCHRONOUS;
 }
 

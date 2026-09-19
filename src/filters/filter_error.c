@@ -1,7 +1,10 @@
 #include "filters/filter_error.h"
 
+#include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
+
+#include "utils/cdsp_macros.h"
 
 const char *filter_error_to_string(filter_error_code_t code) {
   switch (code) {
@@ -17,9 +20,9 @@ const char *filter_error_to_string(filter_error_code_t code) {
     return "File I/O error";
   case FILTER_ERR_INVALID_STATE:
     return "Invalid state";
-  default:
-    return "Unknown filter error";
   }
+  CDSP_UNREACHABLE();
+  return "Unknown filter error";
 }
 
 void filter_error_set(filter_error_t *err, filter_error_code_t code,

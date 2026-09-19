@@ -299,41 +299,42 @@ static void diffeq_filter_process(void *instance, mutable_waveform_t waveform,
   if (!filter || !waveform || count == 0)
     return;
 
-  switch (filter->order) {
-  case 0: {
-    double b0 = filter->b[0];
-    for (size_t i = 0; i < count; i++) {
-      waveform[i] *= b0;
-    }
-    break;
-  }
-  case 1:
-    diffeq_process_block_1(filter, waveform, count);
-    break;
-  case 2:
-    diffeq_process_block_2(filter, waveform, count);
-    break;
-  case 3:
-    diffeq_process_block_3(filter, waveform, count);
-    break;
-  case 4:
-    diffeq_process_block_4(filter, waveform, count);
-    break;
-  case 5:
-    diffeq_process_block_5(filter, waveform, count);
-    break;
-  case 6:
-    diffeq_process_block_6(filter, waveform, count);
-    break;
-  case 7:
-    diffeq_process_block_7(filter, waveform, count);
-    break;
-  case 8:
-    diffeq_process_block_8(filter, waveform, count);
-    break;
-  default:
+  if (filter->order > 8) {
     diffeq_process_block_any(filter, waveform, count);
-    break;
+  } else {
+    switch (filter->order) {
+    case 0: {
+      double b0 = filter->b[0];
+      for (size_t i = 0; i < count; i++) {
+        waveform[i] *= b0;
+      }
+      break;
+    }
+    case 1:
+      diffeq_process_block_1(filter, waveform, count);
+      break;
+    case 2:
+      diffeq_process_block_2(filter, waveform, count);
+      break;
+    case 3:
+      diffeq_process_block_3(filter, waveform, count);
+      break;
+    case 4:
+      diffeq_process_block_4(filter, waveform, count);
+      break;
+    case 5:
+      diffeq_process_block_5(filter, waveform, count);
+      break;
+    case 6:
+      diffeq_process_block_6(filter, waveform, count);
+      break;
+    case 7:
+      diffeq_process_block_7(filter, waveform, count);
+      break;
+    case 8:
+      diffeq_process_block_8(filter, waveform, count);
+      break;
+    }
   }
 
   // Flush subnormals

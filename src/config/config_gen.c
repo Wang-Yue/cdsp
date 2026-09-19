@@ -12,6 +12,7 @@
 /* clang-format off */
 
 #include "config/config_gen.h"
+#include <assert.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,8 +26,9 @@ const char *time_unit_to_string(time_unit_t val) {
     case TIME_UNIT_S: return "s";
     case TIME_UNIT_SAMPLES: return "samples";
     case TIME_UNIT_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 time_unit_t time_unit_from_string(const char *str) {
@@ -46,8 +48,9 @@ const char *delay_unit_to_string(delay_unit_t val) {
     case DELAY_UNIT_SAMPLES: return "samples";
     case DELAY_UNIT_MM: return "mm";
     case DELAY_UNIT_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 delay_unit_t delay_unit_from_string(const char *str) {
@@ -64,8 +67,9 @@ const char *gain_scale_to_string(gain_scale_t val) {
   switch (val) {
     case GAIN_SCALE_DB: return "dB";
     case GAIN_SCALE_LINEAR: return "linear";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 gain_scale_t gain_scale_from_string(const char *str) {
@@ -83,8 +87,9 @@ const char *fader_to_string(fader_t val) {
     case FADER_AUX3: return "Aux3";
     case FADER_AUX4: return "Aux4";
     case FADER_NONE: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 fader_t fader_from_string(const char *str) {
@@ -103,9 +108,11 @@ const char *volume_fader_to_string(fader_t val) {
     case FADER_AUX2: return "Aux2";
     case FADER_AUX3: return "Aux3";
     case FADER_AUX4: return "Aux4";
+    case FADER_MAIN: return "Invalid";
     case FADER_NONE: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 fader_t volume_fader_from_string(const char *str) {
@@ -131,8 +138,9 @@ const char *filter_type_to_string(filter_type_t val) {
     case FILTER_TYPE_CLIPPER: return "Clipper";
     case FILTER_TYPE_LOOKAHEAD_LIMITER: return "LookaheadLimiter";
     case FILTER_TYPE_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 filter_type_t filter_type_from_string(const char *str) {
@@ -169,8 +177,9 @@ const char *biquad_type_to_string(biquad_type_t val) {
     case BIQUAD_TYPE_ALLPASS_FO: return "AllpassFO";
     case BIQUAD_TYPE_GENERAL_NOTCH: return "GeneralNotch";
     case BIQUAD_TYPE_LINKWITZ_TRANSFORM: return "LinkwitzTransform";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 biquad_type_t biquad_type_from_string(const char *str) {
@@ -199,8 +208,9 @@ const char *steepness_type_to_string(steepness_type_t val) {
     case STEEPNESS_TYPE_Q: return "q";
     case STEEPNESS_TYPE_BANDWIDTH: return "bandwidth";
     case STEEPNESS_TYPE_SLOPE: return "slope";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 steepness_type_t steepness_type_from_string(const char *str) {
@@ -217,8 +227,9 @@ const char *conv_type_to_string(conv_type_t val) {
     case CONV_TYPE_WAV: return "Wav";
     case CONV_TYPE_VALUES: return "Values";
     case CONV_TYPE_DUMMY: return "Dummy";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 conv_type_t conv_type_from_string(const char *str) {
@@ -239,8 +250,9 @@ const char *biquad_combo_type_to_string(biquad_combo_type_t val) {
     case BIQUAD_COMBO_TYPE_TILT: return "Tilt";
     case BIQUAD_COMBO_TYPE_N_POINT_PEQ: return "NPointPeq";
     case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER: return "GraphicEqualizer";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 biquad_combo_type_t biquad_combo_type_from_string(const char *str) {
@@ -279,8 +291,9 @@ const char *dither_type_to_string(dither_type_t val) {
     case DITHER_TYPE_SHIBATA_LOW_96: return "ShibataLow96";
     case DITHER_TYPE_SHIBATA_192: return "Shibata192";
     case DITHER_TYPE_SHIBATA_LOW_192: return "ShibataLow192";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 dither_type_t dither_type_from_string(const char *str) {
@@ -316,8 +329,9 @@ const char *resampler_type_to_string(resampler_type_t val) {
     case RESAMPLER_TYPE_ASYNC_SINC: return "AsyncSinc";
     case RESAMPLER_TYPE_ASYNC_POLY: return "AsyncPoly";
     case RESAMPLER_TYPE_SLIP: return "Slip";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 resampler_type_t resampler_type_from_string(const char *str) {
@@ -335,8 +349,9 @@ const char *resampler_profile_to_string(resampler_profile_t val) {
     case RESAMPLER_PROFILE_FAST: return "Fast";
     case RESAMPLER_PROFILE_BALANCED: return "Balanced";
     case RESAMPLER_PROFILE_ACCURATE: return "Accurate";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 resampler_profile_t resampler_profile_from_string(const char *str) {
@@ -352,8 +367,9 @@ const char *fixed_async_to_string(fixed_async_t val) {
   switch (val) {
     case FIXED_ASYNC_INPUT: return "input";
     case FIXED_ASYNC_OUTPUT: return "output";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 fixed_async_t fixed_async_from_string(const char *str) {
@@ -370,8 +386,9 @@ const char *processor_type_to_string(processor_type_t val) {
     case PROCESSOR_TYPE_RACE: return "RACE";
     case PROCESSOR_TYPE_LOOKAHEAD_LIMITER: return "LookaheadLimiter";
     case PROCESSOR_TYPE_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 processor_type_t processor_type_from_string(const char *str) {
@@ -388,8 +405,9 @@ const char *pipeline_step_type_to_string(pipeline_step_type_t val) {
     case PIPELINE_STEP_TYPE_FILTER: return "Filter";
     case PIPELINE_STEP_TYPE_MIXER: return "Mixer";
     case PIPELINE_STEP_TYPE_PROCESSOR: return "Processor";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 pipeline_step_type_t pipeline_step_type_from_string(const char *str) {
@@ -402,26 +420,47 @@ pipeline_step_type_t pipeline_step_type_from_string(const char *str) {
 
 const char *audio_backend_type_to_string(audio_backend_type_t val) {
   switch (val) {
+    #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO: return "CoreAudio";
+    #endif
+    #if defined(ENABLE_ALSA)
     case AUDIO_BACKEND_TYPE_ALSA: return "Alsa";
+    #endif
+    #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE: return "PipeWire";
+    #endif
+    #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI: return "Wasapi";
+    #endif
+    #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO: return "Asio";
+    #endif
     case AUDIO_BACKEND_TYPE_FILE: return "File";
     case AUDIO_BACKEND_TYPE_STDIN_OUT: return "Stdin";
     case AUDIO_BACKEND_TYPE_GENERATOR: return "SignalGenerator";
     case AUDIO_BACKEND_TYPE_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 audio_backend_type_t audio_backend_type_from_string(const char *str) {
   if (!str) return AUDIO_BACKEND_TYPE_INVALID;
+  #if defined(ENABLE_COREAUDIO)
   if (strcmp(str, "CoreAudio") == 0) return AUDIO_BACKEND_TYPE_CORE_AUDIO;
+  #endif
+  #if defined(ENABLE_ALSA)
   if (strcmp(str, "Alsa") == 0) return AUDIO_BACKEND_TYPE_ALSA;
+  #endif
+  #if defined(ENABLE_PIPEWIRE)
   if (strcmp(str, "PipeWire") == 0) return AUDIO_BACKEND_TYPE_PIPEWIRE;
+  #endif
+  #if defined(ENABLE_WASAPI)
   if (strcmp(str, "Wasapi") == 0) return AUDIO_BACKEND_TYPE_WASAPI;
+  #endif
+  #if defined(ENABLE_ASIO)
   if (strcmp(str, "Asio") == 0) return AUDIO_BACKEND_TYPE_ASIO;
+  #endif
   if (strcmp(str, "File") == 0) return AUDIO_BACKEND_TYPE_FILE;
   if (strcmp(str, "RawFile") == 0) return AUDIO_BACKEND_TYPE_FILE;
   if (strcmp(str, "WavFile") == 0) return AUDIO_BACKEND_TYPE_FILE;
@@ -437,8 +476,9 @@ const char *signal_type_to_string(signal_type_t val) {
     case SIGNAL_TYPE_SQUARE: return "Square";
     case SIGNAL_TYPE_WHITE_NOISE: return "WhiteNoise";
     case SIGNAL_TYPE_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 signal_type_t signal_type_from_string(const char *str) {
@@ -462,8 +502,9 @@ const char *sdm_filter_to_string(sdm_filter_t val) {
     case SDM_FILTER_CLANS8: return "clans-8";
     case SDM_FILTER_SDM8: return "sdm-8";
     case SDM_FILTER_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 sdm_filter_t sdm_filter_from_string(const char *str) {
@@ -481,6 +522,7 @@ sdm_filter_t sdm_filter_from_string(const char *str) {
   return SDM_FILTER_INVALID;
 }
 
+#if defined(ENABLE_COREAUDIO)
 const char *coreaudio_sample_format_to_string(coreaudio_sample_format_t val) {
   switch (val) {
     case COREAUDIO_SAMPLE_FORMAT_S16: return "S16";
@@ -488,8 +530,9 @@ const char *coreaudio_sample_format_to_string(coreaudio_sample_format_t val) {
     case COREAUDIO_SAMPLE_FORMAT_S32: return "S32";
     case COREAUDIO_SAMPLE_FORMAT_F32: return "F32";
     case COREAUDIO_SAMPLE_FORMAT_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 coreaudio_sample_format_t coreaudio_sample_format_from_string(const char *str) {
@@ -500,7 +543,9 @@ coreaudio_sample_format_t coreaudio_sample_format_from_string(const char *str) {
   if (strcmp(str, "F32") == 0) return COREAUDIO_SAMPLE_FORMAT_F32;
   return COREAUDIO_SAMPLE_FORMAT_INVALID;
 }
+#endif /* ENABLE_COREAUDIO */
 
+#if defined(ENABLE_ALSA)
 const char *alsa_sample_format_to_string(alsa_sample_format_t val) {
   switch (val) {
     case ALSA_SAMPLE_FORMAT_S16_LE: return "S16_LE";
@@ -515,8 +560,9 @@ const char *alsa_sample_format_to_string(alsa_sample_format_t val) {
     case ALSA_SAMPLE_FORMAT_DSD_U32_LE: return "DSD_U32_LE";
     case ALSA_SAMPLE_FORMAT_DSD_U32_BE: return "DSD_U32_BE";
     case ALSA_SAMPLE_FORMAT_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 alsa_sample_format_t alsa_sample_format_from_string(const char *str) {
@@ -534,7 +580,9 @@ alsa_sample_format_t alsa_sample_format_from_string(const char *str) {
   if (strcmp(str, "DSD_U32_BE") == 0) return ALSA_SAMPLE_FORMAT_DSD_U32_BE;
   return ALSA_SAMPLE_FORMAT_INVALID;
 }
+#endif /* ENABLE_ALSA */
 
+#if defined(ENABLE_WASAPI)
 const char *wasapi_sample_format_to_string(wasapi_sample_format_t val) {
   switch (val) {
     case WASAPI_SAMPLE_FORMAT_S16: return "S16";
@@ -542,8 +590,9 @@ const char *wasapi_sample_format_to_string(wasapi_sample_format_t val) {
     case WASAPI_SAMPLE_FORMAT_S32: return "S32";
     case WASAPI_SAMPLE_FORMAT_F32: return "F32";
     case WASAPI_SAMPLE_FORMAT_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 wasapi_sample_format_t wasapi_sample_format_from_string(const char *str) {
@@ -554,7 +603,9 @@ wasapi_sample_format_t wasapi_sample_format_from_string(const char *str) {
   if (strcmp(str, "F32") == 0) return WASAPI_SAMPLE_FORMAT_F32;
   return WASAPI_SAMPLE_FORMAT_INVALID;
 }
+#endif /* ENABLE_WASAPI */
 
+#if defined(ENABLE_ASIO)
 const char *asio_sample_format_to_string(asio_sample_format_t val) {
   switch (val) {
     case ASIO_SAMPLE_FORMAT_S16_LE: return "S16_LE";
@@ -565,8 +616,9 @@ const char *asio_sample_format_to_string(asio_sample_format_t val) {
     case ASIO_SAMPLE_FORMAT_F64_LE: return "F64_LE";
     case ASIO_SAMPLE_FORMAT_DSD_INT8: return "DSD_INT8";
     case ASIO_SAMPLE_FORMAT_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 asio_sample_format_t asio_sample_format_from_string(const char *str) {
@@ -580,23 +632,17 @@ asio_sample_format_t asio_sample_format_from_string(const char *str) {
   if (strcmp(str, "DSD_INT8") == 0) return ASIO_SAMPLE_FORMAT_DSD_INT8;
   return ASIO_SAMPLE_FORMAT_INVALID;
 }
+#endif /* ENABLE_ASIO */
 
 const char *binary_sample_format_to_string(binary_sample_format_t val) {
   switch (val) {
     case BINARY_SAMPLE_FORMAT_S16_LE: return "S16_LE";
-    case BINARY_SAMPLE_FORMAT_S16_BE: return "S16_BE";
     case BINARY_SAMPLE_FORMAT_S24_3_LE: return "S24_3_LE";
-    case BINARY_SAMPLE_FORMAT_S24_3_BE: return "S24_3_BE";
     case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE: return "S24_4_RJ_LE";
-    case BINARY_SAMPLE_FORMAT_S24_4_RJ_BE: return "S24_4_RJ_BE";
     case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE: return "S24_4_LJ_LE";
-    case BINARY_SAMPLE_FORMAT_S24_4_LJ_BE: return "S24_4_LJ_BE";
     case BINARY_SAMPLE_FORMAT_S32_LE: return "S32_LE";
-    case BINARY_SAMPLE_FORMAT_S32_BE: return "S32_BE";
     case BINARY_SAMPLE_FORMAT_F32_LE: return "F32_LE";
-    case BINARY_SAMPLE_FORMAT_F32_BE: return "F32_BE";
     case BINARY_SAMPLE_FORMAT_F64_LE: return "F64_LE";
-    case BINARY_SAMPLE_FORMAT_F64_BE: return "F64_BE";
     case BINARY_SAMPLE_FORMAT_DSD_U8: return "DSD_U8";
     case BINARY_SAMPLE_FORMAT_DSD_U16_LE: return "DSD_U16_LE";
     case BINARY_SAMPLE_FORMAT_DSD_U16_BE: return "DSD_U16_BE";
@@ -604,26 +650,20 @@ const char *binary_sample_format_to_string(binary_sample_format_t val) {
     case BINARY_SAMPLE_FORMAT_DSD_U32_BE: return "DSD_U32_BE";
     case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED: return "DSD_U32_REVERSED";
     case BINARY_SAMPLE_FORMAT_INVALID: return "Invalid";
-    default: return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Invalid";
 }
 
 binary_sample_format_t binary_sample_format_from_string(const char *str) {
   if (!str) return BINARY_SAMPLE_FORMAT_INVALID;
   if (strcmp(str, "S16_LE") == 0) return BINARY_SAMPLE_FORMAT_S16_LE;
-  if (strcmp(str, "S16_BE") == 0) return BINARY_SAMPLE_FORMAT_S16_BE;
   if (strcmp(str, "S24_3_LE") == 0) return BINARY_SAMPLE_FORMAT_S24_3_LE;
-  if (strcmp(str, "S24_3_BE") == 0) return BINARY_SAMPLE_FORMAT_S24_3_BE;
   if (strcmp(str, "S24_4_RJ_LE") == 0) return BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
-  if (strcmp(str, "S24_4_RJ_BE") == 0) return BINARY_SAMPLE_FORMAT_S24_4_RJ_BE;
   if (strcmp(str, "S24_4_LJ_LE") == 0) return BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
-  if (strcmp(str, "S24_4_LJ_BE") == 0) return BINARY_SAMPLE_FORMAT_S24_4_LJ_BE;
   if (strcmp(str, "S32_LE") == 0) return BINARY_SAMPLE_FORMAT_S32_LE;
-  if (strcmp(str, "S32_BE") == 0) return BINARY_SAMPLE_FORMAT_S32_BE;
   if (strcmp(str, "F32_LE") == 0) return BINARY_SAMPLE_FORMAT_F32_LE;
-  if (strcmp(str, "F32_BE") == 0) return BINARY_SAMPLE_FORMAT_F32_BE;
   if (strcmp(str, "F64_LE") == 0) return BINARY_SAMPLE_FORMAT_F64_LE;
-  if (strcmp(str, "F64_BE") == 0) return BINARY_SAMPLE_FORMAT_F64_BE;
   if (strcmp(str, "DSD_U8") == 0) return BINARY_SAMPLE_FORMAT_DSD_U8;
   if (strcmp(str, "DSD_U16_LE") == 0) return BINARY_SAMPLE_FORMAT_DSD_U16_LE;
   if (strcmp(str, "DSD_U16_BE") == 0) return BINARY_SAMPLE_FORMAT_DSD_U16_BE;
@@ -705,7 +745,6 @@ int parse_resampler_config(const cJSON *obj, const char *ctx, resampler_config_t
         if (parse_json_double_strict(obj, "f_cutoff", ctx ? ctx : "resampler_config", &out->f_cutoff, &out->has_f_cutoff, err) != 0) return -1;
         break;
       }
-    default: break;
   }
   return 0;
 }
@@ -754,6 +793,7 @@ bool resampler_config_equal(const resampler_config_t *a, const resampler_config_
   }
   return true;
 }
+
 
 void mixer_source_init(mixer_source_t *out) {
   if (!out) return;
@@ -828,6 +868,7 @@ bool mixer_source_equal(const mixer_source_t *a, const mixer_source_t *b) {
   if (a->scale != b->scale) return false;
   return true;
 }
+
 
 void mixer_mapping_init(mixer_mapping_t *out) {
   if (!out) return;
@@ -910,6 +951,7 @@ bool mixer_mapping_equal(const mixer_mapping_t *a, const mixer_mapping_t *b) {
   if (a->mute != b->mute) return false;
   return true;
 }
+
 
 void mixer_config_init(mixer_config_t *out) {
   if (!out) return;
@@ -1037,6 +1079,7 @@ bool mixer_config_equal(const mixer_config_t *a, const mixer_config_t *b) {
   }
   return true;
 }
+
 
 void compressor_config_init(compressor_config_t *out) {
   if (!out) return;
@@ -1187,6 +1230,7 @@ bool compressor_config_equal(const compressor_config_t *a, const compressor_conf
   return true;
 }
 
+
 void noise_gate_config_init(noise_gate_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(noise_gate_config_t));
@@ -1310,6 +1354,7 @@ bool noise_gate_config_equal(const noise_gate_config_t *a, const noise_gate_conf
   return true;
 }
 
+
 void race_config_init(race_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(race_config_t));
@@ -1390,6 +1435,7 @@ bool race_config_equal(const race_config_t *a, const race_config_t *b) {
   if (a->attenuation != b->attenuation) return false;
   return true;
 }
+
 
 void lookahead_limiter_processor_config_init(lookahead_limiter_processor_config_t *out) {
   if (!out) return;
@@ -1515,6 +1561,7 @@ bool lookahead_limiter_processor_config_equal(const lookahead_limiter_processor_
   return true;
 }
 
+
 void processor_config_init(processor_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(processor_config_t));
@@ -1527,7 +1574,7 @@ void free_processor_config_contents(processor_config_t *in) {
     case PROCESSOR_TYPE_NOISE_GATE: free_noise_gate_config_contents(&in->parameters.noise_gate); break;
     case PROCESSOR_TYPE_RACE: free_race_config_contents(&in->parameters.race); break;
     case PROCESSOR_TYPE_LOOKAHEAD_LIMITER: free_lookahead_limiter_processor_config_contents(&in->parameters.lookahead_limiter); break;
-    default: break;
+    case PROCESSOR_TYPE_INVALID: break;
   }
 }
 
@@ -1575,7 +1622,7 @@ int parse_processor_config(const cJSON *obj, const char *ctx, processor_config_t
     case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
       if (parse_lookahead_limiter_processor_config(params_obj, ctx ? ctx : "lookahead_limiter_processor_config", &out->parameters.lookahead_limiter, err) != 0) return -1;
       break;
-    default: break;
+    case PROCESSOR_TYPE_INVALID: break;
   }
   return 0;
 }
@@ -1598,7 +1645,7 @@ cJSON *serialize_processor_config(const processor_config_t *in) {
     case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
       cJSON_AddItemToObject(obj, "parameters", serialize_lookahead_limiter_processor_config(&in->parameters.lookahead_limiter));
       break;
-    default: break;
+    case PROCESSOR_TYPE_INVALID: break;
   }
   return obj;
 }
@@ -1616,9 +1663,12 @@ bool processor_config_equal(const processor_config_t *a, const processor_config_
       return race_config_equal(&a->parameters.race, &b->parameters.race);
     case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
       return lookahead_limiter_processor_config_equal(&a->parameters.lookahead_limiter, &b->parameters.lookahead_limiter);
-    default: return true;
+    case PROCESSOR_TYPE_INVALID: return false;
   }
+  CDSP_UNREACHABLE();
+  return false;
 }
+
 
 void gain_config_init(gain_config_t *out) {
   if (!out) return;
@@ -1687,6 +1737,7 @@ bool gain_config_equal(const gain_config_t *a, const gain_config_t *b) {
   if (a->mute != b->mute) return false;
   return true;
 }
+
 
 void volume_config_init(volume_config_t *out) {
   if (!out) return;
@@ -1761,6 +1812,7 @@ bool volume_config_equal(const volume_config_t *a, const volume_config_t *b) {
   }
   return true;
 }
+
 
 void loudness_config_init(loudness_config_t *out) {
   if (!out) return;
@@ -1859,6 +1911,7 @@ bool loudness_config_equal(const loudness_config_t *a, const loudness_config_t *
   if (a->fader != b->fader) return false;
   return true;
 }
+
 
 void biquad_config_init(biquad_config_t *out) {
   if (!out) return;
@@ -2019,7 +2072,6 @@ int parse_biquad_config(const cJSON *obj, const char *ctx, biquad_config_t *out,
         if (parse_json_double_strict(obj, "q_target", ctx ? ctx : "biquad_config", &out->q_target, &out->has_q_target, err) != 0) return -1;
         break;
       }
-    default: break;
   }
   return 0;
 }
@@ -2128,6 +2180,7 @@ bool biquad_config_equal(const biquad_config_t *a, const biquad_config_t *b) {
   return true;
 }
 
+
 void conv_config_init(conv_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(conv_config_t));
@@ -2196,7 +2249,6 @@ int parse_conv_config(const cJSON *obj, const char *ctx, conv_config_t *out, con
         if (parse_json_int_strict(obj, "length", ctx ? ctx : "conv_config", &out->length, &out->has_length, err) != 0) return -1;
         break;
       }
-    default: break;
   }
   return 0;
 }
@@ -2263,6 +2315,7 @@ bool conv_config_equal(const conv_config_t *a, const conv_config_t *b) {
   return true;
 }
 
+
 void delay_config_init(delay_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(delay_config_t));
@@ -2325,6 +2378,7 @@ bool delay_config_equal(const delay_config_t *a, const delay_config_t *b) {
   return true;
 }
 
+
 void peq_band_init(peq_band_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(peq_band_t));
@@ -2371,6 +2425,7 @@ bool peq_band_equal(const peq_band_t *a, const peq_band_t *b) {
   if (a->gain != b->gain) return false;
   return true;
 }
+
 
 void biquad_combo_config_init(biquad_combo_config_t *out) {
   if (!out) return;
@@ -2459,7 +2514,6 @@ int parse_biquad_combo_config(const cJSON *obj, const char *ctx, biquad_combo_co
         }
         break;
       }
-    default: break;
   }
   return 0;
 }
@@ -2537,6 +2591,7 @@ bool biquad_combo_config_equal(const biquad_combo_config_t *a, const biquad_comb
   return true;
 }
 
+
 void diff_eq_config_init(diff_eq_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(diff_eq_config_t));
@@ -2612,6 +2667,7 @@ bool diff_eq_config_equal(const diff_eq_config_t *a, const diff_eq_config_t *b) 
   }
   return true;
 }
+
 
 void dither_config_init(dither_config_t *out) {
   if (!out) return;
@@ -2699,6 +2755,7 @@ bool dither_config_equal(const dither_config_t *a, const dither_config_t *b) {
   return true;
 }
 
+
 void clipper_config_init(clipper_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(clipper_config_t));
@@ -2743,6 +2800,7 @@ bool clipper_config_equal(const clipper_config_t *a, const clipper_config_t *b) 
   if (a->soft_clip != b->soft_clip) return false;
   return true;
 }
+
 
 void lookahead_limiter_filter_config_init(lookahead_limiter_filter_config_t *out) {
   if (!out) return;
@@ -2823,6 +2881,7 @@ bool lookahead_limiter_filter_config_equal(const lookahead_limiter_filter_config
   return true;
 }
 
+
 void filter_config_init(filter_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(filter_config_t));
@@ -2842,7 +2901,7 @@ void free_filter_config_contents(filter_config_t *in) {
     case FILTER_TYPE_DITHER: free_dither_config_contents(&in->parameters.dither); break;
     case FILTER_TYPE_CLIPPER: free_clipper_config_contents(&in->parameters.clipper); break;
     case FILTER_TYPE_LOOKAHEAD_LIMITER: free_lookahead_limiter_filter_config_contents(&in->parameters.lookahead_limiter); break;
-    default: break;
+    case FILTER_TYPE_INVALID: break;
   }
 }
 
@@ -2918,7 +2977,7 @@ int parse_filter_config(const cJSON *obj, const char *ctx, filter_config_t *out,
     case FILTER_TYPE_LOOKAHEAD_LIMITER:
       if (parse_lookahead_limiter_filter_config(params_obj, ctx ? ctx : "lookahead_limiter_filter_config", &out->parameters.lookahead_limiter, err) != 0) return -1;
       break;
-    default: break;
+    case FILTER_TYPE_INVALID: break;
   }
   return 0;
 }
@@ -2962,7 +3021,7 @@ cJSON *serialize_filter_config(const filter_config_t *in) {
     case FILTER_TYPE_LOOKAHEAD_LIMITER:
       cJSON_AddItemToObject(obj, "parameters", serialize_lookahead_limiter_filter_config(&in->parameters.lookahead_limiter));
       break;
-    default: break;
+    case FILTER_TYPE_INVALID: break;
   }
   return obj;
 }
@@ -2994,9 +3053,12 @@ bool filter_config_equal(const filter_config_t *a, const filter_config_t *b) {
       return clipper_config_equal(&a->parameters.clipper, &b->parameters.clipper);
     case FILTER_TYPE_LOOKAHEAD_LIMITER:
       return lookahead_limiter_filter_config_equal(&a->parameters.lookahead_limiter, &b->parameters.lookahead_limiter);
-    default: return true;
+    case FILTER_TYPE_INVALID: return false;
   }
+  CDSP_UNREACHABLE();
+  return false;
 }
+
 
 void pipeline_step_config_init(pipeline_step_config_t *out) {
   if (!out) return;
@@ -3078,7 +3140,6 @@ int parse_pipeline_step_config(const cJSON *obj, const char *ctx, pipeline_step_
         if (parse_json_bool_strict(obj, "bypassed", ctx ? ctx : "pipeline_step_config", &out->bypassed, NULL, err) != 0) return -1;
         break;
       }
-    default: break;
   }
   return 0;
 }
@@ -3147,6 +3208,7 @@ bool pipeline_step_config_equal(const pipeline_step_config_t *a, const pipeline_
   return true;
 }
 
+
 void generator_signal_init(generator_signal_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(generator_signal_t));
@@ -3212,6 +3274,8 @@ bool generator_signal_equal(const generator_signal_t *a, const generator_signal_
   return true;
 }
 
+
+#if defined(ENABLE_COREAUDIO)
 void coreaudio_capture_config_init(coreaudio_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(coreaudio_capture_config_t));
@@ -3285,6 +3349,9 @@ bool coreaudio_capture_config_equal(const coreaudio_capture_config_t *a, const c
   return true;
 }
 
+#endif /* ENABLE_COREAUDIO */
+
+#if defined(ENABLE_COREAUDIO)
 void coreaudio_playback_config_init(coreaudio_playback_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(coreaudio_playback_config_t));
@@ -3364,6 +3431,9 @@ bool coreaudio_playback_config_equal(const coreaudio_playback_config_t *a, const
   return true;
 }
 
+#endif /* ENABLE_COREAUDIO */
+
+#if defined(ENABLE_ALSA)
 void alsa_capture_config_init(alsa_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(alsa_capture_config_t));
@@ -3460,6 +3530,9 @@ bool alsa_capture_config_equal(const alsa_capture_config_t *a, const alsa_captur
   return true;
 }
 
+#endif /* ENABLE_ALSA */
+
+#if defined(ENABLE_ALSA)
 void alsa_playback_config_init(alsa_playback_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(alsa_playback_config_t));
@@ -3543,6 +3616,9 @@ bool alsa_playback_config_equal(const alsa_playback_config_t *a, const alsa_play
   return true;
 }
 
+#endif /* ENABLE_ALSA */
+
+#if defined(ENABLE_PIPEWIRE)
 void pipewire_capture_config_init(pipewire_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(pipewire_capture_config_t));
@@ -3621,6 +3697,9 @@ bool pipewire_capture_config_equal(const pipewire_capture_config_t *a, const pip
   return true;
 }
 
+#endif /* ENABLE_PIPEWIRE */
+
+#if defined(ENABLE_PIPEWIRE)
 void pipewire_playback_config_init(pipewire_playback_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(pipewire_playback_config_t));
@@ -3698,6 +3777,8 @@ bool pipewire_playback_config_equal(const pipewire_playback_config_t *a, const p
   return true;
 }
 
+#endif /* ENABLE_PIPEWIRE */
+
 void stdin_capture_config_init(stdin_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(stdin_capture_config_t));
@@ -3724,19 +3805,12 @@ int parse_stdin_capture_config(const cJSON *obj, const char *ctx, stdin_capture_
   {
     static const config_enum_variant_t format_binary_sample_format_variants[] = {
       {"S16_LE", BINARY_SAMPLE_FORMAT_S16_LE},
-      {"S16_BE", BINARY_SAMPLE_FORMAT_S16_BE},
       {"S24_3_LE", BINARY_SAMPLE_FORMAT_S24_3_LE},
-      {"S24_3_BE", BINARY_SAMPLE_FORMAT_S24_3_BE},
       {"S24_4_RJ_LE", BINARY_SAMPLE_FORMAT_S24_4_RJ_LE},
-      {"S24_4_RJ_BE", BINARY_SAMPLE_FORMAT_S24_4_RJ_BE},
       {"S24_4_LJ_LE", BINARY_SAMPLE_FORMAT_S24_4_LJ_LE},
-      {"S24_4_LJ_BE", BINARY_SAMPLE_FORMAT_S24_4_LJ_BE},
       {"S32_LE", BINARY_SAMPLE_FORMAT_S32_LE},
-      {"S32_BE", BINARY_SAMPLE_FORMAT_S32_BE},
       {"F32_LE", BINARY_SAMPLE_FORMAT_F32_LE},
-      {"F32_BE", BINARY_SAMPLE_FORMAT_F32_BE},
       {"F64_LE", BINARY_SAMPLE_FORMAT_F64_LE},
-      {"F64_BE", BINARY_SAMPLE_FORMAT_F64_BE},
       {"DSD_U8", BINARY_SAMPLE_FORMAT_DSD_U8},
       {"DSD_U16_LE", BINARY_SAMPLE_FORMAT_DSD_U16_LE},
       {"DSD_U16_BE", BINARY_SAMPLE_FORMAT_DSD_U16_BE},
@@ -3787,6 +3861,7 @@ bool stdin_capture_config_equal(const stdin_capture_config_t *a, const stdin_cap
   return true;
 }
 
+
 void stdout_playback_config_init(stdout_playback_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(stdout_playback_config_t));
@@ -3814,19 +3889,12 @@ int parse_stdout_playback_config(const cJSON *obj, const char *ctx, stdout_playb
   {
     static const config_enum_variant_t format_binary_sample_format_variants[] = {
       {"S16_LE", BINARY_SAMPLE_FORMAT_S16_LE},
-      {"S16_BE", BINARY_SAMPLE_FORMAT_S16_BE},
       {"S24_3_LE", BINARY_SAMPLE_FORMAT_S24_3_LE},
-      {"S24_3_BE", BINARY_SAMPLE_FORMAT_S24_3_BE},
       {"S24_4_RJ_LE", BINARY_SAMPLE_FORMAT_S24_4_RJ_LE},
-      {"S24_4_RJ_BE", BINARY_SAMPLE_FORMAT_S24_4_RJ_BE},
       {"S24_4_LJ_LE", BINARY_SAMPLE_FORMAT_S24_4_LJ_LE},
-      {"S24_4_LJ_BE", BINARY_SAMPLE_FORMAT_S24_4_LJ_BE},
       {"S32_LE", BINARY_SAMPLE_FORMAT_S32_LE},
-      {"S32_BE", BINARY_SAMPLE_FORMAT_S32_BE},
       {"F32_LE", BINARY_SAMPLE_FORMAT_F32_LE},
-      {"F32_BE", BINARY_SAMPLE_FORMAT_F32_BE},
       {"F64_LE", BINARY_SAMPLE_FORMAT_F64_LE},
-      {"F64_BE", BINARY_SAMPLE_FORMAT_F64_BE},
       {"DSD_U8", BINARY_SAMPLE_FORMAT_DSD_U8},
       {"DSD_U16_LE", BINARY_SAMPLE_FORMAT_DSD_U16_LE},
       {"DSD_U16_BE", BINARY_SAMPLE_FORMAT_DSD_U16_BE},
@@ -3865,6 +3933,8 @@ bool stdout_playback_config_equal(const stdout_playback_config_t *a, const stdou
   return true;
 }
 
+
+#if defined(ENABLE_WASAPI)
 void wasapi_capture_config_init(wasapi_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(wasapi_capture_config_t));
@@ -3952,6 +4022,9 @@ bool wasapi_capture_config_equal(const wasapi_capture_config_t *a, const wasapi_
   return true;
 }
 
+#endif /* ENABLE_WASAPI */
+
+#if defined(ENABLE_WASAPI)
 void wasapi_playback_config_init(wasapi_playback_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(wasapi_playback_config_t));
@@ -4038,6 +4111,9 @@ bool wasapi_playback_config_equal(const wasapi_playback_config_t *a, const wasap
   return true;
 }
 
+#endif /* ENABLE_WASAPI */
+
+#if defined(ENABLE_ASIO)
 void asio_capture_config_init(asio_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(asio_capture_config_t));
@@ -4107,6 +4183,9 @@ bool asio_capture_config_equal(const asio_capture_config_t *a, const asio_captur
   return true;
 }
 
+#endif /* ENABLE_ASIO */
+
+#if defined(ENABLE_ASIO)
 void asio_playback_config_init(asio_playback_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(asio_playback_config_t));
@@ -4176,6 +4255,8 @@ bool asio_playback_config_equal(const asio_playback_config_t *a, const asio_play
   return true;
 }
 
+#endif /* ENABLE_ASIO */
+
 void wav_file_capture_config_init(wav_file_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(wav_file_capture_config_t));
@@ -4236,6 +4317,7 @@ bool wav_file_capture_config_equal(const wav_file_capture_config_t *a, const wav
   return true;
 }
 
+
 void raw_file_capture_config_init(raw_file_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(raw_file_capture_config_t));
@@ -4263,19 +4345,12 @@ int parse_raw_file_capture_config(const cJSON *obj, const char *ctx, raw_file_ca
   {
     static const config_enum_variant_t format_binary_sample_format_variants[] = {
       {"S16_LE", BINARY_SAMPLE_FORMAT_S16_LE},
-      {"S16_BE", BINARY_SAMPLE_FORMAT_S16_BE},
       {"S24_3_LE", BINARY_SAMPLE_FORMAT_S24_3_LE},
-      {"S24_3_BE", BINARY_SAMPLE_FORMAT_S24_3_BE},
       {"S24_4_RJ_LE", BINARY_SAMPLE_FORMAT_S24_4_RJ_LE},
-      {"S24_4_RJ_BE", BINARY_SAMPLE_FORMAT_S24_4_RJ_BE},
       {"S24_4_LJ_LE", BINARY_SAMPLE_FORMAT_S24_4_LJ_LE},
-      {"S24_4_LJ_BE", BINARY_SAMPLE_FORMAT_S24_4_LJ_BE},
       {"S32_LE", BINARY_SAMPLE_FORMAT_S32_LE},
-      {"S32_BE", BINARY_SAMPLE_FORMAT_S32_BE},
       {"F32_LE", BINARY_SAMPLE_FORMAT_F32_LE},
-      {"F32_BE", BINARY_SAMPLE_FORMAT_F32_BE},
       {"F64_LE", BINARY_SAMPLE_FORMAT_F64_LE},
-      {"F64_BE", BINARY_SAMPLE_FORMAT_F64_BE},
       {"DSD_U8", BINARY_SAMPLE_FORMAT_DSD_U8},
       {"DSD_U16_LE", BINARY_SAMPLE_FORMAT_DSD_U16_LE},
       {"DSD_U16_BE", BINARY_SAMPLE_FORMAT_DSD_U16_BE},
@@ -4342,6 +4417,7 @@ bool raw_file_capture_config_equal(const raw_file_capture_config_t *a, const raw
   return true;
 }
 
+
 void raw_file_playback_config_init(raw_file_playback_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(raw_file_playback_config_t));
@@ -4371,19 +4447,12 @@ int parse_raw_file_playback_config(const cJSON *obj, const char *ctx, raw_file_p
   {
     static const config_enum_variant_t format_binary_sample_format_variants[] = {
       {"S16_LE", BINARY_SAMPLE_FORMAT_S16_LE},
-      {"S16_BE", BINARY_SAMPLE_FORMAT_S16_BE},
       {"S24_3_LE", BINARY_SAMPLE_FORMAT_S24_3_LE},
-      {"S24_3_BE", BINARY_SAMPLE_FORMAT_S24_3_BE},
       {"S24_4_RJ_LE", BINARY_SAMPLE_FORMAT_S24_4_RJ_LE},
-      {"S24_4_RJ_BE", BINARY_SAMPLE_FORMAT_S24_4_RJ_BE},
       {"S24_4_LJ_LE", BINARY_SAMPLE_FORMAT_S24_4_LJ_LE},
-      {"S24_4_LJ_BE", BINARY_SAMPLE_FORMAT_S24_4_LJ_BE},
       {"S32_LE", BINARY_SAMPLE_FORMAT_S32_LE},
-      {"S32_BE", BINARY_SAMPLE_FORMAT_S32_BE},
       {"F32_LE", BINARY_SAMPLE_FORMAT_F32_LE},
-      {"F32_BE", BINARY_SAMPLE_FORMAT_F32_BE},
       {"F64_LE", BINARY_SAMPLE_FORMAT_F64_LE},
-      {"F64_BE", BINARY_SAMPLE_FORMAT_F64_BE},
       {"DSD_U8", BINARY_SAMPLE_FORMAT_DSD_U8},
       {"DSD_U16_LE", BINARY_SAMPLE_FORMAT_DSD_U16_LE},
       {"DSD_U16_BE", BINARY_SAMPLE_FORMAT_DSD_U16_BE},
@@ -4444,6 +4513,7 @@ bool raw_file_playback_config_equal(const raw_file_playback_config_t *a, const r
   return true;
 }
 
+
 void generator_capture_config_init(generator_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(generator_capture_config_t));
@@ -4492,6 +4562,7 @@ bool generator_capture_config_equal(const generator_capture_config_t *a, const g
   return true;
 }
 
+
 void capture_device_config_init(capture_device_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(capture_device_config_t));
@@ -4508,16 +4579,26 @@ void free_capture_device_config_contents(capture_device_config_t *in) {
     in->labels_count = 0;
   }
   switch (in->type) {
+    #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO: free_coreaudio_capture_config_contents(&in->cfg.coreaudio); break;
+    #endif
+    #if defined(ENABLE_ALSA)
     case AUDIO_BACKEND_TYPE_ALSA: free_alsa_capture_config_contents(&in->cfg.alsa); break;
+    #endif
+    #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE: free_pipewire_capture_config_contents(&in->cfg.pipewire); break;
+    #endif
     case AUDIO_BACKEND_TYPE_FILE: free_raw_file_capture_config_contents(&in->cfg.raw_file); break;
     case AUDIO_BACKEND_TYPE_STDIN_OUT: free_stdin_capture_config_contents(&in->cfg.stdin_in); break;
     case AUDIO_BACKEND_TYPE_GENERATOR: free_generator_capture_config_contents(&in->cfg.generator); break;
+    #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI: free_wasapi_capture_config_contents(&in->cfg.wasapi); break;
+    #endif
+    #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO: free_asio_capture_config_contents(&in->cfg.asio); break;
+    #endif
     free_wav_file_capture_config_contents(&in->cfg.wav_file);
-    default: break;
+    case AUDIO_BACKEND_TYPE_INVALID: break;
   }
 }
 
@@ -4550,68 +4631,82 @@ int parse_capture_device_config(const cJSON *obj, const char *ctx, capture_devic
   if (!out->has_bypass_dop) { out->bypass_dop = true; }
   if (parse_json_double_strict(obj, "dop_cutoff_hz", ctx ? ctx : "capture_device_config", &out->dop_cutoff_hz, &out->has_dop_cutoff_hz, err) != 0) return -1;
   if (!out->has_dop_cutoff_hz) { out->dop_cutoff_hz = 20000.0; }
+  #if defined(ENABLE_COREAUDIO)
   if (strcmp(type_str, "CoreAudio") == 0) {
     out->type = AUDIO_BACKEND_TYPE_CORE_AUDIO;
     return parse_coreaudio_capture_config(obj, "CoreAudio capture_device_config", &out->cfg.coreaudio, err);
   }
-  else if (strcmp(type_str, "Alsa") == 0) {
+  #endif
+  #if defined(ENABLE_ALSA)
+  if (strcmp(type_str, "Alsa") == 0) {
     out->type = AUDIO_BACKEND_TYPE_ALSA;
     return parse_alsa_capture_config(obj, "Alsa capture_device_config", &out->cfg.alsa, err);
   }
-  else if (strcmp(type_str, "PipeWire") == 0) {
+  #endif
+  #if defined(ENABLE_PIPEWIRE)
+  if (strcmp(type_str, "PipeWire") == 0) {
     out->type = AUDIO_BACKEND_TYPE_PIPEWIRE;
     return parse_pipewire_capture_config(obj, "PipeWire capture_device_config", &out->cfg.pipewire, err);
   }
-  else if (strcmp(type_str, "Stdin") == 0) {
+  #endif
+  if (strcmp(type_str, "Stdin") == 0) {
     out->type = AUDIO_BACKEND_TYPE_STDIN_OUT;
     return parse_stdin_capture_config(obj, "Stdin capture_device_config", &out->cfg.stdin_in, err);
   }
-  else if (strcmp(type_str, "SignalGenerator") == 0) {
+  if (strcmp(type_str, "SignalGenerator") == 0) {
     out->type = AUDIO_BACKEND_TYPE_GENERATOR;
     return parse_generator_capture_config(obj, "SignalGenerator capture_device_config", &out->cfg.generator, err);
   }
-  else if (strcmp(type_str, "Wasapi") == 0) {
+  #if defined(ENABLE_WASAPI)
+  if (strcmp(type_str, "Wasapi") == 0) {
     out->type = AUDIO_BACKEND_TYPE_WASAPI;
     return parse_wasapi_capture_config(obj, "Wasapi capture_device_config", &out->cfg.wasapi, err);
   }
-  else if (strcmp(type_str, "Asio") == 0) {
+  #endif
+  #if defined(ENABLE_ASIO)
+  if (strcmp(type_str, "Asio") == 0) {
     out->type = AUDIO_BACKEND_TYPE_ASIO;
     return parse_asio_capture_config(obj, "Asio capture_device_config", &out->cfg.asio, err);
   }
-  else if (strcmp(type_str, "RawFile") == 0) {
+  #endif
+  if (strcmp(type_str, "RawFile") == 0) {
     out->type = AUDIO_BACKEND_TYPE_FILE;
     out->is_wav = false;
     out->has_is_wav = true;
     return parse_raw_file_capture_config(obj, "RawFile capture_device_config", &out->cfg.raw_file, err);
   }
-  else if (strcmp(type_str, "WavFile") == 0) {
+  if (strcmp(type_str, "WavFile") == 0) {
     out->type = AUDIO_BACKEND_TYPE_FILE;
     out->is_wav = true;
     out->has_is_wav = true;
     return parse_wav_file_capture_config(obj, "WavFile capture_device_config", &out->cfg.wav_file, err);
   }
-  else {
-    config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'Stdin', 'SignalGenerator', 'Wasapi', 'Asio', 'RawFile', 'WavFile'", type_str);
-    return -1;
-  }
+  config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'Stdin', 'SignalGenerator', 'Wasapi', 'Asio', 'RawFile', 'WavFile'", type_str);
+  return -1;
 }
 
 cJSON *serialize_capture_device_config(const capture_device_config_t *in) {
   if (!in) return NULL;
   cJSON *obj = NULL;
   switch (in->type) {
+    #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
       obj = serialize_coreaudio_capture_config(&in->cfg.coreaudio);
       if (obj) cJSON_AddStringToObject(obj, "type", "CoreAudio");
       break;
+    #endif
+    #if defined(ENABLE_ALSA)
     case AUDIO_BACKEND_TYPE_ALSA:
       obj = serialize_alsa_capture_config(&in->cfg.alsa);
       if (obj) cJSON_AddStringToObject(obj, "type", "Alsa");
       break;
+    #endif
+    #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       obj = serialize_pipewire_capture_config(&in->cfg.pipewire);
       if (obj) cJSON_AddStringToObject(obj, "type", "PipeWire");
       break;
+    #endif
     case AUDIO_BACKEND_TYPE_FILE:
       if (in->is_wav) {
         obj = serialize_wav_file_capture_config(&in->cfg.wav_file);
@@ -4629,15 +4724,19 @@ cJSON *serialize_capture_device_config(const capture_device_config_t *in) {
       obj = serialize_generator_capture_config(&in->cfg.generator);
       if (obj) cJSON_AddStringToObject(obj, "type", "SignalGenerator");
       break;
+    #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI:
       obj = serialize_wasapi_capture_config(&in->cfg.wasapi);
       if (obj) cJSON_AddStringToObject(obj, "type", "Wasapi");
       break;
+    #endif
+    #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO:
       obj = serialize_asio_capture_config(&in->cfg.asio);
       if (obj) cJSON_AddStringToObject(obj, "type", "Asio");
       break;
-    default: obj = cJSON_CreateObject(); break;
+    #endif
+    case AUDIO_BACKEND_TYPE_INVALID: break;
   }
   if (!obj) return NULL;
   if (in->has_labels && in->labels) {
@@ -4681,12 +4780,18 @@ bool capture_device_config_equal(const capture_device_config_t *a, const capture
     if (a->dop_cutoff_hz != b->dop_cutoff_hz) return false;
   }
   switch (a->type) {
+    #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
       return coreaudio_capture_config_equal(&a->cfg.coreaudio, &b->cfg.coreaudio);
+    #endif
+    #if defined(ENABLE_ALSA)
     case AUDIO_BACKEND_TYPE_ALSA:
       return alsa_capture_config_equal(&a->cfg.alsa, &b->cfg.alsa);
+    #endif
+    #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       return pipewire_capture_config_equal(&a->cfg.pipewire, &b->cfg.pipewire);
+    #endif
     case AUDIO_BACKEND_TYPE_FILE:
       return a->is_wav ? wav_file_capture_config_equal(&a->cfg.wav_file, &b->cfg.wav_file)
                        : raw_file_capture_config_equal(&a->cfg.raw_file, &b->cfg.raw_file);
@@ -4694,13 +4799,20 @@ bool capture_device_config_equal(const capture_device_config_t *a, const capture
       return stdin_capture_config_equal(&a->cfg.stdin_in, &b->cfg.stdin_in);
     case AUDIO_BACKEND_TYPE_GENERATOR:
       return generator_capture_config_equal(&a->cfg.generator, &b->cfg.generator);
+    #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI:
       return wasapi_capture_config_equal(&a->cfg.wasapi, &b->cfg.wasapi);
+    #endif
+    #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO:
       return asio_capture_config_equal(&a->cfg.asio, &b->cfg.asio);
-    default: return true;
+    #endif
+    case AUDIO_BACKEND_TYPE_INVALID: return false;
   }
+  CDSP_UNREACHABLE();
+  return false;
 }
+
 
 void playback_device_config_init(playback_device_config_t *out) {
   if (!out) return;
@@ -4718,14 +4830,25 @@ void free_playback_device_config_contents(playback_device_config_t *in) {
     in->labels_count = 0;
   }
   switch (in->type) {
+    #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO: free_coreaudio_playback_config_contents(&in->cfg.coreaudio); break;
+    #endif
+    #if defined(ENABLE_ALSA)
     case AUDIO_BACKEND_TYPE_ALSA: free_alsa_playback_config_contents(&in->cfg.alsa); break;
+    #endif
+    #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE: free_pipewire_playback_config_contents(&in->cfg.pipewire); break;
+    #endif
     case AUDIO_BACKEND_TYPE_FILE: free_raw_file_playback_config_contents(&in->cfg.raw_file); break;
     case AUDIO_BACKEND_TYPE_STDIN_OUT: free_stdout_playback_config_contents(&in->cfg.stdout_out); break;
+    #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI: free_wasapi_playback_config_contents(&in->cfg.wasapi); break;
+    #endif
+    #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO: free_asio_playback_config_contents(&in->cfg.asio); break;
-    default: break;
+    #endif
+    case AUDIO_BACKEND_TYPE_GENERATOR: break;
+    case AUDIO_BACKEND_TYPE_INVALID: break;
   }
 }
 
@@ -4777,56 +4900,70 @@ int parse_playback_device_config(const cJSON *obj, const char *ctx, playback_dev
     if (has_enum) out->dsd_encoder_filter = (sdm_filter_t)enum_tmp;
   }
   if (!out->has_dsd_encoder_filter) { out->dsd_encoder_filter = SDM_FILTER_SDM6; }
+  #if defined(ENABLE_COREAUDIO)
   if (strcmp(type_str, "CoreAudio") == 0) {
     out->type = AUDIO_BACKEND_TYPE_CORE_AUDIO;
     return parse_coreaudio_playback_config(obj, "CoreAudio playback_device_config", &out->cfg.coreaudio, err);
   }
-  else if (strcmp(type_str, "Alsa") == 0) {
+  #endif
+  #if defined(ENABLE_ALSA)
+  if (strcmp(type_str, "Alsa") == 0) {
     out->type = AUDIO_BACKEND_TYPE_ALSA;
     return parse_alsa_playback_config(obj, "Alsa playback_device_config", &out->cfg.alsa, err);
   }
-  else if (strcmp(type_str, "PipeWire") == 0) {
+  #endif
+  #if defined(ENABLE_PIPEWIRE)
+  if (strcmp(type_str, "PipeWire") == 0) {
     out->type = AUDIO_BACKEND_TYPE_PIPEWIRE;
     return parse_pipewire_playback_config(obj, "PipeWire playback_device_config", &out->cfg.pipewire, err);
   }
-  else if (strcmp(type_str, "File") == 0) {
+  #endif
+  if (strcmp(type_str, "File") == 0) {
     out->type = AUDIO_BACKEND_TYPE_FILE;
     return parse_raw_file_playback_config(obj, "File playback_device_config", &out->cfg.raw_file, err);
   }
-  else if (strcmp(type_str, "Wasapi") == 0) {
+  #if defined(ENABLE_WASAPI)
+  if (strcmp(type_str, "Wasapi") == 0) {
     out->type = AUDIO_BACKEND_TYPE_WASAPI;
     return parse_wasapi_playback_config(obj, "Wasapi playback_device_config", &out->cfg.wasapi, err);
   }
-  else if (strcmp(type_str, "Asio") == 0) {
+  #endif
+  #if defined(ENABLE_ASIO)
+  if (strcmp(type_str, "Asio") == 0) {
     out->type = AUDIO_BACKEND_TYPE_ASIO;
     return parse_asio_playback_config(obj, "Asio playback_device_config", &out->cfg.asio, err);
   }
-  else if (strcmp(type_str, "File") == 0) {
+  #endif
+  if (strcmp(type_str, "File") == 0) {
     out->type = AUDIO_BACKEND_TYPE_FILE;
     return parse_raw_file_playback_config(obj, "File playback_device_config", &out->cfg.raw_file, err);
   }
-  else {
-    config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'File', 'Wasapi', 'Asio'", type_str);
-    return -1;
-  }
+  config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'File', 'Wasapi', 'Asio'", type_str);
+  return -1;
 }
 
 cJSON *serialize_playback_device_config(const playback_device_config_t *in) {
   if (!in) return NULL;
   cJSON *obj = NULL;
   switch (in->type) {
+    #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
       obj = serialize_coreaudio_playback_config(&in->cfg.coreaudio);
       if (obj) cJSON_AddStringToObject(obj, "type", "CoreAudio");
       break;
+    #endif
+    #if defined(ENABLE_ALSA)
     case AUDIO_BACKEND_TYPE_ALSA:
       obj = serialize_alsa_playback_config(&in->cfg.alsa);
       if (obj) cJSON_AddStringToObject(obj, "type", "Alsa");
       break;
+    #endif
+    #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       obj = serialize_pipewire_playback_config(&in->cfg.pipewire);
       if (obj) cJSON_AddStringToObject(obj, "type", "PipeWire");
       break;
+    #endif
     case AUDIO_BACKEND_TYPE_FILE:
       obj = serialize_raw_file_playback_config(&in->cfg.raw_file);
       if (obj) cJSON_AddStringToObject(obj, "type", "File");
@@ -4835,15 +4972,20 @@ cJSON *serialize_playback_device_config(const playback_device_config_t *in) {
       obj = serialize_stdout_playback_config(&in->cfg.stdout_out);
       if (obj) cJSON_AddStringToObject(obj, "type", "Stdin");
       break;
+    #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI:
       obj = serialize_wasapi_playback_config(&in->cfg.wasapi);
       if (obj) cJSON_AddStringToObject(obj, "type", "Wasapi");
       break;
+    #endif
+    #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO:
       obj = serialize_asio_playback_config(&in->cfg.asio);
       if (obj) cJSON_AddStringToObject(obj, "type", "Asio");
       break;
-    default: obj = cJSON_CreateObject(); break;
+    #endif
+    case AUDIO_BACKEND_TYPE_GENERATOR: break;
+    case AUDIO_BACKEND_TYPE_INVALID: break;
   }
   if (!obj) return NULL;
   if (in->has_labels && in->labels) {
@@ -4887,23 +5029,37 @@ bool playback_device_config_equal(const playback_device_config_t *a, const playb
     if (a->dsd_encoder_filter != b->dsd_encoder_filter) return false;
   }
   switch (a->type) {
+    #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO:
       return coreaudio_playback_config_equal(&a->cfg.coreaudio, &b->cfg.coreaudio);
+    #endif
+    #if defined(ENABLE_ALSA)
     case AUDIO_BACKEND_TYPE_ALSA:
       return alsa_playback_config_equal(&a->cfg.alsa, &b->cfg.alsa);
+    #endif
+    #if defined(ENABLE_PIPEWIRE)
     case AUDIO_BACKEND_TYPE_PIPEWIRE:
       return pipewire_playback_config_equal(&a->cfg.pipewire, &b->cfg.pipewire);
+    #endif
     case AUDIO_BACKEND_TYPE_FILE:
       return raw_file_playback_config_equal(&a->cfg.raw_file, &b->cfg.raw_file);
     case AUDIO_BACKEND_TYPE_STDIN_OUT:
       return stdout_playback_config_equal(&a->cfg.stdout_out, &b->cfg.stdout_out);
+    #if defined(ENABLE_WASAPI)
     case AUDIO_BACKEND_TYPE_WASAPI:
       return wasapi_playback_config_equal(&a->cfg.wasapi, &b->cfg.wasapi);
+    #endif
+    #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO:
       return asio_playback_config_equal(&a->cfg.asio, &b->cfg.asio);
-    default: return true;
+    #endif
+    case AUDIO_BACKEND_TYPE_GENERATOR: return false;
+    case AUDIO_BACKEND_TYPE_INVALID: return false;
   }
+  CDSP_UNREACHABLE();
+  return false;
 }
+
 
 void devices_config_init(devices_config_t *out) {
   if (!out) return;
@@ -5052,6 +5208,7 @@ bool devices_config_equal(const devices_config_t *a, const devices_config_t *b) 
   }
   return true;
 }
+
 
 void dsp_config_init(dsp_config_t *out) {
   if (!out) return;
@@ -5278,5 +5435,6 @@ bool dsp_config_equal(const dsp_config_t *a, const dsp_config_t *b) {
   }
   return true;
 }
+
 
 /* clang-format on */

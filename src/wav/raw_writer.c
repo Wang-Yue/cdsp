@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "audio/sample_conversion.h"
+#include "config/config_gen.h"
 #include "utils/cdsp_path.h"
 
 static void set_error(char *err_buf, size_t err_len, const char *fmt, ...) {
@@ -41,8 +42,26 @@ void raw_encode_sample(double val, uint8_t *dst,
   case BINARY_SAMPLE_FORMAT_F64_LE:
     pcm_sample_encode_f64_bytes(val, dst);
     break;
-  default:
-    memset(dst, 0, sample_format_bytes_per_sample(format));
+  case BINARY_SAMPLE_FORMAT_DSD_U8:
+    dst[0] = pcm_sample_encode_dsd_u8(val);
+    break;
+  case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
+    pcm_sample_encode_dsd_u16_le_bytes(val, dst);
+    break;
+  case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
+    pcm_sample_encode_dsd_u16_be_bytes(val, dst);
+    break;
+  case BINARY_SAMPLE_FORMAT_DSD_U32_LE:
+    pcm_sample_encode_dsd_u32_le_bytes(val, dst);
+    break;
+  case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
+    pcm_sample_encode_dsd_u32_be_bytes(val, dst);
+    break;
+  case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
+    pcm_sample_encode_dsd_u32_reversed_bytes(val, dst);
+    break;
+  case BINARY_SAMPLE_FORMAT_INVALID:
+    CDSP_UNREACHABLE();
     break;
   }
 }

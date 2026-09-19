@@ -711,7 +711,6 @@ static const char *delay_unit_to_str(delay_unit_t unit) {
   case DELAY_UNIT_MM:
     return "mm";
   case DELAY_UNIT_INVALID:
-  default:
     return "ms";
   }
 }

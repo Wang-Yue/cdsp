@@ -62,9 +62,9 @@ cJSON *serialize_stop_reason(const cdsp_stop_reason_t *reason) {
     root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "UnknownError", reason->message);
     return root;
-  default:
-    return cJSON_CreateString("None");
   }
+  CDSP_UNREACHABLE();
+  return cJSON_CreateString("None");
 }
 
 cJSON *create_state_event_value(cdsp_processing_state_t state,
@@ -400,21 +400,27 @@ static const char *get_websocket_error_key(cdsp_backend_error_type_t type) {
     return "DeviceNotFoundError";
   case CDSP_BACKEND_ERR_DEVICE_BUSY:
     return "DeviceBusyError";
-  default:
+  case CDSP_BACKEND_ERR_UNKNOWN:
     return "DeviceError";
   }
+  CDSP_UNREACHABLE();
+  return "DeviceError";
 }
 
 static const char *
 get_websocket_device_error_key(cdsp_device_error_type_t type) {
   switch (type) {
+  case CDSP_DEVICE_ERROR_NONE:
+    return "None";
   case CDSP_DEVICE_ERROR_NOT_FOUND:
     return "DeviceNotFoundError";
   case CDSP_DEVICE_ERROR_BUSY:
     return "DeviceBusyError";
-  default:
+  case CDSP_DEVICE_ERROR_UNKNOWN:
     return "DeviceError";
   }
+  CDSP_UNREACHABLE();
+  return "DeviceError";
 }
 
 static char *format_device_descriptor(const cdsp_device_descriptor_t *desc) {
@@ -2957,7 +2963,7 @@ void websocket_server_handle_command(websocket_server_t *server, int client_idx,
     handle_cmd_stop_subscription(server, client_idx, simple, root, ds);
     break;
 
-  default: {
+  case WS_CMD_UNKNOWN: {
     reply_invalid("Unsupported command", ds);
     break;
   }

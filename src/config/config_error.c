@@ -56,7 +56,6 @@ void config_error_description(const config_error_t *err, char *out_buf,
     snprintf(out_buf, buf_len, "Invalid pipeline: %s", err->message);
     break;
   case CONFIG_ERR_NONE:
-  default:
     out_buf[0] = '\0';
     break;
   }

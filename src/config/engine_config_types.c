@@ -1,5 +1,6 @@
 #include "config/engine_config_types.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,13 +26,15 @@ uint8_t processing_state_to_raw_byte(processing_state_t state) {
     return 3;
   case PROCESSING_STATE_STALLED:
     return 4;
-  default:
-    return 0;
   }
+  CDSP_UNREACHABLE();
+  return 0;
 }
 
 processing_state_t processing_state_from_raw_byte(uint8_t raw_byte) {
   switch (raw_byte) {
+  case 0:
+    return PROCESSING_STATE_INACTIVE;
   case 1:
     return PROCESSING_STATE_STARTING;
   case 2:
@@ -40,9 +43,9 @@ processing_state_t processing_state_from_raw_byte(uint8_t raw_byte) {
     return PROCESSING_STATE_PAUSED;
   case 4:
     return PROCESSING_STATE_STALLED;
-  default:
-    return PROCESSING_STATE_INACTIVE;
   }
+  CDSP_UNREACHABLE();
+  return PROCESSING_STATE_INACTIVE;
 }
 
 const char *processing_state_to_string(processing_state_t state) {
@@ -57,9 +60,9 @@ const char *processing_state_to_string(processing_state_t state) {
     return "Paused";
   case PROCESSING_STATE_STALLED:
     return "Stalled";
-  default:
-    return "Inactive";
   }
+  CDSP_UNREACHABLE();
+  return "Inactive";
 }
 
 processing_state_t processing_state_from_string(const char *str) {
@@ -105,8 +108,8 @@ void audio_backend_error_description(const audio_backend_error_t *err,
   case AUDIO_BACKEND_ERR_DEVICE_BUSY:
     snprintf(out_buf, buf_len, "Device busy: %s", err->message);
     break;
-  default:
-    out_buf[0] = '\0';
+  case AUDIO_BACKEND_ERR_CONFIG_READ:
+    snprintf(out_buf, buf_len, "Config read error: %s", err->message);
     break;
   }
 }
@@ -120,9 +123,10 @@ const char *dsd_mode_to_string(dsd_mode_t mode) {
   case DSD_MODE_NATIVE:
     return "dsd";
   case DSD_MODE_PCM:
-  default:
     return "pcm";
   }
+  CDSP_UNREACHABLE();
+  return "pcm";
 }
 
 dsd_mode_t dsd_mode_from_string(const char *str) {
@@ -148,31 +152,26 @@ size_t sample_format_bytes_per_sample(binary_sample_format_t fmt) {
   case BINARY_SAMPLE_FORMAT_DSD_U8:
     return 1;
   case BINARY_SAMPLE_FORMAT_S16_LE:
-  case BINARY_SAMPLE_FORMAT_S16_BE:
   case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
   case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
     return 2;
   case BINARY_SAMPLE_FORMAT_S24_3_LE:
-  case BINARY_SAMPLE_FORMAT_S24_3_BE:
     return 3;
   case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE:
   case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
-  case BINARY_SAMPLE_FORMAT_S24_4_RJ_BE:
-  case BINARY_SAMPLE_FORMAT_S24_4_LJ_BE:
   case BINARY_SAMPLE_FORMAT_S32_LE:
-  case BINARY_SAMPLE_FORMAT_S32_BE:
   case BINARY_SAMPLE_FORMAT_F32_LE:
-  case BINARY_SAMPLE_FORMAT_F32_BE:
   case BINARY_SAMPLE_FORMAT_DSD_U32_LE:
   case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
   case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
     return 4;
   case BINARY_SAMPLE_FORMAT_F64_LE:
-  case BINARY_SAMPLE_FORMAT_F64_BE:
     return 8;
-  default:
+  case BINARY_SAMPLE_FORMAT_INVALID:
     return 0;
   }
+  CDSP_UNREACHABLE();
+  return 0;
 }
 
 bool sample_format_is_dsd(binary_sample_format_t fmt) {
@@ -184,21 +183,41 @@ bool sample_format_is_dsd(binary_sample_format_t fmt) {
   case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
   case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
     return true;
-  default:
+  case BINARY_SAMPLE_FORMAT_INVALID:
+  case BINARY_SAMPLE_FORMAT_S16_LE:
+  case BINARY_SAMPLE_FORMAT_S24_3_LE:
+  case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE:
+  case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
+  case BINARY_SAMPLE_FORMAT_S32_LE:
+  case BINARY_SAMPLE_FORMAT_F32_LE:
+  case BINARY_SAMPLE_FORMAT_F64_LE:
     return false;
   }
+  CDSP_UNREACHABLE();
+  return false;
 }
 
 bool sample_format_is_float(binary_sample_format_t fmt) {
   switch (fmt) {
   case BINARY_SAMPLE_FORMAT_F32_LE:
-  case BINARY_SAMPLE_FORMAT_F32_BE:
   case BINARY_SAMPLE_FORMAT_F64_LE:
-  case BINARY_SAMPLE_FORMAT_F64_BE:
     return true;
-  default:
+  case BINARY_SAMPLE_FORMAT_INVALID:
+  case BINARY_SAMPLE_FORMAT_S16_LE:
+  case BINARY_SAMPLE_FORMAT_S24_3_LE:
+  case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE:
+  case BINARY_SAMPLE_FORMAT_S24_4_LJ_LE:
+  case BINARY_SAMPLE_FORMAT_S32_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U8:
+  case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
     return false;
   }
+  CDSP_UNREACHABLE();
+  return false;
 }
 
 #if defined(ENABLE_COREAUDIO)
@@ -213,9 +232,11 @@ coreaudio_sample_format_to_binary_format(coreaudio_sample_format_t fmt) {
     return BINARY_SAMPLE_FORMAT_S32_LE;
   case COREAUDIO_SAMPLE_FORMAT_F32:
     return BINARY_SAMPLE_FORMAT_F32_LE;
-  default:
+  case COREAUDIO_SAMPLE_FORMAT_INVALID:
     return BINARY_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return BINARY_SAMPLE_FORMAT_INVALID;
 }
 
 coreaudio_sample_format_t
@@ -231,9 +252,18 @@ coreaudio_sample_format_from_binary_format(binary_sample_format_t fmt) {
     return COREAUDIO_SAMPLE_FORMAT_S32;
   case BINARY_SAMPLE_FORMAT_F32_LE:
     return COREAUDIO_SAMPLE_FORMAT_F32;
-  default:
+  case BINARY_SAMPLE_FORMAT_INVALID:
+  case BINARY_SAMPLE_FORMAT_F64_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U8:
+  case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
     return COREAUDIO_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return COREAUDIO_SAMPLE_FORMAT_INVALID;
 }
 #endif
 
@@ -263,9 +293,11 @@ alsa_sample_format_to_binary_format(alsa_sample_format_t fmt) {
     return BINARY_SAMPLE_FORMAT_DSD_U32_LE;
   case ALSA_SAMPLE_FORMAT_DSD_U32_BE:
     return BINARY_SAMPLE_FORMAT_DSD_U32_BE;
-  default:
+  case ALSA_SAMPLE_FORMAT_INVALID:
     return BINARY_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return BINARY_SAMPLE_FORMAT_INVALID;
 }
 
 alsa_sample_format_t
@@ -294,9 +326,12 @@ alsa_sample_format_from_binary_format(binary_sample_format_t fmt) {
     return ALSA_SAMPLE_FORMAT_DSD_U32_LE;
   case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
     return ALSA_SAMPLE_FORMAT_DSD_U32_BE;
-  default:
+  case BINARY_SAMPLE_FORMAT_INVALID:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
     return ALSA_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return ALSA_SAMPLE_FORMAT_INVALID;
 }
 #endif
 
@@ -312,9 +347,11 @@ wasapi_sample_format_to_binary_format(wasapi_sample_format_t fmt) {
     return BINARY_SAMPLE_FORMAT_S32_LE;
   case WASAPI_SAMPLE_FORMAT_F32:
     return BINARY_SAMPLE_FORMAT_F32_LE;
-  default:
+  case WASAPI_SAMPLE_FORMAT_INVALID:
     return BINARY_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return BINARY_SAMPLE_FORMAT_INVALID;
 }
 
 wasapi_sample_format_t
@@ -330,9 +367,18 @@ wasapi_sample_format_from_binary_format(binary_sample_format_t fmt) {
     return WASAPI_SAMPLE_FORMAT_S32;
   case BINARY_SAMPLE_FORMAT_F32_LE:
     return WASAPI_SAMPLE_FORMAT_F32;
-  default:
+  case BINARY_SAMPLE_FORMAT_INVALID:
+  case BINARY_SAMPLE_FORMAT_F64_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U8:
+  case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
     return WASAPI_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return WASAPI_SAMPLE_FORMAT_INVALID;
 }
 #endif
 
@@ -355,9 +401,11 @@ asio_sample_format_to_binary_format(asio_sample_format_t fmt, bool is_lsb) {
   case ASIO_SAMPLE_FORMAT_DSD_INT8:
     return is_lsb ? BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED
                   : BINARY_SAMPLE_FORMAT_DSD_U32_BE;
-  default:
+  case ASIO_SAMPLE_FORMAT_INVALID:
     return BINARY_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return BINARY_SAMPLE_FORMAT_INVALID;
 }
 
 asio_sample_format_t
@@ -380,9 +428,14 @@ asio_sample_format_from_binary_format(binary_sample_format_t fmt) {
   case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
   case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
     return ASIO_SAMPLE_FORMAT_DSD_INT8;
-  default:
+  case BINARY_SAMPLE_FORMAT_INVALID:
+  case BINARY_SAMPLE_FORMAT_DSD_U8:
+  case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
     return ASIO_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return ASIO_SAMPLE_FORMAT_INVALID;
 }
 #endif
 
@@ -418,9 +471,11 @@ capture_device_config_get_channels(const capture_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_ASIO:
     return config->cfg.asio.channels;
 #endif
-  default:
+  case AUDIO_BACKEND_TYPE_INVALID:
     return 0;
   }
+  CDSP_UNREACHABLE();
+  return 0;
 }
 
 size_t
@@ -444,6 +499,8 @@ playback_device_config_get_channels(const playback_device_config_t *config) {
     return config->cfg.raw_file.channels;
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return config->cfg.stdout_out.channels;
+  case AUDIO_BACKEND_TYPE_GENERATOR:
+    return 0;
 #if defined(ENABLE_WASAPI)
   case AUDIO_BACKEND_TYPE_WASAPI:
     return config->cfg.wasapi.channels;
@@ -452,9 +509,11 @@ playback_device_config_get_channels(const playback_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_ASIO:
     return config->cfg.asio.channels;
 #endif
-  default:
+  case AUDIO_BACKEND_TYPE_INVALID:
     return 0;
   }
+  CDSP_UNREACHABLE();
+  return 0;
 }
 
 const char *
@@ -470,6 +529,10 @@ capture_device_config_get_device(const capture_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_ALSA:
     return config->cfg.alsa.device;
 #endif
+#if defined(ENABLE_PIPEWIRE)
+  case AUDIO_BACKEND_TYPE_PIPEWIRE:
+    return "";
+#endif
 #if defined(ENABLE_WASAPI)
   case AUDIO_BACKEND_TYPE_WASAPI:
     return config->cfg.wasapi.device;
@@ -478,9 +541,14 @@ capture_device_config_get_device(const capture_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_ASIO:
     return config->cfg.asio.device;
 #endif
-  default:
+  case AUDIO_BACKEND_TYPE_FILE:
+  case AUDIO_BACKEND_TYPE_STDIN_OUT:
+  case AUDIO_BACKEND_TYPE_GENERATOR:
+  case AUDIO_BACKEND_TYPE_INVALID:
     return "";
   }
+  CDSP_UNREACHABLE();
+  return "";
 }
 
 binary_sample_format_t
@@ -526,9 +594,12 @@ capture_device_config_get_binary_format(const capture_device_config_t *config) {
                                            : BINARY_SAMPLE_FORMAT_INVALID;
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return config->cfg.stdin_in.format;
-  default:
+  case AUDIO_BACKEND_TYPE_GENERATOR:
+  case AUDIO_BACKEND_TYPE_INVALID:
     return BINARY_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return BINARY_SAMPLE_FORMAT_INVALID;
 }
 
 #if defined(ENABLE_COREAUDIO)
@@ -538,9 +609,26 @@ capture_device_config_get_format(const capture_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_CORE_AUDIO:
     return config->cfg.coreaudio.has_format ? config->cfg.coreaudio.format
                                             : COREAUDIO_SAMPLE_FORMAT_INVALID;
-  default:
+  case AUDIO_BACKEND_TYPE_INVALID:
+#if defined(ENABLE_ALSA)
+  case AUDIO_BACKEND_TYPE_ALSA:
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  case AUDIO_BACKEND_TYPE_PIPEWIRE:
+#endif
+#if defined(ENABLE_WASAPI)
+  case AUDIO_BACKEND_TYPE_WASAPI:
+#endif
+#if defined(ENABLE_ASIO)
+  case AUDIO_BACKEND_TYPE_ASIO:
+#endif
+  case AUDIO_BACKEND_TYPE_FILE:
+  case AUDIO_BACKEND_TYPE_STDIN_OUT:
+  case AUDIO_BACKEND_TYPE_GENERATOR:
     return COREAUDIO_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return COREAUDIO_SAMPLE_FORMAT_INVALID;
 }
 #endif
 
@@ -596,6 +684,10 @@ playback_device_config_get_device(const playback_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_ALSA:
     return config->cfg.alsa.device;
 #endif
+#if defined(ENABLE_PIPEWIRE)
+  case AUDIO_BACKEND_TYPE_PIPEWIRE:
+    return "";
+#endif
 #if defined(ENABLE_WASAPI)
   case AUDIO_BACKEND_TYPE_WASAPI:
     return config->cfg.wasapi.device;
@@ -604,9 +696,14 @@ playback_device_config_get_device(const playback_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_ASIO:
     return config->cfg.asio.device;
 #endif
-  default:
+  case AUDIO_BACKEND_TYPE_FILE:
+  case AUDIO_BACKEND_TYPE_STDIN_OUT:
+  case AUDIO_BACKEND_TYPE_GENERATOR:
+  case AUDIO_BACKEND_TYPE_INVALID:
     return "";
   }
+  CDSP_UNREACHABLE();
+  return "";
 }
 
 binary_sample_format_t playback_device_config_get_binary_format(
@@ -649,9 +746,12 @@ binary_sample_format_t playback_device_config_get_binary_format(
                                            : BINARY_SAMPLE_FORMAT_INVALID;
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return config->cfg.stdout_out.format;
-  default:
+  case AUDIO_BACKEND_TYPE_GENERATOR:
+  case AUDIO_BACKEND_TYPE_INVALID:
     return BINARY_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return BINARY_SAMPLE_FORMAT_INVALID;
 }
 
 #if defined(ENABLE_COREAUDIO)
@@ -661,9 +761,26 @@ playback_device_config_get_format(const playback_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_CORE_AUDIO:
     return config->cfg.coreaudio.has_format ? config->cfg.coreaudio.format
                                             : COREAUDIO_SAMPLE_FORMAT_INVALID;
-  default:
+  case AUDIO_BACKEND_TYPE_INVALID:
+#if defined(ENABLE_ALSA)
+  case AUDIO_BACKEND_TYPE_ALSA:
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  case AUDIO_BACKEND_TYPE_PIPEWIRE:
+#endif
+#if defined(ENABLE_WASAPI)
+  case AUDIO_BACKEND_TYPE_WASAPI:
+#endif
+#if defined(ENABLE_ASIO)
+  case AUDIO_BACKEND_TYPE_ASIO:
+#endif
+  case AUDIO_BACKEND_TYPE_FILE:
+  case AUDIO_BACKEND_TYPE_STDIN_OUT:
+  case AUDIO_BACKEND_TYPE_GENERATOR:
     return COREAUDIO_SAMPLE_FORMAT_INVALID;
   }
+  CDSP_UNREACHABLE();
+  return COREAUDIO_SAMPLE_FORMAT_INVALID;
 }
 #endif
 
@@ -680,9 +797,23 @@ bool playback_device_config_get_exclusive(
   case AUDIO_BACKEND_TYPE_WASAPI:
     return config->cfg.wasapi.exclusive;
 #endif
-  default:
+  case AUDIO_BACKEND_TYPE_INVALID:
+#if defined(ENABLE_ALSA)
+  case AUDIO_BACKEND_TYPE_ALSA:
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  case AUDIO_BACKEND_TYPE_PIPEWIRE:
+#endif
+#if defined(ENABLE_ASIO)
+  case AUDIO_BACKEND_TYPE_ASIO:
+#endif
+  case AUDIO_BACKEND_TYPE_FILE:
+  case AUDIO_BACKEND_TYPE_STDIN_OUT:
+  case AUDIO_BACKEND_TYPE_GENERATOR:
     return false;
   }
+  CDSP_UNREACHABLE();
+  return false;
 }
 
 size_t playback_device_config_calculate_carrier_bits(
@@ -761,8 +892,7 @@ void capture_device_config_set_channels(capture_device_config_t *config,
     config->cfg.asio.channels = channels;
     break;
 #endif
-
-  default:
+  case AUDIO_BACKEND_TYPE_INVALID:
     break;
   }
 }

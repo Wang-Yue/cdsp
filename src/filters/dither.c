@@ -30,6 +30,7 @@ struct dither_filter {
 
 typedef struct dither_filter dither_filter_t;
 
+#include <assert.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -335,9 +336,13 @@ static noise_shaper_t *noise_shaper_create_for_type(dither_type_t type) {
         -0.018070342019200325, -0.0139975780621171};
     return noise_shaper_create(c, 20);
   }
-  default:
+  case DITHER_TYPE_NONE:
+  case DITHER_TYPE_FLAT:
+  case DITHER_TYPE_HIGHPASS:
     return NULL;
   }
+  CDSP_UNREACHABLE();
+  return NULL;
 }
 
 // MARK: - Ditherers

@@ -9,6 +9,7 @@
 
 #include "resampler/async_sinc_resampler.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -727,10 +728,12 @@ async_sinc_resampler_process(void *impl, const audio_chunk_t *input,
   case SINC_INTERPOLATION_CUBIC:
     run_cubic(resampler, output_frames, output);
     break;
-  default:
+  case SINC_INTERPOLATION_LAST:
     run_cubic(resampler, output_frames, output);
     break;
   }
+  assert(resampler->interpolation < SINC_INTERPOLATION_LAST &&
+         "Invalid sinc_interpolation_type_t");
 
   resampler->last_index = final_idx - (double)resampler->needed_input_size;
   resampler->resample_ratio = resampler->target_ratio;
@@ -1130,8 +1133,6 @@ static void *async_sinc_resampler_create_from_profile(
     oversampling_factor = 256;
     window = WINDOW_FUNCTION_BLACKMAN_HARRIS2;
     interpolation = SINC_INTERPOLATION_CUBIC;
-    break;
-  default:
     break;
   }
 

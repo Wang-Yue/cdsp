@@ -1,10 +1,13 @@
 #include "pipeline/pipeline.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "utils/cdsp_macros.h"
 
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
@@ -39,9 +42,9 @@ const char *pipeline_error_description(pipeline_error_t err) {
     return "Output buffer too small";
   case PIPELINE_ERR_CHANNEL_COUNT_MISMATCH:
     return "Channel count mismatch";
-  default:
-    return "Unknown pipeline error";
   }
+  CDSP_UNREACHABLE();
+  return "Unknown pipeline error";
 }
 
 // ============================================================================

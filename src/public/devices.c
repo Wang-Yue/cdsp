@@ -101,7 +101,7 @@ bool cdsp_get_device_capabilities(const char *backend, const char *device,
       case DEVICE_ERROR_BUSY:
         out_err->type = CDSP_DEVICE_ERROR_BUSY;
         break;
-      default:
+      case DEVICE_ERROR_OTHER:
         out_err->type = CDSP_DEVICE_ERROR_UNKNOWN;
         break;
       }

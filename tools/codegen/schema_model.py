@@ -37,14 +37,16 @@ class EnumType(FieldType):
         variants: List[tuple],
         default: Optional[str] = None,
         invalid_val: Optional[str] = None,
-        is_external: bool = False
+        is_external: bool = False,
+        guard: Optional[str] = None
     ):
         self.name = name
         self.c_type = c_type
-        self.variants = variants  # list of (C_VARIANT, "JsonString", [optional aliases])
+        self.variants = variants  # list of (C_VARIANT, "JsonString", [optional aliases], optional guard)
         self.default = default
         self.invalid_val = invalid_val
         self.is_external = is_external
+        self.guard = guard
 
 class ArrayType(FieldType):
     def __init__(self, item_type: FieldType):
@@ -109,7 +111,8 @@ class StructType(FieldType):
         allowed_extra_keys: Optional[List[str]] = None,
         variant_tag_field: Optional[str] = None,
         variant_rules: Optional[List[VariantRule]] = None,
-        nested_objects: Optional[Dict[str, List[str]]] = None
+        nested_objects: Optional[Dict[str, List[str]]] = None,
+        guard: Optional[str] = None
     ):
         self.name = name
         self.c_type = c_type
@@ -121,6 +124,7 @@ class StructType(FieldType):
         self.variant_tag_field = variant_tag_field
         self.variant_rules = variant_rules or []
         self.nested_objects = nested_objects or {}
+        self.guard = guard
 
 class TaggedUnionType(FieldType):
     def __init__(
@@ -141,7 +145,8 @@ class TaggedUnionType(FieldType):
         is_flattened: bool = False,
         rejected_variants: Optional[List[str]] = None,
         variant_type_aliases: Optional[Dict[str, tuple]] = None,
-        variant_type_serializers: Optional[Dict[str, str]] = None
+        variant_type_serializers: Optional[Dict[str, str]] = None,
+        guard: Optional[str] = None
     ):
         self.name = name
         self.c_type = c_type
@@ -158,6 +163,7 @@ class TaggedUnionType(FieldType):
         self.rejected_variants = rejected_variants or []
         self.variant_type_aliases = variant_type_aliases or {}
         self.variant_type_serializers = variant_type_serializers or {}
+        self.guard = guard
         # Normalized variants dict mapping tag -> (field_name, StructType)
         norm_variants = {}
         for k, v in variants.items():
@@ -182,7 +188,8 @@ class Field:
         aliases: Optional[List[str]] = None,
         description: str = "",
         getter_default: Any = None,
-        allow_null_items: bool = False
+        allow_null_items: bool = False,
+        guard: Optional[str] = None
     ):
         self.name = name
         self.type = field_type
@@ -195,3 +202,4 @@ class Field:
         self.description = description
         self.getter_default = getter_default
         self.allow_null_items = allow_null_items
+        self.guard = guard

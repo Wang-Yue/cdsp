@@ -1,5 +1,6 @@
 #include "processors/lookahead_limiter_processor.h"
 
+#include <assert.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -54,9 +55,10 @@ static double compute_time_samples(double value, time_unit_t unit,
   case TIME_UNIT_SAMPLES:
     return value;
   case TIME_UNIT_INVALID:
-  default:
     return 0.0;
   }
+  CDSP_UNREACHABLE();
+  return 0.0;
 }
 
 static delay_unit_t map_time_unit_to_delay_unit(time_unit_t unit) {
@@ -70,9 +72,10 @@ static delay_unit_t map_time_unit_to_delay_unit(time_unit_t unit) {
   case TIME_UNIT_SAMPLES:
     return DELAY_UNIT_SAMPLES;
   case TIME_UNIT_INVALID:
-  default:
     return DELAY_UNIT_SAMPLES;
   }
+  CDSP_UNREACHABLE();
+  return DELAY_UNIT_SAMPLES;
 }
 
 static int lookahead_limiter_config_validate(const processor_config_t *config,

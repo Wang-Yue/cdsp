@@ -177,7 +177,7 @@ int dsp_config_apply_overrides(dsp_config_t *config,
       config->devices.capture.cfg.asio.channels = overrides.channels;
       break;
 #endif
-    default:
+    case AUDIO_BACKEND_TYPE_INVALID:
       break;
     }
   }
@@ -281,7 +281,8 @@ int dsp_config_apply_overrides(dsp_config_t *config,
       break;
     }
 #endif
-    default:
+    case AUDIO_BACKEND_TYPE_GENERATOR:
+    case AUDIO_BACKEND_TYPE_INVALID:
       break;
     }
   }

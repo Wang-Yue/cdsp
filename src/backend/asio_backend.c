@@ -717,9 +717,11 @@ const char *asio_format_to_str(asio_sample_format_t fmt) {
     return "F64_LE";
   case ASIO_SAMPLE_FORMAT_DSD_INT8:
     return "DSD_INT8";
-  default:
-    return "Unknown";
+  case ASIO_SAMPLE_FORMAT_INVALID:
+    return "Invalid";
   }
+  CDSP_UNREACHABLE();
+  return "Unknown";
 }
 
 /**
@@ -769,9 +771,8 @@ const char *asio_sample_type_name(int type_id) {
     return "DSD Int8 MSB 1";
   case ASIO_ST_DSD_INT8_NER8:
     return "DSD Int8 NER8";
-  default:
-    return "Unknown";
   }
+  return "Unknown";
 }
 
 /**
@@ -799,9 +800,8 @@ asio_sample_format_t asio_sample_type_to_format(int type_id) {
   case ASIO_ST_DSD_INT8_MSB_1:
   case ASIO_ST_DSD_INT8_NER8:
     return ASIO_SAMPLE_FORMAT_DSD_INT8;
-  default:
-    return ASIO_SAMPLE_FORMAT_INVALID;
   }
+  return ASIO_SAMPLE_FORMAT_INVALID;
 }
 
 /**
@@ -1540,9 +1540,9 @@ static long handle_asio_message(long selector, long value, bool playback,
       return 1; // Supported
     case K_ASIO_BUFFER_SIZE_CHANGE:
     case K_ASIO_SUPPORTS_TIME_CODE:
-    default:
       return 0; // Not supported
     }
+    return 0; // Not supported
   case K_ASIO_ENGINE_VERSION:
     return 2; // ASIO 2.0
   case K_ASIO_SUPPORTS_TIME_INFO:
@@ -1591,10 +1591,9 @@ static long handle_asio_message(long selector, long value, bool playback,
   case K_ASIO_LATENCIES_CHANGED:
     logger_debug(&g_logger, "ASIO latencies changed notification.");
     return 1;
-  default:
-    logger_trace(&g_logger, "Unhandled ASIO message selector %ld.", selector);
-    return 0;
   }
+  logger_trace(&g_logger, "Unhandled ASIO message selector %ld.", selector);
+  return 0;
 }
 
 /**

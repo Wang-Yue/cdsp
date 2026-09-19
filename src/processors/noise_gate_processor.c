@@ -17,6 +17,8 @@
 
 #include "processors/noise_gate_processor.h"
 
+#include <assert.h>
+
 #include "audio/audio_chunk.h"
 #include "config/config_error.h"
 #include "config/config_gen.h"
@@ -149,9 +151,10 @@ static double compute_time_seconds(double value, time_unit_t unit,
   case TIME_UNIT_SAMPLES:
     return (sample_rate > 0) ? (value / (double)sample_rate) : 0.0;
   case TIME_UNIT_INVALID:
-  default:
     return 0.0;
   }
+  CDSP_UNREACHABLE();
+  return 0.0;
 }
 
 static void *noise_gate_processor_create(const char *name,

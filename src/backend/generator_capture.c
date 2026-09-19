@@ -1,5 +1,6 @@
 #include "backend/generator_capture.h"
 
+#include <assert.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -170,7 +171,8 @@ static bool generator_capture_read(void *ctx, size_t frames,
     break;
   }
 
-  default: {
+  case SIGNAL_TYPE_INVALID: {
+    assert(0 && "Invalid signal_type_t");
     for (size_t f = 0; f < frames; f++) {
       for (size_t c = 0; c < capture->channels; c++) {
         dst_channels[c][f] = 0.0;

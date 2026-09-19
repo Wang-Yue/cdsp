@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include "server/websocket_server.h"
+#include "utils/cdsp_macros.h"
 
 typedef struct cJSON cJSON;
 
@@ -45,9 +46,9 @@ ws_processing_state_to_string(cdsp_processing_state_t state) {
     return "Paused";
   case CDSP_PROCESSING_STATE_STALLED:
     return "Stalled";
-  default:
-    return "Inactive";
   }
+  CDSP_UNREACHABLE();
+  return "Inactive";
 }
 
 typedef struct {

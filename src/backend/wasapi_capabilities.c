@@ -9,6 +9,7 @@
 #define COBJMACROS
 #endif
 
+#include <assert.h>
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
@@ -154,6 +155,8 @@ cleanup:
 
 static const char *wasapi_format_to_str(wasapi_sample_format_t fmt) {
   switch (fmt) {
+  case WASAPI_SAMPLE_FORMAT_INVALID:
+    return "Invalid";
   case WASAPI_SAMPLE_FORMAT_S16:
     return "S16";
   case WASAPI_SAMPLE_FORMAT_S24:
@@ -162,9 +165,9 @@ static const char *wasapi_format_to_str(wasapi_sample_format_t fmt) {
     return "S32";
   case WASAPI_SAMPLE_FORMAT_F32:
     return "F32";
-  default:
-    return "F32";
   }
+  CDSP_UNREACHABLE();
+  return "F32";
 }
 
 static void format_labels_to_str(const wasapi_sample_format_t *formats,

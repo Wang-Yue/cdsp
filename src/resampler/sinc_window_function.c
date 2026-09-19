@@ -3,10 +3,13 @@
 
 #include "resampler/sinc_window_function.h"
 
+#include <assert.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "utils/cdsp_macros.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -45,9 +48,11 @@ const char *window_function_to_string(window_function_t wf) {
     return "BlackmanHarris";
   case WINDOW_FUNCTION_BLACKMAN_HARRIS2:
     return "BlackmanHarris2";
-  default:
+  case WINDOW_FUNCTION_LAST:
     return "Hann";
   }
+  CDSP_UNREACHABLE();
+  return "Hann";
 }
 
 /// Periodic window value at sample index `i` of a length-`n` window.
@@ -62,6 +67,7 @@ double window_value(window_function_t window, size_t i, size_t n) {
   double arg2 = 2.0 * M_PI * x / len;
   double arg4 = 4.0 * M_PI * x / len;
   double arg6 = 6.0 * M_PI * x / len;
+
   switch (window) {
   case WINDOW_FUNCTION_HANN:
     return 0.5 - 0.5 * cos(arg2);
@@ -83,9 +89,11 @@ double window_value(window_function_t window, size_t i, size_t n) {
                0.01168 * cos(arg6);
     return w * w;
   }
-  default:
+  case WINDOW_FUNCTION_LAST:
     return 1.0;
   }
+  CDSP_UNREACHABLE();
+  return 1.0;
 }
 
 /// f32 cutoff calculation. The
@@ -125,12 +133,13 @@ float calculate_cutoff_f32(size_t sinc_len, window_function_t window) {
     k2 = 29.69451915489501f;
     k3 = 184.82117462266237f;
     break;
-  default:
+  case WINDOW_FUNCTION_LAST:
     k1 = 3.3481080887677166f;
     k2 = 10.106519434875038f;
     k3 = 78.96345249024414f;
     break;
   }
+  assert(window < WINDOW_FUNCTION_LAST && "Invalid window_function_t");
   float n = (float)sinc_len;
   return 1.0f / (k1 / n + k2 / (n * n) + k3 / (n * n * n) + 1.0f);
 }
@@ -171,12 +180,13 @@ double calculate_cutoff(size_t sinc_len, window_function_t window) {
     k2 = 29.69451915489501;
     k3 = 184.82117462266237;
     break;
-  default:
+  case WINDOW_FUNCTION_LAST:
     k1 = 3.3481080887677166;
     k2 = 10.106519434875038;
     k3 = 78.96345249024414;
     break;
   }
+  assert(window < WINDOW_FUNCTION_LAST && "Invalid window_function_t");
   double n = (double)sinc_len;
   return 1.0 / (k1 / n + k2 / (n * n) + k3 / (n * n * n) + 1.0);
 }

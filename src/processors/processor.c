@@ -10,6 +10,7 @@
 
 #include "processors/processor.h"
 
+#include <assert.h>
 #include <stdlib.h>
 
 #include "audio/audio_chunk.h"
@@ -33,9 +34,11 @@ processor_vtable_from_type(processor_type_t type) {
     return &g_race_vtable;
   case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
     return &g_lookahead_limiter_processor_vtable;
-  default:
+  case PROCESSOR_TYPE_INVALID:
     return NULL;
   }
+  CDSP_UNREACHABLE();
+  return NULL;
 }
 
 static processor_impl_type_t
@@ -50,8 +53,9 @@ processor_impl_type_from_config(processor_type_t type) {
   case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
     return PROCESSOR_IMPL_LOOKAHEAD_LIMITER;
   case PROCESSOR_TYPE_INVALID:
-    break;
+    return PROCESSOR_IMPL_COMPRESSOR;
   }
+  CDSP_UNREACHABLE();
   return PROCESSOR_IMPL_COMPRESSOR;
 }
 

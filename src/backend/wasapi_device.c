@@ -7,6 +7,7 @@
 
 #if defined(ENABLE_WASAPI)
 
+#include <assert.h>
 #include <initguid.h>
 #include <ks.h>
 #include <ksmedia.h>
@@ -324,15 +325,14 @@ size_t wasapi_make_channelmasks(size_t channels, DWORD masks[8]) {
     masks[2] = wasapi_make_simple_channelmask(8);
     masks[3] = 0;
     return 4;
-  default:
-    if (channels >= 9 && channels <= 18) {
-      masks[0] = wasapi_make_simple_channelmask(channels);
-      masks[1] = 0;
-      return 2;
-    }
-    masks[0] = 0;
-    return 1;
   }
+  if (channels >= 9 && channels <= 18) {
+    masks[0] = wasapi_make_simple_channelmask(channels);
+    masks[1] = 0;
+    return 2;
+  }
+  masks[0] = 0;
+  return 1;
 }
 
 void wasapi_build_wave_format(binary_sample_format_t fmt, int samplerate,
@@ -369,7 +369,15 @@ void wasapi_build_wave_format(binary_sample_format_t fmt, int samplerate,
     validbits = 32;
     is_float = true;
     break;
-  default:
+  case BINARY_SAMPLE_FORMAT_INVALID:
+  case BINARY_SAMPLE_FORMAT_S24_4_RJ_LE:
+  case BINARY_SAMPLE_FORMAT_F64_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U8:
+  case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_LE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
+  case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
     break;
   }
 
@@ -518,9 +526,11 @@ bool wasapi_get_supported_wave_format_with_channel_mask(
       }
       return false;
     }
-    default:
+    case WASAPI_SAMPLE_FORMAT_INVALID:
       return false;
     }
+    CDSP_UNREACHABLE();
+    return false;
   } else {
     // Shared mode: standard 32-bit float extensible
     WAVEFORMATEXTENSIBLE wfx;
@@ -993,9 +1003,8 @@ DWORD wasapi_get_default_channel_mask(int channels) {
     return KSAUDIO_SPEAKER_5POINT1_SURROUND;
   case 8:
     return KSAUDIO_SPEAKER_7POINT1_SURROUND;
-  default:
-    return wasapi_make_simple_channelmask((size_t)channels);
   }
+  return wasapi_make_simple_channelmask((size_t)channels);
 }
 
 #endif // ENABLE_WASAPI

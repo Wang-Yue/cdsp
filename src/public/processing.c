@@ -149,7 +149,14 @@ bool cdsp_get_samples(dsp_engine_t *engine, bool is_capture, size_t n_frames,
       case AUDIO_BACKEND_ERR_DEVICE_BUSY:
         out_err->type = CDSP_BACKEND_ERR_DEVICE_BUSY;
         break;
-      default:
+      case AUDIO_BACKEND_ERR_CONFIG_READ:
+        out_err->type = CDSP_BACKEND_ERR_CONFIG_READ;
+        break;
+      case AUDIO_BACKEND_ERR_COMMAND_SEND:
+      case AUDIO_BACKEND_ERR_INVALID_SAMPLERATE:
+      case AUDIO_BACKEND_ERR_SPECTRUM_COMPUTE:
+      case AUDIO_BACKEND_ERR_ENGINE_NOT_RUNNING:
+      case AUDIO_BACKEND_ERR_BUFFER_EMPTY:
         out_err->type = CDSP_BACKEND_ERR_UNKNOWN;
         break;
       }

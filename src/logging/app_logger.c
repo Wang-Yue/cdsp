@@ -379,9 +379,6 @@ static void *worker_thread_func(void *arg) {
         case LOG_LEVEL_TRACE:
           lvl_str = "TRACE";
           break;
-        default:
-          lvl_str = "UNKNOWN";
-          break;
         }
         char formatted_msg[4096];
         log_argument_t args[4] = {rec.arg1, rec.arg2, rec.arg3, rec.arg4};
@@ -629,20 +626,23 @@ void app_logger_log_raw_str(const logger_t *logger, log_level_t level,
   } else {
     const char *lvl_str;
     switch (level) {
+    case LOG_LEVEL_OFF:
+      lvl_str = "OFF";
+      break;
     case LOG_LEVEL_ERROR:
       lvl_str = "ERROR";
       break;
     case LOG_LEVEL_WARN:
       lvl_str = "WARN";
       break;
+    case LOG_LEVEL_INFO:
+      lvl_str = "INFO";
+      break;
     case LOG_LEVEL_DEBUG:
       lvl_str = "DEBUG";
       break;
     case LOG_LEVEL_TRACE:
       lvl_str = "TRACE";
-      break;
-    default:
-      lvl_str = "INFO";
       break;
     }
     pthread_mutex_lock(&g_log_file_mutex);

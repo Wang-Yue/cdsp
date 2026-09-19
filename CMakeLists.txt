@@ -103,6 +103,8 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     add_compile_options(
         -Wall
         -Wextra
+        -Wswitch
+        -Werror=switch
         -fvisibility=hidden
     )
 

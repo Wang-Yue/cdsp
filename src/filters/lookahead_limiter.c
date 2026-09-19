@@ -1,5 +1,6 @@
 #include "filters/lookahead_limiter.h"
 
+#include <assert.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,9 +60,10 @@ static double compute_time_samples(double value, time_unit_t unit,
   case TIME_UNIT_SAMPLES:
     return value;
   case TIME_UNIT_INVALID:
-  default:
     return 0.0;
   }
+  CDSP_UNREACHABLE();
+  return 0.0;
 }
 
 static void configure(const lookahead_limiter_filter_config_t *params,

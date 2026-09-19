@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "audio/sample_conversion.h"
+#include "config/config_gen.h"
 #include "utils/cdsp_path.h"
 #include "wav/wav_types.h"
 
@@ -176,9 +177,24 @@ double raw_decode_sample(const uint8_t *src, binary_sample_format_t format,
     return pcm_sample_decode_f32_bytes(src);
   case BINARY_SAMPLE_FORMAT_F64_LE:
     return pcm_sample_decode_f64_bytes(src);
-  default:
+  case BINARY_SAMPLE_FORMAT_DSD_U8:
+    return pcm_sample_decode_dsd_u8(src[0]);
+  case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
+    return pcm_sample_decode_dsd_u16_le_bytes(src);
+  case BINARY_SAMPLE_FORMAT_DSD_U16_BE:
+    return pcm_sample_decode_dsd_u16_be_bytes(src);
+  case BINARY_SAMPLE_FORMAT_DSD_U32_LE:
+    return pcm_sample_decode_dsd_u32_le_bytes(src);
+  case BINARY_SAMPLE_FORMAT_DSD_U32_BE:
+    return pcm_sample_decode_dsd_u32_be_bytes(src);
+  case BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED:
+    return pcm_sample_decode_dsd_u32_reversed_bytes(src);
+  case BINARY_SAMPLE_FORMAT_INVALID:
+    CDSP_UNREACHABLE();
     return 0.0;
   }
+  CDSP_UNREACHABLE();
+  return 0.0;
 }
 
 double *raw_read_channel_stream(FILE *f, int channel, size_t channels,

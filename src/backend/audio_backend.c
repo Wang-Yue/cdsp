@@ -5,6 +5,10 @@
 
 #include "backend/audio_backend.h"
 
+#include <assert.h>
+#include <stdatomic.h>
+#include <stdlib.h>
+
 #if defined(ENABLE_COREAUDIO)
 #include "backend/core_audio_capture.h"
 #include "backend/core_audio_playback.h"
@@ -24,17 +28,14 @@
 #include "backend/wasapi_playback.h"
 #endif
 
-#include <stdatomic.h>
-#include <stdlib.h>
-
 #include "audio/audio_chunk.h"
+#include "backend/file_backend.h"
+#include "backend/generator_capture.h"
 #include "config/engine_config_types.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend"};
-#include "backend/file_backend.h"
-#include "backend/generator_capture.h"
 
 static const capture_backend_vtable_t *
 get_capture_vtable(audio_backend_type_t type) {
@@ -64,9 +65,11 @@ get_capture_vtable(audio_backend_type_t type) {
   case AUDIO_BACKEND_TYPE_FILE:
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return &g_file_capture_vtable;
-  default:
+  case AUDIO_BACKEND_TYPE_INVALID:
     return NULL;
   }
+  CDSP_UNREACHABLE();
+  return NULL;
 }
 
 static const playback_backend_vtable_t *
@@ -95,9 +98,12 @@ get_playback_vtable(audio_backend_type_t type) {
   case AUDIO_BACKEND_TYPE_FILE:
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return &g_file_playback_vtable;
-  default:
+  case AUDIO_BACKEND_TYPE_GENERATOR:
+  case AUDIO_BACKEND_TYPE_INVALID:
     return NULL;
   }
+  CDSP_UNREACHABLE();
+  return NULL;
 }
 
 capture_backend_t *create_capture_backend(const capture_device_config_t *config,

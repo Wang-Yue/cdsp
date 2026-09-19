@@ -61,6 +61,7 @@ static const char *race_processor_get_name(const void *impl) {
   return processor ? processor->name : "";
 }
 
+#include <assert.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -206,7 +207,6 @@ static void *race_processor_create(const char *name,
     sample_period = 1.0;
     break;
   case DELAY_UNIT_INVALID:
-  default:
     sample_period = 1000.0 / (double)sample_rate;
     break;
   }

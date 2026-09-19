@@ -14,11 +14,13 @@
 #ifndef CONFIG_GEN_H
 #define CONFIG_GEN_H
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include "config/cJSON.h"
 #include "config/config_error.h"
+#include "utils/cdsp_macros.h"
 
 struct biquad_filter;
 typedef struct biquad_filter biquad_filter_t;
@@ -237,12 +239,22 @@ pipeline_step_type_t pipeline_step_type_from_string(const char *str);
 
 /** Enum: audio_backend_type */
 typedef enum {
+  #if defined(ENABLE_COREAUDIO)
   AUDIO_BACKEND_TYPE_INVALID = -1,
   AUDIO_BACKEND_TYPE_CORE_AUDIO,
+  #endif /* ENABLE_COREAUDIO */
+  #if defined(ENABLE_ALSA)
   AUDIO_BACKEND_TYPE_ALSA,
+  #endif /* ENABLE_ALSA */
+  #if defined(ENABLE_PIPEWIRE)
   AUDIO_BACKEND_TYPE_PIPEWIRE,
+  #endif /* ENABLE_PIPEWIRE */
+  #if defined(ENABLE_WASAPI)
   AUDIO_BACKEND_TYPE_WASAPI,
+  #endif /* ENABLE_WASAPI */
+  #if defined(ENABLE_ASIO)
   AUDIO_BACKEND_TYPE_ASIO,
+  #endif /* ENABLE_ASIO */
   AUDIO_BACKEND_TYPE_FILE,
   AUDIO_BACKEND_TYPE_STDIN_OUT,
   AUDIO_BACKEND_TYPE_GENERATOR
@@ -280,6 +292,7 @@ typedef enum {
 const char *sdm_filter_to_string(sdm_filter_t val);
 sdm_filter_t sdm_filter_from_string(const char *str);
 
+#if defined(ENABLE_COREAUDIO)
 /** Enum: coreaudio_sample_format */
 typedef enum {
   COREAUDIO_SAMPLE_FORMAT_INVALID = -1,
@@ -291,7 +304,9 @@ typedef enum {
 
 const char *coreaudio_sample_format_to_string(coreaudio_sample_format_t val);
 coreaudio_sample_format_t coreaudio_sample_format_from_string(const char *str);
+#endif /* ENABLE_COREAUDIO */
 
+#if defined(ENABLE_ALSA)
 /** Enum: alsa_sample_format */
 typedef enum {
   ALSA_SAMPLE_FORMAT_INVALID = -1,
@@ -310,7 +325,9 @@ typedef enum {
 
 const char *alsa_sample_format_to_string(alsa_sample_format_t val);
 alsa_sample_format_t alsa_sample_format_from_string(const char *str);
+#endif /* ENABLE_ALSA */
 
+#if defined(ENABLE_WASAPI)
 /** Enum: wasapi_sample_format */
 typedef enum {
   WASAPI_SAMPLE_FORMAT_INVALID = -1,
@@ -322,7 +339,9 @@ typedef enum {
 
 const char *wasapi_sample_format_to_string(wasapi_sample_format_t val);
 wasapi_sample_format_t wasapi_sample_format_from_string(const char *str);
+#endif /* ENABLE_WASAPI */
 
+#if defined(ENABLE_ASIO)
 /** Enum: asio_sample_format */
 typedef enum {
   ASIO_SAMPLE_FORMAT_INVALID = -1,
@@ -337,24 +356,18 @@ typedef enum {
 
 const char *asio_sample_format_to_string(asio_sample_format_t val);
 asio_sample_format_t asio_sample_format_from_string(const char *str);
+#endif /* ENABLE_ASIO */
 
 /** Enum: binary_sample_format */
 typedef enum {
   BINARY_SAMPLE_FORMAT_INVALID = -1,
   BINARY_SAMPLE_FORMAT_S16_LE,
-  BINARY_SAMPLE_FORMAT_S16_BE,
   BINARY_SAMPLE_FORMAT_S24_3_LE,
-  BINARY_SAMPLE_FORMAT_S24_3_BE,
   BINARY_SAMPLE_FORMAT_S24_4_RJ_LE,
-  BINARY_SAMPLE_FORMAT_S24_4_RJ_BE,
   BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
-  BINARY_SAMPLE_FORMAT_S24_4_LJ_BE,
   BINARY_SAMPLE_FORMAT_S32_LE,
-  BINARY_SAMPLE_FORMAT_S32_BE,
   BINARY_SAMPLE_FORMAT_F32_LE,
-  BINARY_SAMPLE_FORMAT_F32_BE,
   BINARY_SAMPLE_FORMAT_F64_LE,
-  BINARY_SAMPLE_FORMAT_F64_BE,
   BINARY_SAMPLE_FORMAT_DSD_U8,
   BINARY_SAMPLE_FORMAT_DSD_U16_LE,
   BINARY_SAMPLE_FORMAT_DSD_U16_BE,
@@ -390,18 +403,38 @@ typedef struct lookahead_limiter_filter_config_t lookahead_limiter_filter_config
 typedef struct filter_config_t filter_config_t;
 typedef struct pipeline_step_config_t pipeline_step_config_t;
 typedef struct generator_signal_t generator_signal_t;
+#if defined(ENABLE_COREAUDIO)
 typedef struct coreaudio_capture_config_t coreaudio_capture_config_t;
+#endif /* ENABLE_COREAUDIO */
+#if defined(ENABLE_COREAUDIO)
 typedef struct coreaudio_playback_config_t coreaudio_playback_config_t;
+#endif /* ENABLE_COREAUDIO */
+#if defined(ENABLE_ALSA)
 typedef struct alsa_capture_config_t alsa_capture_config_t;
+#endif /* ENABLE_ALSA */
+#if defined(ENABLE_ALSA)
 typedef struct alsa_playback_config_t alsa_playback_config_t;
+#endif /* ENABLE_ALSA */
+#if defined(ENABLE_PIPEWIRE)
 typedef struct pipewire_capture_config_t pipewire_capture_config_t;
+#endif /* ENABLE_PIPEWIRE */
+#if defined(ENABLE_PIPEWIRE)
 typedef struct pipewire_playback_config_t pipewire_playback_config_t;
+#endif /* ENABLE_PIPEWIRE */
 typedef struct stdin_capture_config_t stdin_capture_config_t;
 typedef struct stdout_playback_config_t stdout_playback_config_t;
+#if defined(ENABLE_WASAPI)
 typedef struct wasapi_capture_config_t wasapi_capture_config_t;
+#endif /* ENABLE_WASAPI */
+#if defined(ENABLE_WASAPI)
 typedef struct wasapi_playback_config_t wasapi_playback_config_t;
+#endif /* ENABLE_WASAPI */
+#if defined(ENABLE_ASIO)
 typedef struct asio_capture_config_t asio_capture_config_t;
+#endif /* ENABLE_ASIO */
+#if defined(ENABLE_ASIO)
 typedef struct asio_playback_config_t asio_playback_config_t;
+#endif /* ENABLE_ASIO */
 typedef struct wav_file_capture_config_t wav_file_capture_config_t;
 typedef struct raw_file_capture_config_t raw_file_capture_config_t;
 typedef struct raw_file_playback_config_t raw_file_playback_config_t;
@@ -743,6 +776,7 @@ struct generator_signal_t {
   double level;
 };
 
+#if defined(ENABLE_COREAUDIO)
 /** Struct: coreaudio_capture_config */
 struct coreaudio_capture_config_t {
   size_t channels;
@@ -753,7 +787,9 @@ struct coreaudio_capture_config_t {
   bool has_loopback;
   bool loopback;
 };
+#endif /* ENABLE_COREAUDIO */
 
+#if defined(ENABLE_COREAUDIO)
 /** Struct: coreaudio_playback_config */
 struct coreaudio_playback_config_t {
   size_t channels;
@@ -766,7 +802,9 @@ struct coreaudio_playback_config_t {
   bool has_target_level;
   int target_level;
 };
+#endif /* ENABLE_COREAUDIO */
 
+#if defined(ENABLE_ALSA)
 /** Struct: alsa_capture_config */
 struct alsa_capture_config_t {
   size_t channels;
@@ -782,7 +820,9 @@ struct alsa_capture_config_t {
   bool has_threaded;
   bool threaded;
 };
+#endif /* ENABLE_ALSA */
 
+#if defined(ENABLE_ALSA)
 /** Struct: alsa_playback_config */
 struct alsa_playback_config_t {
   size_t channels;
@@ -794,7 +834,9 @@ struct alsa_playback_config_t {
   bool has_threaded;
   bool threaded;
 };
+#endif /* ENABLE_ALSA */
 
+#if defined(ENABLE_PIPEWIRE)
 /** Struct: pipewire_capture_config */
 struct pipewire_capture_config_t {
   size_t channels;
@@ -811,7 +853,9 @@ struct pipewire_capture_config_t {
   bool has_loopback;
   bool loopback;
 };
+#endif /* ENABLE_PIPEWIRE */
 
+#if defined(ENABLE_PIPEWIRE)
 /** Struct: pipewire_playback_config */
 struct pipewire_playback_config_t {
   size_t channels;
@@ -828,6 +872,7 @@ struct pipewire_playback_config_t {
   bool has_target_level;
   int target_level;
 };
+#endif /* ENABLE_PIPEWIRE */
 
 /** Struct: stdin_capture_config */
 struct stdin_capture_config_t {
@@ -849,6 +894,7 @@ struct stdout_playback_config_t {
   bool wav_header;
 };
 
+#if defined(ENABLE_WASAPI)
 /** Struct: wasapi_capture_config */
 struct wasapi_capture_config_t {
   size_t channels;
@@ -863,7 +909,9 @@ struct wasapi_capture_config_t {
   bool has_polling;
   bool polling;
 };
+#endif /* ENABLE_WASAPI */
 
+#if defined(ENABLE_WASAPI)
 /** Struct: wasapi_playback_config */
 struct wasapi_playback_config_t {
   size_t channels;
@@ -878,7 +926,9 @@ struct wasapi_playback_config_t {
   bool has_target_level;
   int target_level;
 };
+#endif /* ENABLE_WASAPI */
 
+#if defined(ENABLE_ASIO)
 /** Struct: asio_capture_config */
 struct asio_capture_config_t {
   size_t channels;
@@ -887,7 +937,9 @@ struct asio_capture_config_t {
   bool has_format;
   asio_sample_format_t format;
 };
+#endif /* ENABLE_ASIO */
 
+#if defined(ENABLE_ASIO)
 /** Struct: asio_playback_config */
 struct asio_playback_config_t {
   size_t channels;
@@ -896,6 +948,7 @@ struct asio_playback_config_t {
   bool has_format;
   asio_sample_format_t format;
 };
+#endif /* ENABLE_ASIO */
 
 /** Struct: wav_file_capture_config */
 struct wav_file_capture_config_t {
@@ -959,14 +1012,24 @@ struct capture_device_config_t {
   bool has_dop_cutoff_hz;
   double dop_cutoff_hz;
   union {
+    #if defined(ENABLE_COREAUDIO)
     coreaudio_capture_config_t coreaudio;
+    #endif /* ENABLE_COREAUDIO */
+    #if defined(ENABLE_ALSA)
     alsa_capture_config_t alsa;
+    #endif /* ENABLE_ALSA */
+    #if defined(ENABLE_PIPEWIRE)
     pipewire_capture_config_t pipewire;
+    #endif /* ENABLE_PIPEWIRE */
     raw_file_capture_config_t raw_file;
     stdin_capture_config_t stdin_in;
     generator_capture_config_t generator;
+    #if defined(ENABLE_WASAPI)
     wasapi_capture_config_t wasapi;
+    #endif /* ENABLE_WASAPI */
+    #if defined(ENABLE_ASIO)
     asio_capture_config_t asio;
+    #endif /* ENABLE_ASIO */
     wav_file_capture_config_t wav_file;
   } cfg;
 };
@@ -984,13 +1047,23 @@ struct playback_device_config_t {
   bool has_dsd_encoder_filter;
   sdm_filter_t dsd_encoder_filter;
   union {
+    #if defined(ENABLE_COREAUDIO)
     coreaudio_playback_config_t coreaudio;
+    #endif /* ENABLE_COREAUDIO */
+    #if defined(ENABLE_ALSA)
     alsa_playback_config_t alsa;
+    #endif /* ENABLE_ALSA */
+    #if defined(ENABLE_PIPEWIRE)
     pipewire_playback_config_t pipewire;
+    #endif /* ENABLE_PIPEWIRE */
     raw_file_playback_config_t raw_file;
     stdout_playback_config_t stdout_out;
+    #if defined(ENABLE_WASAPI)
     wasapi_playback_config_t wasapi;
+    #endif /* ENABLE_WASAPI */
+    #if defined(ENABLE_ASIO)
     asio_playback_config_t asio;
+    #endif /* ENABLE_ASIO */
   } cfg;
 };
 
@@ -1217,41 +1290,53 @@ cJSON *serialize_generator_signal(const generator_signal_t *in);
 void free_generator_signal_contents(generator_signal_t *in);
 double generator_signal_get_freq(const generator_signal_t *in);
 
+#if defined(ENABLE_COREAUDIO)
 void coreaudio_capture_config_init(coreaudio_capture_config_t *out);
 bool coreaudio_capture_config_equal(const coreaudio_capture_config_t *a, const coreaudio_capture_config_t *b);
 int parse_coreaudio_capture_config(const cJSON *obj, const char *ctx, coreaudio_capture_config_t *out, config_error_t *err);
 cJSON *serialize_coreaudio_capture_config(const coreaudio_capture_config_t *in);
 void free_coreaudio_capture_config_contents(coreaudio_capture_config_t *in);
+#endif /* ENABLE_COREAUDIO */
 
+#if defined(ENABLE_COREAUDIO)
 void coreaudio_playback_config_init(coreaudio_playback_config_t *out);
 bool coreaudio_playback_config_equal(const coreaudio_playback_config_t *a, const coreaudio_playback_config_t *b);
 int parse_coreaudio_playback_config(const cJSON *obj, const char *ctx, coreaudio_playback_config_t *out, config_error_t *err);
 cJSON *serialize_coreaudio_playback_config(const coreaudio_playback_config_t *in);
 void free_coreaudio_playback_config_contents(coreaudio_playback_config_t *in);
+#endif /* ENABLE_COREAUDIO */
 
+#if defined(ENABLE_ALSA)
 void alsa_capture_config_init(alsa_capture_config_t *out);
 bool alsa_capture_config_equal(const alsa_capture_config_t *a, const alsa_capture_config_t *b);
 int parse_alsa_capture_config(const cJSON *obj, const char *ctx, alsa_capture_config_t *out, config_error_t *err);
 cJSON *serialize_alsa_capture_config(const alsa_capture_config_t *in);
 void free_alsa_capture_config_contents(alsa_capture_config_t *in);
+#endif /* ENABLE_ALSA */
 
+#if defined(ENABLE_ALSA)
 void alsa_playback_config_init(alsa_playback_config_t *out);
 bool alsa_playback_config_equal(const alsa_playback_config_t *a, const alsa_playback_config_t *b);
 int parse_alsa_playback_config(const cJSON *obj, const char *ctx, alsa_playback_config_t *out, config_error_t *err);
 cJSON *serialize_alsa_playback_config(const alsa_playback_config_t *in);
 void free_alsa_playback_config_contents(alsa_playback_config_t *in);
+#endif /* ENABLE_ALSA */
 
+#if defined(ENABLE_PIPEWIRE)
 void pipewire_capture_config_init(pipewire_capture_config_t *out);
 bool pipewire_capture_config_equal(const pipewire_capture_config_t *a, const pipewire_capture_config_t *b);
 int parse_pipewire_capture_config(const cJSON *obj, const char *ctx, pipewire_capture_config_t *out, config_error_t *err);
 cJSON *serialize_pipewire_capture_config(const pipewire_capture_config_t *in);
 void free_pipewire_capture_config_contents(pipewire_capture_config_t *in);
+#endif /* ENABLE_PIPEWIRE */
 
+#if defined(ENABLE_PIPEWIRE)
 void pipewire_playback_config_init(pipewire_playback_config_t *out);
 bool pipewire_playback_config_equal(const pipewire_playback_config_t *a, const pipewire_playback_config_t *b);
 int parse_pipewire_playback_config(const cJSON *obj, const char *ctx, pipewire_playback_config_t *out, config_error_t *err);
 cJSON *serialize_pipewire_playback_config(const pipewire_playback_config_t *in);
 void free_pipewire_playback_config_contents(pipewire_playback_config_t *in);
+#endif /* ENABLE_PIPEWIRE */
 
 void stdin_capture_config_init(stdin_capture_config_t *out);
 bool stdin_capture_config_equal(const stdin_capture_config_t *a, const stdin_capture_config_t *b);
@@ -1265,29 +1350,37 @@ int parse_stdout_playback_config(const cJSON *obj, const char *ctx, stdout_playb
 cJSON *serialize_stdout_playback_config(const stdout_playback_config_t *in);
 void free_stdout_playback_config_contents(stdout_playback_config_t *in);
 
+#if defined(ENABLE_WASAPI)
 void wasapi_capture_config_init(wasapi_capture_config_t *out);
 bool wasapi_capture_config_equal(const wasapi_capture_config_t *a, const wasapi_capture_config_t *b);
 int parse_wasapi_capture_config(const cJSON *obj, const char *ctx, wasapi_capture_config_t *out, config_error_t *err);
 cJSON *serialize_wasapi_capture_config(const wasapi_capture_config_t *in);
 void free_wasapi_capture_config_contents(wasapi_capture_config_t *in);
+#endif /* ENABLE_WASAPI */
 
+#if defined(ENABLE_WASAPI)
 void wasapi_playback_config_init(wasapi_playback_config_t *out);
 bool wasapi_playback_config_equal(const wasapi_playback_config_t *a, const wasapi_playback_config_t *b);
 int parse_wasapi_playback_config(const cJSON *obj, const char *ctx, wasapi_playback_config_t *out, config_error_t *err);
 cJSON *serialize_wasapi_playback_config(const wasapi_playback_config_t *in);
 void free_wasapi_playback_config_contents(wasapi_playback_config_t *in);
+#endif /* ENABLE_WASAPI */
 
+#if defined(ENABLE_ASIO)
 void asio_capture_config_init(asio_capture_config_t *out);
 bool asio_capture_config_equal(const asio_capture_config_t *a, const asio_capture_config_t *b);
 int parse_asio_capture_config(const cJSON *obj, const char *ctx, asio_capture_config_t *out, config_error_t *err);
 cJSON *serialize_asio_capture_config(const asio_capture_config_t *in);
 void free_asio_capture_config_contents(asio_capture_config_t *in);
+#endif /* ENABLE_ASIO */
 
+#if defined(ENABLE_ASIO)
 void asio_playback_config_init(asio_playback_config_t *out);
 bool asio_playback_config_equal(const asio_playback_config_t *a, const asio_playback_config_t *b);
 int parse_asio_playback_config(const cJSON *obj, const char *ctx, asio_playback_config_t *out, config_error_t *err);
 cJSON *serialize_asio_playback_config(const asio_playback_config_t *in);
 void free_asio_playback_config_contents(asio_playback_config_t *in);
+#endif /* ENABLE_ASIO */
 
 void wav_file_capture_config_init(wav_file_capture_config_t *out);
 bool wav_file_capture_config_equal(const wav_file_capture_config_t *a, const wav_file_capture_config_t *b);

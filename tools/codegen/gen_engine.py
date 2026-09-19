@@ -18,6 +18,16 @@ class CodegenEngine:
     def __init__(self, schemas: List[Union[EnumType, StructType, TaggedUnionType]]):
         self.schemas = schemas
 
+    def _get_guard(self, obj: Any) -> Optional[str]:
+        return getattr(obj, "guard", None)
+
+    def _get_var_guard(self, var: tuple) -> Optional[str]:
+        if len(var) > 3 and isinstance(var[3], str):
+            return var[3]
+        if len(var) > 2 and isinstance(var[2], str):
+            return var[2]
+        return None
+
     def _field_value_decl_str(self, f: Field, name: str) -> str:
         if isinstance(f.type, PrimitiveType):
             return f"{f.type.c_type} {name};"
@@ -64,11 +74,13 @@ class CodegenEngine:
         w.line("#ifndef CONFIG_GEN_H")
         w.line("#define CONFIG_GEN_H")
         w.line()
+        w.line("#include <assert.h>")
         w.line("#include <stdbool.h>")
         w.line("#include <stddef.h>")
         w.line("#include <stdint.h>")
         w.line("#include \"config/cJSON.h\"")
         w.line("#include \"config/config_error.h\"")
+        w.line("#include \"utils/cdsp_macros.h\"")
         w.line()
         w.line("struct biquad_filter;")
         w.line("typedef struct biquad_filter biquad_filter_t;")
@@ -77,6 +89,8 @@ class CodegenEngine:
         # 1. Enums
         for s in self.schemas:
             if isinstance(s, EnumType):
+                if s.guard:
+                    w.line(f"#if defined({s.guard})")
                 if not s.is_external:
                     if s.name == "fader":
                         w.line("#ifndef FADER_T_DEFINED")
@@ -85,16 +99,23 @@ class CodegenEngine:
                     w.block_start(f"typedef enum")
                     for i, var in enumerate(s.variants):
                         v_name = var[0]
+                        vg = self._get_var_guard(var)
                         comma = "," if i < len(s.variants) - 1 else ""
+                        if vg:
+                            w.line(f"#if defined({vg})")
                         if i == 0 and s.invalid_val and ("INVALID" in s.invalid_val or "NONE" in s.invalid_val) and "(" not in s.invalid_val:
                             w.line(f"{s.invalid_val} = -1,")
                         w.line(f"{v_name}{comma}")
+                        if vg:
+                            w.line(f"#endif /* {vg} */")
                     w.block_end(f" {s.c_type};")
                     if s.name == "fader":
                         w.line("#endif /* FADER_T_DEFINED */")
                     w.line()
                 w.line(f"const char *{s.name}_to_string({s.c_type} val);")
                 w.line(f"{s.c_type} {s.name}_from_string(const char *str);")
+                if s.guard:
+                    w.line(f"#endif /* {s.guard} */")
                 w.line()
 
         # 2. Structs & Tagged Unions forward declarations
@@ -106,19 +127,32 @@ class CodegenEngine:
                         seen_named_maps.add(f.type.name)
                         w.line(f"typedef struct {f.type.item_c_type} {f.type.item_c_type};")
                 if not s.is_external:
+                    if s.guard:
+                        w.line(f"#if defined({s.guard})")
                     w.line(f"typedef struct {s.c_type} {s.c_type};")
+                    if s.guard:
+                        w.line(f"#endif /* {s.guard} */")
             elif isinstance(s, TaggedUnionType):
                 if not s.is_external:
+                    if s.guard:
+                        w.line(f"#if defined({s.guard})")
                     w.line(f"typedef struct {s.c_type} {s.c_type};")
+                    if s.guard:
+                        w.line(f"#endif /* {s.guard} */")
         w.line()
 
         # 3. Full Struct Definitions
         for s in self.schemas:
             if isinstance(s, StructType):
                 if not s.is_external:
+                    if s.guard:
+                        w.line(f"#if defined({s.guard})")
                     w.line(f"/** Struct: {s.name} */")
                     w.block_start(f"struct {s.c_type}")
                     for f in s.fields:
+                        fg = self._get_guard(f)
+                        if fg:
+                            w.line(f"#if defined({fg})")
                         if f.has_flag:
                             if f.aliases and not isinstance(f.type, ArrayType):
                                 w.block_start("union")
@@ -136,15 +170,24 @@ class CodegenEngine:
                             w.block_end(";")
                         else:
                             w.line(self._field_value_decl_str(f, f.name))
+                        if fg:
+                            w.line(f"#endif /* {fg} */")
                     w.block_end(";")
+                    if s.guard:
+                        w.line(f"#endif /* {s.guard} */")
                     w.line()
             elif isinstance(s, TaggedUnionType):
                 if not s.is_external:
+                    if s.guard:
+                        w.line(f"#if defined({s.guard})")
                     w.line(f"/** Tagged Union: {s.name} */")
                     w.block_start(f"struct {s.c_type}")
                     w.line(f"{s.tag_enum.c_type} {s.tag_field};")
                     if s.extra_fields:
                         for f in s.extra_fields:
+                            fg = self._get_guard(f)
+                            if fg:
+                                w.line(f"#if defined({fg})")
                             if f.has_flag:
                                 if f.aliases and not isinstance(f.type, ArrayType):
                                     w.block_start("union")
@@ -162,14 +205,28 @@ class CodegenEngine:
                                 w.block_end(";")
                             else:
                                 w.line(self._field_value_decl_str(f, f.name))
+                            if fg:
+                                w.line(f"#endif /* {fg} */")
                     w.block_start(f"union")
                     for tag_variant, (field_name, struct_type) in s.variants.items():
+                        g = self._get_guard(struct_type)
+                        if g:
+                            w.line(f"#if defined({g})")
                         w.line(f"{struct_type.c_type} {field_name};")
+                        if g:
+                            w.line(f"#endif /* {g} */")
                     if s.extra_union_members:
                         for field_name, struct_type in s.extra_union_members:
+                            g = self._get_guard(struct_type)
+                            if g:
+                                w.line(f"#if defined({g})")
                             w.line(f"{struct_type.c_type} {field_name};")
+                            if g:
+                                w.line(f"#endif /* {g} */")
                     w.block_end(f" {s.union_field};")
                     w.block_end(";")
+                    if s.guard:
+                        w.line(f"#endif /* {s.guard} */")
                     w.line()
 
         # 3.5 Named Map Item Struct Definitions
@@ -192,6 +249,8 @@ class CodegenEngine:
         # 4. Function Prototypes (init, equal, parse, serialize, free, getters)
         for s in self.schemas:
             if isinstance(s, StructType):
+                if s.guard:
+                    w.line(f"#if defined({s.guard})")
                 w.line(f"void {s.name}_init({s.c_type} *out);")
                 w.line(f"bool {s.name}_equal(const {s.c_type} *a, const {s.c_type} *b);")
                 w.line(f"int parse_{s.name}(const cJSON *obj, const char *ctx, {s.c_type} *out, config_error_t *err);")
@@ -203,13 +262,19 @@ class CodegenEngine:
                             w.line(f"{f.type.c_type} {s.name}_get_{f.name}(const {s.c_type} *in);")
                         elif isinstance(f.type, EnumType):
                             w.line(f"{f.type.c_type} {s.name}_get_{f.name}(const {s.c_type} *in);")
+                if s.guard:
+                    w.line(f"#endif /* {s.guard} */")
                 w.line()
             elif isinstance(s, TaggedUnionType):
+                if s.guard:
+                    w.line(f"#if defined({s.guard})")
                 w.line(f"void {s.name}_init({s.c_type} *out);")
                 w.line(f"bool {s.name}_equal(const {s.c_type} *a, const {s.c_type} *b);")
                 w.line(f"int parse_{s.name}(const cJSON *obj, const char *ctx, {s.c_type} *out, config_error_t *err);")
                 w.line(f"cJSON *serialize_{s.name}(const {s.c_type} *in);")
                 w.line(f"void free_{s.name}_contents({s.c_type} *in);")
+                if s.guard:
+                    w.line(f"#endif /* {s.guard} */")
                 w.line()
 
         w.line("#endif /* CONFIG_GEN_H */")
@@ -233,6 +298,7 @@ class CodegenEngine:
         w.line("/* clang-format off */")
         w.line()
         w.line("#include \"config/config_gen.h\"")
+        w.line("#include <assert.h>")
         w.line("#include <math.h>")
         w.line("#include <stdio.h>")
         w.line("#include <stdlib.h>")
@@ -240,20 +306,49 @@ class CodegenEngine:
         w.line("#include \"config/config_parser.h\"")
         w.line()
 
+        # Collect all variants per enum c_type
+        c_type_variants = {}
+        for s in self.schemas:
+            if isinstance(s, EnumType):
+                if s.c_type not in c_type_variants:
+                    c_type_variants[s.c_type] = []
+                for var in s.variants:
+                    if not any(v[0] == var[0] for v in c_type_variants[s.c_type]):
+                        c_type_variants[s.c_type].append(var)
+
         # 1. Enums implementation
         for s in self.schemas:
             if isinstance(s, EnumType):
+                if s.guard:
+                    w.line(f"#if defined({s.guard})")
                 w.line(f"const char *{s.name}_to_string({s.c_type} val) {{")
                 w.indent()
                 w.block_start("switch (val)")
+                handled = set()
                 for var in s.variants:
                     v_name = var[0]
                     json_str = var[1]
+                    handled.add(v_name)
+                    vg = self._get_var_guard(var)
+                    if vg:
+                        w.line(f"#if defined({vg})")
                     w.line(f"case {v_name}: return \"{json_str}\";")
-                if s.invalid_val:
+                    if vg:
+                        w.line(f"#endif")
+                for var in c_type_variants.get(s.c_type, []):
+                    if var[0] not in handled and var[0] != s.invalid_val:
+                        handled.add(var[0])
+                        vg = self._get_var_guard(var)
+                        if vg:
+                            w.line(f"#if defined({vg})")
+                        w.line(f"case {var[0]}: return \"Invalid\";")
+                        if vg:
+                            w.line(f"#endif")
+                if s.invalid_val and s.invalid_val not in handled:
                     w.line(f"case {s.invalid_val}: return \"Invalid\";")
-                w.line("default: return \"Invalid\";")
                 w.block_end()
+                w.line("CDSP_UNREACHABLE();")
+                w.line("return \"Invalid\";")
                 w.dedent()
                 w.line("}")
                 w.line()
@@ -265,18 +360,27 @@ class CodegenEngine:
                 for var in s.variants:
                     v_name = var[0]
                     json_str = var[1]
-                    aliases = var[2] if len(var) > 2 else []
+                    aliases = var[2] if len(var) > 2 and isinstance(var[2], list) else []
+                    vg = self._get_var_guard(var)
+                    if vg:
+                        w.line(f"#if defined({vg})")
                     w.line(f"if (strcmp(str, \"{json_str}\") == 0) return {v_name};")
                     for alias in aliases:
                         w.line(f"if (strcmp(str, \"{alias}\") == 0) return {v_name};")
+                    if vg:
+                        w.line(f"#endif")
                 w.line(f"return {invalid_ret};")
                 w.dedent()
                 w.line("}")
+                if s.guard:
+                    w.line(f"#endif /* {s.guard} */")
                 w.line()
 
         # 2. Structs implementation
         for s in self.schemas:
             if isinstance(s, StructType):
+                if s.guard:
+                    w.line(f"#if defined({s.guard})")
                 # Init function
                 w.line(f"void {s.name}_init({s.c_type} *out) {{")
                 w.indent()
@@ -359,7 +463,13 @@ class CodegenEngine:
                 # Equal function
                 self._generate_struct_equal(s, w)
 
+                if s.guard:
+                    w.line(f"#endif /* {s.guard} */")
+                w.line()
+
             elif isinstance(s, TaggedUnionType):
+                if s.guard:
+                    w.line(f"#if defined({s.guard})")
                 # Init function
                 w.line(f"void {s.name}_init({s.c_type} *out) {{")
                 w.indent()
@@ -405,12 +515,33 @@ class CodegenEngine:
                             else:
                                 w.line(f"if (in->{f.name}) {{ free(in->{f.name}); in->{f.name} = NULL; in->{f.name}_count = 0; }}")
                 w.block_start(f"switch (in->{s.tag_field})")
+                handled_tags = set()
                 for tag_variant, (field_name, struct_type) in s.variants.items():
+                    handled_tags.add(tag_variant)
+                    g = self._get_guard(struct_type)
+                    if g:
+                        w.line(f"#if defined({g})")
                     w.line(f"case {tag_variant}: free_{struct_type.name}_contents(&in->{s.union_field}.{field_name}); break;")
+                    if g:
+                        w.line(f"#endif")
                 if s.extra_union_members:
                     for field_name, struct_type in s.extra_union_members:
+                        g = self._get_guard(struct_type)
+                        if g:
+                            w.line(f"#if defined({g})")
                         w.line(f"free_{struct_type.name}_contents(&in->{s.union_field}.{field_name});")
-                w.line("default: break;")
+                        if g:
+                            w.line(f"#endif")
+                for var in s.tag_enum.variants:
+                    if var[0] not in handled_tags:
+                        vg = self._get_var_guard(var)
+                        if vg:
+                            w.line(f"#if defined({vg})")
+                        w.line(f"case {var[0]}: break;")
+                        if vg:
+                            w.line(f"#endif")
+                if s.tag_enum.invalid_val and s.tag_enum.invalid_val not in handled_tags:
+                    w.line(f"case {s.tag_enum.invalid_val}: break;")
                 w.block_end()
                 w.dedent()
                 w.line("}")
@@ -424,6 +555,10 @@ class CodegenEngine:
 
                 # Tagged Union Equal
                 self._generate_tagged_union_equal(s, w)
+
+                if s.guard:
+                    w.line(f"#endif /* {s.guard} */")
+                w.line()
 
         w.line("/* clang-format on */")
         return w.get_code()
@@ -624,10 +759,15 @@ class CodegenEngine:
             for var in enum_type.variants:
                 v_c = var[0]
                 v_j = var[1]
+                vg = self._get_var_guard(var)
+                if vg:
+                    w.line(f"#if defined({vg})")
                 w.line(f"  {{\"{v_j}\", {v_c}}},")
                 if len(var) > 2:
                     for alias in var[2]:
                         w.line(f"  {{\"{alias}\", {v_c}}},")
+                if vg:
+                    w.line("#endif")
             w.line("  {NULL, 0}")
             w.line("};")
             w.line(f"int tag_val = 0;")
@@ -635,9 +775,11 @@ class CodegenEngine:
             w.line(f"out->{s.variant_tag_field} = ({enum_type.c_type})tag_val;")
             w.line()
             w.block_start(f"switch (out->{s.variant_tag_field})")
+            handled_tags = set()
             for rule in s.variant_rules:
                 for tv in rule.tag_values:
                     w.line(f"case {tv}:")
+                    handled_tags.add(tv)
                 w.indent()
                 w.line("{")
                 w.indent()
@@ -725,7 +867,16 @@ class CodegenEngine:
                 w.dedent()
                 w.line("}")
                 w.dedent()
-            w.line("default: break;")
+            for var in enum_type.variants:
+                if var[0] not in handled_tags:
+                    vg = self._get_var_guard(var)
+                    if vg:
+                        w.line(f"#if defined({vg})")
+                    w.line(f"case {var[0]}: break;")
+                    if vg:
+                        w.line("#endif")
+            if enum_type.invalid_val and enum_type.invalid_val not in handled_tags:
+                w.line(f"case {enum_type.invalid_val}: break;")
             w.block_end()
             w.line("return 0;")
             w.dedent()
@@ -959,7 +1110,6 @@ class CodegenEngine:
                         w.line(f"if (!out->has_{f.name}) {{ out->{f.name} = {val_str}; }}")
 
             # Match type_str to payload parsers
-            first = True
             for tag_variant, (field_name, struct_type) in s.variants.items():
                 var_names = []
                 for var in s.tag_enum.variants:
@@ -971,46 +1121,51 @@ class CodegenEngine:
                                     var_names.append(a)
                 if not var_names:
                     continue
+                g = self._get_guard(struct_type)
+                if g:
+                    w.line(f"#if defined({g})")
                 match_cond = " || ".join([f"strcmp(type_str, \"{v}\") == 0" for v in var_names])
-                keyword = "if" if first else "else if"
-                first = False
-                w.line(f"{keyword} ({match_cond}) {{")
+                w.line(f"if ({match_cond}) {{")
                 w.indent()
                 w.line(f"out->{s.tag_field} = {tag_variant};")
                 w.line(f"return parse_{struct_type.name}(obj, \"{var_names[0]} {s.name}\", &out->{s.union_field}.{field_name}, err);")
                 w.dedent()
                 w.line("}")
+                if g:
+                    w.line("#endif")
 
             for alias_key, (tag_val, member_name, assigns) in s.variant_type_aliases.items():
-                keyword = "if" if first else "else if"
-                first = False
-                w.line(f"{keyword} (strcmp(type_str, \"{alias_key}\") == 0) {{")
-                w.indent()
-                w.line(f"out->{s.tag_field} = {tag_val};")
-                for ak, av in assigns.items():
-                    val_str = "true" if av is True else "false" if av is False else str(av)
-                    w.line(f"out->{ak} = {val_str};")
                 # find target struct type from extra_union_members or variants
                 payload_type_name = None
+                st_obj = None
                 for mem_name, st in s.extra_union_members:
                     if mem_name == member_name:
                         payload_type_name = st.name
+                        st_obj = st
                         break
                 if not payload_type_name:
                     for tv, (mem_name, st) in s.variants.items():
                         if mem_name == member_name:
                             payload_type_name = st.name
+                            st_obj = st
                             break
+                g = self._get_guard(st_obj) if st_obj else None
+                if g:
+                    w.line(f"#if defined({g})")
+                w.line(f"if (strcmp(type_str, \"{alias_key}\") == 0) {{")
+                w.indent()
+                w.line(f"out->{s.tag_field} = {tag_val};")
+                for ak, av in assigns.items():
+                    val_str = "true" if av is True else "false" if av is False else str(av)
+                    w.line(f"out->{ak} = {val_str};")
                 w.line(f"return parse_{payload_type_name}(obj, \"{alias_key} {s.name}\", &out->{s.union_field}.{member_name}, err);")
                 w.dedent()
                 w.line("}")
+                if g:
+                    w.line("#endif")
 
-            w.line("else {")
-            w.indent()
             w.line(f"config_error_set(err, CONFIG_ERR_PARSE, \"unknown variant '%s', expected one of {expected_str}\", type_str);")
             w.line("return -1;")
-            w.dedent()
-            w.line("}")
             w.dedent()
             w.line("}")
             w.line()
@@ -1022,10 +1177,15 @@ class CodegenEngine:
         for var in s.tag_enum.variants:
             v_c = var[0]
             v_j = var[1]
+            vg = self._get_var_guard(var)
+            if vg:
+                w.line(f"#if defined({vg})")
             w.line(f"  {{\"{v_j}\", {v_c}}},")
             if len(var) > 2:
                 for alias in var[2]:
                     w.line(f"  {{\"{alias}\", {v_c}}},")
+            if vg:
+                w.line("#endif")
         w.line("  {NULL, 0}")
         w.line("};")
 
@@ -1067,13 +1227,29 @@ class CodegenEngine:
 
         w.line()
         w.block_start(f"switch (out->{s.tag_field})")
+        handled_tags = set()
         for tag_variant, (field_name, struct_type) in s.variants.items():
+            handled_tags.add(tag_variant)
+            g = self._get_guard(struct_type)
+            if g:
+                w.line(f"#if defined({g})")
             w.line(f"case {tag_variant}:")
             w.indent()
             w.line(f"if (parse_{struct_type.name}(params_obj, ctx ? ctx : \"{struct_type.name}\", &out->{s.union_field}.{field_name}, err) != 0) return -1;")
             w.line("break;")
             w.dedent()
-        w.line("default: break;")
+            if g:
+                w.line("#endif")
+        for var in s.tag_enum.variants:
+            if var[0] not in handled_tags:
+                vg = self._get_var_guard(var)
+                if vg:
+                    w.line(f"#if defined({vg})")
+                w.line(f"case {var[0]}: break;")
+                if vg:
+                    w.line("#endif")
+        if s.tag_enum.invalid_val and s.tag_enum.invalid_val not in handled_tags:
+            w.line(f"case {s.tag_enum.invalid_val}: break;")
         w.block_end()
         w.line("return 0;")
         w.dedent()
@@ -1089,7 +1265,12 @@ class CodegenEngine:
         if s.is_flattened:
             w.line("cJSON *obj = NULL;")
             w.block_start(f"switch (in->{s.tag_field})")
+            handled_tags = set()
             for tag_variant, (field_name, struct_type) in s.variants.items():
+                handled_tags.add(tag_variant)
+                g = self._get_guard(struct_type)
+                if g:
+                    w.line(f"#if defined({g})")
                 w.line(f"case {tag_variant}:")
                 w.indent()
                 # Check if this tag has alias branching (e.g. WavFile / RawFile)
@@ -1117,7 +1298,18 @@ class CodegenEngine:
                     w.line(f"if (obj) cJSON_AddStringToObject(obj, \"type\", \"{tag_str}\");")
                 w.line("break;")
                 w.dedent()
-            w.line("default: obj = cJSON_CreateObject(); break;")
+                if g:
+                    w.line("#endif")
+            for var in s.tag_enum.variants:
+                if var[0] not in handled_tags:
+                    vg = self._get_var_guard(var)
+                    if vg:
+                        w.line(f"#if defined({vg})")
+                    w.line(f"case {var[0]}: break;")
+                    if vg:
+                        w.line("#endif")
+            if s.tag_enum.invalid_val and s.tag_enum.invalid_val not in handled_tags:
+                w.line(f"case {s.tag_enum.invalid_val}: break;")
             w.block_end()
             w.line("if (!obj) return NULL;")
             if s.extra_fields:
@@ -1169,13 +1361,29 @@ class CodegenEngine:
                     w.line(f"{has_check} cJSON_AddStringToObject(obj, \"{f.json_key}\", {f.type.name}_to_string(in->{f.name}));")
 
         w.block_start(f"switch (in->{s.tag_field})")
+        handled_tags = set()
         for tag_variant, (field_name, struct_type) in s.variants.items():
+            handled_tags.add(tag_variant)
+            g = self._get_guard(struct_type)
+            if g:
+                w.line(f"#if defined({g})")
             w.line(f"case {tag_variant}:")
             w.indent()
             w.line(f"cJSON_AddItemToObject(obj, \"parameters\", serialize_{struct_type.name}(&in->{s.union_field}.{field_name}));")
             w.line("break;")
             w.dedent()
-        w.line("default: break;")
+            if g:
+                w.line("#endif")
+        for var in s.tag_enum.variants:
+            if var[0] not in handled_tags:
+                vg = self._get_var_guard(var)
+                if vg:
+                    w.line(f"#if defined({vg})")
+                w.line(f"case {var[0]}: break;")
+                if vg:
+                    w.line("#endif")
+        if s.tag_enum.invalid_val and s.tag_enum.invalid_val not in handled_tags:
+            w.line(f"case {s.tag_enum.invalid_val}: break;")
         w.block_end()
         w.line("return obj;")
         w.dedent()
@@ -1266,7 +1474,12 @@ class CodegenEngine:
                 else:
                     self._generate_field_equal(f, w)
         w.block_start(f"switch (a->{s.tag_field})")
+        handled_tags = set()
         for tag_variant, (field_name, struct_type) in s.variants.items():
+            handled_tags.add(tag_variant)
+            g = self._get_guard(struct_type)
+            if g:
+                w.line(f"#if defined({g})")
             w.line(f"case {tag_variant}:")
             w.indent()
             has_is_wav_alias = any(ak in ("WavFile", "RawFile") for ak in s.variant_type_aliases.keys()) and tag_variant == "AUDIO_BACKEND_TYPE_FILE"
@@ -1277,8 +1490,21 @@ class CodegenEngine:
             else:
                 w.line(f"return {struct_type.name}_equal(&a->{s.union_field}.{field_name}, &b->{s.union_field}.{field_name});")
             w.dedent()
-        w.line("default: return true;")
+            if g:
+                w.line("#endif")
+        for var in s.tag_enum.variants:
+            if var[0] not in handled_tags:
+                vg = self._get_var_guard(var)
+                if vg:
+                    w.line(f"#if defined({vg})")
+                w.line(f"case {var[0]}: return false;")
+                if vg:
+                    w.line("#endif")
+        if s.tag_enum.invalid_val and s.tag_enum.invalid_val not in handled_tags:
+            w.line(f"case {s.tag_enum.invalid_val}: return false;")
         w.block_end()
+        w.line("CDSP_UNREACHABLE();")
+        w.line("return false;")
         w.dedent()
         w.line("}")
         w.line()

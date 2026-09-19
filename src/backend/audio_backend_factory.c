@@ -10,9 +10,15 @@
 static const logger_t g_logger = {"dsp.backend.factory"};
 static capture_backend_t *s_last_capture_backend = NULL;
 
+#include <assert.h>
+
+#include "utils/cdsp_macros.h"
+
 static audio_backend_error_type_t
 map_backend_error_type(backend_error_type_t type) {
   switch (type) {
+  case BACKEND_ERROR_NONE:
+    return AUDIO_BACKEND_ERR_COMMAND_SEND;
   case BACKEND_ERROR_DEVICE_NOT_FOUND:
     return AUDIO_BACKEND_ERR_DEVICE_NOT_FOUND;
   case BACKEND_ERROR_DEVICE_BUSY:
@@ -23,9 +29,10 @@ map_backend_error_type(backend_error_type_t type) {
   case BACKEND_ERROR_READ_EOF:
   case BACKEND_ERROR_READ_ERROR:
   case BACKEND_ERROR_WRITE_ERROR:
-  default:
     return AUDIO_BACKEND_ERR_COMMAND_SEND;
   }
+  CDSP_UNREACHABLE();
+  return AUDIO_BACKEND_ERR_COMMAND_SEND;
 }
 
 capture_backend_t *audio_backend_factory_create_capture(
