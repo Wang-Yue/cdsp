@@ -7,22 +7,25 @@ import sys
 import json
 from collections import defaultdict, deque
 
-SEARCH_DIRS = ["Engine", "Audio", "DSD", "Pipeline", "Resampler", "Filters", "Mixer", "Utils", "Backend", "Logging"]
-
 C_KEYWORDS = {
     "if", "while", "for", "switch", "return", "sizeof", "typeof", "alignof",
     "atomic_load_explicit", "atomic_store_explicit", "atomic_init",
     "atomic_compare_exchange_weak_explicit", "atomic_compare_exchange_strong_explicit",
-    "atomic_exchange", "atomic_load", "atomic_store", "cast", "defined",
-    "__attribute__", "NULL", "true", "false", "int", "char", "bool", "double", "float", "size_t"
+    "atomic_exchange", "atomic_load", "atomic_store", "atomic_fetch_add", "atomic_fetch_sub",
+    "cast", "defined", "__attribute__", "__builtin_expect", "__builtin_unreachable",
+    "NULL", "true", "false", "int", "char", "bool", "double", "float", "size_t", "void",
+    "CDSP_UNREACHABLE", "CDSP_ASSERT", "assert"
 }
 
 FORBIDDEN_PRIMITIVES = {
     "pthread_mutex_lock": "POSIX Mutex Lock",
+    "pthread_mutex_trylock": "POSIX Mutex Trylock",
     "malloc": "Heap Memory Allocation",
     "calloc": "Heap Memory Allocation",
     "realloc": "Heap Memory Allocation",
-    "free": "Heap Memory Deallocation"
+    "free": "Heap Memory Deallocation",
+    "posix_memalign": "Heap Memory Allocation",
+    "aligned_alloc": "Heap Memory Allocation"
 }
 
 def remove_comments_and_strings(code):
@@ -31,22 +34,19 @@ def remove_comments_and_strings(code):
     code = re.sub(r'"([^"\\]|\\.)*"', '""', code)
     return code
 
-def parse_c_files(root_dir, search_dirs):
+def parse_c_files(root_dir):
     functions = {}
     pattern = re.compile(
         r'(?:static\s+|inline\s+|extern\s+)?(?:[a-zA-Z0-9_]+\s+\*?)+([a-zA-Z0-9_]+)\s*\([^)]*\)\s*\{',
         re.DOTALL
     )
 
-    for d in search_dirs:
-        dir_path = os.path.join(root_dir, "src", d)
-        if not os.path.exists(dir_path):
-            dir_path = os.path.join(root_dir, d)
-        if not os.path.exists(dir_path):
-            continue
-        for fname in os.listdir(dir_path):
+    src_dir = os.path.join(root_dir, "src")
+    for dirpath, _, filenames in os.walk(src_dir):
+        for fname in filenames:
             if fname.endswith(".c") or fname.endswith(".h"):
-                fpath = os.path.join(dir_path, fname)
+                fpath = os.path.join(dirpath, fname)
+                rel_path = os.path.relpath(fpath, root_dir)
                 with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
                 
@@ -69,7 +69,7 @@ def parse_c_files(root_dir, search_dirs):
                     
                     body = clean[start_idx:idx]
                     functions[func_name] = {
-                        "file": f"{d}/{fname}",
+                        "file": rel_path,
                         "body": body
                     }
     return functions
@@ -176,13 +176,15 @@ def generate_mermaid_and_tree(root_func, functions):
 
 def main():
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    functions = parse_c_files(root_dir, SEARCH_DIRS)
+    functions = parse_c_files(root_dir)
     roots = ["engine_capture_loop_run", "engine_processing_loop_run", "engine_playback_loop_run"]
 
     out = {}
+    total_steady_violations = 0
     for r in roots:
         mermaid_str, primitive_paths, visited = generate_mermaid_and_tree(r, functions)
         steady_violations = [p for p in primitive_paths if p["phase"] == "steady"]
+        total_steady_violations += len(steady_violations)
         out[r] = {
             "mermaid": mermaid_str,
             "primitive_paths": primitive_paths,
@@ -191,6 +193,9 @@ def main():
         }
 
     print(json.dumps(out, indent=2))
+    if total_steady_violations > 0:
+        sys.stderr.write(f"\nERROR: Detected {total_steady_violations} steady-state hot-path lock/allocation violations!\n")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

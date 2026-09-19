@@ -31,7 +31,7 @@ In real-time audio DSP systems, meeting strict low-latency constraints (e.g. 512
 | **`EnginePlaybackLoop`** | 61 | **0 (None)** | **0 (None)** | ✅ PASS (Zero-Lock & Zero-Alloc) |
 
 > [!NOTE]
-> **Static Call Path Analysis Result**: Across all three audio loops, `pthread_mutex_lock`, `malloc`, `calloc`, `realloc`, and `free` are **0% reachable on steady-state audio streaming paths**. The only call paths leading to locks or heap frees are strictly encapsulated in Startup Init, Fallback Error Handling, or Teardown Exit phases.
+> **Static Call Path Analysis Result**: Across all three audio loops, `pthread_mutex_lock`, `pthread_mutex_trylock`, `malloc`, `calloc`, `realloc`, `free`, `posix_memalign`, and `aligned_alloc` are **0% reachable on steady-state audio streaming paths**. The only call paths leading to locks or heap frees are strictly encapsulated in Startup Init, Fallback Error Handling, or Teardown Exit phases.
 
 ---
 
@@ -134,10 +134,14 @@ graph TD
 
 ## 5. How to Re-generate This Audit Report
 
-Run the AST callgraph analysis tool in `tools/generate_callgraph.py`:
+Run the AST callgraph analysis tool in `tools/generate_callgraph.py` or invoke the CMake custom target:
 
 ```bash
+# Direct execution:
 python3 tools/generate_callgraph.py
+
+# Or via CMake build target:
+cmake --build build --target callgraph-audit
 ```
 
-It parses the C AST across `Engine/`, `Audio/`, `DSD/`, `Pipeline/`, `Resampler/`, `Filters/`, `Mixer/`, `Utils/`, `Backend/`, and `Logging/` to verify lock reachability, dynamic heap allocations (`malloc`/`free`), multiline signatures, and generates JSON/Mermaid call graph topologies.
+It recursively parses the C AST across all source modules in `src/` (including `audio/`, `backend/`, `config/`, `dsd/`, `engine/`, `fft/`, `filters/`, `logging/`, `mixer/`, `pipeline/`, `processors/`, `public/`, `resampler/`, `utils/`, and `wav/`) to verify lock reachability (`pthread_mutex_lock`, `pthread_mutex_trylock`), dynamic heap allocations (`malloc`, `calloc`, `realloc`, `free`, `posix_memalign`, `aligned_alloc`), and generates JSON/Mermaid call graph topologies.
