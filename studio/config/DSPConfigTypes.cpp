@@ -795,10 +795,10 @@ CoreAudioCaptureConfig CoreAudioCaptureConfig::fromJson(const QJsonObject& json)
         cfg.bypassDoP = json["bypass_dop"].toBool();
     if (json.contains("dop_cutoff_hz"))
         cfg.dopCutoffHz = json["dop_cutoff_hz"].toDouble();
-    if (json.contains("channel_labels")) {
-        QJsonArray arr = json["channel_labels"].toArray();
+    if (json.contains("labels")) {
+        QJsonArray arr = json["labels"].toArray();
         for (const auto& val : arr)
-            cfg.channelLabels.push_back(val.toString().toStdString());
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -817,11 +817,11 @@ QJsonObject CoreAudioCaptureConfig::toJson() const {
         obj["bypass_dop"] = bypassDoP.value();
     if (dopCutoffHz.has_value())
         obj["dop_cutoff_hz"] = dopCutoffHz.value();
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -840,10 +840,10 @@ CoreAudioPlaybackConfig CoreAudioPlaybackConfig::fromJson(const QJsonObject& jso
         cfg.outputDoP = json["output_dop"].toBool();
     if (json.contains("dsd_encoder_filter"))
         cfg.dsdEncoderFilter = stringToSDMFilter(json["dsd_encoder_filter"].toString().toStdString());
-    if (json.contains("channel_labels")) {
-        QJsonArray arr = json["channel_labels"].toArray();
+    if (json.contains("labels")) {
+        QJsonArray arr = json["labels"].toArray();
         for (const auto& val : arr)
-            cfg.channelLabels.push_back(val.toString().toStdString());
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -862,11 +862,11 @@ QJsonObject CoreAudioPlaybackConfig::toJson() const {
         obj["output_dop"] = outputDoP.value();
     if (dsdEncoderFilter.has_value())
         obj["dsd_encoder_filter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter.value()));
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -878,10 +878,10 @@ WavFileCaptureConfig WavFileCaptureConfig::fromJson(const QJsonObject& json) {
         cfg.filename = json["filename"].toString().toStdString();
     if (json.contains("extra_samples"))
         cfg.extraSamples = json["extra_samples"].toInt();
-    if (json.contains("channel_labels")) {
-        QJsonArray arr = json["channel_labels"].toArray();
+    if (json.contains("labels")) {
+        QJsonArray arr = json["labels"].toArray();
         for (const auto& val : arr)
-            cfg.channelLabels.push_back(val.toString().toStdString());
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -892,11 +892,11 @@ QJsonObject WavFileCaptureConfig::toJson() const {
     obj["filename"] = QString::fromStdString(filename);
     if (extraSamples.has_value())
         obj["extra_samples"] = extraSamples.value();
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -915,10 +915,10 @@ RawFileCaptureConfig RawFileCaptureConfig::fromJson(const QJsonObject& json) {
         cfg.readBytes = json["read_bytes"].toInt();
     if (json.contains("extra_samples"))
         cfg.extraSamples = json["extra_samples"].toInt();
-    if (json.contains("channel_labels")) {
-        QJsonArray arr = json["channel_labels"].toArray();
+    if (json.contains("labels")) {
+        QJsonArray arr = json["labels"].toArray();
         for (const auto& val : arr)
-            cfg.channelLabels.push_back(val.toString().toStdString());
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -935,11 +935,11 @@ QJsonObject RawFileCaptureConfig::toJson() const {
         obj["read_bytes"] = readBytes.value();
     if (extraSamples.has_value())
         obj["extra_samples"] = extraSamples.value();
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -956,10 +956,10 @@ RawFilePlaybackConfig RawFilePlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.wavHeader = json["wav_header"].toBool();
     if (json.contains("use_rf64"))
         cfg.useRf64 = json["use_rf64"].toBool();
-    if (json.contains("channel_labels")) {
-        QJsonArray arr = json["channel_labels"].toArray();
+    if (json.contains("labels")) {
+        QJsonArray arr = json["labels"].toArray();
         for (const auto& val : arr)
-            cfg.channelLabels.push_back(val.toString().toStdString());
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -974,11 +974,11 @@ QJsonObject RawFilePlaybackConfig::toJson() const {
         obj["wav_header"] = wavHeader.value();
     if (useRf64.has_value())
         obj["use_rf64"] = useRf64.value();
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -989,10 +989,10 @@ GeneratorCaptureConfig GeneratorCaptureConfig::fromJson(const QJsonObject& json)
         cfg.channels = json["channels"].toInt();
     if (json.contains("signal"))
         cfg.signal = GeneratorConfig::fromJson(json["signal"].toObject());
-    if (json.contains("channel_labels")) {
-        QJsonArray arr = json["channel_labels"].toArray();
+    if (json.contains("labels")) {
+        QJsonArray arr = json["labels"].toArray();
         for (const auto& val : arr)
-            cfg.channelLabels.push_back(val.toString().toStdString());
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -1002,11 +1002,11 @@ QJsonObject GeneratorCaptureConfig::toJson() const {
     obj["type"] = "SignalGenerator";
     obj["channels"] = channels;
     obj["signal"] = signal.toJson();
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -1030,9 +1030,9 @@ WASAPICaptureConfig WASAPICaptureConfig::fromJson(const QJsonObject& json) {
         cfg.bypassDoP = json["bypass_dop"].toBool();
     if (json.contains("dop_cutoff_hz"))
         cfg.dopCutoffHz = json["dop_cutoff_hz"].toDouble();
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
+    if (json.contains("labels")) {
+        for (const auto& val : json["labels"].toArray())
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -1055,11 +1055,11 @@ QJsonObject WASAPICaptureConfig::toJson() const {
         obj["bypass_dop"] = bypassDoP.value();
     if (dopCutoffHz.has_value())
         obj["dop_cutoff_hz"] = dopCutoffHz.value();
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -1080,9 +1080,9 @@ WASAPIPlaybackConfig WASAPIPlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.outputDoP = json["output_dop"].toBool();
     if (json.contains("dsd_encoder_filter"))
         cfg.dsdEncoderFilter = stringToSDMFilter(json["dsd_encoder_filter"].toString().toStdString());
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
+    if (json.contains("labels")) {
+        for (const auto& val : json["labels"].toArray())
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -1103,11 +1103,11 @@ QJsonObject WASAPIPlaybackConfig::toJson() const {
         obj["output_dop"] = outputDoP.value();
     if (dsdEncoderFilter.has_value())
         obj["dsd_encoder_filter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter.value()));
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -1126,9 +1126,9 @@ ASIOCaptureConfig ASIOCaptureConfig::fromJson(const QJsonObject& json) {
         cfg.bypassDoP = json["bypass_dop"].toBool();
     if (json.contains("dop_cutoff_hz"))
         cfg.dopCutoffHz = json["dop_cutoff_hz"].toDouble();
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
+    if (json.contains("labels")) {
+        for (const auto& val : json["labels"].toArray())
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -1145,11 +1145,11 @@ QJsonObject ASIOCaptureConfig::toJson() const {
         obj["bypass_dop"] = bypassDoP.value();
     if (dopCutoffHz.has_value())
         obj["dop_cutoff_hz"] = dopCutoffHz.value();
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -1166,9 +1166,9 @@ ASIOPlaybackConfig ASIOPlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.outputDoP = json["output_dop"].toBool();
     if (json.contains("dsd_encoder_filter"))
         cfg.dsdEncoderFilter = stringToSDMFilter(json["dsd_encoder_filter"].toString().toStdString());
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
+    if (json.contains("labels")) {
+        for (const auto& val : json["labels"].toArray())
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -1185,11 +1185,11 @@ QJsonObject ASIOPlaybackConfig::toJson() const {
         obj["output_dop"] = outputDoP.value();
     if (dsdEncoderFilter.has_value())
         obj["dsd_encoder_filter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter.value()));
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -1212,9 +1212,9 @@ ALSACaptureConfig ALSACaptureConfig::fromJson(const QJsonObject& json) {
         cfg.linkMuteControl = json["link_mute_control"].toString().toStdString();
     if (json.contains("threaded"))
         cfg.threaded = json["threaded"].toBool();
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
+    if (json.contains("labels")) {
+        for (const auto& val : json["labels"].toArray())
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -1235,11 +1235,11 @@ QJsonObject ALSACaptureConfig::toJson() const {
         obj["link_mute_control"] = QString::fromStdString(linkMuteControl.value());
     if (threaded.has_value())
         obj["threaded"] = threaded.value();
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -1258,9 +1258,9 @@ ALSAPlaybackConfig ALSAPlaybackConfig::fromJson(const QJsonObject& json) {
         cfg.outputDoP = json["output_dop"].toBool();
     if (json.contains("dsd_encoder_filter"))
         cfg.dsdEncoderFilter = stringToSDMFilter(json["dsd_encoder_filter"].toString().toStdString());
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
+    if (json.contains("labels")) {
+        for (const auto& val : json["labels"].toArray())
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -1279,11 +1279,11 @@ QJsonObject ALSAPlaybackConfig::toJson() const {
         obj["output_dop"] = outputDoP.value();
     if (dsdEncoderFilter.has_value())
         obj["dsd_encoder_filter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter.value()));
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -1310,9 +1310,9 @@ PipeWireCaptureConfig PipeWireCaptureConfig::fromJson(const QJsonObject& json) {
         else
             cfg.autoconnectTo = json["autoconnect_to"].toString().toStdString();
     }
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
+    if (json.contains("labels")) {
+        for (const auto& val : json["labels"].toArray())
+            cfg.labels.push_back(val.toString().toStdString());
     }
     if (json.contains("loopback"))
         cfg.loopback = json["loopback"].toBool();
@@ -1335,11 +1335,11 @@ QJsonObject PipeWireCaptureConfig::toJson() const {
         obj["autoconnect_to"] = QJsonValue::Null;
     if (loopback.has_value())
         obj["loopback"] = loopback.value();
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -1360,9 +1360,9 @@ PipeWirePlaybackConfig PipeWirePlaybackConfig::fromJson(const QJsonObject& json)
         else
             cfg.autoconnectTo = json["autoconnect_to"].toString().toStdString();
     }
-    if (json.contains("channel_labels")) {
-        for (const auto& val : json["channel_labels"].toArray())
-            cfg.channelLabels.push_back(val.toString().toStdString());
+    if (json.contains("labels")) {
+        for (const auto& val : json["labels"].toArray())
+            cfg.labels.push_back(val.toString().toStdString());
     }
     return cfg;
 }
@@ -1381,11 +1381,11 @@ QJsonObject PipeWirePlaybackConfig::toJson() const {
         obj["autoconnect_to"] = QString::fromStdString(autoconnectTo.value());
     else
         obj["autoconnect_to"] = QJsonValue::Null;
-    if (!channelLabels.empty()) {
+    if (!labels.empty()) {
         QJsonArray arr;
-        for (const auto& l : channelLabels)
+        for (const auto& l : labels)
             arr.append(QString::fromStdString(l));
-        obj["channel_labels"] = arr;
+        obj["labels"] = arr;
     }
     return obj;
 }
@@ -2500,50 +2500,49 @@ PipelineStep PipelineStep::fromJson(const QJsonObject& json) {
 
 QJsonObject PipelineStep::toJson() const {
     QJsonObject obj;
-    std::string typeStr = "Filter";
-    switch (type) {
-    case PipelineStepType::Filter:
-        typeStr = "Filter";
-        break;
-    case PipelineStepType::Mixer:
-        typeStr = "Mixer";
-        break;
-    case PipelineStepType::Processor:
-        typeStr = "Processor";
-        break;
-    }
-    obj["type"] = QString::fromStdString(typeStr);
-    if (channel.has_value())
-        obj["channel"] = channel.value();
-    if (!channels.empty()) {
-        QJsonArray arr;
-        for (int c : channels)
-            arr.append(c);
-        obj["channels"] = arr;
-    }
-    if (type == PipelineStepType::Filter) {
-        QJsonArray arr;
-        if (!names.empty()) {
-            for (const auto& n : names)
-                arr.append(QString::fromStdString(n));
-        } else if (name.has_value()) {
-            arr.append(QString::fromStdString(name.value()));
-        }
-        if (!arr.isEmpty()) {
-            obj["names"] = arr;
-        }
-    } else {
-        if (name.has_value())
-            obj["name"] = QString::fromStdString(name.value());
-        if (!names.empty()) {
-            QJsonArray arr;
-            for (const auto& n : names)
-                arr.append(QString::fromStdString(n));
-            obj["names"] = arr;
-        }
-    }
     if (bypassed.has_value())
         obj["bypassed"] = bypassed.value();
+
+    switch (type) {
+    case PipelineStepType::Filter: {
+        obj["type"] = "Filter";
+        QJsonArray chArr;
+        if (!channels.empty()) {
+            for (int c : channels)
+                chArr.append(c);
+        } else if (channel.has_value()) {
+            chArr.append(channel.value());
+        }
+        if (!chArr.isEmpty())
+            obj["channels"] = chArr;
+
+        QJsonArray nameArr;
+        if (!names.empty()) {
+            for (const auto& n : names)
+                nameArr.append(QString::fromStdString(n));
+        } else if (name.has_value()) {
+            nameArr.append(QString::fromStdString(name.value()));
+        }
+        obj["names"] = nameArr;
+        break;
+    }
+    case PipelineStepType::Mixer: {
+        obj["type"] = "Mixer";
+        if (name.has_value())
+            obj["name"] = QString::fromStdString(name.value());
+        else if (!names.empty())
+            obj["name"] = QString::fromStdString(names.front());
+        break;
+    }
+    case PipelineStepType::Processor: {
+        obj["type"] = "Processor";
+        if (name.has_value())
+            obj["name"] = QString::fromStdString(name.value());
+        else if (!names.empty())
+            obj["name"] = QString::fromStdString(names.front());
+        break;
+    }
+    }
     return obj;
 }
 

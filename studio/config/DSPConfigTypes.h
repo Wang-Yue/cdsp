@@ -339,13 +339,13 @@ struct CoreAudioCaptureConfig {
     std::optional<bool> loopback;
     std::optional<bool> bypassDoP;
     std::optional<double> dopCutoffHz;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static CoreAudioCaptureConfig fromJson(const QJsonObject& json);
 
     bool operator==(const CoreAudioCaptureConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && loopback == o.loopback &&
-               bypassDoP == o.bypassDoP && dopCutoffHz == o.dopCutoffHz && channelLabels == o.channelLabels;
+               bypassDoP == o.bypassDoP && dopCutoffHz == o.dopCutoffHz && labels == o.labels;
     }
     bool operator!=(const CoreAudioCaptureConfig& o) const { return !(*this == o); }
 };
@@ -357,13 +357,13 @@ struct CoreAudioPlaybackConfig {
     std::optional<bool> exclusive;
     std::optional<bool> outputDoP;
     std::optional<SDMFilter> dsdEncoderFilter;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static CoreAudioPlaybackConfig fromJson(const QJsonObject& json);
 
     bool operator==(const CoreAudioPlaybackConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && exclusive == o.exclusive &&
-               outputDoP == o.outputDoP && dsdEncoderFilter == o.dsdEncoderFilter && channelLabels == o.channelLabels;
+               outputDoP == o.outputDoP && dsdEncoderFilter == o.dsdEncoderFilter && labels == o.labels;
     }
     bool operator!=(const CoreAudioPlaybackConfig& o) const { return !(*this == o); }
 };
@@ -379,14 +379,14 @@ struct WASAPICaptureConfig {
     std::optional<bool> polling;
     std::optional<bool> bypassDoP;
     std::optional<double> dopCutoffHz;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static WASAPICaptureConfig fromJson(const QJsonObject& json);
 
     bool operator==(const WASAPICaptureConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && exclusive == o.exclusive &&
                loopback == o.loopback && polling == o.polling && bypassDoP == o.bypassDoP &&
-               dopCutoffHz == o.dopCutoffHz && channelLabels == o.channelLabels;
+               dopCutoffHz == o.dopCutoffHz && labels == o.labels;
     }
     bool operator!=(const WASAPICaptureConfig& o) const { return !(*this == o); }
 };
@@ -399,14 +399,14 @@ struct WASAPIPlaybackConfig {
     std::optional<bool> polling;
     std::optional<bool> outputDoP;
     std::optional<SDMFilter> dsdEncoderFilter;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static WASAPIPlaybackConfig fromJson(const QJsonObject& json);
 
     bool operator==(const WASAPIPlaybackConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && exclusive == o.exclusive &&
                polling == o.polling && outputDoP == o.outputDoP && dsdEncoderFilter == o.dsdEncoderFilter &&
-               channelLabels == o.channelLabels;
+               labels == o.labels;
     }
     bool operator!=(const WASAPIPlaybackConfig& o) const { return !(*this == o); }
 };
@@ -419,13 +419,13 @@ struct ASIOCaptureConfig {
     std::optional<std::string> format;
     std::optional<bool> bypassDoP;
     std::optional<double> dopCutoffHz;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static ASIOCaptureConfig fromJson(const QJsonObject& json);
 
     bool operator==(const ASIOCaptureConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && bypassDoP == o.bypassDoP &&
-               dopCutoffHz == o.dopCutoffHz && channelLabels == o.channelLabels;
+               dopCutoffHz == o.dopCutoffHz && labels == o.labels;
     }
     bool operator!=(const ASIOCaptureConfig& o) const { return !(*this == o); }
 };
@@ -436,13 +436,13 @@ struct ASIOPlaybackConfig {
     std::optional<std::string> format;
     std::optional<bool> outputDoP;
     std::optional<SDMFilter> dsdEncoderFilter;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static ASIOPlaybackConfig fromJson(const QJsonObject& json);
 
     bool operator==(const ASIOPlaybackConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && outputDoP == o.outputDoP &&
-               dsdEncoderFilter == o.dsdEncoderFilter && channelLabels == o.channelLabels;
+               dsdEncoderFilter == o.dsdEncoderFilter && labels == o.labels;
     }
     bool operator!=(const ASIOPlaybackConfig& o) const { return !(*this == o); }
 };
@@ -457,14 +457,14 @@ struct ALSACaptureConfig {
     std::optional<std::string> linkVolumeControl;
     std::optional<std::string> linkMuteControl;
     std::optional<bool> threaded;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static ALSACaptureConfig fromJson(const QJsonObject& json);
 
     bool operator==(const ALSACaptureConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format &&
                stopOnInactive == o.stopOnInactive && linkVolumeControl == o.linkVolumeControl &&
-               linkMuteControl == o.linkMuteControl && threaded == o.threaded && channelLabels == o.channelLabels;
+               linkMuteControl == o.linkMuteControl && threaded == o.threaded && labels == o.labels;
     }
     bool operator!=(const ALSACaptureConfig& o) const { return !(*this == o); }
 };
@@ -476,13 +476,13 @@ struct ALSAPlaybackConfig {
     std::optional<bool> threaded;
     std::optional<bool> outputDoP;
     std::optional<SDMFilter> dsdEncoderFilter;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static ALSAPlaybackConfig fromJson(const QJsonObject& json);
 
     bool operator==(const ALSAPlaybackConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && threaded == o.threaded &&
-               outputDoP == o.outputDoP && dsdEncoderFilter == o.dsdEncoderFilter && channelLabels == o.channelLabels;
+               outputDoP == o.outputDoP && dsdEncoderFilter == o.dsdEncoderFilter && labels == o.labels;
     }
     bool operator!=(const ALSAPlaybackConfig& o) const { return !(*this == o); }
 };
@@ -498,14 +498,14 @@ struct PipeWireCaptureConfig {
     std::optional<std::string> nodeGroupName;
     std::optional<std::string> autoconnectTo;
     std::optional<bool> loopback;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static PipeWireCaptureConfig fromJson(const QJsonObject& json);
 
     bool operator==(const PipeWireCaptureConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && nodeName == o.nodeName &&
                nodeDescription == o.nodeDescription && nodeGroupName == o.nodeGroupName &&
-               autoconnectTo == o.autoconnectTo && loopback == o.loopback && channelLabels == o.channelLabels;
+               autoconnectTo == o.autoconnectTo && loopback == o.loopback && labels == o.labels;
     }
     bool operator!=(const PipeWireCaptureConfig& o) const { return !(*this == o); }
 };
@@ -518,14 +518,14 @@ struct PipeWirePlaybackConfig {
     std::optional<std::string> nodeDescription;
     std::optional<std::string> nodeGroupName;
     std::optional<std::string> autoconnectTo;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static PipeWirePlaybackConfig fromJson(const QJsonObject& json);
 
     bool operator==(const PipeWirePlaybackConfig& o) const {
         return channels == o.channels && device == o.device && format == o.format && nodeName == o.nodeName &&
                nodeDescription == o.nodeDescription && nodeGroupName == o.nodeGroupName &&
-               autoconnectTo == o.autoconnectTo && channelLabels == o.channelLabels;
+               autoconnectTo == o.autoconnectTo && labels == o.labels;
     }
     bool operator!=(const PipeWirePlaybackConfig& o) const { return !(*this == o); }
 };
@@ -534,12 +534,12 @@ struct PipeWirePlaybackConfig {
 struct WavFileCaptureConfig {
     std::string filename;
     std::optional<int> extraSamples;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static WavFileCaptureConfig fromJson(const QJsonObject& json);
 
     bool operator==(const WavFileCaptureConfig& o) const {
-        return filename == o.filename && extraSamples == o.extraSamples && channelLabels == o.channelLabels;
+        return filename == o.filename && extraSamples == o.extraSamples && labels == o.labels;
     }
     bool operator!=(const WavFileCaptureConfig& o) const { return !(*this == o); }
 };
@@ -551,13 +551,13 @@ struct RawFileCaptureConfig {
     std::optional<int> skipBytes;
     std::optional<int> readBytes;
     std::optional<int> extraSamples;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static RawFileCaptureConfig fromJson(const QJsonObject& json);
 
     bool operator==(const RawFileCaptureConfig& o) const {
         return channels == o.channels && filename == o.filename && format == o.format && skipBytes == o.skipBytes &&
-               readBytes == o.readBytes && extraSamples == o.extraSamples && channelLabels == o.channelLabels;
+               readBytes == o.readBytes && extraSamples == o.extraSamples && labels == o.labels;
     }
     bool operator!=(const RawFileCaptureConfig& o) const { return !(*this == o); }
 };
@@ -568,13 +568,13 @@ struct RawFilePlaybackConfig {
     std::string format = "S16_LE";
     std::optional<bool> wavHeader;
     std::optional<bool> useRf64;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static RawFilePlaybackConfig fromJson(const QJsonObject& json);
 
     bool operator==(const RawFilePlaybackConfig& o) const {
         return channels == o.channels && filename == o.filename && format == o.format && wavHeader == o.wavHeader &&
-               useRf64 == o.useRf64 && channelLabels == o.channelLabels;
+               useRf64 == o.useRf64 && labels == o.labels;
     }
     bool operator!=(const RawFilePlaybackConfig& o) const { return !(*this == o); }
 };
@@ -582,12 +582,12 @@ struct RawFilePlaybackConfig {
 struct GeneratorCaptureConfig {
     int channels = 2;
     GeneratorConfig signal;
-    std::vector<std::string> channelLabels;
+    std::vector<std::string> labels;
     QJsonObject toJson() const;
     static GeneratorCaptureConfig fromJson(const QJsonObject& json);
 
     bool operator==(const GeneratorCaptureConfig& o) const {
-        return channels == o.channels && signal == o.signal && channelLabels == o.channelLabels;
+        return channels == o.channels && signal == o.signal && labels == o.labels;
     }
     bool operator!=(const GeneratorCaptureConfig& o) const { return !(*this == o); }
 };
