@@ -2,7 +2,7 @@
 
 #include "audio/processing_parameters.h"
 #include "config/config_error.h"
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 #include "filters/filter.h"
 #include "utils/double_helpers.h"
 
@@ -99,7 +99,7 @@ static int diffeq_config_validate(const filter_config_t *config,
   (void)sample_rate;
   if (!config || config->type != FILTER_TYPE_DIFF_EQ)
     return -1;
-  const diffeq_config_t *params = &config->parameters.diff_eq;
+  const diff_eq_config_t *params = &config->parameters.diff_eq;
   if (!params)
     return 0;
 
@@ -179,7 +179,7 @@ static void *diffeq_filter_create(const char *name,
   (void)proc_params;
   if (!config || config->type != FILTER_TYPE_DIFF_EQ)
     return NULL;
-  const diffeq_config_t *params = &config->parameters.diff_eq;
+  const diff_eq_config_t *params = &config->parameters.diff_eq;
   if (diffeq_config_validate(config, 0, err) != 0)
     return NULL;
 

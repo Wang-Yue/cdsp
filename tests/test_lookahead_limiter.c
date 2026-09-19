@@ -3,8 +3,7 @@
 #include <string.h>
 
 #include "audio/audio_chunk.h"
-#include "config/filter_config_types.h"
-#include "config/processor_config_types.h"
+#include "config/config_gen.h"
 #include "filters/clipper.h"
 #include "filters/filter.h"
 #include "filters/lookahead_limiter.h"
@@ -25,11 +24,12 @@ static bool compare_waveforms(const double *left, const double *right,
 }
 
 TEST(test_lookahead_limiter_basic) {
-  lookahead_limiter_config_t params = {.limit = 0.0,
-                                       .attack = 4.0,
-                                       .attack_unit = TIME_UNIT_SAMPLES,
-                                       .release = 1.0 / log(2.0),
-                                       .release_unit = TIME_UNIT_SAMPLES};
+  lookahead_limiter_filter_config_t params = {.limit = 0.0,
+                                              .attack = 4.0,
+                                              .attack_unit = TIME_UNIT_SAMPLES,
+                                              .release = 1.0 / log(2.0),
+                                              .release_unit =
+                                                  TIME_UNIT_SAMPLES};
   filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                          .parameters.lookahead_limiter = params};
   void *filter = g_lookahead_limiter_vtable.create("lookahead_limiter", &cfg,
@@ -64,7 +64,7 @@ TEST(test_lookahead_limiter_basic) {
 }
 
 TEST(test_lookahead_limiter_same_as_limiter) {
-  lookahead_limiter_config_t params_lookahead = {
+  lookahead_limiter_filter_config_t params_lookahead = {
       .limit = 0.0,
       .attack = 0.0,
       .attack_unit = TIME_UNIT_SAMPLES,
@@ -105,12 +105,12 @@ TEST(test_lookahead_limiter_zero_attack_matches_compressor) {
   double limiter_input[] = {2.0, 1.0, 1.0, 1.0, 1.0};
   size_t chunksize = 5;
 
-  lookahead_limiter_config_t params_limiter = {.limit = 0.0,
-                                               .attack = 0.0,
-                                               .attack_unit = TIME_UNIT_SAMPLES,
-                                               .release = release_samples,
-                                               .release_unit =
-                                                   TIME_UNIT_SAMPLES};
+  lookahead_limiter_filter_config_t params_limiter = {
+      .limit = 0.0,
+      .attack = 0.0,
+      .attack_unit = TIME_UNIT_SAMPLES,
+      .release = release_samples,
+      .release_unit = TIME_UNIT_SAMPLES};
   filter_config_t cfg_limiter = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                                  .parameters.lookahead_limiter =
                                      params_limiter};
@@ -158,11 +158,12 @@ TEST(test_lookahead_limiter_zero_attack_matches_compressor) {
 }
 
 TEST(test_lookahead_limiter_zero_release) {
-  lookahead_limiter_config_t params = {.limit = 0.0,
-                                       .attack = 2.0,
-                                       .attack_unit = TIME_UNIT_SAMPLES,
-                                       .release = 0.0,
-                                       .release_unit = TIME_UNIT_SAMPLES};
+  lookahead_limiter_filter_config_t params = {.limit = 0.0,
+                                              .attack = 2.0,
+                                              .attack_unit = TIME_UNIT_SAMPLES,
+                                              .release = 0.0,
+                                              .release_unit =
+                                                  TIME_UNIT_SAMPLES};
   filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                          .parameters.lookahead_limiter = params};
   void *filter = g_lookahead_limiter_vtable.create("lookahead", &cfg, 48000,
@@ -177,11 +178,12 @@ TEST(test_lookahead_limiter_zero_release) {
 }
 
 TEST(test_lookahead_limiter_state_persistence) {
-  lookahead_limiter_config_t params = {.limit = 0.0,
-                                       .attack = 5.0,
-                                       .attack_unit = TIME_UNIT_SAMPLES,
-                                       .release = 1.0 / log(2.0),
-                                       .release_unit = TIME_UNIT_SAMPLES};
+  lookahead_limiter_filter_config_t params = {.limit = 0.0,
+                                              .attack = 5.0,
+                                              .attack_unit = TIME_UNIT_SAMPLES,
+                                              .release = 1.0 / log(2.0),
+                                              .release_unit =
+                                                  TIME_UNIT_SAMPLES};
   filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                          .parameters.lookahead_limiter = params};
   void *filter = g_lookahead_limiter_vtable.create("lookahead", &cfg, 48000,
@@ -203,22 +205,24 @@ TEST(test_lookahead_limiter_state_persistence) {
 }
 
 TEST(test_lookahead_limiter_attack_over_one_second_rejected) {
-  lookahead_limiter_config_t params = {.limit = 0.0,
-                                       .attack = 48001.0,
-                                       .attack_unit = TIME_UNIT_SAMPLES,
-                                       .release = 4.0,
-                                       .release_unit = TIME_UNIT_SAMPLES};
+  lookahead_limiter_filter_config_t params = {.limit = 0.0,
+                                              .attack = 48001.0,
+                                              .attack_unit = TIME_UNIT_SAMPLES,
+                                              .release = 4.0,
+                                              .release_unit =
+                                                  TIME_UNIT_SAMPLES};
   filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                          .parameters.lookahead_limiter = params};
   ASSERT_NE(0, g_lookahead_limiter_vtable.validate(&cfg, 48000, NULL));
 }
 
 TEST(test_lookahead_limiter_chunksize_larger_than_samplerate) {
-  lookahead_limiter_config_t params = {.limit = 0.0,
-                                       .attack = 4.0,
-                                       .attack_unit = TIME_UNIT_SAMPLES,
-                                       .release = 1.0,
-                                       .release_unit = TIME_UNIT_SAMPLES};
+  lookahead_limiter_filter_config_t params = {.limit = 0.0,
+                                              .attack = 4.0,
+                                              .attack_unit = TIME_UNIT_SAMPLES,
+                                              .release = 1.0,
+                                              .release_unit =
+                                                  TIME_UNIT_SAMPLES};
   filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                          .parameters.lookahead_limiter = params};
   void *filter =
@@ -235,11 +239,12 @@ TEST(test_lookahead_limiter_chunksize_larger_than_samplerate) {
 // both replay stale audio and duck the incoming chunk with a peak that no
 // longer applies.
 TEST(test_lookahead_limiter_transfer_state_flushes_lookahead) {
-  lookahead_limiter_config_t params = {.limit = 0.0,
-                                       .attack = 4.0,
-                                       .attack_unit = TIME_UNIT_SAMPLES,
-                                       .release = 1.0,
-                                       .release_unit = TIME_UNIT_SAMPLES};
+  lookahead_limiter_filter_config_t params = {.limit = 0.0,
+                                              .attack = 4.0,
+                                              .attack_unit = TIME_UNIT_SAMPLES,
+                                              .release = 1.0,
+                                              .release_unit =
+                                                  TIME_UNIT_SAMPLES};
   filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                          .parameters.lookahead_limiter = params};
   void *src = g_lookahead_limiter_vtable.create("limiter_src", &cfg, 48000, 32,
@@ -247,12 +252,12 @@ TEST(test_lookahead_limiter_transfer_state_flushes_lookahead) {
   void *dest_same = g_lookahead_limiter_vtable.create("limiter_dest_same", &cfg,
                                                       48000, 32, NULL, NULL);
 
-  lookahead_limiter_config_t params_changed = {.limit = -1.0,
-                                               .attack = 4.0,
-                                               .attack_unit = TIME_UNIT_SAMPLES,
-                                               .release = 1.0,
-                                               .release_unit =
-                                                   TIME_UNIT_SAMPLES};
+  lookahead_limiter_filter_config_t params_changed = {
+      .limit = -1.0,
+      .attack = 4.0,
+      .attack_unit = TIME_UNIT_SAMPLES,
+      .release = 1.0,
+      .release_unit = TIME_UNIT_SAMPLES};
   filter_config_t cfg_changed = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                                  .parameters.lookahead_limiter =
                                      params_changed};

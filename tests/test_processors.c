@@ -3,8 +3,7 @@
 #include <string.h>
 
 #include "audio/audio_chunk.h"
-#include "config/filter_config_types.h"
-#include "config/processor_config_types.h"
+#include "config/config_gen.h"
 #include "filters/filter.h"
 #include "filters/lookahead_limiter.h"
 #include "processors/processor.h"
@@ -416,12 +415,12 @@ TEST(test_lookahead_limiter_processor_matches_filter) {
   size_t chunksize = 19;
 
   // Filter
-  lookahead_limiter_config_t params_filter = {.limit = 0.0,
-                                              .attack = 4.0,
-                                              .attack_unit = TIME_UNIT_SAMPLES,
-                                              .release = 1.0 / log(2.0),
-                                              .release_unit =
-                                                  TIME_UNIT_SAMPLES};
+  lookahead_limiter_filter_config_t params_filter = {
+      .limit = 0.0,
+      .attack = 4.0,
+      .attack_unit = TIME_UNIT_SAMPLES,
+      .release = 1.0 / log(2.0),
+      .release_unit = TIME_UNIT_SAMPLES};
   filter_config_t cfg_filter = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                                 .parameters.lookahead_limiter = params_filter};
   void *filter = g_lookahead_limiter_vtable.create(

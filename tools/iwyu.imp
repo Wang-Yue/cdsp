@@ -924,6 +924,14 @@
   },
   {
     "include": [
+      "\"config_gen.h\"",
+      "private",
+      "\"config/config_gen.h\"",
+      "public"
+    ]
+  },
+  {
+    "include": [
       "\"config_loader.h\"",
       "private",
       "\"Pipeline/config_loader.h\"",
@@ -964,9 +972,9 @@
   },
   {
     "include": [
-      "\"config_parser_internal.h\"",
+      "\"config_parser.h\"",
       "private",
-      "\"Config/config_parser_internal.h\"",
+      "\"config/config_parser.h\"",
       "public"
     ]
   },
@@ -1172,14 +1180,6 @@
   },
   {
     "include": [
-      "\"filter_config_types.h\"",
-      "private",
-      "\"Config/filter_config_types.h\"",
-      "public"
-    ]
-  },
-  {
-    "include": [
       "\"filter_error.h\"",
       "private",
       "\"Filters/filter_error.h\"",
@@ -1269,14 +1269,6 @@
   },
   {
     "include": [
-      "\"mixer_config_types.h\"",
-      "private",
-      "\"Config/mixer_config_types.h\"",
-      "public"
-    ]
-  },
-  {
-    "include": [
       "\"noise_gate_processor.h\"",
       "private",
       "\"Processors/noise_gate_processor.h\"",
@@ -1325,14 +1317,6 @@
   },
   {
     "include": [
-      "\"processor_config_types.h\"",
-      "private",
-      "\"Config/processor_config_types.h\"",
-      "public"
-    ]
-  },
-  {
-    "include": [
       "\"race_processor.h\"",
       "private",
       "\"Processors/race_processor.h\"",
@@ -1352,14 +1336,6 @@
       "\"real_fft.h\"",
       "private",
       "\"FFT/real_fft.h\"",
-      "public"
-    ]
-  },
-  {
-    "include": [
-      "\"resampler_config_types.h\"",
-      "private",
-      "\"Config/resampler_config_types.h\"",
       "public"
     ]
   },

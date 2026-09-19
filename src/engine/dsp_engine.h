@@ -15,9 +15,9 @@
 #include "audio/spectrum_analyzer.h"
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
+#include "config/config_gen.h"
 #include "config/configuration.h"
 #include "config/engine_config_types.h"
-#include "config/filter_config_types.h"
 #include "config/log_level.h"
 
 /**

@@ -7,7 +7,7 @@
  * management.
  */
 
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 
 typedef struct biquad_filter biquad_filter_t;
 

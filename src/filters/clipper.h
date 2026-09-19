@@ -6,7 +6,7 @@
  * @brief Simple peak/soft clipper implementation.
  */
 
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 
 struct filter_vtable;
 

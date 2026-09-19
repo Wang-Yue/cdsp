@@ -277,26 +277,26 @@ static bool apply_cjson_overrides(cJSON *root, int samplerate_override,
   if (!root)
     return true;
 
-  cJSON *devices = cJSON_GetObjectItem(root, "devices");
+  cJSON *devices = cJSON_GetObjectItemCaseSensitive(root, "devices");
   if (!devices)
     return true;
 
-  cJSON *capture = cJSON_GetObjectItem(devices, "capture");
+  cJSON *capture = cJSON_GetObjectItemCaseSensitive(devices, "capture");
   const char *cap_type = "";
   if (capture) {
-    cJSON *t = cJSON_GetObjectItem(capture, "type");
+    cJSON *t = cJSON_GetObjectItemCaseSensitive(capture, "type");
     if (t && t->valuestring) {
       cap_type = t->valuestring;
     }
   }
 
   if (samplerate_override > 0 && strcmp(cap_type, "WavFile") != 0) {
-    cJSON *resampler = cJSON_GetObjectItem(devices, "resampler");
-    cJSON *old_sr = cJSON_GetObjectItem(devices, "samplerate");
+    cJSON *resampler = cJSON_GetObjectItemCaseSensitive(devices, "resampler");
+    cJSON *old_sr = cJSON_GetObjectItemCaseSensitive(devices, "samplerate");
     double cfg_rate = old_sr ? old_sr->valuedouble : 0.0;
 
     if (!resampler || cJSON_IsNull(resampler)) {
-      cJSON *old_cs = cJSON_GetObjectItem(devices, "chunksize");
+      cJSON *old_cs = cJSON_GetObjectItemCaseSensitive(devices, "chunksize");
       if (cfg_rate > 0.0 && old_cs && old_cs->valuedouble > 0.0) {
         double rate = (double)samplerate_override;
         double cfg_chunksize = old_cs->valuedouble;
@@ -322,7 +322,8 @@ static bool apply_cjson_overrides(cJSON *root, int samplerate_override,
       // Rescale extra_samples for RawFile or Stdin capture
       if (capture && (strcmp(cap_type, "RawFile") == 0 ||
                       strcmp(cap_type, "Stdin") == 0)) {
-        cJSON *old_extra = cJSON_GetObjectItem(capture, "extra_samples");
+        cJSON *old_extra =
+            cJSON_GetObjectItemCaseSensitive(capture, "extra_samples");
         if (old_extra && cfg_rate > 0.0) {
           long new_extra =
               (long)((old_extra->valuedouble * (double)samplerate_override) /
@@ -339,7 +340,8 @@ static bool apply_cjson_overrides(cJSON *root, int samplerate_override,
         cJSON_AddItemToObject(devices, "capture_samplerate", item);
       }
 
-      cJSON *era = cJSON_GetObjectItem(devices, "enable_rate_adjust");
+      cJSON *era =
+          cJSON_GetObjectItemCaseSensitive(devices, "enable_rate_adjust");
       bool has_rate_adjust = era && cJSON_IsTrue(era);
       if (cfg_rate > 0.0 && samplerate_override == (int)cfg_rate &&
           !has_rate_adjust) {

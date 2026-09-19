@@ -3,11 +3,9 @@
 #include <string.h>
 
 #include "config/config_error.h"
+#include "config/config_gen.h"
 #include "config/configuration.h"
 #include "config/engine_config_types.h"
-#include "config/filter_config_types.h"
-#include "config/mixer_config_types.h"
-#include "config/processor_config_types.h"
 #include "filters/filter.h"
 #include "mixer/mixer.h"
 #include "pipeline/pipeline.h"

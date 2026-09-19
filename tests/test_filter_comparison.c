@@ -16,9 +16,7 @@
 
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
-#include "config/filter_config_types.h"
-#include "config/mixer_config_types.h"
-#include "config/processor_config_types.h"
+#include "config/config_gen.h"
 #include "filters/biquad.h"
 #include "filters/biquad_combo.h"
 #include "filters/clipper.h"
@@ -659,7 +657,7 @@ TEST(Convolution_Vs_Rust_RandomIR) {
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  convolution_config_t params = {0};
+  conv_config_t params = {0};
   params.type = CONV_TYPE_VALUES;
   params.values = coeffs;
   params.values_count = 2000;
@@ -712,6 +710,7 @@ static const char *delay_unit_to_str(delay_unit_t unit) {
     return "samples";
   case DELAY_UNIT_MM:
     return "mm";
+  case DELAY_UNIT_INVALID:
   default:
     return "ms";
   }
@@ -1146,7 +1145,7 @@ TEST(DiffEq_SimpleIIR) {
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
+  diff_eq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
   filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
                          .parameters.diff_eq = params};
   void *filter = g_diffeq_vtable.create("test_diffeq", &cfg, 0, 0, NULL, NULL);
@@ -1318,11 +1317,12 @@ static void compare_lookahead_limiter(double limit, double attack,
   ASSERT_TRUE(ref != NULL);
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
-  lookahead_limiter_config_t params = {.limit = limit,
-                                       .attack = attack,
-                                       .attack_unit = (time_unit_t)unit,
-                                       .release = release,
-                                       .release_unit = (time_unit_t)unit};
+  lookahead_limiter_filter_config_t params = {.limit = limit,
+                                              .attack = attack,
+                                              .attack_unit = (time_unit_t)unit,
+                                              .release = release,
+                                              .release_unit =
+                                                  (time_unit_t)unit};
   filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                          .parameters.lookahead_limiter = params};
   void *filter = g_lookahead_limiter_vtable.create(

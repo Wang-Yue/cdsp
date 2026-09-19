@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "audio/audio_chunk.h"
-#include "config/resampler_config_types.h"
+#include "config/config_gen.h"
 #include "resampler/audio_resampler.h"
 #include "resampler/resampler_error.h"
 #include "test_support.h"
@@ -35,7 +35,7 @@ static void assert_stereo_matches_mono(resampler_type_t type,
   make_sine(right, nbr_in, in_rate, 1500.0);
 
   resampler_config_t cfg_stereo;
-  resampler_config_init(&cfg_stereo, type);
+  resampler_config_init_with_type(&cfg_stereo, type);
   if (interp_str) {
     strncpy(cfg_stereo.interpolation, interp_str,
             sizeof(cfg_stereo.interpolation) - 1);
@@ -129,7 +129,7 @@ static void assert_stereo_matches_mono(resampler_type_t type,
 static void assert_inout_matches(resampler_type_t type,
                                  const char *interp_str) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, type);
+  resampler_config_init_with_type(&cfg, type);
   if (interp_str) {
     strncpy(cfg.interpolation, interp_str, sizeof(cfg.interpolation) - 1);
     cfg.has_interpolation = true;
@@ -188,7 +188,7 @@ static void assert_inout_matches(resampler_type_t type,
 static void assert_rejects_too_small(resampler_type_t type,
                                      const char *interp_str) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, type);
+  resampler_config_init_with_type(&cfg, type);
   if (interp_str) {
     strncpy(cfg.interpolation, interp_str, sizeof(cfg.interpolation) - 1);
     cfg.has_interpolation = true;
@@ -255,7 +255,7 @@ TEST(InoutAPI_RejectsTooSmallOutputBuffer_AsyncSinc) {
 static void assert_accepts_partial_chunk(resampler_type_t type,
                                          const char *interp_str) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, type);
+  resampler_config_init_with_type(&cfg, type);
   if (interp_str) {
     strncpy(cfg.interpolation, interp_str, sizeof(cfg.interpolation) - 1);
     cfg.has_interpolation = true;
@@ -303,7 +303,7 @@ TEST(PartialChunk_AsyncSinc) {
 
 TEST(AsyncSinc_UnderrunBoundaryCheck) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
   strncpy(cfg.profile, "Accurate", sizeof(cfg.profile) - 1);
   cfg.has_profile = true;
 
@@ -338,7 +338,7 @@ TEST(AsyncSinc_UnderrunBoundaryCheck) {
 
 TEST(SlipResampler_Basic) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SLIP);
 
   size_t chunk_size = 1000;
   resampler_t *res =
@@ -508,7 +508,7 @@ TEST(SlipResampler_Vs_Rubato) {
   ASSERT_TRUE(ref_data != NULL);
 
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SLIP);
 
   resampler_t *res =
       resampler_create_from_config(&cfg, fs_in, fs_in, 1, chunk_size, NULL);
@@ -608,7 +608,7 @@ TEST(SlipResampler_Vs_Rubato) {
 
 TEST(AsyncSinc_DriftCrash) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
   cfg.sinc_len = 128;
   cfg.has_sinc_len = true;
   cfg.oversampling_factor = 1024;
@@ -790,7 +790,7 @@ static resampler_t *make_poly_resampler_helper(const char *interp,
                                                size_t chunk_size,
                                                size_t channels) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
   strncpy(cfg.interpolation, interp, sizeof(cfg.interpolation) - 1);
   cfg.has_interpolation = true;
   return resampler_create_from_config(&cfg, 48000, 48000, channels, chunk_size,
@@ -800,7 +800,7 @@ static resampler_t *make_poly_resampler_helper(const char *interp,
 static resampler_t *make_sinc_resampler_helper(size_t chunk_size,
                                                size_t channels) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
   cfg.sinc_len = 128;
   cfg.has_sinc_len = true;
   cfg.oversampling_factor = 1024;
@@ -938,7 +938,7 @@ TEST(Sinc_LinWeightsMatchLinDirect) {
 
 TEST(Synchronous_ResampleUnitEnergyConservation) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_SYNCHRONOUS);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SYNCHRONOUS);
   resampler_t *res =
       resampler_create_from_config(&cfg, 147, 1000, 1, 147, NULL);
   ASSERT_TRUE(res != NULL);
@@ -982,7 +982,7 @@ TEST(Synchronous_ResampleUnitEnergyConservation) {
 
 TEST(Slip_UnitRatioIsIdentity) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SLIP);
   resampler_t *res =
       resampler_create_from_config(&cfg, 48000, 48000, 2, 1024, NULL);
   ASSERT_TRUE(res != NULL);
@@ -1016,7 +1016,7 @@ TEST(Slip_UnitRatioIsIdentity) {
 
 TEST(Slip_DC_StaysFlatAcrossCorrection) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_SLIP);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SLIP);
   resampler_t *res =
       resampler_create_from_config(&cfg, 48000, 48000, 1, 512, NULL);
   ASSERT_TRUE(res != NULL);
@@ -1046,7 +1046,7 @@ TEST(Slip_DC_StaysFlatAcrossCorrection) {
 
 TEST(AsyncSinc_SincLenRoundedToMultipleOf8) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
   cfg.has_sinc_len = true;
   cfg.sinc_len = 100; // Not a multiple of 8; should round to 104
   cfg.has_oversampling_factor = true;
@@ -1071,7 +1071,7 @@ TEST(AsyncSinc_SincLenRoundedToMultipleOf8) {
 
 TEST(AsyncSinc_Reset_RecomputesNeededLengths) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
   strncpy(cfg.profile, "VeryFast", sizeof(cfg.profile) - 1);
   cfg.has_profile = true;
 
@@ -1107,7 +1107,7 @@ TEST(AsyncSinc_Reset_RecomputesNeededLengths) {
 
 TEST(AsyncPoly_Reset_RecomputesNeededLengths) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
   strncpy(cfg.profile, "VeryFast", sizeof(cfg.profile) - 1);
   cfg.has_profile = true;
 
@@ -1141,7 +1141,7 @@ TEST(AsyncPoly_Reset_RecomputesNeededLengths) {
 TEST(AsyncSinc_LargeUpsampling_DoesNotExceedMaxOutput) {
   // 44100 -> 352800 (8x upsampling) with 1.1 relative ratio
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
   strncpy(cfg.profile, "Fast", sizeof(cfg.profile) - 1);
   cfg.has_profile = true;
 
@@ -1171,7 +1171,7 @@ TEST(AsyncSinc_LargeUpsampling_DoesNotExceedMaxOutput) {
 
 TEST(Async_SetRelativeRatio_RejectsNaN) {
   resampler_config_t cfg;
-  resampler_config_init(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
   strncpy(cfg.profile, "VeryFast", sizeof(cfg.profile) - 1);
   cfg.has_profile = true;
 

@@ -144,7 +144,7 @@ static bool mock_get_vu_levels(void *ctx, vu_levels_t *out_vu) {
   }
   if (out_vu->capture_rms && cap_ch > 0) {
     processing_parameters_get_capture_signal_rms(mock_params,
-                                                  out_vu->capture_rms, cap_ch);
+                                                 out_vu->capture_rms, cap_ch);
   }
   if (out_vu->capture_peak && cap_ch > 0) {
     processing_parameters_get_capture_signal_peak(mock_params,
@@ -495,9 +495,12 @@ TEST(test_websocket_handle_command_direct) {
 
   // Test GetChannelLabels (no mixer in pipeline -> playback falls back to
   // capture labels)
-  mock_active_config =
-      strdup("{\"devices\":{\"playback\":{\"labels\":[\"Left\",\"Right\"]},"
-             "\"capture\":{\"labels\":[\"Mic\"]}}}");
+  mock_active_config = strdup(
+      "{\"devices\":{\"samplerate\":44100,\"chunksize\":1024,"
+      "\"capture\":{\"type\":\"RawFile\",\"filename\":\"in.raw\",\"format\":"
+      "\"S16_LE\",\"channels\":1,\"labels\":[\"Mic\"]},"
+      "\"playback\":{\"type\":\"File\",\"filename\":\"out.raw\",\"format\":"
+      "\"S16_LE\",\"channels\":2,\"labels\":[\"Left\",\"Right\"]}}}");
   websocket_server_handle_command(
       server, 0, "{\"command\":\"GetChannelLabels\"}", resp, sizeof(resp));
   root = cJSON_Parse(resp);
@@ -1452,10 +1455,19 @@ TEST(WebSocket_ChannelLabelsMixerAndFallback) {
   // in pipeline
   mock_active_config = strdup(
       "{\n"
-      "  \"devices\": {\"capture\": {\"labels\": [\"Cap0\", \"Cap1\"]}},\n"
+      "  \"devices\": {\n"
+      "    \"samplerate\": 44100, \"chunksize\": 1024,\n"
+      "    \"capture\": {\"type\": \"RawFile\", \"filename\": \"in.raw\", "
+      "\"format\": \"S16_LE\", \"channels\": 2, \"labels\": [\"Cap0\", "
+      "\"Cap1\"]},\n"
+      "    \"playback\": {\"type\": \"File\", \"filename\": \"out.raw\", "
+      "\"format\": \"S16_LE\", \"channels\": 2}\n"
+      "  },\n"
       "  \"mixers\": {\n"
-      "    \"m1\": {\"labels\": [\"M1_0\", \"M1_1\"]},\n"
-      "    \"m2\": {\"labels\": [\"M2_0\", \"M2_1\", \"M2_2\"]}\n"
+      "    \"m1\": {\"channels\": {\"in\": 2, \"out\": 2}, \"mapping\": [], "
+      "\"labels\": [\"M1_0\", \"M1_1\"]},\n"
+      "    \"m2\": {\"channels\": {\"in\": 2, \"out\": 3}, \"mapping\": [], "
+      "\"labels\": [\"M2_0\", \"M2_1\", \"M2_2\"]}\n"
       "  },\n"
       "  \"pipeline\": [\n"
       "    {\"type\": \"Mixer\", \"name\": \"m1\"},\n"
@@ -1482,18 +1494,25 @@ TEST(WebSocket_ChannelLabelsMixerAndFallback) {
 
   // 2. Last mixer has no labels: playback is null even if earlier mixer has
   // labels
-  mock_active_config =
-      strdup("{\n"
-             "  \"devices\": {\"capture\": {\"labels\": [\"Cap0\"]}},\n"
-             "  \"mixers\": {\n"
-             "    \"m1\": {\"labels\": [\"M1_0\"]},\n"
-             "    \"m2\": {}\n"
-             "  },\n"
-             "  \"pipeline\": [\n"
-             "    {\"type\": \"Mixer\", \"name\": \"m1\"},\n"
-             "    {\"type\": \"Mixer\", \"name\": \"m2\"}\n"
-             "  ]\n"
-             "}");
+  mock_active_config = strdup(
+      "{\n"
+      "  \"devices\": {\n"
+      "    \"samplerate\": 44100, \"chunksize\": 1024,\n"
+      "    \"capture\": {\"type\": \"RawFile\", \"filename\": \"in.raw\", "
+      "\"format\": \"S16_LE\", \"channels\": 1, \"labels\": [\"Cap0\"]},\n"
+      "    \"playback\": {\"type\": \"File\", \"filename\": \"out.raw\", "
+      "\"format\": \"S16_LE\", \"channels\": 1}\n"
+      "  },\n"
+      "  \"mixers\": {\n"
+      "    \"m1\": {\"channels\": {\"in\": 1, \"out\": 1}, \"mapping\": [], "
+      "\"labels\": [\"M1_0\"]},\n"
+      "    \"m2\": {\"channels\": {\"in\": 1, \"out\": 1}, \"mapping\": []}\n"
+      "  },\n"
+      "  \"pipeline\": [\n"
+      "    {\"type\": \"Mixer\", \"name\": \"m1\"},\n"
+      "    {\"type\": \"Mixer\", \"name\": \"m2\"}\n"
+      "  ]\n"
+      "}");
 
   memset(resp, 0, sizeof(resp));
   websocket_server_handle_command(
@@ -1510,7 +1529,15 @@ TEST(WebSocket_ChannelLabelsMixerAndFallback) {
   // 3. Mixer has empty array labels: [] -> returns []
   mock_active_config =
       strdup("{\n"
-             "  \"mixers\": {\"m\": {\"labels\": []}},\n"
+             "  \"devices\": {\n"
+             "    \"samplerate\": 44100, \"chunksize\": 1024,\n"
+             "    \"capture\": {\"type\": \"RawFile\", \"filename\": "
+             "\"in.raw\", \"format\": \"S16_LE\", \"channels\": 1},\n"
+             "    \"playback\": {\"type\": \"File\", \"filename\": "
+             "\"out.raw\", \"format\": \"S16_LE\", \"channels\": 1}\n"
+             "  },\n"
+             "  \"mixers\": {\"m\": {\"channels\": {\"in\": 1, \"out\": 1}, "
+             "\"mapping\": [], \"labels\": []}},\n"
              "  \"pipeline\": [{\"type\": \"Mixer\", \"name\": \"m\"}]\n"
              "}");
 

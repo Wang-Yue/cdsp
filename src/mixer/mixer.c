@@ -28,8 +28,7 @@
 #include <string.h>
 
 #include "audio/audio_chunk.h"
-#include "config/filter_config_types.h"
-#include "config/mixer_config_types.h"
+#include "config/config_gen.h"
 #include "logging/app_logger.h"
 #include "utils/double_helpers.h"
 
@@ -114,9 +113,9 @@ static bool populate_mapping(mixer_t *mixer, const mixer_config_t *config) {
       // Calculate linear gain from dB or linear configuration.
       // Upstream's `MixerSource::gain()` is `unwrap_or_default()`, i.e. 0.0
       // when the key is absent, *regardless of scale* - so a `scale: linear`
-      // source with no gain is silent, not unity. mixer_source_gain_value()
-      // already implements that.
-      double gain = mixer_source_gain_value(src);
+      // source with no gain is silent, not unity. mixer_source_get_gain()
+      // returns 0.0 when has_gain is false.
+      double gain = mixer_source_get_gain(src);
       double lin_gain =
           (src->scale == GAIN_SCALE_LINEAR) ? gain : double_from_db(gain);
 

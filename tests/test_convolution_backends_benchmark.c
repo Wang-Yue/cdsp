@@ -15,7 +15,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 #include "fft/real_fft.h"
 #include "filters/convolution.h"
 #include "filters/filter.h"
@@ -50,9 +50,9 @@ static int compare_doubles(const void *a, const void *b) {
 static double measure_convolution_ns_per_frame(size_t chunk_size,
                                                const double *coeffs,
                                                size_t taps, size_t iters) {
-  convolution_config_t params = {.type = CONV_TYPE_VALUES,
-                                 .values = (double *)coeffs,
-                                 .values_count = taps};
+  conv_config_t params = {.type = CONV_TYPE_VALUES,
+                          .values = (double *)coeffs,
+                          .values_count = taps};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *filter =
       g_convolution_vtable.create("conv", &cfg, 48000, chunk_size, NULL, NULL);

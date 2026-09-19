@@ -22,8 +22,7 @@
 
 #include "audio/audio_chunk.h"
 #include "config/config_error.h"
-#include "config/filter_config_types.h"
-#include "config/processor_config_types.h"
+#include "config/config_gen.h"
 #include "filters/delay.h"
 #include "filters/filter.h"
 #include "filters/gain.h"
@@ -206,6 +205,7 @@ static void *race_processor_create(const char *name,
   case DELAY_UNIT_SAMPLES:
     sample_period = 1.0;
     break;
+  case DELAY_UNIT_INVALID:
   default:
     sample_period = 1000.0 / (double)sample_rate;
     break;

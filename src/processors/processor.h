@@ -16,7 +16,7 @@
 
 #include "audio/audio_chunk.h"
 #include "config/config_error.h"
-#include "config/processor_config_types.h"
+#include "config/config_gen.h"
 #include "processors/compressor_processor.h"
 #include "processors/lookahead_limiter_processor.h"
 #include "processors/noise_gate_processor.h"

@@ -6,7 +6,7 @@
  * @brief Internal structural definitions for biquad filter instances.
  */
 
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 #include "filters/biquad.h"
 
 typedef struct {

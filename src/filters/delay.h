@@ -9,7 +9,7 @@
  * biquads (1st or 2nd order).
  */
 
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 
 typedef struct delay_filter delay_filter_t;
 

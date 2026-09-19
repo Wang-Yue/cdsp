@@ -6,14 +6,14 @@
 #include <math.h>
 #include <string.h>
 
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 #include "filters/convolution.h"
 #include "filters/filter.h"
 #include "test_support.h"
 
 TEST(MovingAverage) {
   double coeffs[] = {0.5, 0.5};
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 2};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *filter = g_convolution_vtable.create("conv", &cfg, 0, 8, NULL, NULL);
@@ -33,7 +33,7 @@ TEST(SegmentedConvolution) {
   double ir[32];
   for (int i = 0; i < 32; i++)
     ir[i] = (double)i;
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = ir, .values_count = 32};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *filter = g_convolution_vtable.create("conv", &cfg, 0, 8, NULL, NULL);
@@ -69,7 +69,7 @@ TEST(SegmentedConvolution) {
 
 TEST(IdentityConvolution) {
   double coeffs[] = {1.0};
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 1};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *filter = g_convolution_vtable.create("conv", &cfg, 0, 8, NULL, NULL);
@@ -85,7 +85,7 @@ TEST(IdentityConvolution) {
 
 TEST(DelayConvolution) {
   double coeffs[] = {0.0, 0.0, 0.0, 1.0};
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 4};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *filter = g_convolution_vtable.create("conv", &cfg, 0, 8, NULL, NULL);
@@ -104,7 +104,7 @@ TEST(DelayConvolution) {
 
 TEST(ConvolutionWithSineWave) {
   double coeffs[] = {0.5, 0.5};
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 2};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *filter = g_convolution_vtable.create("conv", &cfg, 0, 64, NULL, NULL);
@@ -134,7 +134,7 @@ TEST(ConvolutionWithSineWave) {
 }
 
 TEST(EmptyIRThrows) {
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = NULL, .values_count = 0};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *filter = g_convolution_vtable.create("conv", &cfg, 0, 8, NULL, NULL);
@@ -142,7 +142,7 @@ TEST(EmptyIRThrows) {
 }
 
 TEST(DummyIsIdentity) {
-  convolution_config_t params = {.type = CONV_TYPE_DUMMY, .length = 4};
+  conv_config_t params = {.type = CONV_TYPE_DUMMY, .length = 4};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *filter = g_convolution_vtable.create("conv", &cfg, 0, 8, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -159,7 +159,7 @@ TEST(DummyIsIdentity) {
 
 TEST(CachedBuildSharesCoeffsButNotState) {
   double ir[] = {0.1, 0.2, 0.3, 0.4};
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = ir, .values_count = 4};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
 
@@ -193,7 +193,7 @@ TEST(CachedBuildSharesCoeffsButNotState) {
 
 TEST(CacheDoesNotShareAcrossLengths) {
   double ir[] = {0.1, 0.2, 0.3, 0.4};
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = ir, .values_count = 4};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
 
@@ -240,7 +240,7 @@ TEST(UnparsableTextCoeffFileIsRejected) {
   const char *body = "# only a comment, no coefficients\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
-  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  conv_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
   snprintf(params.filename, sizeof(params.filename), "%s", path);
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
 
@@ -259,7 +259,7 @@ TEST(CommentInsideTextCoeffFileIsRejected) {
   const char *body = "1.0\n# comment\n2.0\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
-  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  conv_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
   snprintf(params.filename, sizeof(params.filename), "%s", path);
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
 
@@ -278,7 +278,7 @@ TEST(EmptyLineInsideTextCoeffFileIsRejected) {
   const char *body = "1.0\n\n2.0\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
-  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  conv_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
   snprintf(params.filename, sizeof(params.filename), "%s", path);
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
 
@@ -297,7 +297,7 @@ TEST(MultipleValuesOnLineIsRejected) {
   const char *body = "1.0 2.0\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
-  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  conv_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
   snprintf(params.filename, sizeof(params.filename), "%s", path);
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
 
@@ -316,7 +316,7 @@ TEST(HexFloatIsRejected) {
   const char *body = "0x1.0p0\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
-  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  conv_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
   snprintf(params.filename, sizeof(params.filename), "%s", path);
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
 
@@ -335,7 +335,7 @@ TEST(TextReadBytesLinesLimitsLines) {
   const char *body = "1.0\n2.0\n3.0\n4.0\n";
   ASSERT_TRUE(write_temp_file(path, body, strlen(body)));
 
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_RAW, .format = "TEXT", .read_bytes_lines = 2};
   snprintf(params.filename, sizeof(params.filename), "%s", path);
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
@@ -364,7 +364,7 @@ TEST(LongLineTextCoeffParsed) {
   snprintf(buf + 200, sizeof(buf) - 200, "1.5\n");
   ASSERT_TRUE(write_temp_file(path, buf, strlen(buf)));
 
-  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
+  conv_config_t params = {.type = CONV_TYPE_RAW, .format = "TEXT"};
   snprintf(params.filename, sizeof(params.filename), "%s", path);
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
 
@@ -389,7 +389,7 @@ TEST(TruncatedRawCoeffFileIsRejected) {
   const unsigned char body[1] = {0x7f};
   ASSERT_TRUE(write_temp_file(path, body, sizeof(body)));
 
-  convolution_config_t params = {.type = CONV_TYPE_RAW, .format = "S16LE"};
+  conv_config_t params = {.type = CONV_TYPE_RAW, .format = "S16LE"};
   snprintf(params.filename, sizeof(params.filename), "%s", path);
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
 
@@ -404,7 +404,7 @@ TEST(TruncatedRawCoeffFileIsRejected) {
 
 TEST(PartialChunkProcessesImmediatelyWithoutStaleSamples) {
   double ir[] = {1.0, 0.5};
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = ir, .values_count = 2};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *filter =

@@ -3,7 +3,7 @@
 #include <math.h>
 
 #include "cdsp/cdsp_pub_types.h"
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 #include "engine/dsp_engine.h"
 
 static inline float clamp_volume_db(float db) {

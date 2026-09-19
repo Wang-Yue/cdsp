@@ -1,0 +1,3 @@
+# Files ignored by clang-format
+src/config/config_gen.h
+src/config/config_gen.c

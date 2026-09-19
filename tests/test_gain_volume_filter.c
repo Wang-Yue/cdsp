@@ -2,7 +2,7 @@
 #include <stddef.h>
 
 #include "audio/processing_parameters.h"
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 #include "filters/filter.h"
 #include "filters/gain.h"
 #include "filters/volume.h"

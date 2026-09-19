@@ -6,7 +6,7 @@
 
 #include "audio/processing_parameters.h"
 #include "config/config_error.h"
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 #include "filters/filter.h"
 #include "utils/double_helpers.h"
 
@@ -58,13 +58,15 @@ static double compute_time_samples(double value, time_unit_t unit,
     return value * (double)sample_rate;
   case TIME_UNIT_SAMPLES:
     return value;
+  case TIME_UNIT_INVALID:
+  default:
+    return 0.0;
   }
-  return 0.0;
 }
 
-static void configure(const lookahead_limiter_config_t *params, int sample_rate,
-                      double *out_limit, int *out_attack_samples,
-                      double *out_release_coeff) {
+static void configure(const lookahead_limiter_filter_config_t *params,
+                      int sample_rate, double *out_limit,
+                      int *out_attack_samples, double *out_release_coeff) {
   double limit_db = params ? params->limit : 0.0;
   *out_limit = double_from_db(limit_db);
   time_unit_t attack_unit = params ? params->attack_unit : TIME_UNIT_MS;
@@ -143,7 +145,7 @@ static int lookahead_limiter_config_validate(const filter_config_t *config,
                                              config_error_t *err) {
   if (!config || config->type != FILTER_TYPE_LOOKAHEAD_LIMITER)
     return -1;
-  const lookahead_limiter_config_t *params =
+  const lookahead_limiter_filter_config_t *params =
       &config->parameters.lookahead_limiter;
   if (!params)
     return 0;
@@ -207,7 +209,7 @@ static void *lookahead_gain_create_common(const char *name,
   (void)proc_params;
   if (!config || config->type != FILTER_TYPE_LOOKAHEAD_LIMITER)
     return NULL;
-  const lookahead_limiter_config_t *params =
+  const lookahead_limiter_filter_config_t *params =
       &config->parameters.lookahead_limiter;
   if (lookahead_limiter_config_validate(config, sample_rate, err) != 0)
     return NULL;

@@ -7,7 +7,7 @@
 #include "resampler/audio_resampler.h"
 
 #include "audio/audio_chunk.h"
-#include "config/resampler_config_types.h"
+#include "config/config_gen.h"
 #include "logging/app_logger.h"
 #include "resampler/async_poly_resampler.h"
 #include "resampler/async_sinc_resampler.h"
@@ -47,6 +47,20 @@ resampler_impl_type_from_config(resampler_type_t type) {
     return RESAMPLER_IMPL_SLIP;
   }
   return RESAMPLER_IMPL_SYNCHRONOUS;
+}
+
+static void resampler_config_description(const resampler_config_t *config,
+                                         char *out_buf, size_t buf_len) {
+  if (!config || !out_buf || buf_len == 0)
+    return;
+  const char *prof = config->has_profile ? config->profile : "nil";
+  const char *interp =
+      config->has_interpolation ? config->interpolation : "nil";
+  int sinc = config->has_sinc_len ? config->sinc_len : 0;
+  snprintf(
+      out_buf, buf_len,
+      "ResamplerConfig(type: %s, profile: %s, interpolation: %s, sincLen: %d)",
+      resampler_type_to_string(config->type), prof, interp, sinc);
 }
 
 resampler_t *resampler_create_from_config(const resampler_config_t *config,

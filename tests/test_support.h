@@ -21,6 +21,16 @@
 
 #include <stdarg.h>
 
+#include "config/config_gen.h"
+
+static inline void resampler_config_init_with_type(resampler_config_t *cfg,
+                                                   resampler_type_t type) {
+  resampler_config_init(cfg);
+  if (cfg) {
+    cfg->type = type;
+  }
+}
+
 static inline int custom_snprintf(char *str, size_t size, const char *format,
                                   ...) {
   va_list args;

@@ -307,7 +307,7 @@ static capture_backend_t *generator_capture_create(
     return NULL;
 
   capture->signal_type = config->cfg.generator.signal.type;
-  capture->frequency = config->cfg.generator.signal.frequency;
+  capture->frequency = config->cfg.generator.signal.freq;
   capture->amplitude = double_from_db(config->cfg.generator.signal.level);
 
   capture->sample_rate = sample_rate;

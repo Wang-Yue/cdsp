@@ -16,86 +16,8 @@
 #include <stdint.h>
 
 #include "config/config_error.h"
+#include "config/config_gen.h"
 #include "config/engine_config_types.h"
-#include "config/filter_config_types.h"
-#include "config/mixer_config_types.h"
-#include "config/processor_config_types.h"
-
-/**
- * @brief Type of pipeline step.
- */
-typedef enum {
-  PIPELINE_STEP_TYPE_FILTER = 0, /**< Step applies a filter. */
-  PIPELINE_STEP_TYPE_MIXER,      /**< Step applies a mixer. */
-  PIPELINE_STEP_TYPE_PROCESSOR   /**< Step applies a processor. */
-} pipeline_step_type_t;
-
-/**
- * @brief One step in the user-defined processing pipeline.
- *
- * Either a named filter chain applied to one or more channels,
- * or a mixer that changes the channel layout.
- */
-typedef struct {
-  pipeline_step_type_t type; /**< The type of pipeline step. */
-  char description[256];     /**< Description of the pipeline step. */
-  size_t
-      channel; /**< The channel to apply the filter to (if single channel). */
-  bool has_channel;      /**< True if `channel` is valid. */
-  size_t *channels;      /**< Array of channels (if multi-channel). */
-  size_t channels_count; /**< Number of channels in `channels`. */
-  bool has_channels;     /**< True if `channels` field was present in config. */
-  char name[128];        /**< Name of the filter, mixer, or processor. */
-  bool has_name;         /**< True if `name` is valid. */
-  char **names;          /**< Array of names (if multi-name). */
-  size_t names_count;    /**< Number of names in `names`. */
-  bool has_names;        /**< True if `names` field was present in config. */
-  bool bypassed;         /**< True if this step is bypassed. */
-} pipeline_step_config_t;
-
-/**
- * @brief Named filter configuration.
- */
-typedef struct {
-  char name[128];         /**< Name of the filter. */
-  char description[256];  /**< Description of the filter. */
-  filter_config_t filter; /**< Filter configuration. */
-} named_filter_config_t;
-
-/**
- * @brief Named mixer configuration.
- */
-typedef struct {
-  char name[128];       /**< Name of the mixer. */
-  mixer_config_t mixer; /**< Mixer configuration. */
-} named_mixer_config_t;
-
-/**
- * @brief Named processor configuration.
- */
-typedef struct {
-  char name[128];               /**< Name of the processor. */
-  char description[256];        /**< Description of the processor. */
-  processor_config_t processor; /**< Processor configuration. */
-} named_processor_config_t;
-
-/**
- * @brief Top-level configuration consumed by the DSP engine.
- */
-typedef struct {
-  char title[128];                /**< Title of the configuration. */
-  char description[256];          /**< Description of the configuration. */
-  devices_config_t devices;       /**< Audio devices configuration. */
-  named_filter_config_t *filters; /**< Array of named filters. */
-  size_t filters_count;           /**< Number of filters. */
-  named_mixer_config_t *mixers;   /**< Array of named mixers. */
-  size_t mixers_count;            /**< Number of mixers. */
-  named_processor_config_t *processors; /**< Array of named processors. */
-  size_t processors_count;              /**< Number of processors. */
-  pipeline_step_config_t
-      *pipeline; /**< Array of pipeline steps defining the processing flow. */
-  size_t pipeline_count; /**< Number of pipeline steps. */
-} dsp_config_t;
 
 /**
  * @brief Validates the DSP configuration.

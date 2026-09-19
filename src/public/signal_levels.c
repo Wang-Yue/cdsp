@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "cdsp/cdsp_pub_types.h"
-#include "config/cJSON.h"
+#include "config/configuration.h"
 #include "config/engine_config_types.h"
 #include "engine/dsp_engine.h"
 
@@ -42,24 +42,20 @@ bool cdsp_get_signal_levels_since(const dsp_engine_t *engine, bool is_capture,
                                          since_ms, out_levels, out_channels);
 }
 
-static void get_labels_from_array(cJSON *labels_arr, char ***out_labels,
-                                  size_t *out_count) {
+static void copy_labels(char **src_labels, size_t count, bool has_labels,
+                        char ***out_labels, size_t *out_count) {
   if (!out_labels || !out_count)
     return;
   *out_labels = NULL;
   *out_count = 0;
-  if (!labels_arr || !cJSON_IsArray(labels_arr))
+  if (!has_labels)
     return;
-  size_t count = cJSON_GetArraySize(labels_arr);
-  if (count > 0) {
+  if (count > 0 && src_labels) {
     char **arr = (char **)malloc(count * sizeof(char *));
     if (!arr)
       return;
     for (size_t i = 0; i < count; i++) {
-      cJSON *item = cJSON_GetArrayItem(labels_arr, i);
-      arr[i] = (item && cJSON_IsString(item) && item->valuestring)
-                   ? strdup(item->valuestring)
-                   : NULL;
+      arr[i] = src_labels[i] ? strdup(src_labels[i]) : NULL;
     }
     *out_labels = arr;
     *out_count = count;
@@ -82,64 +78,46 @@ bool cdsp_get_channel_labels(const dsp_engine_t *engine,
       !active_json)
     return false;
 
-  cJSON *root = cJSON_Parse(active_json);
-  free(active_json);
-  if (!root)
+  dsp_config_t *cfg = NULL;
+  config_error_t cerr = {0};
+  if (dsp_config_parse_json_no_validate(active_json, &cfg, &cerr) != 0 ||
+      !cfg) {
+    free(active_json);
     return false;
-
-  cJSON *playback_labels_arr = NULL;
-  cJSON *capture_labels_arr = NULL;
-
-  cJSON *devices = cJSON_GetObjectItem(root, "devices");
-  if (devices) {
-    cJSON *capture = cJSON_GetObjectItem(devices, "capture");
-    if (capture) {
-      capture_labels_arr = cJSON_GetObjectItem(capture, "labels");
-    }
   }
+  free(active_json);
 
-  // Resolve playback labels from last pipeline mixer or fallback to capture
-  // device labels
+  // Capture labels
+  copy_labels(cfg->devices.capture.labels, cfg->devices.capture.labels_count,
+              cfg->devices.capture.has_labels, out_capture_labels,
+              out_capture_count);
+
+  // Playback labels: search pipeline in reverse for the last mixer
   bool mixer_found = false;
-  cJSON *pipeline = cJSON_GetObjectItem(root, "pipeline");
-  cJSON *mixers = cJSON_GetObjectItem(root, "mixers");
-  if (pipeline && mixers && cJSON_IsArray(pipeline)) {
-    int pipeline_size = cJSON_GetArraySize(pipeline);
-    for (int i = pipeline_size - 1; i >= 0; i--) {
-      cJSON *step = cJSON_GetArrayItem(pipeline, i);
-      if (step && cJSON_IsObject(step)) {
-        cJSON *type_node = cJSON_GetObjectItem(step, "type");
-        if (type_node && cJSON_IsString(type_node) &&
-            strcmp(type_node->valuestring, "Mixer") == 0) {
-          cJSON *name_node = cJSON_GetObjectItem(step, "name");
-          if (name_node && cJSON_IsString(name_node)) {
-            cJSON *mixer = cJSON_GetObjectItem(mixers, name_node->valuestring);
-            if (mixer && cJSON_IsObject(mixer)) {
-              cJSON *labels_node = cJSON_GetObjectItem(mixer, "labels");
-              if (labels_node && cJSON_IsArray(labels_node)) {
-                playback_labels_arr = labels_node;
-              } else {
-                playback_labels_arr = NULL;
-              }
-              mixer_found = true;
-              break;
-            }
-          }
+  if (cfg->pipeline && cfg->pipeline_count > 0) {
+    for (ssize_t i = (ssize_t)cfg->pipeline_count - 1; i >= 0; i--) {
+      if (cfg->pipeline[i].type == PIPELINE_STEP_TYPE_MIXER &&
+          cfg->pipeline[i].has_name) {
+        mixer_config_t *mixer =
+            dsp_config_get_mixer(cfg, cfg->pipeline[i].name);
+        if (mixer) {
+          copy_labels(mixer->labels, mixer->labels_count, mixer->has_labels,
+                      out_playback_labels, out_playback_count);
+          mixer_found = true;
+          break;
         }
       }
     }
   }
 
+  // If no mixer found in pipeline, fallback to capture labels
   if (!mixer_found) {
-    playback_labels_arr = capture_labels_arr;
+    copy_labels(cfg->devices.capture.labels, cfg->devices.capture.labels_count,
+                cfg->devices.capture.has_labels, out_playback_labels,
+                out_playback_count);
   }
 
-  get_labels_from_array(playback_labels_arr, out_playback_labels,
-                        out_playback_count);
-  get_labels_from_array(capture_labels_arr, out_capture_labels,
-                        out_capture_count);
-
-  cJSON_Delete(root);
+  dsp_config_free(cfg);
   return true;
 }
 

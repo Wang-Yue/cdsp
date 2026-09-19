@@ -13,7 +13,7 @@
 #include <stdlib.h>
 
 #include "audio/audio_chunk.h"
-#include "config/processor_config_types.h"
+#include "config/config_gen.h"
 #include "logging/app_logger.h"
 #include "processors/compressor_processor.h"
 #include "processors/lookahead_limiter_processor.h"

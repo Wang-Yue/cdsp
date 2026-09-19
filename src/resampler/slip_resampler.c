@@ -7,7 +7,7 @@
 
 #include "audio/audio_chunk.h"
 #include "config/config_error.h"
-#include "config/resampler_config_types.h"
+#include "config/config_gen.h"
 #include "logging/app_logger.h"
 #include "resampler/resampler_error.h"
 

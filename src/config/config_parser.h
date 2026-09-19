@@ -1,11 +1,12 @@
-#ifndef CDSP_CONFIG_PARSER_INTERNAL_H
-#define CDSP_CONFIG_PARSER_INTERNAL_H
+#ifndef CDSP_CONFIG_PARSER_H
+#define CDSP_CONFIG_PARSER_H
 
 /**
- * @file config_parser_internal.h
- * @brief Internal utility helpers shared across config sub-parsers.
+ * @file config_parser.h
+ * @brief Utility helpers and parsers for configuration schemas.
  */
 
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -14,18 +15,6 @@
 #include <string.h>
 
 #include "config/cJSON.h"
-
-/**
- * @brief Parses an array of string labels from a cJSON array.
- *
- * @param labels_arr The cJSON array containing the labels.
- * @param out_labels Output pointer to store allocated array of string pointers.
- * @param out_count Output pointer to store the size of the parsed labels array.
- * @param out_has_labels Output pointer set to true if labels were successfully
- * parsed.
- */
-void parse_labels_array(const cJSON *labels_arr, char ***out_labels,
-                        size_t *out_count, bool *out_has_labels);
 
 /**
  * @brief Parses an array of string labels with strict error reporting.
@@ -38,67 +27,6 @@ void parse_labels_array(const cJSON *labels_arr, char ***out_labels,
  */
 int parse_labels_array_strict(const cJSON *labels_arr, char ***out_labels,
                               size_t *out_count, bool *out_has_labels);
-
-/**
- * @brief Parses an array of double numbers from a cJSON array.
- *
- * @param arr The cJSON array containing floating point values.
- * @param out_count Output pointer storing array length.
- * @return Dynamically allocated double array or NULL.
- */
-double *parse_double_array(const cJSON *arr, size_t *out_count);
-
-static inline bool parse_json_str(const cJSON *obj, const char *key, char *dest,
-                                  size_t dest_sz) {
-  if (dest_sz == 0)
-    return false;
-  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
-  if (cJSON_IsString(item) && item->valuestring) {
-    size_t len = strlen(item->valuestring);
-    if (len >= dest_sz) {
-      return false;
-    }
-    memcpy(dest, item->valuestring, len);
-    dest[len] = '\0';
-    return true;
-  }
-  return false;
-}
-
-static inline bool parse_json_int(const cJSON *obj, const char *key,
-                                  int *dest) {
-  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
-  if (cJSON_IsNumber(item) && item->valuedouble == (double)item->valueint) {
-    *dest = item->valueint;
-    return true;
-  }
-  return false;
-}
-
-/* parse_json_size_t() was removed: it answered `false` for a negative value,
- * which every caller treated as "absent" and so left the destination at 0 --
- * `channel: -1` silently became channel 0. Use parse_json_size_t_strict()
- * below, which reports the error. */
-
-static inline bool parse_json_bool(const cJSON *obj, const char *key,
-                                   bool *dest) {
-  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
-  if (cJSON_IsBool(item)) {
-    *dest = cJSON_IsTrue(item);
-    return true;
-  }
-  return false;
-}
-
-static inline bool parse_json_double(const cJSON *obj, const char *key,
-                                     double *dest) {
-  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
-  if (cJSON_IsNumber(item)) {
-    *dest = item->valuedouble;
-    return true;
-  }
-  return false;
-}
 
 #include "config/config_error.h"
 
@@ -122,6 +50,13 @@ static inline bool parse_json_double(const cJSON *obj, const char *key,
  */
 int parse_size_t_array_strict(const cJSON *arr, const char *field_name,
                               const char *section_name, size_t **out_values,
+                              size_t *out_count, config_error_t *err);
+
+/**
+ * @brief Parses an array of double numbers with strict error checking.
+ */
+int parse_double_array_strict(const cJSON *arr, const char *field_name,
+                              const char *section_name, double **out_values,
                               size_t *out_count, config_error_t *err);
 
 /**
@@ -187,6 +122,29 @@ static inline int parse_json_size_t_strict(const cJSON *obj, const char *key,
   }
   if (dest)
     *dest = (size_t)item->valuedouble;
+  if (present)
+    *present = true;
+  return 0;
+}
+
+static inline int parse_json_int_strict(const cJSON *obj, const char *key,
+                                        const char *section_name, int *dest,
+                                        bool *present, config_error_t *err) {
+  if (present)
+    *present = false;
+  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item || cJSON_IsNull(item))
+    return 0;
+  if (!cJSON_IsNumber(item) || floor(item->valuedouble) != item->valuedouble ||
+      item->valuedouble < (double)INT_MIN ||
+      item->valuedouble > (double)INT_MAX) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "field '%s' in %s must be an integer", key,
+                     section_name ? section_name : "object");
+    return -1;
+  }
+  if (dest)
+    *dest = (int)item->valuedouble;
   if (present)
     *present = true;
   return 0;
@@ -370,9 +328,13 @@ static inline int parse_enum_required(const cJSON *obj, const char *key,
 static inline int parse_enum_optional(const cJSON *obj, const char *key,
                                       const config_enum_variant_t *variants,
                                       const char *section_name, int *out,
-                                      config_error_t *err) {
+                                      bool *present, config_error_t *err) {
+  if (present)
+    *present = false;
   if (!cJSON_GetObjectItemCaseSensitive(obj, key))
     return 0;
+  if (present)
+    *present = true;
   return parse_enum_required(obj, key, variants, section_name, out, err);
 }
 
@@ -414,46 +376,4 @@ static inline int require_json_fields(const cJSON *obj,
   return 0;
 }
 
-/**
- * @brief Requires that at least one of a set of alternative fields is present.
- *
- * Models upstream's untagged helper enums (`NotchWidth`, `PeakingWidth`,
- * `ShelfSteepness`), where the width can be given either as `q` or as
- * `bandwidth`/`slope` but one of them must be there for any variant to match.
- *
- * @param obj The object holding the fields.
- * @param keys NULL-terminated array of alternative field names.
- * @param section_name Section name used in error messages.
- * @param variant Optional variant name to name in the message, may be NULL.
- * @param err Optional error sink.
- * @return 0 if at least one is present, -1 otherwise.
- */
-static inline int require_json_any_field(const cJSON *obj,
-                                         const char *const keys[],
-                                         const char *section_name,
-                                         const char *variant,
-                                         config_error_t *err) {
-  const char *where = section_name ? section_name : "object";
-  char expected[128];
-  size_t off = 0;
-  expected[0] = '\0';
-  for (size_t i = 0; keys && keys[i] != NULL; i++) {
-    if (cJSON_GetObjectItemCaseSensitive(obj, keys[i]))
-      return 0;
-    int n = snprintf(expected + off, sizeof(expected) - off, "%s'%s'",
-                     i == 0 ? "" : " or ", keys[i]);
-    if (n > 0 && (size_t)n < sizeof(expected) - off)
-      off += (size_t)n;
-  }
-  if (variant) {
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "missing field %s in %s for type '%s'", expected, where,
-                     variant);
-  } else {
-    config_error_set(err, CONFIG_ERR_PARSE, "missing field %s in %s", expected,
-                     where);
-  }
-  return -1;
-}
-
-#endif // CDSP_CONFIG_PARSER_INTERNAL_H
+#endif // CDSP_CONFIG_PARSER_H

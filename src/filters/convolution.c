@@ -12,8 +12,8 @@
 #include "audio/processing_parameters.h"
 #include "audio/sample_conversion.h"
 #include "config/config_error.h"
+#include "config/config_gen.h"
 #include "config/engine_config_types.h"
-#include "config/filter_config_types.h"
 #include "fft/real_fft.h"
 #include "filters/filter.h"
 #include "utils/cdsp_memory.h"
@@ -238,7 +238,7 @@ static int convolution_config_validate(const filter_config_t *config,
   (void)sample_rate;
   if (!config || config->type != FILTER_TYPE_CONV)
     return -1;
-  const convolution_config_t *params = &config->parameters.conv;
+  const conv_config_t *params = &config->parameters.conv;
   if (!params)
     return 0;
   switch (params->type) {
@@ -413,7 +413,7 @@ static void *convolution_filter_create(const char *name,
   (void)proc_params;
   if (!config || config->type != FILTER_TYPE_CONV)
     return NULL;
-  const convolution_config_t *params = &config->parameters.conv;
+  const conv_config_t *params = &config->parameters.conv;
   if (convolution_config_validate(config, 0, err) != 0)
     return NULL;
   if (chunk_size == 0) {

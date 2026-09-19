@@ -37,9 +37,9 @@
 #include "cdsp/signal_levels.h"
 #include "cdsp/spectrum.h"
 #include "config/config_error.h"
+#include "config/config_gen.h"
 #include "config/configuration.h"
 #include "config/engine_config_types.h"
-#include "config/filter_config_types.h"
 #include "engine/dsp_engine.h"
 #include "engine/engine_capture_loop.h"
 #include "engine/engine_playback_loop.h"
@@ -2932,7 +2932,7 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
            "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 1,\n"
            "            \"signal\": {\n"
-           "                \"type\": \"Noise\",\n"
+           "                \"type\": \"WhiteNoise\",\n"
            "                \"level\": -20.0\n"
            "            }\n"
            "        },\n"
@@ -3020,7 +3020,7 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
            "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 1,\n"
            "            \"signal\": {\n"
-           "                \"type\": \"Noise\",\n"
+           "                \"type\": \"WhiteNoise\",\n"
            "                \"level\": -100.0\n"
            "            }\n"
            "        },\n"
@@ -3048,7 +3048,7 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
            "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 1,\n"
            "            \"signal\": {\n"
-           "                \"type\": \"Noise\",\n"
+           "                \"type\": \"WhiteNoise\",\n"
            "                \"level\": -100.0\n"
            "            }\n"
            "        },\n"
@@ -3653,7 +3653,7 @@ TEST(DSPEngineE2E_RealtimeQueueDrop_DataIntegrity) {
   cap_cfg.type = AUDIO_BACKEND_TYPE_GENERATOR;
   cap_cfg.cfg.generator.channels = 1;
   cap_cfg.cfg.generator.signal.type = SIGNAL_TYPE_SINE;
-  cap_cfg.cfg.generator.signal.frequency = 1000.0;
+  cap_cfg.cfg.generator.signal.freq = 1000.0;
   cap_cfg.cfg.generator.signal.level = 0.0;
 
   backend_error_t berr;

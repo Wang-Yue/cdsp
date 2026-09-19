@@ -10,7 +10,7 @@
 #include <stddef.h>
 
 #include "config/config_error.h"
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 #include "filters/biquad.h"
 
 struct filter_vtable;

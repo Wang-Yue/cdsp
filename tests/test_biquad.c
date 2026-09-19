@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 #include "filters/biquad.h"
 #include "filters/biquad_internal.h"
 #include "filters/filter.h"

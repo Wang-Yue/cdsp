@@ -24,7 +24,7 @@ TEST(GeneratorSineCorrectness) {
   config.type = AUDIO_BACKEND_TYPE_GENERATOR;
   config.cfg.generator.channels = 2;
   config.cfg.generator.signal.type = SIGNAL_TYPE_SINE;
-  config.cfg.generator.signal.frequency = 1000.0;
+  config.cfg.generator.signal.freq = 1000.0;
   config.cfg.generator.signal.level = 0.0;
 
   backend_error_t err;
@@ -60,7 +60,7 @@ TEST(GeneratorSquareCorrectness) {
   config.type = AUDIO_BACKEND_TYPE_GENERATOR;
   config.cfg.generator.channels = 1;
   config.cfg.generator.signal.type = SIGNAL_TYPE_SQUARE;
-  config.cfg.generator.signal.frequency = 100.0;
+  config.cfg.generator.signal.freq = 100.0;
   config.cfg.generator.signal.level = -6.020599913279624;
 
   backend_error_t err;
@@ -95,7 +95,7 @@ TEST(GeneratorNoThrottling) {
   config.type = AUDIO_BACKEND_TYPE_GENERATOR;
   config.cfg.generator.channels = 1;
   config.cfg.generator.signal.type = SIGNAL_TYPE_SINE;
-  config.cfg.generator.signal.frequency = 1000.0;
+  config.cfg.generator.signal.freq = 1000.0;
   config.cfg.generator.signal.level = 0.0;
 
   backend_error_t err;

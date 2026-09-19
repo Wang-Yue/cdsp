@@ -8,7 +8,7 @@
 #include <strings.h>
 
 #include "backend/file_backend.h"
-#include "config/resampler_config_types.h"
+#include "config/config_gen.h"
 #include "filters/filter.h"
 #include "logging/app_logger.h"
 #include "mixer/mixer.h"
@@ -481,8 +481,12 @@ int dsp_config_validate(const dsp_config_t *config, config_error_t *err) {
   }
 #endif
   if (config->devices.has_target_level) {
-    if ((int64_t)config->devices.target_level > target_limit ||
-        config->devices.target_level < 0) {
+    if (config->devices.target_level < 0) {
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "target_level must be a non-negative integer");
+      return -1;
+    }
+    if ((int64_t)config->devices.target_level > target_limit) {
       config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                        "target_level cannot be larger than %lld",
                        (long long)target_limit);
@@ -570,84 +574,6 @@ int dsp_config_validate(const dsp_config_t *config, config_error_t *err) {
 void dsp_config_free(dsp_config_t *config) {
   if (!config)
     return;
-  if (config->filters) {
-    for (size_t i = 0; i < config->filters_count; i++) {
-      if (config->filters[i].filter.type == FILTER_TYPE_CONV) {
-        free(config->filters[i].filter.parameters.conv.values);
-      } else if (config->filters[i].filter.type == FILTER_TYPE_BIQUAD_COMBO) {
-        free(config->filters[i].filter.parameters.biquad_combo.gains);
-        free(config->filters[i].filter.parameters.biquad_combo.bands);
-      } else if (config->filters[i].filter.type == FILTER_TYPE_DIFF_EQ) {
-        free(config->filters[i].filter.parameters.diff_eq.a);
-        free(config->filters[i].filter.parameters.diff_eq.b);
-      }
-    }
-    free(config->filters);
-  }
-  if (config->mixers) {
-    for (size_t i = 0; i < config->mixers_count; i++) {
-      if (config->mixers[i].mixer.mapping) {
-        for (size_t j = 0; j < config->mixers[i].mixer.mapping_count; j++) {
-          free(config->mixers[i].mixer.mapping[j].sources);
-        }
-        free(config->mixers[i].mixer.mapping);
-      }
-      if (config->mixers[i].mixer.has_labels &&
-          config->mixers[i].mixer.labels) {
-        for (size_t j = 0; j < config->mixers[i].mixer.labels_count; j++) {
-          free(config->mixers[i].mixer.labels[j]);
-        }
-        free(config->mixers[i].mixer.labels);
-      }
-    }
-    free(config->mixers);
-  }
-  if (config->processors) {
-    for (size_t i = 0; i < config->processors_count; i++) {
-      if (config->processors[i].processor.type == PROCESSOR_TYPE_COMPRESSOR) {
-        free(config->processors[i]
-                 .processor.parameters.compressor.monitor_channels);
-        free(config->processors[i]
-                 .processor.parameters.compressor.process_channels);
-      } else if (config->processors[i].processor.type ==
-                 PROCESSOR_TYPE_NOISE_GATE) {
-        free(config->processors[i]
-                 .processor.parameters.noise_gate.monitor_channels);
-        free(config->processors[i]
-                 .processor.parameters.noise_gate.process_channels);
-      } else if (config->processors[i].processor.type ==
-                 PROCESSOR_TYPE_LOOKAHEAD_LIMITER) {
-        free(config->processors[i]
-                 .processor.parameters.lookahead_limiter.monitor_channels);
-        free(config->processors[i]
-                 .processor.parameters.lookahead_limiter.process_channels);
-      }
-    }
-    free(config->processors);
-  }
-  if (config->pipeline) {
-    for (size_t i = 0; i < config->pipeline_count; i++) {
-      free(config->pipeline[i].channels);
-      if (config->pipeline[i].names) {
-        for (size_t j = 0; j < config->pipeline[i].names_count; j++) {
-          free(config->pipeline[i].names[j]);
-        }
-        free(config->pipeline[i].names);
-      }
-    }
-    free(config->pipeline);
-  }
-  if (config->devices.capture.has_labels && config->devices.capture.labels) {
-    for (size_t i = 0; i < config->devices.capture.labels_count; i++) {
-      free(config->devices.capture.labels[i]);
-    }
-    free(config->devices.capture.labels);
-  }
-  if (config->devices.playback.has_labels && config->devices.playback.labels) {
-    for (size_t i = 0; i < config->devices.playback.labels_count; i++) {
-      free(config->devices.playback.labels[i]);
-    }
-    free(config->devices.playback.labels);
-  }
+  free_dsp_config_contents(config);
   free(config);
 }

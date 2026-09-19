@@ -6,7 +6,7 @@
  * @brief Equal-loudness contour compensation filter (RME ADI-2 style).
  */
 
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 
 struct filter_vtable;
 

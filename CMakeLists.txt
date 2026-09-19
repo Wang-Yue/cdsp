@@ -175,6 +175,25 @@ if(NOT ENABLE_SANITIZER STREQUAL "none")
 endif()
 
 # -----------------------------------------------------------------------------
+# Optional Target: Re-generate Configuration Parser & Schemas
+# -----------------------------------------------------------------------------
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_FOUND)
+    file(GLOB_RECURSE CODEGEN_SCRIPTS CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/codegen/*.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_config.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/config/schema/*.py"
+    )
+    add_custom_target(generate_config
+        COMMAND ${CMAKE_COMMAND} -E env PYTHONDONTWRITEBYTECODE=1 "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_config.py" --out-dir "${CMAKE_CURRENT_SOURCE_DIR}/src/config"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        DEPENDS ${CODEGEN_SCRIPTS}
+        COMMENT "Re-generating configuration parser in src/config"
+        VERBATIM
+    )
+endif()
+
+# -----------------------------------------------------------------------------
 # Source Files Selection
 # -----------------------------------------------------------------------------
 file(GLOB_RECURSE DSP_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
@@ -639,6 +658,7 @@ if(CLANG_FORMAT_BIN)
     list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/build/.*")
     list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/\\.build/.*")
     list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/tests/rust_harnesses/.*")
+    list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/config_gen\\.[ch]$")
 
     add_custom_target(format
         COMMAND ${CLANG_FORMAT_BIN} -i ${ALL_C_AND_H_FILES}

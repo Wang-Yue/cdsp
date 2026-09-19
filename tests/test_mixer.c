@@ -5,8 +5,7 @@
 
 #include "audio/audio_chunk.h"
 #include "config/config_error.h"
-#include "config/filter_config_types.h"
-#include "config/mixer_config_types.h"
+#include "config/config_gen.h"
 #include "mixer/mixer.h"
 #include "test_support.h"
 #include "utils/double_helpers.h"

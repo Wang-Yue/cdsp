@@ -15,12 +15,9 @@
 #include "audio/sample_conversion.h"
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
+#include "config/config_gen.h"
 #include "config/configuration.h"
 #include "config/engine_config_types.h"
-#include "config/filter_config_types.h"
-#include "config/mixer_config_types.h"
-#include "config/processor_config_types.h"
-#include "config/resampler_config_types.h"
 #include "dsd/dsd_decoder.h"
 #include "dsd/dsd_encoder.h"
 #include "engine/cdsp_sem.h"
@@ -592,7 +589,7 @@ TEST(Convolution_AllocationFree) {
   for (int i = 0; i < ir_len; i++) {
     ir[i] = (i == 0 ? 1.0 : 0.0) + 0.001 * cos((double)i * 0.01);
   }
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = ir, .values_count = ir_len};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *filter =
@@ -723,7 +720,7 @@ TEST(DiffEq_AllocationFree) {
   double a[] = {1.0, -1.864844640491105, 0.8818236057002321};
   double b[] = {0.004244741301241303, 0.008489482602482605,
                 0.004244741301241303};
-  diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
+  diff_eq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
   filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
                          .parameters.diff_eq = params};
   void *filter = g_diffeq_vtable.create("diffeq", &cfg, 0, 0, NULL, NULL);
@@ -765,11 +762,12 @@ TEST(Clipper_AllocationFree) {
 }
 
 TEST(LookaheadLimiter_AllocationFree) {
-  lookahead_limiter_config_t params = {.limit = -1.0,
-                                       .attack = 4.0,
-                                       .attack_unit = TIME_UNIT_SAMPLES,
-                                       .release = 20.0,
-                                       .release_unit = TIME_UNIT_SAMPLES};
+  lookahead_limiter_filter_config_t params = {.limit = -1.0,
+                                              .attack = 4.0,
+                                              .attack_unit = TIME_UNIT_SAMPLES,
+                                              .release = 20.0,
+                                              .release_unit =
+                                                  TIME_UNIT_SAMPLES};
   filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER,
                          .parameters.lookahead_limiter = params};
   void *filter = g_lookahead_limiter_vtable.create("lookahead", &cfg, 44100,

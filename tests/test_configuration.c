@@ -12,11 +12,9 @@
 #include <unistd.h>
 
 #include "config/config_error.h"
+#include "config/config_gen.h"
 #include "config/configuration.h"
 #include "config/engine_config_types.h"
-#include "config/filter_config_types.h"
-#include "config/mixer_config_types.h"
-#include "config/resampler_config_types.h"
 #include "mixer/mixer.h"
 #include "test_support.h"
 
@@ -1400,8 +1398,8 @@ TEST(StrictValidationRejectUnknownPipelineField) {
       "    },\n"
       "    \"filters\": {\"g1\": {\"type\": \"Gain\", \"parameters\": "
       "{\"gain\": 0.0}}},\n"
-      "    \"pipeline\": [{\"type\": \"Filter\", \"name\": \"g1\", "
-      "\"channel\": 0, \"invalid_pipe_field\": 1}]\n"
+      "    \"pipeline\": [{\"type\": \"Filter\", \"names\": [\"g1\"], "
+      "\"channels\": [0], \"invalid_pipe_field\": 1}]\n"
       "}";
   dsp_config_t *config = NULL;
   config_error_t err;

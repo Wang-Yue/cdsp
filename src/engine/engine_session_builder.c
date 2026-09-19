@@ -16,7 +16,7 @@
 #include "backend/audio_backend.h"
 #include "backend/audio_backend_factory.h"
 #include "config/config_error.h"
-#include "config/resampler_config_types.h"
+#include "config/config_gen.h"
 #include "dsd/dsd_decoder.h"
 #include "dsd/dsd_encoder.h"
 #include "engine/dsp_session.h"

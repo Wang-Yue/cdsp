@@ -2,7 +2,7 @@
 
 #include "audio/processing_parameters.h"
 #include "config/config_error.h"
-#include "config/filter_config_types.h"
+#include "config/config_gen.h"
 #include "filters/biquad.h"
 #include "filters/filter.h"
 #include "utils/double_helpers.h"
@@ -141,8 +141,10 @@ double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
   case DELAY_UNIT_MM:
     // Compute delay using speed of sound in air (approx. 343 m/s)
     return delay / 1000.0 * (double)sample_rate / 343.0;
+  case DELAY_UNIT_INVALID:
+  default:
+    return 0.0;
   }
-  return 0.0;
 }
 
 /**

@@ -101,7 +101,7 @@ static void process_diffeq(void *f, double *w, size_t n) {
 
 TEST(Convolution_1024_Benchmark) {
   double *coeffs = (double *)calloc(1024, sizeof(double));
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 1024};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *f =
@@ -113,7 +113,7 @@ TEST(Convolution_1024_Benchmark) {
 
 TEST(Convolution_4096_Benchmark) {
   double *coeffs = (double *)calloc(4096, sizeof(double));
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 4096};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *f =
@@ -125,7 +125,7 @@ TEST(Convolution_4096_Benchmark) {
 
 TEST(Convolution_16384_Benchmark) {
   double *coeffs = (double *)calloc(16384, sizeof(double));
-  convolution_config_t params = {
+  conv_config_t params = {
       .type = CONV_TYPE_VALUES, .values = coeffs, .values_count = 16384};
   filter_config_t cfg = {.type = FILTER_TYPE_CONV, .parameters.conv = params};
   void *f = g_convolution_vtable.create("conv-16384", &cfg, 0, CHUNK_SIZE, NULL,
@@ -152,7 +152,7 @@ TEST(Biquad_Benchmark) {
 TEST(DiffEq_Benchmark) {
   double a[] = {1.0, -0.1462978543780541, 0.005350765548905586};
   double b[] = {0.21476322779271284, 0.4295264555854257, 0.21476322779271284};
-  diffeq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
+  diff_eq_config_t params = {.a = a, .a_count = 3, .b = b, .b_count = 3};
   filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ,
                          .parameters.diff_eq = params};
   void *f = g_diffeq_vtable.create("diffeq", &cfg, 0, 0, NULL, NULL);
