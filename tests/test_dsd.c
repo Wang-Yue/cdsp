@@ -6,7 +6,8 @@
 
 #include "audio/audio_chunk.h"
 #include "audio/sample_conversion.h"
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
+#include "backend/audio_backend.h"
 #include "dsd/dsd_decoder.h"
 #include "dsd/dsd_encoder.h"
 #include "test_support.h"

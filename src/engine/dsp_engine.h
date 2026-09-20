@@ -13,12 +13,13 @@
 #include <stdint.h>
 
 #include "audio/processing_parameters.h"
+#include "audio/sample_format.h"
 #include "audio/spectrum_analyzer.h"
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
 #include "config/log_level.h"
+#include "engine/engine_state_types.h"
 
 /**
  * @brief Self-contained interface handle representing the DSP engine.

@@ -5,7 +5,6 @@
 #include <stddef.h>
 
 #include "backend/audio_backend.h"
-#include "config/engine_config_types.h"
 
 /**
  * @file audio_backend_factory.h

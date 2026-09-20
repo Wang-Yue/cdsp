@@ -10,7 +10,7 @@
 #include <unknwn.h>
 #include <windows.h>
 
-#include "config/engine_config_types.h"
+#include "backend/audio_backend.h"
 
 // COM Release helper
 #define SAFE_RELEASE(punk)                                                     \
@@ -155,6 +155,9 @@ typedef struct IASIOVtbl {
 struct IASIO {
   const IASIOVtbl *lpVtbl;
 };
+
+binary_sample_format_t
+asio_sample_format_to_binary_format(asio_sample_format_t fmt, bool is_lsb);
 
 #endif // ENABLE_ASIO
 

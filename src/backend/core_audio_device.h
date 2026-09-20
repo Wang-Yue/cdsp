@@ -15,7 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "config/engine_config_types.h"
+#include "backend/audio_backend.h"
 
 /**
  * @file core_audio_device.h

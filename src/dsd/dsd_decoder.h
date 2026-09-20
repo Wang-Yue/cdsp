@@ -38,7 +38,7 @@
 #include <stddef.h>
 
 #include "audio/audio_chunk.h"
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 
 /**
  * @brief DSD detection and decoding engine.

@@ -29,8 +29,9 @@
 
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
+#include "audio/sample_format.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
+#include "engine/engine_state_types.h"
 #include "pipeline/pipeline.h"
 #include "resampler/audio_resampler.h"
 #include "resampler/resampler_error.h"

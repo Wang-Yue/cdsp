@@ -4,8 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "backend/audio_backend.h"
 #include "backend/backend_error.h"
-#include "config/engine_config_types.h"
 
 /**
  * @file audio_backend_registry.h

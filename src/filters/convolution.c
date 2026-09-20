@@ -11,9 +11,9 @@
 
 #include "audio/processing_parameters.h"
 #include "audio/sample_conversion.h"
+#include "audio/sample_format.h"
 #include "config/config_error.h"
 #include "config/config_gen.h"
-#include "config/engine_config_types.h"
 #include "fft/real_fft.h"
 #include "filters/filter.h"
 #include "utils/cdsp_memory.h"
@@ -58,7 +58,7 @@ struct convolution_filter {
 
 typedef struct convolution_filter convolution_filter_t;
 
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 // Uniform-partitioned overlap-add FIR convolution.
 // Stockham-style segmented overlap-add with one 2N-point real FFT per
 // chunk and an N+1-bin spectrum-domain multiply-accumulate across the

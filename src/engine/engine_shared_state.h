@@ -62,7 +62,8 @@ static inline void engine_yield(void) { SwitchToThread(); }
 #include <stddef.h>
 #include <stdint.h>
 
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
+#include "engine/engine_state_types.h"
 
 /**
  * @brief Opaque structure representing shared state between the engine threads.

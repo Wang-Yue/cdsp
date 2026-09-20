@@ -4,9 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "audio/sample_format.h"
 #include "cdsp/cdsp_pub_types.h"
-#include "config/engine_config_types.h"
 #include "engine/dsp_engine.h"
+#include "engine/engine_state_types.h"
 #include "utils/double_helpers.h"
 
 cdsp_processing_state_t cdsp_get_state(const dsp_engine_t *engine) {

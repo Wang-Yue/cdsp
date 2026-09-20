@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "config/engine_config_types.h"
+#include "backend/audio_backend.h"
 
 /**
  * @file alsa_device.h

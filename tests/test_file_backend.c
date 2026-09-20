@@ -25,7 +25,6 @@
 #include "backend/file_backend.h"
 #include "config/config_error.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
 #include "test_support.h"
 #include "utils/cdsp_time.h"
 

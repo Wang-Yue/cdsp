@@ -25,11 +25,12 @@
 
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
+#include "audio/sample_format.h"
 #include "audio/silence_counter.h"
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
-#include "config/engine_config_types.h"
 #include "dsd/dsd_decoder.h"
+#include "engine/engine_state_types.h"
 #include "engine/sample_rate_watcher.h"
 
 struct engine_capture_loop {

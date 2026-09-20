@@ -13,8 +13,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "audio/sample_format.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
 
 /**
  * @enum config_change_type_t

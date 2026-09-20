@@ -6,10 +6,10 @@
 
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
+#include "audio/sample_format.h"
 #include "config/config_error.h"
 #include "config/config_gen.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
 #include "filters/filter.h"
 #include "pipeline/config_loader.h"
 #include "pipeline/pipeline.h"

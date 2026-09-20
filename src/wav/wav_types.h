@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 
 #ifdef _WIN32
 #define cdsp_fseek64 _fseeki64

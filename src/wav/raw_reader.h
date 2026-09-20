@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 
 /**
  * @brief Read one line dynamically from a text stream, allocating the buffer.

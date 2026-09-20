@@ -5,7 +5,7 @@
 #include <unistd.h>
 
 #include "audio/sample_conversion.h"
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 #include "test_support.h"
 #include "wav/raw_reader.h"
 #include "wav/raw_writer.h"

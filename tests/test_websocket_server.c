@@ -22,13 +22,13 @@ typedef int socket_t;
 #include <string.h>
 
 #include "audio/processing_parameters.h"
+#include "audio/sample_format.h"
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
 #include "cdsp/cdsp_pub_types.h"
 #include "cdsp/general.h"
 #include "cdsp/processing.h"
 #include "config/cJSON.h"
-#include "config/engine_config_types.h"
 #include "engine/dsp_engine.h" // IWYU pragma: keep
 #include "server/websocket_server.h"
 #include "server/websocket_server_internal.h"

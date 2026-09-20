@@ -25,6 +25,7 @@
 #include <windows.h>
 
 #include "audio/sample_conversion.h"
+#include "config/config_gen.h"
 #include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"

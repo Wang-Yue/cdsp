@@ -3,10 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "audio/sample_format.h"
 #include "cdsp/cdsp_pub_types.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
 #include "engine/dsp_engine.h"
+#include "engine/engine_state_types.h"
 
 bool cdsp_get_vu_levels(const dsp_engine_t *engine, cdsp_vu_levels_t *out_vu) {
   if (!engine || !out_vu || !engine->get_vu_levels)

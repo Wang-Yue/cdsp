@@ -3,9 +3,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "audio/sample_format.h"
 #include "cdsp/cdsp_pub_types.h"
-#include "config/engine_config_types.h"
 #include "engine/dsp_engine.h"
+#include "engine/engine_state_types.h"
 
 bool cdsp_get_spectrum(dsp_engine_t *engine, cdsp_spectrum_side_t side,
                        const size_t *channel, float min_freq, float max_freq,

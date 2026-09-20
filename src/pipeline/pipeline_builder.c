@@ -6,10 +6,11 @@
 
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
+#include "audio/sample_format.h"
+#include "backend/audio_backend.h"
 #include "config/config_error.h"
 #include "config/config_gen.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
 #include "filters/biquad.h"
 #include "filters/biquad_combo.h"
 #include "filters/convolution.h"

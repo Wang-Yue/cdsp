@@ -17,7 +17,8 @@
 
 #include "config/config_error.h"
 #include "config/config_gen.h"
-#include "config/engine_config_types.h"
+
+typedef struct dsp_config_overrides_t dsp_config_overrides_t;
 
 /**
  * @brief Validates the DSP configuration.

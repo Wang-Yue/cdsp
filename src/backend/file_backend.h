@@ -11,7 +11,6 @@
 #include <stdint.h>
 
 #include "backend/audio_backend.h"
-#include "config/engine_config_types.h"
 #include "wav/wav_reader.h"
 #include "wav/wav_types.h"
 

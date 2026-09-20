@@ -33,10 +33,11 @@
 
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
+#include "audio/sample_format.h"
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
-#include "config/engine_config_types.h"
 #include "dsd/dsd_encoder.h"
+#include "engine/engine_state_types.h"
 #include "engine/rate_controller.h"
 #include "engine/thread_priority.h"
 #include "logging/app_logger.h"

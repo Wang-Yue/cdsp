@@ -25,8 +25,8 @@
 #include <windows.h>
 
 #include "audio/audio_chunk.h"
+#include "backend/audio_backend.h"
 #include "backend/backend_error.h"
-#include "config/engine_config_types.h"
 #include "logging/app_logger.h"
 
 extern const logger_t g_wasapi_logger;

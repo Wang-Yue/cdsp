@@ -3,7 +3,7 @@
 #include <string.h>
 #include <strings.h>
 
-#include "config/engine_config_types.h"
+#include "backend/audio_backend.h"
 
 #if defined(ENABLE_COREAUDIO)
 #include "backend/core_audio_capabilities.h"

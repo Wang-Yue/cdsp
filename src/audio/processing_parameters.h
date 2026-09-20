@@ -20,19 +20,14 @@
 
 #include "audio/audio_chunk.h"
 
-#ifndef FADER_T_DEFINED
-#define FADER_T_DEFINED
-/**
- * @brief Enum defining the available faders.
- */
 typedef enum {
+  FADER_NONE = -1,
   FADER_MAIN = 0, /**< Main fader. */
   FADER_AUX1 = 1, /**< Auxiliary fader 1. */
   FADER_AUX2 = 2, /**< Auxiliary fader 2. */
   FADER_AUX3 = 3, /**< Auxiliary fader 3. */
   FADER_AUX4 = 4  /**< Auxiliary fader 4. */
 } fader_t;
-#endif
 #define FADER_COUNT 5
 
 /// Default volume (dB) when an engine starts.

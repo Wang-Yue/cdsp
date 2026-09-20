@@ -79,7 +79,13 @@ class CodegenEngine:
         w.line("#include <stddef.h>")
         w.line("#include <stdint.h>")
         w.line()
+        w.line("#include \"audio/processing_parameters.h\"")
+        w.line("#include \"audio/sample_format.h\"")
+        w.line("#include \"backend/audio_backend.h\"")
         w.line("#include \"config/config_error.h\"")
+        w.line("#include \"dsd/sigma_delta_modulator.h\"")
+        w.line("#include \"engine/engine_state_types.h\"")
+        w.line("#include \"filters/biquad.h\"")
         w.line("#include \"utils/cdsp_macros.h\"")
         w.line()
         w.line("typedef struct cJSON cJSON;")
@@ -91,9 +97,6 @@ class CodegenEngine:
                 if s.guard:
                     w.line(f"#if defined({s.guard})")
                 if not s.is_external:
-                    if s.name == "fader":
-                        w.line("#ifndef FADER_T_DEFINED")
-                        w.line("#define FADER_T_DEFINED")
                     w.line(f"/** Enum: {s.name} */")
                     w.block_start(f"typedef enum")
                     if s.invalid_val and ("INVALID" in s.invalid_val or "NONE" in s.invalid_val) and "(" not in s.invalid_val:
@@ -108,8 +111,6 @@ class CodegenEngine:
                         if vg:
                             w.line(f"#endif /* {vg} */")
                     w.block_end(f" {s.c_type};")
-                    if s.name == "fader":
-                        w.line("#endif /* FADER_T_DEFINED */")
                     w.line()
                 w.line(f"const char *{s.name}_to_string({s.c_type} val);")
                 w.line(f"{s.c_type} {s.name}_from_string(const char *str);")

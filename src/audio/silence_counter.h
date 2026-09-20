@@ -12,7 +12,8 @@
 
 #include <stddef.h>
 
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
+#include "engine/engine_state_types.h"
 
 /**
  * @brief Opaque structure representing a silence counter.

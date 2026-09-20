@@ -2,10 +2,11 @@
 #define CDSP_ENGINE_SESSION_BUILDER_H
 
 #include "audio/audio_chunk.h"
+#include "audio/sample_format.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
 #include "engine/dsp_session.h"
 #include "engine/engine_state_manager.h"
+#include "engine/engine_state_types.h"
 
 /**
  * @brief Constructs, pre-allocates scratch buffers and pipelines, opens

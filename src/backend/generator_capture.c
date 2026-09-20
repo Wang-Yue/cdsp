@@ -8,8 +8,9 @@
 #include <stdlib.h>
 
 #include "audio/audio_chunk.h"
+#include "backend/audio_backend.h"
 #include "backend/backend_error.h"
-#include "config/engine_config_types.h"
+#include "config/config_gen.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
 #include "utils/double_helpers.h"

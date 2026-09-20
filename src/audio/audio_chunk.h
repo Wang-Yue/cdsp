@@ -10,7 +10,7 @@
 #include <stddef.h>
 
 #include "audio/audio_buffers.h"
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 #include "utils/double_helpers.h"
 
 /**

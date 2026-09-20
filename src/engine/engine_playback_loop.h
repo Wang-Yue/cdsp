@@ -49,8 +49,9 @@
  */
 typedef struct engine_playback_loop engine_playback_loop_t;
 
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 #include "dsd/dsd_encoder.h"
+#include "engine/engine_state_types.h"
 
 typedef struct {
   engine_shared_state_t *shared;

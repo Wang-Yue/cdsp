@@ -20,12 +20,12 @@
 #include <unistd.h>
 #endif
 
+#include "audio/sample_format.h"
 #include "backend/audio_backend.h"
 #include "config/cJSON.h"
 #include "config/config_error.h"
 #include "config/config_parser.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
 #include "config_gen.h"
 #include "logging/app_logger.h"
 

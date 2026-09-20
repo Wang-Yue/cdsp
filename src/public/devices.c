@@ -5,10 +5,11 @@
 #include <string.h>
 #include <strings.h>
 
+#include "audio/sample_format.h"
 #include "backend/audio_backend_registry.h"
 #include "backend/backend_error.h"
 #include "cdsp/cdsp_pub_types.h"
-#include "config/engine_config_types.h"
+#include "engine/engine_state_types.h"
 
 bool cdsp_get_available_devices(const char *backend, bool is_input,
                                 cdsp_device_info_t **out_devices,

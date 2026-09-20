@@ -1116,9 +1116,9 @@
   },
   {
     "include": [
-      "\"engine_config_types.h\"",
+      "\"engine_state_types.h\"",
       "private",
-      "\"Config/engine_config_types.h\"",
+      "\"Engine/engine_state_types.h\"",
       "public"
     ]
   },

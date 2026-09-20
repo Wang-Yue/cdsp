@@ -43,7 +43,7 @@
 #include <stdlib.h>
 
 #include "audio/sample_conversion.h"
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_memory.h"
 

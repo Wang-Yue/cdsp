@@ -19,7 +19,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "audio/processing_parameters.h"
+#include "audio/sample_format.h"
+#include "backend/audio_backend.h"
 #include "config/config_error.h"
+#include "dsd/sigma_delta_modulator.h"
+#include "engine/engine_state_types.h"
+#include "filters/biquad.h"
 #include "utils/cdsp_macros.h"
 
 typedef struct cJSON cJSON;
@@ -58,19 +64,6 @@ typedef enum {
 const char *gain_scale_to_string(gain_scale_t val);
 gain_scale_t gain_scale_from_string(const char *str);
 
-#ifndef FADER_T_DEFINED
-#define FADER_T_DEFINED
-/** Enum: fader */
-typedef enum {
-  FADER_NONE = -1,
-  FADER_MAIN,
-  FADER_AUX1,
-  FADER_AUX2,
-  FADER_AUX3,
-  FADER_AUX4
-} fader_t;
-#endif /* FADER_T_DEFINED */
-
 const char *fader_to_string(fader_t val);
 fader_t fader_from_string(const char *str);
 
@@ -95,26 +88,6 @@ typedef enum {
 
 const char *filter_type_to_string(filter_type_t val);
 filter_type_t filter_type_from_string(const char *str);
-
-/** Enum: biquad_type */
-typedef enum {
-  BIQUAD_TYPE_FREE,
-  BIQUAD_TYPE_HIGHPASS,
-  BIQUAD_TYPE_LOWPASS,
-  BIQUAD_TYPE_HIGHPASS_FO,
-  BIQUAD_TYPE_LOWPASS_FO,
-  BIQUAD_TYPE_HIGHSHELF,
-  BIQUAD_TYPE_LOWSHELF,
-  BIQUAD_TYPE_HIGHSHELF_FO,
-  BIQUAD_TYPE_LOWSHELF_FO,
-  BIQUAD_TYPE_PEAKING,
-  BIQUAD_TYPE_NOTCH,
-  BIQUAD_TYPE_BANDPASS,
-  BIQUAD_TYPE_ALLPASS,
-  BIQUAD_TYPE_ALLPASS_FO,
-  BIQUAD_TYPE_GENERAL_NOTCH,
-  BIQUAD_TYPE_LINKWITZ_TRANSFORM
-} biquad_type_t;
 
 const char *biquad_type_to_string(biquad_type_t val);
 biquad_type_t biquad_type_from_string(const char *str);
@@ -236,29 +209,6 @@ typedef enum {
 const char *pipeline_step_type_to_string(pipeline_step_type_t val);
 pipeline_step_type_t pipeline_step_type_from_string(const char *str);
 
-/** Enum: audio_backend_type */
-typedef enum {
-  AUDIO_BACKEND_TYPE_INVALID = -1,
-  #if defined(ENABLE_COREAUDIO)
-  AUDIO_BACKEND_TYPE_CORE_AUDIO,
-  #endif /* ENABLE_COREAUDIO */
-  #if defined(ENABLE_ALSA)
-  AUDIO_BACKEND_TYPE_ALSA,
-  #endif /* ENABLE_ALSA */
-  #if defined(ENABLE_PIPEWIRE)
-  AUDIO_BACKEND_TYPE_PIPEWIRE,
-  #endif /* ENABLE_PIPEWIRE */
-  #if defined(ENABLE_WASAPI)
-  AUDIO_BACKEND_TYPE_WASAPI,
-  #endif /* ENABLE_WASAPI */
-  #if defined(ENABLE_ASIO)
-  AUDIO_BACKEND_TYPE_ASIO,
-  #endif /* ENABLE_ASIO */
-  AUDIO_BACKEND_TYPE_FILE,
-  AUDIO_BACKEND_TYPE_STDIN_OUT,
-  AUDIO_BACKEND_TYPE_GENERATOR
-} audio_backend_type_t;
-
 const char *audio_backend_type_to_string(audio_backend_type_t val);
 audio_backend_type_t audio_backend_type_from_string(const char *str);
 
@@ -273,107 +223,28 @@ typedef enum {
 const char *signal_type_to_string(signal_type_t val);
 signal_type_t signal_type_from_string(const char *str);
 
-/** Enum: sdm_filter */
-typedef enum {
-  SDM_FILTER_INVALID = -1,
-  SDM_FILTER_CLANS4,
-  SDM_FILTER_SDM4,
-  SDM_FILTER_CLANS5,
-  SDM_FILTER_SDM5,
-  SDM_FILTER_CLANS6,
-  SDM_FILTER_SDM6,
-  SDM_FILTER_CLANS7,
-  SDM_FILTER_SDM7,
-  SDM_FILTER_CLANS8,
-  SDM_FILTER_SDM8
-} sdm_filter_t;
-
 const char *sdm_filter_to_string(sdm_filter_t val);
 sdm_filter_t sdm_filter_from_string(const char *str);
 
 #if defined(ENABLE_COREAUDIO)
-/** Enum: coreaudio_sample_format */
-typedef enum {
-  COREAUDIO_SAMPLE_FORMAT_INVALID = -1,
-  COREAUDIO_SAMPLE_FORMAT_S16,
-  COREAUDIO_SAMPLE_FORMAT_S24,
-  COREAUDIO_SAMPLE_FORMAT_S32,
-  COREAUDIO_SAMPLE_FORMAT_F32
-} coreaudio_sample_format_t;
-
 const char *coreaudio_sample_format_to_string(coreaudio_sample_format_t val);
 coreaudio_sample_format_t coreaudio_sample_format_from_string(const char *str);
 #endif /* ENABLE_COREAUDIO */
 
 #if defined(ENABLE_ALSA)
-/** Enum: alsa_sample_format */
-typedef enum {
-  ALSA_SAMPLE_FORMAT_INVALID = -1,
-  ALSA_SAMPLE_FORMAT_S16_LE,
-  ALSA_SAMPLE_FORMAT_S24_3_LE,
-  ALSA_SAMPLE_FORMAT_S24_4_LE,
-  ALSA_SAMPLE_FORMAT_S32_LE,
-  ALSA_SAMPLE_FORMAT_F32_LE,
-  ALSA_SAMPLE_FORMAT_F64_LE,
-  ALSA_SAMPLE_FORMAT_DSD_U8,
-  ALSA_SAMPLE_FORMAT_DSD_U16_LE,
-  ALSA_SAMPLE_FORMAT_DSD_U16_BE,
-  ALSA_SAMPLE_FORMAT_DSD_U32_LE,
-  ALSA_SAMPLE_FORMAT_DSD_U32_BE
-} alsa_sample_format_t;
-
 const char *alsa_sample_format_to_string(alsa_sample_format_t val);
 alsa_sample_format_t alsa_sample_format_from_string(const char *str);
 #endif /* ENABLE_ALSA */
 
 #if defined(ENABLE_WASAPI)
-/** Enum: wasapi_sample_format */
-typedef enum {
-  WASAPI_SAMPLE_FORMAT_INVALID = -1,
-  WASAPI_SAMPLE_FORMAT_S16,
-  WASAPI_SAMPLE_FORMAT_S24,
-  WASAPI_SAMPLE_FORMAT_S32,
-  WASAPI_SAMPLE_FORMAT_F32
-} wasapi_sample_format_t;
-
 const char *wasapi_sample_format_to_string(wasapi_sample_format_t val);
 wasapi_sample_format_t wasapi_sample_format_from_string(const char *str);
 #endif /* ENABLE_WASAPI */
 
 #if defined(ENABLE_ASIO)
-/** Enum: asio_sample_format */
-typedef enum {
-  ASIO_SAMPLE_FORMAT_INVALID = -1,
-  ASIO_SAMPLE_FORMAT_S16_LE,
-  ASIO_SAMPLE_FORMAT_S24_3_LE,
-  ASIO_SAMPLE_FORMAT_S24_4_LE,
-  ASIO_SAMPLE_FORMAT_S32_LE,
-  ASIO_SAMPLE_FORMAT_F32_LE,
-  ASIO_SAMPLE_FORMAT_F64_LE,
-  ASIO_SAMPLE_FORMAT_DSD_INT8
-} asio_sample_format_t;
-
 const char *asio_sample_format_to_string(asio_sample_format_t val);
 asio_sample_format_t asio_sample_format_from_string(const char *str);
 #endif /* ENABLE_ASIO */
-
-/** Enum: binary_sample_format */
-typedef enum {
-  BINARY_SAMPLE_FORMAT_INVALID = -1,
-  BINARY_SAMPLE_FORMAT_S16_LE,
-  BINARY_SAMPLE_FORMAT_S24_3_LE,
-  BINARY_SAMPLE_FORMAT_S24_4_RJ_LE,
-  BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
-  BINARY_SAMPLE_FORMAT_S32_LE,
-  BINARY_SAMPLE_FORMAT_F32_LE,
-  BINARY_SAMPLE_FORMAT_F64_LE,
-  BINARY_SAMPLE_FORMAT_DSD_U8,
-  BINARY_SAMPLE_FORMAT_DSD_U16_LE,
-  BINARY_SAMPLE_FORMAT_DSD_U16_BE,
-  BINARY_SAMPLE_FORMAT_DSD_U32_LE,
-  BINARY_SAMPLE_FORMAT_DSD_U32_BE,
-  BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED
-} binary_sample_format_t;
 
 const char *binary_sample_format_to_string(binary_sample_format_t val);
 binary_sample_format_t binary_sample_format_from_string(const char *str);

@@ -10,10 +10,10 @@
 #include <string.h>
 
 #include "audio/audio_chunk.h"
+#include "audio/sample_format.h"
 #include "backend/alsa_capabilities.h"
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
-#include "config/engine_config_types.h"
 #include "test_support.h"
 #include "utils/cdsp_time.h"
 

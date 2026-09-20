@@ -26,10 +26,11 @@
 #include <string.h>
 
 #include "audio/audio_chunk.h"
+#include "backend/audio_backend.h"
 #include "backend/backend_error.h"
 #include "backend/core_audio_device.h"
 #include "backend/core_audio_tap_bridge.h"
-#include "config/engine_config_types.h"
+#include "config/config_gen.h"
 #include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"

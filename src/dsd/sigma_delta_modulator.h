@@ -9,7 +9,24 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
+
+/**
+ * @brief Sigma-delta modulator filter types.
+ */
+typedef enum {
+  SDM_FILTER_INVALID = -1,
+  SDM_FILTER_CLANS4,
+  SDM_FILTER_SDM4,
+  SDM_FILTER_CLANS5,
+  SDM_FILTER_SDM5,
+  SDM_FILTER_CLANS6,
+  SDM_FILTER_SDM6,
+  SDM_FILTER_CLANS7,
+  SDM_FILTER_SDM7,
+  SDM_FILTER_CLANS8,
+  SDM_FILTER_SDM8
+} sdm_filter_t;
 
 /**
  * @brief Sigma-delta modulator state.

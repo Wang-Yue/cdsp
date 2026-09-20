@@ -30,6 +30,7 @@
 #include "audio/sample_conversion.h"
 #include "backend/wasapi_capabilities.h"
 #include "backend/wasapi_device.h"
+#include "config/config_gen.h"
 #include "engine/cdsp_sem.h"
 #include "utils/cdsp_time.h"
 #include "utils/lock_free_ring_buffer.h"

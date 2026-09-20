@@ -35,8 +35,9 @@
 #include <stdlib.h>
 
 #include "audio/audio_chunk.h"
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 #include "engine/audio_sync_queue.h"
+#include "engine/engine_state_types.h"
 #include "logging/app_logger.h"
 #include "pipeline/pipeline.h"
 #include "utils/cdsp_time.h"

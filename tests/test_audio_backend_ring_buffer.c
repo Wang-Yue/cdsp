@@ -5,7 +5,6 @@
 #include "audio/audio_chunk.h"
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
-#include "config/engine_config_types.h"
 #include "test_support.h"
 #include "utils/lock_free_ring_buffer.h"
 

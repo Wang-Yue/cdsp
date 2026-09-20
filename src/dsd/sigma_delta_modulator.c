@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 
 typedef struct {
   float a[8];

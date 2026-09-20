@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 #include "test_support.h"
 
 #if defined(ENABLE_COREAUDIO)
@@ -57,22 +57,24 @@ TEST(AllCases) {
   ASSERT_EQ(4, count);
 }
 
+static binary_sample_format_t
+test_coreaudio_to_binary(coreaudio_sample_format_t fmt) {
+  capture_device_config_t cfg = {
+      .type = AUDIO_BACKEND_TYPE_CORE_AUDIO,
+      .cfg.coreaudio = {.has_format = true, .format = fmt},
+  };
+  return capture_device_config_get_binary_format(&cfg);
+}
+
 TEST(CoreAudioFormatToBinaryFormat) {
-  ASSERT_EQ(
-      BINARY_SAMPLE_FORMAT_S16_LE,
-      coreaudio_sample_format_to_binary_format(COREAUDIO_SAMPLE_FORMAT_S16));
-  ASSERT_EQ(
-      BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
-      coreaudio_sample_format_to_binary_format(COREAUDIO_SAMPLE_FORMAT_S24));
-  ASSERT_EQ(
-      BINARY_SAMPLE_FORMAT_S32_LE,
-      coreaudio_sample_format_to_binary_format(COREAUDIO_SAMPLE_FORMAT_S32));
-  ASSERT_EQ(
-      BINARY_SAMPLE_FORMAT_F32_LE,
-      coreaudio_sample_format_to_binary_format(COREAUDIO_SAMPLE_FORMAT_F32));
-  ASSERT_EQ(BINARY_SAMPLE_FORMAT_INVALID,
-            coreaudio_sample_format_to_binary_format(
-                COREAUDIO_SAMPLE_FORMAT_INVALID));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S16_LE,
+            test_coreaudio_to_binary(COREAUDIO_SAMPLE_FORMAT_S16));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
+            test_coreaudio_to_binary(COREAUDIO_SAMPLE_FORMAT_S24));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S32_LE,
+            test_coreaudio_to_binary(COREAUDIO_SAMPLE_FORMAT_S32));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_F32_LE,
+            test_coreaudio_to_binary(COREAUDIO_SAMPLE_FORMAT_F32));
 }
 
 TEST(CoreAudioASBDForFormatAndBinaryMapping) {
@@ -187,19 +189,27 @@ TEST(CoreAudioHogModeAndFormatSettle) {
 
 #include "backend/alsa_device.h"
 
+static binary_sample_format_t test_alsa_to_binary(alsa_sample_format_t fmt) {
+  capture_device_config_t cfg = {
+      .type = AUDIO_BACKEND_TYPE_ALSA,
+      .cfg.alsa = {.has_format = true, .format = fmt},
+  };
+  return capture_device_config_get_binary_format(&cfg);
+}
+
 TEST(ALSABinaryFormatConversions) {
   ASSERT_EQ(BINARY_SAMPLE_FORMAT_S16_LE,
-            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_S16_LE));
+            test_alsa_to_binary(ALSA_SAMPLE_FORMAT_S16_LE));
   ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_3_LE,
-            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_S24_3_LE));
+            test_alsa_to_binary(ALSA_SAMPLE_FORMAT_S24_3_LE));
   ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_RJ_LE,
-            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_S24_4_LE));
+            test_alsa_to_binary(ALSA_SAMPLE_FORMAT_S24_4_LE));
   ASSERT_EQ(BINARY_SAMPLE_FORMAT_S32_LE,
-            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_S32_LE));
+            test_alsa_to_binary(ALSA_SAMPLE_FORMAT_S32_LE));
   ASSERT_EQ(BINARY_SAMPLE_FORMAT_F32_LE,
-            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_F32_LE));
+            test_alsa_to_binary(ALSA_SAMPLE_FORMAT_F32_LE));
   ASSERT_EQ(BINARY_SAMPLE_FORMAT_F64_LE,
-            alsa_sample_format_to_binary_format(ALSA_SAMPLE_FORMAT_F64_LE));
+            test_alsa_to_binary(ALSA_SAMPLE_FORMAT_F64_LE));
 
   ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_RJ_LE,
             alsa_pcm_format_to_binary_format(SND_PCM_FORMAT_S24_LE));
@@ -285,7 +295,52 @@ TEST(AllCases) {
   ASSERT_EQ(11, count);
 }
 
+#elif defined(ENABLE_WASAPI)
+
+static binary_sample_format_t
+test_wasapi_to_binary(wasapi_sample_format_t fmt) {
+  capture_device_config_t cfg = {
+      .type = AUDIO_BACKEND_TYPE_WASAPI,
+      .cfg.wasapi = {.has_format = true, .format = fmt},
+  };
+  return capture_device_config_get_binary_format(&cfg);
+}
+
+TEST(WASAPIBinaryFormatConversions) {
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S16_LE,
+            test_wasapi_to_binary(WASAPI_SAMPLE_FORMAT_S16));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
+            test_wasapi_to_binary(WASAPI_SAMPLE_FORMAT_S24));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S32_LE,
+            test_wasapi_to_binary(WASAPI_SAMPLE_FORMAT_S32));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_F32_LE,
+            test_wasapi_to_binary(WASAPI_SAMPLE_FORMAT_F32));
+}
+
 #elif defined(ENABLE_ASIO)
+
+static binary_sample_format_t test_asio_to_binary(asio_sample_format_t fmt) {
+  capture_device_config_t cfg = {
+      .type = AUDIO_BACKEND_TYPE_ASIO,
+      .cfg.asio = {.has_format = true, .format = fmt},
+  };
+  return capture_device_config_get_binary_format(&cfg);
+}
+
+TEST(ASIOBinaryFormatConversions) {
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S16_LE,
+            test_asio_to_binary(ASIO_SAMPLE_FORMAT_S16_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_3_LE,
+            test_asio_to_binary(ASIO_SAMPLE_FORMAT_S24_3_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S24_4_LJ_LE,
+            test_asio_to_binary(ASIO_SAMPLE_FORMAT_S24_4_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_S32_LE,
+            test_asio_to_binary(ASIO_SAMPLE_FORMAT_S32_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_F32_LE,
+            test_asio_to_binary(ASIO_SAMPLE_FORMAT_F32_LE));
+  ASSERT_EQ(BINARY_SAMPLE_FORMAT_F64_LE,
+            test_asio_to_binary(ASIO_SAMPLE_FORMAT_F64_LE));
+}
 
 TEST(CanonicalRawValues) {
   ASSERT_STR_EQ("S16_LE",

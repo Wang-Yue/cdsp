@@ -33,7 +33,8 @@
 #include <stddef.h>
 
 #include "audio/audio_chunk.h"
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
+#include "dsd/sigma_delta_modulator.h"
 
 /**
  * @brief DSD encoder context.

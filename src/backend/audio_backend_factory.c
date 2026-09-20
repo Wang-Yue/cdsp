@@ -2,9 +2,10 @@
 
 #include <stdio.h>
 
+#include "backend/audio_backend.h"
 #include "backend/backend_error.h"
 #include "backend/file_backend.h"
-#include "config/engine_config_types.h"
+#include "config/config_gen.h"
 #include "logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.backend.factory"};

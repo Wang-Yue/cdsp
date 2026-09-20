@@ -7,7 +7,7 @@
 #include <stdio.h>
 
 #include "audio/audio_chunk.h"
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 
 /**
  * @brief Encode a single normalized double sample into target binary format

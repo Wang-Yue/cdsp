@@ -65,7 +65,8 @@ ENUM_FADER = EnumType(
         ("FADER_AUX4", "Aux4"),
     ],
     default="Main",
-    invalid_val="FADER_NONE"
+    invalid_val="FADER_NONE",
+    is_external=True
 )
 
 ENUM_VOLUME_FADER = EnumType(
@@ -120,7 +121,8 @@ ENUM_BIQUAD_TYPE = EnumType(
         ("BIQUAD_TYPE_ALLPASS_FO", "AllpassFO"),
         ("BIQUAD_TYPE_GENERAL_NOTCH", "GeneralNotch"),
         ("BIQUAD_TYPE_LINKWITZ_TRANSFORM", "LinkwitzTransform"),
-    ]
+    ],
+    is_external=True
 )
 
 ENUM_STEEPNESS_TYPE = EnumType(
@@ -259,7 +261,8 @@ ENUM_AUDIO_BACKEND_TYPE = EnumType(
         ("AUDIO_BACKEND_TYPE_STDIN_OUT", "Stdin", ["Stdout"]),
         ("AUDIO_BACKEND_TYPE_GENERATOR", "SignalGenerator"),
     ],
-    invalid_val="AUDIO_BACKEND_TYPE_INVALID"
+    invalid_val="AUDIO_BACKEND_TYPE_INVALID",
+    is_external=True
 )
 
 ENUM_SIGNAL_TYPE = EnumType(
@@ -289,7 +292,8 @@ ENUM_SDM_FILTER = EnumType(
         ("SDM_FILTER_SDM8", "sdm-8"),
     ],
     invalid_val="SDM_FILTER_INVALID",
-    default="sdm-6"
+    default="sdm-6",
+    is_external=True
 )
 
 ENUM_COREAUDIO_SAMPLE_FORMAT = EnumType(
@@ -302,7 +306,8 @@ ENUM_COREAUDIO_SAMPLE_FORMAT = EnumType(
         ("COREAUDIO_SAMPLE_FORMAT_F32", "F32"),
     ],
     invalid_val="COREAUDIO_SAMPLE_FORMAT_INVALID",
-    guard="ENABLE_COREAUDIO"
+    guard="ENABLE_COREAUDIO",
+    is_external=True
 )
 
 ENUM_ALSA_SAMPLE_FORMAT = EnumType(
@@ -322,7 +327,8 @@ ENUM_ALSA_SAMPLE_FORMAT = EnumType(
         ("ALSA_SAMPLE_FORMAT_DSD_U32_BE", "DSD_U32_BE"),
     ],
     invalid_val="ALSA_SAMPLE_FORMAT_INVALID",
-    guard="ENABLE_ALSA"
+    guard="ENABLE_ALSA",
+    is_external=True
 )
 
 ENUM_WASAPI_SAMPLE_FORMAT = EnumType(
@@ -335,7 +341,8 @@ ENUM_WASAPI_SAMPLE_FORMAT = EnumType(
         ("WASAPI_SAMPLE_FORMAT_F32", "F32"),
     ],
     invalid_val="WASAPI_SAMPLE_FORMAT_INVALID",
-    guard="ENABLE_WASAPI"
+    guard="ENABLE_WASAPI",
+    is_external=True
 )
 
 ENUM_ASIO_SAMPLE_FORMAT = EnumType(
@@ -351,7 +358,8 @@ ENUM_ASIO_SAMPLE_FORMAT = EnumType(
         ("ASIO_SAMPLE_FORMAT_DSD_INT8", "DSD_INT8"),
     ],
     invalid_val="ASIO_SAMPLE_FORMAT_INVALID",
-    guard="ENABLE_ASIO"
+    guard="ENABLE_ASIO",
+    is_external=True
 )
 
 ENUM_BINARY_SAMPLE_FORMAT = EnumType(
@@ -372,7 +380,8 @@ ENUM_BINARY_SAMPLE_FORMAT = EnumType(
         ("BINARY_SAMPLE_FORMAT_DSD_U32_BE", "DSD_U32_BE"),
         ("BINARY_SAMPLE_FORMAT_DSD_U32_REVERSED", "DSD_U32_REVERSED"),
     ],
-    invalid_val="BINARY_SAMPLE_FORMAT_INVALID"
+    invalid_val="BINARY_SAMPLE_FORMAT_INVALID",
+    is_external=True
 )
 
 # =============================================================================

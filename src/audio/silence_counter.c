@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 #include "logging/app_logger.h"
 
 struct silence_counter {

@@ -10,9 +10,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "backend/audio_backend.h"
 #include "backend/core_audio_device.h"
 #include "backend/core_audio_tap_bridge.h"
-#include "config/engine_config_types.h"
+#include "config/config_gen.h"
 
 // MARK: - Discovery
 

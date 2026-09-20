@@ -4,7 +4,7 @@
 
 #include "audio/audio_chunk.h"
 #include "audio/sample_conversion.h"
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 #include "test_support.h"
 
 TEST(SampleConversion_S16_RoundTrip) {

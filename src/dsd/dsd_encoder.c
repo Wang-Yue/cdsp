@@ -24,7 +24,7 @@
 #include "dsd/dsd_encoder.h"
 
 #include "audio/audio_chunk.h"
-#include "config/engine_config_types.h"
+#include "audio/sample_format.h"
 
 #if defined(ENABLE_LIBDISPATCH)
 #include <dispatch/dispatch.h>

@@ -1,8 +1,8 @@
 #include <stddef.h>
 
 #include "audio/audio_chunk.h"
+#include "audio/sample_format.h"
 #include "audio/silence_counter.h"
-#include "config/engine_config_types.h"
 #include "test_support.h"
 
 TEST(DisabledWhenTimeoutZero) {

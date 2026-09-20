@@ -37,11 +37,12 @@
 
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
+#include "audio/sample_format.h"
 #include "backend/audio_backend.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
 #include "engine/engine_shared_state.h"
 #include "engine/engine_state_manager.h"
+#include "engine/engine_state_types.h"
 
 /**
  * @brief Opaque structure representing the active DSP session.

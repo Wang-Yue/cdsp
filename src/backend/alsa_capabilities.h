@@ -16,8 +16,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "backend/audio_backend.h"
 #include "backend/backend_error.h"
-#include "config/engine_config_types.h"
 
 /**
  * @brief Queries available ALSA device names.

@@ -1,11 +1,11 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "audio/sample_format.h"
 #include "backend/audio_backend_registry.h"
 #include "backend/backend_error.h"
 #include "config/config_error.h"
 #include "config/configuration.h"
-#include "config/engine_config_types.h"
 #include "test_support.h"
 
 #if defined(ENABLE_COREAUDIO)
