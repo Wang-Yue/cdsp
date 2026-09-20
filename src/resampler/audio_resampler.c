@@ -17,6 +17,7 @@
 static const logger_t g_logger = {"dsp.resampler"};
 
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 static const resampler_vtable_t *

@@ -80,8 +80,9 @@ binary_sample_format_t alsa_pcm_format_to_binary_format(snd_pcm_format_t fmt) {
     return BINARY_SAMPLE_FORMAT_DSD_U32_LE;
   case SND_PCM_FORMAT_DSD_U32_BE:
     return BINARY_SAMPLE_FORMAT_DSD_U32_BE;
+  default:
+    return BINARY_SAMPLE_FORMAT_INVALID;
   }
-  return BINARY_SAMPLE_FORMAT_INVALID;
 }
 
 int alsa_apply_format(snd_pcm_t *pcm, snd_pcm_hw_params_t *hwp, bool has_format,
@@ -390,11 +391,9 @@ const char *alsa_state_desc(snd_pcm_state_t state) {
     return "SND_PCM_STATE_SUSPENDED, Hardware is suspended";
   case SND_PCM_STATE_DISCONNECTED:
     return "SND_PCM_STATE_DISCONNECTED, Hardware is disconnected";
-  case SND_PCM_STATE_LAST:
-    return "SND_PCM_STATE_LAST";
+  default:
+    return "Unknown ALSA PCM state";
   }
-  CDSP_UNREACHABLE();
-  return "Unknown ALSA PCM state";
 }
 
 int alsa_device_open_and_configure_hw(

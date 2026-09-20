@@ -239,8 +239,8 @@ pipeline_step_type_t pipeline_step_type_from_string(const char *str);
 
 /** Enum: audio_backend_type */
 typedef enum {
-  #if defined(ENABLE_COREAUDIO)
   AUDIO_BACKEND_TYPE_INVALID = -1,
+  #if defined(ENABLE_COREAUDIO)
   AUDIO_BACKEND_TYPE_CORE_AUDIO,
   #endif /* ENABLE_COREAUDIO */
   #if defined(ENABLE_ALSA)

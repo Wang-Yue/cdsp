@@ -97,14 +97,14 @@ class CodegenEngine:
                         w.line("#define FADER_T_DEFINED")
                     w.line(f"/** Enum: {s.name} */")
                     w.block_start(f"typedef enum")
+                    if s.invalid_val and ("INVALID" in s.invalid_val or "NONE" in s.invalid_val) and "(" not in s.invalid_val:
+                        w.line(f"{s.invalid_val} = -1,")
                     for i, var in enumerate(s.variants):
                         v_name = var[0]
                         vg = self._get_var_guard(var)
                         comma = "," if i < len(s.variants) - 1 else ""
                         if vg:
                             w.line(f"#if defined({vg})")
-                        if i == 0 and s.invalid_val and ("INVALID" in s.invalid_val or "NONE" in s.invalid_val) and "(" not in s.invalid_val:
-                            w.line(f"{s.invalid_val} = -1,")
                         w.line(f"{v_name}{comma}")
                         if vg:
                             w.line(f"#endif /* {vg} */")

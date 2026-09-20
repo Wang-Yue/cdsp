@@ -713,6 +713,8 @@ static const char *delay_unit_to_str(delay_unit_t unit) {
   case DELAY_UNIT_INVALID:
     return "ms";
   }
+  CDSP_UNREACHABLE();
+  return "ms";
 }
 
 static void compare_delay(double delay, delay_unit_t unit, bool subsample,

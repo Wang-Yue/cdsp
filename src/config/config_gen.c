@@ -3438,7 +3438,7 @@ void alsa_capture_config_init(alsa_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(alsa_capture_config_t));
   out->stop_on_inactive = false;
-  out->threaded = true;
+  out->threaded = false;
 }
 
 void free_alsa_capture_config_contents(alsa_capture_config_t *in) {
@@ -3536,7 +3536,7 @@ bool alsa_capture_config_equal(const alsa_capture_config_t *a, const alsa_captur
 void alsa_playback_config_init(alsa_playback_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(alsa_playback_config_t));
-  out->threaded = true;
+  out->threaded = false;
 }
 
 void free_alsa_playback_config_contents(alsa_playback_config_t *in) {
