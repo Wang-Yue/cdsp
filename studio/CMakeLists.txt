@@ -30,6 +30,7 @@ option(ENABLE_IWYU "Enable Include-What-You-Use during compilation" OFF)
 # Build acceleration & memory optimization options
 option(ENABLE_PCH "Enable Precompiled Headers (PCH) to speed up compilation and reduce memory usage" ON)
 option(ENABLE_UNITY_BUILD "Enable Unity (Jumbo) build to combine translation units" OFF)
+option(ENABLE_RUST_BACKEND "Build CDSP Studio with Rust CamillaDSP backend" OFF)
 
 # ==============================================================================
 # RPATH Configuration for Installed Binaries
@@ -51,37 +52,50 @@ if(APPLE)
     list(APPEND EXTRA_PLATFORM_LIBS ${COCOA_LIB} ${AVFOUNDATION_LIB})
 endif()
 
-# Fetch Wang-Yue/cdsp (DSP processing engine) if not already available in-tree
-if(NOT TARGET cdsp::dsp)
-    set(LOCAL_CDSP_PATH "")
-    if(CDSP_SOURCE_DIR AND EXISTS "${CDSP_SOURCE_DIR}/CMakeLists.txt")
-        set(LOCAL_CDSP_PATH "${CDSP_SOURCE_DIR}")
-    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../CMakeLists.txt" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src")
-        get_filename_component(LOCAL_CDSP_PATH "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
-    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../cdsp/CMakeLists.txt")
-        get_filename_component(LOCAL_CDSP_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cdsp" ABSOLUTE)
-    elseif(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/cdsp/CMakeLists.txt")
-        set(LOCAL_CDSP_PATH "$ENV{HOME}/cdsp")
-    endif()
-
-    include(FetchContent)
-    if(LOCAL_CDSP_PATH)
-        message(STATUS "Using local cdsp from: ${LOCAL_CDSP_PATH}")
-        FetchContent_Declare(
-            cdsp
-            SOURCE_DIR     "${LOCAL_CDSP_PATH}"
-            EXCLUDE_FROM_ALL
-        )
+# ==============================================================================
+# DSP Processing Engine Dependency (Rust backend vs Native C cdsp)
+# ==============================================================================
+if(ENABLE_RUST_BACKEND)
+    find_program(CARGO_EXECUTABLE cargo REQUIRED)
+    set(RUST_ENGINE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tests/rust_engine")
+    set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust_target")
+    
+    if(CMAKE_BUILD_TYPE MATCHES "Debug")
+        set(RUST_PROFILE "debug")
+        set(RUST_BUILD_FLAG "")
     else()
-        message(STATUS "Fetching cdsp from GitHub repository")
-        FetchContent_Declare(
-            cdsp
-            GIT_REPOSITORY https://github.com/Wang-Yue/cdsp.git
-            GIT_TAG        main
-            EXCLUDE_FROM_ALL
+        set(RUST_PROFILE "release")
+        set(RUST_BUILD_FLAG "--release")
+    endif()
+    
+    set(RUST_LIB_STATIC "${RUST_TARGET_DIR}/${RUST_PROFILE}/librust_engine.a")
+    
+    add_custom_command(
+        OUTPUT "${RUST_LIB_STATIC}"
+        COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${CARGO_EXECUTABLE} build ${RUST_BUILD_FLAG}
+        WORKING_DIRECTORY "${RUST_ENGINE_DIR}"
+        DEPENDS "${RUST_ENGINE_DIR}/Cargo.toml" "${RUST_ENGINE_DIR}/src/lib.rs"
+        COMMENT "Building Rust CamillaDSP engine static library..."
+        VERBATIM
+    )
+    
+    add_custom_target(cdsp_rust_engine_target DEPENDS "${RUST_LIB_STATIC}")
+    
+    add_library(cdsp::dsp STATIC IMPORTED GLOBAL)
+    set_target_properties(cdsp::dsp PROPERTIES
+        IMPORTED_LOCATION "${RUST_LIB_STATIC}"
+        INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/../include"
+    )
+    add_dependencies(cdsp::dsp cdsp_rust_engine_target)
+    if(APPLE)
+        set_target_properties(cdsp::dsp PROPERTIES
+            INTERFACE_LINK_LIBRARIES "-framework CoreAudio;-framework AudioToolbox;-framework Security;-framework SystemConfiguration"
         )
     endif()
-    FetchContent_MakeAvailable(cdsp)
+else()
+    if(NOT TARGET cdsp::dsp)
+        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/.." "${CMAKE_CURRENT_BINARY_DIR}/cdsp_build" EXCLUDE_FROM_ALL)
+    endif()
 endif()
 
 # ==============================================================================
