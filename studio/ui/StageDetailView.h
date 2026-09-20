@@ -1,0 +1,89 @@
+#ifndef STAGE_DETAIL_VIEW_H
+#define STAGE_DETAIL_VIEW_H
+
+#include "models/DSPEngineController.h" // for DSPEngineController
+#include "models/PipelineStage.h"       // for PipelineStage
+#include "models/PipelineStore.h"       // for PipelineStore
+
+#include <QCheckBox>    // for QCheckBox
+#include <QLineEdit>    // for QLineEdit
+#include <QObject>      // for Q_OBJECT, signals, slots
+#include <QString>      // for QString
+#include <QTableWidget> // for QTableWidget
+#include <QUuid>        // for QUuid
+#include <QWidget>      // for QWidget
+#include <functional>   // for function
+#include <memory>       // for shared_ptr
+#include <vector>       // for vector
+
+class VSliderWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit VSliderWidget(double value = 0.0, double minVal = -40.0, double maxVal = 40.0, QWidget* parent = nullptr);
+
+    double value() const { return m_value; }
+    void setValue(double val);
+
+signals:
+    void valueChanged(double newVal);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+
+private:
+    double m_value;
+    double m_minVal;
+    double m_maxVal;
+
+    void updateValueFromMouse(int y);
+};
+
+class RotatedLabel : public QWidget {
+    Q_OBJECT
+public:
+    explicit RotatedLabel(const QString& text = "", QWidget* parent = nullptr);
+    void setText(const QString& text);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    QSize sizeHint() const override;
+
+private:
+    QString m_text;
+};
+
+class StageDetailView : public QWidget {
+    Q_OBJECT
+
+public:
+    StageDetailView(const QUuid& stageId, std::shared_ptr<PipelineStore> pipeline,
+                    std::shared_ptr<DSPEngineController> dspController, QWidget* parent = nullptr);
+
+private slots:
+    void refreshUi();
+    void applyConfig();
+
+private:
+    QUuid m_stageId;
+    std::shared_ptr<PipelineStore> m_pipeline;
+    std::shared_ptr<DSPEngineController> m_dspController;
+
+    QLineEdit* m_nameEdit = nullptr;
+    QCheckBox* m_enabledCheck = nullptr;
+    QWidget* m_optionsContainer = nullptr;
+    bool m_isBuildingUi = false;
+    bool m_isLocalEditing = false;
+
+    void setupUi();
+    void buildStageOptionsUi();
+    PipelineStage* currentStage() const;
+
+    QWidget* createMatrixCellWidget(PipelineStage& stage, int dest, int src, QTableWidget* table);
+    QWidget* createChannelSelectorWidget(int incomingChannels, const std::function<std::vector<int>()>& getter,
+                                         const std::function<void(const std::vector<int>&)>& setter,
+                                         QWidget* parent = nullptr);
+};
+
+#endif // STAGE_DETAIL_VIEW_H

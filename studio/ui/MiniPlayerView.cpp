@@ -1,0 +1,846 @@
+#include "ui/MiniPlayerView.h"
+
+#include "models/AudioDeviceManager.h" // for AudioDeviceManager
+#include "models/DeviceConfig.h"       // for DeviceConfig
+#include "models/LevelState.h"         // for LevelState
+#include "models/PipelineStage.h"      // for PipelineStage
+#include "models/PipelineStore.h"      // for PipelineStore
+#include "models/SpectrogramEngine.h"  // for SpectrogramEngine
+#include "models/SpectrumEngine.h"     // for SpectrumEngine
+#include "models/VectorScopeEngine.h"  // for VectorScopeEngine
+#include "utils/MacUtils.h"            // for setupAlwaysOnTopAboveFullScreen
+
+#include <QAbstractAnimation>     // for QAbstractAnimation
+#include <QAbstractButton>        // for QAbstractButton
+#include <QAbstractSlider>        // for QAbstractSlider
+#include <QByteArray>             // for QByteArray
+#include <QEvent>                 // for QEvent
+#include <QFlags>                 // for QFlags
+#include <QFont>                  // for QFont
+#include <QFontDatabase>          // for QFontDatabase
+#include <QGraphicsOpacityEffect> // for QGraphicsOpacityEffect
+#include <QGuiApplication>        // for QGuiApplication
+#include <QHBoxLayout>            // for QHBoxLayout
+#include <QKeyEvent>              // for QKeyEvent
+#include <QLabel>                 // for QLabel
+#include <QLayout>                // for QLayout
+#include <QLayoutItem>            // for QLayoutItem
+#include <QMouseEvent>            // for QMouseEvent
+#include <QPainter>               // for QPainter
+#include <QPointF>                // for QPointF
+#include <QPropertyAnimation>     // for QPropertyAnimation
+#include <QScreen>                // for QScreen
+#include <QScrollArea>            // for QScrollArea
+#include <QSettings>              // for QSettings
+#include <QSizePolicy>            // for QSizePolicy
+#include <QString>                // for QString
+#include <QStyle>                 // for QStyle
+#include <QStyleOption>           // for QStyleOption
+#include <QUuid>                  // for QUuid, operator==
+#include <QVBoxLayout>            // for QVBoxLayout
+#include <QVariant>               // for QVariant
+#include <Qt>                     // for CursorShape, AlignmentFlag, MouseButton, Key, operator|, WindowType
+#include <QtGlobal>               // for qBound, Q_UNUSED
+#include <optional>               // for optional
+#include <string>                 // for basic_string
+
+static void enableMouseTrackingRecursively(QWidget* w, QObject* filter) {
+    if (!w)
+        return;
+    w->setMouseTracking(true);
+    w->installEventFilter(filter);
+    for (QObject* child : w->children()) {
+        if (QWidget* childW = qobject_cast<QWidget*>(child)) {
+            enableMouseTrackingRecursively(childW, filter);
+        }
+    }
+}
+
+MiniPlayerView::MiniPlayerView(std::shared_ptr<DSPEngineController> dsp, std::shared_ptr<AudioSettings> settings,
+                               std::shared_ptr<MonitoringController> monitoring, QWidget* parent)
+    : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint), m_dsp(dsp), m_settings(settings),
+      m_monitoring(monitoring) {
+
+    setAttribute(Qt::WA_TranslucentBackground);
+    setStyleSheet("QWidget#MiniPlayerViewWindow { background-color: rgba(0, 0, 0, 0.45); border-radius: 12px; "
+                  "border: none; }");
+    setObjectName("MiniPlayerViewWindow");
+    setMinimumSize(200, 80);
+    setMaximumSize(1000, 1000);
+    resize(320, 140);
+    setFocusPolicy(Qt::StrongFocus);
+
+    MacUtils::setupAlwaysOnTopAboveFullScreen(this);
+
+    setupUi();
+    connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, &MiniPlayerView::refreshMeters);
+    connect(m_dsp.get(), &DSPEngineController::statusChanged, this, &MiniPlayerView::updateEngineStatus);
+    if (m_dsp && m_dsp->pipelineStore()) {
+        connect(m_dsp->pipelineStore().get(), &PipelineStore::pipelineChanged, this,
+                [this]() { buildMiniPipelineUi(); });
+    }
+    if (m_settings) {
+        connect(m_settings.get(), &AudioSettings::settingsChanged, this, [this]() {
+            onFaderChanged(0);
+            buildMiniPipelineUi();
+        });
+        connect(m_settings.get(), &AudioSettings::fadersChanged, this, [this]() { onFaderChanged(0); });
+    }
+}
+
+void MiniPlayerView::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    MacUtils::setupAlwaysOnTopAboveFullScreen(this);
+    QSettings settings;
+    if (settings.contains("MiniPlayer/geometry")) {
+        restoreGeometry(settings.value("MiniPlayer/geometry").toByteArray());
+    } else {
+        if (auto screen = QGuiApplication::primaryScreen()) {
+            QRect screenFrame = screen->availableGeometry();
+            int x = screenFrame.x() + screenFrame.width() - 330;
+            int y = screenFrame.y() + screenFrame.height() - 100;
+            move(x, y);
+        }
+    }
+    int savedMode = 1;
+    if (settings.contains("mini_player_mode")) {
+        savedMode = settings.value("mini_player_mode", 1).toInt();
+    } else {
+        savedMode = settings.value("MiniPlayer/mode", 1).toInt();
+    }
+    if (m_viewStack && savedMode >= 0 && savedMode < m_viewStack->count()) {
+        m_viewStack->setCurrentIndex(savedMode);
+        updateModeButtonStyles(savedMode);
+    }
+}
+
+Fader MiniPlayerView::currentFader() const {
+    return Fader::Main;
+}
+
+MiniPlayerView::ResizeEdge MiniPlayerView::hitTestBorder(const QPoint& globalPos) const {
+    QPoint pos = mapFromGlobal(globalPos);
+    int x = pos.x();
+    int y = pos.y();
+    int w = width();
+    int h = height();
+
+    if (x < -3 || x > w + 3 || y < -3 || y > h + 3) {
+        return ResizeEdge::None;
+    }
+
+    const int border = 8;
+    int edgeFlags = 0;
+
+    if (x <= border)
+        edgeFlags |= static_cast<int>(ResizeEdge::Left);
+    if (x >= w - border)
+        edgeFlags |= static_cast<int>(ResizeEdge::Right);
+    if (y <= border)
+        edgeFlags |= static_cast<int>(ResizeEdge::Top);
+    if (y >= h - border)
+        edgeFlags |= static_cast<int>(ResizeEdge::Bottom);
+
+    return static_cast<ResizeEdge>(edgeFlags);
+}
+
+void MiniPlayerView::updateResizeCursor(ResizeEdge edge) {
+    switch (edge) {
+    case ResizeEdge::Left:
+    case ResizeEdge::Right:
+        setCursor(Qt::SizeHorCursor);
+        break;
+    case ResizeEdge::Top:
+    case ResizeEdge::Bottom:
+        setCursor(Qt::SizeVerCursor);
+        break;
+    case ResizeEdge::TopLeft:
+    case ResizeEdge::BottomRight:
+        setCursor(Qt::SizeFDiagCursor);
+        break;
+    case ResizeEdge::TopRight:
+    case ResizeEdge::BottomLeft:
+        setCursor(Qt::SizeBDiagCursor);
+        break;
+    default:
+        unsetCursor();
+        break;
+    }
+}
+
+void MiniPlayerView::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    QSettings settings;
+    settings.setValue("MiniPlayer/geometry", saveGeometry());
+}
+
+void MiniPlayerView::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        ResizeEdge edge = hitTestBorder(event->globalPosition().toPoint());
+        if (edge != ResizeEdge::None) {
+            m_isResizing = true;
+            m_activeResizeEdge = edge;
+            m_dragStartGeometry = geometry();
+            m_dragStartPos = event->globalPosition().toPoint();
+            event->accept();
+            return;
+        }
+
+        QWidget* child = childAt(event->position().toPoint());
+        if (!child || (!qobject_cast<QAbstractButton*>(child) && !qobject_cast<QAbstractSlider*>(child))) {
+            m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
+            m_isDragging = true;
+            event->accept();
+            return;
+        }
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void MiniPlayerView::mouseMoveEvent(QMouseEvent* event) {
+    QPoint globalPos = event->globalPosition().toPoint();
+
+    if (m_isResizing) {
+        QPoint delta = globalPos - m_dragStartPos;
+        QRect newGeom = m_dragStartGeometry;
+
+        int minW = minimumWidth();
+        int maxW = maximumWidth();
+        int minH = minimumHeight();
+        int maxH = maximumHeight();
+
+        int edgeVal = static_cast<int>(m_activeResizeEdge);
+
+        if (edgeVal & static_cast<int>(ResizeEdge::Left)) {
+            int newW = qBound(minW, m_dragStartGeometry.width() - delta.x(), maxW);
+            newGeom.setLeft(m_dragStartGeometry.right() - newW + 1);
+        }
+        if (edgeVal & static_cast<int>(ResizeEdge::Right)) {
+            int newW = qBound(minW, m_dragStartGeometry.width() + delta.x(), maxW);
+            newGeom.setWidth(newW);
+        }
+        if (edgeVal & static_cast<int>(ResizeEdge::Top)) {
+            int newH = qBound(minH, m_dragStartGeometry.height() - delta.y(), maxH);
+            newGeom.setTop(m_dragStartGeometry.bottom() - newH + 1);
+        }
+        if (edgeVal & static_cast<int>(ResizeEdge::Bottom)) {
+            int newH = qBound(minH, m_dragStartGeometry.height() + delta.y(), maxH);
+            newGeom.setHeight(newH);
+        }
+
+        setGeometry(newGeom);
+        event->accept();
+        return;
+    }
+
+    if (m_isDragging && (event->buttons() & Qt::LeftButton)) {
+        QPoint newPos = globalPos - m_dragPosition;
+        if (auto screen = QGuiApplication::screenAt(globalPos)) {
+            QRect screenGeom = screen->availableGeometry();
+            int minX = screenGeom.left() - width() + 30;
+            int maxX = screenGeom.right() - 30;
+            int minY = screenGeom.top();
+            int maxY = screenGeom.bottom() - 30;
+            newPos.setX(qBound(minX, newPos.x(), maxX));
+            newPos.setY(qBound(minY, newPos.y(), maxY));
+        }
+        move(newPos);
+        event->accept();
+        return;
+    }
+
+    // Hover state: update cursor
+    ResizeEdge edge = hitTestBorder(globalPos);
+    updateResizeCursor(edge);
+
+    QWidget::mouseMoveEvent(event);
+}
+
+void MiniPlayerView::mouseReleaseEvent(QMouseEvent* event) {
+    if (m_isResizing) {
+        m_isResizing = false;
+        m_activeResizeEdge = ResizeEdge::None;
+        QSettings settings;
+        settings.setValue("MiniPlayer/geometry", saveGeometry());
+    }
+    if (m_isDragging) {
+        m_isDragging = false;
+        QSettings settings;
+        settings.setValue("MiniPlayer/geometry", saveGeometry());
+    }
+    updateResizeCursor(hitTestBorder(event->globalPosition().toPoint()));
+    QWidget::mouseReleaseEvent(event);
+}
+
+void MiniPlayerView::enterEvent(QEnterEvent* event) {
+    QWidget::enterEvent(event);
+    if (m_headerOpacityEffect) {
+        auto anim = new QPropertyAnimation(m_headerOpacityEffect, "opacity", this);
+        anim->setDuration(200);
+        anim->setEndValue(1.0);
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+}
+
+void MiniPlayerView::leaveEvent(QEvent* event) {
+    if (!m_isResizing && !m_isDragging) {
+        unsetCursor();
+    }
+    QWidget::leaveEvent(event);
+    if (m_headerOpacityEffect) {
+        auto anim = new QPropertyAnimation(m_headerOpacityEffect, "opacity", this);
+        anim->setDuration(200);
+        anim->setEndValue(0.3);
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+}
+
+void MiniPlayerView::onFaderChanged(int index) {
+    Q_UNUSED(index);
+    if (!m_settings || !m_volSlider || !m_volValueLabel || !m_muteBtn)
+        return;
+    Fader f = currentFader();
+    float vol = m_settings->getVolume(f);
+    bool muted = m_settings->getMuted(f);
+    m_volSlider->blockSignals(true);
+    m_volSlider->setValue(static_cast<int>(vol * 2.0f));
+    m_volSlider->blockSignals(false);
+    m_volValueLabel->setText(QString::asprintf("%+.0f", vol));
+    m_volValueLabel->setStyleSheet(vol > 0.0f
+                                       ? "color: #ff3b30; font-family: monospace; font-size: 9px;"
+                                       : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px;");
+    m_muteBtn->setText(muted ? "🔇" : "🔊");
+    m_muteBtn->setStyleSheet(muted ? "QPushButton { background: transparent; color: #ff3b30; border: none; font-size: "
+                                     "10px; padding: 0px; margin: 0px; }"
+                                   : "QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: "
+                                     "none; font-size: 10px; padding: 0px; margin: 0px; } "
+                                     "QPushButton:hover { color: rgba(255, 255, 255, 0.9); }");
+}
+
+void MiniPlayerView::updateEngineStatus(ProcessingState state) {
+    if (!m_playStopBtn)
+        return;
+    if (state == ProcessingState::Running) {
+        m_playStopBtn->setText("⏹");
+    } else {
+        m_playStopBtn->setText("▶");
+    }
+    m_playStopBtn->setStyleSheet("QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: "
+                                 "none; font-size: 10px; padding: 0px; margin: 0px; } "
+                                 "QPushButton:hover { color: rgba(255, 255, 255, 0.9); }");
+    buildMiniPipelineUi();
+}
+
+void MiniPlayerView::buildMiniPipelineUi() {
+    if (!m_pipelineMiniCard)
+        return;
+    auto layout = qobject_cast<QHBoxLayout*>(m_pipelineMiniCard->layout());
+    if (!layout)
+        return;
+
+    QLayoutItem* item;
+    while ((item = layout->takeAt(0)) != nullptr) {
+        if (item->widget())
+            item->widget()->deleteLater();
+        delete item;
+    }
+
+    if (!m_dsp)
+        return;
+
+    bool isRunning = (m_dsp->status == ProcessingState::Running);
+
+    auto makePillStyle = [](bool active, const QString& activeBgOverride = "") {
+        if (active) {
+            QString bg = activeBgOverride.isEmpty() ? "#007aff" : activeBgOverride;
+            return QString("background-color: %1; color: #ffffff; font-size: 9px; border-radius: 9px; padding: 2px "
+                           "7px; font-weight: bold; border: none;")
+                .arg(bg);
+        } else {
+            return QString("background-color: rgba(255, 255, 255, 0.15); color: rgba(255, 255, 255, 0.6); font-size: "
+                           "9px; border-radius: 9px; padding: 2px 7px; border: none;");
+        }
+    };
+
+    auto addChevron = [layout, card = m_pipelineMiniCard]() {
+        auto label = new QLabel("›", card);
+        label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        label->setStyleSheet("color: rgba(255, 255, 255, 0.3); font-size: 11px; font-weight: bold; border: none; "
+                             "background: transparent;");
+        layout->addWidget(label);
+    };
+
+    // 1. Input Chip
+    QString inDev = "Input";
+    if (m_dsp->devices()) {
+        auto optName = m_dsp->devices()->captureConfig.deviceName();
+        if (optName.has_value() && !optName->empty()) {
+            inDev = QString::fromStdString(*optName);
+        }
+    }
+    auto inChip = new QLabel(QString("🎤 %1").arg(inDev), m_pipelineMiniCard);
+    inChip->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    inChip->setStyleSheet(makePillStyle(isRunning, "#007aff"));
+    layout->addWidget(inChip);
+
+    addChevron();
+
+    // 2. Resampler Chip
+    bool resampEnabled = m_settings ? m_settings->resamplerEnabled : false;
+    auto resampChip = new QPushButton("🔄 Resampler", m_pipelineMiniCard);
+    resampChip->setCheckable(true);
+    resampChip->setChecked(resampEnabled);
+    resampChip->setCursor(Qt::PointingHandCursor);
+    resampChip->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    resampChip->setStyleSheet(makePillStyle(resampEnabled));
+    connect(resampChip, &QPushButton::clicked, [this, resampChip, makePillStyle]() {
+        if (m_settings) {
+            bool enabled = !m_settings->resamplerEnabled;
+            m_settings->resamplerEnabled = enabled;
+            m_settings->savePreferences();
+            resampChip->setChecked(enabled);
+            resampChip->setStyleSheet(makePillStyle(enabled));
+            m_dsp->applyConfig();
+        }
+    });
+    layout->addWidget(resampChip);
+
+    // 3. Stage Chips
+    if (m_dsp->pipelineStore()) {
+        for (const auto& stage : m_dsp->pipelineStore()->stages) {
+            addChevron();
+            QString stageTitle = QString::fromStdString(stage.name);
+            auto chip = new QPushButton(stageTitle, m_pipelineMiniCard);
+            chip->setCheckable(true);
+            chip->setChecked(stage.isEnabled);
+            chip->setCursor(Qt::PointingHandCursor);
+            chip->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+            chip->setStyleSheet(makePillStyle(stage.isEnabled));
+
+            QUuid id = stage.id;
+            connect(chip, &QPushButton::clicked, [this, id, chip, makePillStyle]() {
+                if (m_dsp && m_dsp->pipelineStore()) {
+                    auto& stages = m_dsp->pipelineStore()->stages;
+                    for (auto& st : stages) {
+                        if (st.id == id) {
+                            st.isEnabled = !st.isEnabled;
+                            chip->setChecked(st.isEnabled);
+                            chip->setStyleSheet(makePillStyle(st.isEnabled));
+                            m_dsp->pipelineStore()->save();
+                            emit m_dsp->pipelineStore()->pipelineChanged();
+                            break;
+                        }
+                    }
+                }
+            });
+            layout->addWidget(chip);
+        }
+    }
+
+    addChevron();
+
+    // 4. Output Chip
+    QString outDev = "Output";
+    if (m_dsp->devices()) {
+        auto optName = m_dsp->devices()->playbackConfig.deviceName();
+        if (optName.has_value() && !optName->empty()) {
+            outDev = QString::fromStdString(*optName);
+        }
+    }
+    auto outChip = new QLabel(outDev, m_pipelineMiniCard);
+    outChip->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    outChip->setStyleSheet(makePillStyle(isRunning, "#34c759"));
+    layout->addWidget(outChip);
+
+    layout->addStretch();
+    enableMouseTrackingRecursively(m_pipelineMiniCard, this);
+}
+
+void MiniPlayerView::updateModeButtonStyles(int activeIndex) {
+    for (int i = 0; i < static_cast<int>(m_modeBtns.size()); ++i) {
+        if (i == activeIndex) {
+            m_modeBtns[i]->setStyleSheet(
+                "QPushButton { background: transparent; color: #ffffff; border: none; font-size: 10px; "
+                "padding: 0px; margin: 0px; text-align: center; }");
+        } else {
+            m_modeBtns[i]->setStyleSheet(
+                "QPushButton { background: transparent; color: rgba(255, 255, 255, 0.4); border: none; font-size: "
+                "10px; padding: 0px; margin: 0px; text-align: center; } "
+                "QPushButton:hover { color: rgba(255, 255, 255, 0.8); }");
+        }
+    }
+    QSettings settings;
+    settings.setValue("mini_player_mode", activeIndex);
+    settings.setValue("MiniPlayer/mode", activeIndex);
+    refreshMeters();
+}
+
+void MiniPlayerView::setupUi() {
+    auto mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
+
+    auto topBarWidget = new QWidget(this);
+    topBarWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    auto topBar = new QHBoxLayout(topBarWidget);
+    topBar->setContentsMargins(8, 4, 8, 4);
+    topBar->setSpacing(6);
+
+    m_headerOpacityEffect = new QGraphicsOpacityEffect(topBarWidget);
+    topBarWidget->setGraphicsEffect(m_headerOpacityEffect);
+    m_headerOpacityEffect->setOpacity(0.3);
+
+    // Play / Stop button
+    m_playStopBtn = new QPushButton("▶", topBarWidget);
+    m_playStopBtn->setFixedSize(18, 18);
+    m_playStopBtn->setCursor(Qt::PointingHandCursor);
+    m_playStopBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_playStopBtn->setStyleSheet("QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: "
+                                 "none; font-size: 10px; padding: 0px; margin: 0px; } "
+                                 "QPushButton:hover { color: rgba(255, 255, 255, 0.9); }");
+    connect(m_playStopBtn, &QPushButton::clicked, [this]() {
+        if (m_dsp->status == ProcessingState::Running)
+            m_dsp->stopEngine();
+        else
+            m_dsp->startEngine();
+    });
+    topBar->addWidget(m_playStopBtn);
+
+    // Volume Control Row container
+    auto volWidget = new QWidget(topBarWidget);
+    volWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto volLayout = new QHBoxLayout(volWidget);
+    volLayout->setContentsMargins(4, 0, 4, 0);
+    volLayout->setSpacing(4);
+
+    m_muteBtn = new QPushButton("🔊", volWidget);
+    m_muteBtn->setFixedSize(18, 18);
+    m_muteBtn->setCursor(Qt::PointingHandCursor);
+    m_muteBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_muteBtn->setStyleSheet("QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: none; "
+                             "font-size: 10px; padding: 0px; margin: 0px; } "
+                             "QPushButton:hover { color: rgba(255, 255, 255, 0.9); }");
+    connect(m_muteBtn, &QPushButton::clicked, [this]() {
+        Fader f = currentFader();
+        bool muted = m_settings->getMuted(f);
+        m_dsp->setFaderMute(f, !muted);
+        m_muteBtn->setText(!muted ? "🔇" : "🔊");
+    });
+    volLayout->addWidget(m_muteBtn);
+
+    m_volSlider = new QSlider(Qt::Horizontal, volWidget);
+    m_volSlider->setRange(-120, 40); // -60 dB to +20 dB
+    m_volSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_volSlider->setMinimumWidth(50);
+    float currentVol = m_settings ? m_settings->getVolume(Fader::Main) : 0.0f;
+    m_volSlider->setValue(static_cast<int>(currentVol * 2.0f));
+    m_volSlider->setStyleSheet(
+        "QSlider::groove:horizontal { height: 3px; background: rgba(255, 255, 255, 0.2); border-radius: 1.5px; } "
+        "QSlider::sub-page:horizontal { background: #007aff; border-radius: 1.5px; } "
+        "QSlider::handle:horizontal { background: #ffffff; width: 10px; height: 10px; margin: -3.5px 0; border-radius: "
+        "5px; }");
+
+    m_volValueLabel = new QLabel(QString::asprintf("%+.0f", currentVol), volWidget);
+    QFont mono9 = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    mono9.setPointSize(9);
+    m_volValueLabel->setFont(mono9);
+    m_volValueLabel->setFixedWidth(26);
+    m_volValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_volValueLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+    m_volValueLabel->setStyleSheet(currentVol > 0.0f
+                                       ? "color: #ff3b30; font-family: monospace; font-size: 9px;"
+                                       : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px;");
+
+    connect(m_volSlider, &QSlider::valueChanged, [this](int val) {
+        Fader f = currentFader();
+        float db = val / 2.0f;
+        m_dsp->setFaderVolume(f, db);
+        m_volValueLabel->setText(QString::asprintf("%+.0f", db));
+        m_volValueLabel->setStyleSheet(
+            db > 0.0f ? "color: #ff3b30; font-family: monospace; font-size: 9px;"
+                      : "color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 9px;");
+    });
+
+    volLayout->addWidget(m_volSlider, 1);
+    volLayout->addWidget(m_volValueLabel);
+    topBar->addWidget(volWidget, 1);
+
+    // Mode Switcher Container
+    auto modeSwitcherWidget = new QWidget(topBarWidget);
+    modeSwitcherWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    auto modeLayout = new QHBoxLayout(modeSwitcherWidget);
+    modeLayout->setContentsMargins(0, 0, 0, 0);
+    modeLayout->setSpacing(2);
+
+    // 6 Mode Icon Buttons
+    auto pipeBtn = new QPushButton("☍", modeSwitcherWidget);
+    auto specBtn = new QPushButton("〰", modeSwitcherWidget);
+    auto mtrBtn = new QPushButton("📊", modeSwitcherWidget);
+    auto vuBtn = new QPushButton("⏱", modeSwitcherWidget);
+    auto sgBtn = new QPushButton("▦", modeSwitcherWidget);
+    auto vecBtn = new QPushButton("⚡", modeSwitcherWidget);
+
+    m_modeBtns = {pipeBtn, specBtn, mtrBtn, vuBtn, sgBtn, vecBtn};
+
+    for (auto btn : m_modeBtns) {
+        btn->setFixedSize(18, 18);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        modeLayout->addWidget(btn);
+    }
+
+    pipeBtn->setToolTip("Pipeline Overview");
+    connect(pipeBtn, &QPushButton::clicked, [this]() {
+        buildMiniPipelineUi();
+        m_viewStack->setCurrentIndex(0);
+        updateModeButtonStyles(0);
+    });
+
+    specBtn->setToolTip("Spectrum Analyzer");
+    connect(specBtn, &QPushButton::clicked, [this]() {
+        m_viewStack->setCurrentIndex(1);
+        updateModeButtonStyles(1);
+    });
+
+    mtrBtn->setToolTip("Level Meters");
+    connect(mtrBtn, &QPushButton::clicked, [this]() {
+        m_viewStack->setCurrentIndex(2);
+        updateModeButtonStyles(2);
+    });
+
+    vuBtn->setToolTip("Analog VU Meter");
+    connect(vuBtn, &QPushButton::clicked, [this]() {
+        m_viewStack->setCurrentIndex(3);
+        updateModeButtonStyles(3);
+    });
+
+    sgBtn->setToolTip("Spectroscope Waterfall");
+    connect(sgBtn, &QPushButton::clicked, [this]() {
+        m_viewStack->setCurrentIndex(4);
+        updateModeButtonStyles(4);
+    });
+
+    vecBtn->setToolTip("Vector Scope");
+    connect(vecBtn, &QPushButton::clicked, [this]() {
+        m_viewStack->setCurrentIndex(5);
+        updateModeButtonStyles(5);
+    });
+
+    updateModeButtonStyles(1); // Default to Spectrum (mode 1) matching SwiftUI default
+
+    topBar->addWidget(modeSwitcherWidget);
+
+    mainLayout->addWidget(topBarWidget);
+
+    m_viewStack = new QStackedWidget(this);
+    m_viewStack->setObjectName("MiniPlayerViewStack");
+    m_viewStack->setContentsMargins(8, 0, 8, 8);
+    m_viewStack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_viewStack->setStyleSheet("QStackedWidget { background: transparent; }");
+
+    // Mode 0: Mini Pipeline Chips in a QScrollArea
+    auto pipeScroll = new QScrollArea(this);
+    pipeScroll->setWidgetResizable(true);
+    pipeScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    pipeScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    pipeScroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    pipeScroll->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+    pipeScroll->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+
+    m_pipelineMiniCard = new QWidget(pipeScroll);
+    m_pipelineMiniCard->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    m_pipelineMiniCard->setStyleSheet("QWidget { background: transparent; }");
+    auto pipeLayout = new QHBoxLayout(m_pipelineMiniCard);
+    pipeLayout->setContentsMargins(0, 0, 0, 0);
+    pipeLayout->setSpacing(4);
+    pipeLayout->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+    buildMiniPipelineUi();
+    pipeScroll->setWidget(m_pipelineMiniCard);
+    m_viewStack->addWidget(pipeScroll);
+
+    // Mode 1: Spectrum
+    m_spectrumView = new SpectrumView(m_monitoring ? m_monitoring->spectrumEngine() : nullptr, this);
+    m_spectrumView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_viewStack->addWidget(m_spectrumView);
+
+    // Mode 2: Level Meters
+    m_metersView = new LevelMeterView(this);
+    m_metersView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    if (m_monitoring)
+        m_metersView->setLevelState(&m_monitoring->levelState);
+    m_viewStack->addWidget(m_metersView);
+
+    // Mode 3: Analog VU
+    m_analogVUView = new AnalogVUMeterView(this);
+    m_analogVUView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    if (m_monitoring)
+        m_analogVUView->setLevelState(&m_monitoring->levelState);
+    m_viewStack->addWidget(m_analogVUView);
+
+    // Mode 4: Spectrogram
+    m_spectrogramView = new SpectrogramView(m_monitoring ? m_monitoring->spectrogramEngine() : nullptr, this);
+    m_spectrogramView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_viewStack->addWidget(m_spectrogramView);
+
+    // Mode 5: Vector Scope
+    m_vectorScopeView = new VectorScopeView(m_monitoring ? m_monitoring->vectorScopeEngine() : nullptr, this);
+    m_vectorScopeView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_viewStack->addWidget(m_vectorScopeView);
+
+    mainLayout->addWidget(m_viewStack, 1);
+    updateEngineStatus(m_dsp->status);
+
+    enableMouseTrackingRecursively(this, this);
+
+    onFaderChanged(0);
+}
+
+void MiniPlayerView::closeAndRestoreMain() {
+    QSettings settings;
+    settings.setValue("MiniPlayer/geometry", saveGeometry());
+    hide();
+    emit requestRestoreMainWindow();
+}
+
+void MiniPlayerView::mouseDoubleClickEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        closeAndRestoreMain();
+        event->accept();
+    }
+}
+
+void MiniPlayerView::keyPressEvent(QKeyEvent* event) {
+    bool hasCmdOrCtrl = (event->modifiers() & (Qt::ControlModifier | Qt::MetaModifier));
+
+    if (event->key() == Qt::Key_Escape || (hasCmdOrCtrl && event->key() == Qt::Key_W) ||
+        (hasCmdOrCtrl && event->key() == Qt::Key_M)) {
+        closeAndRestoreMain();
+        event->accept();
+        return;
+    } else if (event->key() == Qt::Key_Space) {
+        if (m_dsp) {
+            if (m_dsp->status == ProcessingState::Running)
+                m_dsp->stopEngine();
+            else
+                m_dsp->startEngine();
+        }
+        event->accept();
+        return;
+    } else if (event->key() == Qt::Key_M && !hasCmdOrCtrl) {
+        if (m_settings && m_dsp) {
+            Fader f = currentFader();
+            bool muted = m_settings->getMuted(f);
+            m_dsp->setFaderMute(f, !muted);
+            if (m_muteBtn) {
+                m_muteBtn->setText(!muted ? "🔇" : "🔊");
+            }
+        }
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
+}
+
+void MiniPlayerView::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
+    QStyleOption opt;
+    opt.initFrom(this);
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
+}
+
+bool MiniPlayerView::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::MouseButtonDblClick) {
+        auto mouseEv = static_cast<QMouseEvent*>(event);
+        if (mouseEv->button() == Qt::LeftButton) {
+            QWidget* child = qobject_cast<QWidget*>(watched);
+            if (child && !qobject_cast<QAbstractButton*>(child) && !qobject_cast<QAbstractSlider*>(child)) {
+                closeAndRestoreMain();
+                return true;
+            }
+        }
+    } else if (event->type() == QEvent::MouseMove) {
+        auto mouseEv = static_cast<QMouseEvent*>(event);
+        if (m_isResizing || m_isDragging) {
+            mouseMoveEvent(mouseEv);
+            return true;
+        }
+        ResizeEdge edge = hitTestBorder(mouseEv->globalPosition().toPoint());
+        if (edge != ResizeEdge::None) {
+            updateResizeCursor(edge);
+        } else {
+            QWidget* child = qobject_cast<QWidget*>(watched);
+            if (child && !qobject_cast<QAbstractButton*>(child) && !qobject_cast<QAbstractSlider*>(child)) {
+                unsetCursor();
+            }
+        }
+    } else if (event->type() == QEvent::MouseButtonPress) {
+        auto mouseEv = static_cast<QMouseEvent*>(event);
+        if (mouseEv->button() == Qt::LeftButton) {
+            ResizeEdge edge = hitTestBorder(mouseEv->globalPosition().toPoint());
+            if (edge != ResizeEdge::None) {
+                m_isResizing = true;
+                m_activeResizeEdge = edge;
+                m_dragStartGeometry = geometry();
+                m_dragStartPos = mouseEv->globalPosition().toPoint();
+                return true;
+            }
+            QWidget* child = qobject_cast<QWidget*>(watched);
+            if (child && !qobject_cast<QAbstractButton*>(child) && !qobject_cast<QAbstractSlider*>(child)) {
+                m_dragPosition = mouseEv->globalPosition().toPoint() - frameGeometry().topLeft();
+                m_isDragging = true;
+                return true;
+            }
+        }
+    } else if (event->type() == QEvent::MouseButtonRelease) {
+        auto mouseEv = static_cast<QMouseEvent*>(event);
+        if (mouseEv->button() == Qt::LeftButton) {
+            if (m_isResizing || m_isDragging) {
+                mouseReleaseEvent(mouseEv);
+                return true;
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void MiniPlayerView::refreshMeters() {
+    if (!isVisible() || !m_monitoring || !m_viewStack)
+        return;
+
+    int mode = m_viewStack->currentIndex();
+    const auto& st = m_monitoring->levelState;
+
+    switch (mode) {
+    case 1: // Spectrum
+        if (m_spectrumView && m_monitoring->spectrumEngine()) {
+            m_spectrumView->setSpectrum(m_monitoring->spectrumEngine()->data);
+        }
+        break;
+    case 2: // Level Meters
+        if (m_metersView) {
+            m_metersView->setLevels(st.playbackRms, st.playbackPeak, "");
+        }
+        break;
+    case 3: // Analog VU
+        if (m_analogVUView) {
+            m_analogVUView->setLevels(st.playbackRms);
+        }
+        break;
+    case 4: // Spectrogram
+        if (m_spectrogramView && m_monitoring->spectrogramEngine()) {
+            m_spectrogramView->setHistory(m_monitoring->spectrogramEngine()->history,
+                                          m_monitoring->spectrogramEngine()->show3D);
+        }
+        break;
+    case 5: // Vector Scope
+        if (m_vectorScopeView && m_monitoring->vectorScopeEngine()) {
+            m_vectorScopeView->setSamples(m_monitoring->vectorScopeEngine()->samples,
+                                          m_monitoring->vectorScopeEngine()->showParticles);
+        }
+        break;
+    default:
+        break;
+    }
+}

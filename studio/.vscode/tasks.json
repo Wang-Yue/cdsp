@@ -1,0 +1,50 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build cdsp-studio",
+            "type": "shell",
+            "command": "cmake -S ${workspaceFolder} -B ${workspaceFolder}/build -DCMAKE_BUILD_TYPE=Debug && cmake --build ${workspaceFolder}/build --target cdsp-studio --parallel",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "clear": true
+            }
+        },
+        {
+            "label": "IWYU: Check Includes",
+            "type": "shell",
+            "command": "./scripts/run-iwyu.sh --check",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "clear": true
+            }
+        },
+        {
+            "label": "IWYU: Fix Includes",
+            "type": "shell",
+            "command": "./scripts/run-iwyu.sh --fix",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "clear": true
+            }
+        }
+    ]
+}

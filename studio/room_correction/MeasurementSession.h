@@ -1,0 +1,146 @@
+#ifndef MEASUREMENT_SESSION_H
+#define MEASUREMENT_SESSION_H
+
+#include "config/BiquadCoefficients.h"         // for BiquadParameters
+#include "models/ConvolutionPreset.h"          // for ConvolutionPreset
+#include "models/EQPreset.h"                   // for EQPreset, EQBand
+#include "room_correction/CalibrationCurve.h"  // for CalibrationCurve
+#include "room_correction/FrequencyResponse.h" // for FrequencyResponse
+#include "room_correction/ImpulseResponse.h"   // for ImpulseResponse
+#include "room_correction/SubwooferAssist.h"   // for SubwooferRecommendation
+#include "room_correction/TargetCurve.h"       // for TargetCurve, TargetBreakpoint, TargetPreset
+
+#include <QObject>    // for QObject, Q_OBJECT, signals
+#include <QUuid>      // for QUuid
+#include <functional> // for function
+#include <optional>   // for optional, nullopt, nullopt_t
+#include <string>     // for string, basic_string
+#include <vector>     // for vector
+
+enum class MeasurementChannelKind { Full, Mains, Subwoofer };
+std::string channelKindToString(MeasurementChannelKind kind);
+
+enum class FIRKind { MinimumPhase, LinearPhase, MeasurementDriven };
+std::string firKindToString(FIRKind kind);
+
+enum class DisplaySmoothing {
+    Off,
+    Oct1over1,
+    Oct1over3,
+    Oct1over6,
+    Oct1over12,
+    Oct1over24,
+    Oct1over48,
+    Variable,
+    Psychoacoustic
+};
+std::string displaySmoothingToString(DisplaySmoothing s);
+
+enum class FDWCycles { Off, Cycles1, Cycles5, Cycles10, Cycles15 };
+
+struct MeasurementPosition {
+    QUuid id;
+    std::string name;
+    FrequencyResponse fr;
+    std::optional<ImpulseResponse> ir;
+    bool isEnabled = true;
+    MeasurementChannelKind kind = MeasurementChannelKind::Full;
+
+    MeasurementPosition() : id(QUuid::createUuid()) {}
+    MeasurementPosition(const std::string& name, const FrequencyResponse& fr,
+                        const std::optional<ImpulseResponse>& ir = std::nullopt, bool enabled = true,
+                        MeasurementChannelKind kind = MeasurementChannelKind::Full)
+        : id(QUuid::createUuid()), name(name), fr(fr), ir(ir), isEnabled(enabled), kind(kind) {}
+};
+
+class MeasurementSession : public QObject {
+    Q_OBJECT
+
+public:
+    explicit MeasurementSession(QObject* parent = nullptr);
+
+    double sweepF1 = 20.0;
+    double sweepF2 = 20000.0;
+    double sweepDurationSeconds = 1.0;
+    int sampleRate = 48000;
+
+    TargetPreset targetPreset = TargetPreset::Flat;
+    std::optional<TargetCurve> customTarget;
+    TargetCurve targetCurve() const {
+        if (customTarget.has_value() && !customTarget.value().breakpoints.empty()) {
+            return customTarget.value();
+        }
+        return TargetCurve::getPreset(targetPreset);
+    }
+
+    int bandCount = 8;
+    double maxGainDB = 12.0;
+    bool modalMode = false;
+    double schroederHz = 200.0;
+    double modalMinQ = 2.0;
+
+    FDWCycles fdwCycles = FDWCycles::Off;
+    DisplaySmoothing displaySmoothing = DisplaySmoothing::Oct1over6;
+
+    std::optional<CalibrationCurve> calibration;
+    std::string calibrationPath;
+
+    FIRKind firKind = FIRKind::MinimumPhase;
+    int firTapCount = 8192;
+    double firPhaseBlend = 1.0;
+
+    std::vector<MeasurementPosition> positions;
+    std::optional<ImpulseResponse> measuredIR;
+    std::optional<FrequencyResponse> measuredFR;
+    std::vector<double> measuredMagDB;
+    std::vector<double> grid;
+
+    std::string selectedMicName;
+    std::string selectedOutputName;
+    int selectedOutputChannel = -1;
+    int selectedInputChannel = 0;
+    bool isCapturing = false;
+
+    std::optional<EQPreset> correctionPreset;
+    std::string status = "No measurement loaded.";
+    std::string generatedFIRPath;
+
+    static std::vector<double> applyCalibration(const std::vector<double>& raw, const std::vector<double>& grid,
+                                                const std::optional<CalibrationCurve>& cal);
+    static std::vector<double> levelNormalize(const std::vector<double>& magDB, const std::vector<double>& grid);
+
+    static std::optional<EQBand> eqBandFromBiquadParameters(const BiquadParameters& p);
+    static BiquadParameters biquadParametersFromEQBand(const EQBand& band);
+
+    void generateMockMeasurement(bool append = false);
+    void recordPosition(bool append = false, const std::string& inputDeviceName = "",
+                        const std::string& outputDeviceName = "", int inputChannel = 0, int outputChannel = -1,
+                        std::function<void(bool success, const std::string& message)> callback = nullptr);
+    void importPositionFRD(const std::string& path);
+
+    void togglePosition(const QUuid& id);
+    void removePosition(const QUuid& id);
+    void setPositionKind(const QUuid& id, MeasurementChannelKind kind);
+
+    void recomputeAverage();
+    void runFit();
+    std::optional<ConvolutionPreset> generateFIR(const std::vector<std::string>& existingNames);
+
+    void loadCalibration(const std::string& path);
+    void clearCalibration();
+    bool exportFRD(const std::string& path, bool includeCalibration = false);
+
+    bool subwooferAssistAvailable() const;
+    std::optional<SubwooferRecommendation> computeSubwooferRecommendation();
+
+    std::vector<double> displayedMagDB() const;
+    void reset();
+
+signals:
+    void sessionUpdated();
+
+private:
+    std::vector<BiquadParameters> randomMockSystem();
+};
+
+#endif // MEASUREMENT_SESSION_H

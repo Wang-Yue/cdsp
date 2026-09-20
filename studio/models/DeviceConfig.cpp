@@ -1,0 +1,563 @@
+#include "models/DeviceConfig.h"
+
+#include <QByteArray> // for QByteArray
+#include <QFile>      // for QFile
+#include <QIODevice>  // for QIODevice
+#include <QJsonValue> // for QJsonValue, QJsonValueRef
+#include <QString>    // for QString
+#include <QtGlobal>   // for qint64
+#include <algorithm>  // for max, find, min, find_if, max_element, sort
+#include <cctype>     // for isspace
+#include <cstdlib>    // for abs
+#include <cstring>    // for memcpy
+#include <set>        // for set, operator!=
+
+const DeviceCapabilitySet* DeviceConfig::activeCapabilitySet() const {
+    if (capabilities.capability_sets.empty())
+        return nullptr;
+    if (exclusive) {
+        for (const auto& set : capabilities.capability_sets) {
+            if (set.mode == "Exclusive")
+                return &set;
+        }
+    } else {
+        for (const auto& set : capabilities.capability_sets) {
+            if (set.mode == "Shared")
+                return &set;
+        }
+    }
+    return &capabilities.capability_sets[0];
+}
+
+DeviceCapabilitySet* DeviceConfig::activeCapabilitySet() {
+    return const_cast<DeviceCapabilitySet*>(static_cast<const DeviceConfig*>(this)->activeCapabilitySet());
+}
+
+void DeviceConfig::updateRate(int newRate) {
+    auto* set = activeCapabilitySet();
+    if (set && set->mode == "Shared") {
+        for (auto& cap : set->capabilities) {
+            if (!cap.samplerates.empty()) {
+                cap.samplerates[0].samplerate = newRate;
+            } else {
+                SamplerateCapability sr;
+                sr.samplerate = newRate;
+                sr.formats = {"F32"};
+                cap.samplerates.push_back(sr);
+            }
+        }
+    }
+    sampleRate = newRate;
+    *this = enforced();
+}
+
+std::vector<int> DeviceConfig::supportedChannels() const {
+    const auto* set = activeCapabilitySet();
+    if (!set || set->capabilities.empty())
+        return {};
+    std::set<int> chs;
+    for (const auto& cap : set->capabilities) {
+        chs.insert(cap.channels);
+    }
+    return std::vector<int>(chs.begin(), chs.end());
+}
+
+std::vector<int> DeviceConfig::supportedRates() const {
+#if defined(ENABLE_PIPEWIRE)
+    if (backend == AudioBackendType::PipeWire) {
+        return MONITOR_STANDARD_RATES;
+    }
+#endif
+    if (backend == AudioBackendType::SignalGenerator) {
+        return MONITOR_STANDARD_RATES;
+    }
+
+    const auto* set = activeCapabilitySet();
+    if (!set || set->capabilities.empty())
+        return {};
+
+    const ChannelCapability* selectedCap = nullptr;
+    for (const auto& cap : set->capabilities) {
+        if (cap.channels == deviceChannels) {
+            selectedCap = &cap;
+            break;
+        }
+    }
+    if (!selectedCap && !set->capabilities.empty()) {
+        selectedCap = &set->capabilities[0];
+    }
+
+    std::set<int> rates;
+    if (selectedCap) {
+        for (const auto& sr : selectedCap->samplerates) {
+            rates.insert(sr.samplerate);
+        }
+    } else {
+        for (const auto& cap : set->capabilities) {
+            for (const auto& sr : cap.samplerates) {
+                rates.insert(sr.samplerate);
+            }
+        }
+    }
+    return std::vector<int>(rates.begin(), rates.end());
+}
+
+static int formatPriority(const std::string& fmt) {
+    if (fmt == "S32" || fmt == "S32_LE" || fmt == "S32_BE")
+        return 7;
+    if (fmt == "S24" || fmt == "S24_4_LE" || fmt == "S24_4_BE" || fmt == "S24_4_LJ_LE" || fmt == "S24_4_RJ_LE")
+        return 6;
+    if (fmt == "S24_3_LE" || fmt == "S24_3_BE")
+        return 5;
+    if (fmt == "S16" || fmt == "S16_LE" || fmt == "S16_BE")
+        return 4;
+    if (fmt == "F32" || fmt == "F32_LE" || fmt == "F32_BE")
+        return 3;
+    if (fmt == "F64" || fmt == "F64_LE" || fmt == "F64_BE")
+        return 2;
+    if (fmt.rfind("DSD", 0) == 0)
+        return 1;
+    return 0;
+}
+
+std::vector<std::string> DeviceConfig::supportedFormats() const {
+    const auto* set = activeCapabilitySet();
+    if (!set || set->capabilities.empty())
+        return {};
+
+    const ChannelCapability* selectedCap = nullptr;
+    for (const auto& cap : set->capabilities) {
+        if (cap.channels == deviceChannels) {
+            selectedCap = &cap;
+            break;
+        }
+    }
+    if (!selectedCap && !set->capabilities.empty()) {
+        selectedCap = &set->capabilities[0];
+    }
+
+    std::vector<std::string> fmts;
+    if (selectedCap) {
+        for (const auto& sr : selectedCap->samplerates) {
+            if (sr.samplerate == sampleRate) {
+                fmts = sr.formats;
+                break;
+            }
+        }
+    }
+    std::sort(fmts.begin(), fmts.end(),
+              [](const std::string& a, const std::string& b) { return formatPriority(a) > formatPriority(b); });
+    return fmts;
+}
+
+DeviceConfig DeviceConfig::enforced() const {
+    DeviceConfig res = *this;
+#if defined(ENABLE_PIPEWIRE)
+    if (res.backend == AudioBackendType::PipeWire) {
+        res.channels = std::max(1, std::min(32, res.channels));
+        res.deviceChannels = res.channels;
+        res.capabilities = AudioDeviceDescriptor();
+        return res;
+    }
+#endif
+    if (isHardwareBackend(res.backend)) {
+#if defined(ENABLE_WASAPI)
+        if (res.backend == AudioBackendType::WASAPI && res.loopback) {
+            res.exclusive = false;
+        }
+#endif
+        auto chs = res.supportedChannels();
+        if (!chs.empty()) {
+            bool devChValid = (std::find(chs.begin(), chs.end(), res.deviceChannels) != chs.end()) &&
+                              (res.deviceChannels >= res.channels);
+            if (!devChValid) {
+                auto it = std::find_if(chs.begin(), chs.end(), [&res](int c) { return c >= res.channels; });
+                if (it != chs.end()) {
+                    res.deviceChannels = *it;
+                } else {
+                    int maxPhys = *std::max_element(chs.begin(), chs.end());
+                    res.channels = maxPhys;
+                    res.deviceChannels = maxPhys;
+                }
+            }
+        } else {
+            res.deviceChannels = std::max(1, std::min(32, std::max(res.deviceChannels, res.channels)));
+        }
+        res.channels = std::max(1, std::min(res.deviceChannels, res.channels));
+
+        auto rates = res.supportedRates();
+        if (!rates.empty() && std::find(rates.begin(), rates.end(), res.sampleRate) == rates.end()) {
+            res.sampleRate = bestRate(rates, res.sampleRate);
+        }
+
+        auto fmts = res.supportedFormats();
+        if (res.format.has_value() && !res.format->empty() && *res.format != "Auto" && !fmts.empty()) {
+            if (std::find(fmts.begin(), fmts.end(), *res.format) == fmts.end()) {
+                res.format = std::nullopt;
+            }
+        }
+    } else if (res.backend == AudioBackendType::WavFile) {
+        if (!res.filename.empty()) {
+            if (auto wavInfo = parseWavHeader(res.filename)) {
+                res.channels = wavInfo->first;
+                res.sampleRate = wavInfo->second;
+            }
+        }
+        res.channels = std::max(1, std::min(32, res.channels));
+        res.deviceChannels = res.channels;
+    } else {
+        res.channels = std::max(1, std::min(32, res.channels));
+        res.deviceChannels = res.channels;
+    }
+    return res;
+}
+
+std::optional<std::pair<int, int>> DeviceConfig::parseWavHeader(const std::string& path) {
+    if (path.empty())
+        return std::nullopt;
+    if (!QFile::exists(QString::fromStdString(path)))
+        return std::nullopt;
+    QFile file(QString::fromStdString(path));
+    if (!file.open(QIODevice::ReadOnly))
+        return std::nullopt;
+
+    QByteArray riffData = file.read(12);
+    if (riffData.size() < 12)
+        return std::nullopt;
+
+    std::string riff = riffData.left(4).toStdString();
+    std::string wave = riffData.mid(8, 4).toStdString();
+    if ((riff != "RIFF" && riff != "RF64") || wave != "WAVE")
+        return std::nullopt;
+
+    if (!file.seek(12))
+        return std::nullopt;
+    QByteArray remainingData = file.read(1024);
+    int fmtOffset = remainingData.indexOf("fmt ");
+    if (fmtOffset == -1 || fmtOffset + 16 > remainingData.size())
+        return std::nullopt;
+
+    uint16_t numChannels = 0;
+    std::memcpy(&numChannels, remainingData.constData() + fmtOffset + 10, sizeof(uint16_t));
+
+    uint32_t sampleRate = 0;
+    std::memcpy(&sampleRate, remainingData.constData() + fmtOffset + 12, sizeof(uint32_t));
+
+    if (numChannels < 1 || numChannels > 32)
+        return std::nullopt;
+    if (sampleRate < 8000 || sampleRate > 768000)
+        return std::nullopt;
+
+    return std::make_pair(static_cast<int>(numChannels), static_cast<int>(sampleRate));
+}
+
+int DeviceConfig::bestRate(const std::vector<int>& rates, int currentRate) {
+    if (rates.empty())
+        return 48000;
+    if (std::find(rates.begin(), rates.end(), currentRate) != rates.end())
+        return currentRate;
+    int best = rates[0];
+    int minDiff = std::abs(best - currentRate);
+    for (int r : rates) {
+        int diff = std::abs(r - currentRate);
+        if (diff < minDiff) {
+            minDiff = diff;
+            best = r;
+        }
+    }
+    return best;
+}
+
+CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
+    CaptureDeviceConfig cap;
+    cap.backend = backend;
+    switch (backend) {
+#if defined(ENABLE_COREAUDIO)
+    case AudioBackendType::CoreAudio:
+        cap.coreAudio.channels = channels;
+        cap.coreAudio.device = deviceName();
+        cap.coreAudio.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        cap.coreAudio.loopback = loopback;
+        cap.coreAudio.bypassDoP = bypassDoP;
+        cap.coreAudio.dopCutoffHz = dopCutoffHz;
+        break;
+#endif
+#if defined(ENABLE_WASAPI)
+    case AudioBackendType::WASAPI:
+        cap.wasapi.channels = channels;
+        cap.wasapi.device = deviceName();
+        cap.wasapi.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        cap.wasapi.exclusive = exclusive;
+        cap.wasapi.loopback = loopback;
+        cap.wasapi.polling = polling;
+        cap.wasapi.bypassDoP = bypassDoP;
+        cap.wasapi.dopCutoffHz = dopCutoffHz;
+        break;
+#endif
+#if defined(ENABLE_ASIO)
+    case AudioBackendType::ASIO:
+        cap.asio.channels = channels;
+        cap.asio.device = deviceName();
+        cap.asio.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        cap.asio.bypassDoP = bypassDoP;
+        cap.asio.dopCutoffHz = dopCutoffHz;
+        break;
+#endif
+#if defined(ENABLE_ALSA)
+    case AudioBackendType::ALSA:
+        cap.alsa.channels = channels;
+        cap.alsa.device = deviceName();
+        cap.alsa.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        cap.alsa.stopOnInactive = stopOnInactive;
+        cap.alsa.threaded = threaded;
+        if (!linkVolumeControl.empty())
+            cap.alsa.linkVolumeControl = linkVolumeControl;
+        if (!linkMuteControl.empty())
+            cap.alsa.linkMuteControl = linkMuteControl;
+        break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+    case AudioBackendType::PipeWire:
+        cap.pipeWire.channels = channels;
+        cap.pipeWire.device = deviceName();
+        cap.pipeWire.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        if (!nodeName.empty())
+            cap.pipeWire.nodeName = nodeName;
+        if (!nodeDescription.empty())
+            cap.pipeWire.nodeDescription = nodeDescription;
+        if (!nodeGroupName.empty())
+            cap.pipeWire.nodeGroupName = nodeGroupName;
+        cap.pipeWire.autoconnectTo = autoconnectTo;
+        cap.pipeWire.loopback = loopback;
+        break;
+#endif
+    case AudioBackendType::WavFile:
+        cap.wavFile.filename = filename.empty() ? "" : filename;
+        cap.wavFile.extraSamples = extraSamples > 0 ? std::make_optional(static_cast<int>(extraSamples)) : std::nullopt;
+        break;
+    case AudioBackendType::RawFile:
+        cap.rawFile.filename = filename.empty() ? "" : filename;
+        cap.rawFile.channels = channels;
+        cap.rawFile.format = fileFormat;
+        cap.rawFile.skipBytes = skipBytes > 0 ? std::make_optional(static_cast<int>(skipBytes)) : std::nullopt;
+        cap.rawFile.readBytes = readBytes > 0 ? std::make_optional(static_cast<int>(readBytes)) : std::nullopt;
+        cap.rawFile.extraSamples = extraSamples > 0 ? std::make_optional(static_cast<int>(extraSamples)) : std::nullopt;
+        break;
+    case AudioBackendType::SignalGenerator:
+        cap.generator.channels = channels;
+        cap.generator.signal.type = generatorType;
+        cap.generator.signal.freq = (generatorType == "WhiteNoise") ? std::nullopt : std::make_optional(generatorFreq);
+        cap.generator.signal.level = generatorLevel;
+        break;
+    }
+    return cap;
+}
+
+PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
+    PlaybackDeviceConfig pb;
+    pb.backend = backend;
+    switch (backend) {
+#if defined(ENABLE_COREAUDIO)
+    case AudioBackendType::CoreAudio:
+        pb.coreAudio.channels = channels;
+        pb.coreAudio.device = deviceName();
+        pb.coreAudio.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        pb.coreAudio.exclusive = exclusive;
+        pb.coreAudio.outputDoP = outputDoP;
+        pb.coreAudio.dsdEncoderFilter = dsdEncoderFilter;
+        break;
+#endif
+#if defined(ENABLE_WASAPI)
+    case AudioBackendType::WASAPI:
+        pb.wasapi.channels = channels;
+        pb.wasapi.device = deviceName();
+        pb.wasapi.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        pb.wasapi.exclusive = exclusive;
+        pb.wasapi.polling = polling;
+        pb.wasapi.outputDoP = outputDoP;
+        pb.wasapi.dsdEncoderFilter = dsdEncoderFilter;
+        break;
+#endif
+#if defined(ENABLE_ASIO)
+    case AudioBackendType::ASIO:
+        pb.asio.channels = channels;
+        pb.asio.device = deviceName();
+        pb.asio.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        pb.asio.outputDoP = outputDoP;
+        pb.asio.dsdEncoderFilter = dsdEncoderFilter;
+        break;
+#endif
+#if defined(ENABLE_ALSA)
+    case AudioBackendType::ALSA:
+        pb.alsa.channels = channels;
+        pb.alsa.device = deviceName();
+        pb.alsa.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        pb.alsa.threaded = threaded;
+        pb.alsa.outputDoP = outputDoP;
+        pb.alsa.dsdEncoderFilter = dsdEncoderFilter;
+        break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+    case AudioBackendType::PipeWire:
+        pb.pipeWire.channels = channels;
+        pb.pipeWire.device = deviceName();
+        pb.pipeWire.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
+        if (!nodeName.empty())
+            pb.pipeWire.nodeName = nodeName;
+        if (!nodeDescription.empty())
+            pb.pipeWire.nodeDescription = nodeDescription;
+        if (!nodeGroupName.empty())
+            pb.pipeWire.nodeGroupName = nodeGroupName;
+        pb.pipeWire.autoconnectTo = autoconnectTo;
+        break;
+#endif
+    case AudioBackendType::RawFile:
+    case AudioBackendType::WavFile:
+        pb.rawFile.filename = filename.empty() ? "" : filename;
+        pb.rawFile.channels = channels;
+        pb.rawFile.format = fileFormat;
+        pb.rawFile.wavHeader = (backend == AudioBackendType::WavFile || isWav);
+        if (backend == AudioBackendType::WavFile || isWav) {
+            pb.rawFile.useRf64 = useRf64;
+        }
+        break;
+    case AudioBackendType::SignalGenerator:
+        break;
+    }
+    return pb;
+}
+
+QJsonObject DeviceConfig::toJson() const {
+    QJsonObject obj;
+    obj["backend"] = QString::fromStdString(audioBackendTypeToString(backend));
+    obj["channels"] = channels;
+    obj["deviceChannels"] = deviceChannels;
+    obj["sampleRate"] = sampleRate;
+    if (format.has_value() && !format->empty() && *format != "Auto")
+        obj["format"] = QString::fromStdString(*format);
+    obj["exclusive"] = exclusive;
+    obj["loopback"] = loopback;
+    obj["polling"] = polling;
+    obj["stopOnInactive"] = stopOnInactive;
+    obj["threaded"] = threaded;
+    if (!linkVolumeControl.empty())
+        obj["linkVolumeControl"] = QString::fromStdString(linkVolumeControl);
+    if (!linkMuteControl.empty())
+        obj["linkMuteControl"] = QString::fromStdString(linkMuteControl);
+    obj["bypassDoP"] = bypassDoP;
+    obj["dopCutoffHz"] = dopCutoffHz;
+    obj["outputDoP"] = outputDoP;
+    obj["dsdEncoderFilter"] = QString::fromStdString(sdmFilterToString(dsdEncoderFilter));
+    obj["filename"] = QString::fromStdString(filename);
+    obj["fileFormat"] = QString::fromStdString(fileFormat);
+    obj["isWav"] = isWav;
+    obj["useRf64"] = useRf64;
+    obj["skipBytes"] = static_cast<qint64>(skipBytes);
+    obj["readBytes"] = static_cast<qint64>(readBytes);
+    obj["extraSamples"] = static_cast<qint64>(extraSamples);
+    obj["generatorType"] = QString::fromStdString(generatorType);
+    obj["generatorFreq"] = generatorFreq;
+    obj["generatorLevel"] = generatorLevel;
+    obj["nodeName"] = QString::fromStdString(nodeName);
+    obj["nodeDescription"] = QString::fromStdString(nodeDescription);
+    obj["nodeGroupName"] = QString::fromStdString(nodeGroupName);
+    if (autoconnectTo.has_value())
+        obj["autoconnectTo"] = QString::fromStdString(*autoconnectTo);
+    obj["capabilities"] = capabilities.toJson();
+    return obj;
+}
+
+DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
+    DeviceConfig cfg;
+    if (json.contains("backend"))
+        cfg.backend = stringToAudioBackendType(json["backend"].toString().toStdString());
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    if (json.contains("deviceChannels")) {
+        cfg.deviceChannels = json["deviceChannels"].toInt();
+    } else {
+        cfg.deviceChannels = cfg.channels;
+    }
+    if (json.contains("sampleRate"))
+        cfg.sampleRate = json["sampleRate"].toInt();
+    if (json.contains("format") && !json["format"].isNull()) {
+        std::string fmtStr = json["format"].toString().toStdString();
+        if (!fmtStr.empty() && fmtStr != "Auto")
+            cfg.format = fmtStr;
+        else
+            cfg.format = std::nullopt;
+    } else {
+        cfg.format = std::nullopt;
+    }
+    if (json.contains("exclusive"))
+        cfg.exclusive = json["exclusive"].toBool();
+    if (json.contains("loopback"))
+        cfg.loopback = json["loopback"].toBool();
+    if (json.contains("polling"))
+        cfg.polling = json["polling"].toBool();
+    if (json.contains("stopOnInactive"))
+        cfg.stopOnInactive = json["stopOnInactive"].toBool();
+    if (json.contains("threaded"))
+        cfg.threaded = json["threaded"].toBool();
+    if (json.contains("linkVolumeControl"))
+        cfg.linkVolumeControl = json["linkVolumeControl"].toString().toStdString();
+    if (json.contains("linkMuteControl"))
+        cfg.linkMuteControl = json["linkMuteControl"].toString().toStdString();
+    if (json.contains("bypassDoP"))
+        cfg.bypassDoP = json["bypassDoP"].toBool();
+    if (json.contains("dopCutoffHz"))
+        cfg.dopCutoffHz = json["dopCutoffHz"].toDouble();
+    if (json.contains("outputDoP"))
+        cfg.outputDoP = json["outputDoP"].toBool();
+    if (json.contains("dsdEncoderFilter"))
+        cfg.dsdEncoderFilter = stringToSDMFilter(json["dsdEncoderFilter"].toString().toStdString());
+    if (json.contains("filename"))
+        cfg.filename = json["filename"].toString().toStdString();
+    if (json.contains("fileFormat"))
+        cfg.fileFormat = json["fileFormat"].toString().toStdString();
+    if (json.contains("isWav"))
+        cfg.isWav = json["isWav"].toBool();
+    if (json.contains("useRf64"))
+        cfg.useRf64 = json["useRf64"].toBool();
+    if (json.contains("skipBytes"))
+        cfg.skipBytes = json["skipBytes"].toInteger();
+    if (json.contains("readBytes"))
+        cfg.readBytes = json["readBytes"].toInteger();
+    if (json.contains("extraSamples"))
+        cfg.extraSamples = json["extraSamples"].toInteger();
+    if (json.contains("generatorType"))
+        cfg.generatorType = json["generatorType"].toString().toStdString();
+    if (json.contains("generatorFreq"))
+        cfg.generatorFreq = json["generatorFreq"].toDouble();
+    if (json.contains("generatorLevel"))
+        cfg.generatorLevel = json["generatorLevel"].toDouble();
+    if (json.contains("nodeName"))
+        cfg.nodeName = json["nodeName"].toString().toStdString();
+    if (json.contains("nodeDescription"))
+        cfg.nodeDescription = json["nodeDescription"].toString().toStdString();
+    if (json.contains("nodeGroupName"))
+        cfg.nodeGroupName = json["nodeGroupName"].toString().toStdString();
+    if (json.contains("autoconnectTo") && !json["autoconnectTo"].isNull())
+        cfg.autoconnectTo = json["autoconnectTo"].toString().toStdString();
+    if (json.contains("capabilities") && json["capabilities"].isObject()) {
+        cfg.capabilities = AudioDeviceDescriptor::fromJson(json["capabilities"].toObject());
+    } else if (json.contains("deviceName")) {
+        cfg.capabilities.name = json["deviceName"].toString().toStdString();
+    }
+    return cfg;
+}
+
+bool DeviceConfig::operator==(const DeviceConfig& other) const {
+    return backend == other.backend && capabilities == other.capabilities && channels == other.channels &&
+           deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
+           exclusive == other.exclusive && loopback == other.loopback && polling == other.polling &&
+           stopOnInactive == other.stopOnInactive && threaded == other.threaded &&
+           linkVolumeControl == other.linkVolumeControl && linkMuteControl == other.linkMuteControl &&
+           bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
+           dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
+           isWav == other.isWav && useRf64 == other.useRf64 && skipBytes == other.skipBytes &&
+           readBytes == other.readBytes && extraSamples == other.extraSamples && generatorType == other.generatorType &&
+           generatorFreq == other.generatorFreq && generatorLevel == other.generatorLevel &&
+           nodeName == other.nodeName && nodeDescription == other.nodeDescription &&
+           nodeGroupName == other.nodeGroupName && autoconnectTo == other.autoconnectTo;
+}
