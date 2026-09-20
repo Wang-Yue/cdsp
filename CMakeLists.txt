@@ -706,6 +706,28 @@ install(DIRECTORY include/
     FILES_MATCHING PATTERN "*.h"
 )
 
+if(UNIX AND NOT APPLE)
+    # Post-install: Grant cap_sys_nice=ep capability for Real-Time priority scheduling (SCHED_FIFO)
+    install(CODE "
+        find_program(SETCAP_BIN setcap)
+        if(SETCAP_BIN)
+            set(TARGET_BIN \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/cdsp\")
+            if(EXISTS \"\${TARGET_BIN}\")
+                message(STATUS \"Applying cap_sys_nice=ep capability to \${TARGET_BIN}...\")
+                execute_process(
+                    COMMAND \${SETCAP_BIN} cap_sys_nice=ep \${TARGET_BIN}
+                    RESULT_VARIABLE SETCAP_RES
+                )
+                if(NOT SETCAP_RES EQUAL 0)
+                    message(WARNING \"Failed to set capability (requires root/sudo). Run manually: sudo setcap cap_sys_nice=ep \${TARGET_BIN}\")
+                endif()
+            endif()
+        else()
+            message(WARNING \"'setcap' tool not found. Real-time scheduling capability was not applied.\")
+        endif()
+    ")
+endif()
+
 # -----------------------------------------------------------------------------
 # CDSP Studio (Qt GUI Application)
 # -----------------------------------------------------------------------------

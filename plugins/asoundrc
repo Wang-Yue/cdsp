@@ -1,4 +1,6 @@
-# ALSA configuration for CDSP Studio / CamillaDSP Dynamic Rate Notify Plugin
+# =============================================================
+# CDSP Studio / CamillaDSP ALSA Rate Notify Configuration
+# =============================================================
 
 pcm_type.rate_notify {
     lib {

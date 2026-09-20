@@ -87,7 +87,10 @@ static int rn_start(snd_pcm_ioplug_t *io) {
   if (rec->slave) {
     snd_pcm_state_t state = snd_pcm_state(rec->slave);
     if (state == SND_PCM_STATE_PREPARED) {
-      return snd_pcm_start(rec->slave);
+      snd_pcm_sframes_t delay = 0;
+      if (snd_pcm_delay(rec->slave, &delay) == 0 && delay > 0) {
+        return snd_pcm_start(rec->slave);
+      }
     }
   }
   return 0;
@@ -161,7 +164,8 @@ static snd_pcm_sframes_t rn_transfer(snd_pcm_ioplug_t *io,
   if (!rec->slave)
     return -EBADFD;
 
-  char *buf = (char *)areas[0].addr + (offset * areas[0].step / 8);
+  char *buf =
+      (char *)areas[0].addr + (areas[0].first + offset * areas[0].step) / 8;
   snd_pcm_sframes_t written = snd_pcm_writei(rec->slave, buf, size);
   if (written > 0) {
     rec->hw_ptr += written;
@@ -385,6 +389,13 @@ static int rn_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params) {
   return 0;
 }
 
+static int rn_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp) {
+  rate_notify_ioplug_t *rec = (rate_notify_ioplug_t *)io;
+  if (!rec->slave)
+    return -EBADFD;
+  return snd_pcm_delay(rec->slave, delayp);
+}
+
 static const snd_pcm_ioplug_callback_t rn_callback = {
     .start = rn_start,
     .stop = rn_stop,
@@ -398,9 +409,16 @@ static const snd_pcm_ioplug_callback_t rn_callback = {
     .poll_descriptors_count = rn_poll_descriptors_count,
     .poll_descriptors = rn_poll_descriptors,
     .poll_revents = rn_poll_revents,
+    .delay = rn_delay,
 };
 
-SND_PCM_PLUGIN_DEFINE_FUNC(rate_notify) {
+#if defined(__GNUC__) && __GNUC__ >= 4
+#define CDSP_PLUGIN_EXPORT __attribute__((visibility("default")))
+#else
+#define CDSP_PLUGIN_EXPORT
+#endif
+
+CDSP_PLUGIN_EXPORT SND_PCM_PLUGIN_DEFINE_FUNC(rate_notify) {
   snd_config_iterator_t i, next;
   const char *slave_name = "hw:Loopback,0,0";
   const char *ctl_card = "Loopback";
@@ -474,9 +492,8 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rate_notify) {
     return err;
   }
 
-  // 1. Access modes: interleaved and mmap
-  static const unsigned int accesses[] = {SND_PCM_ACCESS_RW_INTERLEAVED,
-                                          SND_PCM_ACCESS_MMAP_INTERLEAVED};
+  // 1. Access modes: interleaved
+  static const unsigned int accesses[] = {SND_PCM_ACCESS_RW_INTERLEAVED};
   snd_pcm_ioplug_set_param_list(&rec->io, SND_PCM_IOPLUG_HW_ACCESS,
                                 sizeof(accesses) / sizeof(accesses[0]),
                                 accesses);
@@ -514,4 +531,4 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rate_notify) {
   return 0;
 }
 
-SND_PCM_PLUGIN_SYMBOL(rate_notify);
+CDSP_PLUGIN_EXPORT SND_PCM_PLUGIN_SYMBOL(rate_notify);

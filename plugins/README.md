@@ -49,28 +49,21 @@ card 0 [Loopback       ]: Loopback - Loopback
 
 ## Build & Installation
 
-### Option 1: System-Wide Installation (Recommended - Zero User Config Needed)
 ```bash
-cd cdsp-studio/build
-sudo cmake --install plugins/alsa_rate_notify
-```
-When installed via `cmake --install`, CMake automatically installs:
-1. `libasound_module_pcm_rate_notify.so` to your distro's ALSA plugin directory (e.g. `/usr/lib/x86_64-linux-gnu/alsa-lib/` or `/usr/lib64/alsa-lib/`).
-2. `50-cdsp.conf` to `/etc/alsa/conf.d/50-cdsp.conf`.
-
-**Zero Configuration Required**: Once installed, `"CDSP Studio / CamillaDSP Dynamic Rate Audio"` (`pcm.cdsp`) is automatically discovered by ALSA and immediately appears in device picker dropdowns across all applications (Audacious, VLC, mpv, etc.) without creating or editing `~/.asoundrc`.
-
-### Option 2: User-Level Installation (No Root/Sudo Required)
-```bash
-# Build the plugin
-cd cdsp-studio
 cmake -B build
 cmake --build build
-
-# Copy to user directory
-mkdir -p ~/.local/lib/alsa-lib
-cp build/plugins/alsa_rate_notify/libasound_module_pcm_rate_notify.so ~/.local/lib/alsa-lib/
+cmake --install build/plugins
 ```
+When installed via `cmake --install`, CMake automatically:
+1. Installs `libasound_module_pcm_rate_notify.so` to your user ALSA plugin directory (`~/.local/lib/alsa-lib/`).
+2. Installs `asoundrc` to `~/.asoundrc`.
+3. Installs `50-cdsp.conf` to `~/.config/alsa/conf.d/50-cdsp.conf`.
+4. Installs PipeWire & WirePlumber bit-perfect configurations to `~/.config/pipewire/` and `~/.config/wireplumber/`.
+5. Automatically restarts active `pipewire`, `pipewire-pulse`, and `wireplumber` user services.
+
+*(Even when executed via `sudo cmake --install`, CMake resolves `$SUDO_USER` to install configurations to the active user's home directory rather than `/root/`)*
+
+**Zero Root Required**: Once installed, `"CDSP Studio / CamillaDSP Dynamic Rate Audio"` (`pcm.cdsp`) is automatically discovered by ALSA and immediately appears in device picker dropdowns across all applications (Audacious, VLC, mpv, etc.).
 
 ---
 
@@ -141,193 +134,67 @@ In **CDSP Studio** $\rightarrow$ **Device Settings** tab:
 
 ## PipeWire & WirePlumber User Configurations
 
-If your system uses **PipeWire** (standard on modern Linux desktop environments like KDE Plasma or GNOME) alongside WirePlumber, configure the following user configuration files under `~/.config/` for bit-perfect audio playback, dynamic USB DAC rate switching, hotplug safety, and ALSA loopback compatibility with CamillaDSP.
+If your system uses **PipeWire** (standard on modern Linux desktop environments like KDE Plasma or GNOME) alongside WirePlumber, bit-perfect audio configurations are included with the plugin and automatically installed to your `~/.config/` directory when running `cmake --install build/plugins`. CMake also automatically restarts the active user audio services upon installation.
 
-### Directory Structure
+### Configuration Overview
 
-```text
-~/.config/
-├── pipewire/
-│   ├── pipewire.conf.d/
-│   │   └── 50-bitperfect-dac.conf
-│   └── pipewire-pulse.conf.d/
-│       └── 99-bitperfect.conf
-└── wireplumber/
-    └── wireplumber.conf.d/
-        ├── 50-bitperfect-dac.conf
-        └── 50-loopback.conf
-```
+| Source File | Destination in `~/.config/` | Purpose |
+| :--- | :--- | :--- |
+| `plugins/pipewire/50-bitperfect-dac.conf` | `pipewire/pipewire.conf.d/50-bitperfect-dac.conf` | Configures global clock allowed sample rates (44.1 kHz – 768 kHz) and buffer quantum sizes. |
+| `plugins/pipewire-pulse/99-bitperfect.conf` | `pipewire/pipewire-pulse.conf.d/99-bitperfect.conf` | Disables volume normalization and channel mixing in the PulseAudio layer; sets SoXR quality. |
+| `plugins/wireplumber/50-bitperfect-dac.conf` | `wireplumber/wireplumber.conf.d/50-bitperfect-dac.conf` | Dynamic rule matching USB DACs (`~alsa_output.usb-.*`), setting `resample.disable = true` and `audio.format = "S32LE"`. Hotplug-safe. |
+| `plugins/wireplumber/50-loopback.conf` | `wireplumber/wireplumber.conf.d/50-loopback.conf` | Forces ALSA Loopback device (`snd_aloop`) to open in interleaved `S32LE` format for CamillaDSP capture compatibility. |
 
 ---
 
-### Step 1: Identify Your USB DAC Hardware Capabilities
+### Customizing Output Devices & Formats (Optional)
 
-Before creating the configurations, query your DAC's hardware capabilities:
+By default, `50-bitperfect-dac.conf` targets any connected USB audio device (`~alsa_output.usb-.*`). If you want to use a different output device—such as an onboard/PCI soundcard, HDMI audio, or a specific USB DAC model—follow these steps:
 
-1. **Find your DAC's ALSA card number:**
-   ```bash
-   cat /proc/asound/cards
-   ```
-   *(Note the card number `X` corresponding to your USB DAC)*
-
-2. **Check supported sample rates & formats:**
-   ```bash
-   cat /proc/asound/cardX/stream0
-   ```
-   * **Rates:** Look at the `Rates:` line (e.g. `44100, 48000, 88200, 96000, 176400, 192000...`).
-   * **Format:** Look at the `Format:` line under `Playback` (e.g. `S32_LE`, `S24_3LE`, `S16_LE`). Most modern DACs accept `S32LE`.
-
-3. **Find your DAC's WirePlumber node name:**
-   ```bash
-   wpctl status
-   # Locate your DAC sink ID, then inspect it:
-   wpctl inspect <sink-id> | grep 'node.name'
-   ```
-   *(Example: `node.name = "alsa_output.usb-Manufacturer_Model_Serial-00.analog-stereo"`)*
-
----
-
-### Step 2: Configuration Files
-
-#### 1. PipeWire Global Clock & Allowed Sample Rates
-**File:** `~/.config/pipewire/pipewire.conf.d/50-bitperfect-dac.conf`
-
-**Role:** Defines the fallback rate and list of sample rates PipeWire may negotiate with your DAC. When resampling is disabled on the sink, PipeWire dynamically switches the hardware clock rate to match the source file.
-
-```spa-json
-# =============================================================
-# Bit-Perfect Audio Configuration for PipeWire
-# Global clock and allowed rates
-# =============================================================
-
-context.properties = {
-    # Fallback rate when idle — NOT fixed playback rate.
-    default.clock.rate          = 48000
-
-    # Rates PipeWire may negotiate with the DAC.
-    # Set this array to the sample rates supported by your DAC from stream0:
-    default.clock.allowed-rates = [ 44100 48000 88200 96000 176400 192000 352800 384000 705600 768000 ]
-
-    # Buffer quantum settings (1024 ~= 23ms at 44.1kHz)
-    default.clock.quantum       = 1024
-    default.clock.min-quantum   = 32
-    default.clock.max-quantum   = 8192
-}
+#### 1. Identify Your Output Device's Node Name
+Run `wpctl status` to find your target device under `Audio -> Sinks`, then inspect its node name:
+```bash
+wpctl status
+# Inspect using the sink ID (e.g., 45):
+wpctl inspect <sink-id> | grep 'node.name'
 ```
 
----
+Common node patterns:
+- **Any USB DAC (Default):** `~alsa_output.usb-.*`
+- **Specific USB DAC:** `~alsa_output.usb-Topping_.*` *(recommended if you also have a USB headset or microphone connected)*
+- **Internal / Onboard (PCI/PCIe) Soundcard:** `~alsa_output.pci-.*analog-stereo`
+- **HDMI / DisplayPort Audio:** `~alsa_output.pci-.*hdmi-stereo`
+- **Exact Node Name:** `"alsa_output.pci-0000_00_1f.3.analog-stereo"`
 
-#### 2. PipeWire-Pulse Compatibility Layer Tuning
-**File:** `~/.config/pipewire/pipewire-pulse.conf.d/99-bitperfect.conf`
+#### 2. Query Supported Rates and Formats
+Check your soundcard's hardware-supported formats and sample rates:
+```bash
+# For USB DACs:
+cat /proc/asound/cardX/stream0
 
-**Role:** Ensures applications using the PulseAudio API output bit-perfect streams without digital volume attenuation, channel mixing, or unnecessary resampling.
-
-```spa-json
-# =============================================================
-# PipeWire-Pulse Tuning for Bit-Perfect Playback
-# =============================================================
-
-pulse.properties = {
-    pulse.default.format = F32
-}
-
-stream.properties = {
-    # Maximum SoXR resampling quality used ONLY as fallback
-    # (e.g. when multiple streams with different rates play simultaneously)
-    resample.quality = 15
-
-    # Disable channel mixing modifications
-    channelmix.normalize    = false
-    channelmix.upmix        = false
-    channelmix.upmix-method = none
-    channelmix.mix-lfe      = false
-}
+# For PCI / Onboard Soundcards:
+cat /proc/asound/cardX/codec#* | grep -E "rates|formats"
 ```
+*(Find the card number `X` using `cat /proc/asound/cards`)*
 
----
+#### 3. Update WirePlumber Configuration
+Edit `~/.config/wireplumber/wireplumber.conf.d/50-bitperfect-dac.conf`:
+- Set `node.name` to match your device pattern (e.g., `~alsa_output.pci-.*analog-stereo`).
+- Adjust `audio.format` if your hardware accepts a different format (e.g. `"S16LE"`, `"S24LE"`, or `"S32LE"`).
 
-#### 3. WirePlumber Dynamic USB DAC Rule (Hotplug Safe)
-**File:** `~/.config/wireplumber/wireplumber.conf.d/50-bitperfect-dac.conf`
+#### 4. Update PipeWire Allowed Rates
+Edit `~/.config/pipewire/pipewire.conf.d/50-bitperfect-dac.conf`:
+- Adjust `default.clock.allowed-rates` to contain only the rates supported by your device (e.g., `[ 44100 48000 88200 96000 192000 ]`).
 
-**Role:** Dynamically matches your USB DAC whenever connected, disables PipeWire's resampler (`resample.disable = true`), sets the hardware container format (`audio.format`), and assigns high priority (`9000`). 
-
-> **Important**: Applying these properties dynamically via WirePlumber rules (rather than a static `context.objects` sink in `pipewire.conf`) ensures that detaching the USB cable cleanly removes the audio node and falls back to onboard audio without freezing or crashing PipeWire.
-
-```spa-json
-# =============================================================
-# WirePlumber Dynamic Bit-Perfect Rule for USB DAC
-# =============================================================
-
-monitor.alsa.rules = [
-  {
-    matches = [
-      {
-        # Match pattern for your USB DAC node name from `wpctl inspect`.
-        # You can use a specific pattern (e.g., "~alsa_output.usb-My_DAC_Name_.*")
-        # or match any USB audio output: "~alsa_output.usb-.*"
-        node.name = "~alsa_output.usb-Topping_DX3_Pro_.*"
-      }
-    ]
-    actions = {
-      update-props = {
-        # Set to the widest format your DAC accepts from stream0 (typically S32LE, S24LE, S24_3LE, or S16LE)
-        audio.format          = "S32LE"
-
-        # Disable PipeWire sample rate conversion (passes native stream rate to DAC)
-        resample.disable      = true
-
-        # Hardware buffer tuning
-        api.alsa.period-size  = 1024
-        api.alsa.headroom     = 0
-
-        # Prioritize USB DAC over internal soundcards when plugged in
-        priority.driver       = 9000
-        priority.session      = 9000
-      }
-    }
-  }
-]
-```
-
----
-
-#### 4. WirePlumber ALSA Loopback Interleaved Format
-**File:** `~/.config/wireplumber/wireplumber.conf.d/50-loopback.conf`
-
-**Role:** Forces WirePlumber to open the ALSA Loopback device (`snd_aloop`) with interleaved audio format (`S32LE`).
-
-**Why this is needed:** By default, PipeWire opens ALSA PCM sinks using planar (non-interleaved) access mode (`MMAP_NONINTERLEAVED`, format `S32P`). However, the Linux kernel's `snd-aloop` driver strictly requires matching interleaved modes on both ends of the loopback cable. When CamillaDSP attempts to capture using standard interleaved access (`MMAP_INTERLEAVED`), the kernel rejects the capture stream with:
-```text
-Capture error: ALSA function 'snd_pcm_start' failed with error 'I/O error (5)'
-```
-
-```spa-json
-monitor.alsa.rules = [
-  {
-    matches = [
-      {
-        node.name = "~alsa_output.*snd_aloop.*"
-      }
-    ]
-    actions = {
-      update-props = {
-        audio.format = "S32LE"
-      }
-    }
-  }
-]
-```
-
----
-
-## Service Management & Verification
-
-### Restart Audio Services
+#### 5. Apply Changes
+Restart the audio services to reload the modified configuration:
 ```bash
 systemctl --user restart pipewire pipewire-pulse wireplumber
 ```
 
-### Verification Commands
+---
+
+## Verification Commands
 
 ```bash
 # 1. Verify active access mode on the loopback playback endpoint (should show: access: MMAP_INTERLEAVED)
