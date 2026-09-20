@@ -1,13 +1,11 @@
 #include "config/configuration.h"
 
-#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
-#include "backend/file_backend.h"
+#include "backend/audio_backend.h"
 #include "config/config_gen.h"
 #include "filters/filter.h"
 #include "logging/app_logger.h"
@@ -15,280 +13,8 @@
 #include "pipeline/pipeline.h"
 #include "processors/processor.h"
 #include "resampler/audio_resampler.h"
-#include "wav/wav_reader.h"
 
 static const logger_t g_logger = {"dsp.config"};
-
-int dsp_config_apply_overrides(dsp_config_t *config,
-                               const dsp_config_overrides_t *overrides_in,
-                               config_error_t *err) {
-  (void)err;
-  if (!config)
-    return 0;
-
-  dsp_config_overrides_t overrides;
-  if (overrides_in) {
-    overrides = *overrides_in;
-  } else {
-    memset(&overrides, 0, sizeof(overrides));
-    overrides.samplerate = -1;
-    overrides.channels = -1;
-    overrides.extra_samples = -1;
-  }
-
-  // 1. If capture device is WavFile, read WAV info to populate base overrides
-  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE &&
-      config->devices.capture.is_wav &&
-      config->devices.capture.cfg.wav_file.has_filename) {
-    const char *fname = config->devices.capture.cfg.wav_file.filename;
-    wav_info_t wav_info;
-    char wav_err[256];
-    if (wav_read_info_from_file(fname, &wav_info, wav_err, sizeof(wav_err))) {
-      logger_info(
-          &g_logger,
-          "Updating overrides with values from wav input file, rate %u, "
-          "format: %s, channels: %u",
-          wav_info.sample_rate, file_sample_format_to_string(wav_info.format),
-          (unsigned int)wav_info.channels);
-      config->devices.capture.cfg.wav_file.channels = wav_info.channels;
-      overrides.channels = (int)wav_info.channels;
-      overrides.sample_format = wav_info.format;
-      overrides.has_sample_format = true;
-      overrides.samplerate = (int)wav_info.sample_rate;
-    } else {
-      logger_warn(&g_logger, "Failed to read wav header from %s: %s", fname,
-                  wav_err);
-    }
-  }
-
-  // 2. Apply samplerate override
-  if (overrides.samplerate > 0) {
-    size_t rate = (size_t)overrides.samplerate;
-    size_t cfg_rate = config->devices.samplerate;
-    size_t cfg_chunksize = config->devices.chunksize;
-
-    if (!config->devices.has_resampler) {
-      logger_debug(&g_logger, "Apply override for samplerate: %zu", rate);
-      config->devices.samplerate = rate;
-      if (cfg_rate > 0 && cfg_chunksize > 0) {
-        size_t scaled_chunksize = cfg_chunksize;
-        if (rate > cfg_rate) {
-          scaled_chunksize =
-              cfg_chunksize * (size_t)round((double)rate / (double)cfg_rate);
-        } else {
-          size_t divisor = (size_t)round((double)cfg_rate / (double)rate);
-          if (divisor > 0)
-            scaled_chunksize = cfg_chunksize / divisor;
-        }
-        if (scaled_chunksize == 0) {
-          logger_warn(&g_logger,
-                      "Overriding the samplerate to %zu scales chunksize %zu "
-                      "below one frame, using 1",
-                      rate, cfg_chunksize);
-          scaled_chunksize = 1;
-        }
-        logger_debug(&g_logger,
-                     "Samplerate changed, adjusting chunksize: %zu -> %zu",
-                     cfg_chunksize, scaled_chunksize);
-        config->devices.chunksize = scaled_chunksize;
-
-        if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE) {
-          if (!config->devices.capture.is_wav &&
-              config->devices.capture.cfg.raw_file.has_extra_samples) {
-            config->devices.capture.cfg.raw_file.extra_samples =
-                config->devices.capture.cfg.raw_file.extra_samples * rate /
-                cfg_rate;
-          }
-        } else if (config->devices.capture.type ==
-                       AUDIO_BACKEND_TYPE_STDIN_OUT &&
-                   config->devices.capture.cfg.stdin_in.has_extra_samples) {
-          config->devices.capture.cfg.stdin_in.extra_samples =
-              config->devices.capture.cfg.stdin_in.extra_samples * rate /
-              cfg_rate;
-        }
-      }
-    } else {
-      logger_debug(&g_logger, "Apply override for capture_samplerate: %zu",
-                   rate);
-      config->devices.capture_samplerate = rate;
-      config->devices.has_capture_samplerate = true;
-      if (rate == cfg_rate && !config->devices.enable_rate_adjust) {
-        logger_debug(&g_logger, "Disabling unnecessary 1:1 resampling");
-        config->devices.has_resampler = false;
-      }
-    }
-  }
-
-  // 3. Apply extra_samples override
-  if (overrides.has_extra_samples && overrides.extra_samples >= 0) {
-    logger_debug(&g_logger, "Apply override for extra_samples: %d",
-                 overrides.extra_samples);
-    if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE) {
-      if (!config->devices.capture.is_wav) {
-        config->devices.capture.cfg.raw_file.extra_samples =
-            overrides.extra_samples;
-        config->devices.capture.cfg.raw_file.has_extra_samples = true;
-      }
-    } else if (config->devices.capture.type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
-      config->devices.capture.cfg.stdin_in.extra_samples =
-          overrides.extra_samples;
-      config->devices.capture.cfg.stdin_in.has_extra_samples = true;
-    }
-  }
-
-  // 4. Apply channels override
-  if (overrides.channels > 0) {
-    logger_debug(&g_logger, "Apply override for capture channels: %d",
-                 overrides.channels);
-    switch (config->devices.capture.type) {
-    case AUDIO_BACKEND_TYPE_FILE:
-      if (!config->devices.capture.is_wav) {
-        config->devices.capture.cfg.raw_file.channels = overrides.channels;
-      }
-      break;
-    case AUDIO_BACKEND_TYPE_STDIN_OUT:
-      config->devices.capture.cfg.stdin_in.channels = overrides.channels;
-      break;
-    case AUDIO_BACKEND_TYPE_GENERATOR:
-      config->devices.capture.cfg.generator.channels = overrides.channels;
-      break;
-#if defined(ENABLE_ALSA)
-    case AUDIO_BACKEND_TYPE_ALSA:
-      config->devices.capture.cfg.alsa.channels = overrides.channels;
-      break;
-#endif
-#if defined(ENABLE_PIPEWIRE)
-    case AUDIO_BACKEND_TYPE_PIPEWIRE:
-      config->devices.capture.cfg.pipewire.channels = overrides.channels;
-      break;
-#endif
-#if defined(ENABLE_COREAUDIO)
-    case AUDIO_BACKEND_TYPE_CORE_AUDIO:
-      config->devices.capture.cfg.coreaudio.channels = overrides.channels;
-      break;
-#endif
-#if defined(ENABLE_WASAPI)
-    case AUDIO_BACKEND_TYPE_WASAPI:
-      config->devices.capture.cfg.wasapi.channels = overrides.channels;
-      break;
-#endif
-#if defined(ENABLE_ASIO)
-    case AUDIO_BACKEND_TYPE_ASIO:
-      config->devices.capture.cfg.asio.channels = overrides.channels;
-      break;
-#endif
-    case AUDIO_BACKEND_TYPE_INVALID:
-      break;
-    }
-  }
-
-  // 5. Apply sample_format override
-  if (overrides.has_sample_format) {
-    switch (config->devices.capture.type) {
-    case AUDIO_BACKEND_TYPE_FILE:
-      if (!config->devices.capture.is_wav) {
-        config->devices.capture.cfg.raw_file.format = overrides.sample_format;
-        config->devices.capture.cfg.raw_file.has_format = true;
-        logger_debug(&g_logger, "Apply override for capture sample format: %s",
-                     file_sample_format_to_string(overrides.sample_format));
-      }
-      break;
-    case AUDIO_BACKEND_TYPE_STDIN_OUT:
-      config->devices.capture.cfg.stdin_in.format = overrides.sample_format;
-      logger_debug(&g_logger, "Apply override for capture sample format: %s",
-                   file_sample_format_to_string(overrides.sample_format));
-      break;
-#if defined(ENABLE_ALSA)
-    case AUDIO_BACKEND_TYPE_ALSA: {
-      alsa_sample_format_t alsa_fmt =
-          alsa_sample_format_from_binary_format(overrides.sample_format);
-      if (alsa_fmt != ALSA_SAMPLE_FORMAT_INVALID) {
-        config->devices.capture.cfg.alsa.format = alsa_fmt;
-        config->devices.capture.cfg.alsa.has_format = true;
-        logger_debug(&g_logger, "Apply override for capture sample format: %s",
-                     alsa_sample_format_to_string(alsa_fmt));
-      }
-      break;
-    }
-#endif
-#if defined(ENABLE_PIPEWIRE)
-    case AUDIO_BACKEND_TYPE_PIPEWIRE:
-      logger_error(
-          &g_logger,
-          "Not possible to override capture format for PipeWire, ignoring");
-      break;
-#endif
-#if defined(ENABLE_COREAUDIO)
-    case AUDIO_BACKEND_TYPE_CORE_AUDIO: {
-      coreaudio_sample_format_t ca_fmt =
-          coreaudio_sample_format_from_binary_format(overrides.sample_format);
-      if (ca_fmt != COREAUDIO_SAMPLE_FORMAT_INVALID) {
-        config->devices.capture.cfg.coreaudio.format = ca_fmt;
-        config->devices.capture.cfg.coreaudio.has_format = true;
-        logger_debug(&g_logger, "Apply override for capture sample format: %s",
-                     coreaudio_sample_format_to_string(ca_fmt));
-      } else {
-        char msg[256];
-        snprintf(msg, sizeof(msg),
-                 "CoreAudio does not have a sample format corresponding to %s",
-                 file_sample_format_to_string(overrides.sample_format));
-        config_error_set(err, CONFIG_ERR_PARSE, "%s", msg);
-        logger_error(&g_logger, "%s", msg);
-        return -1;
-      }
-      break;
-    }
-#endif
-#if defined(ENABLE_WASAPI)
-    case AUDIO_BACKEND_TYPE_WASAPI: {
-      wasapi_sample_format_t wasapi_fmt =
-          wasapi_sample_format_from_binary_format(overrides.sample_format);
-      if (wasapi_fmt != WASAPI_SAMPLE_FORMAT_INVALID) {
-        config->devices.capture.cfg.wasapi.format = wasapi_fmt;
-        config->devices.capture.cfg.wasapi.has_format = true;
-        logger_debug(&g_logger, "Apply override for capture sample format: %s",
-                     wasapi_sample_format_to_string(wasapi_fmt));
-      } else {
-        char msg[256];
-        snprintf(msg, sizeof(msg),
-                 "Wasapi does not have a sample format corresponding to %s",
-                 file_sample_format_to_string(overrides.sample_format));
-        config_error_set(err, CONFIG_ERR_PARSE, "%s", msg);
-        logger_error(&g_logger, "%s", msg);
-        return -1;
-      }
-      break;
-    }
-#endif
-#if defined(ENABLE_ASIO)
-    case AUDIO_BACKEND_TYPE_ASIO: {
-      asio_sample_format_t asio_fmt =
-          asio_sample_format_from_binary_format(overrides.sample_format);
-      if (asio_fmt != ASIO_SAMPLE_FORMAT_INVALID) {
-        config->devices.capture.cfg.asio.format = asio_fmt;
-        config->devices.capture.cfg.asio.has_format = true;
-        logger_debug(&g_logger, "Apply override for capture sample format: %s",
-                     asio_sample_format_to_string(asio_fmt));
-      } else {
-        char msg[256];
-        snprintf(msg, sizeof(msg),
-                 "ASIO does not have a sample format corresponding to %s",
-                 file_sample_format_to_string(overrides.sample_format));
-        config_error_set(err, CONFIG_ERR_PARSE, "%s", msg);
-        logger_error(&g_logger, "%s", msg);
-        return -1;
-      }
-      break;
-    }
-#endif
-    case AUDIO_BACKEND_TYPE_GENERATOR:
-    case AUDIO_BACKEND_TYPE_INVALID:
-      break;
-    }
-  }
-
-  return 0;
-}
 
 // Top-level configuration validation and memory management.
 
@@ -360,77 +86,6 @@ int dsp_config_validate(const dsp_config_t *config, config_error_t *err) {
                      "Playback channels must be positive");
     return -1;
   }
-  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_FILE) {
-    if (config->devices.playback.cfg.raw_file.wav_header &&
-        config->devices.playback.cfg.raw_file.format ==
-            BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
-      config_error_set(
-          err, CONFIG_ERR_INVALID_DEVICE,
-          "Wav files do not support the S24_4_RJ_LE sample format");
-      return -1;
-    }
-  }
-
-  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE) {
-    const char *fname = config->devices.capture.is_wav
-                            ? config->devices.capture.cfg.wav_file.filename
-                            : config->devices.capture.cfg.raw_file.filename;
-    FILE *fp = (fname && fname[0] != '\0') ? fopen(fname, "rb") : NULL;
-    if (!fp) {
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "Could not open input file '%s'", fname ? fname : "");
-      return -1;
-    }
-    fclose(fp);
-  }
-
-#if defined(ENABLE_WASAPI)
-  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_WASAPI) {
-    const wasapi_capture_config_t *wcap = &config->devices.capture.cfg.wasapi;
-    if (!wcap->exclusive && wcap->has_format &&
-        wcap->format != WASAPI_SAMPLE_FORMAT_F32) {
-      config_error_set(
-          err, CONFIG_ERR_INVALID_DEVICE,
-          "Wasapi capture in shared mode only supports the F32 format");
-      return -1;
-    }
-    if (wcap->loopback && wcap->exclusive) {
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "Wasapi loopback capture only supported in shared mode");
-      return -1;
-    }
-  }
-  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_WASAPI) {
-    const wasapi_playback_config_t *wplay =
-        &config->devices.playback.cfg.wasapi;
-    if (!wplay->exclusive && wplay->has_format &&
-        wplay->format != WASAPI_SAMPLE_FORMAT_F32) {
-      config_error_set(
-          err, CONFIG_ERR_INVALID_DEVICE,
-          "Wasapi playback in shared mode only supports the F32 format");
-      return -1;
-    }
-  }
-#endif
-
-#if defined(ENABLE_ASIO)
-  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_ASIO &&
-      config->devices.playback.type == AUDIO_BACKEND_TYPE_ASIO) {
-    // Capture and playback on the same device share a single driver instance,
-    // and therefore a single clock and sample rate, so there is nothing to
-    // resample between. Different devices are independent and resample like any
-    // other pair.
-    if (strcmp(config->devices.capture.cfg.asio.device,
-               config->devices.playback.cfg.asio.device) == 0 &&
-        config->devices.has_resampler) {
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "Resampling is not supported in full-duplex ASIO mode. "
-                       "Both capture and playback share the same driver and "
-                       "sample rate");
-      return -1;
-    }
-  }
-#endif
 
   if (config->devices.has_silence_timeout_s &&
       config->devices.silence_timeout_s < 0.0) {
@@ -469,30 +124,6 @@ int dsp_config_validate(const dsp_config_t *config, config_error_t *err) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "queuelimit cannot be negative");
     return -1;
-  }
-  if (config->devices.chunksize == 0) {
-    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                     "chunksize must be positive");
-    return -1;
-  }
-  int64_t target_limit = (2 + qlimit_val) * (int64_t)config->devices.chunksize;
-#if defined(ENABLE_ALSA)
-  if (config->devices.playback.type == AUDIO_BACKEND_TYPE_ALSA) {
-    target_limit = (4 + qlimit_val) * (int64_t)config->devices.chunksize;
-  }
-#endif
-  if (config->devices.has_target_level) {
-    if (config->devices.target_level < 0) {
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "target_level must be a non-negative integer");
-      return -1;
-    }
-    if ((int64_t)config->devices.target_level > target_limit) {
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "target_level cannot be larger than %lld",
-                       (long long)target_limit);
-      return -1;
-    }
   }
 
   if (config->devices.has_worker_threads &&
@@ -545,28 +176,10 @@ int dsp_config_validate(const dsp_config_t *config, config_error_t *err) {
     }
   }
 
-#if defined(ENABLE_COREAUDIO)
-  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_CORE_AUDIO &&
-      config->devices.playback.type == AUDIO_BACKEND_TYPE_CORE_AUDIO &&
-      config->devices.capture.cfg.coreaudio.loopback &&
-      config->devices.has_resampler) {
-    const char *cap_dev = config->devices.capture.cfg.coreaudio.has_device
-                              ? config->devices.capture.cfg.coreaudio.device
-                              : "";
-    const char *pb_dev = config->devices.playback.cfg.coreaudio.has_device
-                             ? config->devices.playback.cfg.coreaudio.device
-                             : "";
-    if (strcasecmp(cap_dev, pb_dev) == 0) {
-      config_error_set(
-          err, CONFIG_ERR_INVALID_DEVICE,
-          "Resampling is not supported when CoreAudio loopback captures from "
-          "the "
-          "playback device. Both capture and playback share the same hardware "
-          "clock and sample rate");
-      return -1;
-    }
+  // Validate audio backends
+  if (audio_backend_validate_devices(&config->devices, err) != 0) {
+    return -1;
   }
-#endif
 
   // Validate pipeline structure and channel routing
   return pipeline_config_validate(config, err);

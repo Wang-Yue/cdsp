@@ -12,6 +12,8 @@
 
 #include "audio/audio_chunk.h"
 #include "backend/backend_error.h"
+#include "config/config_error.h"
+#include "config/config_gen.h"
 #include "config/engine_config_types.h"
 #include "utils/lock_free_ring_buffer.h"
 
@@ -22,6 +24,37 @@
  * Defines the Virtual Method Tables (vtables) and wrappers for the
  * capture and playback backends used by the CamillaDSP-Monitor engine.
  */
+
+/**
+ * @brief Validates backend-specific device configurations.
+ *
+ * Checks device constraints for active capture and playback backends (e.g.
+ * File backend access/formats, WASAPI format/loopback rules, ASIO full-duplex
+ * resampling, CoreAudio loopback matching, and target buffering limits).
+ *
+ * @param devices Pointer to devices configuration.
+ * @param[out] err Configuration error sink.
+ * @return 0 on success, -1 on validation failure.
+ */
+int audio_backend_validate_devices(const devices_config_t *devices,
+                                   config_error_t *err);
+
+/**
+ * @brief Applies command-line and WAV file overrides to the device
+ * configuration.
+ *
+ * Updates sample rates, chunk sizes, channel counts, format conversions, and
+ * probes input WAV headers when applicable.
+ *
+ * @param devices Pointer to devices configuration to update.
+ * @param overrides_in Pointer to override parameters (may be NULL for
+ * defaults).
+ * @param[out] err Configuration error sink.
+ * @return 0 on success, -1 on error.
+ */
+int audio_backend_apply_device_overrides(
+    devices_config_t *devices, const dsp_config_overrides_t *overrides_in,
+    config_error_t *err);
 
 typedef struct capture_backend capture_backend_t;
 typedef struct playback_backend playback_backend_t;

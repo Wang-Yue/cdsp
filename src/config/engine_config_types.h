@@ -474,4 +474,17 @@ void capture_device_config_set_channels(capture_device_config_t *config,
  */
 void free_audio_device_descriptor(audio_device_descriptor_t *desc);
 
+/**
+ * @brief Active command-line or programmatic configuration overrides.
+ */
+typedef struct {
+  int samplerate; /**< Overridden sample rate (> 0), or -1 / 0 if none. */
+  int channels;   /**< Overridden capture channels (> 0), or -1 / 0 if none. */
+  binary_sample_format_t
+      sample_format;      /**< Overridden capture sample format. */
+  bool has_sample_format; /**< True if sample_format is set. */
+  int extra_samples; /**< Overridden extra samples (>= 0), or -1 if none. */
+  bool has_extra_samples; /**< True if extra_samples is set. */
+} dsp_config_overrides_t;
+
 #endif // CLIB_CONFIG_ENGINE_CONFIG_TYPES_H

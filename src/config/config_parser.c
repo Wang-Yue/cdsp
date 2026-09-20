@@ -20,6 +20,7 @@
 #include <unistd.h>
 #endif
 
+#include "backend/audio_backend.h"
 #include "config/cJSON.h"
 #include "config/config_error.h"
 #include "config/config_parser.h"
@@ -601,7 +602,8 @@ int dsp_config_parse_json_with_dir_and_overrides_ext(
   cJSON_Delete(root);
 
   // Apply WAV file and command-line overrides
-  if (dsp_config_apply_overrides(config, overrides, err) != 0) {
+  if (audio_backend_apply_device_overrides(&config->devices, overrides, err) !=
+      0) {
     dsp_config_free(config);
     return -1;
   }
