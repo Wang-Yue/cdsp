@@ -154,6 +154,10 @@ The compiled binaries will be placed in `build/bin/`:
 > cmake -B build -S . -DENABLE_STATIC_WINDOWS=OFF
 > cmake --build build -j
 > ```
+> 
+> **Parallelization (OpenMP vs. libdispatch / GCD)**:
+> - **OpenMP (`ENABLE_OPENMP=ON`, default)**: Supports fully static linking via GCC's `libgomp.a` with zero external DLLs.
+> - **libdispatch (`-DENABLE_OPENMP=OFF -DENABLE_LIBDISPATCH=ON`)**: Supported on Windows via `mingw-w64-ucrt-x86_64-libdispatch`. Because MSYS2 packages `libdispatch` solely as a shared dynamic library (`libdispatch.dll`), using `libdispatch` on Windows requires dynamic linking (`-DENABLE_STATIC_WINDOWS=OFF`).
 
 #### 2. Headless Build (Core Engine & CLI Daemon Only)
 
