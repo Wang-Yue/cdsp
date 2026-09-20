@@ -101,6 +101,14 @@ if(ENABLE_RUST_BACKEND)
         set_target_properties(cdsp::dsp PROPERTIES
             INTERFACE_LINK_LIBRARIES "-framework CoreAudio;-framework AudioToolbox;-framework Security;-framework SystemConfiguration"
         )
+    elseif(WIN32)
+        set_target_properties(cdsp::dsp PROPERTIES
+            INTERFACE_LINK_LIBRARIES "ole32;oleaut32;ksuser;avrt;winmm;ws2_32;userenv;bcrypt;ntdll;synchronization"
+        )
+    elseif(UNIX)
+        set_target_properties(cdsp::dsp PROPERTIES
+            INTERFACE_LINK_LIBRARIES "asound;pthread;dl;m;rt"
+        )
     endif()
 else()
     if(NOT TARGET cdsp::dsp)
