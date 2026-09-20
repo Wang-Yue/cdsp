@@ -8,7 +8,6 @@
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
 #include "config/config_error.h"
-#include "config/config_gen.h"
 #include "config/configuration.h"
 #include "config/engine_config_types.h"
 #include "filters/biquad.h"

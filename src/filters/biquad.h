@@ -7,7 +7,10 @@
  * management.
  */
 
-#include "config/config_gen.h"
+#include <stdbool.h>
+#include <stddef.h>
+
+typedef struct filter_config_t filter_config_t;
 
 typedef struct biquad_filter biquad_filter_t;
 

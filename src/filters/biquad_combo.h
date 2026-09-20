@@ -10,8 +10,9 @@
 #include <stddef.h>
 
 #include "config/config_error.h"
-#include "config/config_gen.h"
 #include "filters/biquad.h"
+
+typedef struct biquad_combo_config_t biquad_combo_config_t;
 
 struct filter_vtable;
 

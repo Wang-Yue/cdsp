@@ -36,8 +36,9 @@
 
 #include "audio/audio_chunk.h"
 #include "config/config_error.h"
-#include "config/config_gen.h"
 #include "utils/double_helpers.h"
+
+typedef struct mixer_config_t mixer_config_t;
 
 /**
  * @brief Error codes returned by mixer processing functions.

@@ -16,11 +16,12 @@
 
 #include "audio/audio_chunk.h"
 #include "config/config_error.h"
-#include "config/config_gen.h"
 #include "processors/compressor_processor.h"
 #include "processors/lookahead_limiter_processor.h"
 #include "processors/noise_gate_processor.h"
 #include "processors/race_processor.h"
+
+typedef struct processor_config_t processor_config_t;
 
 /**
  * @brief Enumeration of concrete processor implementation types.

@@ -6,8 +6,6 @@
  * @brief Gain filter implementation.
  */
 
-#include "config/config_gen.h"
-
 typedef struct gain_filter gain_filter_t;
 
 /**

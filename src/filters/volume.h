@@ -9,7 +9,6 @@
 #include <stdbool.h>
 
 #include "audio/processing_parameters.h"
-#include "config/config_gen.h"
 
 typedef struct volume_filter volume_filter_t;
 

@@ -6,8 +6,6 @@
  * @brief Simple peak/soft clipper implementation.
  */
 
-#include "config/config_gen.h"
-
 struct filter_vtable;
 
 extern const struct filter_vtable g_clipper_vtable;

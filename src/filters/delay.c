@@ -129,7 +129,8 @@ static void delay_filter_free(void *instance) {
  * @param sample_rate The audio sample rate in Hz.
  * @return The delay in samples.
  */
-double compute_delay_samples(double delay, delay_unit_t unit, int sample_rate) {
+static double compute_delay_samples(double delay, delay_unit_t unit,
+                                    int sample_rate) {
   switch (unit) {
   case DELAY_UNIT_MS:
     return delay / 1000.0 * (double)sample_rate;

@@ -17,8 +17,9 @@
 
 #include "audio/audio_chunk.h"
 #include "config/config_error.h"
-#include "config/config_gen.h"
 #include "resampler/resampler_error.h"
+
+typedef struct resampler_config_t resampler_config_t;
 
 /**
  * @brief Identifiers for the underlying resampler implementations.

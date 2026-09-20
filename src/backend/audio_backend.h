@@ -13,9 +13,12 @@
 #include "audio/audio_chunk.h"
 #include "backend/backend_error.h"
 #include "config/config_error.h"
-#include "config/config_gen.h"
 #include "config/engine_config_types.h"
 #include "utils/lock_free_ring_buffer.h"
+
+typedef struct devices_config_t devices_config_t;
+typedef struct capture_device_config_t capture_device_config_t;
+typedef struct playback_device_config_t playback_device_config_t;
 
 /**
  * @file audio_backend.h

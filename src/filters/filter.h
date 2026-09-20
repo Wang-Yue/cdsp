@@ -14,7 +14,6 @@
 
 #include "audio/processing_parameters.h"
 #include "config/config_error.h"
-#include "config/config_gen.h"
 #include "filters/biquad.h"
 #include "utils/double_helpers.h"
 
