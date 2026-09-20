@@ -465,7 +465,7 @@ STRUCT_MIXER = StructType(
 FILTER_EXTRA_KEYS = ["type", "description"]
 PROCESSOR_EXTRA_KEYS = ["type", "description"]
 CAPTURE_EXTRA_KEYS = ["type", "labels", "bypass_dop", "dop_cutoff_hz", "description"]
-PLAYBACK_EXTRA_KEYS = ["type", "labels", "output_dop", "dsd_encoder_filter", "description"]
+PLAYBACK_EXTRA_KEYS = ["type", "output_dop", "dsd_encoder_filter", "description"]
 
 # Processor Structs
 STRUCT_COMPRESSOR = StructType(
@@ -1162,7 +1162,6 @@ UNION_PLAYBACK = TaggedUnionType(
     tag_field="type",
     union_field="cfg",
     extra_fields=[
-        Field("labels", ArrayType(StringType(128)), has_flag=True, allow_null_items=True),
         Field("is_wav", TYPE_BOOL, has_flag=True),
         Field("output_dop", TYPE_BOOL, has_flag=True, default=False),
         Field("dsd_encoder_filter", ENUM_SDM_FILTER, has_flag=True, default="SDM_FILTER_SDM6"),

@@ -3370,7 +3370,7 @@ int parse_coreaudio_playback_config(const cJSON *obj, const char *ctx, coreaudio
   }
   coreaudio_playback_config_init(out);
 
-  static const char *const allowed_keys[] = {"channels", "device", "format", "exclusive", "target_level", "type", "labels", "output_dop", "dsd_encoder_filter", "description", NULL};
+  static const char *const allowed_keys[] = {"channels", "device", "format", "exclusive", "target_level", "type", "output_dop", "dsd_encoder_filter", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "coreaudio_playback_config", err) != 0) return -1;
 
   static const char *const req_keys[] = {"channels", NULL};
@@ -3551,7 +3551,7 @@ int parse_alsa_playback_config(const cJSON *obj, const char *ctx, alsa_playback_
   }
   alsa_playback_config_init(out);
 
-  static const char *const allowed_keys[] = {"channels", "device", "format", "target_level", "threaded", "type", "labels", "output_dop", "dsd_encoder_filter", "description", NULL};
+  static const char *const allowed_keys[] = {"channels", "device", "format", "target_level", "threaded", "type", "output_dop", "dsd_encoder_filter", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "alsa_playback_config", err) != 0) return -1;
 
   static const char *const req_keys[] = {"channels", "device", NULL};
@@ -3717,7 +3717,7 @@ int parse_pipewire_playback_config(const cJSON *obj, const char *ctx, pipewire_p
   }
   pipewire_playback_config_init(out);
 
-  static const char *const allowed_keys[] = {"channels", "device", "node_name", "node_description", "node_group_name", "autoconnect_to", "target_level", "type", "labels", "output_dop", "dsd_encoder_filter", "description", NULL};
+  static const char *const allowed_keys[] = {"channels", "device", "node_name", "node_description", "node_group_name", "autoconnect_to", "target_level", "type", "output_dop", "dsd_encoder_filter", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "pipewire_playback_config", err) != 0) return -1;
 
   static const char *const req_keys[] = {"channels", NULL};
@@ -3880,7 +3880,7 @@ int parse_stdout_playback_config(const cJSON *obj, const char *ctx, stdout_playb
   }
   stdout_playback_config_init(out);
 
-  static const char *const allowed_keys[] = {"channels", "format", "wav_header", "type", "labels", "output_dop", "dsd_encoder_filter", "description", NULL};
+  static const char *const allowed_keys[] = {"channels", "format", "wav_header", "type", "output_dop", "dsd_encoder_filter", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "stdout_playback_config", err) != 0) return -1;
 
   static const char *const req_keys[] = {"channels", "format", NULL};
@@ -4044,7 +4044,7 @@ int parse_wasapi_playback_config(const cJSON *obj, const char *ctx, wasapi_playb
   }
   wasapi_playback_config_init(out);
 
-  static const char *const allowed_keys[] = {"channels", "device", "format", "exclusive", "polling", "target_level", "type", "labels", "output_dop", "dsd_encoder_filter", "description", NULL};
+  static const char *const allowed_keys[] = {"channels", "device", "format", "exclusive", "polling", "target_level", "type", "output_dop", "dsd_encoder_filter", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "wasapi_playback_config", err) != 0) return -1;
 
   static const char *const req_keys[] = {"channels", NULL};
@@ -4203,7 +4203,7 @@ int parse_asio_playback_config(const cJSON *obj, const char *ctx, asio_playback_
   }
   asio_playback_config_init(out);
 
-  static const char *const allowed_keys[] = {"channels", "device", "format", "type", "labels", "output_dop", "dsd_encoder_filter", "description", NULL};
+  static const char *const allowed_keys[] = {"channels", "device", "format", "type", "output_dop", "dsd_encoder_filter", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "asio_playback_config", err) != 0) return -1;
 
   static const char *const req_keys[] = {"channels", NULL};
@@ -4438,7 +4438,7 @@ int parse_raw_file_playback_config(const cJSON *obj, const char *ctx, raw_file_p
   }
   raw_file_playback_config_init(out);
 
-  static const char *const allowed_keys[] = {"filename", "format", "channels", "wav_header", "use_rf64", "realtime", "type", "labels", "output_dop", "dsd_encoder_filter", "description", NULL};
+  static const char *const allowed_keys[] = {"filename", "format", "channels", "wav_header", "use_rf64", "realtime", "type", "output_dop", "dsd_encoder_filter", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "raw_file_playback_config", err) != 0) return -1;
 
   static const char *const req_keys[] = {"filename", "format", "channels", NULL};
@@ -4824,12 +4824,6 @@ void playback_device_config_init(playback_device_config_t *out) {
 
 void free_playback_device_config_contents(playback_device_config_t *in) {
   if (!in) return;
-  if (in->labels) {
-    for (size_t i = 0; i < in->labels_count; i++) { free(in->labels[i]); }
-    free(in->labels);
-    in->labels = NULL;
-    in->labels_count = 0;
-  }
   switch (in->type) {
     #if defined(ENABLE_COREAUDIO)
     case AUDIO_BACKEND_TYPE_CORE_AUDIO: free_coreaudio_playback_config_contents(&in->cfg.coreaudio); break;
@@ -4869,13 +4863,6 @@ int parse_playback_device_config(const cJSON *obj, const char *ctx, playback_dev
   if (strcmp(type_str, "Stdin") == 0 || strcmp(type_str, "WavFile") == 0 || strcmp(type_str, "RawFile") == 0) {
     config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'File', 'Wasapi', 'Asio'", type_str);
     return -1;
-  }
-  cJSON *arr_labels = cJSON_GetObjectItemCaseSensitive(obj, "labels");
-  if (arr_labels) {
-    if (parse_labels_array_strict(arr_labels, &out->labels, &out->labels_count, &out->has_labels) != 0) {
-      config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be an array of strings", "labels", ctx ? ctx : "playback_device_config");
-      return -1;
-    }
   }
   if (parse_json_bool_strict(obj, "is_wav", ctx ? ctx : "playback_device_config", &out->is_wav, &out->has_is_wav, err) != 0) return -1;
   if (parse_json_bool_strict(obj, "output_dop", ctx ? ctx : "playback_device_config", &out->output_dop, &out->has_output_dop, err) != 0) return -1;
@@ -4989,14 +4976,6 @@ cJSON *serialize_playback_device_config(const playback_device_config_t *in) {
     case AUDIO_BACKEND_TYPE_INVALID: break;
   }
   if (!obj) return NULL;
-  if (in->has_labels && in->labels) {
-    cJSON *arr = cJSON_CreateArray();
-    for (size_t i = 0; i < in->labels_count; i++) {
-      if (in->labels[i]) cJSON_AddItemToArray(arr, cJSON_CreateString(in->labels[i]));
-      else cJSON_AddItemToArray(arr, cJSON_CreateNull());
-    }
-    cJSON_AddItemToObject(obj, "labels", arr);
-  }
   if (in->has_output_dop) cJSON_AddBoolToObject(obj, "output_dop", in->output_dop);
   if (in->has_dsd_encoder_filter) cJSON_AddStringToObject(obj, "dsd_encoder_filter", sdm_filter_to_string(in->dsd_encoder_filter));
   return obj;
@@ -5006,17 +4985,6 @@ bool playback_device_config_equal(const playback_device_config_t *a, const playb
   if (a == b) return true;
   if (!a || !b) return false;
   if (a->type != b->type) return false;
-  if (a->has_labels != b->has_labels) return false;
-  if (a->has_labels) {
-    if (a->labels_count != b->labels_count) return false;
-    if (a->labels_count > 0) {
-      if (!a->labels || !b->labels) return false;
-      for (size_t i = 0; i < a->labels_count; i++) {
-        if ((a->labels[i] == NULL) != (b->labels[i] == NULL)) return false;
-        if (a->labels[i] && strcmp(a->labels[i], b->labels[i]) != 0) return false;
-      }
-    }
-  }
   if (a->has_is_wav != b->has_is_wav) return false;
   if (a->has_is_wav) {
     if (a->is_wav != b->is_wav) return false;

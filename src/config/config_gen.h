@@ -907,9 +907,6 @@ struct capture_device_config_t {
 /** Tagged Union: playback_device_config */
 struct playback_device_config_t {
   audio_backend_type_t type;
-  bool has_labels;
-  char * *labels;
-  size_t labels_count;
   bool has_is_wav;
   bool is_wav;
   bool has_output_dop;

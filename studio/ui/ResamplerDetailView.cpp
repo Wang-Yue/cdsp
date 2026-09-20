@@ -41,7 +41,7 @@ void ResamplerDetailView::setupUi() {
     headerBox->addStretch();
 
     m_enabledCheck = new QCheckBox("Enabled", this);
-    connect(m_enabledCheck, &QCheckBox::toggled, [this](bool checked) {
+    connect(m_enabledCheck, &QCheckBox::toggled, [this](bool) {
         if (m_isUpdatingUi || !m_settings)
             return;
         updateVisibility();

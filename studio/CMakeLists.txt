@@ -72,19 +72,29 @@ if(ENABLE_RUST_BACKEND)
     
     add_custom_command(
         OUTPUT "${RUST_LIB_STATIC}"
-        COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${CARGO_EXECUTABLE} build ${RUST_BUILD_FLAG}
+        COMMAND ${CMAKE_COMMAND} -E env "RUSTFLAGS=-C target-cpu=native" CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${CARGO_EXECUTABLE} build ${RUST_BUILD_FLAG}
         WORKING_DIRECTORY "${RUST_ENGINE_DIR}"
         DEPENDS "${RUST_ENGINE_DIR}/Cargo.toml" "${RUST_ENGINE_DIR}/src/lib.rs"
-        COMMENT "Building Rust CamillaDSP engine static library..."
+        COMMENT "Building Rust CamillaDSP engine static library with target-cpu=native..."
         VERBATIM
     )
     
     add_custom_target(cdsp_rust_engine_target DEPENDS "${RUST_LIB_STATIC}")
     
+    set(RUST_BACKEND_DEFS "ENABLE_RUST_BACKEND=1")
+    if(APPLE)
+        list(APPEND RUST_BACKEND_DEFS "ENABLE_COREAUDIO=1")
+    elseif(WIN32)
+        list(APPEND RUST_BACKEND_DEFS "ENABLE_WASAPI=1" "ENABLE_ASIO=1")
+    elseif(UNIX)
+        list(APPEND RUST_BACKEND_DEFS "ENABLE_ALSA=1" "ENABLE_PIPEWIRE=1")
+    endif()
+
     add_library(cdsp::dsp STATIC IMPORTED GLOBAL)
     set_target_properties(cdsp::dsp PROPERTIES
         IMPORTED_LOCATION "${RUST_LIB_STATIC}"
         INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/../include"
+        INTERFACE_COMPILE_DEFINITIONS "${RUST_BACKEND_DEFS}"
     )
     add_dependencies(cdsp::dsp cdsp_rust_engine_target)
     if(APPLE)

@@ -831,7 +831,13 @@ TEST(ParseChannelLabels) {
       "            \"type\": \"File\",\n"
       "            \"filename\": \"/dev/null\",\n"
       "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 4,\n"
+      "            \"channels\": 4\n"
+      "        }\n"
+      "    },\n"
+      "    \"mixers\": {\n"
+      "        \"mymixer\": {\n"
+      "            \"channels\": {\"in\": 4, \"out\": 4},\n"
+      "            \"mapping\": [],\n"
       "            \"labels\": [\"OutputLeft\", null, \"OutputRight\", null]\n"
       "        }\n"
       "    }\n"
@@ -854,13 +860,15 @@ TEST(ParseChannelLabels) {
   ASSERT_TRUE(config->devices.capture.labels[2] == NULL);
   ASSERT_STR_EQ("Center", config->devices.capture.labels[3]);
 
-  // Verify playback labels
-  ASSERT_TRUE(config->devices.playback.has_labels);
-  ASSERT_EQ(4, config->devices.playback.labels_count);
-  ASSERT_STR_EQ("OutputLeft", config->devices.playback.labels[0]);
-  ASSERT_TRUE(config->devices.playback.labels[1] == NULL);
-  ASSERT_STR_EQ("OutputRight", config->devices.playback.labels[2]);
-  ASSERT_TRUE(config->devices.playback.labels[3] == NULL);
+  // Verify mixer labels
+  mixer_config_t *mixer = dsp_config_get_mixer(config, "mymixer");
+  ASSERT_TRUE(mixer != NULL);
+  ASSERT_TRUE(mixer->has_labels);
+  ASSERT_EQ(4, mixer->labels_count);
+  ASSERT_STR_EQ("OutputLeft", mixer->labels[0]);
+  ASSERT_TRUE(mixer->labels[1] == NULL);
+  ASSERT_STR_EQ("OutputRight", mixer->labels[2]);
+  ASSERT_TRUE(mixer->labels[3] == NULL);
 
   dsp_config_free(config);
 }

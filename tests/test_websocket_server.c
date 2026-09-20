@@ -500,7 +500,7 @@ TEST(test_websocket_handle_command_direct) {
       "\"capture\":{\"type\":\"RawFile\",\"filename\":\"in.raw\",\"format\":"
       "\"S16_LE\",\"channels\":1,\"labels\":[\"Mic\"]},"
       "\"playback\":{\"type\":\"File\",\"filename\":\"out.raw\",\"format\":"
-      "\"S16_LE\",\"channels\":2,\"labels\":[\"Left\",\"Right\"]}}}");
+      "\"S16_LE\",\"channels\":2}}}");
   websocket_server_handle_command(
       server, 0, "{\"command\":\"GetChannelLabels\"}", resp, sizeof(resp));
   root = cJSON_Parse(resp);

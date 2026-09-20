@@ -1127,6 +1127,15 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
 }
 
 void DevicePickerView::updateDoPCapability() {
+#if defined(ENABLE_RUST_BACKEND)
+    if (m_outputDoPCheck)
+        m_outputDoPCheck->hide();
+    if (m_sdmFilterCombo)
+        m_sdmFilterCombo->hide();
+    if (m_pbDopHintLabel)
+        m_pbDopHintLabel->hide();
+    return;
+#else
     if (!m_pbRateCombo || !m_outputDoPCheck || !m_sdmFilterCombo || !m_pbDopHintLabel)
         return;
     int currentRate = m_pbRateCombo->currentData().toInt();
@@ -1155,6 +1164,7 @@ void DevicePickerView::updateDoPCapability() {
         }
     }
     m_pbDopHintLabel->setVisible(!isCapable);
+#endif
 }
 
 QWidget* DevicePickerView::createPbFileView(bool isWav) {
@@ -1343,10 +1353,6 @@ void DevicePickerView::refreshUi() {
 #if defined(ENABLE_WASAPI)
     isPbWasapi = m_devices->playbackConfig.backend == AudioBackendType::WASAPI;
 #endif
-    bool isPbCoreAudio = false;
-#if defined(ENABLE_COREAUDIO)
-    isPbCoreAudio = m_devices->playbackConfig.backend == AudioBackendType::CoreAudio;
-#endif
     bool isPbAlsa = false;
 #if defined(ENABLE_ALSA)
     isPbAlsa = m_devices->playbackConfig.backend == AudioBackendType::ALSA;
@@ -1467,7 +1473,11 @@ void DevicePickerView::refreshUi() {
     }
 
     // Capture DoP
+#if defined(ENABLE_RUST_BACKEND)
+    bool capDopVisible = false;
+#else
     bool capDopVisible = !isCapPw && isHardwareBackend(m_devices->captureConfig.backend);
+#endif
     if (m_capCoreAudioForm) {
         m_capCoreAudioForm->setRowVisible(m_bypassDoPCheck, capDopVisible);
         m_capCoreAudioForm->setRowVisible(m_dopCutoffCombo, capDopVisible);
@@ -1494,12 +1504,20 @@ void DevicePickerView::refreshUi() {
     m_capAlsaThreadedCheck->setChecked(m_devices->captureConfig.threaded);
 
     if (m_capCoreAudioForm) {
+#if defined(ENABLE_RUST_BACKEND)
+        m_capCoreAudioForm->setRowVisible(m_capCoreAudioLoopbackCheck, false);
+#else
         m_capCoreAudioForm->setRowVisible(m_capCoreAudioLoopbackCheck, isCapCoreAudio);
+#endif
         m_capCoreAudioForm->setRowVisible(m_capWasapiExclusiveCheck, isCapWasapi);
         m_capCoreAudioForm->setRowVisible(m_capWasapiLoopbackCheck, isCapWasapi);
         m_capCoreAudioForm->setRowVisible(m_capWasapiPollingCheck, isCapWasapi);
         m_capCoreAudioForm->setRowVisible(m_capAlsaStopInactiveCheck, isCapAlsa);
+#if defined(ENABLE_RUST_BACKEND)
+        m_capCoreAudioForm->setRowVisible(m_capAlsaThreadedCheck, false);
+#else
         m_capCoreAudioForm->setRowVisible(m_capAlsaThreadedCheck, isCapAlsa);
+#endif
         m_capCoreAudioForm->setRowVisible(m_capAlsaLinkVolumeEdit, isCapAlsa);
         m_capCoreAudioForm->setRowVisible(m_capAlsaLinkMuteEdit, isCapAlsa);
         m_capCoreAudioForm->setRowVisible(m_capPwNodeNameEdit, isCapPw);
@@ -1697,7 +1715,11 @@ void DevicePickerView::refreshUi() {
 
     m_pbAlsaThreadedCheck->setChecked(m_devices->playbackConfig.threaded);
 
+#if defined(ENABLE_RUST_BACKEND)
+    bool pbDopVisible = false;
+#else
     bool pbDopVisible = !isPbPw && isHardwareBackend(m_devices->playbackConfig.backend);
+#endif
     m_outputDoPCheck->setChecked(m_devices->playbackConfig.outputDoP);
 
     int filterIdx = m_sdmFilterCombo->findData(static_cast<int>(m_devices->playbackConfig.dsdEncoderFilter));
@@ -1708,7 +1730,11 @@ void DevicePickerView::refreshUi() {
         m_pbCoreAudioForm->setRowVisible(m_exclusiveModeCheck, pbExclusiveVisible);
         m_pbCoreAudioForm->setRowVisible(m_exclusiveModeHint, pbExclusiveVisible);
         m_pbCoreAudioForm->setRowVisible(m_pbWasapiPollingCheck, isPbWasapi);
+#if defined(ENABLE_RUST_BACKEND)
+        m_pbCoreAudioForm->setRowVisible(m_pbAlsaThreadedCheck, false);
+#else
         m_pbCoreAudioForm->setRowVisible(m_pbAlsaThreadedCheck, isPbAlsa);
+#endif
         m_pbCoreAudioForm->setRowVisible(m_pbPwNodeNameEdit, isPbPw);
         m_pbCoreAudioForm->setRowVisible(m_pbPwNodeDescEdit, isPbPw);
         m_pbCoreAudioForm->setRowVisible(m_pbPwNodeGroupEdit, isPbPw);
@@ -1884,7 +1910,9 @@ void DevicePickerView::applySettings() {
             pbCfg.exclusive = m_exclusiveModeCheck->isChecked();
         }
         pbCfg.polling = m_pbWasapiPollingCheck->isChecked();
+#if !defined(ENABLE_RUST_BACKEND)
         pbCfg.threaded = m_pbAlsaThreadedCheck->isChecked();
+#endif
         if (m_pbPwNodeNameEdit)
             pbCfg.nodeName = m_pbPwNodeNameEdit->text().toStdString();
         if (m_pbPwNodeDescEdit)
@@ -1896,10 +1924,12 @@ void DevicePickerView::applySettings() {
                                       ? std::make_optional(m_pbPwAutoconnectEdit->text().toStdString())
                                       : std::nullopt;
         }
+#if !defined(ENABLE_RUST_BACKEND)
         pbCfg.outputDoP = m_outputDoPCheck->isChecked();
         if (m_sdmFilterCombo->currentIndex() >= 0) {
             pbCfg.dsdEncoderFilter = static_cast<SDMFilter>(m_sdmFilterCombo->currentData().toInt());
         }
+#endif
     } else if (pbCfg.backend == AudioBackendType::RawFile) {
         if (m_pbRawFilePathEdit)
             pbCfg.filename = m_pbRawFilePathEdit->text().toStdString();
@@ -1973,13 +2003,16 @@ void DevicePickerView::applySettings() {
             }
         }
 
+#if !defined(ENABLE_RUST_BACKEND)
         capCfg.bypassDoP = m_bypassDoPCheck->isChecked();
         if (m_dopCutoffCombo->currentIndex() >= 0) {
             capCfg.dopCutoffHz = m_dopCutoffCombo->currentData().toDouble();
         }
         if (m_capCoreAudioLoopbackCheck && m_capCoreAudioLoopbackCheck->isVisible()) {
             capCfg.loopback = m_capCoreAudioLoopbackCheck->isChecked();
-        } else if (m_capWasapiLoopbackCheck && m_capWasapiLoopbackCheck->isVisible()) {
+        } else
+#endif
+            if (m_capWasapiLoopbackCheck && m_capWasapiLoopbackCheck->isVisible()) {
             capCfg.loopback = m_capWasapiLoopbackCheck->isChecked();
             capCfg.exclusive = capCfg.loopback ? false : m_capWasapiExclusiveCheck->isChecked();
         } else if (m_capPwLoopbackCheck && m_capPwLoopbackCheck->isVisible()) {
@@ -1987,7 +2020,9 @@ void DevicePickerView::applySettings() {
         }
         capCfg.polling = m_capWasapiPollingCheck->isChecked();
         capCfg.stopOnInactive = m_capAlsaStopInactiveCheck->isChecked();
+#if !defined(ENABLE_RUST_BACKEND)
         capCfg.threaded = m_capAlsaThreadedCheck->isChecked();
+#endif
         if (m_capAlsaLinkVolumeEdit)
             capCfg.linkVolumeControl = m_capAlsaLinkVolumeEdit->text().toStdString();
         if (m_capAlsaLinkMuteEdit)
