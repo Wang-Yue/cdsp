@@ -18,12 +18,11 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "config/cJSON.h"
+
 #include "config/config_error.h"
 #include "utils/cdsp_macros.h"
 
-struct biquad_filter;
-typedef struct biquad_filter biquad_filter_t;
+typedef struct cJSON cJSON;
 
 /** Enum: time_unit */
 typedef enum {

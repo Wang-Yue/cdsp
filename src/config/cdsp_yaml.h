@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include "config/cJSON.h"
+typedef struct cJSON cJSON;
 
 /**
  * @brief Converts a cJSON structure to a clean YAML formatted string.

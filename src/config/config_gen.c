@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "config/cJSON.h"
 #include "config/config_parser.h"
 
 const char *time_unit_to_string(time_unit_t val) {

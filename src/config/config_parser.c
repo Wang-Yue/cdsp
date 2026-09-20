@@ -4,6 +4,7 @@
  * auto-generated codegen.
  */
 
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -177,6 +178,234 @@ int parse_double_array_strict(const cJSON *arr, const char *field_name,
   }
   *out_values = values;
   *out_count = (size_t)size;
+  return 0;
+}
+
+int parse_json_str_strict(const cJSON *obj, const char *key,
+                          const char *section_name, char *dest, size_t dest_sz,
+                          bool *present, config_error_t *err) {
+  if (present)
+    *present = false;
+  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item || cJSON_IsNull(item))
+    return 0;
+  if (!cJSON_IsString(item) || !item->valuestring) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a string",
+                     key, section_name ? section_name : "object");
+    return -1;
+  }
+  size_t len = strlen(item->valuestring);
+  if (dest_sz > 0 && len >= dest_sz) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "string '%s' in %s exceeds maximum length of %zu", key,
+                     section_name ? section_name : "object", dest_sz - 1);
+    return -1;
+  }
+  if (dest && dest_sz > 0) {
+    memcpy(dest, item->valuestring, len + 1);
+  }
+  if (present)
+    *present = true;
+  return 0;
+}
+
+int parse_json_size_t_strict(const cJSON *obj, const char *key,
+                             const char *section_name, size_t *dest,
+                             bool *present, config_error_t *err) {
+  if (present)
+    *present = false;
+  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item || cJSON_IsNull(item))
+    return 0;
+  if (!cJSON_IsNumber(item) || item->valuedouble < 0.0 ||
+      floor(item->valuedouble) != item->valuedouble ||
+      item->valuedouble > (double)SIZE_MAX) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "field '%s' in %s must be a non-negative integer", key,
+                     section_name ? section_name : "object");
+    return -1;
+  }
+  if (dest)
+    *dest = (size_t)item->valuedouble;
+  if (present)
+    *present = true;
+  return 0;
+}
+
+int parse_json_int_strict(const cJSON *obj, const char *key,
+                          const char *section_name, int *dest, bool *present,
+                          config_error_t *err) {
+  if (present)
+    *present = false;
+  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item || cJSON_IsNull(item))
+    return 0;
+  if (!cJSON_IsNumber(item) || floor(item->valuedouble) != item->valuedouble ||
+      item->valuedouble < (double)INT_MIN ||
+      item->valuedouble > (double)INT_MAX) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "field '%s' in %s must be an integer", key,
+                     section_name ? section_name : "object");
+    return -1;
+  }
+  if (dest)
+    *dest = (int)item->valuedouble;
+  if (present)
+    *present = true;
+  return 0;
+}
+
+int parse_json_bool_strict(const cJSON *obj, const char *key,
+                           const char *section_name, bool *dest, bool *present,
+                           config_error_t *err) {
+  if (present)
+    *present = false;
+  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item || cJSON_IsNull(item))
+    return 0;
+  if (!cJSON_IsBool(item)) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "field '%s' in %s must be a boolean", key,
+                     section_name ? section_name : "object");
+    return -1;
+  }
+  if (dest)
+    *dest = cJSON_IsTrue(item);
+  if (present)
+    *present = true;
+  return 0;
+}
+
+int parse_json_double_strict(const cJSON *obj, const char *key,
+                             const char *section_name, double *dest,
+                             bool *present, config_error_t *err) {
+  if (present)
+    *present = false;
+  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item || cJSON_IsNull(item))
+    return 0;
+  if (!cJSON_IsNumber(item) || !isfinite(item->valuedouble)) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "field '%s' in %s must be a finite number", key,
+                     section_name ? section_name : "object");
+    return -1;
+  }
+  if (dest)
+    *dest = item->valuedouble;
+  if (present)
+    *present = true;
+  return 0;
+}
+
+int validate_unknown_fields(const cJSON *obj, const char *const allowed_keys[],
+                            const char *section_name, config_error_t *err) {
+  if (!obj || !cJSON_IsObject(obj))
+    return 0;
+  const cJSON *child = NULL;
+  cJSON_ArrayForEach(child, obj) {
+    if (!child->string)
+      continue;
+    bool found = false;
+    for (size_t i = 0; allowed_keys[i] != NULL; i++) {
+      if (strcmp(child->string, allowed_keys[i]) == 0) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      if (err) {
+        char msg[256];
+        snprintf(msg, sizeof(msg), "unknown field '%s' in %s", child->string,
+                 section_name ? section_name : "object");
+        config_error_set(err, CONFIG_ERR_PARSE, "%s", msg);
+      }
+      return -1;
+    }
+  }
+  return 0;
+}
+
+void format_enum_variants(const config_enum_variant_t *variants, char *buf,
+                          size_t buf_len) {
+  if (!buf || buf_len == 0)
+    return;
+  buf[0] = '\0';
+  size_t off = 0;
+  for (size_t i = 0; variants && variants[i].name != NULL; i++) {
+    int n = snprintf(buf + off, buf_len - off, "%s%s", i == 0 ? "" : ", ",
+                     variants[i].name);
+    if (n < 0 || (size_t)n >= buf_len - off) {
+      // Ran out of room; leave an ellipsis so the message stays honest.
+      if (buf_len >= 4) {
+        snprintf(buf + (buf_len - 4), 4, "...");
+      }
+      return;
+    }
+    off += (size_t)n;
+  }
+}
+
+int parse_enum_required(const cJSON *obj, const char *key,
+                        const config_enum_variant_t *variants,
+                        const char *section_name, int *out,
+                        config_error_t *err) {
+  const char *where = section_name ? section_name : "object";
+  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item) {
+    config_error_set(err, CONFIG_ERR_PARSE, "missing field '%s' in %s", key,
+                     where);
+    return -1;
+  }
+  if (!cJSON_IsString(item) || !item->valuestring) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a string",
+                     key, where);
+    return -1;
+  }
+  for (size_t i = 0; variants && variants[i].name != NULL; i++) {
+    if (strcmp(item->valuestring, variants[i].name) == 0) {
+      if (out)
+        *out = variants[i].value;
+      return 0;
+    }
+  }
+  char expected[320];
+  format_enum_variants(variants, expected, sizeof(expected));
+  config_error_set(err, CONFIG_ERR_PARSE,
+                   "unknown variant '%s' for '%s' in %s, expected one of: %s",
+                   item->valuestring, key, where, expected);
+  return -1;
+}
+
+int parse_enum_optional(const cJSON *obj, const char *key,
+                        const config_enum_variant_t *variants,
+                        const char *section_name, int *out, bool *present,
+                        config_error_t *err) {
+  if (present)
+    *present = false;
+  if (!cJSON_GetObjectItemCaseSensitive(obj, key))
+    return 0;
+  if (present)
+    *present = true;
+  return parse_enum_required(obj, key, variants, section_name, out, err);
+}
+
+int require_json_fields(const cJSON *obj, const char *const keys[],
+                        const char *section_name, const char *variant,
+                        config_error_t *err) {
+  const char *where = section_name ? section_name : "object";
+  for (size_t i = 0; keys && keys[i] != NULL; i++) {
+    if (!cJSON_GetObjectItemCaseSensitive(obj, keys[i])) {
+      if (variant) {
+        config_error_set(err, CONFIG_ERR_PARSE,
+                         "missing field '%s' in %s for type '%s'", keys[i],
+                         where, variant);
+      } else {
+        config_error_set(err, CONFIG_ERR_PARSE, "missing field '%s' in %s",
+                         keys[i], where);
+      }
+      return -1;
+    }
+  }
   return 0;
 }
 

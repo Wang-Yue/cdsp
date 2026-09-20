@@ -78,12 +78,11 @@ class CodegenEngine:
         w.line("#include <stdbool.h>")
         w.line("#include <stddef.h>")
         w.line("#include <stdint.h>")
-        w.line("#include \"config/cJSON.h\"")
+        w.line()
         w.line("#include \"config/config_error.h\"")
         w.line("#include \"utils/cdsp_macros.h\"")
         w.line()
-        w.line("struct biquad_filter;")
-        w.line("typedef struct biquad_filter biquad_filter_t;")
+        w.line("typedef struct cJSON cJSON;")
         w.line()
 
         # 1. Enums
@@ -303,6 +302,7 @@ class CodegenEngine:
         w.line("#include <stdio.h>")
         w.line("#include <stdlib.h>")
         w.line("#include <string.h>")
+        w.line("#include \"config/cJSON.h\"")
         w.line("#include \"config/config_parser.h\"")
         w.line()
 
