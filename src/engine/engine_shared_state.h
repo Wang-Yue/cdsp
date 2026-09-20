@@ -11,7 +11,7 @@
  * used, allowing the loops to read/write fields without coordinating locks.
  *
  * @section concurrency_model Concurrency model
- * Ref: engine_state_management.md - Section 1.1: Inter-Thread Level
+ * Ref: docs/engine_state_management.md - Section 1.1: Inter-Thread Level
  * (`engine_shared_state_t`) & Section 1.5: Atomic Variables & Accessing Threads
  * Justification
  * - `captured_queue`: SPSC sync queue (`audio_sync_queue_t`), producer =

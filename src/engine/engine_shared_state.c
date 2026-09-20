@@ -45,7 +45,7 @@
 
 static const logger_t g_logger = {"dsp.engine.state"};
 
-// Ref: engine_state_management.md - Section 1.1: Inter-Thread Level
+// Ref: docs/engine_state_management.md - Section 1.1: Inter-Thread Level
 // (engine_shared_state_t) & Section 1.5: Atomic Variables & Accessing Threads
 // Justification
 struct engine_shared_state {
@@ -158,9 +158,9 @@ void engine_shared_state_set_capture_pitch(engine_shared_state_t *state,
   }
 }
 
-// Ref: engine_state_management.md - Section 1.7.2 (Rule 4: Deferred Garbage
-// Collection for Audio Threads) & Section 1.1: Atomic pipeline pointer holding
-// swapped-out DSP pipeline during hot-reloads.
+// Ref: docs/engine_state_management.md - Section 1.7.2 (Rule 4: Deferred
+// Garbage Collection for Audio Threads) & Section 1.1: Atomic pipeline pointer
+// holding swapped-out DSP pipeline during hot-reloads.
 pipeline_t *engine_shared_state_retire_pipeline(engine_shared_state_t *state,
                                                 pipeline_t *pipeline) {
   if (!state || !pipeline)
@@ -169,7 +169,7 @@ pipeline_t *engine_shared_state_retire_pipeline(engine_shared_state_t *state,
                                   memory_order_acq_rel);
 }
 
-// Ref: engine_state_management.md - Section 1.7.1: Garbage Collection
+// Ref: docs/engine_state_management.md - Section 1.7.1: Garbage Collection
 // off-thread by main controller thread during poll / set_config.
 pipeline_t *
 engine_shared_state_collect_retired_pipeline(engine_shared_state_t *state) {
@@ -179,7 +179,7 @@ engine_shared_state_collect_retired_pipeline(engine_shared_state_t *state) {
                                   memory_order_acquire);
 }
 
-// Ref: engine_state_management.md - Section 1.6: Mutex Isolation
+// Ref: docs/engine_state_management.md - Section 1.6: Mutex Isolation
 // stop_reason_mutex is a Level 2 leaf lock protecting the 264-byte stop_reason
 // struct against concurrent read/write publication races.
 processing_stop_reason_t
@@ -222,7 +222,7 @@ engine_shared_state_create(size_t captured_queue_depth,
   return state;
 }
 
-// Ref: engine_state_management.md - Section 1.7.1: Ownership & Resource
+// Ref: docs/engine_state_management.md - Section 1.7.1: Ownership & Resource
 // Lifecycle Guidelines Drain Before Free & Garbage Drain. Frees sync queues,
 // uncollected retired pipelines, and destroys stop_reason_mutex.
 void engine_shared_state_free(engine_shared_state_t *state) {
@@ -254,11 +254,11 @@ void engine_shared_state_request_stop(engine_shared_state_t *state,
   if (!state)
     return;
 
-  // Ref: engine_state_management.md - Section 4: The CAS Race-Condition Safety
-  // Gate Acquire stop_reason_mutex before checking CAS and writing stop_reason
-  // so that another thread entering the LOSER branch is guaranteed to observe
-  // the published stop_reason rather than reading STOP_REASON_NONE during an
-  // intermediate window.
+  // Ref: docs/engine_state_management.md - Section 4: The CAS Race-Condition
+  // Safety Gate Acquire stop_reason_mutex before checking CAS and writing
+  // stop_reason so that another thread entering the LOSER branch is guaranteed
+  // to observe the published stop_reason rather than reading STOP_REASON_NONE
+  // during an intermediate window.
   pthread_mutex_lock(&state->stop_reason_mutex);
   bool already_stopped =
       atomic_exchange_explicit(&state->stop_once, true, memory_order_acq_rel);
@@ -268,22 +268,22 @@ void engine_shared_state_request_stop(engine_shared_state_t *state,
     pthread_mutex_unlock(&state->stop_reason_mutex);
 
     if (reason.type != STOP_REASON_DONE) {
-      // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
-      // Step 1: For non-graceful aborts (errors or user Stop), immediately
-      // transition engine state to INACTIVE and shut down both queues to wake
-      // up all blocked threads.
+      // Ref: docs/engine_state_management.md - Section 3.6: Immediate Abort
+      // Teardown Step 1: For non-graceful aborts (errors or user Stop),
+      // immediately transition engine state to INACTIVE and shut down both
+      // queues to wake up all blocked threads.
       engine_shared_state_set_state(state, PROCESSING_STATE_INACTIVE);
       audio_sync_queue_shutdown(state->captured_queue);
       audio_sync_queue_shutdown(state->processed_queue);
     } else {
-      // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown
-      // (Queue Drain) Step 1: For EOF, only shut down capture queue to let
-      // downstream threads finish draining.
+      // Ref: docs/engine_state_management.md - Section 3.5: Graceful EOF
+      // Teardown (Queue Drain) Step 1: For EOF, only shut down capture queue to
+      // let downstream threads finish draining.
       audio_sync_queue_shutdown(state->captured_queue);
     }
   } else {
     // LOSER branch: Stop has already been requested by another thread.
-    // Ref: engine_state_management.md - Section 4: The CAS Race-Condition
+    // Ref: docs/engine_state_management.md - Section 4: The CAS Race-Condition
     // Safety Gate (and Section 4.1 for loop guards avoiding false alarms).
     // If a graceful EOF was previously requested, but a subsequent
     // stop request occurs (e.g. user aborts, session teardown, or hardware
@@ -327,7 +327,7 @@ bool engine_shared_state_enqueue_captured(engine_shared_state_t *state,
   return audio_sync_queue_enqueue(state->captured_queue, chunk);
 }
 
-// Ref: engine_state_management.md - Section 1.5: Atomic Variables
+// Ref: docs/engine_state_management.md - Section 1.5: Atomic Variables
 // (processed_queued_frames) Tracks the exact number of frames in the queue for
 // rate-adjust telemetry without cross-thread lock acquisition.
 bool engine_shared_state_enqueue_processed(engine_shared_state_t *state,
@@ -356,7 +356,7 @@ engine_shared_state_dequeue_captured_blocking(engine_shared_state_t *state) {
       state->captured_queue);
 }
 
-// Ref: engine_state_management.md - Section 1.5: Atomic Variables
+// Ref: docs/engine_state_management.md - Section 1.5: Atomic Variables
 // (processed_queued_frames)
 audio_chunk_t *
 engine_shared_state_dequeue_processed_blocking(engine_shared_state_t *state) {
@@ -383,9 +383,9 @@ engine_shared_state_get_state(const engine_shared_state_t *state) {
   return processing_state_from_raw_byte(raw);
 }
 
-// Ref: engine_state_management.md - Section 2.1: Terminal State Guard Invariant
-// Once stop_once is true, any transition to RUNNING/PAUSED/STALLED is ignored;
-// only transitions to INACTIVE are permitted.
+// Ref: docs/engine_state_management.md - Section 2.1: Terminal State Guard
+// Invariant Once stop_once is true, any transition to RUNNING/PAUSED/STALLED is
+// ignored; only transitions to INACTIVE are permitted.
 void engine_shared_state_set_state(engine_shared_state_t *state,
                                    processing_state_t new_state) {
   if (!state)
@@ -413,9 +413,9 @@ void engine_shared_state_set_state(engine_shared_state_t *state,
   }
 }
 
-// Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
-// Step 1 Capture thread updates telemetry timestamp in nanoseconds on every
-// chunk read.
+// Ref: docs/engine_state_management.md - Section 3.4: Watchdog Stall & Recovery
+// Flow Step 1 Capture thread updates telemetry timestamp in nanoseconds on
+// every chunk read.
 void engine_shared_state_set_last_capture_time(engine_shared_state_t *state,
                                                uint64_t ns) {
   if (state) {

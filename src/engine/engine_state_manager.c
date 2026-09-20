@@ -8,7 +8,7 @@
 #include "audio/processing_parameters.h"
 #include "pipeline/state_file.h"
 
-// Ref: engine_state_management.md - Section 1.4: State Persistence Level
+// Ref: docs/engine_state_management.md - Section 1.4: State Persistence Level
 // (engine_state_manager_t) & Section 1.6: Mutex Isolation (Level 2 recursive
 // leaf lock protecting fader volume/mutes & state persistence).
 struct engine_state_manager {
@@ -43,7 +43,7 @@ engine_state_manager_t *engine_state_manager_create(void) {
   mgr->dirty = false;
   mgr->change_counter = 0;
 
-  // Ref: engine_state_management.md - Section 1.6: Mutex Isolation &
+  // Ref: docs/engine_state_management.md - Section 1.6: Mutex Isolation &
   // Non-Audio-Thread Concurrency Model PTHREAD_MUTEX_RECURSIVE prevents
   // self-deadlocks when nested internal calls on the main/API thread (e.g.
   // state persistence transactions) re-acquire mgr->mutex. Audio loops never
@@ -178,9 +178,10 @@ bool engine_state_manager_is_dirty(const engine_state_manager_t *mgr) {
   return res;
 }
 
-// Ref: engine_state_management.md - Section 1.6: Non-Audio-Thread Concurrency
-// Model Audio threads update volume smoothly via processing_parameters_t
-// (atomic gain factors) and never touch engine_state_manager_t directly.
+// Ref: docs/engine_state_management.md - Section 1.6: Non-Audio-Thread
+// Concurrency Model Audio threads update volume smoothly via
+// processing_parameters_t (atomic gain factors) and never touch
+// engine_state_manager_t directly.
 void engine_state_manager_sync_to_processing_parameters(
     const engine_state_manager_t *mgr, processing_parameters_t *params) {
   if (!mgr || !params)

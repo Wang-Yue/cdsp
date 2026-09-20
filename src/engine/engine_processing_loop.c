@@ -209,7 +209,7 @@ processing_loop_check_pipeline_swap(engine_processing_loop_t *loop) {
       pipeline_t *uncollected = engine_shared_state_retire_pipeline(
           loop->shared, loop->active_pipeline);
       if (uncollected) {
-        // Ref: engine_state_management.md - Section 1.7.2 (Rule 4)
+        // Ref: docs/engine_state_management.md - Section 1.7.2 (Rule 4)
         // Under normal operation, dsp_engine collects retired pipelines on the
         // main thread prior to config reloads, so retired_pipeline will be
         // NULL. In the unexpected event of an uncollected prior pipeline, log a
@@ -327,7 +327,7 @@ static void processing_loop_record_metrics(engine_processing_loop_t *loop,
  */
 static bool processing_loop_enqueue_output(engine_processing_loop_t *loop,
                                            audio_chunk_t *chunk) {
-  // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue
+  // Ref: docs/engine_state_management.md - Section 3.2 (Real-Time Bounded Queue
   // Drops) & Section 1.7.2 (Rule 5)
   if (loop->is_realtime) {
     // Real-time hardware stream: non-blocking single-try push to avoid audio
@@ -347,8 +347,8 @@ static bool processing_loop_enqueue_output(engine_processing_loop_t *loop,
     }
     return true;
   } else {
-    // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
-    // In non-realtime mode during full-queue wait, return false on
+    // Ref: docs/engine_state_management.md - Section 3.6: Immediate Abort
+    // Teardown In non-realtime mode during full-queue wait, return false on
     // should_stop() to break out of the outer while (dequeue_captured_blocking)
     // loop immediately.
     bool aborted = false;
@@ -375,21 +375,21 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
 
   audio_chunk_t *chunk = NULL;
 
-  // Ref: engine_state_management.md - Section 3.2: Steady-State Audio Loops &
-  // Section 3.6: Immediate Abort Teardown Dequeue chunks from captured_queue.
-  // Blocks on captured semaphore if queue is empty.
+  // Ref: docs/engine_state_management.md - Section 3.2: Steady-State Audio
+  // Loops & Section 3.6: Immediate Abort Teardown Dequeue chunks from
+  // captured_queue. Blocks on captured semaphore if queue is empty.
   while ((chunk = engine_shared_state_dequeue_captured_blocking(
               loop->shared)) != NULL) {
     if (engine_shared_state_should_stop(loop->shared)) {
       break;
     }
-    // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
+    // Ref: docs/engine_state_management.md - Section 3.3: Silence Auto-Pause &
     // Resume Flow Step 2 & Section 3.1: Check and execute structural hot-reload
     // pipeline swaps immediately on every chunk.
     processing_loop_check_pipeline_swap(loop);
 
     size_t frames = audio_chunk_get_valid_frames(chunk);
-    // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
+    // Ref: docs/engine_state_management.md - Section 3.3: Silence Auto-Pause &
     // Resume Flow Step 2: Detect 0-frame tick chunk. Bypass resampling/DSP
     // and propagate the empty chunk downstream to keep playback synchronized.
     if (frames == 0) {
@@ -398,8 +398,8 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
         current_scratch = round_robin_chunk_pool_next(loop->scratch_pool);
       }
       audio_chunk_set_valid_frames(current_scratch, 0);
-      // Ref: engine_state_management.md - Section 3.2 (RT Drops) & Section 3.6
-      // (Immediate Abort Teardown)
+      // Ref: docs/engine_state_management.md - Section 3.2 (RT Drops) &
+      // Section 3.6 (Immediate Abort Teardown)
       if (!processing_loop_enqueue_output(loop, current_scratch)) {
         break;
       }
@@ -422,7 +422,8 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
     if (resamp_err)
       break;
 
-    // Ref: engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
+    // Ref: docs/engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule
+    // 5)
     // 4. Retrieve a pre-allocated scratch chunk from the round-robin pool,
     // or reuse an un-enqueued scratch chunk if the previous enqueue was
     // dropped.
@@ -456,17 +457,18 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
       loop->on_chunk_processed(loop->on_chunk_processed_ctx, chunk);
     }
 
-    // Ref: engine_state_management.md - Section 3.2 (Real-Time Bounded Queue
-    // Drops), Section 1.7.2 (Rule 5), & Section 3.6 (Immediate Abort Teardown)
+    // Ref: docs/engine_state_management.md - Section 3.2 (Real-Time Bounded
+    // Queue Drops), Section 1.7.2 (Rule 5), & Section 3.6 (Immediate Abort
+    // Teardown)
     // 7. Enqueue the processed chunk to the playback queue.
     if (!processing_loop_enqueue_output(loop, chunk)) {
       break;
     }
   }
 
-  // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown (Queue
-  // Drain) Step 2: Once captured queue is shut down and empty, dequeue returns
-  // NULL. Shutdown processed queue and exit thread.
+  // Ref: docs/engine_state_management.md - Section 3.5: Graceful EOF Teardown
+  // (Queue Drain) Step 2: Once captured queue is shut down and empty, dequeue
+  // returns NULL. Shutdown processed queue and exit thread.
   if (loop->shared) {
     engine_shared_state_shutdown_processed_queue(loop->shared);
   }

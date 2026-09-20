@@ -22,7 +22,7 @@
 #include "logging/app_logger.h"
 #include "pipeline/config_loader.h"
 
-// Ref: engine_state_management.md - Section 1.3: Controller Level
+// Ref: docs/engine_state_management.md - Section 1.3: Controller Level
 // (dsp_engine_t) & Section 1.6: Mutex Isolation (state_mutex as Level 1
 // Top-Level Controller Lock)
 struct dsp_engine_impl {
@@ -102,10 +102,11 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
     dsp_session_collect_garbage(impl->session.active);
   }
 
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
-  // Flow Step 1 Configuration Change Decision Tree: If devices match, perform
-  // non-blocking pipeline hot-reload via dsp_session_reload_config. If devices
-  // differ, fall back to full session teardown and rebuild.
+  // Ref: docs/engine_state_management.md - Section 3.1: Startup &
+  // Initialization Flow Step 1 Configuration Change Decision Tree: If devices
+  // match, perform non-blocking pipeline hot-reload via
+  // dsp_session_reload_config. If devices differ, fall back to full session
+  // teardown and rebuild.
   if (impl->session.active && dsp_session_get_state(impl->session.active) !=
                                   PROCESSING_STATE_INACTIVE) {
     const dsp_config_t *cur_cfg = dsp_session_get_config(impl->session.active);
@@ -139,7 +140,7 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
       impl->buffers.playback,
       playback_device_config_get_channels(&config->devices.playback));
 
-  // Ref: engine_state_management.md - Section 1.7.1: Lifecycle & Ownership
+  // Ref: docs/engine_state_management.md - Section 1.7.1: Lifecycle & Ownership
   // Contract Matrix & Section 3.1: Startup & Initialization Flow (Step 3
   // Pre-seeded Fader Sync). Ownership of config transfers to dsp_session_t on
   // creation success.
@@ -193,7 +194,7 @@ static bool dsp_engine_set_config_locked(dsp_engine_impl_t *impl,
     impl->config.previous_json = impl->config.active_json;
     impl->config.active_json = strdup(json);
   } else {
-    // Ref: engine_state_management.md - Section 1.7.1: Cleanup on Builder
+    // Ref: docs/engine_state_management.md - Section 1.7.1: Cleanup on Builder
     // Failure If builder fails before core->current_config assignment, caller
     // frees parsed config.
     dsp_config_free(parsed);
@@ -206,10 +207,10 @@ static bool dsp_engine_set_config_json(void *ctx, const char *json_str,
   if (!ctx)
     return false;
   dsp_engine_impl_t *impl = (dsp_engine_impl_t *)ctx;
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
-  // Flow Step 1: Set config_in_progress to true. Status queries check this
-  // atomic flag to return STARTING immediately without blocking on the
-  // state_mutex.
+  // Ref: docs/engine_state_management.md - Section 3.1: Startup &
+  // Initialization Flow Step 1: Set config_in_progress to true. Status queries
+  // check this atomic flag to return STARTING immediately without blocking on
+  // the state_mutex.
   atomic_store(&impl->config.in_progress, true);
   pthread_mutex_lock(&impl->state_mutex);
   bool res = dsp_engine_set_config_locked(impl, json_str, out_err);
@@ -222,9 +223,10 @@ static void dsp_engine_stop(void *ctx) {
   if (!ctx)
     return;
   dsp_engine_impl_t *impl = (dsp_engine_impl_t *)ctx;
-  // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
-  // Step 3: Controller teardown stops backend devices, joins terminated
-  // threads, and cleans up session resources under the controller lock.
+  // Ref: docs/engine_state_management.md - Section 3.6: Immediate Abort
+  // Teardown Step 3: Controller teardown stops backend devices, joins
+  // terminated threads, and cleans up session resources under the controller
+  // lock.
   pthread_mutex_lock(&impl->state_mutex);
   if (impl->session.active) {
     dsp_session_collect_garbage(impl->session.active);
@@ -309,7 +311,7 @@ static bool dsp_engine_get_status(void *ctx, state_update_t *out_status) {
   if (!ctx || !out_status)
     return false;
   dsp_engine_impl_t *impl = (dsp_engine_impl_t *)ctx;
-  // Ref: engine_state_management.md - Section 1.5: Atomic Variables
+  // Ref: docs/engine_state_management.md - Section 1.5: Atomic Variables
   // (config.in_progress) & Section 3.1: Startup & Initialization Flow Step 1:
   // Lock-free status query optimization:
   // Since configuration reloads hold state_mutex for a relatively long duration
@@ -843,9 +845,9 @@ static void dsp_engine_free_impl(void *ctx) {
   free(impl);
 }
 
-// Ref: engine_state_management.md - Section 3.4: Watchdog Stall & Recovery Flow
-// Step 1 (Unified Main-Thread Watchdog) & Section 1.7.1 (Garbage Collection via
-// dsp_session_collect_garbage)
+// Ref: docs/engine_state_management.md - Section 3.4: Watchdog Stall & Recovery
+// Flow Step 1 (Unified Main-Thread Watchdog) & Section 1.7.1 (Garbage
+// Collection via dsp_session_collect_garbage)
 static void dsp_engine_poll_impl(void *ctx) {
   if (!ctx)
     return;

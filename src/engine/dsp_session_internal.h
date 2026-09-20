@@ -15,8 +15,8 @@
 #include "engine/engine_playback_loop.h"
 #include "engine/engine_processing_loop.h"
 
-// Ref: engine_state_management.md - Section 1.2: Session Level (dsp_session_t)
-// & Section 1.7.1: Lifecycle & Ownership Contract Matrix
+// Ref: docs/engine_state_management.md - Section 1.2: Session Level
+// (dsp_session_t) & Section 1.7.1: Lifecycle & Ownership Contract Matrix
 struct dsp_session {
   // MARK: - Configuration
   /** Current configuration. */

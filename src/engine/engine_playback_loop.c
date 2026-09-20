@@ -278,8 +278,8 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
 
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
-  // Flow Step 9: Playback Loop opens the playback device backend
+  // Ref: docs/engine_state_management.md - Section 3.1: Startup &
+  // Initialization Flow Step 9: Playback Loop opens the playback device backend
   // asynchronously.
   if (!playback_backend_open(loop->playback, &berr)) {
     logger_error(&g_logger,
@@ -294,10 +294,10 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
     return;
   }
 
-  // Ref: engine_state_management.md - Section 3.1: Startup & Initialization
-  // Flow Step 9: Pre-fill hardware DAC buffer with silence frames
-  // asynchronously. Prefill playback silence to feed the DAC immediately on
-  // start, preventing immediate buffer underrun errors. If rate adjust is
+  // Ref: docs/engine_state_management.md - Section 3.1: Startup &
+  // Initialization Flow Step 9: Pre-fill hardware DAC buffer with silence
+  // frames asynchronously. Prefill playback silence to feed the DAC immediately
+  // on start, preventing immediate buffer underrun errors. If rate adjust is
   // enabled, we match its target level; otherwise, we pre-fill chunk_size.
   size_t prefill_frames =
       loop->target_level > 0 ? (size_t)loop->target_level : loop->chunk_size;
@@ -338,9 +338,9 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
   bool reached_eos = true;
   audio_chunk_t *chunk = NULL;
   bool was_paused = false;
-  // Ref: engine_state_management.md - Section 3.2: Steady-State Audio Loops &
-  // Section 3.6: Immediate Abort Teardown Dequeue chunks from processed_queue.
-  // Blocks on processed semaphore if queue is empty.
+  // Ref: docs/engine_state_management.md - Section 3.2: Steady-State Audio
+  // Loops & Section 3.6: Immediate Abort Teardown Dequeue chunks from
+  // processed_queue. Blocks on processed semaphore if queue is empty.
   while ((chunk = engine_shared_state_dequeue_processed_blocking(
               loop->shared)) != NULL) {
     if (engine_shared_state_should_stop(loop->shared)) {
@@ -354,10 +354,10 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
     if (should_pause != is_paused) {
       playback_backend_set_is_paused(loop->playback, should_pause);
       if (was_paused && !should_pause) {
-        // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
-        // Resume Flow Step 3: Reset PI rate controller stopwatch and averager
-        // when auto-resuming from pause to prevent resampler ratio and pitch
-        // speed glitches caused by wall-clock time accumulation.
+        // Ref: docs/engine_state_management.md - Section 3.3: Silence
+        // Auto-Pause & Resume Flow Step 3: Reset PI rate controller stopwatch
+        // and averager when auto-resuming from pause to prevent resampler ratio
+        // and pitch speed glitches caused by wall-clock time accumulation.
         if (loop->rate_adjust_enabled) {
           averager_restart(&averager);
           stopwatch_restart(&stopwatch);
@@ -371,7 +371,7 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
     was_paused = is_paused;
 
     size_t frames = audio_chunk_get_valid_frames(chunk);
-    // Ref: engine_state_management.md - Section 3.3: Silence Auto-Pause &
+    // Ref: docs/engine_state_management.md - Section 3.3: Silence Auto-Pause &
     // Resume Flow Step 2: Ignore 0-frame control/tick chunks. Drop them
     // immediately to bypass writing to hardware.
     if (frames == 0) {
@@ -404,7 +404,7 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
     bool ok = playback_backend_write(loop->playback, chunk, &err);
     if (!ok || err.type != BACKEND_ERROR_NONE) {
-      // Ref: engine_state_management.md - Section 4.1: Prevention of
+      // Ref: docs/engine_state_management.md - Section 4.1: Prevention of
       // False-Alarm Shutdown Errors (Loop Guards)
       if (engine_shared_state_should_stop(loop->shared)) {
         reached_eos = false;
@@ -429,7 +429,7 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
           break;
         }
       }
-      // Clean EOF on Plain-WAV 4 GB Limit (Ref: engine_state_management.md
+      // Clean EOF on Plain-WAV 4 GB Limit (Ref: docs/engine_state_management.md
       // §4.2) When writing to a standard 32-bit RIFF WAV file without RF64
       // extensions, reaching the 4 GB (2^32 bytes) address limit causes
       // playback_backend_write to stop accepting data and return false with
@@ -442,10 +442,10 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
         reached_eos = true;
         break;
       }
-      // Ref: engine_state_management.md - Section 3.6: Immediate Abort Teardown
-      // Step 1: Playback thread detects a hardware write error. Requests stop
-      // with PLAYBACK_ERROR, which immediately transitions state to INACTIVE
-      // and shuts down both queues.
+      // Ref: docs/engine_state_management.md - Section 3.6: Immediate Abort
+      // Teardown Step 1: Playback thread detects a hardware write error.
+      // Requests stop with PLAYBACK_ERROR, which immediately transitions state
+      // to INACTIVE and shuts down both queues.
       logger_error(&g_logger, "Playback error: %s", err.message);
       processing_stop_reason_t reason = {.type = STOP_REASON_PLAYBACK_ERROR};
       snprintf(reason.message, sizeof(reason.message), "%s", err.message);
@@ -461,7 +461,7 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
   bool is_paused = playback_backend_get_is_paused(loop->playback);
   if (reached_eos && !is_paused &&
       !engine_shared_state_should_stop(loop->shared)) {
-    // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown
+    // Ref: docs/engine_state_management.md - Section 3.5: Graceful EOF Teardown
     // (Queue Drain) Step 3: Playback loop runs
     // playback_loop_drain_hardware_buffer to wait for the DAC buffer to hit 0.
     playback_backend_drain(loop->playback);
@@ -479,7 +479,7 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
   if (rate_controller)
     pi_rate_controller_free(rate_controller);
   if (loop->shared) {
-    // Ref: engine_state_management.md - Section 3.5: Graceful EOF Teardown
+    // Ref: docs/engine_state_management.md - Section 3.5: Graceful EOF Teardown
     // (Queue Drain) Step 3: Sets state to INACTIVE via
     // engine_shared_state_set_state(state, INACTIVE).
     engine_shared_state_set_state(loop->shared, PROCESSING_STATE_INACTIVE);

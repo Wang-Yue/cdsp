@@ -205,16 +205,17 @@ void processing_parameters_set_target_volume_for_fader(
 
 /**
  * @brief Records that audio flow was interrupted (capture paused or stalled).
- * Ref: engine_state_management.md - Section 1.5 (pause_count) & Section 3.3
- * (Pause Counter Increment): Volume filters compare pause_count against
- * last_pause_count to disable volume ramping on resume.
+ * Ref: docs/engine_state_management.md - Section 1.5 (pause_count) &
+ * Section 3.3 (Pause Counter Increment): Volume filters compare pause_count
+ * against last_pause_count to disable volume ramping on resume.
  * @param params Pointer to the processing parameters.
  */
 void processing_parameters_bump_pause_count(processing_parameters_t *params);
 
 /**
  * @brief Gets the current count of audio flow interruptions.
- * Ref: engine_state_management.md - Section 1.5: Atomic Variables (pause_count)
+ * Ref: docs/engine_state_management.md - Section 1.5: Atomic Variables
+ * (pause_count)
  * @param params Pointer to the processing parameters.
  * @return Cumulative pause count.
  */
@@ -223,7 +224,7 @@ processing_parameters_get_pause_count(const processing_parameters_t *params);
 
 /**
  * @brief Gets the measured capture sample rate.
- * Ref: engine_state_management.md - Section 1.5: Atomic Variables
+ * Ref: docs/engine_state_management.md - Section 1.5: Atomic Variables
  * (measured_capture_rate)
  * @param params Pointer to the processing parameters.
  * @return Measured sample rate in Hz.
