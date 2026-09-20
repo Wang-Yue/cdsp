@@ -16,7 +16,7 @@ graph TD
 ```
 
 ### 1.1. Inter-Thread Level (`engine_shared_state_t`)
-Defined in [engine_shared_state.c](src/engine/engine_shared_state.c). This struct is shared directly among the Capture, Processing, and Playback threads and is 100% lock-free.
+Defined in [engine_shared_state.c](../src/engine/engine_shared_state.c). This struct is shared directly among the Capture, Processing, and Playback threads and is 100% lock-free.
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
@@ -34,7 +34,7 @@ Defined in [engine_shared_state.c](src/engine/engine_shared_state.c). This struc
 ---
 
 ### 1.2. Session Level (`dsp_session_t`)
-Defined in [dsp_session_internal.h](src/engine/dsp_session_internal.h). Manages resource lifetimes (backends, resampler, threads, chunk pools).
+Defined in [dsp_session_internal.h](../src/engine/dsp_session_internal.h). Manages resource lifetimes (backends, resampler, threads, chunk pools).
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
@@ -45,7 +45,7 @@ Defined in [dsp_session_internal.h](src/engine/dsp_session_internal.h). Manages 
 ---
 
 ### 1.3. Controller Level (`dsp_engine_t`)
-Defined in [dsp_engine.c](src/engine/dsp_engine.c). The top-level controller interfacing with the Server and user commands, structured into domain sub-groups (`session`, `buffers`, `config`).
+Defined in [dsp_engine.c](../src/engine/dsp_engine.c). The top-level controller interfacing with the Server and user commands, structured into domain sub-groups (`session`, `buffers`, `config`).
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
@@ -56,7 +56,7 @@ Defined in [dsp_engine.c](src/engine/dsp_engine.c). The top-level controller int
 ---
 
 ### 1.4. State Persistence Level (`engine_state_manager_t`)
-Defined in [engine_state_manager.c](src/engine/engine_state_manager.c) (opaque handle declared in [engine_state_manager.h](src/engine/engine_state_manager.h)). Manages fader volume/mute settings, config path, and state file serialization.
+Defined in [engine_state_manager.c](../src/engine/engine_state_manager.c) (opaque handle declared in [engine_state_manager.h](../src/engine/engine_state_manager.h)). Manages fader volume/mute settings, config path, and state file serialization.
 
 | Field Name | Type | Purpose | Concurrency Model |
 | :--- | :--- | :--- | :--- |
@@ -233,11 +233,11 @@ sequenceDiagram
 ```
 
 1. **Staging & Lock-Free Status Indicator**:
-   - `dsp_engine_set_config_json()` sets `config_in_progress` to `true` (see [src/engine/dsp_engine.c](src/engine/dsp_engine.c)). This allows client WebSocket/HTTP poll queries to immediately return `PROCESSING_STATE_STARTING` lock-free without blocking on `state_mutex`.
+   - `dsp_engine_set_config_json()` sets `config_in_progress` to `true` (see [src/engine/dsp_engine.c](../src/engine/dsp_engine.c)). This allows client WebSocket/HTTP poll queries to immediately return `PROCESSING_STATE_STARTING` lock-free without blocking on `state_mutex`.
    - **Configuration Change Decision Tree**: `dsp_engine_set_config_struct_locked()` evaluates `devices_config_equal(&cur_cfg->devices, &config->devices)`. If device backends, sample rates, or channels match, it triggers non-blocking pipeline hot-reload via `dsp_session_reload_config()`. If device settings differ, it triggers a full session teardown and rebuild.
 
 2. **Allocating Session Core & Mutex**:
-   - `engine_session_build_and_start()` allocates the `dsp_session_t` container and initializes `config_mutex` (see [src/engine/engine_session_builder.c](src/engine/engine_session_builder.c)).
+   - `engine_session_build_and_start()` allocates the `dsp_session_t` container and initializes `config_mutex` (see [src/engine/engine_session_builder.c](../src/engine/engine_session_builder.c)).
 
 3. **Shared State, Processing Parameters & DSD/DoP Helpers Setup**:
    - `engine_session_build_shared_state_and_dop()` allocates `engine_shared_state_t` (initializing SPSC queues `captured_queue` and `processed_queue`, and `state_raw` to `PROCESSING_STATE_STARTING`) and `processing_parameters_t`.
@@ -530,8 +530,8 @@ If `should_stop()` is already `true`, the threads exit their loops silently, byp
 Standard RIFF WAV headers store chunk and file sizes using 32-bit unsigned integers (`uint32_t`), limiting the maximum playable or recordable stream length to $2^{32} - 1$ bytes (~4 GB).
 
 When an active playback backend writes to a standard WAV file without RF64 extensions (`use_rf64: false`) and the next audio chunk would breach the 4 GB limit:
-1. `file_playback_write` in [`src/backend/file_backend.c`](src/backend/file_backend.c) intercepts the write, logs a warning, and returns `false` with `err->type = BACKEND_ERROR_NONE` (signaling a clean file boundary rather than an operating system I/O fault).
-2. The playback loop in [`src/engine/engine_playback_loop.c`](src/engine/engine_playback_loop.c) inspects `err.type`:
+1. `file_playback_write` in [`src/backend/file_backend.c`](../src/backend/file_backend.c) intercepts the write, logs a warning, and returns `false` with `err->type = BACKEND_ERROR_NONE` (signaling a clean file boundary rather than an operating system I/O fault).
+2. The playback loop in [`src/engine/engine_playback_loop.c`](../src/engine/engine_playback_loop.c) inspects `err.type`:
    ```c
    if (err.type == BACKEND_ERROR_NONE) {
        reached_eos = true;

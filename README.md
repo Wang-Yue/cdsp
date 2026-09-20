@@ -1,314 +1,183 @@
-# High-Performance Multirate Audio Processing: A C Alternative Engine Architecture for Real-Time DSP
+# CDSP Audio Suite
 
-**Author**: Wang-Yue  
-**Date**: July 2026  
+<p align="center">
+  <strong>A high-performance, cross-platform audio DSP engine, CLI daemon, and Qt 6 desktop studio suite.</strong>
+</p>
 
----
-
-## Abstract
-This paper presents the design, implementation, and performance evaluation of a high-performance, cross-platform alternative digital signal processing (DSP) engine written in C (`CDSP`). Supporting macOS, Linux, and Windows, the engine achieves seamless drop-in compatibility with the upstream Rust-based *CamillaDSP* by implementing the exact same configuration schemas and WebSocket control APIs. By replacing generic, platform-agnostic concurrency and vectorization structures with custom wait-free single-producer single-consumer (SPSC) queues, platform-native semaphores, multi-platform task schedulers (Grand Central Dispatch / OpenMP), and native hardware vectorization (Apple Accelerate / GCC auto-vectorization), our architecture delivers up to 1.77x faster filter execution, 1.73x faster resampling throughput, and 1.25x faster raw end-to-end loopback processing. Furthermore, our design enforces strict real-time safety, eliminating memory allocations, deallocations, and blocking disk I/O on the audio thread during live configuration reloads.
-
----
-
-## 1. Introduction
-
-### 1.1 Motivation & Upstream Limitations
-Real-time audio processing requires processing threads to meet strict, sub-millisecond execution deadlines. Upstream *CamillaDSP*, written in Rust, has established itself as a versatile and popular platform-agnostic DSP engine. However, its generalized architecture introduces three fundamental bottlenecks when running on modern operating systems and asymmetric multi-core hardware (such as Apple Silicon):
-
-1. **Lock Contention**: Upstream CamillaDSP makes extensive use of synchronization locks (such as `RwLock` or `Mutex`) to share state (including status structs, volume parameters, and active configurations) between the control thread and the real-time audio loops. Although my recent proposals have helped optimize lock usage in some paths, several locks remain deeply embedded in the engine's architecture and are impossible to eliminate completely, risking priority inversion and audio path degradation.
-2. **Hot-Path Memory and File Operations**: In CamillaDSP, configuration updates and filter parameter changes (such as reloading a convolution coefficient WAV file) are executed directly on the high-priority processing thread. This triggers synchronous disk reads and dynamic memory allocations (`malloc`/`free`) on the audio thread, risking priority inversion and audible dropouts.
-3. **Generic Concurrency Primitives**: CamillaDSP relies on `crossbeam_channel` for thread coordination and `rayon` for task parallelization. While highly optimized, crossbeam channels introduce lock contention and heap-allocation overhead under heavy workloads. Rayon's work-stealing threadpool is designed for general-purpose parallel loops but is oblivious to real-time scheduling constraints and asymmetric CPU layouts (Performance vs. Efficiency cores), leading to execution jitter and thread-migration overhead.
-4. **Platform-Agnostic Vectorization**: Upstream Rust relies on compiler auto-vectorization (SIMD) and generic FFT crates (e.g., `realfft`). This prevents the engine from leveraging hardware-specific, OS-integrated vector libraries like Apple's Accelerate (vDSP) framework, which are hand-optimized and dynamically tuned for the target CPU.
-
-### 1.2 The Alternative Approach
-Rather than introducing platform-specific forks or breaking modifications into the upstream Rust codebase, we designed and built a clean-sheet alternative engine. To ensure drop-in compatibility with existing integrations (such as the CamillaDSP-Monitor interface), our alternative engine maintains complete compatibility with **CamillaDSP v5.0 (Commit `99e9724`)** by adhering to two strict integration requirements:
-- **Shared Configuration Format**: The C engine parses and executes the exact same JSON configuration files.
-- **WebSocket API Compatibility**: The control protocol implements the identical WebSocket interface, including format querying, volume control, level-meter streaming, and live pipeline reloading.
-
-### 1.3 Code Lineage, Derivation & Licensing
-CDSP is an alternative C implementation engineered for high-throughput, lock-free real-time digital signal processing. Portions of the audio processing pipelines, platform backends, and configuration handling are ported and derived from upstream CamillaDSP (authored by Henrik Enquist and contributors, dual-licensed under GPLv3 and MPL-2.0). 
-
-Additionally, the engine links against and utilizes FFTW for high-performance FFT and convolution routines. 
-
-In accordance with the requirements of GPLv3 (including Section 5 modification notices), CDSP is licensed and distributed under the GNU General Public License (GPLv3). Full copyright notices for the original upstream works and contributors are preserved in the [NOTICE](NOTICE) and [LICENSE](LICENSE) files.
-
-### 1.4 Design Safety and C Portability
-The alternative codebase focuses entirely on the C engine (`CDSP`) to achieve maximum cross-platform portability across macOS, Linux, and Windows. To ensure design safety and correctness during the initial development:
-
-1. **Safety Prototyping in Swift 6**: We originally designed and prototyped the lock-free primitives and synchronization invariants using Swift 6. Leveraging Swift 6's strict compile-time data isolation, sendability checking, and memory safety models, we verified and proved all core logical deductions, lock-free ring-buffer synchronization invariants, and state-transition models.
-2. **AI-Assisted Porting to C**: Once the design was proven sound in the Swift prototype, we used AI models to port the codebase systematically into C. While the resulting C engine (`CDSP`) employs raw pointers, manual memory offsets, and low-level thread APIs, it inherits the structurally proven correctness and safety invariants validated by the Swift compiler.
-3. **Target Deployment**: With the prototype phase complete, the Swift engine has been retired, and `CDSP` remains the single, actively supported high-performance engine for production deployments.
+<p align="center">
+  <img src="https://img.shields.io/badge/Language-C11%20%7C%20C%2B%2B17-blue.svg?style=flat-square" alt="Language" />
+  <img src="https://img.shields.io/badge/GUI-Qt%206-green.svg?style=flat-square&logo=qt" alt="Qt 6" />
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/License-GPLv3-orange.svg?style=flat-square" alt="License" />
+</p>
 
 ---
 
-## 2. Architecture & Design Principles
+## Overview
 
-```mermaid
-flowchart TB
-    subgraph Rust ["Upstream CamillaDSP Concurrency"]
-        direction TB
-        R_Cap["Capture Thread"] -->|"Crossbeam Channel"| R_Proc["Processing Thread"]
-        R_Proc -->|"Rayon Work-Stealing Pool"| R_Filt["Filter Workers"]
-        R_Proc -->|"Crossbeam Channel"| R_Play["Playback Thread"]
-    end
+**CDSP** is a modular, high-throughput audio digital signal processing suite engineered for ultra-low latency, lock-free real-time audio routing, parametric equalization, convolution filtering, and acoustic measurement.
 
-    subgraph CDSP ["C Engine (CDSP) Concurrency"]
-        direction TB
-        C_Cap["Capture Thread"] -->|"Wait-Free SPSC Queue<br/>+ Native Semaphore Signal"| C_Proc["Processing Thread"]
-        C_Proc -->|"GCD dispatch_apply_f<br/>(Apple Silicon P/E Cores)"| C_Sched["Dynamic Core Scheduling"]
-        C_Proc -->|"Wait-Free SPSC Queue<br/>+ Native Semaphore Signal"| C_Play["Playback Thread"]
-    end
+The repository is organized into three primary components:
+
+1. **[Core C DSP Engine (`libcdsp`) & CLI Daemon (`cdsp`)](docs/ENGINE.md)**:
+   A lightweight, drop-in replacement for CamillaDSP with hardware SIMD acceleration (Apple Accelerate / NEON / AVX2 / FFTW3), wait-free SPSC queue concurrency, driverless macOS CoreAudio loopback, and native DSD/DoP decoding and encoding.
+2. **[CDSP Studio (`cdsp-studio`)](studio/README.md)**:
+   A cross-platform Qt 6 / C++ desktop application providing real-time DSP signal chain visualization, interactive parametric EQ design, FIR impulse response filtering, acoustic room correction wizards, headphone AutoEQ / Oratory1990 preset databases, and floating mini-players.
+3. **[ALSA Rate Notify Plugin (`plugins/`)](plugins/README.md)**:
+   A native Linux ALSA `ioplug` module enabling automatic, bit-perfect sample rate and format switching over `snd-aloop` without audio drops.
+
+---
+
+## Screenshots
+
+![CDSP Studio visualization dashboard](Visualization.png)
+
+![CDSP Studio parametric equalizer diagram](EQDiagram.png)
+
+![CDSP Studio audio device settings (Linux)](DeviceSetting.png)
+
+![CDSP Studio dashboard (Linux)](Dashboard.png)
+
+---
+
+## Project Structure
+
+```text
+cdsp/
+├── CMakeLists.txt              # Root CMake build configuration
+├── src/                        # Core C DSP engine (audio, backend, config, dsd, engine, filters, resampler)
+├── include/                    # Public C API headers (include/cdsp/cdsp.h)
+├── app/                        # CLI daemon & WebSocket RPC server entry point
+│   ├── main.c
+│   └── server/
+├── studio/                     # CDSP Studio (Qt 6 / C++ GUI application)
+│   ├── CMakeLists.txt
+│   ├── main.cpp                # Qt application entry point
+│   ├── ui/                     # Views, plots, dialogs, visualizers, mini-player
+│   ├── models/                 # Audio devices, presets, monitoring, pipeline models
+│   ├── engine/                 # DSP engine controller & state bridge
+│   ├── room_correction/        # AutoFit curve fitting, sweeps, subwoofer assist
+│   ├── resources/              # Icons (app.icns/app.png), QRC resource bundle
+│   ├── cmake/
+│   └── README.md
+├── plugins/                    # ALSA rate and format notification plugin for Linux
+│   ├── CMakeLists.txt
+│   ├── pcm_rate_notify.c
+│   └── README.md
+├── docs/                       # Technical specifications, audits, and architecture deep dives
+│   ├── ENGINE.md               # Core engine architecture & benchmark evaluation
+│   ├── INTENTIONAL_DIVERGENCES.md # Architectural enhancements & safety guarantees
+│   ├── engine_state_management.md # Real-time state machine & thread concurrency model
+│   ├── dsp_engine_public_api_alignment.md # Public C API dispatch contract
+│   └── callgraph_audit_report.md # Real-time audio loop zero-lock/zero-alloc audit
+├── tests/                      # Full unit, integration, and benchmark test suite
+└── tools/                      # Code generation, schema generators, and callgraph AST audit tools
 ```
 
-### 2.1 Wait-Free SPSC Queue and Platform-Native Semaphores
-To transfer audio blocks between the Capture, Processing, and Playback loops without thread blocking or locks, we implement a custom power-of-two capacity Single-Producer Single-Consumer (SPSC) queue ([lock_free_ring_buffer.c](src/utils/lock_free_ring_buffer.c)). 
+---
 
-Index coordination is achieved using atomic integers (`_Atomic`) with release-acquire memory ordering. The queue memory is fully pre-allocated at startup, guaranteeing zero heap allocations on the hot path. 
+## Key Features
 
-For thread coordination, the engine uses platform-native binary semaphores (`dispatch_semaphore_t` on macOS; `sem_t` on Linux) instead of heavy mutexes or spin-locks. When the SPSC queue is empty, the consumer sleeps on the semaphore. The producer signals the semaphore after enqueueing a chunk. The consumer then drains the queue completely in a tight loop before sleeping again, minimizing context-switch overhead.
+- ⚡ **High-Throughput Real-Time Audio**: Up to **1.8x faster** filter execution and **1.7x faster** resampling throughput with full multi-threaded dynamic scheduling (Apple GCD / OpenMP).
+- 🔒 **Zero-Lock & Zero-Allocation Audio Loops**: Verified by automated AST Call Graph Auditing to ensure steady-state audio threads never acquire mutexes or invoke dynamic memory allocators.
+- 🪟 **Rich Desktop Experience**: Full-featured Qt 6 GUI with interactive frequency response curves, vector scopes, waterfall spectrograms, VU meters, and AutoEQ database integration.
+- 🎧 **Native DSD & DoP Support**: In-place decoding and encoding for DSD64–DSD512 and DoP carrier streams.
+- 🍏 **Driverless macOS Loopback**: Native process-level and hardware-level audio capture via `CATapDescription` without third-party virtual audio cables.
+- 🐧 **Bit-Perfect Linux Switching**: ALSA rate notify plugin intercepts player sample rate transitions and coordinates dynamic engine restarts.
 
-### 2.2 Strict Real-Time Memory Management & State Copying
-To meet real-time guarantees, the audio threads perform zero memory allocations (`malloc`/`free`) and zero deallocations in the steady-state. 
+---
 
-#### 2.2.1 Round-Robin Chunk Pool
-Audio chunks are cycled through a pre-allocated chunk pool (`round_robin_chunk_pool_t`) whose capacity is matched to the SPSC queue depth. Processing loops use pre-sized static scratch buffers for resampler output and pipeline steps.
+## Building from Source
 
-#### 2.2.2 Off-Thread Pipeline GC and In-Place State Transfers
-When a live configuration change is requested, the reload mechanism preserves audio continuity and guarantees real-time safety via a deferred garbage collection pattern:
+### Prerequisites & Dependencies
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant C as Control Thread (Main/Control)
-    participant A as Audio Thread (Realtime Processing)
+- **C/C++ Compiler**: C11 and C++17 compatible compiler (Clang, GCC, or MSVC)
+- **CMake**: `3.20` or newer
+- **FFTW3**: Double & single precision FFT libraries (`libfftw3`, `libfftw3f`)
+- **Qt 6** *(Required for CDSP Studio GUI)*: `Core`, `Widgets`, `Network`, `Concurrent`, `Multimedia`
 
-    Note over C: 1. Builds new pipeline in bg
-    C->>A: 2. Atomic Exchange (next_pipeline)
-    Note over A: 3. Core switches to new pipeline<br/>Copies state (zero allocations)
-    A->>C: 4. Retires old pipeline via Atomic Pointer
-    Note over C: 5. Deallocates old filters async
+#### macOS (Homebrew)
+```bash
+brew install cmake fftw qt
 ```
 
-1. **Background Compilation**: The **Control Thread** loads configuration parameters, performs synchronous disk reads (e.g. loading convolution WAV coefficient files), and allocates memory for the new pipeline in the background.
-2. **Atomic Swap**: The Control Thread publishes the new pipeline pointer via an atomic slot (`_Atomic(pipeline_t*)`).
-3. **In-Place State Transfer**: At the start of its next iteration, the **Processing Thread** checks the atomic slot. If a new pipeline is present, it calls [pipeline_transfer_state](src/pipeline/pipeline.c#L174-L196). Filters are matched by name, and their active history states (such as biquad delay lines and loudness targets) are copied in-place. This state copy copies raw values and performs **zero allocations, zero deallocations, and zero disk reads**.
-4. **Deferred GC**: The old pipeline pointer is retired into a single atomic slot `retired_pipeline` (in [engine_shared_state.c](src/engine/engine_shared_state.c)). The **Control Thread** periodically collects this pointer and deallocates the old structures asynchronously, keeping the audio thread entirely free of deallocation overhead.
-
-### 2.3 Cross-Platform Vectorization & Dynamic Core Scheduling
-We leverage platform-native APIs and math acceleration frameworks depending on the target operating system:
-
-- **Hardware-Accelerated Vectorization**:
-  - **macOS**: Biquad calculations, mixer mappings, and FFTs are delegated directly to Apple's **Accelerate (vDSP / vForce)** framework, utilizing low-level ARM Neon SIMD registers.
-  - **Linux & Windows**: Biquad and filter loops are structured for compiler auto-vectorization (utilizing NEON on ARM and AVX2/AVX-512 on x86_64). FFT operations are optionally backed by the high-performance **FFTW** or **OpenBLAS** libraries, falling back to a custom, hand-optimized mixed-radix C FFT implementation.
-- **Dynamic Thread Scheduling**:
-  - Rather than using a generic work-stealing threadpool (such as Rayon in Rust), the engine parallelizes multi-channel filters using **Grand Central Dispatch (GCD)** via `dispatch_apply_f` (on macOS or Linux) or **OpenMP** (on Linux or Windows).
-  - GCD integrates directly with the macOS kernel scheduler to dynamically assign workloads to Performance (P) and Efficiency (E) cores, optimizing for CoreAudio deadlines. On Linux/Windows, OpenMP distributes filter processing lanes across cores with low-overhead static scheduling, avoiding cache thrashing.
-- **Explicit Loop Vectorization**: Biquad loops and windowed-sinc resampler dot products are decorated with vectorization hints (`#pragma clang loop vectorize(enable)` / OpenMP SIMD pragmas) and fast-math contract pragmas (`#pragma clang fp contract(fast)`), ensuring Clang and GCC generate optimal Neon/AVX assembly.
-
-### 2.4 Real-Time Safe Stall Watchdog
-Hardware drops, clock drift, or device hangs are handled using a dedicated **Stall Watchdog** ([engine_capture_loop.c](src/engine/engine_capture_loop.c#L180-L200)) built directly into the capture loop.
-
-#### 2.4.1 Unified Design vs. Backend-Specific Duplication
-A major architectural advantage of our design lies in how stall detection is managed:
-- **Upstream CamillaDSP Bottleneck**: Upstream CamillaDSP distributes connection loss and timeout handling inside each specific backend device driver (e.g. AlsaCapture, CoreAudioCapture). This leads to fragmented stall behavior, code duplication, and inconsistent recovery policies across different platforms.
-- **Unified Engine-Level Watchdog**: Our architecture implements the stall watchdog exactly **once** at the engine capture loop layer, wrapping around a simple backend read abstraction. Regardless of which backend is active (CoreAudio, ALSA, or file streams), the watchdog monitors read rates uniformly. This separation of concerns significantly simplifies backend drivers, guarantees consistent recovery behaviors across platforms, and demonstrates a cleaner, more maintainable architectural design.
-
-#### 2.4.2 Technical Implementation
-- **vDSO Clock Read**: The watchdog measures time using `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)`. On macOS, this reads directly from the user-space mapped **vDSO** page, bypassing the syscall ring transition entirely.
-- **Fail-Safe Transitions**: If the capture device fails to return audio chunks for more than 0.5s consecutively while running, the watchdog transitions the engine state to `STALLED` via the atomic state machine, allowing the control server to alert the client and initiate a restart. The watchdog automatically recovers when the device resumes delivery, and is disabled during the `PAUSED` state to prevent false positives.
-
-### 2.5 DSD (Native DSD / DoP) Integration and Architectural Flexibility
-To demonstrate the architectural flexibility of our clean-sheet engines in accommodating highly specialized audio formats without adding complexity to the core real-time processing loop, we implemented native DSD over PCM (DoP) and Native DSD (8, 16, 32-bit containers) support ([dsd_decoder.h](src/dsd/dsd_decoder.h) / [dsd_encoder.h](src/dsd/dsd_encoder.h)).
-
-Rather than running DSD as a separate, bulky processing layer, our design integrates it directly into the capture and processing pipeline:
-- **Automatic In-Place Decoding**: The DSD decoder runs at the start of the `EngineCaptureLoop` ([engine_capture_loop.c](src/engine/engine_capture_loop.c)). It handles both Native DSD bitstreams (e.g. from ALSA or ASIO) and DoP carrier streams (detecting the `0x05`/`0xFA` marker alternation). When active, it decodes the raw 1-bit DSD samples in-place and decimates them back to high-resolution PCM before volume, level metering, and filter pipelines execute. This ensures downstream DSP stages and visual UI meters measure the actual audio content instead of high-frequency carrier noise.
-- **Selective In-Place Encoding**: At the end of the `EngineProcessingLoop` ([engine_processing_loop.c](src/engine/engine_processing_loop.c)), if `output_dop` is enabled or a Native DSD sample format is configured, processed PCM is modulated back to DSD and packed into a DoP or Native DSD stream before being sent to the playback SPSC queue.
-
-### 2.6 Resampling Architecture: Fixed Input vs. Fixed Output Models
-
-An important architectural difference exists between `CDSP` and upstream *CamillaDSP* regarding how asynchronous resampling mismatch is handled:
-
-* **CamillaDSP (`FIXED_ASYNC_OUTPUT` Model)**:
-  - Upstream CamillaDSP configures its resamplers (using the `Rubato` library) in **Fixed Output** mode.
-  - To guarantee a fixed output block size, CamillaDSP queries the resampler at each cycle (`input_frames_next()`) to find out how many input samples are required next (e.g., fluctuating dynamically between 1021 and 1026 frames).
-  - It then dynamically reads a **variable** number of frames from the capture hardware.
-  - *Limitation*: While highly elegant for ALSA (which easily permits variable-sized reads from its hardware ring buffer), **this model is incompatible with macOS (CoreAudio) and Windows (ASIO) capture drivers**, which strictly enforce fixed-size callback buffers. To support these platforms, CamillaDSP must implement intermediate buffering inside individual backend drivers.
-
-* **CDSP (`FIXED_ASYNC_INPUT` Model)**:
-  - `CDSP` uses **Fixed Input** mode.
-  - The capture device always reads a **fixed** block size directly from the OS/driver callback.
-  - The resampler consumes this fixed input block and produces a **variable** output block size (fluctuating slightly to match clock drift updates).
-  - The variable output block is written into a lock-free **SPSC queue**. The playback thread drains this queue and serves the playback hardware driver's fixed-size output request, with the `RateController` adjusting the target ratio based on queue fill levels.
-  - *Advantage*: This model is fully compatible with macOS, Windows, and Linux hardware APIs out of the box, without requiring any complex buffer-stashing mechanisms inside platform backends.
-
-### 2.7 Native C Public API & Zero-Overhead In-Process FFI
-
-A major architectural contrast lies in how integration and external control are achieved:
-
-* **Upstream CamillaDSP (IPC-Only Integration)**:
-  - Upstream CamillaDSP is designed exclusively as an independent, standalone executable binary. 
-  - Its internal engine modules (`camillalib`) rely heavily on Rust-specific concurrency and synchronization types (`Arc<RwLock<T>>`, `crossbeam_channel::Receiver<T>`) which cannot be directly exposed to C.
-  - Consequently, any external GUI client (like *CamillaDSP-Monitor*) must control it across a process boundary via network loopback WebSocket RPC requests, introducing socket connection setup, IPC context-switches, and JSON serialization/deserialization overhead.
-  
-* **CDSP Engine (Dual-Mode: WebSocket & Zero-Overhead FFI)**:
-  - In addition to hosting a compatible, drop-in WebSocket RPC server ([websocket_server.c](app/server/websocket_server.c)) for standard clients, `CDSP` exposes a clean, FFI-friendly public C API ([general.h](include/cdsp/general.h)).
-  - It exposes simple, stateless, thread-safe functions (such as `cdsp_engine_create`, `cdsp_volume_set_gain`, `cdsp_signal_levels_get`) that operate directly on opaque engine handles.
-  - This allows host applications (like `CamillaDSP-Monitor` via Swift FFI or `Monitor-Qt` via direct C++ link) to embed the DSP processing engine **directly in-process** as a static or dynamic library (`libdsp.a`). 
-  - Parameter changes (such as muting, panning, or changing volume) bypass IPC serialization entirely and update the engine's atomic register slots directly, eliminating TCP/IPC socket latency and loopback jitter.
-
-### 2.8 Driverless macOS Audio Loopback (macOS 14.2+)
-
-Routing system or application audio into real-time DSP pipelines on macOS has historically required installing third-party virtual loopback audio drivers (such as *BlackHole* or *Loopback*). While functional, virtual drivers introduce administrative friction (requiring system permissions and driver installations), decouple clock domains (introducing asynchronous clock drift between virtual and physical devices), and incur substantial buffer latency (often 30ms – 80ms).
-
-`cdsp` extends the native `CoreAudio` capture backend with direct macOS 14.2+ CoreAudio Audio Hardware Tapping (`CATapDescription` / `AudioHardwareCreateProcessTap`), activated simply with `"loopback": true` (matching WASAPI and PipeWire loopback semantics):
-
-```json
-{
-  "capture": {
-    "type": "CoreAudio",
-    "channels": 2,
-    "device": "DX3 Pro+",
-    "loopback": true,
-    "format": "FLOAT32LE",
-    "sample_rate": 48000
-  },
-  "playback": {
-    "type": "CoreAudio",
-    "channels": 2,
-    "device": "DX3 Pro+",
-    "format": "FLOAT32LE",
-    "sample_rate": 48000
-  }
-}
+#### Linux (Debian / Ubuntu)
+```bash
+sudo apt-get update && sudo apt-get install -y \
+    build-essential cmake \
+    libfftw3-dev \
+    libasound2-dev libpipewire-0.3-dev libdbus-1-dev \
+    qt6-base-dev qt6-multimedia-dev
 ```
 
-#### Key Capabilities:
-- **100% Driverless & Rootless**: Completely eliminates virtual kernel extensions and HAL `.driver` plugins. Users simply select their physical DAC as the macOS system default output device without any extra drivers.
-- **Minimal Latency**: Intercepts audio frames directly within the physical device's native hardware IO cycle. Eliminates intermediate virtual driver ring buffers, inter-thread context switches, and dynamic clock-drift resamplers for the lowest possible round-trip delay.
-- **Zero Clock Drift**: Capturing the loopback tap of a physical DAC runs both capture and playback loops against the identical hardware crystal oscillator ($1:1$), avoiding buffer drift and eliminating the CPU overhead of asynchronous resampling.
-- **Per-Application & Process Capture**: In addition to hardware device taps, `cdsp` supports targeted process tapping by naming the capture device as `"app:app_name"` (e.g. `"app:Google Chrome"`, `"app:Music"`, `"app:Spotify"`), routing sound from specific applications directly into the DSP pipeline while all running applications are dynamically exposed in the capture device registry and capability APIs.
-- **Strict Bit-Perfect Verification & Dynamic Rate Reporting**: `cdsp` strictly verifies that the configured sample rate matches the physical DAC's nominal rate on initialization (disallowing implicit CoreAudio sample rate conversion), while monitoring hardware sample rate transitions via `rate_change_watcher` to report `CAPTURE_FORMAT_CHANGE` events to the external supervisor (`cdsp-studio`).
-- **Anti-Feedback Loop & Auto-Mute**: Automatically isolates `cdsp`'s own process ID and sets `CATapMuted` on the tapped device stream, preventing un-DSP'd raw audio leakage to the DAC and eliminating acoustic feedback.
-
-### 2.9 Intentional Behavioral Divergences & Architectural Enhancements
-
-`cdsp` maintains rigorous line-by-line DSP and protocol parity with upstream *CamillaDSP* and *Rubato*. A behavioral divergence from upstream is admitted only when **`cdsp` does strictly better**—such as eliminating acoustic and speaker safety hazards, guaranteeing hard real-time execution safety (zero allocations and zero disk I/O on the audio thread), preventing transient pops across filter changes, preserving state continuity across reloads, and achieving higher numerical precision.
-
-All intentional divergences, architectural enhancements, technical rationales, and verification details are comprehensively documented in:
-
-👉 **[docs/INTENTIONAL_DIVERGENCES.md](docs/INTENTIONAL_DIVERGENCES.md)**
-
+#### Windows (MSYS2 UCRT64)
+In the MSYS2 UCRT64 shell:
+```bash
+pacman -S --needed \
+    mingw-w64-ucrt-x86_64-gcc \
+    mingw-w64-ucrt-x86_64-cmake \
+    mingw-w64-ucrt-x86_64-ninja \
+    mingw-w64-ucrt-x86_64-fftw \
+    mingw-w64-ucrt-x86_64-qt6-base \
+    mingw-w64-ucrt-x86_64-qt6-multimedia
+```
 
 ---
 
-## 3. Head-to-Head Performance Evaluation
+### Build Commands
 
-Benchmarks were conducted on Apple Silicon (M-series processor) under identical host operating conditions.
+#### 1. Full Build (Core Engine, Daemon & CDSP Studio)
 
-### 3.1 Pipeline Execution Speeds (Latency per Chunk)
-*Test Config: 48 kHz, Chunk Size = 1024 frames. 4-in, 2-out layout.*
+```bash
+cmake -B build -S .
+cmake --build build -j
+```
 
-#### A. Biquad-Only Pipeline (96 EQ evaluations/chunk)
-| Engine | Single-Threaded Mode | Multi-Threaded Mode | Speedup Ratio | Winner |
-| :--- | :---: | :---: | :---: | :---: |
-| **CamillaDSP (Rust)** | 239.76 µs | 193.39 µs | **1.24x** | |
-| **CDSP (C Engine)** | **198.21 µs** | **109.22 µs** | **1.81x** | 🟢 **CDSP (1.77x faster)** |
+The compiled binaries will be placed in `build/bin/`:
+- `build/bin/cdsp` — Core DSP CLI daemon & WebSocket RPC server
+- `build/bin/CDSPStudio` (or `.app` on macOS) — Qt 6 Desktop GUI Studio
 
-#### B. Biquad + Convolution Pipeline (96 EQs + 12 long convolutions/chunk)
-*Convolutions lengths: 32768, 65536 taps.*
-| Engine | Single-Threaded Mode | Multi-Threaded Mode | Speedup Ratio | Winner |
-| :--- | :---: | :---: | :---: | :---: |
-| **CamillaDSP (Rust)** | **561.79 µs** | 343.37 µs | **1.64x** | |
-| **CDSP (C Engine)** | 653.10 µs | **278.06 µs** | **2.35x** | 🟢 **CDSP (1.23x faster)** |
+#### 2. Headless Build (Core Engine & CLI Daemon Only)
 
-* **Analysis**: CDSP's single-threaded biquad path is 17% faster than Rust's due to Apple Accelerate biquad vectorization. In multi-threaded mode, GCD dynamic core scheduling scales exceptionally well, achieving a **2.35x speedup** on heavy convolution workloads (compared to Rayon's **1.64x**), making the CDSP engine **20% faster than Rust** under heavy load.
+If building on headless servers, embedded devices, or minimal environments without Qt:
 
----
+```bash
+cmake -B build -S . -DENABLE_STUDIO=OFF
+cmake --build build -j
+```
 
-### 3.2 End-to-End Raw Loopback Throughput
-To isolate the coordination overhead of the SPSC queues and signaling semaphores, we ran a deterministic, unthrottled File-to-File loopback test.
-*Workload: 10 MB PCM stereo file, 59.44s real-time duration, chunk size = 512.*
+#### 3. Run Test Suite
 
-| Engine | Execution Time | Real-time Speed Factor (RTF) | Winner |
-| :--- | :---: | :---: | :---: |
-| **CamillaDSP (Rust)** | 0.060s | **995.1x** | |
-| **CDSP (C Engine)** | **0.048s** | **1247.7x** | 🟢 **CDSP (1.25x faster)** |
+```bash
+ctest --test-dir build -j --output-on-failure
+```
 
-* **Analysis**: CDSP's wait-free SPSC queues and platform semaphores bypass the scheduling overhead and allocation checks of Rust's Crossbeam channels, achieving a **25% increase in raw data throughput** (1247.7x real-time speed).
+#### 4. Code Formatting & Static Analysis
 
----
+```bash
+# Format all C/C++ source and header files
+cmake --build build --target format
 
-### 3.3 Resampler Throughput & Quality Matrix (CDSP vs. Rubato Rust)
-Resampler performance was evaluated against the popular Rust library **Rubato** across 9 rate-conversion pairs.
+# Check formatting without modifying files
+cmake --build build --target format-check
 
-#### Throughput Comparison (Real-Time Speed Factor - RTF, higher is better)
-| Rate Pair | CDSP Sync (vDSP) | Rubato FFT (Rust) | CDSP Poly (SIMD) | Rubato Poly (Rust) | CDSP Sinc (SIMD) | Rubato Sinc (Rust) | CDSP vs. Rust Winner |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **44.1 $\rightarrow$ 48k** | **1839.8x** | 1559.7x | **3626.7x** | 2133.0x | **139.1x** | 125.3x | 🟢 **CDSP (1.18x – 1.70x faster)** |
-| **48 $\rightarrow$ 44.1k** | **1817.3x** | 1545.7x | **3915.4x** | 2320.7x | **152.5x** | 137.1x | 🟢 **CDSP (1.18x – 1.69x faster)** |
-| **48 $\rightarrow$ 96k** | **1967.8x** | 1831.8x | **1846.2x** | 1077.9x | **94.9x** | 84.3x | 🟢 **CDSP (1.07x – 1.71x faster)** |
-| **96 $\rightarrow$ 48k** | **2202.8x** | 1987.0x | **3531.1x** | 2264.3x | **189.1x** | 168.6x | 🟢 **CDSP (1.11x – 1.56x faster)** |
-| **44.1 $\rightarrow$ 192k** | 616.9x | **637.1x** | **922.2x** | 539.7x | **35.2x** | 31.9x | 🟢 **CDSP (Poly/Sinc 1.71x faster)** |
-| **192 $\rightarrow$ 44.1k** | **845.8x** | 781.6x | **3574.3x** | 2195.4x | **154.3x** | 135.8x | 🟢 **CDSP (1.08x – 1.63x faster)** |
-| **61.9 $\rightarrow$ 64k** | 662.2x | **683.0x** | **2684.8x** | 1547.0x | **102.4x** | 92.9x | 🟢 **CDSP (Poly/Sinc 1.73x faster)** |
-
-* **Analysis**:
-  - The `SynchronousResampler` (CDSP Sync) runs up to **18% faster** than Rubato FFT due to Apple's low-level, OS-tuned `vDSP` DFT kernels.
-  - The polynomial (`AsyncPolyResampler`) and windowed-sinc (`AsyncSincResampler`) resamplers run up to **70% faster** than Rubato, demonstrating the efficiency gains from SIMD loop optimization and register-friendly calculations.
-
-### 3.4 DoP (DSD over PCM) Encoder/Decoder Performance
-Throughput was evaluated on a DSD256 carrier stream (768 kHz PCM equivalent carrier rate) with 2 channels on Apple Silicon. Under these conditions, the real-time budget per frame is **1302.08 ns**.
-
-| Stage | Throughput per Frame | Real-time Speed Factor (RTF) | Status |
-| :--- | :---: | :---: | :---: |
-| **DoP Encoder** | 263.12 ns | **4.95x** | 🟢 Real-Time Safe |
-| **DoP Decoder** | 28.95 ns | **44.98x** | 🟢 Real-Time Safe |
-
-* **Analysis**: Despite the high-order (SDM-6) modulator running on a 768 kHz carrier stream, our byte-lookup convolution maps to hardware caches efficiently. The decoder processes a frame in under 29 ns, running **45x faster than real-time**, while the encoder runs at **4.95x real-time**, proving the design is highly performant and flexible.
-
-### 3.5 Build Speed and Binary Footprint (C vs. Rust)
-In addition to runtime execution speed, a critical goal of our clean-sheet rewrite was to improve the development loop and minimize target storage overhead. We conducted a single-core build benchmark on Apple Silicon comparing the C engine (`CDSP`) and the upstream Rust engine (`camilladsp`). 
-
-#### 3.5.1 Build Duration (Single Core Compile)
-*Clean build compile times measured under identical hardware and job conditions (`-j 1` and `-C codegen-units=1`).*
-
-| Engine / Target | User Time | System Time | Total Wall Time | Build Speed Ratio |
-| :--- | :---: | :---: | :---: | :---: |
-| **C Target (`cdsp`)** | 15.32s | 3.93s | **22.65s** | 🟢 **4.31x faster build** |
-| **Rust Engine (`camilladsp`)** | 80.49s | 6.79s | **97.58s** | |
-
-The C engine builds in ~22 seconds, representing a **4.3x faster compilation cycle** than the upstream Rust engine.
-
-#### 3.5.2 Standalone Binary Footprint (Executable Size)
-*Comparing the compiled CLI executable size before and after symbol stripping.*
-
-| Engine / Target | Unstripped Executable | Stripped Executable | Size Ratio (Stripped) |
-| :--- | :---: | :---: | :---: |
-| **C Target (`cdsp`, Default -O3)** | 366 KB (375,568 B) | **331 KB** (339,080 B) | 🟢 **16.7x smaller** |
-| **C Target (`cdsp`, Size-Optimized)** | 252 KB (257,648 B) | **220 KB** (225,048 B) | 🟢 **25.2x smaller** |
-| **Rust Engine (`camilladsp`)** | 6.46 MB (6,458,816 B) | **5.54 MB** (5,535,448 B) | |
-
-*\*Note: The C Target Size-Optimized build is compiled with `MODE=small` (using `-Oz -flto -ffunction-sections -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -Wl,-dead_strip`).*
-
-#### 3.5.3 Architectural Footprint Takeaway
-- **C Target Efficiency**: The C engine compilation produces an incredibly compact **220 KB** stripped executable, making it ideal for resource-constrained platforms, embedded systems, and minimal containers.
+# Run Include-What-You-Use (IWYU) analysis
+cmake --build build --target iwyu
+```
 
 ---
 
-## 4. Potential Future Improvements
+## Documentation
 
-While the alternative engine offers substantial architectural and performance advantages, several areas present opportunities for future research:
-
-1. **Dynamic SIMD Dispatch (AVX2/AVX-512/NEON Runtime Selection)**: Adding run-time CPU feature detection (e.g. via `cpuid` or `getauxval`) to dynamically select AVX2 or AVX-512 vector paths on x86_64 systems without requiring native compiler compilation flags (`-march=native`).
-2. **Hybrid Asymmetric Scheduling**: Implementing custom GCD queues that dynamically steer heavy convolution filter segments exclusively to Performance cores, while placing lighter biquad filters on Efficiency cores, could optimize thermal design power (TDP) on mobile macOS devices.
+- 📖 **[Core DSP Engine Deep Dive](docs/ENGINE.md)** — In-depth concurrency design, benchmarks, and performance evaluation.
+- 🎨 **[CDSP Studio Guide](studio/README.md)** — GUI features, screenshots, and acoustic wizards.
+- 🛡️ **[Intentional Divergences & Safety Enhancements](docs/INTENTIONAL_DIVERGENCES.md)** — Safe volume ramping, DSP precision, and real-time invariants.
+- 🔄 **[Engine State Management Specification](docs/engine_state_management.md)** — Lock-free thread coordination and atomic state machine.
+- 🔌 **[Public C API Specification](docs/dsp_engine_public_api_alignment.md)** — Direct C library embedding and FFI dispatch contract.
+- 🔬 **[Static Call Graph Audit Report](docs/callgraph_audit_report.md)** — Formal verification of zero-lock and zero-allocation hot paths.
 
 ---
 
-## 5. Conclusion & Attribution
+## License & Attribution
 
-### 5.1 Conclusion
-We have demonstrated that a specialized alternative DSP engine in C (`CDSP`) can achieve substantial performance gains over a platform-agnostic Rust implementation on Apple Silicon. By adopting wait-free concurrency primitives, native semaphores, off-thread garbage collection, and explicit OS-integrated vectorization, our engine realizes up to 1.7x speedups in filter processing and resampling throughput. These improvements are achieved while maintaining complete drop-in compatibility with the original configuration layouts and WebSocket API schemas.
-
-### 5.2 Attribution & Open-Source Relationship
-This project is an independent work and is not affiliated with, sponsored by, or endorsed by the original authors of CamillaDSP. We express our deep appreciation to **Henrik Enquist**, the author of CamillaDSP, for establishing the excellent JSON configuration schemas, WebSocket APIs, and state machine patterns that made this drop-in replacement architecture possible. 
-All C source code files, custom SPSC primitives, and benchmarking tests were written independently for the CamillaDSP-Monitor project.
+CDSP is licensed under the **[GNU General Public License v3.0 (GPLv3)](LICENSE)**. Full copyright notices for upstream works and contributors are preserved in the **[NOTICE](NOTICE)** file.

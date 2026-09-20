@@ -51,52 +51,56 @@ if(APPLE)
     list(APPEND EXTRA_PLATFORM_LIBS ${COCOA_LIB} ${AVFOUNDATION_LIB})
 endif()
 
-# Fetch Wang-Yue/cdsp (DSP processing engine)
-set(LOCAL_CDSP_PATH "")
-if(CDSP_SOURCE_DIR AND EXISTS "${CDSP_SOURCE_DIR}/CMakeLists.txt")
-    set(LOCAL_CDSP_PATH "${CDSP_SOURCE_DIR}")
-elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../cdsp/CMakeLists.txt")
-    get_filename_component(LOCAL_CDSP_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cdsp" ABSOLUTE)
-elseif(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/cdsp/CMakeLists.txt")
-    set(LOCAL_CDSP_PATH "$ENV{HOME}/cdsp")
-endif()
+# Fetch Wang-Yue/cdsp (DSP processing engine) if not already available in-tree
+if(NOT TARGET cdsp::dsp)
+    set(LOCAL_CDSP_PATH "")
+    if(CDSP_SOURCE_DIR AND EXISTS "${CDSP_SOURCE_DIR}/CMakeLists.txt")
+        set(LOCAL_CDSP_PATH "${CDSP_SOURCE_DIR}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../CMakeLists.txt" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+        get_filename_component(LOCAL_CDSP_PATH "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../cdsp/CMakeLists.txt")
+        get_filename_component(LOCAL_CDSP_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cdsp" ABSOLUTE)
+    elseif(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/cdsp/CMakeLists.txt")
+        set(LOCAL_CDSP_PATH "$ENV{HOME}/cdsp")
+    endif()
 
-include(FetchContent)
-if(LOCAL_CDSP_PATH)
-    message(STATUS "Using local cdsp from: ${LOCAL_CDSP_PATH}")
-    FetchContent_Declare(
-        cdsp
-        SOURCE_DIR     "${LOCAL_CDSP_PATH}"
-        EXCLUDE_FROM_ALL
-    )
-else()
-    message(STATUS "Fetching cdsp from GitHub repository")
-    FetchContent_Declare(
-        cdsp
-        GIT_REPOSITORY https://github.com/Wang-Yue/cdsp.git
-        GIT_TAG        main
-        EXCLUDE_FROM_ALL
-    )
+    include(FetchContent)
+    if(LOCAL_CDSP_PATH)
+        message(STATUS "Using local cdsp from: ${LOCAL_CDSP_PATH}")
+        FetchContent_Declare(
+            cdsp
+            SOURCE_DIR     "${LOCAL_CDSP_PATH}"
+            EXCLUDE_FROM_ALL
+        )
+    else()
+        message(STATUS "Fetching cdsp from GitHub repository")
+        FetchContent_Declare(
+            cdsp
+            GIT_REPOSITORY https://github.com/Wang-Yue/cdsp.git
+            GIT_TAG        main
+            EXCLUDE_FROM_ALL
+        )
+    endif()
+    FetchContent_MakeAvailable(cdsp)
 endif()
-FetchContent_MakeAvailable(cdsp)
 
 # ==============================================================================
 # Source Files & Platform Resources
 # ==============================================================================
-file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.h" "src/*.qrc")
+file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/resources/*.qrc")
 
 if(APPLE)
     enable_language(OBJCXX)
-    set(APP_ICON_MACOS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app.icns")
+    set(APP_ICON_MACOS "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/app.icns")
     set_source_files_properties(${APP_ICON_MACOS} PROPERTIES
         MACOSX_PACKAGE_LOCATION "Resources"
     )
     list(APPEND SOURCES
         ${APP_ICON_MACOS}
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/MacUtils.mm"
+        "${CMAKE_CURRENT_SOURCE_DIR}/utils/MacUtils.mm"
     )
 elseif(WIN32)
-    set(APP_ICON_WIN "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/app.rc")
+    set(APP_ICON_WIN "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.rc")
     list(APPEND SOURCES ${APP_ICON_WIN})
 endif()
 
@@ -105,7 +109,7 @@ endif()
 # ==============================================================================
 add_executable(cdsp-studio WIN32 ${SOURCES})
 
-target_include_directories(cdsp-studio PRIVATE src)
+target_include_directories(cdsp-studio PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 
 target_link_libraries(cdsp-studio PRIVATE
     Qt6::Core
@@ -134,7 +138,7 @@ if(ENABLE_PCH)
         <algorithm>
     )
     if(APPLE)
-        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/utils/MacUtils.mm" PROPERTIES
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/utils/MacUtils.mm" PROPERTIES
             SKIP_PRECOMPILE_HEADERS ON
         )
     endif()
@@ -147,7 +151,7 @@ if(ENABLE_UNITY_BUILD)
         UNITY_BUILD_MODE BATCH
     )
     if(APPLE)
-        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/utils/MacUtils.mm" PROPERTIES
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/utils/MacUtils.mm" PROPERTIES
             SKIP_UNITY_BUILD_INCLUSION ON
         )
     endif()
@@ -189,7 +193,7 @@ find_program(IWYU_BIN NAMES include-what-you-use)
 if(ENABLE_IWYU)
     if(IWYU_BIN)
         message(STATUS "Include-What-You-Use enabled for cdsp-studio")
-        set(IWYU_MAPPING_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/iwyu.imp")
+        set(IWYU_MAPPING_FILE "${CMAKE_SOURCE_DIR}/tools/iwyu.imp")
         set(IWYU_OPTIONS
             ${IWYU_BIN}
             -Xiwyu --mapping_file=${IWYU_MAPPING_FILE}
@@ -208,25 +212,25 @@ if(ENABLE_IWYU)
 endif()
 
 # Standalone targets to check or fix includes across the project
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh")
+if(EXISTS "${CMAKE_SOURCE_DIR}/tools/run-iwyu.sh")
     add_custom_target(
         iwyu-studio
-        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh" --check
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMAND "${CMAKE_SOURCE_DIR}/tools/run-iwyu.sh" --check "${CMAKE_CURRENT_SOURCE_DIR}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         COMMENT "Analyzing cdsp-studio includes with Include-What-You-Use..."
         USES_TERMINAL
     )
     add_custom_target(
         iwyu-check-studio
-        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh" --check
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMAND "${CMAKE_SOURCE_DIR}/tools/run-iwyu.sh" --check "${CMAKE_CURRENT_SOURCE_DIR}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         COMMENT "Analyzing cdsp-studio includes with Include-What-You-Use..."
         USES_TERMINAL
     )
     add_custom_target(
         iwyu-fix-studio
-        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-iwyu.sh" --fix
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMAND "${CMAKE_SOURCE_DIR}/tools/run-iwyu.sh" --fix "${CMAKE_CURRENT_SOURCE_DIR}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         COMMENT "Applying Include-What-You-Use include fixes automatically..."
         USES_TERMINAL
     )
@@ -237,7 +241,7 @@ endif()
 # ==============================================================================
 find_program(CLANG_FORMAT_BIN NAMES clang-format)
 if(CLANG_FORMAT_BIN)
-    file(GLOB_RECURSE ALL_PROJECT_SOURCES "src/*.cpp" "src/*.h")
+    file(GLOB_RECURSE ALL_PROJECT_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/*.h")
     add_custom_target(
         format-studio
         COMMAND ${CLANG_FORMAT_BIN} -i -style=file ${ALL_PROJECT_SOURCES}
@@ -263,11 +267,11 @@ if(UNIX AND NOT APPLE)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/cmake/com.wangyue.cdspstudio.desktop"
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
     )
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app.png"
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/app.png"
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
         RENAME com.wangyue.cdspstudio.png
     )
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app.png"
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/app.png"
         DESTINATION ${CMAKE_INSTALL_DATADIR}/pixmaps
         RENAME com.wangyue.cdspstudio.png
     )
@@ -292,14 +296,7 @@ if(UNIX AND NOT APPLE)
         endif()
     ")
 
-    # ALSA Rate Notify plugin for Linux / snd-aloop rate change detection
-    find_package(PkgConfig QUIET)
-    if(PkgConfig_FOUND)
-        pkg_check_modules(ALSA QUIET alsa)
-        if(ALSA_FOUND)
-            add_subdirectory(plugins/alsa_rate_notify)
-        endif()
-    endif()
 endif()
+
 
 

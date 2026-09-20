@@ -4,11 +4,9 @@ set -e
 CDSP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$CDSP_DIR"
 
+TOOLCHAIN_FILE="${TOOLCHAIN_FILE:-$CDSP_DIR/cmake/x86_64-w64-mingw32.cmake}"
 CROSS_PREFIX="${CROSS_COMPILE:-x86_64-w64-mingw32-}"
-CC="$(which ${CROSS_PREFIX}gcc 2>/dev/null || echo ${CROSS_PREFIX}gcc)"
-AR="$(which ${CROSS_PREFIX}gcc-ar 2>/dev/null || which ${CROSS_PREFIX}ar 2>/dev/null || echo ${CROSS_PREFIX}ar)"
 DLLTOOL="$(which ${CROSS_PREFIX}dlltool 2>/dev/null || echo ${CROSS_PREFIX}dlltool)"
-SYSROOT="$("$CC" -print-sysroot 2>/dev/null || true)"
 
 BUILD_DIR="build-win"
 DEPS_DIR="$CDSP_DIR/build-win/deps"
@@ -29,9 +27,7 @@ if [ ! -f "$FFTW_DIR/libfftw3.dll.a" ] || [ ! -f "$FFTW_DIR/libfftw3f.dll.a" ]; 
 fi
 
 cmake -B "$BUILD_DIR" \
-    -DCMAKE_SYSTEM_NAME=Windows \
-    -DCMAKE_C_COMPILER="$CC" \
-    -DCMAKE_AR="$AR" \
+    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
     -DFFTW3_INCLUDE_DIR="$FFTW_DIR" \
     -DFFTW3_LIB="$FFTW_DIR/libfftw3.dll.a" \
     -DFFTW3F_LIB="$FFTW_DIR/libfftw3f.dll.a" \
@@ -48,5 +44,6 @@ cp "$FFTW_DIR"/libfftw3*.dll "$BUILD_DIR/bin/" 2>/dev/null || true
 
 echo "✅ Windows cross-compilation complete:"
 echo "   - Main binary: $BUILD_DIR/bin/cdsp.exe"
+[ -f "$BUILD_DIR/bin/CDSPStudio.exe" ] && echo "   - Studio GUI:  $BUILD_DIR/bin/CDSPStudio.exe"
 echo "   - Test runner: $BUILD_DIR/bin/test_runner.exe"
 echo "   - Benchmarks:  $BUILD_DIR/bin/test_*_benchmark.exe"

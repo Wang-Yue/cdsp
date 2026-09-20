@@ -21,18 +21,6 @@ The application is powered directly by [**cdsp**](https://github.com/Wang-Yue/cd
 
 ---
 
-## Screenshots
-
-![CDSP Studio visualization dashboard](Visualization.png)
-
-![CDSP Studio parametric equalizer diagram](EQDiagram.png)
-
-![CDSP Studio audio device settings (Linux)](DeviceSetting.png)
-
-![CDSP Studio dashboard (Linux)](Dashboard.png)
-
----
-
 ## Key Features
 
 ### 🎛 Real-Time DSP Signal Chain & Pipeline Control
@@ -78,51 +66,14 @@ CDSP Studio automatically leverages optimal platform audio APIs and hardware SIM
 
 ---
 
-## Requirements
+## Building
 
-- **C++ Compiler**: C++17 compatible compiler (`clang++`, `g++`, or MSVC 2019+)
-- **CMake**: `3.16` or newer
-- **Qt 6**: `Qt6::Core`, `Qt6::Widgets`, `Qt6::Network`, `Qt6::Concurrent`, `Qt6::Multimedia`
-- **Build Dependencies**:
-  - **macOS**: Xcode Command Line Tools
-  - **Linux**: `libasound2-dev`, `libpipewire-0.3-dev`, `libdbus-1-dev`, `libfftw3-dev`
-  - **Windows**: MinGW-w64 or MSVC with Windows SDK
-
----
-
-## Building from Source
-
-### macOS
+CDSP Studio is built directly as part of the unified CDSP build tree. See the top-level [**README.md**](../README.md#building-from-source) for prerequisites and build instructions.
 
 ```bash
-# Install dependencies via Homebrew
-brew install cmake qt
-
-# Configure and build
-cmake -B build
-cmake --build build
-```
-
-### Linux (Ubuntu / Debian)
-
-```bash
-# Install dependencies
-sudo apt-get update && sudo apt-get install -y \
-    build-essential cmake \
-    qt6-base-dev qt6-multimedia-dev \
-    libasound2-dev libpipewire-0.3-dev libdbus-1-dev \
-    libfftw3-dev
-
-# Configure and build
-cmake -B build
-cmake --build build
-```
-
-### Windows
-
-```bash
-cmake -B build
-cmake --build build
+# From repository root:
+cmake -B build -S .
+cmake --build build -j
 ```
 
 ---
@@ -130,33 +81,16 @@ cmake --build build
 ## Project Structure
 
 ```text
-cdsp-studio/
+studio/
 ├── CMakeLists.txt              # CMake build configuration and platform dependencies
-├── plugins/
-│   └── alsa_rate_notify/       # ALSA PCM plugin for dynamic sample rate notification (Linux)
-├── src/
-│   ├── main.cpp                # Application entrypoint & high-DPI initialization
-│   ├── config/                 # Biquad coefficients, DSP types, and configuration models
-│   ├── engine/                 # CDSPEngine bridge to native cdsp processing core
-│   ├── models/                 # AudioDeviceManager, AudioSettings, PipelineStore, LogManager
-│   ├── room_correction/        # AutoEQ parsing, PEQ auto-fitting, measurement filters
-│   ├── ui/                     # Qt Widgets: Dashboard, MiniPlayer, Visualizers, Dialogs
-│   ├── utils/                  # App icon rendering, Math utilities, Helpers
-│   └── resources/              # Qt resource bundles (.qrc) and icons
-```
-
----
-
-## Code Formatting
-
-The codebase enforces consistent styling with `clang-format`:
-
-```bash
-# Format all C/C++ files
-cmake --build build --target format-studio
-
-# Check formatting compliance
-cmake --build build --target format-check-studio
+├── main.cpp                    # Application entrypoint & high-DPI initialization
+├── config/                     # Biquad coefficients, DSP types, and configuration models
+├── engine/                     # CDSPEngine bridge to native cdsp processing core
+├── models/                     # AudioDeviceManager, AudioSettings, PipelineStore, LogManager
+├── room_correction/            # AutoEQ parsing, PEQ auto-fitting, measurement filters
+├── ui/                         # Qt Widgets: Dashboard, MiniPlayer, Visualizers, Dialogs
+├── utils/                      # App icon rendering, Math utilities, Helpers
+└── resources/                  # Qt resource bundles (.qrc) and icons
 ```
 
 ---

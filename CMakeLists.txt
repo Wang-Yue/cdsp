@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
-project(cdsp VERSION 5.0.0 LANGUAGES C)
+project(cdsp VERSION 5.0.0 LANGUAGES C CXX)
 
 if(APPLE)
-    enable_language(OBJC)
+    enable_language(OBJC OBJCXX)
 endif()
 
 set(CMAKE_C_STANDARD 11)
@@ -76,6 +76,7 @@ option(ENABLE_LTO         "Enable Link Time Optimization"       ON)
 option(ENABLE_NATIVE_ARCH "Enable native CPU optimization"      ON)
 option(BUILD_TESTING      "Build test runner and unit tests"    ON)
 option(BUILD_BENCHMARKS   "Build benchmark targets"             ON)
+option(ENABLE_STUDIO       "Build CDSP Studio GUI application"   ON)
 
 set(ENABLE_SANITIZER "none" CACHE STRING "Sanitizer to enable (none, address, thread, undefined, memory, leak, intsan, cfi)")
 
@@ -656,36 +657,40 @@ if(CLANG_FORMAT_BIN)
     file(GLOB_RECURSE ALL_C_AND_H_FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
     )
-    list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/build/.*")
-    list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/\\.build/.*")
+    list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/build.*")
+    list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/\\.build.*")
     list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/tests/rust_harnesses/.*")
     list(FILTER ALL_C_AND_H_FILES EXCLUDE REGEX ".*/config_gen\\.[ch]$")
 
     add_custom_target(format
         COMMAND ${CLANG_FORMAT_BIN} -i ${ALL_C_AND_H_FILES}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMENT "Formatting all C and H source files with clang-format..."
+        COMMENT "Formatting all source and header files with clang-format..."
+    )
+    add_custom_target(format-check
+        COMMAND ${CLANG_FORMAT_BIN} --dry-run -Werror ${ALL_C_AND_H_FILES}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Checking code formatting with clang-format..."
     )
 endif()
 
 # Include-What-You-Use (IWYU) targets
-find_program(IWYU_TOOL_BIN NAMES iwyu_tool iwyu_tool.py PATHS /usr/local/bin /opt/homebrew/bin)
-find_program(FIX_INCLUDES_BIN NAMES fix_includes.py fix_includes PATHS /usr/local/bin /opt/homebrew/bin)
-if(IWYU_TOOL_BIN)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/run-iwyu.sh")
     add_custom_target(iwyu
-        COMMAND ${IWYU_TOOL_BIN} -p ${CMAKE_BINARY_DIR} -- -Xiwyu --mapping_file=${CMAKE_CURRENT_SOURCE_DIR}/tools/iwyu.imp -Xiwyu --no_fwd_decls
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/run-iwyu.sh" --check
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         COMMENT "Running Include-What-You-Use analysis..."
+        USES_TERMINAL
     )
-    if(FIX_INCLUDES_BIN)
-        add_custom_target(iwyu-fix
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/iwyu
-            COMMAND ${CMAKE_COMMAND} -E echo "Running IWYU and applying include fixes..."
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            COMMENT "Applying Include-What-You-Use fixes..."
-        )
-    endif()
+    add_custom_target(iwyu-fix
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/run-iwyu.sh" --fix
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Applying Include-What-You-Use fixes..."
+        USES_TERMINAL
+    )
 endif()
 
 # -----------------------------------------------------------------------------
@@ -704,6 +709,26 @@ install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.h"
 )
+
+# -----------------------------------------------------------------------------
+# CDSP Studio (Qt GUI Application)
+# -----------------------------------------------------------------------------
+if(ENABLE_STUDIO)
+    add_subdirectory(studio)
+endif()
+
+# -----------------------------------------------------------------------------
+# Plugins (ALSA Rate Notify Plugin for Linux)
+# -----------------------------------------------------------------------------
+if(UNIX AND NOT APPLE AND ENABLE_ALSA)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(ALSA QUIET alsa)
+        if(ALSA_FOUND)
+            add_subdirectory(plugins)
+        endif()
+    endif()
+endif()
 
 set_source_files_properties(
     src/dsd/dsd_encoder.c

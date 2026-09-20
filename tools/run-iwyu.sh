@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# run-iwyu.sh - Run Include-What-You-Use (IWYU) on the CDSP Studio project
+# run-iwyu.sh - Run Include-What-You-Use (IWYU) on the CDSP project & Studio
 # ==============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/build"
-MAPPING_FILE="${PROJECT_ROOT}/cmake/iwyu.imp"
+MAPPING_FILE="${PROJECT_ROOT}/tools/iwyu.imp"
 
 # Detect IWYU tool binaries
 IWYU_TOOL=""
@@ -17,6 +17,8 @@ elif command -v iwyu_tool >/dev/null 2>&1; then
     IWYU_TOOL="$(command -v iwyu_tool)"
 elif [ -f "/opt/homebrew/bin/iwyu_tool.py" ]; then
     IWYU_TOOL="/opt/homebrew/bin/iwyu_tool.py"
+elif [ -f "/opt/homebrew/bin/iwyu_tool" ]; then
+    IWYU_TOOL="/opt/homebrew/bin/iwyu_tool"
 fi
 
 IWYU_BIN=""
@@ -36,7 +38,7 @@ elif [ -f "/opt/homebrew/bin/fix_includes.py" ]; then
 fi
 
 if [ -z "$IWYU_TOOL" ] && [ -z "$IWYU_BIN" ]; then
-    echo "Error: include-what-you-use / iwyu_tool.py not found in PATH." >&2
+    echo "Error: include-what-you-use / iwyu_tool not found in PATH." >&2
     echo "Install it via:" >&2
     echo "  macOS:  brew install include-what-you-use" >&2
     echo "  Ubuntu/Debian: sudo apt-get install iwyu" >&2
@@ -56,7 +58,7 @@ MODE="check"
 JOBS="$DEFAULT_JOBS"
 SAFE_HEADERS=false
 DRY_RUN=false
-TARGET_FILES=()
+RAW_TARGETS=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -90,7 +92,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            echo "Usage: $0 [options] [files...]"
+            echo "Usage: $0 [options] [files/dirs...]"
             echo ""
             echo "Options:"
             echo "  --check          Analyze and display IWYU recommendations (default)"
@@ -104,7 +106,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         *)
-            TARGET_FILES+=("$1")
+            RAW_TARGETS+=("$1")
             shift
             ;;
     esac
@@ -130,12 +132,22 @@ if [[ "$(uname)" == "Darwin" ]]; then
     fi
 fi
 
-# Determine source files to check if none specified
-if [ ${#TARGET_FILES[@]} -eq 0 ]; then
-    # Collect all project .cpp files in src/, excluding ObjC++ .mm
+# Expand targets to file paths
+TARGET_FILES=()
+if [ ${#RAW_TARGETS[@]} -gt 0 ]; then
+    for item in "${RAW_TARGETS[@]}"; do
+        if [ -d "$item" ]; then
+            while IFS= read -r f; do
+                TARGET_FILES+=("$f")
+            done < <(find "$item" \( -name "*.c" -o -name "*.cpp" \) -not -path "*/build/*" -not -path "*/.build/*" -not -path "*/deps/*" | sort)
+        elif [ -f "$item" ]; then
+            TARGET_FILES+=("$item")
+        fi
+    done
+else
     while IFS= read -r file; do
         TARGET_FILES+=("$file")
-    done < <(find "${PROJECT_ROOT}/src" -name "*.cpp" -not -path "*/build/*" | sort)
+    done < <(find "${PROJECT_ROOT}/src" "${PROJECT_ROOT}/app" "${PROJECT_ROOT}/studio" \( -name "*.c" -o -name "*.cpp" \) -not -path "*/build/*" -not -path "*/.build/*" -not -path "*/deps/*" | sort)
 fi
 
 echo "Running Include-What-You-Use on ${#TARGET_FILES[@]} file(s) with ${JOBS} worker(s)..."

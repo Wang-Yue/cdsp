@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Ref: engine_state_management.md - Section 1.6.1: Why Call Graph Auditing is Mandatory
+# Ref: docs/engine_state_management.md - Section 1.6.1: Why Call Graph Auditing is Mandatory
 # (Hard Real-Time Latency, Underrun Elimination & Lock Contamination Prevention)
 import os
 import re
