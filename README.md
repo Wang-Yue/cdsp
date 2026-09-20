@@ -112,6 +112,18 @@ sudo apt-get update && sudo apt-get install -y \
 
 #### Windows (MSYS2 UCRT64)
 In the MSYS2 UCRT64 shell:
+
+**Option A: Static Standalone Build (Recommended - Zero DLL dependencies)**
+```bash
+pacman -S --needed \
+    mingw-w64-ucrt-x86_64-gcc \
+    mingw-w64-ucrt-x86_64-cmake \
+    mingw-w64-ucrt-x86_64-ninja \
+    mingw-w64-ucrt-x86_64-fftw \
+    mingw-w64-ucrt-x86_64-qt6-static
+```
+
+**Option B: Dynamic Build (Shared DLLs)**
 ```bash
 pacman -S --needed \
     mingw-w64-ucrt-x86_64-gcc \
@@ -134,8 +146,14 @@ cmake --build build -j
 ```
 
 The compiled binaries will be placed in `build/bin/`:
-- `build/bin/cdsp` — Core DSP CLI daemon & WebSocket RPC server
-- `build/bin/CDSPStudio` (or `.app` on macOS) — Qt 6 Desktop GUI Studio
+- `build/bin/cdsp` (`cdsp.exe` on Windows) — Core DSP CLI daemon & WebSocket RPC server
+- `build/bin/CDSPStudio` (`CDSPStudio.exe` on Windows, `.app` on macOS) — Qt 6 Desktop GUI Studio
+
+> **Note for Windows**: On Windows (MinGW-w64 / GCC), `ENABLE_STATIC_WINDOWS=ON` is enabled by default. When built with `mingw-w64-ucrt-x86_64-qt6-static`, `cdsp.exe` and `CDSPStudio.exe` are compiled as **fully static standalone executables** with zero runtime third-party DLL dependencies. If using shared/dynamic Qt packages, configure with `-DENABLE_STATIC_WINDOWS=OFF`:
+> ```bash
+> cmake -B build -S . -DENABLE_STATIC_WINDOWS=OFF
+> cmake --build build -j
+> ```
 
 #### 2. Headless Build (Core Engine & CLI Daemon Only)
 

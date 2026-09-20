@@ -41,7 +41,35 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 # ==============================================================================
 # Dependencies
 # ==============================================================================
+if(WIN32 AND ENABLE_STATIC_WINDOWS)
+    # Prefer static Qt6 build if available in MSYS2 or sysroot
+    if(DEFINED ENV{MINGW_PREFIX} AND EXISTS "$ENV{MINGW_PREFIX}/qt6-static")
+        list(PREPEND CMAKE_PREFIX_PATH "$ENV{MINGW_PREFIX}/qt6-static/lib/cmake" "$ENV{MINGW_PREFIX}/qt6-static")
+    elseif(EXISTS "/ucrt64/qt6-static")
+        list(PREPEND CMAKE_PREFIX_PATH "/ucrt64/qt6-static/lib/cmake" "/ucrt64/qt6-static")
+    elseif(EXISTS "/mingw64/qt6-static")
+        list(PREPEND CMAKE_PREFIX_PATH "/mingw64/qt6-static/lib/cmake" "/mingw64/qt6-static")
+    elseif(DEFINED MINGW_SYSROOT AND EXISTS "${MINGW_SYSROOT}/qt6-static")
+        list(PREPEND CMAKE_PREFIX_PATH "${MINGW_SYSROOT}/qt6-static/lib/cmake" "${MINGW_SYSROOT}/qt6-static")
+    endif()
+
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ".lib")
+    set(CMAKE_IMPORT_LIBRARY_SUFFIX ".a")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        set(CMAKE_CXX_STANDARD_LIBRARIES "-Wl,--allow-multiple-definition -Wl,--start-group -lfreetype -lharfbuzz -lgraphite2 -ljpeg -ltiff -lrpcrt4 -llzma -ldeflate -ljbig -llerc -lzstd -lbrotlidec -lbrotlienc -lbrotlicommon -lbz2 -lwinpthread -Wl,--end-group ${CMAKE_CXX_STANDARD_LIBRARIES}" CACHE STRING "" FORCE)
+        set(CMAKE_C_STANDARD_LIBRARIES "-Wl,--allow-multiple-definition -Wl,--start-group -lfreetype -lharfbuzz -lgraphite2 -ljpeg -ltiff -lrpcrt4 -llzma -ldeflate -ljbig -llerc -lzstd -lbrotlidec -lbrotlienc -lbrotlicommon -lbz2 -lwinpthread -Wl,--end-group ${CMAKE_C_STANDARD_LIBRARIES}" CACHE STRING "" FORCE)
+    endif()
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent Multimedia)
+if(WIN32 AND ENABLE_STATIC_WINDOWS)
+    if(TARGET harfbuzz::harfbuzz)
+        find_library(STATIC_HARFBUZZ_LIB NAMES libharfbuzz.a HINTS /ucrt64/lib /mingw64/lib)
+        if(STATIC_HARFBUZZ_LIB)
+            set_target_properties(harfbuzz::harfbuzz PROPERTIES IMPORTED_LOCATION "${STATIC_HARFBUZZ_LIB}")
+        endif()
+    endif()
+endif()
 find_package(Threads REQUIRED)
 
 # Extra platform-specific dependencies for cdsp-studio UI
@@ -215,6 +243,9 @@ elseif(WIN32)
     set_target_properties(cdsp-studio PROPERTIES
         OUTPUT_NAME "CDSPStudio"
     )
+    if(ENABLE_STATIC_WINDOWS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_options(cdsp-studio PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--gc-sections)
+    endif()
 endif()
 
 

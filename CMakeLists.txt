@@ -77,6 +77,7 @@ option(ENABLE_NATIVE_ARCH "Enable native CPU optimization"      ON)
 option(BUILD_TESTING      "Build test runner and unit tests"    ON)
 option(BUILD_BENCHMARKS   "Build benchmark targets"             ON)
 option(ENABLE_STUDIO       "Build CDSP Studio GUI application"   ON)
+option(ENABLE_STATIC_WINDOWS "Build static standalone binaries on Windows (MinGW)" ON)
 
 set(ENABLE_SANITIZER "none" CACHE STRING "Sanitizer to enable (none, address, thread, undefined, memory, leak, intsan, cfi)")
 
@@ -125,6 +126,12 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
             add_compile_options(-march=native)
         endif()
     endif()
+endif()
+
+if(WIN32 AND ENABLE_STATIC_WINDOWS AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ".lib")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++ -Wl,--gc-sections")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -static -static-libgcc -static-libstdc++ -Wl,--gc-sections")
 endif()
 
 # Sanitizers
