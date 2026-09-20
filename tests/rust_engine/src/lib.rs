@@ -45,23 +45,21 @@ impl log::Log for RustLogger {
                 Level::Trace => "TRACE\0",
             };
 
-            let target = record.target();
-            let mut target_buf = [0u8; 64];
-            let target_bytes = target.as_bytes();
-            let t_len = target_bytes.len().min(63);
-            target_buf[..t_len].copy_from_slice(&target_bytes[..t_len]);
-
-            let msg = format!("{}", record.args());
-            let mut msg_buf = [0u8; 1024];
-            let msg_bytes = msg.as_bytes();
-            let m_len = msg_bytes.len().min(1023);
-            msg_buf[..m_len].copy_from_slice(&msg_bytes[..m_len]);
+            let c_target = std::ffi::CString::new(record.target()).unwrap_or_default();
+            let msg_str = format!("{}", record.args());
+            let c_msg = match std::ffi::CString::new(msg_str.clone()) {
+                Ok(s) => s,
+                Err(_) => {
+                    let clean = msg_str.replace('\0', " ");
+                    std::ffi::CString::new(clean).unwrap_or_default()
+                }
+            };
 
             unsafe {
                 cb(
                     level_str.as_ptr() as *const c_char,
-                    target_buf.as_ptr() as *const c_char,
-                    msg_buf.as_ptr() as *const c_char,
+                    c_target.as_ptr(),
+                    c_msg.as_ptr(),
                     user_data_ptr as *mut c_void,
                 );
             }
@@ -278,6 +276,7 @@ pub extern "C" fn cdsp_set_log_level(level_str: *const c_char) {
 #[no_mangle]
 pub extern "C" fn cdsp_engine_create() -> *mut CamillaEngine {
     init_logger_if_needed();
+    camillalib::spectrum::request_spectrum_data();
 
     let (tx_command, rx_command) = bounded(10);
     let active_config = Arc::new(Mutex::new(None));
@@ -366,6 +365,7 @@ pub extern "C" fn cdsp_set_config_json(
     }
     let eng = unsafe { &*engine };
     let json_slice = unsafe { CStr::from_ptr(json_str).to_string_lossy() };
+    log::info!("Set config: {}", json_slice);
 
     let conf: config::Configuration = match serde_json::from_str(&json_slice) {
         Ok(c) => c,
@@ -568,12 +568,24 @@ pub extern "C" fn cdsp_get_spectrum(
     if engine.is_null() || out_spec.is_null() || n_bins == 0 {
         return false;
     }
+    camillalib::spectrum::request_spectrum_data();
+
     let eng = unsafe { &*engine };
+    let is_capture = side == CdspSpectrumSide::Capture;
     let samplerate_usize: usize = eng
         .active_config
         .lock()
         .as_ref()
-        .map(|c| c.devices.samplerate.get())
+        .map(|c| {
+            if is_capture {
+                c.devices
+                    .capture_samplerate
+                    .map(|sr| sr.get())
+                    .unwrap_or_else(|| c.devices.samplerate.get())
+            } else {
+                c.devices.samplerate.get()
+            }
+        })
         .unwrap_or(0);
     if samplerate_usize == 0 {
         return false;
@@ -581,7 +593,6 @@ pub extern "C" fn cdsp_get_spectrum(
 
     let ch = if channel.is_null() { None } else { Some(unsafe { *channel }) };
 
-    let is_capture = side == CdspSpectrumSide::Capture;
     let res = if is_capture {
         let cap = eng.status_structs.capture.read();
         camillalib::spectrum::compute_spectrum(
@@ -633,45 +644,103 @@ pub extern "C" fn cdsp_get_samples(
     is_capture: bool,
     n_frames: usize,
     out_samples: *mut CdspAudioSamples,
-    _out_err: *mut CdspBackendError,
+    out_err: *mut CdspBackendError,
 ) -> bool {
     if engine.is_null() || out_samples.is_null() {
         return false;
     }
+    camillalib::spectrum::request_spectrum_data();
+
     let eng = unsafe { &*engine };
+
+    let configured_channels = eng
+        .active_config
+        .lock()
+        .as_ref()
+        .map(|c| {
+            if is_capture {
+                c.devices.capture.channels()
+            } else {
+                c.devices.playback.channels()
+            }
+        })
+        .unwrap_or(0);
+
+    let buffer_channels = if is_capture {
+        let cap = eng.status_structs.capture.read();
+        cap.audio_buffer.channel_count()
+    } else {
+        let pb = eng.status_structs.playback.read();
+        pb.audio_buffer.channel_count()
+    };
+
+    let ch_count = if buffer_channels > 0 {
+        buffer_channels
+    } else if configured_channels > 0 {
+        configured_channels
+    } else {
+        2
+    };
 
     unsafe {
         if (*out_samples).channels.is_null() {
-            (*out_samples).channels_count = 2;
+            (*out_samples).channels_count = ch_count;
             (*out_samples).frames = 0;
             return true;
         }
 
-        let read_channel = |ch: usize| -> Vec<f32> {
-            if is_capture {
-                let cap = eng.status_structs.capture.read();
-                cap.audio_buffer.read_latest(n_frames, Some(ch)).unwrap_or_default().iter().map(|&x| x as f32).collect()
-            } else {
-                let pb = eng.status_structs.playback.read();
-                pb.audio_buffer.read_latest(n_frames, Some(ch)).unwrap_or_default().iter().map(|&x| x as f32).collect()
-            }
+        let caller_channels = (*out_samples).channels_count;
+        let effective_ch_count = if caller_channels > 0 {
+            caller_channels.min(ch_count)
+        } else {
+            ch_count
         };
 
-        let ch_count = (*out_samples).channels_count;
-        let mut actual_frames = 0;
-        for ch in 0..ch_count {
-            let samples = read_channel(ch);
-            let frames_to_copy = samples.len().min(n_frames);
-            actual_frames = actual_frames.max(frames_to_copy);
-            let ptr = *(*out_samples).channels.add(ch);
-            if !ptr.is_null() {
-                std::ptr::copy_nonoverlapping(samples.as_ptr(), ptr, frames_to_copy);
+        if n_frames == 0 {
+            (*out_samples).channels_count = effective_ch_count;
+            (*out_samples).frames = 0;
+            return true;
+        }
+
+        let mut max_copied_frames = 0;
+        let mut any_success = false;
+
+        for ch in 0..effective_ch_count {
+            let channel_ptr = *(*out_samples).channels.add(ch);
+            if channel_ptr.is_null() {
+                continue;
+            }
+
+            let maybe_samples = if is_capture {
+                let cap = eng.status_structs.capture.read();
+                cap.audio_buffer.read_latest(n_frames, Some(ch))
+            } else {
+                let pb = eng.status_structs.playback.read();
+                pb.audio_buffer.read_latest(n_frames, Some(ch))
+            };
+
+            if let Some(samples) = maybe_samples {
+                let frames_to_copy = samples.len().min(n_frames);
+                std::ptr::copy_nonoverlapping(samples.as_ptr(), channel_ptr, frames_to_copy);
+                max_copied_frames = max_copied_frames.max(frames_to_copy);
+                any_success = true;
             }
         }
-        (*out_samples).frames = actual_frames;
-    }
 
-    true
+        if !any_success {
+            if !out_err.is_null() {
+                (*out_err).error_type = CdspBackendErrorType::Unknown;
+                let msg = b"Insufficient data or buffer empty\0";
+                let len = msg.len().min(255);
+                std::ptr::copy_nonoverlapping(msg.as_ptr() as *const c_char, (*out_err).message.as_mut_ptr(), len);
+            }
+            return false;
+        }
+
+        (*out_samples).channels_count = effective_ch_count;
+        (*out_samples).frames = max_copied_frames;
+        true
+    }
 }
 
 #[no_mangle]
@@ -877,3 +946,4 @@ pub extern "C" fn cdsp_free_device_capabilities(desc: *mut CdspDeviceDescriptor)
         libc::free(desc as *mut c_void);
     }
 }
+
