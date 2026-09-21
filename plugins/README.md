@@ -141,7 +141,7 @@ If your system uses **PipeWire** (standard on modern Linux desktop environments 
 | Source File | Destination in `~/.config/` | Purpose |
 | :--- | :--- | :--- |
 | `plugins/pipewire/50-bitperfect-dac.conf` | `pipewire/pipewire.conf.d/50-bitperfect-dac.conf` | Configures global clock allowed sample rates (44.1 kHz – 768 kHz) and buffer quantum sizes. |
-| `plugins/pipewire/60-cdsp-sink.conf` | `pipewire/pipewire.conf.d/60-cdsp-sink.conf` | Exposes the `cdsp` ALSA rate notify plugin as a native system output sink (**"CDSP Studio Dynamic Rate Audio"**), visible in GNOME and KDE Sound Settings. |
+| `plugins/pipewire/60-cdsp-sink.conf` | `pipewire/pipewire.conf.d/60-cdsp-sink.conf` | Exposes the `cdsp` ALSA rate notify plugin as selectable Stereo (2ch), Surround (8ch), and Pro Audio (32ch) output sinks in GNOME and KDE Sound Settings. |
 | `plugins/pipewire-pulse/99-bitperfect.conf` | `pipewire/pipewire-pulse.conf.d/99-bitperfect.conf` | Disables volume normalization and channel mixing in the PulseAudio layer; sets SoXR quality. |
 | `plugins/wireplumber/50-bitperfect-dac.conf` | `wireplumber/wireplumber.conf.d/50-bitperfect-dac.conf` | Dynamic rule matching USB DACs (`~alsa_output.usb-.*`), setting `resample.disable = true` and `audio.format = "S32LE"`. Hotplug-safe. |
 | `plugins/wireplumber/50-loopback.conf` | `wireplumber/wireplumber.conf.d/50-loopback.conf` | Disables the raw ALSA Loopback device (`snd_aloop`) from generating duplicate output sinks, ensuring only the dynamic rate sink appears in desktop settings. |
