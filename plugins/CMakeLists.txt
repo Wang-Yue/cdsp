@@ -63,7 +63,9 @@ install(FILES 50-cdsp.conf
     DESTINATION ${ALSA_CONF_DIR}
 )
 
-install(FILES pipewire/50-bitperfect-dac.conf
+install(FILES
+    pipewire/50-bitperfect-dac.conf
+    pipewire/60-cdsp-sink.conf
     DESTINATION ${PIPEWIRE_CONF_DIR}
 )
 
