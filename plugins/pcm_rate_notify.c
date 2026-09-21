@@ -355,21 +355,6 @@ static int rn_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params) {
     usleep((useconds_t)rec->retry_delay_us);
   }
 
-  // Safety fallback: if raw hw open fails (e.g. peer locked in incompatible
-  // mode), fallback to plughw
-  if (err < 0 || !rec->slave) {
-    char plug_name[256];
-    if (strncmp(rec->slave_name, "hw:", 3) == 0) {
-      snprintf(plug_name, sizeof(plug_name), "plughw:%s", rec->slave_name + 3);
-    } else {
-      snprintf(plug_name, sizeof(plug_name), "plug:%s", rec->slave_name);
-    }
-    err = snd_pcm_open(&rec->slave, plug_name, io->stream, io->nonblock);
-    if (err == 0 && rec->slave) {
-      err = set_slave_hw_params(rec->slave, params);
-    }
-  }
-
   if (err < 0 || !rec->slave) {
     return err;
   }
