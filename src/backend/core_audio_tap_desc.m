@@ -27,12 +27,11 @@ bool cdsp_tap_desc_is_supported(void) {
     return false;
 }
 
-OSStatus cdsp_tap_desc_create(CFArrayRef proc_ids,
-                              bool is_exclusive,
+OSStatus cdsp_tap_desc_create(CFArrayRef exclude_proc_ids,
                               CFStringRef target_device_uid,
                               AudioObjectID *out_tap_id,
                               CFStringRef *out_tap_uuid_str) {
-    if (!out_tap_id || !out_tap_uuid_str || !proc_ids || !target_device_uid) {
+    if (!out_tap_id || !out_tap_uuid_str || !exclude_proc_ids || !target_device_uid) {
         return kAudioHardwareIllegalOperationError;
     }
     *out_tap_id = kAudioObjectUnknown;
@@ -44,12 +43,12 @@ OSStatus cdsp_tap_desc_create(CFArrayRef proc_ids,
     }
 
     @autoreleasepool {
-        NSArray* procArray = (__bridge NSArray*)proc_ids;
+        NSArray* procArray = (__bridge NSArray*)exclude_proc_ids;
         NSString* uidString = (__bridge NSString*)target_device_uid;
 
-        CATapDescription* desc = is_exclusive
-            ? [[CATapDescription alloc] initExcludingProcesses:procArray andDeviceUID:uidString withStream:0]
-            : [[CATapDescription alloc] initWithProcesses:procArray andDeviceUID:uidString withStream:0];
+        CATapDescription* desc = [[CATapDescription alloc] initExcludingProcesses:procArray
+                                                                    andDeviceUID:uidString
+                                                                      withStream:0];
         if (!desc) {
             return kAudioHardwareBadDeviceError;
         }
@@ -69,8 +68,7 @@ OSStatus cdsp_tap_desc_create(CFArrayRef proc_ids,
         return noErr;
     }
 #else
-    (void)proc_ids;
-    (void)is_exclusive;
+    (void)exclude_proc_ids;
     (void)target_device_uid;
     return kAudioHardwareIllegalOperationError;
 #endif

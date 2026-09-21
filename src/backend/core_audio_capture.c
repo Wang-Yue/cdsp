@@ -713,8 +713,7 @@ static capture_backend_t *core_audio_capture_create(
             sizeof(capture->device_name) - 1);
   }
   if (config->type == AUDIO_BACKEND_TYPE_CORE_AUDIO) {
-    capture->loopback = config->cfg.coreaudio.loopback ||
-                        cdsp_tap_is_app_device(capture->device_name);
+    capture->loopback = config->cfg.coreaudio.loopback;
   }
   size_t config_channels = capture_device_config_get_channels(config);
   capture->channels = config_channels;

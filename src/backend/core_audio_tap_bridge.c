@@ -1,6 +1,5 @@
 // CoreAudio Tap Bridge for macOS 14.2+
-// Pure C implementation of Aggregate Tap Device lifecycle and process
-// discovery.
+// Pure C implementation of Aggregate Tap Device lifecycle.
 
 #include "backend/core_audio_tap_bridge.h"
 
@@ -10,12 +9,9 @@
 #include <Availability.h>
 #include <CoreAudio/CoreAudio.h>
 #include <CoreFoundation/CoreFoundation.h>
-#include <ctype.h>
-#include <libproc.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <unistd.h>
 
 #include "backend/core_audio_device.h"
@@ -26,21 +22,6 @@
 static const logger_t g_tap_logger = {"dsp.backend.coreaudio.tap"};
 
 bool cdsp_tap_is_supported(void) { return cdsp_tap_desc_is_supported(); }
-
-bool cdsp_tap_is_app_device(const char *device_name) {
-  if (!device_name)
-    return false;
-  return (strncasecmp(device_name, "app:", 4) == 0);
-}
-
-const char *cdsp_tap_parse_app_name(const char *device_name) {
-  if (!cdsp_tap_is_app_device(device_name))
-    return NULL;
-  const char *p = device_name + 4;
-  while (*p == ' ' || *p == '\t')
-    p++;
-  return p;
-}
 
 /**
  * @brief Retrieve the list of active process AudioObjectIDs from CoreAudio HAL.
@@ -77,45 +58,6 @@ static AudioObjectID *get_all_coreaudio_process_objects(UInt32 *out_count) {
 }
 
 /**
- * @brief Resolve process info (name and PID) for a CoreAudio process object.
- *
- * Queries kAudioProcessPropertyPID on the AudioObjectID and resolves the
- * process name via libproc's proc_name().
- *
- * @param procObj CoreAudio Process AudioObjectID.
- * @param[out] out_name Buffer to store process name.
- * @param name_len Length of out_name buffer.
- * @param[out] out_pid Optional pointer to receive Unix PID.
- * @return true if successfully resolved, false otherwise.
- */
-static bool get_coreaudio_process_info(AudioObjectID procObj, char *out_name,
-                                       size_t name_len, pid_t *out_pid) {
-  if (procObj == kAudioObjectUnknown || !out_name || name_len == 0)
-    return false;
-  out_name[0] = '\0';
-
-  pid_t pid = 0;
-  UInt32 pidSize = sizeof(pid);
-  AudioObjectPropertyAddress pidAddr = {kAudioProcessPropertyPID,
-                                        kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
-  if (AudioObjectGetPropertyData(procObj, &pidAddr, 0, NULL, &pidSize, &pid) !=
-          noErr ||
-      pid == 0 || pid == getpid()) {
-    return false;
-  }
-  if (out_pid) {
-    *out_pid = pid;
-  }
-
-  if (proc_name(pid, out_name, (uint32_t)name_len) <= 0 ||
-      out_name[0] == '\0') {
-    return false;
-  }
-  return true;
-}
-
-/**
  * @brief Find the CoreAudio AudioObjectID associated with a given Unix PID.
  *
  * @param pid Unix process identifier.
@@ -147,210 +89,6 @@ static AudioObjectID get_process_object_id_for_pid(pid_t pid) {
   }
   free(procs);
   return found;
-}
-
-/**
- * @brief Create a CoreFoundation array of AudioObjectID NSNumbers matching a
- * process name.
- *
- * @param app_name Process name to match (e.g. "Google Chrome", "Music").
- * @return CFArrayRef containing CFNumberRef objects, or NULL on failure. Caller
- * releases.
- */
-static CFArrayRef create_process_object_array_for_app(const char *app_name) {
-  if (!app_name || app_name[0] == '\0')
-    return NULL;
-
-  UInt32 count = 0;
-  AudioObjectID *procs = get_all_coreaudio_process_objects(&count);
-  if (!procs || count == 0) {
-    free(procs);
-    return NULL;
-  }
-
-  CFMutableArrayRef matches =
-      CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
-  for (UInt32 i = 0; i < count; i++) {
-    char procName[256] = {0};
-    pid_t pid = 0;
-    if (get_coreaudio_process_info(procs[i], procName, sizeof(procName),
-                                   &pid)) {
-      if (strcasecmp(procName, app_name) == 0) {
-        uint32_t objVal = (uint32_t)procs[i];
-        CFNumberRef num =
-            CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &objVal);
-        if (num) {
-          CFArrayAppendValue(matches, num);
-          CFRelease(num);
-        }
-      }
-    }
-  }
-  free(procs);
-  return matches;
-}
-
-int cdsp_tap_get_available_app_names(char out_names[][256], int max_names) {
-  if (!out_names || max_names <= 0)
-    return 0;
-
-  UInt32 count = 0;
-  AudioObjectID *procs = get_all_coreaudio_process_objects(&count);
-  if (!procs || count == 0) {
-    free(procs);
-    return 0;
-  }
-
-  int res = 0;
-  for (UInt32 i = 0; i < count; i++) {
-    char procName[256] = {0};
-    pid_t pid = 0;
-    if (!get_coreaudio_process_info(procs[i], procName, sizeof(procName),
-                                    &pid)) {
-      continue;
-    }
-
-    // Deduplicate case-insensitively
-    bool duplicate = false;
-    char candidate[256];
-    snprintf(candidate, sizeof(candidate), "app:%s", procName);
-    for (int j = 0; j < res; j++) {
-      if (strcasecmp(out_names[j], candidate) == 0) {
-        duplicate = true;
-        break;
-      }
-    }
-    if (!duplicate && res < max_names) {
-      snprintf(out_names[res], 256, "%s", candidate);
-      res++;
-    }
-  }
-  free(procs);
-
-  // Sort alphabetically
-  qsort(out_names, res, sizeof(out_names[0]),
-        (int (*)(const void *, const void *))strcasecmp);
-  return res;
-}
-
-bool cdsp_tap_find_app(const char *app_name, char *out_matched_name,
-                       size_t max_len) {
-  if (!app_name || app_name[0] == '\0')
-    return false;
-
-  UInt32 count = 0;
-  AudioObjectID *procs = get_all_coreaudio_process_objects(&count);
-  if (!procs || count == 0) {
-    free(procs);
-    return false;
-  }
-
-  bool found = false;
-  for (UInt32 i = 0; i < count; i++) {
-    char procName[256] = {0};
-    pid_t pid = 0;
-    if (get_coreaudio_process_info(procs[i], procName, sizeof(procName),
-                                   &pid)) {
-      if (strcasecmp(procName, app_name) == 0) {
-        if (out_matched_name && max_len > 0) {
-          snprintf(out_matched_name, max_len, "%s", procName);
-        }
-        found = true;
-        break;
-      }
-    }
-  }
-  free(procs);
-  return found;
-}
-
-AudioDeviceID cdsp_tap_get_active_device_for_app(const char *app_name) {
-  AudioDeviceID default_id =
-      core_audio_device_id_for_name(NULL, CORE_AUDIO_SCOPE_OUTPUT);
-  if (!app_name || app_name[0] == '\0') {
-    return default_id;
-  }
-
-  UInt32 count = 0;
-  AudioObjectID *procs = get_all_coreaudio_process_objects(&count);
-  if (!procs || count == 0) {
-    free(procs);
-    return default_id;
-  }
-
-  AudioDeviceID matched_dev = kAudioObjectUnknown;
-  for (UInt32 i = 0; i < count; i++) {
-    char procName[256] = {0};
-    pid_t pid = 0;
-    if (!get_coreaudio_process_info(procs[i], procName, sizeof(procName),
-                                    &pid)) {
-      continue;
-    }
-
-    if (strcasecmp(procName, app_name) == 0) {
-      AudioObjectPropertyAddress devAddr = {kAudioProcessPropertyDevices,
-                                            kAudioObjectPropertyScopeOutput,
-                                            kAudioObjectPropertyElementMain};
-      UInt32 devSize = 0;
-      if (AudioObjectGetPropertyDataSize(procs[i], &devAddr, 0, NULL,
-                                         &devSize) == noErr &&
-          devSize > 0) {
-        UInt32 numDevs = devSize / sizeof(AudioObjectID);
-        AudioObjectID *devIDs = (AudioObjectID *)malloc(devSize);
-        if (devIDs) {
-          if (AudioObjectGetPropertyData(procs[i], &devAddr, 0, NULL, &devSize,
-                                         devIDs) == noErr &&
-              numDevs > 0) {
-            for (UInt32 d = 0; d < numDevs; d++) {
-              if (devIDs[d] != kAudioObjectUnknown) {
-                matched_dev = devIDs[d];
-                break;
-              }
-            }
-          }
-          free(devIDs);
-        }
-      }
-      if (matched_dev != kAudioObjectUnknown) {
-        break;
-      }
-    }
-  }
-  free(procs);
-
-  return (matched_dev != kAudioObjectUnknown) ? matched_dev : default_id;
-}
-
-bool cdsp_tap_resolve_app_device(const char *device_name, bool is_capture,
-                                 AudioDeviceID *out_device_id,
-                                 device_error_t *err) {
-  if (!is_capture) {
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_NOT_FOUND,
-                        "Application tap is only supported for capture");
-    }
-    return false;
-  }
-  if (!cdsp_tap_is_supported()) {
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_NOT_FOUND,
-                        "CoreAudio process tap requires macOS 14.2+");
-    }
-    return false;
-  }
-  const char *app_name = cdsp_tap_parse_app_name(device_name);
-  if (!app_name || app_name[0] == '\0' ||
-      !cdsp_tap_find_app(app_name, NULL, 0)) {
-    if (err) {
-      device_error_init(err, DEVICE_ERROR_NOT_FOUND,
-                        "Application or process not found");
-    }
-    return false;
-  }
-  if (out_device_id) {
-    *out_device_id = cdsp_tap_get_active_device_for_app(app_name);
-  }
-  return true;
 }
 
 /**
@@ -503,73 +241,42 @@ OSStatus cdsp_tap_create(const char *device_name,
     return kAudioHardwareIllegalOperationError;
   }
 
-  AudioDeviceID target_dev_id = kAudioObjectUnknown;
-  AudioObjectID tapID = kAudioObjectUnknown;
-  CFStringRef tapUIDStr = NULL;
-  OSStatus status = noErr;
-
-  bool is_app = cdsp_tap_is_app_device(device_name);
-  CFArrayRef procIDs = NULL;
-
-  if (is_app) {
-    const char *app_name = cdsp_tap_parse_app_name(device_name);
-    if (!app_name || app_name[0] == '\0') {
-      logger_error(&g_tap_logger, "No application name specified in '%s'",
-                   device_name);
-      return kAudioHardwareBadDeviceError;
-    }
-
-    procIDs = create_process_object_array_for_app(app_name);
-    if (!procIDs || CFArrayGetCount(procIDs) == 0) {
-      if (procIDs)
-        CFRelease(procIDs);
-      logger_error(
-          &g_tap_logger,
-          "Could not find running process with CoreAudio support for app '%s'",
-          app_name);
-      return kAudioHardwareBadDeviceError;
-    }
-    target_dev_id = cdsp_tap_get_active_device_for_app(app_name);
-  } else {
-    AudioObjectID myProcObj = get_process_object_id_for_pid(getpid());
-    CFMutableArrayRef excludeProcs =
-        CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
-    if (myProcObj != kAudioObjectUnknown) {
-      uint32_t objVal = (uint32_t)myProcObj;
-      CFNumberRef num =
-          CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &objVal);
-      if (num) {
-        CFArrayAppendValue(excludeProcs, num);
-        CFRelease(num);
-      }
-    } else {
-      logger_warn(&g_tap_logger,
-                  "Could not resolve own CoreAudio process object; tap "
-                  "self-exclusion is not active.");
-    }
-    procIDs = excludeProcs;
-    target_dev_id =
-        core_audio_device_id_for_name(device_name, CORE_AUDIO_SCOPE_OUTPUT);
-  }
-
+  AudioDeviceID target_dev_id =
+      core_audio_device_id_for_name(device_name, CORE_AUDIO_SCOPE_OUTPUT);
   if (target_dev_id == kAudioObjectUnknown) {
-    if (procIDs)
-      CFRelease(procIDs);
     logger_error(&g_tap_logger, "Could not resolve output device for tap.");
     return kAudioHardwareBadDeviceError;
   }
 
+  AudioObjectID myProcObj = get_process_object_id_for_pid(getpid());
+  CFMutableArrayRef excludeProcs =
+      CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
+  if (myProcObj != kAudioObjectUnknown) {
+    uint32_t objVal = (uint32_t)myProcObj;
+    CFNumberRef num =
+        CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &objVal);
+    if (num) {
+      CFArrayAppendValue(excludeProcs, num);
+      CFRelease(num);
+    }
+  } else {
+    logger_warn(&g_tap_logger,
+                "Could not resolve own CoreAudio process object; tap "
+                "self-exclusion is not active.");
+  }
+
   CFStringRef targetDeviceUID = copy_device_uid_for_id(target_dev_id);
   if (!targetDeviceUID) {
-    if (procIDs)
-      CFRelease(procIDs);
+    CFRelease(excludeProcs);
     logger_error(&g_tap_logger, "Could not resolve device UID for tap.");
     return kAudioHardwareBadDeviceError;
   }
 
-  status = cdsp_tap_desc_create(procIDs, !is_app, targetDeviceUID, &tapID,
-                                &tapUIDStr);
-  CFRelease(procIDs);
+  AudioObjectID tapID = kAudioObjectUnknown;
+  CFStringRef tapUIDStr = NULL;
+  OSStatus status =
+      cdsp_tap_desc_create(excludeProcs, targetDeviceUID, &tapID, &tapUIDStr);
+  CFRelease(excludeProcs);
   CFRelease(targetDeviceUID);
 
   if (status != noErr || tapID == kAudioObjectUnknown || !tapUIDStr) {

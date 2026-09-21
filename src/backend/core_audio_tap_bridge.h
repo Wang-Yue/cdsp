@@ -1,12 +1,9 @@
 /**
  * @file core_audio_tap_bridge.h
- * @brief CoreAudio Hardware & Process Tap C Bridge for macOS 14.2+.
+ * @brief CoreAudio Hardware Device Tap C Bridge for macOS 14.2+.
  *
- * Encapsulates CoreAudio audio tapping APIs, private aggregate device
- * composition, and process/device enumeration.
- *
- * Supports both hardware device taps (bound to a physical output device) and
- * process taps (capturing audio from an application, named as "app:app_name").
+ * Encapsulates CoreAudio audio tapping APIs and private aggregate device
+ * composition for hardware output device loopback capture.
  */
 
 #ifndef CLIB_BACKEND_CORE_AUDIO_TAP_BRIDGE_H
@@ -41,7 +38,7 @@ typedef struct {
 } cdsp_tap_handle_t;
 
 /**
- * @brief Check if the running macOS system supports CoreAudio process/device
+ * @brief Check if the running macOS system supports CoreAudio device
  * taps (macOS 14.2+).
  *
  * @return true if running on macOS 14.2 or later with tap support available.
@@ -49,97 +46,14 @@ typedef struct {
 bool cdsp_tap_is_supported(void);
 
 /**
- * @brief Check if a device name specifies an application tap (e.g. "app:Google
- * Chrome", "app:Music").
- *
- * @param device_name The device string to inspect.
- * @return true if device_name begins with "app:" (case-insensitive).
- */
-bool cdsp_tap_is_app_device(const char *device_name);
-
-/**
- * @brief Extract the application name component from an "app:app_name" string.
- *
- * Skips the "app:" prefix and any leading whitespace.
- *
- * @param device_name The device string starting with "app:".
- * @return Pointer within device_name to the application name, or NULL if
- * invalid.
- */
-const char *cdsp_tap_parse_app_name(const char *device_name);
-
-/**
- * @brief Enumerate currently running applications available for process
- * tapping.
- *
- * Discovers applications from both NSWorkspace and CoreAudio process
- * registries, returning formatted device names prefixed with "app:" (e.g.
- * "app:Google Chrome", "app:Music").
- *
- * @param out_names Buffer to store the discovered device names.
- * @param max_names Maximum number of names to return.
- * @return Number of discovered application tap names.
- */
-int cdsp_tap_get_available_app_names(char out_names[][256], int max_names);
-
-/**
- * @brief Check whether a named application or process is currently running /
- * registered in CoreAudio.
- *
- * @param app_name Name of the application (e.g. "Google Chrome", "Music",
- * "com.apple.Music").
- * @param[out] out_matched_name Optional buffer to receive the canonical
- * application name.
- * @param max_len Size of out_matched_name buffer.
- * @return true if the application/process was found, false otherwise.
- */
-bool cdsp_tap_find_app(const char *app_name, char *out_matched_name,
-                       size_t max_len);
-
-/**
- * @brief Resolve the active output AudioDeviceID used by an application.
- *
- * Inspects the application's CoreAudio Process object using
- * kAudioProcessPropertyDevices with output scope. If the app is currently
- * active on an output device, that AudioDeviceID is returned; otherwise,
- * falls back to the system default output device.
- *
- * @param app_name Name of the application (e.g. "Google Chrome", "Music").
- * @return AudioDeviceID of the active output device, or system default output
- * device.
- */
-AudioDeviceID cdsp_tap_get_active_device_for_app(const char *app_name);
-
-/**
- * @brief Validate an application tap device name and resolve its output
- * AudioDeviceID.
- *
- * Validates that the device name format is valid, that the system supports
- * CoreAudio process taps (macOS 14.2+), that the requested application is
- * running with CoreAudio support, and that the operation is capture (process
- * taps only support capture). Resolves the underlying active/default output
- * AudioDeviceID.
- *
- * @param device_name Application tap name (e.g. "app:Google Chrome").
- * @param is_capture Must be true (app taps only support capture).
- * @param[out] out_device_id Output pointer for resolved AudioDeviceID.
- * @param[out] err Optional pointer to device_error_t to receive error details
- * on failure.
- * @return true if valid and resolved, false on validation failure.
- */
-bool cdsp_tap_resolve_app_device(const char *device_name, bool is_capture,
-                                 AudioDeviceID *out_device_id,
-                                 device_error_t *err);
-
-/**
  * @brief Create a CoreAudio Device Tap and a private Aggregate Device wrapping
  * it.
  *
- * Configures CATapDescription with anti-feedback process exclusions (for device
- * taps) or process inclusion list (for "app:app_name" process taps), assigns
- * private tap visibility, creates an AudioHardwareProcessTap object, and
- * packages it into a private aggregate AudioDeviceID that can be bound to a HAL
- * Output AudioUnit exactly like any other capture device.
+ * Configures CATapDescription with anti-feedback process exclusion (for cdsp's
+ * own process), assigns private tap visibility, creates an
+ * AudioHardwareProcessTap object, and packages it into a private aggregate
+ * AudioDeviceID that can be bound to a HAL Output AudioUnit exactly like any
+ * other capture device.
  *
  * The aggregate is composed following Apple's documented tap recipe: it
  * declares the target/default device as its main sub-device (clock source),
@@ -148,13 +62,11 @@ bool cdsp_tap_resolve_app_device(const char *device_name, bool is_capture,
  * the tap's channels are actually visible on the aggregate before returning.
  *
  * @param device_name Name of the output device to tap, or NULL/empty for the
- * current default output device, or "app:app_name" for an application tap.
+ * current default output device.
  * @param[out] out_handle Pointer to receive the resolved tap composition
  * details.
  * @return 0 (noErr) on success, or an OSStatus error code.
  */
-#include "backend/backend_error.h"
-
 OSStatus cdsp_tap_create(const char *device_name,
                          cdsp_tap_handle_t *out_handle);
 
@@ -162,7 +74,7 @@ OSStatus cdsp_tap_create(const char *device_name,
  * @brief Helper to create a CoreAudio tap and format backend_error_t on
  * failure.
  *
- * @param device_name Name of the output device to tap or "app:app_name".
+ * @param device_name Name of the output device to tap, or NULL/empty.
  * @param[out] out_handle Pointer to receive the tap handle.
  * @param[out] err Optional error structure to populate on failure.
  * @return true on success, false on failure.

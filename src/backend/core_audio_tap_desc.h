@@ -25,17 +25,15 @@
 bool cdsp_tap_desc_is_supported(void);
 
 /**
- * @brief Create a CoreAudio process tap object using CATapDescription.
+ * @brief Create a CoreAudio device tap object using CATapDescription.
  *
  * Allocates and configures a CATapDescription instance with the specified
- * process list and target device UID, applies private tap visibility and muting
- * behavior, and calls AudioHardwareCreateProcessTap to register the tap with
- * CoreAudio HAL.
+ * process exclusion list and target device UID, applies private tap visibility
+ * and muting behavior, and calls AudioHardwareCreateProcessTap to register the
+ * tap with CoreAudio HAL.
  *
- * @param proc_ids CoreFoundation array of CFNumberRef (AudioObjectID) processes
- * to include or exclude.
- * @param is_exclusive If true, excludes proc_ids (for device taps). If false,
- * includes proc_ids (for process taps).
+ * @param exclude_proc_ids CoreFoundation array of CFNumberRef (AudioObjectID)
+ * processes to exclude (to prevent feedback loops).
  * @param target_device_uid CoreFoundation string of the target output device
  * UID.
  * @param[out] out_tap_id Pointer to receive the AudioObjectID of the created
@@ -44,7 +42,7 @@ bool cdsp_tap_desc_is_supported(void);
  * UUID string (caller releases).
  * @return OSStatus noErr on success, or an error code on failure.
  */
-OSStatus cdsp_tap_desc_create(CFArrayRef proc_ids, bool is_exclusive,
+OSStatus cdsp_tap_desc_create(CFArrayRef exclude_proc_ids,
                               CFStringRef target_device_uid,
                               AudioObjectID *out_tap_id,
                               CFStringRef *out_tap_uuid_str);
