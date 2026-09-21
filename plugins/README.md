@@ -67,11 +67,127 @@ When installed via `cmake --install`, CMake automatically:
 
 ---
 
+## Desktop & Application Audio Routing
+
+There are two primary methods to route audio into **CDSP Studio**:
+
+```text
+                 [Music Player / Web Browser / Desktop Audio]
+                                      │
+          ┌───────────────────────────┴───────────────────────────┐
+          ▼                                                       ▼
+   Method 1: System-Wide Desktop Audio             Method 2: Direct Bit-Perfect ALSA
+   PipeWire Desktop Sinks                          Dedicated Players (mpv, Audacious)
+   "CDSP Studio (2ch / 8ch / 32ch)"                Select ALSA Device: "cdsp"
+          │                                                       │
+          └───────────────────────────┬───────────────────────────┘
+                                      │
+                                      ▼
+      ┌───────────────────────────────────────────────────────────────┐
+      │     ALSA Rate Notify Plugin (pcm.cdsp / pcm.cdsp_in)          │
+      │     Writes dynamic sample rate to "Capture Rate" control      │
+      └───────────────────────────────┬───────────────────────────────┘
+                                      │
+                                      ▼
+      [hw:Loopback,0,0] (Kernel snd-aloop input)
+                                      │ (virtual loopback cable)
+                                      ▼
+      [hw:Loopback,1,0] (ALSA Capture Backend in CDSP Studio)
+                                      │
+      [CDSP Studio / CamillaDSP Engine] (FIR/IIR Filters, EQ, Crossover, Volume)
+                                      │
+          ┌───────────────────────────┴───────────────────────────┐
+          ▼                                                       ▼
+   Playback Option A:                              Playback Option B:
+   PipeWire Backend                                Direct ALSA Backend
+   (Bit-Perfect via 50-bitperfect-dac.conf)        (Direct Hardware ALSA: hw:DAC)
+   resample.disable = true                         Exclusive DAC access
+          │                                                       │
+          └───────────────────────────┬───────────────────────────┘
+                                      ▼
+                          [Physical DAC / Speakers]
+```
+
+### Method 1: System-Wide Desktop Audio (PipeWire)
+
+Use this method for day-to-day desktop usage—including web browsers (YouTube, Netflix), Spotify, gaming, system notifications, and media players that use PipeWire or PulseAudio.
+
+1. Open your desktop sound settings:
+   - **GNOME:** Settings $\rightarrow$ Sound $\rightarrow$ Output Device
+   - **KDE Plasma:** System Settings $\rightarrow$ Audio $\rightarrow$ Playback Devices
+   - **CLI / Terminal:** `wpctl status` and `wpctl set-default <sink-id>`
+2. Select your desired CDSP Studio sink endpoint:
+   - **`CDSP Studio (Stereo 2ch)`** *(Default)*: Best for music listening, streaming services, web browsers, and general stereo audio.
+   - **`CDSP Studio (Surround 8ch)`**: Best for 5.1 / 7.1 surround sound movies and games.
+   - **`CDSP Studio (Pro Audio 32ch)`**: Best for multichannel DAW routing, multi-way active crossovers, and complex studio setups.
+
+#### Dynamic Sample Rate Switching
+When using any of these PipeWire desktop sinks:
+- PipeWire's clock dynamically switches sample rates (44.1 kHz, 48 kHz, 88.2 kHz, 96 kHz, 176.4 kHz, 192 kHz, up to 768 kHz) to match the playing media stream.
+- The underlying `pcm_rate_notify` plugin detects the rate transition and signals CDSP Studio to reload seamlessly without restarting desktop playback.
+- Sinks not in use automatically suspend and release their ALSA subdevice.
+
+---
+
+### Method 2: Direct Bit-Perfect ALSA Output (Media Players)
+
+Use this method for dedicated audiophile music players (e.g. **Audacious**, **DeaDBeeF**, **Strawberry**, **mpv**, or **VLC**) when you want bit-perfect, zero-resampling transmission that dynamically matches both the exact sample rate and channel count directly from the media file:
+
+1. Open your player's Audio Preferences:
+   - **Audacious:** Preferences $\rightarrow$ Audio $\rightarrow$ Output plugin: **ALSA Output** $\rightarrow$ Settings $\rightarrow$ PCM device: `cdsp` (or select `"CDSP Studio / CamillaDSP Dynamic Rate Audio"`).
+   - **DeaDBeeF:** Preferences $\rightarrow$ Sound $\rightarrow$ Output plugin: **ALSA output** $\rightarrow$ Device: `cdsp`.
+   - **Strawberry / Clementine:** Settings $\rightarrow$ Backend $\rightarrow$ Output: **ALSA** $\rightarrow$ Device: `cdsp`.
+   - **mpv:** Add `--ao=alsa --audio-device=alsa/cdsp` to your command line or `~/.config/mpv/mpv.conf`.
+2. In direct ALSA mode, the player bypasses the desktop sound server and communicates directly with `pcm_rate_notify.c`. The plugin dynamically passes through any channel count (1 to 32 channels) and sample rate without intermediate mixing.
+
+---
+
+## CDSP Studio Device Configuration
+
+Configure the capture and playback endpoints in **CDSP Studio** under the **Device Settings** tab:
+
+### 1. Capture Settings (Input from Applications)
+
+| Setting | Recommended Value | Description |
+| :--- | :--- | :--- |
+| **Capture Backend** | **`ALSA`** | Direct Linux ALSA backend. |
+| **Capture Device** | **`hw:Loopback,1,0`** *(or `hw:0,1,0`)* | Captures the output of the virtual loopback cable fed by `cdsp_in` (`hw:Loopback,0,0`). |
+| **Capture Format** | **`AUTO`** *(or `S32_LE` / `F32_LE`)* | Matches the native sample format delivered across the loopback cable. |
+| **Stop on Rate Change** | **`Enabled`** *(Checked)* | **Crucial:** Allows CamillaDSP to halt immediately upon detecting a rate change event on the loopback control, prompting CDSP Studio's `MonitoringController` to reload the DSP engine at the new sample rate. |
+
+### 2. Playback Settings (Output to Hardware DAC)
+
+Choose either of the two playback backends based on your setup:
+
+#### Playback Option A: PipeWire Backend (Bit-Perfect to Physical DAC)
+- **Playback Backend:** **`PipeWire`**
+- **Playback Device:** Select your physical DAC or default PipeWire sink.
+- **Why it is bit-perfect:** With the installed WirePlumber rule (`50-bitperfect-dac.conf`), PipeWire applies `resample.disable = true` and `audio.format = "S32LE"` directly to your hardware DAC. CDSP Studio streams audio directly to the DAC at its native sample rate without PipeWire software resampling or dither.
+- **Advantages:** Hotplug-safe; allows device switching; does not lock the hardware ALSA device, allowing system alerts or other non-interfering audio to play if needed.
+
+#### Playback Option B: Direct ALSA Backend (Hardware Direct)
+- **Playback Backend:** **`ALSA`**
+- **Playback Device:** Direct hardware address of your DAC (e.g. **`hw:DAC`**, **`hw:1,0`**, or **`hw:U18`**).
+- **Advantages:** Lowest possible latency; completely bypasses user-space sound servers.
+- **Note:** ALSA takes exclusive hardware access of the DAC. Other sound servers or applications cannot open the DAC directly while CDSP is running.
+
+---
+
+> [!CAUTION]
+> ### ⚠️ Critical: Prevent Audio Feedback Loops
+> **Never select `default`, `hw:Loopback,0,0`, or `cdsp_sink` as the CDSP Playback Device!**
+> 
+> `hw:Loopback,0,0` and `cdsp_sink` are the *input endpoints* where applications send audio into CDSP. Selecting them for playback will route CDSP's processed output back into its own input, creating an infinite, loud audio feedback loop.
+> 
+> **Always ensure the Playback Device points to your physical DAC or PipeWire output sink.**
+
+---
+
 ## ALSA Configuration (Optional Customization)
 
-If you installed system-wide (Option 1), `pcm.cdsp` works automatically out of the box. 
+`pcm.cdsp` is installed automatically to `~/.config/alsa/conf.d/50-cdsp.conf` and `~/.asoundrc`. 
 
-If you want `cdsp` to be your system's global **`default`** audio sink, or if you did a user-level install (Option 2), add the following to `~/.asoundrc` or `/etc/asound.conf`:
+If you want `cdsp` to be your system's global **`default`** fallback ALSA audio sink, add the following to `~/.asoundrc` or `/etc/asound.conf`:
 
 ```alsa
 # Set CDSP Studio / cdsp as the global default playback PCM
@@ -88,7 +204,7 @@ ctl.!default {
 ```
 
 ### User-Level Configuration (Custom Path)
-If you installed the plugin to a user directory instead of the system directory, declare the library path at the top of your `~/.asoundrc`:
+If you installed the plugin to a custom user directory, declare the library path at the top of your `~/.asoundrc`:
 
 ```alsa
 # Declare custom plugin library location (replace with your absolute path)
@@ -114,21 +230,6 @@ ctl.!default {
     card "Loopback"
 }
 ```
-
----
-
-## CDSP Studio Device Configuration
-
-In **CDSP Studio** $\rightarrow$ **Device Settings** tab:
-
-| Setting | Recommended Value | Description |
-| :--- | :--- | :--- |
-| **Capture Backend** | `ALSA` | Linux ALSA backend |
-| **Capture Device** | **`hw:Loopback,1,0`** *(or `hw:0,1,0`)* | Captures the loopback output originating from `cdsp_in` (`hw:Loopback,0,0`). |
-| **Capture Format** | `F32_LE` *(or `AUTO`)* | Native sample format. |
-| **Stop on Rate Change** | **`Enabled`** | Required to allow CDSP Studio to restart the DSP engine on sample rate change events. |
-| **Playback Backend** | `ALSA` or `PipeWire` | Output backend. |
-| **Playback Device** | **Your physical DAC** (e.g. `hw:DAC`, `pipewire`, `pulse`) | ⚠️ **Never select `default` or `hw:Loopback,0,0` for Playback**, as that is the input channel reserved for playback applications. If testing in a virtual environment without a DAC, select `hw:Loopback,0,1` (Device 0, Subdevice 1). |
 
 ---
 
