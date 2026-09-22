@@ -79,29 +79,50 @@ install(FILES
     DESTINATION ${WIREPLUMBER_CONF_DIR}
 )
 
-# Automatically restart PipeWire and WirePlumber user services if running
+# Automatically fix ownership and restart PipeWire/WirePlumber user services
 install(CODE "
     find_program(_SYSTEMCTL systemctl)
-    if(_SYSTEMCTL)
-        if(DEFINED ENV{SUDO_USER} AND NOT \"\$ENV{SUDO_USER}\" STREQUAL \"\" AND NOT \"\$ENV{SUDO_USER}\" STREQUAL \"root\")
+    if(DEFINED ENV{SUDO_USER} AND NOT \"\$ENV{SUDO_USER}\" STREQUAL \"\" AND NOT \"\$ENV{SUDO_USER}\" STREQUAL \"root\")
+        set(_USER \"\$ENV{SUDO_USER}\")
+        execute_process(COMMAND id -gn \${_USER} OUTPUT_VARIABLE _GID OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+        message(STATUS \"Setting user ownership of installed configs to \${_USER}:\${_GID}...\")
+        execute_process(
+            COMMAND chown -R \${_USER}:\${_GID}
+                \"${ALSA_PLUGIN_DIR}\"
+                \"${ALSA_CONF_DIR}\"
+                \"${PIPEWIRE_CONF_DIR}\"
+                \"${PIPEWIRE_PULSE_CONF_DIR}\"
+                \"${WIREPLUMBER_CONF_DIR}\"
+                \"${TARGET_HOME}/.asoundrc\"
+        )
+
+        if(_SYSTEMCTL)
+            message(STATUS \"Restarting PipeWire and WirePlumber user services for \${_USER}...\")
             execute_process(
-                COMMAND sudo -u \$ENV{SUDO_USER} \${_SYSTEMCTL} --user restart pipewire pipewire-pulse wireplumber
+                COMMAND \${_SYSTEMCTL} --machine=\${_USER}@.host --user restart pipewire pipewire-pulse wireplumber
                 RESULT_VARIABLE _res
                 OUTPUT_QUIET
                 ERROR_QUIET
             )
-        else()
+            if(_res EQUAL 0)
+                message(STATUS \"Successfully restarted PipeWire and WirePlumber user services for \${_USER}\")
+            endif()
+        endif()
+    else()
+        if(_SYSTEMCTL)
             execute_process(
                 COMMAND \${_SYSTEMCTL} --user restart pipewire pipewire-pulse wireplumber
                 RESULT_VARIABLE _res
                 OUTPUT_QUIET
                 ERROR_QUIET
             )
-        endif()
-        if(_res EQUAL 0)
-            message(STATUS \"Restarted PipeWire and WirePlumber user services\")
+            if(_res EQUAL 0)
+                message(STATUS \"Successfully restarted PipeWire and WirePlumber user services\")
+            endif()
         endif()
     endif()
 ")
+
 
 
