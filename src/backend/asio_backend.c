@@ -2768,8 +2768,7 @@ asio_playback_create(const playback_device_config_t *config, int sample_rate,
   playback->channels = config->cfg.asio.channels;
   playback->chunk_size = chunk_size;
   playback->format = config->cfg.asio.format;
-  playback->has_format =
-      (config->cfg.asio.format != ASIO_SAMPLE_FORMAT_INVALID);
+  playback->has_format = config->cfg.asio.has_format;
   playback->full_duplex = full_duplex;
 
   atomic_init(&playback->is_running, false);
@@ -3169,7 +3168,7 @@ asio_capture_create(const capture_device_config_t *config, int sample_rate,
   capture->channels = config->cfg.asio.channels;
   capture->chunk_size = chunk_size;
   capture->format = config->cfg.asio.format;
-  capture->has_format = (config->cfg.asio.format != ASIO_SAMPLE_FORMAT_INVALID);
+  capture->has_format = config->cfg.asio.has_format;
   capture->full_duplex = full_duplex;
 
   atomic_init(&capture->is_running, false);

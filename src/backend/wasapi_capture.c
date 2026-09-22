@@ -41,6 +41,7 @@ struct wasapi_capture {
   size_t channels;
   int chunk_size;
   wasapi_sample_format_t format;
+  bool has_format;
   bool loopback;
   bool exclusive;
   bool polling;
@@ -421,7 +422,7 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
   WAVEFORMATEXTENSIBLE wfx;
   bool is_std_wfx = false;
   binary_sample_format_t bin_fmt;
-  bool has_format = (capture->format != WASAPI_SAMPLE_FORMAT_INVALID);
+  bool has_format = capture->has_format;
 
   if (!wasapi_get_device_format(capture->client, capture->sample_rate,
                                 capture->channels, capture->format, has_format,
@@ -640,6 +641,7 @@ wasapi_capture_create(const capture_device_config_t *config, int sample_rate,
   capture->channels = config->cfg.wasapi.channels;
   capture->chunk_size = chunk_size;
   capture->format = config->cfg.wasapi.format;
+  capture->has_format = config->cfg.wasapi.has_format;
   capture->loopback =
       config->cfg.wasapi.has_loopback ? config->cfg.wasapi.loopback : false;
   capture->exclusive =

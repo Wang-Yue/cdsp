@@ -42,6 +42,7 @@ struct wasapi_playback {
   size_t channels;
   int chunk_size;
   wasapi_sample_format_t format;
+  bool has_format;
   bool exclusive;
   bool polling;
   _Atomic int target_level;
@@ -351,7 +352,7 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
   WAVEFORMATEXTENSIBLE wfx;
   bool is_std_wfx = false;
   binary_sample_format_t bin_fmt;
-  bool has_format = (playback->format != WASAPI_SAMPLE_FORMAT_INVALID);
+  bool has_format = playback->has_format;
 
   if (!wasapi_get_device_format(playback->client, playback->sample_rate,
                                 playback->channels, playback->format,
@@ -578,6 +579,7 @@ wasapi_playback_create(const playback_device_config_t *config, int sample_rate,
   playback->channels = config->cfg.wasapi.channels;
   playback->chunk_size = chunk_size;
   playback->format = config->cfg.wasapi.format;
+  playback->has_format = config->cfg.wasapi.has_format;
   playback->exclusive =
       config->cfg.wasapi.has_exclusive ? config->cfg.wasapi.exclusive : false;
   playback->polling =
