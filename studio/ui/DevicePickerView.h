@@ -94,7 +94,6 @@ private:
     QCheckBox* m_capWasapiLoopbackCheck = nullptr;
     QCheckBox* m_capWasapiPollingCheck = nullptr;
     QCheckBox* m_capAlsaStopInactiveCheck = nullptr;
-    QCheckBox* m_capAlsaThreadedCheck = nullptr;
     QLineEdit* m_capAlsaLinkVolumeEdit = nullptr;
     QLineEdit* m_capAlsaLinkMuteEdit = nullptr;
     QLineEdit* m_capPwNodeNameEdit = nullptr;
@@ -149,7 +148,6 @@ private:
     QCheckBox* m_exclusiveModeCheck = nullptr;
     QLabel* m_exclusiveModeHint = nullptr;
     QCheckBox* m_pbWasapiPollingCheck = nullptr;
-    QCheckBox* m_pbAlsaThreadedCheck = nullptr;
     QLineEdit* m_pbPwNodeNameEdit = nullptr;
     QLineEdit* m_pbPwNodeDescEdit = nullptr;
     QLineEdit* m_pbPwNodeGroupEdit = nullptr;

@@ -3439,7 +3439,6 @@ void alsa_capture_config_init(alsa_capture_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(alsa_capture_config_t));
   out->stop_on_inactive = false;
-  out->threaded = false;
 }
 
 void free_alsa_capture_config_contents(alsa_capture_config_t *in) {
@@ -3453,7 +3452,7 @@ int parse_alsa_capture_config(const cJSON *obj, const char *ctx, alsa_capture_co
   }
   alsa_capture_config_init(out);
 
-  static const char *const allowed_keys[] = {"channels", "device", "format", "stop_on_inactive", "link_volume_control", "link_mute_control", "threaded", "type", "labels", "bypass_dop", "dop_cutoff_hz", "description", NULL};
+  static const char *const allowed_keys[] = {"channels", "device", "format", "stop_on_inactive", "link_volume_control", "link_mute_control", "type", "labels", "bypass_dop", "dop_cutoff_hz", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "alsa_capture_config", err) != 0) return -1;
 
   static const char *const req_keys[] = {"channels", "device", NULL};
@@ -3485,7 +3484,6 @@ int parse_alsa_capture_config(const cJSON *obj, const char *ctx, alsa_capture_co
   if (parse_json_bool_strict(obj, "stop_on_inactive", ctx ? ctx : "alsa_capture_config", &out->stop_on_inactive, &out->has_stop_on_inactive, err) != 0) return -1;
   if (parse_json_str_strict(obj, "link_volume_control", ctx ? ctx : "alsa_capture_config", out->link_volume_control, sizeof(out->link_volume_control), &out->has_link_volume_control, err) != 0) return -1;
   if (parse_json_str_strict(obj, "link_mute_control", ctx ? ctx : "alsa_capture_config", out->link_mute_control, sizeof(out->link_mute_control), &out->has_link_mute_control, err) != 0) return -1;
-  if (parse_json_bool_strict(obj, "threaded", ctx ? ctx : "alsa_capture_config", &out->threaded, &out->has_threaded, err) != 0) return -1;
   return 0;
 }
 
@@ -3499,7 +3497,6 @@ cJSON *serialize_alsa_capture_config(const alsa_capture_config_t *in) {
   if (in->has_stop_on_inactive) cJSON_AddBoolToObject(obj, "stop_on_inactive", in->stop_on_inactive);
   if (in->has_link_volume_control) if (in->link_volume_control[0]) cJSON_AddStringToObject(obj, "link_volume_control", in->link_volume_control);
   if (in->has_link_mute_control) if (in->link_mute_control[0]) cJSON_AddStringToObject(obj, "link_mute_control", in->link_mute_control);
-  if (in->has_threaded) cJSON_AddBoolToObject(obj, "threaded", in->threaded);
   return obj;
 }
 
@@ -3524,10 +3521,6 @@ bool alsa_capture_config_equal(const alsa_capture_config_t *a, const alsa_captur
   if (a->has_link_mute_control) {
     if (strncmp(a->link_mute_control, b->link_mute_control, sizeof(a->link_mute_control)) != 0) return false;
   }
-  if (a->has_threaded != b->has_threaded) return false;
-  if (a->has_threaded) {
-    if (a->threaded != b->threaded) return false;
-  }
   return true;
 }
 
@@ -3537,7 +3530,6 @@ bool alsa_capture_config_equal(const alsa_capture_config_t *a, const alsa_captur
 void alsa_playback_config_init(alsa_playback_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(alsa_playback_config_t));
-  out->threaded = false;
 }
 
 void free_alsa_playback_config_contents(alsa_playback_config_t *in) {
@@ -3551,7 +3543,7 @@ int parse_alsa_playback_config(const cJSON *obj, const char *ctx, alsa_playback_
   }
   alsa_playback_config_init(out);
 
-  static const char *const allowed_keys[] = {"channels", "device", "format", "target_level", "threaded", "type", "output_dop", "dsd_encoder_filter", "description", NULL};
+  static const char *const allowed_keys[] = {"channels", "device", "format", "target_level", "type", "output_dop", "dsd_encoder_filter", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "alsa_playback_config", err) != 0) return -1;
 
   static const char *const req_keys[] = {"channels", "device", NULL};
@@ -3581,7 +3573,6 @@ int parse_alsa_playback_config(const cJSON *obj, const char *ctx, alsa_playback_
     if (has_enum) out->format = (alsa_sample_format_t)enum_tmp;
   }
   if (parse_json_int_strict(obj, "target_level", ctx ? ctx : "alsa_playback_config", &out->target_level, &out->has_target_level, err) != 0) return -1;
-  if (parse_json_bool_strict(obj, "threaded", ctx ? ctx : "alsa_playback_config", &out->threaded, &out->has_threaded, err) != 0) return -1;
   return 0;
 }
 
@@ -3593,7 +3584,6 @@ cJSON *serialize_alsa_playback_config(const alsa_playback_config_t *in) {
   if (1) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
   if (in->has_format) cJSON_AddStringToObject(obj, "format", alsa_sample_format_to_string(in->format));
   if (in->has_target_level) cJSON_AddNumberToObject(obj, "target_level", (double)in->target_level);
-  if (in->has_threaded) cJSON_AddBoolToObject(obj, "threaded", in->threaded);
   return obj;
 }
 
@@ -3609,10 +3599,6 @@ bool alsa_playback_config_equal(const alsa_playback_config_t *a, const alsa_play
   if (a->has_target_level != b->has_target_level) return false;
   if (a->has_target_level) {
     if (a->target_level != b->target_level) return false;
-  }
-  if (a->has_threaded != b->has_threaded) return false;
-  if (a->has_threaded) {
-    if (a->threaded != b->threaded) return false;
   }
   return true;
 }

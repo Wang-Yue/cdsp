@@ -367,34 +367,6 @@ int alsa_recover_suspended_pcm(snd_pcm_t *pcm, const char *direction) {
   return snd_pcm_prepare(pcm);
 }
 
-// Returns the descriptive string representation of an ALSA PCM state.
-// (utils.rs:255-277)
-const char *alsa_state_desc(snd_pcm_state_t state) {
-  switch (state) {
-  case SND_PCM_STATE_OPEN:
-    return "SND_PCM_STATE_OPEN, Open";
-  case SND_PCM_STATE_SETUP:
-    return "SND_PCM_STATE_SETUP, Setup installed";
-  case SND_PCM_STATE_PREPARED:
-    return "SND_PCM_STATE_PREPARED, Ready to start";
-  case SND_PCM_STATE_RUNNING:
-    return "SND_PCM_STATE_RUNNING, Running";
-  case SND_PCM_STATE_XRUN:
-    return "SND_PCM_STATE_XRUN, Stopped: underrun (playback) or overrun "
-           "(capture) detected";
-  case SND_PCM_STATE_DRAINING:
-    return "SND_PCM_STATE_DRAINING, Draining: running (playback) or stopped "
-           "(capture)";
-  case SND_PCM_STATE_PAUSED:
-    return "SND_PCM_STATE_PAUSED, Paused";
-  case SND_PCM_STATE_SUSPENDED:
-    return "SND_PCM_STATE_SUSPENDED, Hardware is suspended";
-  case SND_PCM_STATE_DISCONNECTED:
-    return "SND_PCM_STATE_DISCONNECTED, Hardware is disconnected";
-  default:
-    return "Unknown ALSA PCM state";
-  }
-}
 
 int alsa_device_open_and_configure_hw(
     snd_pcm_t **pcm, const char *device_name, snd_pcm_stream_t stream,

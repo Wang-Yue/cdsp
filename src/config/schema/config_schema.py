@@ -943,7 +943,6 @@ STRUCT_ALSA_CAPTURE = StructType(
         Field("stop_on_inactive", TYPE_BOOL, has_flag=True, default=False),
         Field("link_volume_control", StringType(256), has_flag=True),
         Field("link_mute_control", StringType(256), has_flag=True),
-        Field("threaded", TYPE_BOOL, has_flag=True, default=False),
     ],
     allowed_extra_keys=CAPTURE_EXTRA_KEYS,
     guard="ENABLE_ALSA"
@@ -957,7 +956,6 @@ STRUCT_ALSA_PLAYBACK = StructType(
         Field("device", StringType(256), required=True),
         Field("format", ENUM_ALSA_SAMPLE_FORMAT, has_flag=True),
         Field("target_level", TYPE_INT, has_flag=True),
-        Field("threaded", TYPE_BOOL, has_flag=True, default=False),
     ],
     allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
     guard="ENABLE_ALSA"

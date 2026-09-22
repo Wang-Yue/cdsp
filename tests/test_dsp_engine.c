@@ -546,10 +546,10 @@ static void *alsa_loopback_reader_func(void *arg) {
 }
 #endif
 
-TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
+TEST(DSPEngineE2E_WavFileToALSAPlaybackExit) {
 #if defined(__linux__) && defined(ENABLE_ALSA)
   char wav_file[256];
-  snprintf(wav_file, sizeof(wav_file), "/tmp/test_threaded_alsa_%d.wav",
+  snprintf(wav_file, sizeof(wav_file), "/tmp/test_alsa_%d.wav",
            getpid());
   remove(wav_file);
 
@@ -607,7 +607,6 @@ TEST(DSPEngineE2E_WavFileToThreadedALSAPlaybackExit) {
            "        \"playback\": {\n"
            "            \"type\": \"Alsa\",\n"
            "            \"device\": \"hw:CARD=Loopback,DEV=0\",\n"
-           "            \"threaded\": true,\n"
            "            \"format\": \"S16_LE\",\n"
            "            \"channels\": 2\n"
            "        }\n"

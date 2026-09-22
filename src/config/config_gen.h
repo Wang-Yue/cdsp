@@ -687,8 +687,6 @@ struct alsa_capture_config_t {
   char link_volume_control[256];
   bool has_link_mute_control;
   char link_mute_control[256];
-  bool has_threaded;
-  bool threaded;
 };
 #endif /* ENABLE_ALSA */
 
@@ -701,8 +699,6 @@ struct alsa_playback_config_t {
   alsa_sample_format_t format;
   bool has_target_level;
   int target_level;
-  bool has_threaded;
-  bool threaded;
 };
 #endif /* ENABLE_ALSA */
 

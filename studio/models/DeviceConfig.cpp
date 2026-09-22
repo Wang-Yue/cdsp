@@ -309,7 +309,6 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
         cap.alsa.device = deviceName();
         cap.alsa.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
         cap.alsa.stopOnInactive = stopOnInactive;
-        cap.alsa.threaded = threaded;
         if (!linkVolumeControl.empty())
             cap.alsa.linkVolumeControl = linkVolumeControl;
         if (!linkMuteControl.empty())
@@ -392,7 +391,6 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
         pb.alsa.channels = channels;
         pb.alsa.device = deviceName();
         pb.alsa.format = (format.has_value() && !format->empty() && *format != "Auto") ? format : std::nullopt;
-        pb.alsa.threaded = threaded;
         pb.alsa.outputDoP = outputDoP;
         pb.alsa.dsdEncoderFilter = dsdEncoderFilter;
         break;
@@ -439,7 +437,6 @@ QJsonObject DeviceConfig::toJson() const {
     obj["loopback"] = loopback;
     obj["polling"] = polling;
     obj["stopOnInactive"] = stopOnInactive;
-    obj["threaded"] = threaded;
     if (!linkVolumeControl.empty())
         obj["linkVolumeControl"] = QString::fromStdString(linkVolumeControl);
     if (!linkMuteControl.empty())
@@ -497,8 +494,6 @@ DeviceConfig DeviceConfig::fromJson(const QJsonObject& json) {
         cfg.polling = json["polling"].toBool();
     if (json.contains("stopOnInactive"))
         cfg.stopOnInactive = json["stopOnInactive"].toBool();
-    if (json.contains("threaded"))
-        cfg.threaded = json["threaded"].toBool();
     if (json.contains("linkVolumeControl"))
         cfg.linkVolumeControl = json["linkVolumeControl"].toString().toStdString();
     if (json.contains("linkMuteControl"))
@@ -551,7 +546,7 @@ bool DeviceConfig::operator==(const DeviceConfig& other) const {
     return backend == other.backend && capabilities == other.capabilities && channels == other.channels &&
            deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
            exclusive == other.exclusive && loopback == other.loopback && polling == other.polling &&
-           stopOnInactive == other.stopOnInactive && threaded == other.threaded &&
+           stopOnInactive == other.stopOnInactive &&
            linkVolumeControl == other.linkVolumeControl && linkMuteControl == other.linkMuteControl &&
            bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
            dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&

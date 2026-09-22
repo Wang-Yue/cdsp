@@ -605,13 +605,6 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     });
     m_capCoreAudioForm->addRow(m_capAlsaStopInactiveCheck);
 
-    m_capAlsaThreadedCheck = new QCheckBox(tr("Threaded Ring Buffer Mode"), w);
-    connect(m_capAlsaThreadedCheck, &QCheckBox::toggled, [this](bool) {
-        if (!m_isRefreshing)
-            applySettings();
-    });
-    m_capCoreAudioForm->addRow(m_capAlsaThreadedCheck);
-
     m_capAlsaLinkVolumeEdit = new QLineEdit(w);
     m_capAlsaLinkVolumeEdit->setPlaceholderText("e.g. Master");
     connect(m_capAlsaLinkVolumeEdit, &QLineEdit::editingFinished, [this]() {
@@ -1039,13 +1032,6 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
     });
     m_pbCoreAudioForm->addRow(m_pbWasapiPollingCheck);
 
-    m_pbAlsaThreadedCheck = new QCheckBox(tr("Threaded Ring Buffer Mode"), w);
-    connect(m_pbAlsaThreadedCheck, &QCheckBox::toggled, [this](bool) {
-        if (!m_isRefreshing)
-            applySettings();
-    });
-    m_pbCoreAudioForm->addRow(m_pbAlsaThreadedCheck);
-
     m_pbPwNodeNameEdit = new QLineEdit(w);
     m_pbPwNodeNameEdit->setPlaceholderText("e.g. cdsp-playback");
     connect(m_pbPwNodeNameEdit, &QLineEdit::editingFinished, [this]() {
@@ -1353,10 +1339,6 @@ void DevicePickerView::refreshUi() {
 #if defined(ENABLE_WASAPI)
     isPbWasapi = m_devices->playbackConfig.backend == AudioBackendType::WASAPI;
 #endif
-    bool isPbAlsa = false;
-#if defined(ENABLE_ALSA)
-    isPbAlsa = m_devices->playbackConfig.backend == AudioBackendType::ALSA;
-#endif
 
     // 1. Refresh Capture Devices List & CoreAudio controls
     if (!isCapPw) {
@@ -1501,7 +1483,6 @@ void DevicePickerView::refreshUi() {
     m_capWasapiExclusiveCheck->setEnabled(!m_devices->captureConfig.loopback);
     m_capWasapiPollingCheck->setChecked(m_devices->captureConfig.polling);
     m_capAlsaStopInactiveCheck->setChecked(m_devices->captureConfig.stopOnInactive);
-    m_capAlsaThreadedCheck->setChecked(m_devices->captureConfig.threaded);
 
     if (m_capCoreAudioForm) {
 #if defined(ENABLE_RUST_BACKEND)
@@ -1513,11 +1494,6 @@ void DevicePickerView::refreshUi() {
         m_capCoreAudioForm->setRowVisible(m_capWasapiLoopbackCheck, isCapWasapi);
         m_capCoreAudioForm->setRowVisible(m_capWasapiPollingCheck, isCapWasapi);
         m_capCoreAudioForm->setRowVisible(m_capAlsaStopInactiveCheck, isCapAlsa);
-#if defined(ENABLE_RUST_BACKEND)
-        m_capCoreAudioForm->setRowVisible(m_capAlsaThreadedCheck, false);
-#else
-        m_capCoreAudioForm->setRowVisible(m_capAlsaThreadedCheck, isCapAlsa);
-#endif
         m_capCoreAudioForm->setRowVisible(m_capAlsaLinkVolumeEdit, isCapAlsa);
         m_capCoreAudioForm->setRowVisible(m_capAlsaLinkMuteEdit, isCapAlsa);
         m_capCoreAudioForm->setRowVisible(m_capPwNodeNameEdit, isCapPw);
@@ -1713,8 +1689,6 @@ void DevicePickerView::refreshUi() {
 
     m_pbWasapiPollingCheck->setChecked(m_devices->playbackConfig.polling);
 
-    m_pbAlsaThreadedCheck->setChecked(m_devices->playbackConfig.threaded);
-
 #if defined(ENABLE_RUST_BACKEND)
     bool pbDopVisible = false;
 #else
@@ -1730,11 +1704,6 @@ void DevicePickerView::refreshUi() {
         m_pbCoreAudioForm->setRowVisible(m_exclusiveModeCheck, pbExclusiveVisible);
         m_pbCoreAudioForm->setRowVisible(m_exclusiveModeHint, pbExclusiveVisible);
         m_pbCoreAudioForm->setRowVisible(m_pbWasapiPollingCheck, isPbWasapi);
-#if defined(ENABLE_RUST_BACKEND)
-        m_pbCoreAudioForm->setRowVisible(m_pbAlsaThreadedCheck, false);
-#else
-        m_pbCoreAudioForm->setRowVisible(m_pbAlsaThreadedCheck, isPbAlsa);
-#endif
         m_pbCoreAudioForm->setRowVisible(m_pbPwNodeNameEdit, isPbPw);
         m_pbCoreAudioForm->setRowVisible(m_pbPwNodeDescEdit, isPbPw);
         m_pbCoreAudioForm->setRowVisible(m_pbPwNodeGroupEdit, isPbPw);
@@ -1910,9 +1879,6 @@ void DevicePickerView::applySettings() {
             pbCfg.exclusive = m_exclusiveModeCheck->isChecked();
         }
         pbCfg.polling = m_pbWasapiPollingCheck->isChecked();
-#if !defined(ENABLE_RUST_BACKEND)
-        pbCfg.threaded = m_pbAlsaThreadedCheck->isChecked();
-#endif
         if (m_pbPwNodeNameEdit)
             pbCfg.nodeName = m_pbPwNodeNameEdit->text().toStdString();
         if (m_pbPwNodeDescEdit)
@@ -2020,9 +1986,6 @@ void DevicePickerView::applySettings() {
         }
         capCfg.polling = m_capWasapiPollingCheck->isChecked();
         capCfg.stopOnInactive = m_capAlsaStopInactiveCheck->isChecked();
-#if !defined(ENABLE_RUST_BACKEND)
-        capCfg.threaded = m_capAlsaThreadedCheck->isChecked();
-#endif
         if (m_capAlsaLinkVolumeEdit)
             capCfg.linkVolumeControl = m_capAlsaLinkVolumeEdit->text().toStdString();
         if (m_capAlsaLinkMuteEdit)

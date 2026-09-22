@@ -46,7 +46,6 @@ struct alsa_playback {
 
   void *interleaved_buf;
   size_t interleaved_buf_size;
-  size_t bytes_per_sample;
   size_t blockalign;
   void *zero_stall_buf;
   size_t zero_stall_buf_size;
@@ -61,29 +60,12 @@ struct alsa_playback {
   double pending_rate;
   bool has_pending_rate;
 
-  // Runtime switch for decoupled threaded mode vs direct mode
-  // (src/alsa_backend/threaded_device.rs vs src/alsa_backend/device.rs)
-  bool threaded;
   spsc_byte_ring_buffer_t *ring_buffer;
   pthread_t inner_thread;
   bool inner_thread_created;
   _Atomic bool inner_running;
   _Atomic bool draining;
 };
-
-// Sleep for the target delay matching
-// PlaybackBufferManager::sleep_for_target_delay in upstream
-// (src/alsa_backend/buffermanager.rs:227-234)
-static void sleep_for_target_delay(alsa_playback_t *playback) {
-  if (playback->target_level > 0 && playback->sample_rate > 0) {
-    double millis_per_frame = 1000.0 / (double)playback->sample_rate;
-    uint64_t sleep_millis =
-        (uint64_t)((double)playback->target_level * millis_per_frame);
-    logger_trace(&g_logger, "Sleeping for %zu frames = %llu ms",
-                 playback->target_level, (unsigned long long)sleep_millis);
-    cdsp_sleep_ms(sleep_millis);
-  }
-}
 
 // Dedicated real-time playback inner thread matching AlsaPlaybackInner in
 // upstream (src/alsa_backend/threaded_device.rs:1078-1345)
@@ -397,37 +379,20 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
     return false;
   }
 
-  // Set software parameters (src/alsa_backend/device.rs:483-491)
-  if (playback->chunk_size > playback->bufsize) {
+  // Set software parameters (threaded_buffermanager.rs:106-122)
+  snd_pcm_uframes_t avail_min =
+      playback->period > 0 ? (snd_pcm_uframes_t)playback->period : 1;
+  if (avail_min > (snd_pcm_uframes_t)playback->bufsize) {
     char msg[256];
-    snprintf(msg, sizeof(msg),
-             "Trying to set avail_min to %zu, must be smaller than or equal to "
-             "device buffer size of %lu",
-             playback->chunk_size, (unsigned long)playback->bufsize);
+    snprintf(
+        msg, sizeof(msg),
+        "Trying to set avail_min to %lu, must be smaller than or equal to "
+        "device buffer size of %lu",
+        (unsigned long)avail_min, (unsigned long)playback->bufsize);
     logger_error(&g_logger, "%s", msg);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
     goto error_cleanup;
-  }
-
-  // start on first write of any size (buffermanager.rs:248), avail_min =
-  // chunksize in direct mode, period in threaded mode
-  // (threaded_buffermanager.rs:106-122)
-  snd_pcm_uframes_t avail_min = (snd_pcm_uframes_t)playback->chunk_size;
-  if (playback->threaded) {
-    avail_min = playback->period > 0 ? (snd_pcm_uframes_t)playback->period : 1;
-    if (avail_min > (snd_pcm_uframes_t)playback->bufsize) {
-      char msg[256];
-      snprintf(
-          msg, sizeof(msg),
-          "Trying to set avail_min to %lu, must be smaller than or equal to "
-          "device buffer size of %lu",
-          (unsigned long)avail_min, (unsigned long)playback->bufsize);
-      logger_error(&g_logger, "%s", msg);
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
-      goto error_cleanup;
-    }
   }
   int sw_rc = alsa_device_configure_sw(playback->pcm, avail_min, 1);
   if (sw_rc < 0) {
@@ -443,7 +408,6 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
 
   size_t sample_size = alsa_format_sample_size(playback->format);
 
-  playback->bytes_per_sample = sample_size;
   playback->blockalign = (size_t)playback->channels * sample_size;
   playback->interleaved_buf_size =
       2 * playback->chunk_size * playback->blockalign;
@@ -518,37 +482,39 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
     }
   }
 
-  if (playback->threaded) {
-    size_t ring_frames = alsa_playback_ring_capacity_frames(
-        playback->target_level, playback->chunk_size);
-    playback->ring_buffer =
-        spsc_byte_ring_buffer_create(ring_frames * playback->blockalign);
-    if (!playback->ring_buffer) {
-      if (err) {
-        backend_error_init(
-            err, BACKEND_ERROR_INITIALIZATION_FAILED,
-            "Failed to allocate SPSC ring buffer for threaded ALSA");
-      }
-      goto error_cleanup;
+  size_t ring_frames = alsa_playback_ring_capacity_frames(
+      playback->target_level, playback->chunk_size);
+  playback->ring_buffer =
+      spsc_byte_ring_buffer_create(ring_frames * playback->blockalign);
+  if (!playback->ring_buffer) {
+    if (err) {
+      backend_error_init(
+          err, BACKEND_ERROR_INITIALIZATION_FAILED,
+          "Failed to allocate SPSC ring buffer for threaded ALSA");
     }
-    atomic_store_explicit(&playback->inner_running, true, memory_order_release);
-    if (pthread_create(&playback->inner_thread, NULL,
-                       alsa_playback_inner_thread_func, playback) != 0) {
-      atomic_store_explicit(&playback->inner_running, false,
-                            memory_order_release);
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to spawn ALSA playback inner thread");
-      }
-      goto error_cleanup;
-    }
-    playback->inner_thread_created = true;
+    goto error_cleanup;
   }
+  atomic_store_explicit(&playback->inner_running, true, memory_order_release);
+  if (pthread_create(&playback->inner_thread, NULL,
+                     alsa_playback_inner_thread_func, playback) != 0) {
+    atomic_store_explicit(&playback->inner_running, false,
+                          memory_order_release);
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to spawn ALSA playback inner thread");
+    }
+    goto error_cleanup;
+  }
+  playback->inner_thread_created = true;
 
   pthread_mutex_unlock(&g_alsa_mutex);
   return true;
 
 error_cleanup:
+  if (playback->ring_buffer) {
+    spsc_byte_ring_buffer_free(playback->ring_buffer);
+    playback->ring_buffer = NULL;
+  }
   if (playback->pcm) {
     snd_pcm_close(playback->pcm);
     playback->pcm = NULL;
@@ -593,230 +559,12 @@ static bool alsa_playback_write(void *ctx, const audio_chunk_t *chunk,
   if (total_frames == 0)
     return true;
 
-  if (!playback->threaded) {
-    bool paused = atomic_load_explicit(&playback->paused, memory_order_acquire);
-    if (paused) {
-      if (playback->can_pause && !playback->currently_paused) {
-        snd_pcm_pause(playback->pcm, 1);
-        playback->currently_paused = true;
-      }
-      return true;
-    } else {
-      if (playback->can_pause && playback->currently_paused) {
-        snd_pcm_pause(playback->pcm, 0);
-        playback->currently_paused = false;
-      }
-    }
-  }
-
-  if (playback->threaded) {
-    return audio_backend_ring_buffer_write(
-        playback->ring_buffer, playback->interleaved_buf,
-        playback->interleaved_buf_size, playback->blockalign, chunk,
-        alsa_pcm_format_to_binary_format(playback->format),
-        (size_t)playback->channels, 1, 500, &playback->inner_running,
-        &playback->stopped, &playback->paused, NULL, err);
-  }
-
-  // Device state check and recovery (src/alsa_backend/device.rs:115-147)
-  snd_pcm_state_t playback_state = snd_pcm_state(playback->pcm);
-  if ((int)playback_state < 0) {
-    logger_error(&g_logger,
-                 "PB: Alsa snd_pcm_state() of playback device returned an "
-                 "unexpected error: %s",
-                 snd_strerror((int)playback_state));
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         snd_strerror((int)playback_state));
-    }
-    return false;
-  } else if (playback_state == SND_PCM_STATE_XRUN) {
-    logger_warn(&g_logger, "PB: Prepare playback after buffer underrun");
-    snd_pcm_prepare(playback->pcm);
-    sleep_for_target_delay(playback);
-  } else if (playback_state == SND_PCM_STATE_SUSPENDED) {
-    alsa_recover_suspended_pcm(playback->pcm, "PB");
-    sleep_for_target_delay(playback);
-  } else if (playback_state == SND_PCM_STATE_PREPARED) {
-    logger_info(&g_logger, "PB: Starting playback from Prepared state");
-    sleep_for_target_delay(playback);
-  } else if (playback_state == SND_PCM_STATE_PAUSED) {
-    logger_debug(&g_logger, "PB: Device is in paused state, unpausing.");
-    if (playback->can_pause) {
-      snd_pcm_pause(playback->pcm, 0);
-    }
-  } else if (playback_state != SND_PCM_STATE_RUNNING) {
-    logger_warn(&g_logger, "PB: device is in an unexpected state: %s",
-                alsa_state_desc(playback_state));
-  }
-
-  size_t bytes_per_frame = playback->blockalign;
-  double millis_per_frame = 1000.0 / (double)playback->sample_rate;
-  size_t total_bytes = total_frames * bytes_per_frame;
-
-  if (total_bytes > playback->interleaved_buf_size) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Frame count exceeds playback buffer capacity");
-    }
-    return false;
-  }
-
-  if (!audio_chunk_encode_interleaved(
-          chunk, alsa_pcm_format_to_binary_format(playback->format),
-          (size_t)playback->channels, total_frames,
-          playback->interleaved_buf)) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Failed to encode audio chunk");
-    }
-    return false;
-  }
-
-  char *buf_ptr = (char *)playback->interleaved_buf;
-  size_t remaining_frames = total_frames;
-  int retry_count = 0;
-
-  // Write loop matching play_buffer in upstream
-  // (src/alsa_backend/device.rs:151-238)
-  while (remaining_frames > 0) {
-    if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_NONE, "Playback stopped");
-      }
-      return false;
-    }
-
-    retry_count++;
-    if (retry_count >= 100) {
-      logger_warn(&g_logger, "PB: giving up after %d write attempts",
-                  retry_count);
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                           "Aborting playback after too many write attempts");
-      }
-      return false;
-    }
-
-    uint32_t timeout_millis =
-        (uint32_t)(2.0 * millis_per_frame * (double)total_frames);
-
-    int err_wait = snd_pcm_wait(playback->pcm, (int)timeout_millis);
-    if (err_wait == 0) {
-      // Device stalled: drop, prepare, and prefill stall-check zeros
-      // (src/alsa_backend/device.rs:617-640)
-      logger_trace(
-          &g_logger,
-          "PB: Wait timed out, playback device takes too long to drain buffer");
-      if (!playback->device_stalled) {
-        logger_info(&g_logger, "PB: device stalled");
-        snd_pcm_drop(playback->pcm);
-        snd_pcm_prepare(playback->pcm);
-        snd_pcm_uframes_t frames_to_stall =
-            (playback->bufsize >= playback->chunk_size)
-                ? (playback->bufsize - playback->chunk_size + 1)
-                : 1;
-        snd_pcm_sframes_t sw_rc = snd_pcm_writei(
-            playback->pcm, playback->zero_stall_buf, frames_to_stall);
-        if (sw_rc < 0) {
-          logger_warn(&g_logger, "PB: Writing stall-check zeros failed with %s",
-                      snd_strerror((int)sw_rc));
-        } else {
-          logger_trace(&g_logger, "PB: Wrote %ld zero frames", (long)sw_rc);
-        }
-        playback->device_stalled = true;
-      }
-      return true;
-    } else if (err_wait < 0) {
-      if (err_wait == -EPIPE) {
-        logger_warn(&g_logger,
-                    "PB: wait underrun, trying to recover. Error: %s",
-                    snd_strerror(err_wait));
-        snd_pcm_prepare(playback->pcm);
-      } else if (err_wait == -ESTRPIPE ||
-                 snd_pcm_state(playback->pcm) == SND_PCM_STATE_SUSPENDED) {
-        logger_warn(
-            &g_logger,
-            "PB: wait interrupted by suspend, trying to recover. Error: %s",
-            snd_strerror(err_wait));
-        alsa_recover_suspended_pcm(playback->pcm, "PB");
-        sleep_for_target_delay(playback);
-      } else {
-        logger_warn(&g_logger,
-                    "PB: device failed while waiting for available buffer "
-                    "space, error: %s",
-                    snd_strerror(err_wait));
-        if (err) {
-          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                             snd_strerror(err_wait));
-        }
-        return false;
-      }
-    }
-
-    snd_pcm_sframes_t rc =
-        snd_pcm_writei(playback->pcm, buf_ptr, remaining_frames);
-    if (rc > 0) {
-      size_t written = (size_t)rc;
-      if (playback->device_stalled) {
-        logger_info(&g_logger, "PB: device resumed normal operation");
-        playback->device_stalled = false;
-      }
-      if (written == remaining_frames) {
-        break;
-      } else {
-        logger_trace(&g_logger,
-                     "PB: wrote %zu instead of requested %zu, trying again to "
-                     "write the rest",
-                     written, remaining_frames);
-        buf_ptr += written * bytes_per_frame;
-        remaining_frames -= written;
-        continue;
-      }
-    } else if (rc < 0) {
-      int err_write = (int)rc;
-      if (err_write == -EAGAIN || err_write == 0) {
-        logger_trace(&g_logger,
-                     "PB: encountered EAGAIN error on write, trying again");
-        continue;
-      } else if (err_write == -EPIPE) {
-        logger_warn(&g_logger,
-                    "PB: write underrun, trying to recover. Error: %s",
-                    snd_strerror(err_write));
-        snd_pcm_prepare(playback->pcm);
-        sleep_for_target_delay(playback);
-        snd_pcm_sframes_t retry_rc =
-            snd_pcm_writei(playback->pcm, buf_ptr, remaining_frames);
-        if (retry_rc < 0) {
-          if (err) {
-            backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                               snd_strerror((int)retry_rc));
-          }
-          return false;
-        }
-        break;
-      } else if (err_write == -ESTRPIPE ||
-                 snd_pcm_state(playback->pcm) == SND_PCM_STATE_SUSPENDED) {
-        logger_warn(
-            &g_logger,
-            "PB: write interrupted by suspend, trying to recover. Error: %s",
-            snd_strerror(err_write));
-        alsa_recover_suspended_pcm(playback->pcm, "PB");
-        sleep_for_target_delay(playback);
-        continue;
-      } else {
-        logger_warn(&g_logger, "PB: write failed, error: %s",
-                    snd_strerror(err_write));
-        if (err) {
-          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                             snd_strerror(err_write));
-        }
-        return false;
-      }
-    }
-  }
-
-  return true;
+  return audio_backend_ring_buffer_write(
+      playback->ring_buffer, playback->interleaved_buf,
+      playback->interleaved_buf_size, playback->blockalign, chunk,
+      alsa_pcm_format_to_binary_format(playback->format),
+      (size_t)playback->channels, 1, 500, &playback->inner_running,
+      &playback->stopped, &playback->paused, NULL, err);
 }
 
 // Close the ALSA playback device
@@ -827,7 +575,7 @@ static void alsa_playback_close(void *ctx) {
 
   atomic_store_explicit(&playback->stopped, true, memory_order_release);
 
-  if (playback->threaded && playback->inner_thread_created) {
+  if (playback->inner_thread_created) {
     pthread_join(playback->inner_thread, NULL);
     playback->inner_thread_created = false;
     atomic_store_explicit(&playback->inner_running, false,
@@ -875,32 +623,20 @@ static void alsa_playback_close(void *ctx) {
 // (src/alsa_backend/buffermanager.rs:255: self.data.bufsize - avail)
 static size_t alsa_playback_get_buffer_level(void *ctx) {
   alsa_playback_t *playback = (alsa_playback_t *)ctx;
-  if (!playback)
+  if (!playback || !playback->ring_buffer || playback->blockalign == 0)
     return 0;
-  if (playback->threaded) {
-    if (!playback->ring_buffer || playback->blockalign == 0)
-      return 0;
-    size_t ring_frames =
-        spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
-        playback->blockalign;
-    size_t dev_delay = 0;
-    if (playback->pcm &&
-        snd_pcm_state(playback->pcm) == SND_PCM_STATE_RUNNING) {
-      snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
-      if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
-        dev_delay = (size_t)(playback->bufsize - (snd_pcm_uframes_t)avail);
-      }
+  size_t ring_frames =
+      spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
+      playback->blockalign;
+  size_t dev_delay = 0;
+  if (playback->pcm &&
+      snd_pcm_state(playback->pcm) == SND_PCM_STATE_RUNNING) {
+    snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
+    if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
+      dev_delay = (size_t)(playback->bufsize - (snd_pcm_uframes_t)avail);
     }
-    return ring_frames + dev_delay;
   }
-  if (!playback->pcm || snd_pcm_state(playback->pcm) != SND_PCM_STATE_RUNNING) {
-    return 0;
-  }
-  snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
-  if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
-    return (size_t)(playback->bufsize - (snd_pcm_uframes_t)avail);
-  }
-  return 0;
+  return ring_frames + dev_delay;
 }
 
 static bool alsa_playback_get_pending_rate_change(void *ctx, double *out_rate) {
@@ -922,48 +658,21 @@ static bool alsa_playback_prefill_silence(void *ctx, size_t frames,
                                           backend_error_t *err) {
   (void)err;
   alsa_playback_t *playback = (alsa_playback_t *)ctx;
-  if (!playback || frames == 0)
+  if (!playback || frames == 0 || !playback->ring_buffer)
     return true;
 
-  if (playback->threaded) {
-    if (!playback->ring_buffer)
-      return true;
-    size_t bytes = frames * playback->blockalign;
-    uint8_t zero_buf[512] = {0};
-    if (alsa_is_dsd_format(playback->format)) {
-      memset(zero_buf, 0x69, sizeof(zero_buf));
-    }
-    while (bytes > 0) {
-      size_t chunk_bytes = bytes < sizeof(zero_buf) ? bytes : sizeof(zero_buf);
-      size_t written = spsc_byte_ring_buffer_write(playback->ring_buffer,
-                                                   zero_buf, chunk_bytes);
-      if (written == 0)
-        break;
-      bytes -= written;
-    }
-    return true;
-  }
-
-  if (!playback->pcm)
-    return true;
+  size_t bytes = frames * playback->blockalign;
   uint8_t zero_buf[512] = {0};
   if (alsa_is_dsd_format(playback->format)) {
     memset(zero_buf, 0x69, sizeof(zero_buf));
   }
-  size_t written_frames = 0;
-  while (written_frames < frames) {
-    size_t max_chunk_frames = sizeof(zero_buf) / playback->blockalign;
-    if (max_chunk_frames == 0)
-      max_chunk_frames = 1;
-    size_t chunk = (frames - written_frames) < max_chunk_frames
-                       ? (frames - written_frames)
-                       : max_chunk_frames;
-    snd_pcm_sframes_t rc = snd_pcm_writei(playback->pcm, zero_buf, chunk);
-    if (rc > 0) {
-      written_frames += (size_t)rc;
-    } else {
+  while (bytes > 0) {
+    size_t chunk_bytes = bytes < sizeof(zero_buf) ? bytes : sizeof(zero_buf);
+    size_t written = spsc_byte_ring_buffer_write(playback->ring_buffer,
+                                                 zero_buf, chunk_bytes);
+    if (written == 0)
       break;
-    }
+    bytes -= written;
   }
   return true;
 }
@@ -1017,16 +726,7 @@ static void alsa_playback_drain(void *ctx) {
   alsa_playback_t *playback = (alsa_playback_t *)ctx;
   if (!playback)
     return;
-  if (playback->threaded) {
-    atomic_store_explicit(&playback->draining, true, memory_order_release);
-  } else {
-    pthread_mutex_lock(&g_alsa_mutex);
-    if (playback->pcm &&
-        snd_pcm_state(playback->pcm) == SND_PCM_STATE_RUNNING) {
-      snd_pcm_drain(playback->pcm);
-    }
-    pthread_mutex_unlock(&g_alsa_mutex);
-  }
+  atomic_store_explicit(&playback->draining, true, memory_order_release);
 }
 
 static void alsa_playback_stop(void *ctx) {
@@ -1082,8 +782,6 @@ alsa_playback_create(const playback_device_config_t *config, int sample_rate,
   playback->params = params;
   atomic_init(&playback->paused, false);
   playback->currently_paused = false;
-  playback->threaded =
-      config->cfg.alsa.has_threaded ? config->cfg.alsa.threaded : false;
   pthread_mutex_init(&playback->mixer_mutex, NULL);
 
   playback_backend_t *backend =

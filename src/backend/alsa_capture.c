@@ -4,7 +4,6 @@
 #include <alsa/asoundlib.h>
 #include <errno.h>
 #include <math.h>
-#include <poll.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -34,7 +33,6 @@ struct alsa_capture {
   int chunk_size;
   snd_pcm_uframes_t bufsize;
   snd_pcm_uframes_t period;
-  size_t last_avail_min;
 
   bool has_format;
   alsa_sample_format_t requested_format;
@@ -74,9 +72,6 @@ struct alsa_capture {
   pthread_mutex_t mixer_mutex;
   _Atomic bool stopped;
 
-  // Runtime switch for decoupled threaded mode vs direct mode
-  // (src/alsa_backend/threaded_device.rs vs src/alsa_backend/device.rs)
-  bool threaded;
   spsc_byte_ring_buffer_t *ring_buffer;
   cdsp_sem_t semaphore;
   pthread_t inner_thread;
@@ -471,42 +466,21 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
     return false;
   }
 
-  // Calculate init_io_size (buffermanager.rs:168: init_io_size = (chunksize as
-  // f32 / resampling_ratio) as Frames)
+  // Set software parameters (threaded_buffermanager.rs:106-122)
   snd_pcm_uframes_t capture_avail_min =
-      (snd_pcm_uframes_t)((double)capture->chunk_size / resampling_ratio);
-  if (capture_avail_min > capture->bufsize) {
+      capture->period > 0 ? (snd_pcm_uframes_t)capture->period : 1;
+  if (capture_avail_min > (snd_pcm_uframes_t)capture->bufsize) {
     char msg[256];
-    snprintf(msg, sizeof(msg),
-             "Trying to set avail_min to %lu, must be smaller than or equal to "
-             "device buffer size of %lu",
-             (unsigned long)capture_avail_min, (unsigned long)capture->bufsize);
+    snprintf(
+        msg, sizeof(msg),
+        "Trying to set avail_min to %lu, must be smaller than or equal to "
+        "device buffer size of %lu",
+        (unsigned long)capture_avail_min, (unsigned long)capture->bufsize);
     logger_error(&g_logger, "%s", msg);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
     goto error_cleanup;
   }
-
-  // Set software parameters (src/alsa_backend/device.rs:483-491,
-  // threaded_buffermanager.rs:106-122) immediate start after pcmdev.prepare
-  // (buffermanager.rs:194)
-  if (capture->threaded) {
-    capture_avail_min =
-        capture->period > 0 ? (snd_pcm_uframes_t)capture->period : 1;
-    if (capture_avail_min > (snd_pcm_uframes_t)capture->bufsize) {
-      char msg[256];
-      snprintf(
-          msg, sizeof(msg),
-          "Trying to set avail_min to %lu, must be smaller than or equal to "
-          "device buffer size of %lu",
-          (unsigned long)capture_avail_min, (unsigned long)capture->bufsize);
-      logger_error(&g_logger, "%s", msg);
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
-      goto error_cleanup;
-    }
-  }
-  capture->last_avail_min = (size_t)capture_avail_min;
   int sw_rc = alsa_device_configure_sw(capture->pcm, capture_avail_min, 0);
   if (sw_rc < 0) {
     char msg[256];
@@ -539,41 +513,39 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
 
   alsa_capture_init_controls(capture);
 
-  if (capture->threaded) {
-    size_t ring_frames = alsa_capture_ring_capacity_frames(
-        (size_t)capture->chunk_size, capture->period);
-    capture->ring_buffer = spsc_byte_ring_buffer_create(
-        ring_frames * (size_t)capture->channels * sample_size);
-    if (!capture->ring_buffer) {
-      if (err) {
-        backend_error_init(
-            err, BACKEND_ERROR_INITIALIZATION_FAILED,
-            "Failed to allocate SPSC ring buffer for threaded ALSA capture");
-      }
-      goto error_cleanup;
+  size_t ring_frames = alsa_capture_ring_capacity_frames(
+      (size_t)capture->chunk_size, capture->period);
+  capture->ring_buffer = spsc_byte_ring_buffer_create(
+      ring_frames * (size_t)capture->channels * sample_size);
+  if (!capture->ring_buffer) {
+    if (err) {
+      backend_error_init(
+          err, BACKEND_ERROR_INITIALIZATION_FAILED,
+          "Failed to allocate SPSC ring buffer for threaded ALSA capture");
     }
-    capture->semaphore = cdsp_sem_create();
-    if (!capture->semaphore) {
-      if (err) {
-        backend_error_init(
-            err, BACKEND_ERROR_INITIALIZATION_FAILED,
-            "Failed to allocate semaphore for threaded ALSA capture");
-      }
-      goto error_cleanup;
-    }
-    atomic_store_explicit(&capture->inner_running, true, memory_order_release);
-    if (pthread_create(&capture->inner_thread, NULL,
-                       alsa_capture_inner_thread_func, capture) != 0) {
-      atomic_store_explicit(&capture->inner_running, false,
-                            memory_order_release);
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to spawn ALSA capture inner thread");
-      }
-      goto error_cleanup;
-    }
-    capture->inner_thread_created = true;
+    goto error_cleanup;
   }
+  capture->semaphore = cdsp_sem_create();
+  if (!capture->semaphore) {
+    if (err) {
+      backend_error_init(
+          err, BACKEND_ERROR_INITIALIZATION_FAILED,
+          "Failed to allocate semaphore for threaded ALSA capture");
+    }
+    goto error_cleanup;
+  }
+  atomic_store_explicit(&capture->inner_running, true, memory_order_release);
+  if (pthread_create(&capture->inner_thread, NULL,
+                     alsa_capture_inner_thread_func, capture) != 0) {
+    atomic_store_explicit(&capture->inner_running, false,
+                          memory_order_release);
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to spawn ALSA capture inner thread");
+    }
+    goto error_cleanup;
+  }
+  capture->inner_thread_created = true;
 
   pthread_mutex_unlock(&g_alsa_mutex);
   return true;
@@ -640,338 +612,14 @@ static bool alsa_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
     return false;
   }
 
-  if (capture->threaded) {
-    size_t sample_bytes = alsa_format_sample_size(capture->format);
-    size_t blockalign = (size_t)capture->channels * sample_bytes;
-    return audio_backend_ring_buffer_read(
-        capture->ring_buffer, capture->interleaved_buf,
-        capture->interleaved_buf_size, blockalign, frames,
-        alsa_pcm_format_to_binary_format(capture->format),
-        (size_t)capture->channels, &capture->inner_running, &capture->stopped,
-        &capture->has_pending_rate_change, chunk, err);
-  }
-
-  // Update avail_min and start_threshold if requested input frames changed
-  // (src/alsa_backend/device.rs:958 & buffermanager.rs:126-133)
-  if (frames != capture->last_avail_min) {
-    if (frames > (size_t)capture->bufsize) {
-      char msg[256];
-      snprintf(
-          msg, sizeof(msg),
-          "Trying to set avail_min to %zu, must be smaller than or equal to "
-          "device buffer size of %lu",
-          frames, (unsigned long)capture->bufsize);
-      logger_error(&g_logger, "%s", msg);
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_READ_ERROR, msg);
-      return false;
-    }
-    snd_pcm_sw_params_t *sw_params;
-    snd_pcm_sw_params_alloca(&sw_params);
-    if (snd_pcm_sw_params_current(capture->pcm, sw_params) >= 0) {
-      snd_pcm_sw_params_set_avail_min(capture->pcm, sw_params,
-                                      (snd_pcm_uframes_t)frames);
-      snd_pcm_sw_params_set_start_threshold(capture->pcm, sw_params, 0);
-      if (snd_pcm_sw_params(capture->pcm, sw_params) >= 0) {
-        capture->last_avail_min = frames;
-      }
-    }
-  }
-
-  // State checks and recoveries matching device.rs:259-282
-  snd_pcm_state_t capture_state = snd_pcm_state(capture->pcm);
-  if (capture_state == SND_PCM_STATE_XRUN) {
-    logger_warn(&g_logger, "Prepare capture device");
-    snd_pcm_prepare(capture->pcm);
-  } else if (capture_state == SND_PCM_STATE_SUSPENDED) {
-    alsa_recover_suspended_pcm(capture->pcm, "Capture");
-    if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
-      snd_pcm_start(capture->pcm);
-    }
-  } else if ((int)capture_state < 0) {
-    logger_error(&g_logger,
-                 "Alsa snd_pcm_state() of capture device returned an "
-                 "unexpected error: %s",
-                 snd_strerror((int)capture_state));
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                         snd_strerror((int)capture_state));
-    return false;
-  } else if (capture_state != SND_PCM_STATE_RUNNING) {
-    logger_debug(&g_logger, "Starting capture from state: %s",
-                 alsa_state_desc(capture_state));
-    snd_pcm_start(capture->pcm);
-  }
-
   size_t sample_bytes = alsa_format_sample_size(capture->format);
-  size_t bytes_per_frame = (size_t)capture->channels * sample_bytes;
-
-  double millis_per_chunk =
-      1000.0 * (double)frames / (double)capture->capture_sample_rate;
-
-  char *buffer = (char *)capture->interleaved_buf;
-  size_t buffer_len_bytes = frames * bytes_per_frame;
-
-  if (buffer_len_bytes > capture->interleaved_buf_size) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                         "Frame count exceeds capture buffer capacity");
-    }
-    return false;
-  }
-
-  // Poll loop matching capture_buffer in upstream
-  // (src/alsa_backend/device.rs:287-364)
-  for (;;) {
-    int pcm_fds_count = snd_pcm_poll_descriptors_count(capture->pcm);
-    int ctl_fds_count = 0;
-    if (capture->ctl) {
-      ctl_fds_count = snd_ctl_poll_descriptors_count(capture->ctl);
-    }
-    if (pcm_fds_count < 0)
-      pcm_fds_count = 0;
-    if (ctl_fds_count < 0)
-      ctl_fds_count = 0;
-
-    int total_fds = pcm_fds_count + ctl_fds_count;
-    struct pollfd pfds[total_fds > 0 ? total_fds : 1];
-    memset(pfds, 0, sizeof(pfds));
-
-    if (pcm_fds_count > 0) {
-      snd_pcm_poll_descriptors(capture->pcm, pfds, (unsigned int)pcm_fds_count);
-    }
-    if (ctl_fds_count > 0 && capture->ctl) {
-      snd_ctl_poll_descriptors(capture->ctl, pfds + pcm_fds_count,
-                               (unsigned int)ctl_fds_count);
-    }
-
-    uint32_t timeout_millis = (uint32_t)(8.0 * millis_per_chunk);
-    if (timeout_millis < 20)
-      timeout_millis = 20;
-    uint32_t remaining_timeout_millis = timeout_millis;
-
-    while (true) {
-      if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
-        if (err) {
-          backend_error_init(err, BACKEND_ERROR_NONE, "Capture stopped");
-        }
-        return false;
-      }
-
-      uint32_t poll_slice_millis =
-          remaining_timeout_millis < 20 ? remaining_timeout_millis : 20;
-      int poll_res = 0;
-      if (total_fds > 0) {
-        poll_res = poll(pfds, (nfds_t)total_fds, (int)poll_slice_millis);
-      } else {
-        poll_res = snd_pcm_wait(capture->pcm, (int)poll_slice_millis);
-      }
-
-      if (poll_res == 0) {
-        if (remaining_timeout_millis <= poll_slice_millis) {
-          logger_trace(&g_logger,
-                       "Wait timed out, capture device takes too long to "
-                       "capture frames");
-          if (!capture->device_stalled) {
-            logger_info(&g_logger,
-                        "Capture device is stalled, processing is stalled");
-            capture->device_stalled = true;
-          }
-          if (err) {
-            backend_error_init(err, BACKEND_ERROR_NONE,
-                               "Capture device wait timeout");
-          }
-          return false;
-        }
-        remaining_timeout_millis -= poll_slice_millis;
-        continue;
-      } else if (poll_res < 0) {
-        if (errno == EINTR) {
-          if (err) {
-            backend_error_init(err, BACKEND_ERROR_NONE,
-                               "Capture poll interrupted by signal");
-          }
-          return false;
-        }
-        logger_warn(&g_logger,
-                    "Capture: poll failed while waiting for available frames, "
-                    "error: %s",
-                    strerror(errno));
-        if (err) {
-          backend_error_init(err, BACKEND_ERROR_READ_ERROR, strerror(errno));
-        }
-        return false;
-      }
-
-      // Check control events (device.rs:316-331)
-      if (ctl_fds_count > 0) {
-        bool ctl_event = false;
-        for (int i = pcm_fds_count; i < total_fds; i++) {
-          if (pfds[i].revents != 0) {
-            ctl_event = true;
-            break;
-          }
-        }
-        if (ctl_event) {
-          logger_trace(&g_logger, "Got a control event");
-          alsa_capture_process_events(capture);
-          if (atomic_load_explicit(&capture->is_inactive,
-                                   memory_order_acquire)) {
-            if (err) {
-              backend_error_init(err, BACKEND_ERROR_READ_EOF,
-                                 "Capture source inactive");
-            }
-            return false;
-          }
-        }
-      }
-
-      // Check PCM events (device.rs:332-355)
-      if (pcm_fds_count > 0) {
-        unsigned short pcm_revents = 0;
-        int rev_rc = snd_pcm_poll_descriptors_revents(
-            capture->pcm, pfds, (unsigned int)pcm_fds_count, &pcm_revents);
-        if (rev_rc < 0) {
-          if (rev_rc == -EPIPE) {
-            logger_warn(&g_logger,
-                        "Capture: wait overrun, trying to recover. Error: %s",
-                        snd_strerror(rev_rc));
-            snd_pcm_prepare(capture->pcm);
-            break;
-          } else if (rev_rc == -ESTRPIPE ||
-                     snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
-            logger_warn(&g_logger,
-                        "Capture: wait interrupted by suspend, trying to "
-                        "recover. Error: %s",
-                        snd_strerror(rev_rc));
-            alsa_recover_suspended_pcm(capture->pcm, "Capture");
-            if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
-              snd_pcm_start(capture->pcm);
-            }
-            break;
-          } else {
-            logger_warn(&g_logger,
-                        "Capture: device failed while waiting for available "
-                        "frames, error: %s",
-                        snd_strerror(rev_rc));
-            if (err) {
-              backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                                 snd_strerror(rev_rc));
-            }
-            return false;
-          }
-        }
-
-        if (pcm_revents & (POLLIN | POLLERR | POLLNVAL)) {
-          if (pcm_revents & (POLLERR | POLLNVAL)) {
-            snd_pcm_state_t st = snd_pcm_state(capture->pcm);
-            if (st == SND_PCM_STATE_XRUN) {
-              logger_warn(&g_logger,
-                          "Capture: wait overrun, trying to recover.");
-              snd_pcm_prepare(capture->pcm);
-              break;
-            } else if (st == SND_PCM_STATE_SUSPENDED) {
-              logger_warn(
-                  &g_logger,
-                  "Capture: wait interrupted by suspend, trying to recover.");
-              alsa_recover_suspended_pcm(capture->pcm, "Capture");
-              if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
-                snd_pcm_start(capture->pcm);
-              }
-              break;
-            }
-          }
-          break;
-        }
-      } else {
-        break;
-      }
-
-      if (remaining_timeout_millis > poll_slice_millis) {
-        remaining_timeout_millis -= poll_slice_millis;
-      } else {
-        remaining_timeout_millis = 0;
-      }
-    }
-
-    if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
-      if (err) {
-        backend_error_init(err, BACKEND_ERROR_NONE, "Capture stopped");
-      }
-      return false;
-    }
-
-    // Read audio frames matching device.rs:368-411
-    size_t frames_req = buffer_len_bytes / bytes_per_frame;
-    snd_pcm_sframes_t rc = snd_pcm_readi(capture->pcm, buffer, frames_req);
-    if (rc > 0) {
-      if (capture->device_stalled) {
-        capture->device_stalled = false;
-      }
-      size_t frames_read = (size_t)rc;
-      if (frames_read == frames_req) {
-        break;
-      } else {
-        logger_warn(&g_logger,
-                    "Capture read %zu frames instead of the requested %zu",
-                    frames_read, frames_req);
-        buffer += frames_read * bytes_per_frame;
-        buffer_len_bytes -= frames_read * bytes_per_frame;
-        continue;
-      }
-    } else {
-      int err_read = (int)rc;
-      if (err_read == -EIO) {
-        logger_warn(&g_logger, "Capture: read failed with error: %s",
-                    snd_strerror(err_read));
-        if (err)
-          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                             snd_strerror(err_read));
-        return false;
-      } else if (err_read == 0) {
-        if (!capture->device_stalled) {
-          logger_info(&g_logger,
-                      "Capture device is stalled, processing is stalled");
-          capture->device_stalled = true;
-        }
-        continue;
-      } else if (err_read == -EAGAIN) {
-        logger_trace(&g_logger,
-                     "Capture: encountered EAGAIN error on read, trying again");
-        continue;
-      } else if (err_read == -EPIPE) {
-        logger_warn(&g_logger,
-                    "Capture: read overrun, trying to recover. Error: %s",
-                    snd_strerror(err_read));
-        snd_pcm_prepare(capture->pcm);
-        continue;
-      } else if (err_read == -ESTRPIPE ||
-                 snd_pcm_state(capture->pcm) == SND_PCM_STATE_SUSPENDED) {
-        logger_warn(&g_logger,
-                    "Capture: read interrupted by suspend, trying to recover. "
-                    "Error: %s",
-                    snd_strerror(err_read));
-        alsa_recover_suspended_pcm(capture->pcm, "Capture");
-        if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
-          snd_pcm_start(capture->pcm);
-        }
-        continue;
-      } else {
-        logger_warn(&g_logger, "Capture failed, error: %s",
-                    snd_strerror(err_read));
-        if (err)
-          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                             snd_strerror(err_read));
-        return false;
-      }
-    }
-  }
-
-  size_t read_frames = frames;
-  return audio_chunk_decode_interleaved(
-      capture->interleaved_buf,
+  size_t blockalign = (size_t)capture->channels * sample_bytes;
+  return audio_backend_ring_buffer_read(
+      capture->ring_buffer, capture->interleaved_buf,
+      capture->interleaved_buf_size, blockalign, frames,
       alsa_pcm_format_to_binary_format(capture->format),
-      (size_t)capture->channels, read_frames, chunk);
+      (size_t)capture->channels, &capture->inner_running, &capture->stopped,
+      &capture->has_pending_rate_change, chunk, err);
 }
 
 // Close the ALSA capture device
@@ -981,24 +629,22 @@ static void alsa_capture_close(void *ctx) {
     return;
   atomic_store_explicit(&capture->stopped, true, memory_order_release);
 
-  if (capture->threaded) {
-    if (capture->semaphore) {
-      cdsp_sem_signal(capture->semaphore);
-    }
-    if (capture->inner_thread_created) {
-      pthread_join(capture->inner_thread, NULL);
-      capture->inner_thread_created = false;
-      atomic_store_explicit(&capture->inner_running, false,
-                            memory_order_release);
-    }
-    if (capture->ring_buffer) {
-      spsc_byte_ring_buffer_free(capture->ring_buffer);
-      capture->ring_buffer = NULL;
-    }
-    if (capture->semaphore) {
-      cdsp_sem_destroy(capture->semaphore);
-      capture->semaphore = NULL;
-    }
+  if (capture->semaphore) {
+    cdsp_sem_signal(capture->semaphore);
+  }
+  if (capture->inner_thread_created) {
+    pthread_join(capture->inner_thread, NULL);
+    capture->inner_thread_created = false;
+    atomic_store_explicit(&capture->inner_running, false,
+                          memory_order_release);
+  }
+  if (capture->ring_buffer) {
+    spsc_byte_ring_buffer_free(capture->ring_buffer);
+    capture->ring_buffer = NULL;
+  }
+  if (capture->semaphore) {
+    cdsp_sem_destroy(capture->semaphore);
+    capture->semaphore = NULL;
   }
 
   pthread_mutex_lock(&g_alsa_mutex);
@@ -1085,15 +731,9 @@ static bool alsa_capture_wait(void *ctx, uint32_t timeout_ms) {
   if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
     return false;
   }
-  if (capture->threaded) {
-    if (!capture->semaphore)
-      return false;
-    return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
-  }
-  if (!capture->pcm)
+  if (!capture->semaphore)
     return false;
-  int err = snd_pcm_wait(capture->pcm, (int)timeout_ms);
-  return err > 0;
+  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
 
 static void alsa_capture_stop(void *ctx) {
@@ -1152,8 +792,6 @@ alsa_capture_create(const capture_device_config_t *config, int sample_rate,
   atomic_init(&capture->pending_rate, 0.0);
   atomic_init(&capture->has_pending_rate_change, false);
   atomic_init(&capture->is_inactive, false);
-  capture->threaded =
-      config->cfg.alsa.has_threaded ? config->cfg.alsa.threaded : false;
   pthread_mutex_init(&capture->mixer_mutex, NULL);
 
   capture_backend_t *backend =
