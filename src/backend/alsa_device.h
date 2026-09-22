@@ -128,6 +128,16 @@ int alsa_apply_period_size(snd_pcm_t *pcm, snd_pcm_hw_params_t *hwp,
  */
 int alsa_recover_suspended_pcm(snd_pcm_t *pcm, const char *direction);
 
+/**
+ * @brief Returns a human readable description of an ALSA PCM state.
+ *
+ * Matches state_desc in upstream CamillaDSP
+ * (src/alsa_backend/utils.rs:255-277).
+ *
+ * @param state ALSA PCM state (as returned by snd_pcm_state()).
+ * @return Static description string. Never NULL.
+ */
+const char *alsa_state_desc(int state);
 
 /**
  * @brief Helper to look up an ALSA control element.

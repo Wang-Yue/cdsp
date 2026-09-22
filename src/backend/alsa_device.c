@@ -118,6 +118,121 @@ int alsa_apply_format(snd_pcm_t *pcm, snd_pcm_hw_params_t *hwp, bool has_format,
   return -EINVAL;
 }
 
+// Logs the channel counts the device accepts.
+// Matches list_channels_as_text (utils.rs:368-395).
+//
+// snd_pcm_hw_params_test_*() never mutates the container it is handed, so the
+// caller's `hwp` can be probed directly. This mirrors upstream, where each
+// list reflects the configuration space as narrowed by the preceding set_*().
+static void log_supported_channels(const char *direction, snd_pcm_t *pcm,
+                                   snd_pcm_hw_params_t *hwp) {
+  static const unsigned int CHANNEL_LIST_LIMIT = 32;
+  unsigned int min_ch = 0;
+  unsigned int max_ch = 0;
+  if (snd_pcm_hw_params_get_channels_min(hwp, &min_ch) < 0 ||
+      snd_pcm_hw_params_get_channels_max(hwp, &max_ch) < 0) {
+    logger_debug(&g_alsa_dev_logger, "%s: failed checking supported channels",
+                 direction);
+    return;
+  }
+  if (min_ch == max_ch) {
+    logger_debug(&g_alsa_dev_logger, "%s: supported channels: exactly %u",
+                 direction, min_ch);
+    return;
+  }
+  unsigned int check_max =
+      max_ch < CHANNEL_LIST_LIMIT ? max_ch : CHANNEL_LIST_LIMIT;
+  char list[256];
+  size_t off = 0;
+  list[0] = '\0';
+  for (unsigned int ch = min_ch; ch <= check_max && off + 8 < sizeof(list);
+       ch++) {
+    if (snd_pcm_hw_params_test_channels(pcm, hwp, ch) == 0) {
+      off += (size_t)snprintf(list + off, sizeof(list) - off, "%s%u",
+                              off ? ", " : "", ch);
+    }
+  }
+  char omitted_note[64];
+  if (CHANNEL_LIST_LIMIT < max_ch) {
+    snprintf(omitted_note, sizeof(omitted_note),
+             ", channel counts above %u omitted", CHANNEL_LIST_LIMIT);
+  } else {
+    omitted_note[0] = '\0';
+  }
+  char range_note[96];
+  snprintf(range_note, sizeof(range_note), "reported min: %u, max: %u%s",
+           min_ch, max_ch, omitted_note);
+  logger_debug(&g_alsa_dev_logger,
+               "%s: supported channels: discrete values [%s] (%s)", direction,
+               list, range_note);
+}
+
+// Logs the sample rates the device accepts.
+// Matches list_samplerates_as_text (utils.rs:312-340).
+static void log_supported_samplerates(const char *direction, snd_pcm_t *pcm,
+                                      snd_pcm_hw_params_t *hwp) {
+  unsigned int min_rate = 0;
+  unsigned int max_rate = 0;
+  if (snd_pcm_hw_params_get_rate_min(hwp, &min_rate, NULL) < 0 ||
+      snd_pcm_hw_params_get_rate_max(hwp, &max_rate, NULL) < 0) {
+    logger_debug(&g_alsa_dev_logger,
+                 "%s: failed checking supported samplerates", direction);
+    return;
+  }
+  if (min_rate == max_rate) {
+    // Only one rate is supported.
+    logger_debug(&g_alsa_dev_logger, "%s: supported samplerates: [%u]",
+                 direction, min_rate);
+    return;
+  }
+  if (snd_pcm_hw_params_test_rate(pcm, hwp, min_rate + 1, 0) == 0) {
+    // If min_rate + 1 is supported, then this must be a range.
+    logger_debug(&g_alsa_dev_logger, "%s: supported samplerates: range %u-%u",
+                 direction, min_rate, max_rate);
+    return;
+  }
+
+  char list[256];
+  size_t off = 0;
+  list[0] = '\0';
+  for (size_t i = 0; i < STANDARD_RATES_COUNT && off + 12 < sizeof(list); i++) {
+    if (snd_pcm_hw_params_test_rate(pcm, hwp, STANDARD_RATES[i], 0) == 0) {
+      off += (size_t)snprintf(list + off, sizeof(list) - off, "%s%u",
+                              off ? ", " : "", STANDARD_RATES[i]);
+    }
+  }
+  logger_debug(&g_alsa_dev_logger, "%s: supported samplerates: [%s]", direction,
+               list);
+}
+
+// Logs the sample formats the device accepts.
+// Matches list_formats_as_text (utils.rs:408-465).
+static void log_supported_formats(const char *direction, snd_pcm_t *pcm,
+                                  snd_pcm_hw_params_t *hwp) {
+  static const snd_pcm_format_t probe_formats[] = {
+      SND_PCM_FORMAT_S16_LE,     SND_PCM_FORMAT_S24_LE,
+      SND_PCM_FORMAT_S24_3LE,    SND_PCM_FORMAT_S32_LE,
+      SND_PCM_FORMAT_FLOAT_LE,   SND_PCM_FORMAT_FLOAT64_LE,
+      SND_PCM_FORMAT_DSD_U8,     SND_PCM_FORMAT_DSD_U16_LE,
+      SND_PCM_FORMAT_DSD_U16_BE, SND_PCM_FORMAT_DSD_U32_LE,
+      SND_PCM_FORMAT_DSD_U32_BE,
+  };
+  char list[256];
+  size_t off = 0;
+  list[0] = '\0';
+  for (size_t i = 0; i < sizeof(probe_formats) / sizeof(probe_formats[0]) &&
+                     off + 16 < sizeof(list);
+       i++) {
+    if (snd_pcm_hw_params_test_format(pcm, hwp, probe_formats[i]) == 0) {
+      const char *name = snd_pcm_format_name(probe_formats[i]);
+      off += (size_t)snprintf(list + off, sizeof(list) - off, "%s%s",
+                              off ? ", " : "", name ? name : "?");
+    }
+  }
+  logger_debug(&g_alsa_dev_logger, "%s: supported sample formats: [%s]",
+               direction, list);
+}
+
 snd_hctl_elem_t *alsa_find_elem(snd_hctl_t *hctl, snd_ctl_elem_iface_t iface,
                                 int device, int subdevice, const char *name,
                                 unsigned int *out_numid) {
@@ -367,6 +482,34 @@ int alsa_recover_suspended_pcm(snd_pcm_t *pcm, const char *direction) {
   return snd_pcm_prepare(pcm);
 }
 
+// Human readable ALSA PCM state descriptions. (utils.rs:255-277)
+const char *alsa_state_desc(int state) {
+  switch (state) {
+  case SND_PCM_STATE_OPEN:
+    return "SND_PCM_STATE_OPEN, Open";
+  case SND_PCM_STATE_SETUP:
+    return "SND_PCM_STATE_SETUP, Setup installed";
+  case SND_PCM_STATE_PREPARED:
+    return "SND_PCM_STATE_PREPARED, Ready to start";
+  case SND_PCM_STATE_RUNNING:
+    return "SND_PCM_STATE_RUNNING, Running";
+  case SND_PCM_STATE_XRUN:
+    return "SND_PCM_STATE_XRUN, Stopped: underrun (playback) or overrun "
+           "(capture) detected";
+  case SND_PCM_STATE_DRAINING:
+    return "SND_PCM_STATE_DRAINING, Draining: running (playback) or stopped "
+           "(capture)";
+  case SND_PCM_STATE_PAUSED:
+    return "SND_PCM_STATE_PAUSED, Paused";
+  case SND_PCM_STATE_SUSPENDED:
+    return "SND_PCM_STATE_SUSPENDED, Hardware is suspended";
+  case SND_PCM_STATE_DISCONNECTED:
+    return "SND_PCM_STATE_DISCONNECTED, Hardware is disconnected";
+  default:
+    return "Unknown state";
+  }
+}
+
 
 int alsa_device_open_and_configure_hw(
     snd_pcm_t **pcm, const char *device_name, snd_pcm_stream_t stream,
@@ -437,6 +580,7 @@ int alsa_device_open_and_configure_hw(
   }
 
   // Set channels
+  log_supported_channels(direction, *pcm, params);
   logger_debug(&g_alsa_dev_logger, "%s: setting channels to %d", direction,
                channels);
   rc = snd_pcm_hw_params_set_channels(*pcm, params, channels);
@@ -453,6 +597,7 @@ int alsa_device_open_and_configure_hw(
   // Upstream CamillaDSP uses the exact `snd_pcm_hw_params_set_rate` here, not
   // `..._set_rate_near`: accepting a nearby rate would silently run the whole
   // engine at the wrong rate (a pitch/speed error) instead of failing cleanly.
+  log_supported_samplerates(direction, *pcm, params);
   logger_debug(&g_alsa_dev_logger, "%s: setting rate to %u", direction,
                sample_rate);
   int dir = 0;
@@ -483,6 +628,7 @@ int alsa_device_open_and_configure_hw(
   }
 
   // Set sample format
+  log_supported_formats(direction, *pcm, params);
   rc =
       alsa_apply_format(*pcm, params, has_format, requested_format, out_format);
   if (rc < 0) {

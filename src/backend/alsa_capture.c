@@ -4,6 +4,7 @@
 #include <alsa/asoundlib.h>
 #include <errno.h>
 #include <math.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -80,6 +81,58 @@ struct alsa_capture {
   bool device_stalled;
 };
 
+// Defined below; invoked from the capture RT thread whenever poll() reports
+// activity on a control descriptor.
+static void alsa_capture_process_events(alsa_capture_t *capture);
+
+// Maximum number of poll descriptors collected from the PCM and control
+// handles. ALSA devices realistically expose one or two each.
+#define ALSA_CAPTURE_MAX_POLL_FDS 32
+
+// Collects the poll descriptors of the PCM handle followed by those of the
+// control handles, matching upstream's FileDescriptors { fds, nbr_pcm_fds }
+// (src/alsa_backend/utils.rs:532-535 &
+// src/alsa_backend/threaded_device.rs:1442-1482).
+static int alsa_capture_collect_poll_fds(alsa_capture_t *capture,
+                                         struct pollfd *pfds, int max_fds,
+                                         int *out_nbr_pcm_fds) {
+  int total = 0;
+  *out_nbr_pcm_fds = 0;
+
+  int pcm_count = snd_pcm_poll_descriptors_count(capture->pcm);
+  if (pcm_count <= 0 || pcm_count > max_fds) {
+    return 0;
+  }
+  int got = snd_pcm_poll_descriptors(capture->pcm, pfds, (unsigned int)pcm_count);
+  if (got <= 0) {
+    return 0;
+  }
+  total = got;
+  *out_nbr_pcm_fds = got;
+
+  // Control descriptors are appended after the PCM descriptors so the
+  // PCM/control split can be recovered from the index alone after poll().
+  if (capture->ctl) {
+    int ctl_count = snd_ctl_poll_descriptors_count(capture->ctl);
+    if (ctl_count > 0 && total + ctl_count <= max_fds) {
+      int n = snd_ctl_poll_descriptors(capture->ctl, pfds + total,
+                                       (unsigned int)ctl_count);
+      if (n > 0)
+        total += n;
+    }
+  }
+  if (capture->hctl) {
+    int hctl_count = snd_hctl_poll_descriptors_count(capture->hctl);
+    if (hctl_count > 0 && total + hctl_count <= max_fds) {
+      int n = snd_hctl_poll_descriptors(capture->hctl, pfds + total,
+                                        (unsigned int)hctl_count);
+      if (n > 0)
+        total += n;
+    }
+  }
+  return total;
+}
+
 // Dedicated real-time capture inner thread matching AlsaCaptureInner in
 // upstream (src/alsa_backend/threaded_device.rs:1368-1540)
 static void *alsa_capture_inner_thread_func(void *arg) {
@@ -95,11 +148,44 @@ static void *alsa_capture_inner_thread_func(void *arg) {
   size_t bytes_per_frame = (size_t)capture->channels * sample_bytes;
   size_t chunk_bytes = (size_t)capture->chunk_size * bytes_per_frame;
   uint8_t *local_buf = (uint8_t *)malloc(chunk_bytes);
+  if (!local_buf) {
+    logger_error(&g_logger, "Failed to allocate ALSA capture read buffer");
+    atomic_store_explicit(&capture->inner_running, false, memory_order_release);
+    if (capture->semaphore) {
+      cdsp_sem_signal(capture->semaphore);
+    }
+    if (rt_handle) {
+      demote_current_thread_from_realtime(rt_handle);
+    }
+    return NULL;
+  }
   double millis_per_chunk = 1000.0 * (double)capture->chunk_size /
                             (double)capture->capture_sample_rate;
   uint32_t timeout_millis = (uint32_t)(8.0 * millis_per_chunk);
   if (timeout_millis < 20)
     timeout_millis = 20;
+
+  // Collect the descriptor set once; it stays valid for the lifetime of the
+  // PCM and control handles.
+  struct pollfd pfds[ALSA_CAPTURE_MAX_POLL_FDS];
+  int nbr_pcm_fds = 0;
+  int total_fds = alsa_capture_collect_poll_fds(
+      capture, pfds, ALSA_CAPTURE_MAX_POLL_FDS, &nbr_pcm_fds);
+  if (total_fds <= 0) {
+    // Upstream builds FileDescriptors unconditionally and propagates the
+    // error if the descriptors cannot be obtained
+    // (src/alsa_backend/threaded_device.rs:1442-1482).
+    logger_error(&g_logger, "Failed to get ALSA capture poll descriptors");
+    free(local_buf);
+    atomic_store_explicit(&capture->inner_running, false, memory_order_release);
+    if (capture->semaphore) {
+      cdsp_sem_signal(capture->semaphore);
+    }
+    if (rt_handle) {
+      demote_current_thread_from_realtime(rt_handle);
+    }
+    return NULL;
+  }
 
   while (!atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
     snd_pcm_state_t capture_state = snd_pcm_state(capture->pcm);
@@ -110,74 +196,148 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     }
     if (capture_state == SND_PCM_STATE_XRUN) {
       logger_warn(&g_logger, "Prepare capture device");
-      if (snd_pcm_prepare(capture->pcm) < 0 ||
-          snd_pcm_start(capture->pcm) < 0) {
+      if (snd_pcm_prepare(capture->pcm) < 0) {
         logger_error(&g_logger, "Failed to restart capture device after XRUN");
         break;
       }
     } else if (capture_state == SND_PCM_STATE_SUSPENDED) {
-      if (alsa_recover_suspended_pcm(capture->pcm, "Capture") < 0 ||
+      if (alsa_recover_suspended_pcm(capture->pcm, "Capture") < 0) {
+        logger_error(&g_logger,
+                     "Failed to restart capture device after suspension");
+        break;
+      }
+      // A successful resume leaves the device RUNNING; starting it again
+      // would fail with -EBADFD.
+      if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING &&
           snd_pcm_start(capture->pcm) < 0) {
         logger_error(&g_logger,
                      "Failed to restart capture device after suspension");
         break;
       }
-    } else if (capture_state == SND_PCM_STATE_PREPARED) {
+    } else if (capture_state != SND_PCM_STATE_RUNNING) {
+      logger_debug(&g_logger, "Starting capture from state: %s",
+                   alsa_state_desc((int)capture_state));
       if (snd_pcm_start(capture->pcm) < 0) {
-        logger_error(&g_logger, "Failed to start prepared capture device");
+        logger_error(&g_logger, "Failed to start capture device");
         break;
       }
     }
 
-    int wait_rc = snd_pcm_wait(capture->pcm, (int)timeout_millis);
-    if (wait_rc > 0) {
-      snd_pcm_sframes_t frames_read = snd_pcm_readi(
-          capture->pcm, local_buf, (snd_pcm_uframes_t)capture->chunk_size);
-      if (frames_read > 0) {
-        if (capture->device_stalled) {
-          capture->device_stalled = false;
-        }
-        size_t bytes_read = (size_t)frames_read * bytes_per_frame;
-        spsc_byte_ring_buffer_write(capture->ring_buffer, local_buf,
-                                    bytes_read);
-        if (capture->semaphore) {
-          cdsp_sem_signal(capture->semaphore);
-        }
-      } else if (frames_read == -EPIPE) {
-        logger_warn(&g_logger, "Capture buffer underrun/overrun");
-        if (snd_pcm_prepare(capture->pcm) < 0 ||
-            snd_pcm_start(capture->pcm) < 0) {
-          break;
-        }
-      } else if (frames_read == -ESTRPIPE) {
-        if (alsa_recover_suspended_pcm(capture->pcm, "Capture") < 0 ||
-            snd_pcm_start(capture->pcm) < 0) {
-          break;
-        }
-      } else if (frames_read == 0) {
-        if (!capture->device_stalled) {
-          logger_info(&g_logger,
-                      "Capture device is stalled, processing is stalled");
-          capture->device_stalled = true;
-        }
-      } else if (frames_read == -EAGAIN || frames_read == -EINTR) {
-        // Upstream's capture_buffer reports -EAGAIN/-EINTR as
-        // ordinary transient conditions. Keep polling.
-      } else {
-        logger_error(&g_logger, "Capture read fatal error: %s",
-                     snd_strerror((int)frames_read));
+    // Wait for the device, servicing control events as they arrive.
+    // The wait is sliced so a stop request is observed within 20 ms even when
+    // the full stall timeout is much longer
+    // (src/alsa_backend/threaded_device.rs:778-840).
+    bool pcm_ready = false;
+    bool wait_timed_out = false;
+    bool wait_fatal = false;
+    uint32_t remaining_millis = timeout_millis;
+    for (;;) {
+      if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
         break;
       }
-    } else if (wait_rc == 0) {
+      int poll_slice = remaining_millis < 20 ? (int)remaining_millis : 20;
+      for (int i = 0; i < total_fds; i++) {
+        pfds[i].revents = 0;
+      }
+      int nbr_ready = poll(pfds, (nfds_t)total_fds, poll_slice);
+      if (nbr_ready < 0) {
+        if (errno == EINTR)
+          continue;
+        logger_error(&g_logger, "Capture poll fatal error: %s",
+                     strerror(errno));
+        wait_fatal = true;
+        break;
+      }
+      if (nbr_ready == 0) {
+        if (remaining_millis <= (uint32_t)poll_slice) {
+          wait_timed_out = true;
+          break;
+        }
+        remaining_millis -= (uint32_t)poll_slice;
+        continue;
+      }
+
+      int nbr_found = 0;
+      for (int i = 0; i < nbr_pcm_fds; i++) {
+        if (pfds[i].revents != 0) {
+          pcm_ready = true;
+          nbr_found++;
+        }
+      }
+      // There were other ready file descriptors than PCM, must be controls
+      // (src/alsa_backend/utils.rs:565-570).
+      if (nbr_found < nbr_ready) {
+        alsa_capture_process_events(capture);
+      }
+      if (pcm_ready) {
+        break;
+      }
+      remaining_millis = remaining_millis > (uint32_t)poll_slice
+                             ? remaining_millis - (uint32_t)poll_slice
+                             : 0;
+    }
+
+    if (wait_fatal) {
+      break;
+    }
+    if (wait_timed_out) {
       if (!capture->device_stalled) {
         logger_info(&g_logger,
                     "Capture device is stalled, processing is stalled");
         capture->device_stalled = true;
       }
-    } else if (wait_rc < 0 && wait_rc != -EPIPE && wait_rc != -ESTRPIPE &&
-               wait_rc != -EINTR) {
-      logger_error(&g_logger, "Capture wait fatal error: %s",
-                   snd_strerror(wait_rc));
+      continue;
+    }
+    if (!pcm_ready) {
+      // Interrupted by a stop request.
+      continue;
+    }
+
+    snd_pcm_sframes_t frames_read = snd_pcm_readi(
+        capture->pcm, local_buf, (snd_pcm_uframes_t)capture->chunk_size);
+    if (frames_read > 0) {
+      if (capture->device_stalled) {
+        capture->device_stalled = false;
+      }
+      size_t bytes_read = (size_t)frames_read * bytes_per_frame;
+      size_t pushed =
+          spsc_byte_ring_buffer_write(capture->ring_buffer, local_buf,
+                                      bytes_read);
+      if (pushed < bytes_read) {
+        logger_warn(&g_logger,
+                    "Capture ring buffer is full, dropped %zu out of %zu bytes",
+                    bytes_read - pushed, bytes_read);
+      }
+      if (capture->semaphore) {
+        cdsp_sem_signal(capture->semaphore);
+      }
+    } else if (frames_read == -EPIPE) {
+      logger_warn(&g_logger, "Capture: read overrun, trying to recover");
+      if (snd_pcm_prepare(capture->pcm) < 0) {
+        break;
+      }
+    } else if (frames_read == -ESTRPIPE) {
+      logger_warn(&g_logger,
+                  "Capture: read interrupted by suspend, trying to recover");
+      if (alsa_recover_suspended_pcm(capture->pcm, "Capture") < 0) {
+        break;
+      }
+      if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING &&
+          snd_pcm_start(capture->pcm) < 0) {
+        break;
+      }
+    } else if (frames_read == 0) {
+      if (!capture->device_stalled) {
+        logger_info(&g_logger,
+                    "Capture device is stalled, processing is stalled");
+        capture->device_stalled = true;
+      }
+    } else if (frames_read == -EAGAIN || frames_read == -EINTR) {
+      // Upstream's capture_buffer reports -EAGAIN/-EINTR as
+      // ordinary transient conditions. Keep polling.
+    } else {
+      logger_error(&g_logger, "Capture read fatal error: %s",
+                   snd_strerror((int)frames_read));
       break;
     }
   }
@@ -333,14 +493,14 @@ static void alsa_capture_sync_linked_controls(alsa_capture_t *capture) {
 // Process events from ALSA control interface matching process_events &
 // get_event_action in upstream (src/alsa_backend/utils.rs:574-721)
 static void alsa_capture_process_events(alsa_capture_t *capture) {
-  if (!capture->ctl)
+  if (!capture->ctl && !capture->hctl)
     return;
   pthread_mutex_lock(&capture->mixer_mutex);
 
   snd_ctl_event_t *event;
   snd_ctl_event_alloca(&event);
 
-  while (snd_ctl_read(capture->ctl, event) > 0) {
+  while (capture->ctl && snd_ctl_read(capture->ctl, event) > 0) {
     if (snd_ctl_event_get_type(event) != SND_CTL_EVENT_ELEM) {
       continue;
     }

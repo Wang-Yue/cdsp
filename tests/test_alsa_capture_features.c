@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "audio/audio_chunk.h"
 #include "audio/sample_format.h"
@@ -15,7 +16,17 @@
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
 #include "test_support.h"
-#include "utils/cdsp_time.h"
+
+// `cdsp_sleep_ms` is deliberately time-scaled in test builds (divided by
+// CDSP_TIME_SCALE, default 15) so that simulated backends run fast. Real ALSA
+// hardware does not speed up with it, so these tests must wait in true
+// wall-clock time instead.
+static void hw_sleep_ms(long ms) {
+  struct timespec ts;
+  ts.tv_sec = ms / 1000;
+  ts.tv_nsec = (ms % 1000) * 1000000L;
+  nanosleep(&ts, NULL);
+}
 
 static void remove_capture_rate_ctl_if_present(void) {
   snd_ctl_t *ctl = NULL;
@@ -79,22 +90,24 @@ TEST(ALSACapture_StopOnInactive_SourceStatus) {
       snd_pcm_writei(play_pcm, silence, 1024);
     }
     snd_pcm_start(play_pcm);
-    cdsp_sleep_ms(20);
+    hw_sleep_ms(20);
 
+    // The capture worker needs a full ALSA period plus a control-event poll
+    // cycle before the first frames land in the ring buffer.
     bool read_active = false;
-    for (int retry = 0; retry < 5; retry++) {
+    for (int retry = 0; retry < 50; retry++) {
       if (capture_backend_read(capture, 128, chunk, &err)) {
         read_active = true;
         break;
       }
-      cdsp_sleep_ms(10);
+      hw_sleep_ms(10);
     }
     ASSERT_TRUE(read_active);
 
     // 3. Closing playback generates a PCM Slave Active inactive event
     snd_pcm_drop(play_pcm);
     snd_pcm_close(play_pcm);
-    cdsp_sleep_ms(20);
+    hw_sleep_ms(20);
 
     bool read_inactive = capture_backend_read(capture, 128, chunk, &err);
     ASSERT_FALSE(read_inactive);
@@ -169,7 +182,7 @@ TEST(ALSACapture_DynamicRateChange_HCtlMonitoring) {
     snd_ctl_elem_value_set_id(val, id);
     snd_ctl_elem_value_set_integer(val, 0, 96000);
     snd_ctl_elem_write(ctl, val);
-    cdsp_sleep_ms(10);
+    hw_sleep_ms(10);
   }
 
   double pending_rate = 0.0;
