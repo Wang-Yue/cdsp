@@ -27,10 +27,10 @@
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
 #include "backend/core_audio_device.h"
+#include "backend/playback_buffer.h"
 #include "config/config_gen.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
-#include "utils/device_buffer_estimator.h"
 #include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};
@@ -61,24 +61,20 @@ struct core_audio_playback {
   _Atomic int active_callbacks;
   _Atomic bool is_running;
   _Atomic size_t underrun_silence_frames;
-  // Frames still pending playback, published by the render callback and
-  // extrapolated by the engine thread. Mirrors upstream
-  // (src/coreaudio_backend/device.rs:631-635).
-  device_buffer_estimator_t device_buffer;
+  // Frames pending outside the ring buffer. The ring itself is read live by
+  // playback_buffer_level().
+  playback_buffer_t buffer;
 };
 
-// Publish the level the render callback is leaving behind: whatever is still
-// in the ring, plus any silence still queued ahead of it.
+// Publish what the render callback is leaving queued ahead of the ring
+// buffer. The ring itself is read live, so only the silence counts here.
 static void core_audio_publish_buffer_level(core_audio_playback_t *playback) {
-  if (!playback || !playback->ring_buffer || playback->blockalign == 0)
+  if (!playback)
     return;
-  size_t ring_frames =
-      spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
-      playback->blockalign;
-  size_t silence_frames = atomic_load_explicit(
-      &playback->underrun_silence_frames, memory_order_relaxed);
-  device_buffer_estimator_add(&playback->device_buffer,
-                              ring_frames + silence_frames);
+  playback_buffer_publish(
+      &playback->buffer,
+      atomic_load_explicit(&playback->underrun_silence_frames,
+                           memory_order_relaxed));
 }
 
 /**
@@ -289,8 +285,7 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
   if (playback->ring_buffer) {
     spsc_byte_ring_buffer_drain(playback->ring_buffer);
   }
-  device_buffer_estimator_set_rate(&playback->device_buffer,
-                                   playback->sample_rate);
+  playback_buffer_set_rate(&playback->buffer, playback->sample_rate);
 
   if (!playback->write_buf ||
       playback->write_buf_cap <
@@ -538,9 +533,10 @@ static bool core_audio_playback_write(void *ctx, const audio_chunk_t *chunk,
 /// Get the current buffer level in frames.
 static size_t core_audio_playback_get_buffer_level(void *ctx) {
   core_audio_playback_t *playback = (core_audio_playback_t *)ctx;
-  if (!playback || !playback->ring_buffer || playback->blockalign == 0)
+  if (!playback)
     return 0;
-  return device_buffer_estimator_estimate(&playback->device_buffer);
+  return playback_buffer_level(&playback->buffer, playback->ring_buffer,
+                               playback->blockalign);
 }
 
 /// Get any pending sample rate change detected on the playback device.
@@ -669,7 +665,7 @@ static playback_backend_t *core_audio_playback_create(
   playback->target_level = target_level;
   atomic_init(&playback->is_running, true);
   atomic_init(&playback->underrun_silence_frames, 0);
-  device_buffer_estimator_init(&playback->device_buffer, playback->sample_rate);
+  playback_buffer_init(&playback->buffer, playback->sample_rate);
   playback->exclusive = playback_device_config_get_exclusive(config);
 
   coreaudio_sample_format_t fmt = playback_device_config_get_format(config);

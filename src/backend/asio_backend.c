@@ -25,11 +25,11 @@
 #include <windows.h>
 
 #include "audio/sample_conversion.h"
+#include "backend/playback_buffer.h"
 #include "config/config_gen.h"
 #include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
-#include "utils/device_buffer_estimator.h"
 #include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.asio"};
@@ -1125,11 +1125,9 @@ typedef struct {
   size_t sample_queue_cap;
   _Atomic size_t target_level;
   uint8_t silence_byte;
-  // Total frames still pending playback (callback-local queue plus ring
-  // buffer), published by the ASIO callback thread and extrapolated by the
-  // engine thread. Mirrors upstream's DeviceBufferEstimator
-  // (src/utils/countertimer.rs:23-54).
-  device_buffer_estimator_t device_buffer;
+  // Frames pending outside the ring buffer, i.e. still in sample_queue.
+  // The ring itself is read live by playback_buffer_level().
+  playback_buffer_t buffer;
   bool running;
 } asio_playback_context_t;
 
@@ -1387,14 +1385,11 @@ static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
     ctx->sample_queue_len = remaining;
   }
 
-  // Update buffer fill estimate.
-  // Include both the callback-local queue and the remaining ringbuffer data
-  // to represent total pending playback frames.
-  size_t curr_buffer_fill =
-      (ctx->sample_queue_len +
-       spsc_byte_ring_buffer_get_available_to_read(ctx->ring_buffer)) /
-      bytes_per_frame;
-  device_buffer_estimator_add(&ctx->device_buffer, curr_buffer_fill);
+  // Only the callback-local staging queue lives outside the ring buffer.
+  if (bytes_per_frame > 0) {
+    playback_buffer_publish(&ctx->buffer,
+                            ctx->sample_queue_len / bytes_per_frame);
+  }
 }
 
 /**
@@ -2577,8 +2572,8 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
   playback->context->running = false;
   playback->context->silence_byte =
       (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) ? 0x69 : 0x00;
-  device_buffer_estimator_init(&playback->context->device_buffer,
-                               (double)playback->sample_rate);
+  playback_buffer_init(&playback->context->buffer,
+                       (double)playback->sample_rate);
 
   if (playback->full_duplex) {
     atomic_store_explicit(&PLAYBACK_CONTEXT, playback->context,
@@ -2693,9 +2688,9 @@ static size_t asio_playback_get_buffer_level(void *ctx) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
   if (!playback || !playback->context)
     return 0;
-  // The published value already covers the ring buffer as well as the
-  // callback-local queue, so it is the complete level on its own.
-  return device_buffer_estimator_estimate(&playback->context->device_buffer);
+  return playback_buffer_level(&playback->context->buffer,
+                               playback->context->ring_buffer,
+                               playback->bytes_per_sample * playback->channels);
 }
 
 static bool asio_playback_get_pending_rate_change(void *ctx, double *out_rate) {

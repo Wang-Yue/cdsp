@@ -36,6 +36,7 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 | 18 | **Formats** | Limited to standard PCM audio formats | Native DSD and DoP (DSD over PCM) subsystem support (§4.3) | High-resolution audiophile format playback |
 | 19 | **Validation** | Accepts degenerate/empty convolution IR configurations | Stricter rejection at validation time (§5) | Fails fast instead of producing NaN/singular filters |
 | 20 | **macOS Capture** | Requires virtual loopback drivers (BlackHole/Soundflower) | Native CoreAudio Device Tap (`"loopback": true`) (§4.4) | Zero driver installation, minimal hardware-direct latency, zero clock drift |
+| 21 | **Buffer Level** | `Arc<Mutex<DeviceBufferEstimator>>` sampled with `try_lock()`, reporting `0` on contention | Lock-free atomic estimator plus live SPSC ring sampling (§2.5) | No spurious zero-level readings into the rate controller; exact ring term |
 
 ---
 
@@ -79,6 +80,30 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 * **Upstream Behavior**: Upstream applies **blocking back-pressure** — a full queue blocks the producer until the consumer drains it (`coreaudio_backend/device.rs`, `processing.rs`).
 * **`cdsp` Enhancement**: [`../src/engine/engine_capture_loop.c`](../src/engine/engine_capture_loop.c) and [`../src/engine/engine_processing_loop.c`](../src/engine/engine_processing_loop.c) drop the chunk and continue rather than block.
 * **Why `cdsp` Is Better**: Blocking inside a CoreAudio HAL or ASIO driver callback stalls the driver's real-time thread and cascades into a hardware-level overrun affecting the entire audio graph. Dropping a chunk degrades locally and recoverably instead.
+
+### 2.5 Lock-Free Device Buffer Estimation with Live Ring Sampling
+* **Upstream Behavior**: Upstream's `DeviceBufferEstimator` (`src/utils/countertimer.rs:23-54`) is shared between the device thread and the outer thread as `Arc<Mutex<DeviceBufferEstimator>>`, and **both sides access it with `try_lock()`**. The device thread skips the update entirely when the lock is contended (`alsa_backend/threaded_device.rs:457-459`), and the reader falls back to `unwrap_or_default()` — i.e. **it reports a buffer level of `0`** (`threaded_device.rs:1198-1201`, and the identical pattern in the WASAPI, CoreAudio, ASIO and PipeWire backends). The estimator also stores the ring/channel fill *and* the device-side frames as a single snapshot, so the whole sum is extrapolated from one timestamp.
+* **`cdsp` Enhancement**: Two pieces, shared by all five playback backends:
+  - [`../src/utils/device_buffer_estimator.c`](../src/utils/device_buffer_estimator.c) holds the level in atomics instead of a mutex. The producer stores the frame count (relaxed) and then the timestamp (release); the reader loads the timestamp (acquire) and then the frame count (relaxed).
+  - [`../src/backend/playback_buffer.c`](../src/backend/playback_buffer.c) splits the two terms by how they can be measured. Only frames that live *outside* the ring buffer are published to the estimator — the ALSA hardware delay, ASIO's callback-local staging queue, WASAPI/CoreAudio queued silence. The SPSC ring fill is read live on every query and added on top. PipeWire exposes no device-side buffer information at all, so it publishes nothing and reports the live ring fill alone.
+* **Why `cdsp` Is Better**:
+  - **No lock on the real-time path.** The device thread can never be delayed by, or skip an update because of, a reader holding the mutex.
+  - **No spurious zero readings.** Upstream's contended read feeds a buffer level of `0` straight into the PI rate controller and the published `buffer_level` status, which is indistinguishable from a genuine underrun. A lock-free read cannot fail.
+  - **The ring term is exact and never goes stale.** Sampling a lock-free SPSC ring from the consumer side is already cheap and race-free, so extrapolating it adds error rather than removing it. It also means a device whose callback has stalled no longer appears to be draining, since only the genuinely un-queryable device term decays.
+  - **Races resolve in the safe direction.** The store/load ordering guarantees that a reader racing with a publish pairs a fresh frame count with an older timestamp, which under-estimates the level. Over-estimating would stall [`playback_loop_drain_hardware_buffer`](../src/engine/engine_playback_loop.c), which waits for the reported level to reach zero at shutdown.
+* **Per-Backend Term Mapping**: The *total* reported level is equivalent to upstream in all five backends; only the way the queued-audio term is measured differs. Upstream folds it into the estimator snapshot, `cdsp` reads it live from the ring.
+
+  | Backend | Upstream `estimator.add(...)` | `cdsp` published term | `cdsp` live term |
+  |---|---|---|---|
+  | ALSA | hardware delay + ring fill | hardware delay (`bufsize - avail`) | ring fill |
+  | ASIO | `sample_queue` + ring fill | `sample_queue_len` | ring fill |
+  | PipeWire | ring fill only | *(nothing published)* | ring fill |
+  | WASAPI | leftover `sample_queue` + inner channel depth | `silence_frames_to_insert` | ring fill |
+  | CoreAudio | leftover `sample_queue` + inner channel depth | `underrun_silence_frames` | ring fill |
+
+  WASAPI and CoreAudio look the most different, but the divergence there is structural rather than behavioral. Upstream stages bytes in a callback-local `sample_queue` fed by an inner channel, and pads that same queue with zeros on underrun (`wasapi_backend/device.rs:597-601`), so its silence is counted by virtue of sitting in the queue. `cdsp` has neither structure — the inner loop writes straight from the SPSC ring to the device — so the ring *is* the staging queue, and the only frames left outside it are silence that has been committed but not yet written.
+
+  In all five cases the frames already handed to the device are deliberately excluded, matching upstream. The outer-queue term that upstream adds at the call site as `channel.len() * chunksize` is added by `cdsp` in [`playback_loop_update_rate_adjust`](../src/engine/engine_playback_loop.c) as `processed_queued`, so it is accounted for once, in the engine, rather than per backend.
 
 ---
 

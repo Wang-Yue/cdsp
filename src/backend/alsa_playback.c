@@ -1,4 +1,5 @@
 #include "backend/alsa_playback.h"
+#include "backend/playback_buffer.h"
 
 #if defined(ENABLE_ALSA)
 #include <alsa/asoundlib.h>
@@ -20,7 +21,6 @@
 #include "engine/thread_priority.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
-#include "utils/device_buffer_estimator.h"
 #include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.alsa"};
@@ -72,7 +72,7 @@ struct alsa_playback {
   // snd_pcm_writei() on the same handle, so the engine thread interpolates
   // from this snapshot instead of querying the device. Sampled as in upstream
   // (src/alsa_backend/threaded_device.rs:449-460).
-  device_buffer_estimator_t device_buffer;
+  playback_buffer_t buffer;
 };
 
 // Dedicated real-time playback inner thread matching AlsaPlaybackInner in
@@ -334,8 +334,8 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           snd_pcm_state(playback->pcm) == SND_PCM_STATE_RUNNING) {
         snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
         if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
-          device_buffer_estimator_add(
-              &playback->device_buffer,
+          playback_buffer_publish(
+              &playback->buffer,
               (size_t)(playback->bufsize - (snd_pcm_uframes_t)avail));
         }
       }
@@ -361,7 +361,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
         if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
           delay = playback->bufsize - (snd_pcm_uframes_t)avail;
         }
-        device_buffer_estimator_add(&playback->device_buffer, delay);
+        playback_buffer_publish(&playback->buffer, delay);
         size_t low_threshold = playback->period > 0 ? playback->period : 1;
         buffer_low = (delay < low_threshold);
       } else {
@@ -515,7 +515,7 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
   playback->paused = false;
   playback->currently_paused = false;
   playback->device_stalled = false;
-  device_buffer_estimator_reset(&playback->device_buffer);
+  playback_buffer_set_rate(&playback->buffer, (double)playback->sample_rate);
   atomic_store_explicit(&playback->draining, false, memory_order_relaxed);
 
   // Search for UAC2 gadget pitch control: "Playback Pitch 1000000"
@@ -709,14 +709,10 @@ static void alsa_playback_close(void *ctx) {
 // (src/alsa_backend/threaded_device.rs:1197-1205).
 static size_t alsa_playback_get_buffer_level(void *ctx) {
   alsa_playback_t *playback = (alsa_playback_t *)ctx;
-  if (!playback || !playback->ring_buffer || playback->blockalign == 0)
+  if (!playback)
     return 0;
-  size_t ring_frames =
-      spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
-      playback->blockalign;
-
-  return ring_frames +
-         device_buffer_estimator_estimate(&playback->device_buffer);
+  return playback_buffer_level(&playback->buffer, playback->ring_buffer,
+                               playback->blockalign);
 }
 
 static bool alsa_playback_get_pending_rate_change(void *ctx, double *out_rate) {
@@ -871,8 +867,7 @@ alsa_playback_create(const playback_device_config_t *config, int sample_rate,
   playback->requested_format = config->cfg.alsa.format;
   playback->params = params;
   atomic_init(&playback->paused, false);
-  device_buffer_estimator_init(&playback->device_buffer,
-                               (double)playback->sample_rate);
+  playback_buffer_init(&playback->buffer, (double)playback->sample_rate);
   playback->currently_paused = false;
   pthread_mutex_init(&playback->mixer_mutex, NULL);
 

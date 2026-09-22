@@ -28,12 +28,12 @@
 #include <string.h>
 
 #include "audio/sample_conversion.h"
+#include "backend/playback_buffer.h"
 #include "backend/wasapi_capabilities.h"
 #include "backend/wasapi_device.h"
 #include "config/config_gen.h"
 #include "engine/cdsp_sem.h"
 #include "utils/cdsp_time.h"
-#include "utils/device_buffer_estimator.h"
 #include "utils/lock_free_ring_buffer.h"
 
 struct wasapi_playback {
@@ -72,10 +72,9 @@ struct wasapi_playback {
   _Atomic bool paused;
   double pending_rate;
   _Atomic bool has_pending_rate_change;
-  // Frames still pending playback, published by the inner thread after each
-  // write and extrapolated by the engine thread. Mirrors upstream
-  // (src/wasapi_backend/device.rs:622-625).
-  device_buffer_estimator_t device_buffer;
+  // Frames pending outside the ring buffer. The ring itself is read live by
+  // playback_buffer_level().
+  playback_buffer_t buffer;
 };
 
 static void wasapi_playback_on_format_change(void *parent, double new_rate) {
@@ -259,16 +258,10 @@ static void *wasapi_playback_loop(void *arg) {
         }
         IAudioRenderClient_ReleaseBuffer(playback->render_client,
                                          (UINT32)frames_to_write, 0);
-        // What is still pending after this write: the ring remainder plus any
-        // silence not yet inserted. Like upstream, the frames already handed
-        // to the device are not counted here.
-        size_t pending_frames = silence_frames_to_insert;
-        if (blockalign > 0) {
-          pending_frames += spsc_byte_ring_buffer_get_available_to_read(
-                                playback->ring_buffer) /
-                            blockalign;
-        }
-        device_buffer_estimator_add(&playback->device_buffer, pending_frames);
+        // Only the silence still to be inserted lives outside the ring;
+        // frames already handed to the device are not counted, as upstream
+        // also leaves them out (src/wasapi_backend/device.rs:622-625).
+        playback_buffer_publish(&playback->buffer, silence_frames_to_insert);
       } else {
         for (int retry = 0; retry < 10; retry++) {
           if (atomic_load_explicit(&playback->has_pending_rate_change,
@@ -346,8 +339,7 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
   atomic_init(&playback->stopped, false);
   atomic_init(&playback->paused, false);
   atomic_init(&playback->has_pending_rate_change, false);
-  device_buffer_estimator_set_rate(&playback->device_buffer,
-                                   (double)playback->sample_rate);
+  playback_buffer_set_rate(&playback->buffer, (double)playback->sample_rate);
 
   if (!wasapi_create_device_and_client(
           playback->device, false, false, &playback->enumerator,
@@ -498,7 +490,8 @@ static size_t wasapi_playback_get_buffer_level(void *ctx) {
   wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
   if (!playback)
     return 0;
-  return device_buffer_estimator_estimate(&playback->device_buffer);
+  return playback_buffer_level(&playback->buffer, playback->ring_buffer,
+                               playback->blockalign);
 }
 
 static bool wasapi_playback_get_pending_rate_change(void *ctx,
@@ -594,8 +587,7 @@ wasapi_playback_create(const playback_device_config_t *config, int sample_rate,
                                            : 0);
 
   atomic_init(&playback->paused, false);
-  device_buffer_estimator_init(&playback->device_buffer,
-                               (double)playback->sample_rate);
+  playback_buffer_init(&playback->buffer, (double)playback->sample_rate);
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
   if (!backend) {

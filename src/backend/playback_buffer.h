@@ -1,0 +1,91 @@
+#ifndef CDSP_PLAYBACK_BUFFER_H
+#define CDSP_PLAYBACK_BUFFER_H
+
+#include <stddef.h>
+
+#include "utils/device_buffer_estimator.h"
+#include "utils/lock_free_ring_buffer.h"
+
+/**
+ * @file playback_buffer.h
+ * @brief Reports how many frames a playback backend still has pending.
+ *
+ * Every playback backend has the same two-part answer to "how much audio is
+ * still queued?", and this splits the two parts by how they can be measured:
+ *
+ * - **The ring buffer.** Read live on every query. It is a lock-free SPSC
+ *   structure, so sampling its fill level from the engine thread is cheap and
+ *   exact; there is nothing to estimate.
+ * - **Everything past the ring.** Frames already handed to the device, or
+ *   staged in a callback-local queue, or queued as silence. These generally
+ *   cannot be queried safely from the engine thread, so the thread that owns
+ *   the device publishes the value and this extrapolates between updates.
+ *
+ * Backends therefore call playback_buffer_publish() with *only* the
+ * non-ring frames, and playback_buffer_level() adds the live ring fill back
+ * on. Publishing the ring contents as well would double-count them, and would
+ * also make a stalled device appear to drain when it is not.
+ *
+ * @note This intentionally does not own the ring buffer. Backends create and
+ *       free their ring in open()/close() while this struct lives for the
+ *       lifetime of the backend, and several of them keep the ring somewhere
+ *       else entirely (ASIO stores it in the driver-callback context). Taking
+ *       the ring as an argument keeps a single owner and avoids a second
+ *       pointer that could go stale.
+ */
+typedef struct {
+  device_buffer_estimator_t device;
+} playback_buffer_t;
+
+/**
+ * @brief Initialize for a device running at @p sample_rate Hz.
+ *
+ * Call once, before the device callback or worker thread can run.
+ *
+ * @param pb Buffer tracker to initialize.
+ * @param sample_rate Device sample rate in Hz.
+ */
+void playback_buffer_init(playback_buffer_t *pb, double sample_rate);
+
+/**
+ * @brief Point the tracker at a new sample rate and drop the stored level.
+ *
+ * Call from open(), and after the device changes rate.
+ *
+ * @param pb Buffer tracker to update.
+ * @param sample_rate New device sample rate in Hz.
+ */
+void playback_buffer_set_rate(playback_buffer_t *pb, double sample_rate);
+
+/**
+ * @brief Forget the published device level without changing the rate.
+ *
+ * @param pb Buffer tracker to reset.
+ */
+void playback_buffer_reset(playback_buffer_t *pb);
+
+/**
+ * @brief Publish the frames held beyond the ring buffer.
+ *
+ * Called by the thread that owns the device: the ALSA/WASAPI worker, or the
+ * CoreAudio/ASIO/PipeWire callback. Pass only frames that are *not* in the
+ * ring buffer, such as the ALSA hardware delay or silence still queued.
+ *
+ * @param pb Buffer tracker to update.
+ * @param device_frames Frames pending outside the ring buffer.
+ */
+void playback_buffer_publish(playback_buffer_t *pb, size_t device_frames);
+
+/**
+ * @brief Total frames still pending playback.
+ *
+ * @param pb Buffer tracker to read. May be NULL.
+ * @param ring Ring buffer feeding the device. May be NULL.
+ * @param blockalign Bytes per frame in @p ring. 0 excludes the ring term.
+ * @return Live ring fill plus the extrapolated device-side level, in frames.
+ */
+size_t playback_buffer_level(const playback_buffer_t *pb,
+                             const spsc_byte_ring_buffer_t *ring,
+                             size_t blockalign);
+
+#endif // CDSP_PLAYBACK_BUFFER_H
