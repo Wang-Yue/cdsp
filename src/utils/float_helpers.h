@@ -7,6 +7,7 @@
 #define CLIB_UTILS_FLOAT_HELPERS_H
 
 #include <complex.h>
+#include <float.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -277,7 +278,7 @@ static inline void dsp_ops_float_hann_window(float *buffer, size_t count) {
  */
 static inline float dsp_ops_float_max(const float *buffer, size_t count) {
   if (count == 0)
-    return -INFINITY;
+    return -FLT_MAX;
 #if defined(ENABLE_ACCELERATE)
   float res = 0.0f;
   vDSP_maxv(buffer, 1, &res, count);

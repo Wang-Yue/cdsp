@@ -202,12 +202,19 @@ void *__real_calloc(size_t num, size_t size);
 void *__real_realloc(void *ptr, size_t size);
 void __real_free(void *ptr);
 
+static _Thread_local bool g_in_win_wrap = false;
+
 void *__wrap_malloc(size_t size) {
   void *ptr = __real_malloc(size);
-  malloc_logger_t logger = atomic_load_explicit(
-      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
-  if (logger) {
-    logger(2, 0, (uintptr_t)size, 0, (uintptr_t)ptr, 0);
+  if (!g_in_win_wrap) {
+    g_in_win_wrap = true;
+    malloc_logger_t logger =
+        atomic_load_explicit((_Atomic malloc_logger_t *)&g_custom_malloc_logger,
+                             memory_order_acquire);
+    if (logger) {
+      logger(2, 0, (uintptr_t)size, 0, (uintptr_t)ptr, 0);
+    }
+    g_in_win_wrap = false;
   }
   return ptr;
 }
@@ -215,30 +222,45 @@ void *__wrap_malloc(size_t size) {
 void *__wrap_calloc(size_t num, size_t size) {
   size_t total = num * size;
   void *ptr = __real_calloc(num, size);
-  malloc_logger_t logger = atomic_load_explicit(
-      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
-  if (logger) {
-    logger(2, 0, (uintptr_t)total, 0, (uintptr_t)ptr, 0);
+  if (!g_in_win_wrap) {
+    g_in_win_wrap = true;
+    malloc_logger_t logger =
+        atomic_load_explicit((_Atomic malloc_logger_t *)&g_custom_malloc_logger,
+                             memory_order_acquire);
+    if (logger) {
+      logger(2, 0, (uintptr_t)total, 0, (uintptr_t)ptr, 0);
+    }
+    g_in_win_wrap = false;
   }
   return ptr;
 }
 
 void *__wrap_realloc(void *ptr, size_t size) {
   void *new_ptr = __real_realloc(ptr, size);
-  malloc_logger_t logger = atomic_load_explicit(
-      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
-  if (logger) {
-    logger(2, 0, (uintptr_t)size, 0, (uintptr_t)new_ptr, 0);
+  if (!g_in_win_wrap) {
+    g_in_win_wrap = true;
+    malloc_logger_t logger =
+        atomic_load_explicit((_Atomic malloc_logger_t *)&g_custom_malloc_logger,
+                             memory_order_acquire);
+    if (logger) {
+      logger(2, 0, (uintptr_t)size, 0, (uintptr_t)new_ptr, 0);
+    }
+    g_in_win_wrap = false;
   }
   return new_ptr;
 }
 
 void __wrap_free(void *ptr) {
   __real_free(ptr);
-  malloc_logger_t logger = atomic_load_explicit(
-      (_Atomic malloc_logger_t *)&g_custom_malloc_logger, memory_order_acquire);
-  if (logger) {
-    logger(4, 0, 0, 0, (uintptr_t)ptr, 0);
+  if (!g_in_win_wrap) {
+    g_in_win_wrap = true;
+    malloc_logger_t logger =
+        atomic_load_explicit((_Atomic malloc_logger_t *)&g_custom_malloc_logger,
+                             memory_order_acquire);
+    if (logger) {
+      logger(4, 0, 0, 0, (uintptr_t)ptr, 0);
+    }
+    g_in_win_wrap = false;
   }
 }
 #endif // _WIN32
