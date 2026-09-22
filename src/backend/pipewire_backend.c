@@ -35,6 +35,7 @@
 #include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
+#include "utils/device_buffer_estimator.h"
 #include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.pipewire"};
@@ -100,6 +101,10 @@ struct pipewire_playback {
   uint8_t *encode_buf;
   size_t encode_buf_size;
   size_t blockalign;
+  // Frames still pending playback, published by the PipeWire process callback
+  // and extrapolated by the engine thread. Mirrors upstream
+  // (src/pipewire_backend/device.rs:467-470).
+  device_buffer_estimator_t device_buffer;
   _Atomic bool paused;
   bool stopped;
   bool running;
@@ -216,6 +221,14 @@ static void on_playback_process(void *data) {
             ? (fallback_bytes < max_bytes ? fallback_bytes : max_bytes)
             : requested_bytes;
     callback_bytes -= (callback_bytes % stride);
+
+    // Publish the level before consuming, matching upstream's use of the
+    // ring occupancy sampled on entry (src/pipewire_backend/device.rs:467-470).
+    if (stride > 0) {
+      device_buffer_estimator_add(
+          &p->device_buffer,
+          spsc_byte_ring_buffer_get_available_to_read(p->ring) / stride);
+    }
 
     if (atomic_load_explicit(&p->paused, memory_order_acquire)) {
       memset(dst, 0, callback_bytes);
@@ -906,6 +919,8 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
     return false;
   }
   playback->paused = false;
+  device_buffer_estimator_set_rate(&playback->device_buffer,
+                                   (double)playback->sample_rate);
 
   logger_info(&g_logger,
               "Opened PipeWire playback: device=%s, rate=%d, channels=%d",
@@ -1006,10 +1021,9 @@ static bool pipewire_playback_write(void *ctx, const audio_chunk_t *chunk,
  */
 static size_t pipewire_playback_get_buffer_level(void *ctx) {
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
-  if (!playback || !playback->ring || playback->blockalign == 0)
+  if (!playback)
     return 0;
-  return spsc_byte_ring_buffer_get_available_to_read(playback->ring) /
-         playback->blockalign;
+  return device_buffer_estimator_estimate(&playback->device_buffer);
 }
 
 /**
@@ -1183,6 +1197,8 @@ static playback_backend_t *pipewire_playback_create(
   }
 
   atomic_init(&playback->paused, false);
+  device_buffer_estimator_init(&playback->device_buffer,
+                               (double)playback->sample_rate);
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
   if (!backend) {

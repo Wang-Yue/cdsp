@@ -29,6 +29,7 @@
 #include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
+#include "utils/device_buffer_estimator.h"
 #include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.asio"};
@@ -1124,8 +1125,11 @@ typedef struct {
   size_t sample_queue_cap;
   _Atomic size_t target_level;
   uint8_t silence_byte;
-  _Atomic double buffer_fill;
-  _Atomic uint64_t buffer_fill_time_ns;
+  // Total frames still pending playback (callback-local queue plus ring
+  // buffer), published by the ASIO callback thread and extrapolated by the
+  // engine thread. Mirrors upstream's DeviceBufferEstimator
+  // (src/utils/countertimer.rs:23-54).
+  device_buffer_estimator_t device_buffer;
   bool running;
 } asio_playback_context_t;
 
@@ -1390,10 +1394,7 @@ static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
       (ctx->sample_queue_len +
        spsc_byte_ring_buffer_get_available_to_read(ctx->ring_buffer)) /
       bytes_per_frame;
-  atomic_store_explicit(&ctx->buffer_fill, (double)curr_buffer_fill,
-                        memory_order_relaxed);
-  atomic_store_explicit(&ctx->buffer_fill_time_ns, cdsp_time_now_ns(),
-                        memory_order_relaxed);
+  device_buffer_estimator_add(&ctx->device_buffer, curr_buffer_fill);
 }
 
 /**
@@ -2576,8 +2577,8 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
   playback->context->running = false;
   playback->context->silence_byte =
       (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) ? 0x69 : 0x00;
-  atomic_init(&playback->context->buffer_fill, 0.0);
-  atomic_init(&playback->context->buffer_fill_time_ns, 0);
+  device_buffer_estimator_init(&playback->context->device_buffer,
+                               (double)playback->sample_rate);
 
   if (playback->full_duplex) {
     atomic_store_explicit(&PLAYBACK_CONTEXT, playback->context,
@@ -2692,23 +2693,9 @@ static size_t asio_playback_get_buffer_level(void *ctx) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
   if (!playback || !playback->context)
     return 0;
-  double frames = atomic_load_explicit(&playback->context->buffer_fill,
-                                       memory_order_relaxed);
-  uint64_t update_time = atomic_load_explicit(
-      &playback->context->buffer_fill_time_ns, memory_order_relaxed);
-  if (update_time == 0 || playback->sample_rate <= 0) {
-    return (size_t)frames;
-  }
-  uint64_t now = cdsp_time_now_ns();
-  if (now <= update_time) {
-    return (size_t)frames;
-  }
-  double time_passed_s = (double)(now - update_time) * 1e-9;
-  double frames_consumed = (double)playback->sample_rate * time_passed_s;
-  if (frames_consumed >= frames) {
-    return 0;
-  }
-  return (size_t)(frames - frames_consumed);
+  // The published value already covers the ring buffer as well as the
+  // callback-local queue, so it is the complete level on its own.
+  return device_buffer_estimator_estimate(&playback->context->device_buffer);
 }
 
 static bool asio_playback_get_pending_rate_change(void *ctx, double *out_rate) {

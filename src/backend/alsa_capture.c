@@ -103,7 +103,8 @@ static int alsa_capture_collect_poll_fds(alsa_capture_t *capture,
   if (pcm_count <= 0 || pcm_count > max_fds) {
     return 0;
   }
-  int got = snd_pcm_poll_descriptors(capture->pcm, pfds, (unsigned int)pcm_count);
+  int got =
+      snd_pcm_poll_descriptors(capture->pcm, pfds, (unsigned int)pcm_count);
   if (got <= 0) {
     return 0;
   }
@@ -300,9 +301,8 @@ static void *alsa_capture_inner_thread_func(void *arg) {
         capture->device_stalled = false;
       }
       size_t bytes_read = (size_t)frames_read * bytes_per_frame;
-      size_t pushed =
-          spsc_byte_ring_buffer_write(capture->ring_buffer, local_buf,
-                                      bytes_read);
+      size_t pushed = spsc_byte_ring_buffer_write(capture->ring_buffer,
+                                                  local_buf, bytes_read);
       if (pushed < bytes_read) {
         logger_warn(&g_logger,
                     "Capture ring buffer is full, dropped %zu out of %zu bytes",
@@ -631,11 +631,10 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
       capture->period > 0 ? (snd_pcm_uframes_t)capture->period : 1;
   if (capture_avail_min > (snd_pcm_uframes_t)capture->bufsize) {
     char msg[256];
-    snprintf(
-        msg, sizeof(msg),
-        "Trying to set avail_min to %lu, must be smaller than or equal to "
-        "device buffer size of %lu",
-        (unsigned long)capture_avail_min, (unsigned long)capture->bufsize);
+    snprintf(msg, sizeof(msg),
+             "Trying to set avail_min to %lu, must be smaller than or equal to "
+             "device buffer size of %lu",
+             (unsigned long)capture_avail_min, (unsigned long)capture->bufsize);
     logger_error(&g_logger, "%s", msg);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
@@ -697,8 +696,7 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
   atomic_store_explicit(&capture->inner_running, true, memory_order_release);
   if (pthread_create(&capture->inner_thread, NULL,
                      alsa_capture_inner_thread_func, capture) != 0) {
-    atomic_store_explicit(&capture->inner_running, false,
-                          memory_order_release);
+    atomic_store_explicit(&capture->inner_running, false, memory_order_release);
     if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to spawn ALSA capture inner thread");
@@ -795,8 +793,7 @@ static void alsa_capture_close(void *ctx) {
   if (capture->inner_thread_created) {
     pthread_join(capture->inner_thread, NULL);
     capture->inner_thread_created = false;
-    atomic_store_explicit(&capture->inner_running, false,
-                          memory_order_release);
+    atomic_store_explicit(&capture->inner_running, false, memory_order_release);
   }
   if (capture->ring_buffer) {
     spsc_byte_ring_buffer_free(capture->ring_buffer);

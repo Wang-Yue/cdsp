@@ -20,6 +20,7 @@
 #include "engine/thread_priority.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
+#include "utils/device_buffer_estimator.h"
 #include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.alsa"};
@@ -66,27 +67,13 @@ struct alsa_playback {
   _Atomic bool inner_running;
   _Atomic bool draining;
 
-  // Device buffer level in frames, published by the inner RT thread after each
-  // write, together with the time it was sampled. snd_pcm_avail() must not be
-  // called concurrently with snd_pcm_writei() on the same handle, so the engine
-  // thread interpolates from this snapshot instead of querying the device.
-  // Port of DeviceBufferEstimator (src/utils/countertimer.rs:24-54), sampled as
-  // in upstream (src/alsa_backend/threaded_device.rs:449-460).
-  _Atomic size_t device_delay_frames;
-  _Atomic uint64_t device_delay_time_ns;
+  // Device buffer level published by the inner thread after each successful
+  // write. snd_pcm_avail() must not be called concurrently with
+  // snd_pcm_writei() on the same handle, so the engine thread interpolates
+  // from this snapshot instead of querying the device. Sampled as in upstream
+  // (src/alsa_backend/threaded_device.rs:449-460).
+  device_buffer_estimator_t device_buffer;
 };
-
-// DeviceBufferEstimator::add (src/utils/countertimer.rs:40-43).
-// The timestamp is released last: a reader that observes a stale timestamp
-// together with a fresh frame count over-estimates the elapsed time and so
-// under-estimates the level, which is the safe direction.
-static void alsa_playback_publish_delay(alsa_playback_t *playback,
-                                        size_t frames) {
-  atomic_store_explicit(&playback->device_delay_frames, frames,
-                        memory_order_relaxed);
-  atomic_store_explicit(&playback->device_delay_time_ns, cdsp_time_now_ns(),
-                        memory_order_release);
-}
 
 // Dedicated real-time playback inner thread matching AlsaPlaybackInner in
 // upstream (src/alsa_backend/threaded_device.rs:1078-1345)
@@ -347,8 +334,9 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           snd_pcm_state(playback->pcm) == SND_PCM_STATE_RUNNING) {
         snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
         if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
-          alsa_playback_publish_delay(
-              playback, (size_t)(playback->bufsize - (snd_pcm_uframes_t)avail));
+          device_buffer_estimator_add(
+              &playback->device_buffer,
+              (size_t)(playback->bufsize - (snd_pcm_uframes_t)avail));
         }
       }
     } else {
@@ -373,7 +361,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
         if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
           delay = playback->bufsize - (snd_pcm_uframes_t)avail;
         }
-        alsa_playback_publish_delay(playback, delay);
+        device_buffer_estimator_add(&playback->device_buffer, delay);
         size_t low_threshold = playback->period > 0 ? playback->period : 1;
         buffer_low = (delay < low_threshold);
       } else {
@@ -419,9 +407,8 @@ static void *alsa_playback_inner_thread_func(void *arg) {
             playback->chunk_size < playback->bufsize
                 ? (snd_pcm_uframes_t)playback->chunk_size
                 : playback->bufsize;
-        snd_pcm_sframes_t sw_rc =
-            snd_pcm_writei(playback->pcm, playback->zero_stall_buf,
-                           silence_frames);
+        snd_pcm_sframes_t sw_rc = snd_pcm_writei(
+            playback->pcm, playback->zero_stall_buf, silence_frames);
         if (sw_rc == -EPIPE) {
           snd_pcm_prepare(playback->pcm);
         } else if (sw_rc == -ESTRPIPE) {
@@ -477,11 +464,10 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
       playback->period > 0 ? (snd_pcm_uframes_t)playback->period : 1;
   if (avail_min > (snd_pcm_uframes_t)playback->bufsize) {
     char msg[256];
-    snprintf(
-        msg, sizeof(msg),
-        "Trying to set avail_min to %lu, must be smaller than or equal to "
-        "device buffer size of %lu",
-        (unsigned long)avail_min, (unsigned long)playback->bufsize);
+    snprintf(msg, sizeof(msg),
+             "Trying to set avail_min to %lu, must be smaller than or equal to "
+             "device buffer size of %lu",
+             (unsigned long)avail_min, (unsigned long)playback->bufsize);
     logger_error(&g_logger, "%s", msg);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
@@ -529,10 +515,7 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
   playback->paused = false;
   playback->currently_paused = false;
   playback->device_stalled = false;
-  atomic_store_explicit(&playback->device_delay_frames, 0,
-                        memory_order_relaxed);
-  atomic_store_explicit(&playback->device_delay_time_ns, 0,
-                        memory_order_relaxed);
+  device_buffer_estimator_reset(&playback->device_buffer);
   atomic_store_explicit(&playback->draining, false, memory_order_relaxed);
 
   // Search for UAC2 gadget pitch control: "Playback Pitch 1000000"
@@ -732,26 +715,8 @@ static size_t alsa_playback_get_buffer_level(void *ctx) {
       spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer) /
       playback->blockalign;
 
-  // DeviceBufferEstimator::estimate (src/utils/countertimer.rs:45-53): decay
-  // the last published level by the frames the device has consumed since it
-  // was sampled. Read the timestamp first so it can only be older than the
-  // frame count, never newer.
-  uint64_t sampled_at_ns =
-      atomic_load_explicit(&playback->device_delay_time_ns,
-                           memory_order_acquire);
-  size_t sampled_frames = atomic_load_explicit(&playback->device_delay_frames,
-                                               memory_order_relaxed);
-  size_t dev_delay = 0;
-  if (sampled_at_ns != 0 && sampled_frames > 0 && playback->sample_rate > 0) {
-    uint64_t now_ns = cdsp_time_now_ns();
-    double elapsed_s =
-        now_ns > sampled_at_ns ? (double)(now_ns - sampled_at_ns) / 1e9 : 0.0;
-    double consumed = elapsed_s * (double)playback->sample_rate;
-    if (consumed < (double)sampled_frames) {
-      dev_delay = sampled_frames - (size_t)consumed;
-    }
-  }
-  return ring_frames + dev_delay;
+  return ring_frames +
+         device_buffer_estimator_estimate(&playback->device_buffer);
 }
 
 static bool alsa_playback_get_pending_rate_change(void *ctx, double *out_rate) {
@@ -793,8 +758,8 @@ static bool alsa_playback_prefill_silence(void *ctx, size_t frames,
                              ? remaining_frames
                              : max_frames_per_pass;
     size_t pass_bytes = pass_frames * playback->blockalign;
-    size_t written =
-        spsc_byte_ring_buffer_write(playback->ring_buffer, zero_buf, pass_bytes);
+    size_t written = spsc_byte_ring_buffer_write(playback->ring_buffer,
+                                                 zero_buf, pass_bytes);
     if (written != pass_bytes)
       break;
     remaining_frames -= pass_frames;
@@ -906,8 +871,8 @@ alsa_playback_create(const playback_device_config_t *config, int sample_rate,
   playback->requested_format = config->cfg.alsa.format;
   playback->params = params;
   atomic_init(&playback->paused, false);
-  atomic_init(&playback->device_delay_frames, 0);
-  atomic_init(&playback->device_delay_time_ns, 0);
+  device_buffer_estimator_init(&playback->device_buffer,
+                               (double)playback->sample_rate);
   playback->currently_paused = false;
   pthread_mutex_init(&playback->mixer_mutex, NULL);
 
