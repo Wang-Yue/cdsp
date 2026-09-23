@@ -51,7 +51,6 @@ struct generator_capture {
   double phase;
   unsigned int rand_seed;
   uint64_t last_read_time_ns;
-  bool is_paused;
 };
 
 /**
@@ -264,19 +263,6 @@ static void generator_capture_destroy(void *ctx) {
 }
 
 /**
- * @brief Set the paused state of the generator capture backend.
- *
- * @param ctx Pointer to the generator capture instance.
- * @param paused true to pause, false to resume.
- */
-static void generator_capture_set_is_paused(void *ctx, bool paused) {
-  generator_capture_t *capture = (generator_capture_t *)ctx;
-  if (capture) {
-    capture->is_paused = paused;
-  }
-}
-
-/**
  * @brief Create a generator capture backend instance.
  *
  * @param config Pointer to the capture device configuration.
@@ -351,6 +337,5 @@ const capture_backend_vtable_t g_generator_capture_vtable = {
     .is_pitch_control_supported = generator_capture_pitch_control_supported,
     .set_pitch = generator_capture_set_pitch,
     .wait_for_data = generator_capture_wait,
-    .set_is_paused = generator_capture_set_is_paused,
     .stop = generator_capture_stop,
     .destroy = generator_capture_destroy};

@@ -57,7 +57,6 @@ struct alsa_capture {
 
   bool pitch_is_loopback;
   _Atomic double pending_rate;
-  _Atomic bool has_pending_rate_change;
   _Atomic bool is_inactive;
 
   double linked_volume_value;
@@ -69,13 +68,11 @@ struct alsa_capture {
   snd_pcm_format_t format;
 
   pthread_mutex_t mixer_mutex;
-  _Atomic bool stopped;
 
   backend_buffer_t *buffer;
   cdsp_sem_t semaphore;
   pthread_t inner_thread;
   bool inner_thread_created;
-  _Atomic bool inner_running;
   bool device_stalled;
 };
 
@@ -149,7 +146,7 @@ static void *alsa_capture_inner_thread_func(void *arg) {
   uint8_t *local_buf = (uint8_t *)malloc(chunk_bytes);
   if (!local_buf) {
     logger_error(&g_logger, "Failed to allocate ALSA capture read buffer");
-    atomic_store_explicit(&capture->inner_running, false, memory_order_release);
+    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     if (capture->semaphore) {
       cdsp_sem_signal(capture->semaphore);
     }
@@ -176,7 +173,7 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     // (src/alsa_backend/threaded_device.rs:1442-1482).
     logger_error(&g_logger, "Failed to get ALSA capture poll descriptors");
     free(local_buf);
-    atomic_store_explicit(&capture->inner_running, false, memory_order_release);
+    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     if (capture->semaphore) {
       cdsp_sem_signal(capture->semaphore);
     }
@@ -186,7 +183,7 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     return NULL;
   }
 
-  while (!atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
+  while (backend_buffer_get_state(capture->buffer) != BACKEND_STREAM_STOPPED) {
     snd_pcm_state_t capture_state = snd_pcm_state(capture->pcm);
     if ((int)capture_state < 0) {
       logger_error(&g_logger, "Capture device error state: %s",
@@ -231,7 +228,7 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     bool wait_fatal = false;
     uint32_t remaining_millis = timeout_millis;
     for (;;) {
-      if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
+      if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED) {
         break;
       }
       int poll_slice = remaining_millis < 20 ? (int)remaining_millis : 20;
@@ -340,7 +337,7 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     }
   }
 
-  atomic_store_explicit(&capture->inner_running, false, memory_order_release);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   if (capture->semaphore) {
     cdsp_sem_signal(capture->semaphore);
   }
@@ -542,8 +539,7 @@ static void alsa_capture_process_events(alsa_capture_t *capture) {
                        "Stopping, capture device sample format changed");
           atomic_store_explicit(&capture->pending_rate, (double)rate,
                                 memory_order_release);
-          atomic_store_explicit(&capture->has_pending_rate_change, true,
-                                memory_order_release);
+          backend_buffer_set_pending_rate_change(capture->buffer, true);
           atomic_store_explicit(&capture->is_inactive, false,
                                 memory_order_release);
         } else {
@@ -665,9 +661,6 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
     }
     goto error_cleanup;
   }
-  backend_buffer_set_control_flags(capture->buffer, &capture->inner_running,
-                                   &capture->stopped, NULL,
-                                   &capture->has_pending_rate_change);
   capture->semaphore = cdsp_sem_create();
   if (!capture->semaphore) {
     if (err) {
@@ -677,10 +670,10 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
     }
     goto error_cleanup;
   }
-  atomic_store_explicit(&capture->inner_running, true, memory_order_release);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
   if (pthread_create(&capture->inner_thread, NULL,
                      alsa_capture_inner_thread_func, capture) != 0) {
-    atomic_store_explicit(&capture->inner_running, false, memory_order_release);
+    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to spawn ALSA capture inner thread");
@@ -693,10 +686,8 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
   return true;
 
 error_cleanup:
-  if (capture->buffer) {
-    backend_buffer_free(capture->buffer);
-    capture->buffer = NULL;
-  }
+  backend_buffer_free(capture->buffer);
+  capture->buffer = NULL;
   if (capture->semaphore) {
     cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
@@ -718,7 +709,7 @@ static bool alsa_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   if (!capture || !capture->pcm)
     return false;
 
-  if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
+  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_NONE, "Capture stopped");
     }
@@ -758,7 +749,8 @@ static void alsa_capture_close(void *ctx) {
   alsa_capture_t *capture = (alsa_capture_t *)ctx;
   if (!capture)
     return;
-  atomic_store_explicit(&capture->stopped, true, memory_order_release);
+
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
 
   if (capture->semaphore) {
     cdsp_sem_signal(capture->semaphore);
@@ -766,12 +758,9 @@ static void alsa_capture_close(void *ctx) {
   if (capture->inner_thread_created) {
     pthread_join(capture->inner_thread, NULL);
     capture->inner_thread_created = false;
-    atomic_store_explicit(&capture->inner_running, false, memory_order_release);
   }
-  if (capture->buffer) {
-    backend_buffer_free(capture->buffer);
-    capture->buffer = NULL;
-  }
+  backend_buffer_free(capture->buffer);
+  capture->buffer = NULL;
   if (capture->semaphore) {
     cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
@@ -798,8 +787,6 @@ static void alsa_capture_close(void *ctx) {
   capture->hctl_loopback_active_elem = NULL;
   capture->hctl_volume_elem = NULL;
   capture->hctl_mute_elem = NULL;
-  atomic_store_explicit(&capture->has_pending_rate_change, false,
-                        memory_order_release);
   atomic_store_explicit(&capture->is_inactive, false, memory_order_release);
   pthread_mutex_unlock(&capture->mixer_mutex);
 }
@@ -811,8 +798,7 @@ static bool alsa_capture_get_pending_rate_change(void *ctx, double *out_rate) {
   if (!capture)
     return false;
   alsa_capture_process_events(capture);
-  if (atomic_load_explicit(&capture->has_pending_rate_change,
-                           memory_order_acquire)) {
+  if (backend_buffer_has_pending_rate_change(capture->buffer)) {
     if (out_rate) {
       *out_rate =
           atomic_load_explicit(&capture->pending_rate, memory_order_acquire);
@@ -854,7 +840,7 @@ static bool alsa_capture_wait(void *ctx, uint32_t timeout_ms) {
   alsa_capture_t *capture = (alsa_capture_t *)ctx;
   if (!capture)
     return false;
-  if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
+  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED) {
     return false;
   }
   if (!capture->semaphore)
@@ -866,7 +852,7 @@ static void alsa_capture_stop(void *ctx) {
   alsa_capture_t *capture = (alsa_capture_t *)ctx;
   if (!capture)
     return;
-  atomic_store_explicit(&capture->stopped, true, memory_order_release);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   if (capture->semaphore) {
     cdsp_sem_signal(capture->semaphore);
   }
@@ -916,7 +902,6 @@ alsa_capture_create(const capture_device_config_t *config, int sample_rate,
   snprintf(capture->link_mute_control, sizeof(capture->link_mute_control), "%s",
            config->cfg.alsa.link_mute_control);
   atomic_init(&capture->pending_rate, 0.0);
-  atomic_init(&capture->has_pending_rate_change, false);
   atomic_init(&capture->is_inactive, false);
   pthread_mutex_init(&capture->mixer_mutex, NULL);
 
@@ -942,7 +927,6 @@ const capture_backend_vtable_t g_alsa_capture_vtable = {
     .is_pitch_control_supported = alsa_capture_pitch_control_supported,
     .set_pitch = alsa_capture_set_pitch,
     .wait_for_data = alsa_capture_wait,
-    .set_is_paused = NULL,
     .stop = alsa_capture_stop,
     .destroy = alsa_capture_destroy};
 

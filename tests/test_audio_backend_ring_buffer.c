@@ -29,12 +29,8 @@ TEST(AudioBackendRingBufferRead_BasicRoundTrip) {
   backend_error_t err;
   backend_error_init(&err, BACKEND_ERROR_NONE, "");
 
-  _Atomic bool running = true;
-  _Atomic bool stopped = false;
-  _Atomic bool paused = false;
-  _Atomic bool rate_changed = false;
-  backend_buffer_set_control_flags(buf, &running, &stopped, &paused,
-                                   &rate_changed);
+  backend_buffer_set_state(buf, BACKEND_STREAM_RUNNING);
+  backend_buffer_set_pending_rate_change(buf, false);
 
   bool write_ok = backend_buffer_write_chunk(buf, write_chunk, 1, 10, &err);
   ASSERT_TRUE(write_ok);
@@ -104,8 +100,7 @@ TEST(AudioBackendRingBufferRead_DrainOnStreamStopped) {
   float raw_data[64] = {0};
   backend_buffer_push(buf, raw_data, frames);
 
-  _Atomic bool stopped = true;
-  backend_buffer_set_control_flags(buf, NULL, &stopped, NULL, NULL);
+  backend_buffer_set_state(buf, BACKEND_STREAM_STOPPED);
 
   backend_error_t err;
   backend_error_init(&err, BACKEND_ERROR_NONE, "");
@@ -132,8 +127,7 @@ TEST(AudioBackendRingBufferRead_PendingRateChange) {
   ASSERT_TRUE(buf != NULL);
   audio_chunk_t *chunk = audio_chunk_create(32, channels);
 
-  _Atomic bool rate_change = true;
-  backend_buffer_set_control_flags(buf, NULL, NULL, NULL, &rate_change);
+  backend_buffer_set_pending_rate_change(buf, true);
 
   backend_error_t err;
   backend_error_init(&err, BACKEND_ERROR_NONE, "");
@@ -146,7 +140,7 @@ TEST(AudioBackendRingBufferRead_PendingRateChange) {
   backend_buffer_free(buf);
 }
 
-TEST(AudioBackendRingBufferRead_ThreadRunningFalse_RaisesReadError) {
+TEST(AudioBackendRingBufferRead_StreamStopped_RaisesReadError) {
   size_t channels = 2;
   size_t frames = 32;
   backend_buffer_t *buf = backend_buffer_create(
@@ -154,14 +148,13 @@ TEST(AudioBackendRingBufferRead_ThreadRunningFalse_RaisesReadError) {
   ASSERT_TRUE(buf != NULL);
   audio_chunk_t *chunk = audio_chunk_create(frames, channels);
 
-  _Atomic bool thread_running = false;
-  backend_buffer_set_control_flags(buf, &thread_running, NULL, NULL, NULL);
+  backend_buffer_set_state(buf, BACKEND_STREAM_STOPPED);
 
   backend_error_t err;
   backend_error_init(&err, BACKEND_ERROR_NONE, "");
 
   // Read should fail immediately with BACKEND_ERROR_READ_ERROR because
-  // thread_running is false
+  // stream is stopped
   bool ok = backend_buffer_read_chunk(buf, frames, chunk, &err);
   ASSERT_FALSE(ok);
   ASSERT_EQ(err.type, BACKEND_ERROR_READ_ERROR);
@@ -170,7 +163,7 @@ TEST(AudioBackendRingBufferRead_ThreadRunningFalse_RaisesReadError) {
   backend_buffer_free(buf);
 }
 
-TEST(AudioBackendRingBufferWrite_ThreadRunningFalse_RaisesWriteError) {
+TEST(AudioBackendRingBufferWrite_StreamStopped_RaisesWriteError) {
   size_t channels = 2;
   size_t frames = 32;
   backend_buffer_t *buf = backend_buffer_create(
@@ -179,8 +172,7 @@ TEST(AudioBackendRingBufferWrite_ThreadRunningFalse_RaisesWriteError) {
   audio_chunk_t *chunk = audio_chunk_create(frames, channels);
   audio_chunk_set_valid_frames(chunk, frames);
 
-  _Atomic bool thread_running = false;
-  backend_buffer_set_control_flags(buf, &thread_running, NULL, NULL, NULL);
+  backend_buffer_set_state(buf, BACKEND_STREAM_STOPPED);
 
   backend_error_t err;
   backend_error_init(&err, BACKEND_ERROR_NONE, "");
@@ -237,6 +229,42 @@ TEST(AudioBackendRingBuffer_WrapAroundRoundTrip) {
 
   audio_chunk_free(write_chunk);
   audio_chunk_free(read_chunk);
+  backend_buffer_free(buf);
+}
+
+TEST(AudioBackendRingBuffer_StreamStateLifecycle) {
+  size_t channels = 2;
+  backend_buffer_t *buf = backend_buffer_create(
+      128, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
+  ASSERT_TRUE(buf != NULL);
+
+  // Initial state should be running
+  ASSERT_EQ(backend_buffer_get_state(buf), BACKEND_STREAM_RUNNING);
+
+  // Pause
+  backend_buffer_set_state(buf, BACKEND_STREAM_PAUSED);
+  ASSERT_EQ(backend_buffer_get_state(buf), BACKEND_STREAM_PAUSED);
+
+  // Render when paused should write silence and return 0
+  float render_buf[16] = {1.0f, 1.0f, 1.0f, 1.0f};
+  size_t rendered = backend_buffer_render(buf, render_buf, 4, 0x00);
+  ASSERT_EQ(rendered, 0);
+  for (size_t i = 0; i < 8; i++) {
+    ASSERT_EQ(render_buf[i], 0.0f);
+  }
+
+  // Resume (running)
+  backend_buffer_set_state(buf, BACKEND_STREAM_RUNNING);
+  ASSERT_EQ(backend_buffer_get_state(buf), BACKEND_STREAM_RUNNING);
+
+  // Stop
+  backend_buffer_set_state(buf, BACKEND_STREAM_STOPPED);
+  ASSERT_EQ(backend_buffer_get_state(buf), BACKEND_STREAM_STOPPED);
+
+  // Direct state setting to IDLE
+  backend_buffer_set_state(buf, BACKEND_STREAM_IDLE);
+  ASSERT_EQ(backend_buffer_get_state(buf), BACKEND_STREAM_IDLE);
+
   backend_buffer_free(buf);
 }
 

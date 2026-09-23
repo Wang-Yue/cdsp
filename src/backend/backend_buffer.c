@@ -32,13 +32,11 @@ struct backend_buffer {
   device_buffer_estimator_t device;
   _Atomic size_t target_level;
   _Atomic size_t silence_to_insert;
-  _Atomic bool is_running;
+  _Atomic bool cushion_active;
 
-  // Monitored control flags
-  _Atomic bool *thread_running;
-  _Atomic bool *stopped;
-  _Atomic bool *is_paused;
-  _Atomic bool *has_pending_rate_change;
+  // Stream lifecycle state & events
+  _Atomic backend_stream_state_t state;
+  _Atomic bool has_pending_rate_change;
 };
 
 /* --- Lifecycle Management --- */
@@ -67,7 +65,10 @@ backend_buffer_t *backend_buffer_create(size_t capacity_frames,
   device_buffer_estimator_init(&bb->device, sample_rate);
   atomic_init(&bb->target_level, 0);
   atomic_init(&bb->silence_to_insert, 0);
-  atomic_init(&bb->is_running, true);
+  atomic_init(&bb->cushion_active, true);
+
+  atomic_init(&bb->state, BACKEND_STREAM_RUNNING);
+  atomic_init(&bb->has_pending_rate_change, false);
 
   if (is_planar) {
     bb->planar_ring = spsc_planar_ring_buffer_create(
@@ -101,17 +102,32 @@ void backend_buffer_free(backend_buffer_t *bb) {
   free(bb);
 }
 
-void backend_buffer_set_control_flags(backend_buffer_t *bb,
-                                      _Atomic bool *thread_running,
-                                      _Atomic bool *stopped,
-                                      _Atomic bool *is_paused,
-                                      _Atomic bool *has_pending_rate_change) {
-  if (!bb)
-    return;
-  bb->thread_running = thread_running;
-  bb->stopped = stopped;
-  bb->is_paused = is_paused;
-  bb->has_pending_rate_change = has_pending_rate_change;
+/* --- Stream Lifecycle & State Control --- */
+
+backend_stream_state_t backend_buffer_get_state(const backend_buffer_t *bb) {
+  return bb ? atomic_load_explicit(&bb->state, memory_order_acquire)
+            : BACKEND_STREAM_STOPPED;
+}
+
+void backend_buffer_set_state(backend_buffer_t *bb,
+                              backend_stream_state_t state) {
+  if (bb) {
+    atomic_store_explicit(&bb->state, state, memory_order_release);
+  }
+}
+
+bool backend_buffer_has_pending_rate_change(const backend_buffer_t *bb) {
+  return bb ? atomic_load_explicit(&bb->has_pending_rate_change,
+                                   memory_order_acquire)
+            : false;
+}
+
+void backend_buffer_set_pending_rate_change(backend_buffer_t *bb,
+                                            bool pending) {
+  if (bb) {
+    atomic_store_explicit(&bb->has_pending_rate_change, pending,
+                          memory_order_release);
+  }
 }
 
 void backend_buffer_set_rate(backend_buffer_t *bb, double sample_rate) {
@@ -171,7 +187,7 @@ static void backend_buffer_prefill_planar(backend_buffer_t *bb,
     return;
   atomic_store_explicit(&bb->target_level, frames, memory_order_release);
   atomic_store_explicit(&bb->silence_to_insert, 0, memory_order_release);
-  atomic_store_explicit(&bb->is_running, true, memory_order_release);
+  atomic_store_explicit(&bb->cushion_active, true, memory_order_release);
   if (ring && frames > 0) {
     spsc_planar_ring_buffer_write_silence(ring, frames);
   }
@@ -185,7 +201,7 @@ static void backend_buffer_prefill_byte(backend_buffer_t *bb,
     return;
   atomic_store_explicit(&bb->target_level, frames, memory_order_release);
   atomic_store_explicit(&bb->silence_to_insert, 0, memory_order_release);
-  atomic_store_explicit(&bb->is_running, true, memory_order_release);
+  atomic_store_explicit(&bb->cushion_active, true, memory_order_release);
   if (ring && frames > 0 && blockalign > 0) {
     spsc_byte_ring_buffer_write_silence(ring, frames * blockalign,
                                         silence_byte);
@@ -200,10 +216,10 @@ static size_t backend_buffer_render_planar(backend_buffer_t *bb,
   if (!bb || !ring || !dst_channels || frames == 0)
     return 0;
 
-  if (!atomic_load_explicit(&bb->is_running, memory_order_relaxed)) {
+  if (!atomic_load_explicit(&bb->cushion_active, memory_order_relaxed)) {
     size_t avail = spsc_planar_ring_buffer_get_available_to_read(ring);
     if (avail > 0) {
-      atomic_store_explicit(&bb->is_running, true, memory_order_relaxed);
+      atomic_store_explicit(&bb->cushion_active, true, memory_order_relaxed);
       atomic_store_explicit(
           &bb->silence_to_insert,
           atomic_load_explicit(&bb->target_level, memory_order_relaxed),
@@ -213,7 +229,7 @@ static size_t backend_buffer_render_planar(backend_buffer_t *bb,
 
   size_t consumed = spsc_planar_ring_buffer_read_with_silence(
       ring, dst_channels, frames, silence_byte, &bb->silence_to_insert,
-      &bb->is_running);
+      &bb->cushion_active);
 
   backend_buffer_publish(
       bb, atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed));
@@ -228,11 +244,11 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
   if (!bb || !ring || !dst || frames == 0 || blockalign == 0)
     return 0;
 
-  if (!atomic_load_explicit(&bb->is_running, memory_order_relaxed)) {
+  if (!atomic_load_explicit(&bb->cushion_active, memory_order_relaxed)) {
     size_t avail_bytes = spsc_byte_ring_buffer_get_available_to_read(ring);
     size_t avail_frames = avail_bytes / blockalign;
     if (avail_frames > 0) {
-      atomic_store_explicit(&bb->is_running, true, memory_order_relaxed);
+      atomic_store_explicit(&bb->cushion_active, true, memory_order_relaxed);
       atomic_store_explicit(
           &bb->silence_to_insert,
           atomic_load_explicit(&bb->target_level, memory_order_relaxed),
@@ -242,7 +258,7 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
 
   size_t consumed = spsc_byte_ring_buffer_read_with_silence(
       ring, dst, frames, blockalign, silence_byte, &bb->silence_to_insert,
-      &bb->is_running);
+      &bb->cushion_active);
 
   backend_buffer_publish(
       bb, atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed));
@@ -251,14 +267,10 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
 
 /* --- Engine-Side Audio Chunk Ring Buffer IO (Capture & Playback) --- */
 
-static bool backend_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
-                                size_t blockalign, size_t frames_requested,
-                                binary_sample_format_t fmt, size_t channels,
-                                _Atomic bool *thread_running,
-                                _Atomic bool *stopped,
-                                _Atomic bool *has_pending_rate_change,
-                                audio_chunk_t *chunk, backend_error_t *err) {
-  if (!ring_buffer || !chunk || channels == 0 || blockalign == 0) {
+static bool backend_buffer_read(const backend_buffer_t *bb,
+                                size_t frames_requested, audio_chunk_t *chunk,
+                                backend_error_t *err) {
+  if (!bb || !chunk || bb->channels == 0 || bb->blockalign == 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Invalid parameters");
     return false;
@@ -267,8 +279,8 @@ static bool backend_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
   // Hardware sample rate or format changes must be handled immediately without
   // decoding further frames under obsolete parameters to prevent filter
   // corruption.
-  if (has_pending_rate_change &&
-      atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+  if (atomic_load_explicit(&bb->has_pending_rate_change,
+                           memory_order_acquire)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
     return false;
@@ -279,7 +291,7 @@ static bool backend_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
     return true;
   }
 
-  if (audio_chunk_get_channels(chunk) < channels) {
+  if (audio_chunk_get_channels(chunk) < bb->channels) {
     if (err)
       backend_error_init(
           err, BACKEND_ERROR_INVALID_CHANNELS,
@@ -294,25 +306,23 @@ static bool backend_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
     return false;
   }
 
-  if (frames_requested > SIZE_MAX / blockalign) {
+  if (frames_requested > SIZE_MAX / bb->blockalign) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                          "Requested frame count exceeds maximum size");
     return false;
   }
 
-  size_t bytes_requested = frames_requested * blockalign;
+  size_t bytes_requested = frames_requested * bb->blockalign;
 
-  // Draining semantics: Only check `stopped` / `thread_running` flags after
+  // Draining semantics: Only check `is_stopped` / `is_running` flags after
   // confirming that the ring buffer lacks sufficient bytes. If the capture
   // worker thread wrote its final batch of samples and stopped, those remaining
   // frames must still be consumed to avoid dropping audio at EOF / stream
   // shutdown.
-  if (spsc_byte_ring_buffer_get_available_to_read(ring_buffer) <
+  if (spsc_byte_ring_buffer_get_available_to_read(bb->byte_ring) <
       bytes_requested) {
-    if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
-        (thread_running &&
-         !atomic_load_explicit(thread_running, memory_order_acquire))) {
+    if (backend_buffer_get_state(bb) == BACKEND_STREAM_STOPPED) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                            "Capture stream stopped");
@@ -326,7 +336,7 @@ static bool backend_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
   const uint8_t *s1 = NULL, *s2 = NULL;
   size_t l1 = 0, l2 = 0;
   size_t read_avail = spsc_byte_ring_buffer_get_read_slices(
-      ring_buffer, bytes_requested, &s1, &l1, &s2, &l2);
+      bb->byte_ring, bytes_requested, &s1, &l1, &s2, &l2);
   if (read_avail < bytes_requested || !s1) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
@@ -334,21 +344,21 @@ static bool backend_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
     return false;
   }
 
-  if (l1 % blockalign == 0) {
-    size_t f1 = l1 / blockalign;
+  if (l1 % bb->blockalign == 0) {
+    size_t f1 = l1 / bb->blockalign;
     if (f1 > 0) {
-      if (!audio_chunk_decode_interleaved_offset(s1, fmt, channels, f1, chunk,
-                                                 0)) {
+      if (!audio_chunk_decode_interleaved_offset(s1, bb->format, bb->channels,
+                                                 f1, chunk, 0)) {
         if (err)
           backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                              "Failed to decode captured audio data");
         return false;
       }
     }
-    size_t f2 = l2 / blockalign;
+    size_t f2 = l2 / bb->blockalign;
     if (f2 > 0 && s2) {
-      if (!audio_chunk_decode_interleaved_offset(s2, fmt, channels, f2, chunk,
-                                                 f1)) {
+      if (!audio_chunk_decode_interleaved_offset(s2, bb->format, bb->channels,
+                                                 f2, chunk, f1)) {
         if (err)
           backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                              "Failed to decode captured audio data");
@@ -356,33 +366,33 @@ static bool backend_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
       }
     }
   } else {
-    size_t f1 = l1 / blockalign;
+    size_t f1 = l1 / bb->blockalign;
     if (f1 > 0) {
-      if (!audio_chunk_decode_interleaved_offset(s1, fmt, channels, f1, chunk,
-                                                 0)) {
+      if (!audio_chunk_decode_interleaved_offset(s1, bb->format, bb->channels,
+                                                 f1, chunk, 0)) {
         if (err)
           backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                              "Failed to decode captured audio data");
         return false;
       }
     }
-    size_t rem_l1 = l1 % blockalign;
-    size_t rem_l2 = blockalign - rem_l1;
+    size_t rem_l1 = l1 % bb->blockalign;
+    size_t rem_l2 = bb->blockalign - rem_l1;
     uint8_t split_frame[256];
-    if (blockalign <= sizeof(split_frame) && s2 && l2 >= rem_l2) {
-      memcpy(split_frame, s1 + f1 * blockalign, rem_l1);
+    if (bb->blockalign <= sizeof(split_frame) && s2 && l2 >= rem_l2) {
+      memcpy(split_frame, s1 + f1 * bb->blockalign, rem_l1);
       memcpy(split_frame + rem_l1, s2, rem_l2);
-      if (!audio_chunk_decode_interleaved_offset(split_frame, fmt, channels, 1,
-                                                 chunk, f1)) {
+      if (!audio_chunk_decode_interleaved_offset(split_frame, bb->format,
+                                                 bb->channels, 1, chunk, f1)) {
         if (err)
           backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                              "Failed to decode split audio frame");
         return false;
       }
-      size_t f2 = (l2 - rem_l2) / blockalign;
+      size_t f2 = (l2 - rem_l2) / bb->blockalign;
       if (f2 > 0) {
-        if (!audio_chunk_decode_interleaved_offset(s2 + rem_l2, fmt, channels,
-                                                   f2, chunk, f1 + 1)) {
+        if (!audio_chunk_decode_interleaved_offset(
+                s2 + rem_l2, bb->format, bb->channels, f2, chunk, f1 + 1)) {
           if (err)
             backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                                "Failed to decode captured audio data");
@@ -392,46 +402,40 @@ static bool backend_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
     }
   }
 
-  spsc_byte_ring_buffer_advance_read(ring_buffer, bytes_requested);
+  spsc_byte_ring_buffer_advance_read(bb->byte_ring, bytes_requested);
   audio_chunk_set_valid_frames(chunk, frames_requested);
   return true;
 }
 
-static bool backend_buffer_write(spsc_byte_ring_buffer_t *ring_buffer,
-                                 size_t blockalign, const audio_chunk_t *chunk,
-                                 binary_sample_format_t fmt, size_t channels,
-                                 uint32_t sleep_ms, uint32_t max_retries,
-                                 _Atomic bool *thread_running,
-                                 _Atomic bool *stopped, _Atomic bool *is_paused,
-                                 _Atomic bool *has_pending_rate_change,
-                                 backend_error_t *err) {
-  if (!ring_buffer || !chunk || channels == 0 || blockalign == 0) {
+static bool backend_buffer_write(const backend_buffer_t *bb,
+                                 const audio_chunk_t *chunk, uint32_t sleep_ms,
+                                 uint32_t max_retries, backend_error_t *err) {
+  if (!bb || !chunk || bb->channels == 0 || bb->blockalign == 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, "Invalid parameters");
     return false;
   }
 
-  if (is_paused && atomic_load_explicit(is_paused, memory_order_acquire)) {
+  backend_stream_state_t state = backend_buffer_get_state(bb);
+  if (state == BACKEND_STREAM_PAUSED) {
     return true;
   }
 
-  if (has_pending_rate_change &&
-      atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+  if (atomic_load_explicit(&bb->has_pending_rate_change,
+                           memory_order_acquire)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
     return false;
   }
 
-  if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
-      (thread_running &&
-       !atomic_load_explicit(thread_running, memory_order_acquire))) {
+  if (state == BACKEND_STREAM_STOPPED) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                          "Playback stream stopped");
     return false;
   }
 
-  if (audio_chunk_get_channels(chunk) < channels) {
+  if (audio_chunk_get_channels(chunk) < bb->channels) {
     if (err)
       backend_error_init(
           err, BACKEND_ERROR_INVALID_CHANNELS,
@@ -443,36 +447,35 @@ static bool backend_buffer_write(spsc_byte_ring_buffer_t *ring_buffer,
   if (frames == 0)
     return true;
 
-  if (frames > SIZE_MAX / blockalign) {
+  if (frames > SIZE_MAX / bb->blockalign) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                          "Frame count exceeds maximum size");
     return false;
   }
 
-  size_t bytes_to_write = frames * blockalign;
+  size_t bytes_to_write = frames * bb->blockalign;
 
   uint32_t retries = (max_retries > 0) ? max_retries : 1;
   for (uint32_t retry = 0; retry < retries; retry++) {
-    if (spsc_byte_ring_buffer_get_available_to_write(ring_buffer) >=
+    if (spsc_byte_ring_buffer_get_available_to_write(bb->byte_ring) >=
         bytes_to_write) {
       break;
     }
-    if (has_pending_rate_change &&
-        atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+    if (atomic_load_explicit(&bb->has_pending_rate_change,
+                             memory_order_acquire)) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
       return false;
     }
-    if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
-        (thread_running &&
-         !atomic_load_explicit(thread_running, memory_order_acquire))) {
+    state = backend_buffer_get_state(bb);
+    if (state == BACKEND_STREAM_STOPPED) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                            "Playback stream stopped");
       return false;
     }
-    if (is_paused && atomic_load_explicit(is_paused, memory_order_acquire)) {
+    if (state == BACKEND_STREAM_PAUSED) {
       return true;
     }
     cdsp_sleep_ms(sleep_ms > 0 ? sleep_ms : 1);
@@ -481,7 +484,7 @@ static bool backend_buffer_write(spsc_byte_ring_buffer_t *ring_buffer,
   // Audio chunks must be written as atomic units. If the ring buffer cannot fit
   // the complete chunk after backoff, drop the entire chunk rather than pushing
   // a fractured sub-chunk to prevent time-domain waveform discontinuity.
-  if (spsc_byte_ring_buffer_get_available_to_write(ring_buffer) <
+  if (spsc_byte_ring_buffer_get_available_to_write(bb->byte_ring) <
       bytes_to_write) {
     logger_debug(
         &g_logger,
@@ -497,7 +500,7 @@ static bool backend_buffer_write(spsc_byte_ring_buffer_t *ring_buffer,
   uint8_t *s1 = NULL, *s2 = NULL;
   size_t l1 = 0, l2 = 0;
   size_t write_avail = spsc_byte_ring_buffer_get_write_slices(
-      ring_buffer, bytes_to_write, &s1, &l1, &s2, &l2);
+      bb->byte_ring, bytes_to_write, &s1, &l1, &s2, &l2);
   if (write_avail < bytes_to_write || !s1) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
@@ -505,21 +508,21 @@ static bool backend_buffer_write(spsc_byte_ring_buffer_t *ring_buffer,
     return false;
   }
 
-  if (l1 % blockalign == 0) {
-    size_t f1 = l1 / blockalign;
+  if (l1 % bb->blockalign == 0) {
+    size_t f1 = l1 / bb->blockalign;
     if (f1 > 0) {
-      if (!audio_chunk_encode_interleaved_offset(chunk, fmt, channels, f1, s1,
-                                                 0)) {
+      if (!audio_chunk_encode_interleaved_offset(chunk, bb->format,
+                                                 bb->channels, f1, s1, 0)) {
         if (err)
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                              "Failed to encode audio samples");
         return false;
       }
     }
-    size_t f2 = l2 / blockalign;
+    size_t f2 = l2 / bb->blockalign;
     if (f2 > 0 && s2) {
-      if (!audio_chunk_encode_interleaved_offset(chunk, fmt, channels, f2, s2,
-                                                 f1)) {
+      if (!audio_chunk_encode_interleaved_offset(chunk, bb->format,
+                                                 bb->channels, f2, s2, f1)) {
         if (err)
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                              "Failed to encode audio samples");
@@ -527,33 +530,33 @@ static bool backend_buffer_write(spsc_byte_ring_buffer_t *ring_buffer,
       }
     }
   } else {
-    size_t f1 = l1 / blockalign;
+    size_t f1 = l1 / bb->blockalign;
     if (f1 > 0) {
-      if (!audio_chunk_encode_interleaved_offset(chunk, fmt, channels, f1, s1,
-                                                 0)) {
+      if (!audio_chunk_encode_interleaved_offset(chunk, bb->format,
+                                                 bb->channels, f1, s1, 0)) {
         if (err)
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                              "Failed to encode audio samples");
         return false;
       }
     }
-    size_t rem_l1 = l1 % blockalign;
-    size_t rem_l2 = blockalign - rem_l1;
+    size_t rem_l1 = l1 % bb->blockalign;
+    size_t rem_l2 = bb->blockalign - rem_l1;
     uint8_t split_frame[256];
-    if (blockalign <= sizeof(split_frame) && s2 && l2 >= rem_l2) {
-      if (!audio_chunk_encode_interleaved_offset(chunk, fmt, channels, 1,
-                                                 split_frame, f1)) {
+    if (bb->blockalign <= sizeof(split_frame) && s2 && l2 >= rem_l2) {
+      if (!audio_chunk_encode_interleaved_offset(
+              chunk, bb->format, bb->channels, 1, split_frame, f1)) {
         if (err)
           backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                              "Failed to encode split audio frame");
         return false;
       }
-      memcpy(s1 + f1 * blockalign, split_frame, rem_l1);
+      memcpy(s1 + f1 * bb->blockalign, split_frame, rem_l1);
       memcpy(s2, split_frame + rem_l1, rem_l2);
-      size_t f2 = (l2 - rem_l2) / blockalign;
+      size_t f2 = (l2 - rem_l2) / bb->blockalign;
       if (f2 > 0) {
-        if (!audio_chunk_encode_interleaved_offset(chunk, fmt, channels, f2,
-                                                   s2 + rem_l2, f1 + 1)) {
+        if (!audio_chunk_encode_interleaved_offset(
+                chunk, bb->format, bb->channels, f2, s2 + rem_l2, f1 + 1)) {
           if (err)
             backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                                "Failed to encode audio samples");
@@ -563,38 +566,35 @@ static bool backend_buffer_write(spsc_byte_ring_buffer_t *ring_buffer,
     }
   }
 
-  spsc_byte_ring_buffer_advance_write(ring_buffer, bytes_to_write);
+  spsc_byte_ring_buffer_advance_write(bb->byte_ring, bytes_to_write);
   return true;
 }
 
-static bool backend_buffer_planar_read(
-    spsc_planar_ring_buffer_t *ring_buffer, size_t frames_requested,
-    binary_sample_format_t fmt, size_t channels, _Atomic bool *thread_running,
-    _Atomic bool *stopped, _Atomic bool *has_pending_rate_change,
-    audio_chunk_t *chunk, backend_error_t *err) {
-  if (!ring_buffer || !chunk || channels == 0 || frames_requested == 0) {
+static bool backend_buffer_planar_read(const backend_buffer_t *bb,
+                                       size_t frames_requested,
+                                       audio_chunk_t *chunk,
+                                       backend_error_t *err) {
+  if (!bb || !chunk || bb->channels == 0 || frames_requested == 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Invalid parameters");
     return false;
   }
 
-  if (has_pending_rate_change &&
-      atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+  if (atomic_load_explicit(&bb->has_pending_rate_change,
+                           memory_order_acquire)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
     return false;
   }
 
-  if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
-      (thread_running &&
-       !atomic_load_explicit(thread_running, memory_order_acquire))) {
+  if (backend_buffer_get_state(bb) == BACKEND_STREAM_STOPPED) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                          "Capture stream stopped");
     return false;
   }
 
-  if (audio_chunk_get_channels(chunk) < channels) {
+  if (audio_chunk_get_channels(chunk) < bb->channels) {
     if (err)
       backend_error_init(
           err, BACKEND_ERROR_INVALID_CHANNELS,
@@ -603,9 +603,9 @@ static bool backend_buffer_planar_read(
   }
 
   size_t available_frames =
-      spsc_planar_ring_buffer_get_available_to_read(ring_buffer);
+      spsc_planar_ring_buffer_get_available_to_read(bb->planar_ring);
   if (available_frames < frames_requested) {
-    if (stopped && atomic_load_explicit(stopped, memory_order_acquire)) {
+    if (backend_buffer_get_state(bb) == BACKEND_STREAM_STOPPED) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                            "Capture stream stopped");
@@ -618,7 +618,7 @@ static bool backend_buffer_planar_read(
 
   size_t offset = 0, l1 = 0, l2 = 0;
   size_t read_avail = spsc_planar_ring_buffer_get_read_indices(
-      ring_buffer, frames_requested, &offset, &l1, &l2);
+      bb->planar_ring, frames_requested, &offset, &l1, &l2);
   if (read_avail < frames_requested) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
@@ -626,7 +626,7 @@ static bool backend_buffer_planar_read(
     return false;
   }
 
-  size_t bps = sample_format_bytes_per_sample(fmt);
+  size_t bps = sample_format_bytes_per_sample(bb->format);
   if (bps == 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
@@ -634,9 +634,9 @@ static bool backend_buffer_planar_read(
     return false;
   }
 
-  for (size_t c = 0; c < channels; c++) {
+  for (size_t c = 0; c < bb->channels; c++) {
     const uint8_t *chan_storage =
-        spsc_planar_ring_buffer_get_channel_ptr(ring_buffer, c);
+        spsc_planar_ring_buffer_get_channel_ptr(bb->planar_ring, c);
     if (!chan_storage) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_READ_ERROR,
@@ -644,8 +644,8 @@ static bool backend_buffer_planar_read(
       return false;
     }
     if (l1 > 0) {
-      if (!audio_chunk_decode_channel(chan_storage + offset * bps, fmt, l1,
-                                      chunk, c, 0)) {
+      if (!audio_chunk_decode_channel(chan_storage + offset * bps, bb->format,
+                                      l1, chunk, c, 0)) {
         if (err)
           backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                              "Failed to decode captured planar audio data");
@@ -653,7 +653,8 @@ static bool backend_buffer_planar_read(
       }
     }
     if (l2 > 0) {
-      if (!audio_chunk_decode_channel(chan_storage, fmt, l2, chunk, c, l1)) {
+      if (!audio_chunk_decode_channel(chan_storage, bb->format, l2, chunk, c,
+                                      l1)) {
         if (err)
           backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                              "Failed to decode captured planar audio data");
@@ -662,44 +663,41 @@ static bool backend_buffer_planar_read(
     }
   }
 
-  spsc_planar_ring_buffer_advance_read(ring_buffer, frames_requested);
+  spsc_planar_ring_buffer_advance_read(bb->planar_ring, frames_requested);
   audio_chunk_set_valid_frames(chunk, frames_requested);
   return true;
 }
 
-static bool backend_buffer_planar_write(
-    spsc_planar_ring_buffer_t *ring_buffer, const audio_chunk_t *chunk,
-    binary_sample_format_t fmt, size_t channels, uint32_t sleep_ms,
-    uint32_t max_retries, _Atomic bool *thread_running, _Atomic bool *stopped,
-    _Atomic bool *is_paused, _Atomic bool *has_pending_rate_change,
-    backend_error_t *err) {
-  if (!ring_buffer || !chunk || channels == 0) {
+static bool backend_buffer_planar_write(const backend_buffer_t *bb,
+                                        const audio_chunk_t *chunk,
+                                        uint32_t sleep_ms, uint32_t max_retries,
+                                        backend_error_t *err) {
+  if (!bb || !chunk || bb->channels == 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, "Invalid parameters");
     return false;
   }
 
-  if (is_paused && atomic_load_explicit(is_paused, memory_order_acquire)) {
+  backend_stream_state_t state = backend_buffer_get_state(bb);
+  if (state == BACKEND_STREAM_PAUSED) {
     return true;
   }
 
-  if (has_pending_rate_change &&
-      atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+  if (atomic_load_explicit(&bb->has_pending_rate_change,
+                           memory_order_acquire)) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
     return false;
   }
 
-  if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
-      (thread_running &&
-       !atomic_load_explicit(thread_running, memory_order_acquire))) {
+  if (state == BACKEND_STREAM_STOPPED) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                          "Playback stream stopped");
     return false;
   }
 
-  if (audio_chunk_get_channels(chunk) < channels) {
+  if (audio_chunk_get_channels(chunk) < bb->channels) {
     if (err)
       backend_error_init(
           err, BACKEND_ERROR_INVALID_CHANNELS,
@@ -713,30 +711,31 @@ static bool backend_buffer_planar_write(
 
   uint32_t retries = (max_retries > 0) ? max_retries : 1;
   for (uint32_t retry = 0; retry < retries; retry++) {
-    if (spsc_planar_ring_buffer_get_available_to_write(ring_buffer) >= frames) {
+    if (spsc_planar_ring_buffer_get_available_to_write(bb->planar_ring) >=
+        frames) {
       break;
     }
-    if (has_pending_rate_change &&
-        atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+    if (atomic_load_explicit(&bb->has_pending_rate_change,
+                             memory_order_acquire)) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
       return false;
     }
-    if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
-        (thread_running &&
-         !atomic_load_explicit(thread_running, memory_order_acquire))) {
+    state = backend_buffer_get_state(bb);
+    if (state == BACKEND_STREAM_STOPPED) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                            "Playback stream stopped");
       return false;
     }
-    if (is_paused && atomic_load_explicit(is_paused, memory_order_acquire)) {
+    if (state == BACKEND_STREAM_PAUSED) {
       return true;
     }
     cdsp_sleep_ms(sleep_ms > 0 ? sleep_ms : 1);
   }
 
-  if (spsc_planar_ring_buffer_get_available_to_write(ring_buffer) < frames) {
+  if (spsc_planar_ring_buffer_get_available_to_write(bb->planar_ring) <
+      frames) {
     logger_debug(
         &g_logger,
         "Playback planar ring buffer is full after %u retries, dropped entire "
@@ -750,7 +749,7 @@ static bool backend_buffer_planar_write(
 
   size_t offset = 0, l1 = 0, l2 = 0;
   size_t write_avail = spsc_planar_ring_buffer_get_write_indices(
-      ring_buffer, frames, &offset, &l1, &l2);
+      bb->planar_ring, frames, &offset, &l1, &l2);
   if (write_avail < frames) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
@@ -758,17 +757,10 @@ static bool backend_buffer_planar_write(
     return false;
   }
 
-  size_t bps = sample_format_bytes_per_sample(fmt);
-  if (bps == 0) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Invalid sample format");
-    return false;
-  }
-
-  for (size_t c = 0; c < channels; c++) {
+  size_t bps = sample_format_bytes_per_sample(bb->format);
+  for (size_t c = 0; c < bb->channels; c++) {
     uint8_t *chan_storage =
-        spsc_planar_ring_buffer_get_channel_ptr(ring_buffer, c);
+        spsc_planar_ring_buffer_get_channel_ptr(bb->planar_ring, c);
     if (!chan_storage) {
       if (err)
         backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
@@ -776,7 +768,7 @@ static bool backend_buffer_planar_write(
       return false;
     }
     if (l1 > 0) {
-      if (!audio_chunk_encode_channel(chunk, fmt, l1,
+      if (!audio_chunk_encode_channel(chunk, bb->format, l1,
                                       chan_storage + offset * bps, c, 0)) {
         if (err)
           backend_error_init(
@@ -786,7 +778,8 @@ static bool backend_buffer_planar_write(
       }
     }
     if (l2 > 0) {
-      if (!audio_chunk_encode_channel(chunk, fmt, l2, chan_storage, c, l1)) {
+      if (!audio_chunk_encode_channel(chunk, bb->format, l2, chan_storage, c,
+                                      l1)) {
         if (err)
           backend_error_init(
               err, BACKEND_ERROR_WRITE_ERROR,
@@ -796,7 +789,7 @@ static bool backend_buffer_planar_write(
     }
   }
 
-  spsc_planar_ring_buffer_advance_write(ring_buffer, frames);
+  spsc_planar_ring_buffer_advance_write(bb->planar_ring, frames);
   return true;
 }
 
@@ -811,15 +804,9 @@ bool backend_buffer_write_chunk(backend_buffer_t *bb,
     return false;
   }
   if (bb->type == BACKEND_BUFFER_PLANAR) {
-    return backend_buffer_planar_write(
-        bb->planar_ring, chunk, bb->format, bb->channels, sleep_ms, max_retries,
-        bb->thread_running, bb->stopped, bb->is_paused,
-        bb->has_pending_rate_change, err);
+    return backend_buffer_planar_write(bb, chunk, sleep_ms, max_retries, err);
   } else {
-    return backend_buffer_write(bb->byte_ring, bb->blockalign, chunk,
-                                bb->format, bb->channels, sleep_ms, max_retries,
-                                bb->thread_running, bb->stopped, bb->is_paused,
-                                bb->has_pending_rate_change, err);
+    return backend_buffer_write(bb, chunk, sleep_ms, max_retries, err);
   }
 }
 
@@ -831,15 +818,9 @@ bool backend_buffer_read_chunk(backend_buffer_t *bb, size_t frames_requested,
     return false;
   }
   if (bb->type == BACKEND_BUFFER_PLANAR) {
-    return backend_buffer_planar_read(bb->planar_ring, frames_requested,
-                                      bb->format, bb->channels,
-                                      bb->thread_running, bb->stopped,
-                                      bb->has_pending_rate_change, chunk, err);
+    return backend_buffer_planar_read(bb, frames_requested, chunk, err);
   } else {
-    return backend_buffer_read(bb->byte_ring, bb->blockalign, frames_requested,
-                               bb->format, bb->channels, bb->thread_running,
-                               bb->stopped, bb->has_pending_rate_change, chunk,
-                               err);
+    return backend_buffer_read(bb, frames_requested, chunk, err);
   }
 }
 
@@ -869,6 +850,22 @@ size_t backend_buffer_render(backend_buffer_t *bb, void *dst, size_t frames,
                              uint8_t silence_byte) {
   if (!bb || !dst || frames == 0)
     return 0;
+
+  if (backend_buffer_get_state(bb) == BACKEND_STREAM_PAUSED) {
+    if (bb->type == BACKEND_BUFFER_PLANAR) {
+      void *const *dst_channels = (void *const *)dst;
+      size_t byte_len = frames * bb->bytes_per_sample;
+      for (size_t c = 0; c < bb->channels; c++) {
+        if (dst_channels[c]) {
+          memset(dst_channels[c], silence_byte, byte_len);
+        }
+      }
+    } else {
+      memset(dst, silence_byte, frames * bb->blockalign);
+    }
+    return 0;
+  }
+
   if (bb->type == BACKEND_BUFFER_PLANAR) {
     return backend_buffer_render_planar(bb, bb->planar_ring, (void *const *)dst,
                                         frames, silence_byte);

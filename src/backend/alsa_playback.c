@@ -40,7 +40,6 @@ struct alsa_playback {
   snd_pcm_t *pcm;
   snd_pcm_format_t format;
   bool can_pause;
-  _Atomic bool paused;
   bool currently_paused;
   bool device_stalled;
 
@@ -53,7 +52,6 @@ struct alsa_playback {
   snd_mixer_t *mixer;
   snd_mixer_elem_t *pitch_elem;
   pthread_mutex_t mixer_mutex;
-  _Atomic bool stopped;
 
   double pending_rate;
   bool has_pending_rate;
@@ -61,7 +59,6 @@ struct alsa_playback {
   backend_buffer_t *buffer;
   pthread_t inner_thread;
   bool inner_thread_created;
-  _Atomic bool inner_running;
   _Atomic bool draining;
 };
 
@@ -84,8 +81,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
   uint8_t *local_buf = (uint8_t *)malloc(local_buf_bytes);
   if (!local_buf) {
     logger_error(&g_logger, "Failed to allocate ALSA playback write buffer");
-    atomic_store_explicit(&playback->inner_running, false,
-                          memory_order_release);
+    backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
     if (rt_handle) {
       demote_current_thread_from_realtime(rt_handle);
     }
@@ -93,8 +89,8 @@ static void *alsa_playback_inner_thread_func(void *arg) {
   }
   bool playback_interrupted = false;
 
-  while (!atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
-    if (atomic_load_explicit(&playback->paused, memory_order_acquire)) {
+  while (backend_buffer_get_state(playback->buffer) != BACKEND_STREAM_STOPPED) {
+    if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED) {
       if (playback->can_pause && !playback->currently_paused) {
         snd_pcm_pause(playback->pcm, 1);
         playback->currently_paused = true;
@@ -187,7 +183,8 @@ static void *alsa_playback_inner_thread_func(void *arg) {
       const int max_no_progress = 100;
       int no_progress = 0;
       while (remainder_frames > 0) {
-        if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
+        if (backend_buffer_get_state(playback->buffer) ==
+            BACKEND_STREAM_STOPPED) {
           break;
         }
 
@@ -408,7 +405,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
     }
   }
 
-  atomic_store_explicit(&playback->inner_running, false, memory_order_release);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
   if (local_buf)
     free(local_buf);
   if (rt_handle) {
@@ -489,7 +486,6 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
     memset(playback->zero_stall_buf, 0x69, playback->zero_stall_buf_size);
   }
 
-  playback->paused = false;
   playback->currently_paused = false;
   playback->device_stalled = false;
   atomic_store_explicit(&playback->draining, false, memory_order_relaxed);
@@ -550,14 +546,11 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
     }
     goto error_cleanup;
   }
-  backend_buffer_set_control_flags(playback->buffer, &playback->inner_running,
-                                   &playback->stopped, &playback->paused, NULL);
   backend_buffer_set_target_level(playback->buffer, playback->target_level);
-  atomic_store_explicit(&playback->inner_running, true, memory_order_release);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
   if (pthread_create(&playback->inner_thread, NULL,
                      alsa_playback_inner_thread_func, playback) != 0) {
-    atomic_store_explicit(&playback->inner_running, false,
-                          memory_order_release);
+    backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
     if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to spawn ALSA playback inner thread");
@@ -570,10 +563,8 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
   return true;
 
 error_cleanup:
-  if (playback->buffer) {
-    backend_buffer_free(playback->buffer);
-    playback->buffer = NULL;
-  }
+  backend_buffer_free(playback->buffer);
+  playback->buffer = NULL;
   if (playback->pcm) {
     snd_pcm_close(playback->pcm);
     playback->pcm = NULL;
@@ -594,7 +585,7 @@ static bool alsa_playback_write(void *ctx, const audio_chunk_t *chunk,
   if (!playback || !playback->pcm)
     return false;
 
-  if (atomic_load_explicit(&playback->stopped, memory_order_acquire)) {
+  if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_STOPPED) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_NONE, "Playback stopped");
     }
@@ -623,21 +614,17 @@ static void alsa_playback_close(void *ctx) {
   if (!playback)
     return;
 
-  atomic_store_explicit(&playback->stopped, true, memory_order_release);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
 
   if (playback->inner_thread_created) {
     pthread_join(playback->inner_thread, NULL);
     playback->inner_thread_created = false;
-    atomic_store_explicit(&playback->inner_running, false,
-                          memory_order_release);
-    if (playback->buffer) {
-      backend_buffer_free(playback->buffer);
-      playback->buffer = NULL;
-    }
+    backend_buffer_free(playback->buffer);
+    playback->buffer = NULL;
   }
 
   if (playback->pcm) {
-    if (!atomic_load_explicit(&playback->paused, memory_order_acquire)) {
+    if (backend_buffer_get_state(playback->buffer) != BACKEND_STREAM_PAUSED) {
       snd_pcm_drain(playback->pcm);
     }
   }
@@ -675,7 +662,7 @@ static void alsa_playback_close(void *ctx) {
 // (src/alsa_backend/threaded_device.rs:1197-1205).
 static size_t alsa_playback_get_buffer_level(void *ctx) {
   alsa_playback_t *playback = (alsa_playback_t *)ctx;
-  if (!playback || !playback->buffer)
+  if (!playback)
     return 0;
   return backend_buffer_get_level(playback->buffer);
 }
@@ -699,7 +686,7 @@ static bool alsa_playback_prefill_silence(void *ctx, size_t frames,
                                           backend_error_t *err) {
   (void)err;
   alsa_playback_t *playback = (alsa_playback_t *)ctx;
-  if (!playback || frames == 0 || !playback->buffer)
+  if (!playback || frames == 0)
     return true;
 
   uint8_t silence_byte = alsa_is_dsd_format(playback->format) ? 0x69 : 0x00;
@@ -711,14 +698,15 @@ static bool alsa_playback_get_is_paused(void *ctx) {
   alsa_playback_t *playback = (alsa_playback_t *)ctx;
   if (!playback)
     return false;
-  return atomic_load_explicit(&playback->paused, memory_order_acquire);
+  return backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED;
 }
 
 static void alsa_playback_set_is_paused(void *ctx, bool paused) {
   alsa_playback_t *playback = (alsa_playback_t *)ctx;
   if (!playback)
     return;
-  atomic_store_explicit(&playback->paused, paused, memory_order_release);
+  backend_buffer_set_state(playback->buffer, paused ? BACKEND_STREAM_PAUSED
+                                                    : BACKEND_STREAM_RUNNING);
 }
 
 static bool alsa_playback_pitch_control_supported(void *ctx) {
@@ -763,7 +751,7 @@ static void alsa_playback_stop(void *ctx) {
   alsa_playback_t *playback = (alsa_playback_t *)ctx;
   if (!playback)
     return;
-  atomic_store_explicit(&playback->stopped, true, memory_order_release);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
   pthread_mutex_lock(&g_alsa_mutex);
   if (playback->pcm) {
     snd_pcm_drop(playback->pcm);
@@ -810,7 +798,6 @@ alsa_playback_create(const playback_device_config_t *config, int sample_rate,
   playback->has_format = config->cfg.alsa.has_format;
   playback->requested_format = config->cfg.alsa.format;
   playback->params = params;
-  atomic_init(&playback->paused, false);
   playback->currently_paused = false;
   pthread_mutex_init(&playback->mixer_mutex, NULL);
 

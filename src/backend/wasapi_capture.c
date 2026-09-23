@@ -64,9 +64,6 @@ struct wasapi_capture {
 
   pthread_t inner_thread;
   bool inner_thread_created;
-  _Atomic bool thread_running;
-  _Atomic bool stopped;
-  _Atomic bool paused;
   double pending_rate;
   _Atomic bool has_pending_rate_change;
   backend_buffer_t *buffer;
@@ -164,8 +161,7 @@ static void *wasapi_capture_loop(void *arg) {
     logger_error(&g_wasapi_logger,
                  "Capture failed to allocate %zu byte transfer buffer",
                  data_buf_size);
-    atomic_store_explicit(&capture->thread_running, false,
-                          memory_order_release);
+    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     if (capture->semaphore) {
       cdsp_sem_signal(capture->semaphore);
     }
@@ -202,8 +198,7 @@ static void *wasapi_capture_loop(void *arg) {
   if (FAILED(hr)) {
     logger_error(&g_wasapi_logger, "Capture start stream failed: hr=0x%08lX",
                  (unsigned long)hr);
-    atomic_store_explicit(&capture->thread_running, false,
-                          memory_order_release);
+    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     if (capture->semaphore) {
       cdsp_sem_signal(capture->semaphore);
     }
@@ -215,13 +210,8 @@ static void *wasapi_capture_loop(void *arg) {
   }
   logger_trace(&g_wasapi_logger, "Started capture stream.");
 
-  while (atomic_load_explicit(&capture->thread_running, memory_order_acquire) &&
-         !atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
+  while (backend_buffer_get_state(capture->buffer) != BACKEND_STREAM_STOPPED) {
     logger_trace(&g_wasapi_logger, "Capturing.");
-    if (atomic_load_explicit(&capture->stopped, memory_order_acquire)) {
-      logger_debug(&g_wasapi_logger, "Stopping inner capture loop on request.");
-      break;
-    }
     if (atomic_load_explicit(&capture->has_pending_rate_change,
                              memory_order_acquire)) {
       logger_debug(&g_wasapi_logger,
@@ -231,9 +221,7 @@ static void *wasapi_capture_loop(void *arg) {
 
     if (capture->event_handle) {
       DWORD wait_res = WaitForSingleObject(capture->event_handle, 250);
-      if (atomic_load_explicit(&capture->stopped, memory_order_acquire) ||
-          !atomic_load_explicit(&capture->thread_running,
-                                memory_order_acquire)) {
+      if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED) {
         logger_debug(&g_wasapi_logger,
                      "Stopping inner capture loop on request.");
         break;
@@ -249,9 +237,7 @@ static void *wasapi_capture_loop(void *arg) {
       }
     } else {
       cdsp_sleep_us(poll_delay_us);
-      if (atomic_load_explicit(&capture->stopped, memory_order_acquire) ||
-          !atomic_load_explicit(&capture->thread_running,
-                                memory_order_acquire)) {
+      if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED) {
         logger_debug(&g_wasapi_logger,
                      "Stopping inner capture loop on request.");
         break;
@@ -373,7 +359,7 @@ static void *wasapi_capture_loop(void *arg) {
     }
   }
 
-  atomic_store_explicit(&capture->thread_running, false, memory_order_release);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   if (capture->semaphore) {
     cdsp_sem_signal(capture->semaphore);
   }
@@ -395,8 +381,6 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
 
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   capture->com_initialized = SUCCEEDED(init_hr);
-  atomic_init(&capture->stopped, false);
-  atomic_init(&capture->paused, false);
   atomic_init(&capture->has_pending_rate_change, false);
 
   if (!wasapi_create_device_and_client(
@@ -469,9 +453,7 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
                          "Failed to allocate capture buffer");
     goto error_cleanup;
   }
-  backend_buffer_set_control_flags(capture->buffer, &capture->thread_running,
-                                   &capture->stopped, NULL,
-                                   &capture->has_pending_rate_change);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
 
   capture->semaphore = cdsp_sem_create();
   if (!capture->semaphore) {
@@ -481,11 +463,9 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
 
-  atomic_store_explicit(&capture->thread_running, true, memory_order_release);
   if (pthread_create(&capture->inner_thread, NULL, wasapi_capture_loop,
                      capture) != 0) {
-    atomic_store_explicit(&capture->thread_running, false,
-                          memory_order_release);
+    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to create inner capture thread");
@@ -496,10 +476,8 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
   return true;
 
 error_cleanup:
-  if (capture->buffer) {
-    backend_buffer_free(capture->buffer);
-    capture->buffer = NULL;
-  }
+  backend_buffer_free(capture->buffer);
+  capture->buffer = NULL;
   if (capture->semaphore) {
     cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
@@ -528,9 +506,7 @@ static void wasapi_capture_close(void *ctx) {
     return;
 
   if (capture->inner_thread_created) {
-    atomic_store_explicit(&capture->stopped, true, memory_order_release);
-    atomic_store_explicit(&capture->thread_running, false,
-                          memory_order_release);
+    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     if (capture->event_handle)
       SetEvent(capture->event_handle);
     if (capture->semaphore)
@@ -539,10 +515,8 @@ static void wasapi_capture_close(void *ctx) {
     capture->inner_thread_created = false;
   }
 
-  if (capture->buffer) {
-    backend_buffer_free(capture->buffer);
-    capture->buffer = NULL;
-  }
+  backend_buffer_free(capture->buffer);
+  capture->buffer = NULL;
   if (capture->semaphore) {
     cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
@@ -578,24 +552,16 @@ static bool wasapi_capture_wait(void *ctx, uint32_t timeout_ms) {
   wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
   if (!capture || !capture->semaphore)
     return false;
-  if (atomic_load_explicit(&capture->stopped, memory_order_acquire))
+  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED)
     return false;
   return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
-}
-
-static void wasapi_capture_set_is_paused(void *ctx, bool paused) {
-  wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
-  if (!capture)
-    return;
-  atomic_store_explicit(&capture->paused, paused, memory_order_release);
 }
 
 static void wasapi_capture_stop(void *ctx) {
   wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
   if (!capture)
     return;
-  atomic_store_explicit(&capture->stopped, true, memory_order_release);
-  atomic_store_explicit(&capture->thread_running, false, memory_order_release);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   if (capture->event_handle) {
     SetEvent(capture->event_handle);
   }
@@ -661,7 +627,6 @@ const capture_backend_vtable_t g_wasapi_capture_vtable = {
     .is_pitch_control_supported = wasapi_capture_pitch_control_supported,
     .set_pitch = wasapi_capture_set_pitch,
     .wait_for_data = wasapi_capture_wait,
-    .set_is_paused = wasapi_capture_set_is_paused,
     .stop = wasapi_capture_stop,
     .destroy = wasapi_capture_destroy};
 

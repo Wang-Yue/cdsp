@@ -473,14 +473,6 @@ typedef struct {
   bool (*wait_for_data)(void *ctx, uint32_t timeout_ms);
 
   /**
-   * @brief Notify the capture backend of the paused state of the processing
-   * loop.
-   * @param ctx Pointer to the backend instance context.
-   * @param paused true if the loop is paused, false otherwise.
-   */
-  void (*set_is_paused)(void *ctx, bool paused);
-
-  /**
    * @brief Stop the capture device immediately.
    * @param ctx Pointer to the backend instance context.
    */
@@ -727,13 +719,6 @@ void capture_backend_set_pitch(capture_backend_t *backend, double multiplier);
  * @return true if data is available, false on timeout.
  */
 bool capture_backend_wait(capture_backend_t *backend, uint32_t timeout_ms);
-
-/**
- * @brief Notify the capture backend of paused state via wrapper.
- * @param backend Pointer to the capture backend.
- * @param paused true if paused.
- */
-void capture_backend_set_is_paused(capture_backend_t *backend, bool paused);
 
 /**
  * @brief Stop the capture device via wrapper.

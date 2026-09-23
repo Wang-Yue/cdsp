@@ -415,8 +415,6 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t *loop,
   processing_state_t current = engine_shared_state_get_state(loop->shared);
   if (desired != current) {
     engine_shared_state_set_state(loop->shared, desired);
-    capture_backend_set_is_paused(loop->capture,
-                                  (desired == PROCESSING_STATE_PAUSED));
     if (desired == PROCESSING_STATE_PAUSED && loop->processing_params) {
       processing_parameters_bump_pause_count(loop->processing_params);
     }

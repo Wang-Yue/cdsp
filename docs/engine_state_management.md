@@ -326,9 +326,9 @@ sequenceDiagram
    - The capture loop monitors the peak levels of each chunk across all capture backends (real-time hardware/live streams and non-realtime File/Generator streams).
    - If the level stays below the threshold for longer than the timeout, the silence counter updates and triggers a state transition to `PROCESSING_STATE_PAUSED`.
 2. **Auto-Pause Transition**:
-   - The capture thread updates the state to `PROCESSING_STATE_PAUSED` and pauses its own capture backend via `capture_backend_set_is_paused(loop->capture, true)`.
+   - The capture thread updates the state to `PROCESSING_STATE_PAUSED`.
    - The playback thread observes `PROCESSING_STATE_PAUSED` on its next iteration (or upon receiving 0-frame control ticks) and pauses its own playback backend via `playback_backend_set_is_paused(loop->playback, true)`.
-   - (Note: playback backends suspend DAC rendering or file output; capture backends continue reading frames so the capture loop can continuously evaluate peak levels for auto-resume. Real-time hardware/simulated backends yield CPU with a sleep during `is_paused` to match hardware sample-rate pacing, while non-realtime File/Generator backends proceed with 0ms sleep to evaluate levels at maximum disk/CPU throughput without blocking).
+   - (Note: playback backends suspend DAC rendering or file output; the capture backend continues reading frames so the capture loop can continuously evaluate peak levels for auto-resume).
    - **Pause Counter Increment**: When entering `PROCESSING_STATE_PAUSED` or when audio flow is interrupted, the capture thread calls `processing_parameters_bump_pause_count()`. Volume filters (`VolumeFilter`) compare this atomic counter against their `last_pause_count`. Any volume or mute changes made while paused are applied directly on resume without ramping (avoiding stale volume level fade-ins), while changes made while audio is actively flowing continue to ramp smoothly.
    - The capture thread stops pushing active audio chunks to `captured_queue`.
    - **Periodic 0-Frame Ticks & Buffer Retention**: To prevent configuration hot-reloads (pipeline swaps) or parameter updates (volume/mute) from being delayed indefinitely during silence, the capture thread periodically enqueues empty chunks (`valid_frames == 0`) downstream every 200ms. While in `PAUSED` state, read chunks are retained in `loop->pending_chunk` rather than repeatedly requesting fresh chunks from `round_robin_chunk_pool_next()`. This guarantees that the pre-allocated round-robin chunk pool does not advance and wrap around, protecting in-flight queued buffers from concurrent data race overwrites.
@@ -336,7 +336,7 @@ sequenceDiagram
    - The playback thread blocks on `processed_queue` and drops 0-frame chunks immediately to bypass hardware writes and rate controllers.
 3. **Signal Auto-Resume**:
    - When a loud chunk is read (above the threshold), the silence counter resets.
-   - The capture thread sets the state back to `PROCESSING_STATE_RUNNING` and sets `capture_backend_set_is_paused(loop->capture, false)`.
+   - The capture thread sets the state back to `PROCESSING_STATE_RUNNING`.
    - Active audio chunk pushing resumes, waking up downstream threads.
    - The playback thread observes the transition to unpaused, sets `playback_backend_set_is_paused(loop->playback, false)`, and resumes writing audio chunks to the DAC.
    - **Rate Controller Reset on Resume**: Upon detecting the transition from paused to unpaused, the playback thread resets both the PI rate controller `stopwatch` timer and sample `averager` (`stopwatch_restart` and `averager_restart`). This prevents wall-clock time accumulated during silence from triggering an immediate rate adjustment with stale pre-pause samples, eliminating resampler ratio and pitch speed glitches upon auto-resuming.

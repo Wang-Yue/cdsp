@@ -2214,9 +2214,6 @@ struct asio_playback {
   backend_buffer_t *buffer;
 
   asio_playback_context_t *context;
-  _Atomic bool is_running;
-  _Atomic bool stopped;
-  _Atomic bool paused;
   bool com_initialized;
 };
 
@@ -2224,6 +2221,8 @@ static void asio_playback_close(void *ctx) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
   if (!playback)
     return;
+
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
 
   logger_debug(&g_logger, "Stopping ASIO playback.");
   if (playback->full_duplex) {
@@ -2256,10 +2255,8 @@ static void asio_playback_close(void *ctx) {
     playback->buffer_infos = NULL;
   }
 
-  if (playback->buffer) {
-    backend_buffer_free(playback->buffer);
-    playback->buffer = NULL;
-  }
+  backend_buffer_free(playback->buffer);
+  playback->buffer = NULL;
 }
 
 /**
@@ -2372,9 +2369,7 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
 
-  backend_buffer_set_control_flags(playback->buffer, &playback->is_running,
-                                   &playback->stopped, &playback->paused,
-                                   &ASIO_PLAYBACK_RATE_CHANGED);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
   backend_buffer_set_target_level(playback->buffer, target_level);
 
   playback->context->buffer = playback->buffer;
@@ -2445,7 +2440,7 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
                got_callback);
   logger_debug(&g_logger, "Playback device starts now!");
 
-  atomic_store_explicit(&playback->is_running, true, memory_order_release);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
   return true;
 
 error_cleanup:
@@ -2467,7 +2462,7 @@ static bool asio_playback_write(void *ctx, const audio_chunk_t *chunk,
   if (take_playback_reset_request()) {
     logger_warn(&g_logger,
                 "The ASIO driver requested a reset of the playback stream.");
-    atomic_store_explicit(&playback->stopped, true, memory_order_release);
+    backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
     if (err) {
       backend_error_init(
           err, BACKEND_ERROR_WRITE_ERROR,
@@ -2488,7 +2483,7 @@ static bool asio_playback_write(void *ctx, const audio_chunk_t *chunk,
 
 static size_t asio_playback_get_buffer_level(void *ctx) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
-  if (!playback || !playback->buffer)
+  if (!playback)
     return 0;
   return backend_buffer_get_level(playback->buffer);
 }
@@ -2511,7 +2506,7 @@ static bool asio_playback_prefill_silence(void *ctx, size_t frames,
                                           backend_error_t *err) {
   (void)err;
   asio_playback_t *playback = (asio_playback_t *)ctx;
-  if (!playback || !playback->buffer)
+  if (!playback)
     return false;
   playback->target_level = (int)frames;
   backend_buffer_set_target_level(playback->buffer, frames);
@@ -2525,21 +2520,22 @@ static void asio_playback_stop(void *ctx) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
   if (!playback)
     return;
-  atomic_store_explicit(&playback->stopped, true, memory_order_release);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
 }
 
 static bool asio_playback_get_is_paused(void *ctx) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
   if (!playback)
     return false;
-  return atomic_load_explicit(&playback->paused, memory_order_acquire);
+  return backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED;
 }
 
 static void asio_playback_set_is_paused(void *ctx, bool paused) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
   if (!playback)
     return;
-  atomic_store_explicit(&playback->paused, paused, memory_order_release);
+  backend_buffer_set_state(playback->buffer, paused ? BACKEND_STREAM_PAUSED
+                                                    : BACKEND_STREAM_RUNNING);
 }
 
 static void asio_playback_destroy(void *ctx) {
@@ -2570,10 +2566,6 @@ asio_playback_create(const playback_device_config_t *config, int sample_rate,
   playback->format = config->cfg.asio.format;
   playback->has_format = config->cfg.asio.has_format;
   playback->full_duplex = full_duplex;
-
-  atomic_init(&playback->is_running, false);
-  atomic_init(&playback->stopped, false);
-  atomic_init(&playback->paused, false);
 
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
@@ -2627,8 +2619,6 @@ struct asio_capture {
   cdsp_sem_t semaphore;
 
   asio_capture_context_t *context;
-  _Atomic bool is_running;
-  _Atomic bool stopped;
   bool com_initialized;
 };
 
@@ -2636,6 +2626,8 @@ static void asio_capture_close(void *ctx) {
   asio_capture_t *capture = (asio_capture_t *)ctx;
   if (!capture)
     return;
+
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
 
   // Close the gate first, so callbacks arriving during teardown do no work.
   // Matches device.rs:CAPTURE_STREAM_ACTIVE.
@@ -2677,10 +2669,8 @@ static void asio_capture_close(void *ctx) {
     cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
   }
-  if (capture->buffer) {
-    backend_buffer_free(capture->buffer);
-    capture->buffer = NULL;
-  }
+  backend_buffer_free(capture->buffer);
+  capture->buffer = NULL;
 }
 
 /**
@@ -2791,9 +2781,7 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
 
-  backend_buffer_set_control_flags(capture->buffer, &capture->is_running,
-                                   &capture->stopped, NULL,
-                                   &ASIO_CAPTURE_RATE_CHANGED);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
 
   if (capture->full_duplex) {
     atomic_store_explicit(&CAPTURE_CONTEXT, capture->context,
@@ -2861,7 +2849,7 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
   logger_debug(&g_logger, "Capture device ready and waiting.");
   logger_debug(&g_logger, "Capture device starts now!");
 
-  atomic_store_explicit(&capture->is_running, true, memory_order_release);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
   return true;
 
 error_cleanup:
@@ -2883,7 +2871,7 @@ static bool asio_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   if (take_capture_reset_request()) {
     logger_warn(&g_logger,
                 "The ASIO driver requested a reset of the capture stream.");
-    atomic_store_explicit(&capture->stopped, true, memory_order_release);
+    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     if (err) {
       backend_error_init(
           err, BACKEND_ERROR_READ_ERROR,
@@ -2899,7 +2887,7 @@ static bool asio_capture_wait_for_data(void *ctx, uint32_t timeout_ms) {
   asio_capture_t *capture = (asio_capture_t *)ctx;
   if (!capture || !capture->semaphore)
     return false;
-  if (atomic_load_explicit(&capture->stopped, memory_order_acquire))
+  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED)
     return false;
   return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
@@ -2922,7 +2910,7 @@ static void asio_capture_stop(void *ctx) {
   asio_capture_t *capture = (asio_capture_t *)ctx;
   if (!capture)
     return;
-  atomic_store_explicit(&capture->stopped, true, memory_order_release);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   if (capture->semaphore) {
     cdsp_sem_signal(capture->semaphore);
   }
@@ -2956,9 +2944,6 @@ asio_capture_create(const capture_device_config_t *config, int sample_rate,
   capture->has_format = config->cfg.asio.has_format;
   capture->full_duplex = full_duplex;
 
-  atomic_init(&capture->is_running, false);
-  atomic_init(&capture->stopped, false);
-
   capture_backend_t *backend =
       (capture_backend_t *)calloc(1, sizeof(capture_backend_t));
   if (!backend) {
@@ -2971,13 +2956,6 @@ asio_capture_create(const capture_device_config_t *config, int sample_rate,
   return backend;
 }
 
-static void asio_capture_set_is_paused(void *ctx, bool paused) {
-  asio_capture_t *capture = (asio_capture_t *)ctx;
-  if (!capture)
-    return;
-  (void)paused;
-}
-
 const capture_backend_vtable_t g_asio_capture_vtable = {
     .create = asio_capture_create,
     .open = asio_capture_open,
@@ -2987,7 +2965,6 @@ const capture_backend_vtable_t g_asio_capture_vtable = {
     .is_pitch_control_supported = NULL,
     .set_pitch = NULL,
     .wait_for_data = asio_capture_wait_for_data,
-    .set_is_paused = asio_capture_set_is_paused,
     .stop = asio_capture_stop,
     .destroy = asio_capture_destroy,
 };

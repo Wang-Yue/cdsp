@@ -46,20 +46,50 @@ backend_buffer_t *backend_buffer_create(size_t capacity_frames,
  */
 void backend_buffer_free(backend_buffer_t *bb);
 
+/* --- Stream Lifecycle & State Control --- */
+
 /**
- * @brief Sets pointers to atomic control flags for thread and state monitoring.
+ * @brief Stream lifecycle states for audio backends.
+ */
+typedef enum backend_stream_state {
+  BACKEND_STREAM_IDLE = 0, /**< Initialized / ready, not yet started */
+  BACKEND_STREAM_RUNNING,  /**< Actively processing / streaming audio */
+  BACKEND_STREAM_PAUSED,   /**< Stream active, but paused (silence / idling) */
+  BACKEND_STREAM_STOPPED,  /**< Stopped; stream terminated or teardown */
+} backend_stream_state_t;
+
+/**
+ * @brief Gets the current stream lifecycle state.
  *
  * @param bb Pointer to backend buffer.
- * @param thread_running Optional pointer to atomic thread_running flag.
- * @param stopped Optional pointer to atomic stopped flag.
- * @param is_paused Optional pointer to atomic paused flag.
- * @param has_pending_rate_change Optional pointer to atomic rate change flag.
+ * @return Current backend_stream_state_t.
  */
-void backend_buffer_set_control_flags(backend_buffer_t *bb,
-                                      _Atomic bool *thread_running,
-                                      _Atomic bool *stopped,
-                                      _Atomic bool *is_paused,
-                                      _Atomic bool *has_pending_rate_change);
+backend_stream_state_t backend_buffer_get_state(const backend_buffer_t *bb);
+
+/**
+ * @brief Atomically sets the stream lifecycle state.
+ *
+ * @param bb Pointer to backend buffer.
+ * @param state Target backend_stream_state_t.
+ */
+void backend_buffer_set_state(backend_buffer_t *bb,
+                              backend_stream_state_t state);
+
+/**
+ * @brief Checks if a format or sample rate change is pending.
+ *
+ * @param bb Pointer to backend buffer.
+ * @return True if a rate/format change is pending.
+ */
+bool backend_buffer_has_pending_rate_change(const backend_buffer_t *bb);
+
+/**
+ * @brief Sets the pending rate/format change status.
+ *
+ * @param bb Pointer to backend buffer.
+ * @param pending True if a rate/format change is pending.
+ */
+void backend_buffer_set_pending_rate_change(backend_buffer_t *bb, bool pending);
 
 /* --- Engine Chunk Transfer (Unified Planar & Interleaved) --- */
 

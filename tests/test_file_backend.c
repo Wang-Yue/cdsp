@@ -248,10 +248,10 @@ TEST(FileBackendWavRoundTrip) {
   remove(wav_filename);
 }
 
-TEST(FileBackendPauseThrottling) {
+TEST(FileBackendSequentialRead) {
   char raw_filename[256];
   snprintf(raw_filename, sizeof(raw_filename),
-           "/tmp/test_file_backend_pause_%d.raw", getpid());
+           "/tmp/test_file_backend_seq_%d.raw", getpid());
   remove(raw_filename);
 
   // 1. Write 200 frames to temp file
@@ -311,14 +311,15 @@ TEST(FileBackendPauseThrottling) {
                 1e-6);
   }
 
-  // 4. Set capture paused flag and verify read continues returning frames for
-  // metering/auto-resume
-  capture_backend_set_is_paused(capture, true);
+  // 4. Read next 50 frames (should be frames 50..99)
   ASSERT_TRUE(capture_backend_read(capture, 50, read_chunk, &err));
   ASSERT_EQ(50, audio_chunk_get_valid_frames(read_chunk));
+  for (size_t f = 0; f < 50; f++) {
+    ASSERT_NEAR((double)(f + 50) / 200.0,
+                audio_chunk_get_channel(read_chunk, 0)[f], 1e-6);
+  }
 
-  // 5. Unpause capture and read next 50 frames (should be frames 100..149)
-  capture_backend_set_is_paused(capture, false);
+  // 5. Read next 50 frames (should be frames 100..149)
   ASSERT_TRUE(capture_backend_read(capture, 50, read_chunk, &err));
   ASSERT_EQ(50, audio_chunk_get_valid_frames(read_chunk));
   for (size_t f = 0; f < 50; f++) {

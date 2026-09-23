@@ -68,7 +68,6 @@ struct pipewire_capture {
   backend_buffer_t *buffer;
   size_t blockalign;
   cdsp_sem_t semaphore;
-  bool stopped;
 
   double pending_rate;
   bool has_pending_rate;
@@ -95,8 +94,6 @@ struct pipewire_playback {
   struct pw_stream *stream;
 
   backend_buffer_t *buffer;
-  _Atomic bool paused;
-  bool stopped;
 
   double pending_rate;
   bool has_pending_rate;
@@ -212,11 +209,7 @@ static void on_playback_process(void *data) {
             : requested_bytes;
     callback_bytes -= (callback_bytes % stride);
 
-    if (atomic_load_explicit(&p->paused, memory_order_acquire)) {
-      memset(dst, 0, callback_bytes);
-    } else {
-      backend_buffer_render(p->buffer, dst, callback_bytes / stride, 0x00);
-    }
+    backend_buffer_render(p->buffer, dst, callback_bytes / stride, 0x00);
 
     buf->datas[0].chunk->offset = 0;
     buf->datas[0].chunk->size = (uint32_t)callback_bytes;
@@ -291,10 +284,9 @@ static void pipewire_capture_close(void *ctx) {
     capture->loop = NULL;
   }
 
-  if (capture->buffer) {
-    backend_buffer_free(capture->buffer);
-    capture->buffer = NULL;
-  }
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
+  backend_buffer_free(capture->buffer);
+  capture->buffer = NULL;
 
   if (capture->semaphore) {
     cdsp_sem_signal(capture->semaphore);
@@ -534,9 +526,9 @@ static void pipewire_capture_set_pitch(void *ctx, double multiplier) {
  */
 static bool pipewire_capture_wait(void *ctx, uint32_t timeout_ms) {
   pipewire_capture_t *capture = (pipewire_capture_t *)ctx;
-  if (!capture || !capture->buffer || !capture->semaphore)
+  if (!capture || !capture->semaphore)
     return false;
-  if (capture->stopped)
+  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED)
     return false;
   return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
 }
@@ -550,9 +542,9 @@ static void pipewire_capture_stop(void *ctx) {
   pipewire_capture_t *capture = (pipewire_capture_t *)ctx;
   if (!capture)
     return;
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   if (capture->loop) {
     pw_thread_loop_lock(capture->loop);
-    capture->stopped = true;
     if (capture->stream) {
       pw_stream_set_active(capture->stream, false);
     }
@@ -673,11 +665,14 @@ static void pipewire_playback_close(void *ctx) {
     // Wait for the ring buffer to drain before closing the stream,
     // ensuring all remaining audio is played back.
     int retries = 200; // wait up to 200ms
-    while (!playback->stopped && playback->buffer &&
+    while (backend_buffer_get_state(playback->buffer) !=
+               BACKEND_STREAM_STOPPED &&
            backend_buffer_get_available_read_frames(playback->buffer) > 0 &&
            retries-- > 0) {
       cdsp_sleep_ms(1);
     }
+
+    backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
 
     pw_thread_loop_lock(playback->loop);
     if (playback->stream) {
@@ -695,10 +690,8 @@ static void pipewire_playback_close(void *ctx) {
     playback->loop = NULL;
   }
 
-  if (playback->buffer) {
-    backend_buffer_free(playback->buffer);
-    playback->buffer = NULL;
-  }
+  backend_buffer_free(playback->buffer);
+  playback->buffer = NULL;
 }
 
 /**
@@ -850,10 +843,8 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
                          "Failed to allocate playback buffer");
     return false;
   }
-  backend_buffer_set_control_flags(playback->buffer, NULL, NULL,
-                                   &playback->paused, NULL);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
   backend_buffer_set_target_level(playback->buffer, target_level);
-  playback->paused = false;
 
   logger_info(&g_logger,
               "Opened PipeWire playback: device=%s, rate=%d, channels=%d",
@@ -891,7 +882,7 @@ static bool pipewire_playback_write(void *ctx, const audio_chunk_t *chunk,
  */
 static size_t pipewire_playback_get_buffer_level(void *ctx) {
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
-  if (!playback || !playback->buffer)
+  if (!playback)
     return 0;
   return backend_buffer_get_level(playback->buffer);
 }
@@ -933,7 +924,7 @@ static bool pipewire_playback_prefill_silence(void *ctx, size_t frames,
                                               backend_error_t *err) {
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
   (void)err;
-  if (!playback || !playback->buffer)
+  if (!playback)
     return false;
 
   backend_buffer_prefill_silence(playback->buffer, frames, 0x00);
@@ -950,7 +941,7 @@ static bool pipewire_playback_get_is_paused(void *ctx) {
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
   if (!playback)
     return false;
-  return atomic_load_explicit(&playback->paused, memory_order_acquire);
+  return backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED;
 }
 
 /**
@@ -963,7 +954,8 @@ static void pipewire_playback_set_is_paused(void *ctx, bool paused) {
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
   if (!playback)
     return;
-  atomic_store_explicit(&playback->paused, paused, memory_order_release);
+  backend_buffer_set_state(playback->buffer, paused ? BACKEND_STREAM_PAUSED
+                                                    : BACKEND_STREAM_RUNNING);
 }
 
 /**
@@ -975,9 +967,9 @@ static void pipewire_playback_stop(void *ctx) {
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
   if (!playback)
     return;
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
   if (playback->loop) {
     pw_thread_loop_lock(playback->loop);
-    playback->stopped = true;
     if (playback->stream) {
       pw_stream_set_active(playback->stream, false);
     }
@@ -1057,7 +1049,6 @@ static playback_backend_t *pipewire_playback_create(
     playback->has_autoconnect_to = true;
   }
 
-  atomic_init(&playback->paused, false);
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
   if (!backend) {

@@ -42,21 +42,6 @@
 #include "engine/audio_sync_queue.h"
 #include "utils/lock_free_ring_buffer.h"
 
-/**
- * @brief Yields the current thread's CPU execution slice.
- *
- * Yields execution to another thread that is ready to run on the current
- * processor. Maps to sched_yield() on POSIX (Linux/macOS) and SwitchToThread()
- * on Windows. Used to propagate queue backpressure without forcing a minimum
- * sleep duration.
- */
-#if defined(__APPLE__) || defined(__linux__)
-#include <sched.h>
-
-static inline void engine_yield(void) { sched_yield(); }
-#elif defined(_WIN32)
-static inline void engine_yield(void) { SwitchToThread(); }
-#endif
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>

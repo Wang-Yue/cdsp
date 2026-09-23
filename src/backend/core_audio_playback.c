@@ -51,8 +51,6 @@ struct core_audio_playback {
   bool did_acquire_hog_mode;
   rate_change_watcher_t *rate_watcher;
   _Atomic bool is_device_alive;
-  _Atomic bool is_paused;
-  _Atomic bool stopped;
   _Atomic int active_callbacks;
   backend_buffer_t *buffer;
 };
@@ -78,13 +76,13 @@ static OSStatus playback_callback(void *inRefCon,
   atomic_fetch_add_explicit(&playback->active_callbacks, 1,
                             memory_order_relaxed);
   if (!ioData || ioData->mNumberBuffers == 0 ||
-      atomic_load_explicit(&playback->stopped, memory_order_relaxed)) {
+      backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_STOPPED) {
     atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
                               memory_order_relaxed);
     return noErr;
   }
 
-  if (atomic_load_explicit(&playback->is_paused, memory_order_relaxed)) {
+  if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED) {
     for (UInt32 b = 0; b < ioData->mNumberBuffers; b++) {
       if (ioData->mBuffers[b].mData) {
         memset(ioData->mBuffers[b].mData, 0, ioData->mBuffers[b].mDataByteSize);
@@ -131,7 +129,7 @@ static void core_audio_playback_close(void *ctx) {
   core_audio_playback_t *playback = (core_audio_playback_t *)ctx;
   if (!playback)
     return;
-  atomic_store_explicit(&playback->stopped, true, memory_order_release);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
   if (!playback->audio_unit && playback->opened_device_id == 0)
     return;
   logger_info(&g_logger, "Closing CoreAudio playback device");
@@ -362,7 +360,7 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
     goto cleanup;
   }
 
-  atomic_store_explicit(&playback->stopped, false, memory_order_release);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
   status = AudioOutputUnitStart(playback->audio_unit);
   if (status != noErr) {
     logger_error(&g_logger, "Failed to start playback AudioUnit: status=%d",
@@ -441,17 +439,18 @@ static bool core_audio_playback_prefill_silence(void *ctx, size_t frames,
 /// Check if playback is currently paused.
 static bool core_audio_playback_get_is_paused(void *ctx) {
   core_audio_playback_t *playback = (core_audio_playback_t *)ctx;
-  return playback
-             ? atomic_load_explicit(&playback->is_paused, memory_order_acquire)
-             : false;
+  if (!playback)
+    return false;
+  return backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED;
 }
 
 /// Set playback paused status.
 static void core_audio_playback_set_is_paused(void *ctx, bool paused) {
   core_audio_playback_t *playback = (core_audio_playback_t *)ctx;
-  if (playback) {
-    atomic_store_explicit(&playback->is_paused, paused, memory_order_release);
-  }
+  if (!playback)
+    return;
+  backend_buffer_set_state(playback->buffer, paused ? BACKEND_STREAM_PAUSED
+                                                    : BACKEND_STREAM_RUNNING);
 }
 
 /// Destroy and free the CoreAudio playback backend.
@@ -459,7 +458,7 @@ static void core_audio_playback_stop(void *ctx) {
   core_audio_playback_t *playback = (core_audio_playback_t *)ctx;
   if (!playback)
     return;
-  atomic_store_explicit(&playback->stopped, true, memory_order_release);
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
   if (playback->audio_unit) {
     AudioOutputUnitStop(playback->audio_unit);
   }
@@ -470,10 +469,8 @@ static void core_audio_playback_destroy(void *ctx) {
   if (!playback)
     return;
   core_audio_playback_close(playback);
-  if (playback->buffer) {
-    backend_buffer_free(playback->buffer);
-    playback->buffer = NULL;
-  }
+  backend_buffer_free(playback->buffer);
+  playback->buffer = NULL;
   free(playback);
 }
 
@@ -508,7 +505,6 @@ static playback_backend_t *core_audio_playback_create(
                          "Out of memory");
     return NULL;
   }
-  atomic_init(&playback->stopped, false);
   atomic_init(&playback->active_callbacks, 0);
   const char *config_device = playback_device_config_get_device(config);
   if (config_device && config_device[0] != '\0') {
@@ -547,11 +543,8 @@ static playback_backend_t *core_audio_playback_create(
     return NULL;
   }
   backend_buffer_set_target_level(playback->buffer, target_level);
-  backend_buffer_set_control_flags(playback->buffer, NULL, &playback->stopped,
-                                   &playback->is_paused, NULL);
 
   atomic_init(&playback->is_device_alive, true);
-  atomic_init(&playback->is_paused, false);
 
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));

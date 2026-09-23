@@ -68,7 +68,6 @@ struct core_audio_capture {
   _Atomic bool is_device_alive;
 
   cdsp_sem_t semaphore;
-  _Atomic bool stopped;
   _Atomic int active_callbacks;
 };
 
@@ -93,7 +92,7 @@ static OSStatus capture_callback(void *inRefCon,
   atomic_fetch_add_explicit(&capture->active_callbacks, 1,
                             memory_order_relaxed);
 
-  if (atomic_load_explicit(&capture->stopped, memory_order_relaxed) ||
+  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED ||
       !capture->prealloc_buffer_list || !capture->prealloc_data_buffer ||
       !capture->audio_unit) {
     atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
@@ -214,7 +213,7 @@ static void core_audio_capture_close(void *ctx) {
   core_audio_capture_t *capture = (core_audio_capture_t *)ctx;
   if (!capture)
     return;
-  atomic_store_explicit(&capture->stopped, true, memory_order_release);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   if (!capture->audio_unit && capture->opened_device_id == 0)
     return;
   logger_info(&g_logger, "Closing CoreAudio capture device");
@@ -461,7 +460,7 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
         memory_order_release);
   }
 
-  atomic_store_explicit(&capture->stopped, false, memory_order_release);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
   status = AudioOutputUnitStart(capture->audio_unit);
   if (status != noErr) {
     if (err)
@@ -571,20 +570,9 @@ static bool core_audio_capture_wait(void *ctx, uint32_t timeout_ms) {
   core_audio_capture_t *capture = (core_audio_capture_t *)ctx;
   if (!capture || !capture->semaphore)
     return false;
-  if (atomic_load_explicit(&capture->stopped, memory_order_acquire))
+  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED)
     return false;
   return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
-}
-
-/**
- * @brief Set the paused state of the capture backend.
- *
- * @param ctx Pointer to the CoreAudio capture instance.
- * @param paused true to pause, false to resume.
- */
-static void core_audio_capture_set_is_paused(void *ctx, bool paused) {
-  (void)ctx;
-  (void)paused;
 }
 
 /**
@@ -596,7 +584,7 @@ static void core_audio_capture_stop(void *ctx) {
   core_audio_capture_t *capture = (core_audio_capture_t *)ctx;
   if (!capture)
     return;
-  atomic_store_explicit(&capture->stopped, true, memory_order_release);
+  backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   if (capture->audio_unit) {
     AudioOutputUnitStop(capture->audio_unit);
   }
@@ -611,10 +599,8 @@ static void core_audio_capture_destroy(void *ctx) {
   if (!capture)
     return;
   core_audio_capture_close(capture);
-  if (capture->buffer) {
-    backend_buffer_free(capture->buffer);
-    capture->buffer = NULL;
-  }
+  backend_buffer_free(capture->buffer);
+  capture->buffer = NULL;
   if (capture->semaphore) {
     cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
@@ -695,11 +681,7 @@ static capture_backend_t *core_audio_capture_create(
     core_audio_capture_destroy(capture);
     return NULL;
   }
-  backend_buffer_set_control_flags(capture->buffer, NULL, &capture->stopped,
-                                   NULL, NULL);
-
   atomic_init(&capture->is_device_alive, true);
-  atomic_init(&capture->stopped, false);
   atomic_init(&capture->active_callbacks, 0);
 
   bool pitch_active = false;
@@ -735,7 +717,6 @@ const capture_backend_vtable_t g_core_audio_capture_vtable = {
     .is_pitch_control_supported = core_audio_capture_pitch_control_supported,
     .set_pitch = core_audio_capture_set_pitch,
     .wait_for_data = core_audio_capture_wait,
-    .set_is_paused = core_audio_capture_set_is_paused,
     .stop = core_audio_capture_stop,
     .destroy = core_audio_capture_destroy};
 #endif // ENABLE_COREAUDIO

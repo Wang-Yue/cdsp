@@ -959,13 +959,6 @@ bool capture_backend_wait(capture_backend_t *backend, uint32_t timeout_ms) {
   return backend->vtable->wait_for_data(backend->ctx, timeout_ms);
 }
 
-/// Notify the capture backend of the paused state.
-void capture_backend_set_is_paused(capture_backend_t *backend, bool paused) {
-  if (!backend || !backend->vtable || !backend->vtable->set_is_paused)
-    return;
-  backend->vtable->set_is_paused(backend->ctx, paused);
-}
-
 void capture_backend_stop(capture_backend_t *backend) {
   if (!backend || !backend->vtable || !backend->vtable->stop)
     return;

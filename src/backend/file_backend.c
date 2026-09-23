@@ -54,7 +54,6 @@ struct file_capture {
   uint8_t *raw_buf;
   size_t raw_buf_capacity;
   uint64_t last_read_time_ns;
-  _Atomic bool is_paused;
 #ifdef CDSP_TEST
   bool realtime;
   uint64_t start_time_ns;
@@ -222,12 +221,6 @@ static bool file_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   file_capture_t *capture = (file_capture_t *)ctx;
   if (!capture)
     return false;
-#ifdef CDSP_TEST
-  if (capture->realtime &&
-      atomic_load_explicit(&capture->is_paused, memory_order_acquire)) {
-    cdsp_sleep_ms(10);
-  }
-#endif
   if (audio_chunk_get_channels(chunk) < (size_t)capture->channels) {
     if (err) {
       backend_error_init(
@@ -482,19 +475,6 @@ static bool file_capture_wait(void *ctx, uint32_t timeout_ms) {
 }
 
 /**
- * @brief Set the paused state of the file capture backend.
- *
- * @param ctx Pointer to the file_capture_t instance.
- * @param paused true to pause, false to resume.
- */
-static void file_capture_set_is_paused(void *ctx, bool paused) {
-  file_capture_t *capture = (file_capture_t *)ctx;
-  if (capture) {
-    atomic_store_explicit(&capture->is_paused, paused, memory_order_release);
-  }
-}
-
-/**
  * @brief Stop the file capture device.
  *
  * @param ctx Pointer to the file_capture_t instance.
@@ -619,7 +599,6 @@ const capture_backend_vtable_t g_file_capture_vtable = {
     .is_pitch_control_supported = file_capture_pitch_control_supported,
     .set_pitch = file_capture_set_pitch,
     .wait_for_data = file_capture_wait,
-    .set_is_paused = file_capture_set_is_paused,
     .stop = file_capture_stop,
     .destroy = file_capture_destroy};
 
