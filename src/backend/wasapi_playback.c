@@ -63,8 +63,6 @@ struct wasapi_playback {
   HANDLE event_handle;
 
   spsc_byte_ring_buffer_t *ring_buffer;
-  uint8_t *write_buf;
-  size_t write_buf_cap;
 
   pthread_t inner_thread;
   bool inner_thread_created;
@@ -399,10 +397,6 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
                      (2 * (size_t)playback->chunk_size + 2048);
   playback->ring_buffer = spsc_byte_ring_buffer_create(ring_size);
 
-  playback->write_buf_cap =
-      (size_t)playback->chunk_size * playback->blockalign * 2;
-  playback->write_buf = (uint8_t *)malloc(playback->write_buf_cap);
-
   atomic_store_explicit(&playback->thread_running, true, memory_order_release);
   if (pthread_create(&playback->inner_thread, NULL, wasapi_playback_loop,
                      playback) != 0) {
@@ -418,10 +412,6 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
   return true;
 
 error_cleanup:
-  if (playback->write_buf) {
-    free(playback->write_buf);
-    playback->write_buf = NULL;
-  }
   if (playback->ring_buffer) {
     spsc_byte_ring_buffer_free(playback->ring_buffer);
     playback->ring_buffer = NULL;
@@ -450,11 +440,11 @@ static bool wasapi_playback_write(void *ctx, const audio_chunk_t *chunk,
     sleep_duration_ms = 1;
 
   return audio_backend_ring_buffer_write(
-      playback->ring_buffer, playback->write_buf, playback->write_buf_cap,
-      playback->blockalign, chunk, (binary_sample_format_t)playback->bin_fmt,
-      (size_t)playback->channels, (uint32_t)sleep_duration_ms, 8,
-      &playback->thread_running, &playback->stopped, &playback->paused,
-      &playback->has_pending_rate_change, err);
+      playback->ring_buffer, playback->blockalign, chunk,
+      (binary_sample_format_t)playback->bin_fmt, (size_t)playback->channels,
+      (uint32_t)sleep_duration_ms, 8, &playback->thread_running,
+      &playback->stopped, &playback->paused, &playback->has_pending_rate_change,
+      err);
 }
 
 static void wasapi_playback_close(void *ctx) {
@@ -472,10 +462,6 @@ static void wasapi_playback_close(void *ctx) {
     playback->inner_thread_created = false;
   }
 
-  if (playback->write_buf) {
-    free(playback->write_buf);
-    playback->write_buf = NULL;
-  }
   if (playback->ring_buffer) {
     spsc_byte_ring_buffer_free(playback->ring_buffer);
     playback->ring_buffer = NULL;

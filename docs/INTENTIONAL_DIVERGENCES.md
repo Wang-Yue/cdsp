@@ -37,6 +37,7 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 | 19 | **Validation** | Accepts degenerate/empty convolution IR configurations | Stricter rejection at validation time (§5) | Fails fast instead of producing NaN/singular filters |
 | 20 | **macOS Capture** | Requires virtual loopback drivers (BlackHole/Soundflower) | Native CoreAudio Device Tap (`"loopback": true`) (§4.4) | Zero driver installation, minimal hardware-direct latency, zero clock drift |
 | 21 | **Buffer Level** | `Arc<Mutex<DeviceBufferEstimator>>` sampled with `try_lock()`, reporting `0` on contention | Lock-free atomic estimator plus live SPSC ring sampling (§2.5) | No spurious zero-level readings into the rate controller; exact ring term |
+| 22 | **Zero-Copy Backends** | Staging scratch buffers (`scratch_buf`, `decode_buf`, `encode_buf`, `interleaved_buf`) and intermediate `memcpy` steps | Direct circular slice decoding/encoding to SPSC ring buffers (§2.6) | Zero staging buffers, reduced CPU cache pollution & minimum latency |
 
 ---
 
@@ -104,6 +105,14 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
   WASAPI and CoreAudio look the most different, but the divergence there is structural rather than behavioral. Upstream stages bytes in a callback-local `sample_queue` fed by an inner channel, and pads that same queue with zeros on underrun (`wasapi_backend/device.rs:597-601`), so its silence is counted by virtue of sitting in the queue. `cdsp` has neither structure — the inner loop writes straight from the SPSC ring to the device — so the ring *is* the staging queue, and the only frames left outside it are silence that has been committed but not yet written.
 
   In all five cases the frames already handed to the device are deliberately excluded, matching upstream. The outer-queue term that upstream adds at the call site as `channel.len() * chunksize` is added by `cdsp` in [`playback_loop_update_rate_adjust`](../src/engine/engine_playback_loop.c) as `processed_queued`, so it is accounted for once, in the engine, rather than per backend.
+
+### 2.6 Zero-Copy Backend Ring Buffer Codecs (Elimination of Scratch Buffers)
+* **Upstream Behavior**: Upstream CamillaDSP allocates intermediate flat staging buffers (`scratch_buf`, `decode_buf`, `encode_buf`, `interleaved_buf`, `sample_queue`) in backend capture/playback devices. Interleaved audio bytes are first copied from the SPSC ring buffer into a staging scratch buffer on the heap, and then decoded into planar channel slices (or vice versa on playback).
+* **`cdsp` Enhancement**: In [`../src/backend/audio_backend.c`](../src/backend/audio_backend.c), [`../src/audio/audio_chunk.c`](../src/audio/audio_chunk.c), and [`../src/utils/lock_free_ring_buffer.c`](../src/utils/lock_free_ring_buffer.c), all backend capture and playback implementations (CoreAudio, WASAPI, ALSA, ASIO, PipeWire) perform direct planar-to-interleaved decoding and encoding straight into and out of the circular SPSC ring buffer slices (`spsc_byte_ring_buffer_get_read_slices` / `spsc_byte_ring_buffer_get_write_slices`) without intermediate scratch buffers. Boundary wrap-around sample frames straddling the ring end are handled seamlessly with a small fixed stack buffer without heap allocations.
+* **Why `cdsp` Is Better**:
+  - **Zero Intermediate Staging Allocations**: Completely eliminates `malloc`/`free` lifecycle management of backend scratch and staging buffers across all five platform backends.
+  - **Eliminates Redundant `memcpy` Hops**: Samples are decoded and converted directly between planar channel slices and the SPSC ring buffer in a single pass.
+  - **Reduced CPU Cache Pressure & Memory Bandwidth**: Bypassing intermediate staging buffers minimizes L1/L2 data cache thrashing and lowers end-to-end capture-to-playback buffer latency.
 
 ---
 

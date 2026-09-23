@@ -68,8 +68,6 @@ struct alsa_capture {
   snd_pcm_t *pcm;
   snd_pcm_format_t format;
 
-  void *interleaved_buf;
-  size_t interleaved_buf_size;
   pthread_mutex_t mixer_mutex;
   _Atomic bool stopped;
 
@@ -654,22 +652,6 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
 
   size_t sample_size = alsa_format_sample_size(capture->format);
 
-  // Size buffer generously to accommodate dynamic resampling buffer needs
-  // (src/alsa_backend/device.rs:863 & buffermanager.rs:157)
-  size_t buffer_frames = (size_t)capture->bufsize;
-  if (buffer_frames < (size_t)capture->chunk_size * 2) {
-    buffer_frames = (size_t)capture->chunk_size * 2;
-  }
-  capture->interleaved_buf_size =
-      buffer_frames * capture->channels * sample_size;
-  capture->interleaved_buf = calloc(capture->interleaved_buf_size, 1);
-  if (!capture->interleaved_buf) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to allocate ALSA capture interleaved buffer");
-    goto error_cleanup;
-  }
-
   alsa_capture_init_controls(capture);
 
   size_t ring_frames = alsa_capture_ring_capacity_frames(
@@ -721,10 +703,6 @@ error_cleanup:
     snd_pcm_close(capture->pcm);
     capture->pcm = NULL;
   }
-  if (capture->interleaved_buf) {
-    free(capture->interleaved_buf);
-    capture->interleaved_buf = NULL;
-  }
   pthread_mutex_unlock(&g_alsa_mutex);
   return false;
 }
@@ -773,8 +751,7 @@ static bool alsa_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   size_t sample_bytes = alsa_format_sample_size(capture->format);
   size_t blockalign = (size_t)capture->channels * sample_bytes;
   return audio_backend_ring_buffer_read(
-      capture->ring_buffer, capture->interleaved_buf,
-      capture->interleaved_buf_size, blockalign, frames,
+      capture->ring_buffer, blockalign, frames,
       alsa_pcm_format_to_binary_format(capture->format),
       (size_t)capture->channels, &capture->inner_running, &capture->stopped,
       &capture->has_pending_rate_change, chunk, err);
@@ -829,10 +806,6 @@ static void alsa_capture_close(void *ctx) {
                         memory_order_release);
   atomic_store_explicit(&capture->is_inactive, false, memory_order_release);
   pthread_mutex_unlock(&capture->mixer_mutex);
-  if (capture->interleaved_buf) {
-    free(capture->interleaved_buf);
-    capture->interleaved_buf = NULL;
-  }
 }
 
 // Check for pending rate change matching

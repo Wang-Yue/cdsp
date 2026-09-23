@@ -202,6 +202,106 @@ size_t spsc_byte_ring_buffer_consume(spsc_byte_ring_buffer_t *ring,
   return to_read;
 }
 
+size_t
+spsc_byte_ring_buffer_get_read_slices(const spsc_byte_ring_buffer_t *ring,
+                                      size_t max_bytes, const uint8_t **slice1,
+                                      size_t *len1, const uint8_t **slice2,
+                                      size_t *len2) {
+  if (slice1)
+    *slice1 = NULL;
+  if (len1)
+    *len1 = 0;
+  if (slice2)
+    *slice2 = NULL;
+  if (len2)
+    *len2 = 0;
+  if (!ring || max_bytes == 0)
+    return 0;
+
+  size_t avail = spsc_byte_ring_buffer_get_available_to_read(ring);
+  size_t to_read = (max_bytes < avail) ? max_bytes : avail;
+  if (to_read == 0)
+    return 0;
+
+  uint64_t r = atomic_load_explicit(&ring->read_index, memory_order_relaxed);
+  size_t offset = (size_t)(r & ring->mask);
+  size_t first_chunk = ring->capacity - offset;
+
+  if (to_read <= first_chunk) {
+    if (slice1)
+      *slice1 = ring->storage + offset;
+    if (len1)
+      *len1 = to_read;
+  } else {
+    if (slice1)
+      *slice1 = ring->storage + offset;
+    if (len1)
+      *len1 = first_chunk;
+    if (slice2)
+      *slice2 = ring->storage;
+    if (len2)
+      *len2 = to_read - first_chunk;
+  }
+  return to_read;
+}
+
+void spsc_byte_ring_buffer_advance_read(spsc_byte_ring_buffer_t *ring,
+                                        size_t count) {
+  if (!ring || count == 0)
+    return;
+  uint64_t r = atomic_load_explicit(&ring->read_index, memory_order_relaxed);
+  atomic_store_explicit(&ring->read_index, r + count, memory_order_release);
+}
+
+size_t spsc_byte_ring_buffer_get_write_slices(
+    const spsc_byte_ring_buffer_t *ring, size_t max_bytes, uint8_t **slice1,
+    size_t *len1, uint8_t **slice2, size_t *len2) {
+  if (slice1)
+    *slice1 = NULL;
+  if (len1)
+    *len1 = 0;
+  if (slice2)
+    *slice2 = NULL;
+  if (len2)
+    *len2 = 0;
+  if (!ring || max_bytes == 0)
+    return 0;
+
+  size_t free_space = spsc_byte_ring_buffer_get_available_to_write(ring);
+  size_t to_write = (max_bytes < free_space) ? max_bytes : free_space;
+  if (to_write == 0)
+    return 0;
+
+  uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
+  size_t offset = (size_t)(w & ring->mask);
+  size_t first_chunk = ring->capacity - offset;
+
+  if (to_write <= first_chunk) {
+    if (slice1)
+      *slice1 = ring->storage + offset;
+    if (len1)
+      *len1 = to_write;
+  } else {
+    if (slice1)
+      *slice1 = ring->storage + offset;
+    if (len1)
+      *len1 = first_chunk;
+    if (slice2)
+      *slice2 = ring->storage;
+    if (len2)
+      *len2 = to_write - first_chunk;
+  }
+  return to_write;
+}
+
+void spsc_byte_ring_buffer_advance_write(spsc_byte_ring_buffer_t *ring,
+                                         size_t count) {
+  if (!ring || count == 0)
+    return;
+  uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
+  atomic_store_explicit(&ring->write_index, w + count, memory_order_release);
+}
+
 void spsc_byte_ring_buffer_drain(spsc_byte_ring_buffer_t *ring) {
   if (!ring)
     return;

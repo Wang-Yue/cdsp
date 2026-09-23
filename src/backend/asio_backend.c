@@ -2371,8 +2371,6 @@ struct asio_playback {
   ASIOCallbacks callbacks_for_driver;
 
   spsc_byte_ring_buffer_t *ring_buffer;
-  uint8_t *encode_buf;
-  size_t encode_buf_size;
 
   asio_playback_context_t *context;
   _Atomic bool is_running;
@@ -2422,11 +2420,6 @@ static void asio_playback_close(void *ctx) {
   if (playback->ring_buffer) {
     spsc_byte_ring_buffer_free(playback->ring_buffer);
     playback->ring_buffer = NULL;
-  }
-  if (playback->encode_buf) {
-    free(playback->encode_buf);
-    playback->encode_buf = NULL;
-    playback->encode_buf_size = 0;
   }
 }
 
@@ -2510,11 +2503,6 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
                       (2 * ring_frames + 2048);
   playback->ring_buffer = spsc_byte_ring_buffer_create(ring_bytes);
 
-  playback->encode_buf_size = playback->channels *
-                              (size_t)playback->chunk_size *
-                              playback->bytes_per_sample * 2;
-  playback->encode_buf = (uint8_t *)malloc(playback->encode_buf_size);
-
   clear_playback_driver_events();
   reset_playback_callback_seen();
 
@@ -2527,7 +2515,7 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
 
   playback->context =
       (asio_playback_context_t *)calloc(1, sizeof(asio_playback_context_t));
-  if (!playback->ring_buffer || !playback->encode_buf || !playback->context) {
+  if (!playback->ring_buffer || !playback->context) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to allocate playback buffers or context");
@@ -2676,8 +2664,7 @@ static bool asio_playback_write(void *ctx, const audio_chunk_t *chunk,
     sleep_ms = 1;
 
   return audio_backend_ring_buffer_write(
-      playback->ring_buffer, playback->encode_buf, playback->encode_buf_size,
-      blockalign, chunk,
+      playback->ring_buffer, blockalign, chunk,
       asio_sample_format_to_binary_format(playback->resolved_format,
                                           playback->is_lsb),
       playback->channels, sleep_ms, 8, &playback->is_running,
@@ -2825,8 +2812,6 @@ struct asio_capture {
 
   spsc_byte_ring_buffer_t *ring_buffer;
   cdsp_sem_t semaphore;
-  uint8_t *decode_buf;
-  size_t decode_buf_size;
 
   asio_capture_context_t *context;
   _Atomic bool is_running;
@@ -2881,11 +2866,6 @@ static void asio_capture_close(void *ctx) {
   if (capture->ring_buffer) {
     spsc_byte_ring_buffer_free(capture->ring_buffer);
     capture->ring_buffer = NULL;
-  }
-  if (capture->decode_buf) {
-    free(capture->decode_buf);
-    capture->decode_buf = NULL;
-    capture->decode_buf_size = 0;
   }
 }
 
@@ -2967,10 +2947,6 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
   capture->ring_buffer = spsc_byte_ring_buffer_create(ring_bytes);
   capture->semaphore = cdsp_sem_create();
 
-  capture->decode_buf_size = capture->channels * (size_t)capture->chunk_size *
-                             capture->bytes_per_sample * 2;
-  capture->decode_buf = (uint8_t *)malloc(capture->decode_buf_size);
-
   clear_capture_driver_events();
   // Keep the callback from pushing until the loop is ready to consume
   atomic_store_explicit(&CAPTURE_STREAM_ACTIVE, false, memory_order_release);
@@ -2990,8 +2966,8 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
         (uint8_t *)malloc(capture->context->transfer_buf_size);
   }
 
-  if (!capture->ring_buffer || !capture->semaphore || !capture->decode_buf ||
-      !capture->context || !capture->context->transfer_buf) {
+  if (!capture->ring_buffer || !capture->semaphore || !capture->context ||
+      !capture->context->transfer_buf) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to allocate capture buffers or semaphore");
@@ -3102,8 +3078,7 @@ static bool asio_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
 
   size_t blockalign = capture->channels * capture->bytes_per_sample;
   return audio_backend_ring_buffer_read(
-      capture->ring_buffer, capture->decode_buf, capture->decode_buf_size,
-      blockalign, frames,
+      capture->ring_buffer, blockalign, frames,
       asio_sample_format_to_binary_format(capture->resolved_format,
                                           capture->is_lsb),
       capture->channels, &capture->is_running, &capture->stopped,

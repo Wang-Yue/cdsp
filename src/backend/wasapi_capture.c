@@ -63,8 +63,6 @@ struct wasapi_capture {
   cdsp_sem_t semaphore;
 
   spsc_byte_ring_buffer_t *ring_buffer;
-  uint8_t *decode_buf;
-  size_t decode_buf_cap;
 
   pthread_t inner_thread;
   bool inner_thread_created;
@@ -474,10 +472,6 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
 
-  capture->decode_buf_cap =
-      (size_t)capture->chunk_size * capture->blockalign * 2;
-  capture->decode_buf = (uint8_t *)malloc(capture->decode_buf_cap);
-
   atomic_store_explicit(&capture->thread_running, true, memory_order_release);
   if (pthread_create(&capture->inner_thread, NULL, wasapi_capture_loop,
                      capture) != 0) {
@@ -493,10 +487,6 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
   return true;
 
 error_cleanup:
-  if (capture->decode_buf) {
-    free(capture->decode_buf);
-    capture->decode_buf = NULL;
-  }
   if (capture->ring_buffer) {
     spsc_byte_ring_buffer_free(capture->ring_buffer);
     capture->ring_buffer = NULL;
@@ -521,9 +511,9 @@ static bool wasapi_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   if (!capture)
     return false;
   return audio_backend_ring_buffer_read(
-      capture->ring_buffer, capture->decode_buf, capture->decode_buf_cap,
-      capture->blockalign, frames, (binary_sample_format_t)capture->bin_fmt,
-      (size_t)capture->channels, &capture->thread_running, &capture->stopped,
+      capture->ring_buffer, capture->blockalign, frames,
+      (binary_sample_format_t)capture->bin_fmt, (size_t)capture->channels,
+      &capture->thread_running, &capture->stopped,
       &capture->has_pending_rate_change, chunk, err);
 }
 
@@ -544,10 +534,6 @@ static void wasapi_capture_close(void *ctx) {
     capture->inner_thread_created = false;
   }
 
-  if (capture->decode_buf) {
-    free(capture->decode_buf);
-    capture->decode_buf = NULL;
-  }
   if (capture->ring_buffer) {
     spsc_byte_ring_buffer_free(capture->ring_buffer);
     capture->ring_buffer = NULL;

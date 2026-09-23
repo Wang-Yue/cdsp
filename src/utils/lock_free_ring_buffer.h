@@ -205,6 +205,62 @@ size_t spsc_byte_ring_buffer_consume(spsc_byte_ring_buffer_t *ring,
                                      uint8_t *dest, size_t count);
 
 /**
+ * @brief Get direct pointers to readable contiguous slices in the ring buffer.
+ *
+ * **Consumer-only.** Does not advance the read cursor.
+ *
+ * @param ring Pointer to the ring buffer.
+ * @param max_bytes Maximum bytes to inspect.
+ * @param slice1 Pointer to store first contiguous slice.
+ * @param len1 Pointer to store length of first slice.
+ * @param slice2 Pointer to store second contiguous slice.
+ * @param len2 Pointer to store length of second slice.
+ * @return Total readable bytes available across both slices (up to max_bytes).
+ */
+size_t spsc_byte_ring_buffer_get_read_slices(
+    const spsc_byte_ring_buffer_t *ring, size_t max_bytes,
+    const uint8_t **slice1, size_t *len1, const uint8_t **slice2, size_t *len2);
+
+/**
+ * @brief Advance the read cursor by a given number of bytes.
+ *
+ * **Consumer-only.**
+ *
+ * @param ring Pointer to the ring buffer.
+ * @param count Number of bytes to advance.
+ */
+void spsc_byte_ring_buffer_advance_read(spsc_byte_ring_buffer_t *ring,
+                                        size_t count);
+
+/**
+ * @brief Get direct pointers to writable contiguous slices in the ring buffer.
+ *
+ * **Producer-only.** Does not advance the write cursor.
+ *
+ * @param ring Pointer to the ring buffer.
+ * @param max_bytes Maximum bytes to inspect.
+ * @param slice1 Pointer to store first contiguous slice.
+ * @param len1 Pointer to store length of first slice.
+ * @param slice2 Pointer to store second contiguous slice.
+ * @param len2 Pointer to store length of second slice.
+ * @return Total writable bytes available across both slices (up to max_bytes).
+ */
+size_t spsc_byte_ring_buffer_get_write_slices(
+    const spsc_byte_ring_buffer_t *ring, size_t max_bytes, uint8_t **slice1,
+    size_t *len1, uint8_t **slice2, size_t *len2);
+
+/**
+ * @brief Advance the write cursor by a given number of bytes.
+ *
+ * **Producer-only.**
+ *
+ * @param ring Pointer to the ring buffer.
+ * @param count Number of bytes to advance.
+ */
+void spsc_byte_ring_buffer_advance_write(spsc_byte_ring_buffer_t *ring,
+                                         size_t count);
+
+/**
  * @brief Discard all pending bytes.
  *
  * **Consumer-only.**

@@ -45,8 +45,6 @@ struct alsa_playback {
   bool currently_paused;
   bool device_stalled;
 
-  void *interleaved_buf;
-  size_t interleaved_buf_size;
   size_t blockalign;
   void *zero_stall_buf;
   size_t zero_stall_buf_size;
@@ -488,15 +486,6 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
   size_t sample_size = alsa_format_sample_size(playback->format);
 
   playback->blockalign = (size_t)playback->channels * sample_size;
-  playback->interleaved_buf_size =
-      2 * playback->chunk_size * playback->blockalign;
-  playback->interleaved_buf = calloc(playback->interleaved_buf_size, 1);
-  if (!playback->interleaved_buf) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to allocate ALSA playback interleaved buffer");
-    goto error_cleanup;
-  }
 
   // Preallocate zero stall buffer (src/alsa_backend/device.rs:524-525)
   playback->zero_stall_buf_size =
@@ -599,10 +588,6 @@ error_cleanup:
     snd_pcm_close(playback->pcm);
     playback->pcm = NULL;
   }
-  if (playback->interleaved_buf) {
-    free(playback->interleaved_buf);
-    playback->interleaved_buf = NULL;
-  }
   if (playback->zero_stall_buf) {
     free(playback->zero_stall_buf);
     playback->zero_stall_buf = NULL;
@@ -640,8 +625,7 @@ static bool alsa_playback_write(void *ctx, const audio_chunk_t *chunk,
     return true;
 
   return audio_backend_ring_buffer_write(
-      playback->ring_buffer, playback->interleaved_buf,
-      playback->interleaved_buf_size, playback->blockalign, chunk,
+      playback->ring_buffer, playback->blockalign, chunk,
       alsa_pcm_format_to_binary_format(playback->format),
       (size_t)playback->channels, 1, 500, &playback->inner_running,
       &playback->stopped, &playback->paused, NULL, err);
@@ -677,10 +661,6 @@ static void alsa_playback_close(void *ctx) {
     playback->pcm = NULL;
   }
   pthread_mutex_unlock(&g_alsa_mutex);
-  if (playback->interleaved_buf) {
-    free(playback->interleaved_buf);
-    playback->interleaved_buf = NULL;
-  }
   if (playback->zero_stall_buf) {
     free(playback->zero_stall_buf);
     playback->zero_stall_buf = NULL;

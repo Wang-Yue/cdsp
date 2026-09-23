@@ -202,6 +202,24 @@ bool audio_chunk_decode_interleaved(const void *src, binary_sample_format_t fmt,
                                     audio_chunk_t *chunk);
 
 /**
+ * @brief Decodes interleaved raw byte samples into planar double audio chunk
+ * starting at a specific destination frame offset.
+ *
+ * @param src Pointer to interleaved raw byte data.
+ * @param fmt Binary sample format of raw bytes.
+ * @param channels Number of audio channels in source data.
+ * @param frames Number of audio frames to decode.
+ * @param chunk Destination audio chunk.
+ * @param start_frame Starting frame index inside the chunk's channel buffers.
+ * @return True on success, false on invalid format or parameters.
+ */
+bool audio_chunk_decode_interleaved_offset(const void *src,
+                                           binary_sample_format_t fmt,
+                                           size_t channels, size_t frames,
+                                           audio_chunk_t *chunk,
+                                           size_t start_frame);
+
+/**
  * @brief Encodes planar double audio chunk into interleaved raw byte samples.
  *
  * @param chunk Source audio chunk.
@@ -214,6 +232,23 @@ bool audio_chunk_decode_interleaved(const void *src, binary_sample_format_t fmt,
 bool audio_chunk_encode_interleaved(const audio_chunk_t *chunk,
                                     binary_sample_format_t fmt, size_t channels,
                                     size_t frames, void *dst);
+
+/**
+ * @brief Encodes planar double audio chunk into interleaved raw byte samples
+ * starting at a specific source frame offset.
+ *
+ * @param chunk Source audio chunk.
+ * @param fmt Binary sample format of destination buffer.
+ * @param channels Number of audio channels to encode.
+ * @param frames Number of audio frames to encode.
+ * @param dst Destination buffer to receive interleaved raw bytes.
+ * @param start_frame Starting frame index inside the chunk's channel buffers.
+ * @return True on success, false on invalid format or parameters.
+ */
+bool audio_chunk_encode_interleaved_offset(const audio_chunk_t *chunk,
+                                           binary_sample_format_t fmt,
+                                           size_t channels, size_t frames,
+                                           void *dst, size_t start_frame);
 
 /**
  * @brief Sets the used channels mask for the chunk.

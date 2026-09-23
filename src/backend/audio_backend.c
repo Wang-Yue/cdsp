@@ -1081,14 +1081,15 @@ void playback_backend_free(playback_backend_t *backend) {
   free(backend);
 }
 
-bool audio_backend_ring_buffer_read(
-    spsc_byte_ring_buffer_t *ring_buffer, void *scratch_buf, size_t scratch_cap,
-    size_t blockalign, size_t frames_requested, binary_sample_format_t fmt,
-    size_t channels, _Atomic bool *thread_running, _Atomic bool *stopped,
-    _Atomic bool *has_pending_rate_change, audio_chunk_t *chunk,
-    backend_error_t *err) {
-  if (!ring_buffer || !scratch_buf || !chunk || channels == 0 ||
-      blockalign == 0) {
+bool audio_backend_ring_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
+                                    size_t blockalign, size_t frames_requested,
+                                    binary_sample_format_t fmt, size_t channels,
+                                    _Atomic bool *thread_running,
+                                    _Atomic bool *stopped,
+                                    _Atomic bool *has_pending_rate_change,
+                                    audio_chunk_t *chunk,
+                                    backend_error_t *err) {
+  if (!ring_buffer || !chunk || channels == 0 || blockalign == 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Invalid parameters");
     return false;
@@ -1132,12 +1133,6 @@ bool audio_backend_ring_buffer_read(
   }
 
   size_t bytes_requested = frames_requested * blockalign;
-  if (bytes_requested > scratch_cap) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                         "Frame count exceeds capture buffer capacity");
-    return false;
-  }
 
   // Draining semantics: Only check `stopped` / `thread_running` flags after
   // confirming that the ring buffer lacks sufficient bytes. If the capture
@@ -1159,30 +1154,87 @@ bool audio_backend_ring_buffer_read(
     return false;
   }
 
-  size_t consumed_bytes = spsc_byte_ring_buffer_consume(
-      ring_buffer, (uint8_t *)scratch_buf, bytes_requested);
-  size_t valid_frames = (blockalign > 0) ? (consumed_bytes / blockalign) : 0;
-
-  if (!audio_chunk_decode_interleaved(scratch_buf, fmt, channels, valid_frames,
-                                      chunk)) {
+  const uint8_t *s1 = NULL, *s2 = NULL;
+  size_t l1 = 0, l2 = 0;
+  size_t read_avail = spsc_byte_ring_buffer_get_read_slices(
+      ring_buffer, bytes_requested, &s1, &l1, &s2, &l2);
+  if (read_avail < bytes_requested || !s1) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                         "Failed to decode captured audio data");
+                         "Failed to get read slices from ring buffer");
     return false;
   }
 
+  if (l1 % blockalign == 0) {
+    size_t f1 = l1 / blockalign;
+    if (f1 > 0) {
+      if (!audio_chunk_decode_interleaved_offset(s1, fmt, channels, f1, chunk,
+                                                 0)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "Failed to decode captured audio data");
+        return false;
+      }
+    }
+    size_t f2 = l2 / blockalign;
+    if (f2 > 0 && s2) {
+      if (!audio_chunk_decode_interleaved_offset(s2, fmt, channels, f2, chunk,
+                                                 f1)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "Failed to decode captured audio data");
+        return false;
+      }
+    }
+  } else {
+    size_t f1 = l1 / blockalign;
+    if (f1 > 0) {
+      if (!audio_chunk_decode_interleaved_offset(s1, fmt, channels, f1, chunk,
+                                                 0)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "Failed to decode captured audio data");
+        return false;
+      }
+    }
+    size_t rem_l1 = l1 % blockalign;
+    size_t rem_l2 = blockalign - rem_l1;
+    uint8_t split_frame[256];
+    if (blockalign <= sizeof(split_frame) && s2 && l2 >= rem_l2) {
+      memcpy(split_frame, s1 + f1 * blockalign, rem_l1);
+      memcpy(split_frame + rem_l1, s2, rem_l2);
+      if (!audio_chunk_decode_interleaved_offset(split_frame, fmt, channels, 1,
+                                                 chunk, f1)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "Failed to decode split audio frame");
+        return false;
+      }
+      size_t f2 = (l2 - rem_l2) / blockalign;
+      if (f2 > 0) {
+        if (!audio_chunk_decode_interleaved_offset(s2 + rem_l2, fmt, channels,
+                                                   f2, chunk, f1 + 1)) {
+          if (err)
+            backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                               "Failed to decode captured audio data");
+          return false;
+        }
+      }
+    }
+  }
+
+  spsc_byte_ring_buffer_advance_read(ring_buffer, bytes_requested);
+  audio_chunk_set_valid_frames(chunk, frames_requested);
   return true;
 }
 
 bool audio_backend_ring_buffer_write(
-    spsc_byte_ring_buffer_t *ring_buffer, void *scratch_buf, size_t scratch_cap,
-    size_t blockalign, const audio_chunk_t *chunk, binary_sample_format_t fmt,
-    size_t channels, uint32_t sleep_ms, uint32_t max_retries,
-    _Atomic bool *thread_running, _Atomic bool *stopped,
-    _Atomic bool *is_paused, _Atomic bool *has_pending_rate_change,
-    backend_error_t *err) {
-  if (!ring_buffer || !scratch_buf || !chunk || channels == 0 ||
-      blockalign == 0) {
+    spsc_byte_ring_buffer_t *ring_buffer, size_t blockalign,
+    const audio_chunk_t *chunk, binary_sample_format_t fmt, size_t channels,
+    uint32_t sleep_ms, uint32_t max_retries, _Atomic bool *thread_running,
+    _Atomic bool *stopped, _Atomic bool *is_paused,
+    _Atomic bool *has_pending_rate_change, backend_error_t *err) {
+  if (!ring_buffer || !chunk || channels == 0 || blockalign == 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, "Invalid parameters");
     return false;
@@ -1228,20 +1280,6 @@ bool audio_backend_ring_buffer_write(
   }
 
   size_t bytes_to_write = frames * blockalign;
-  if (bytes_to_write > scratch_cap) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Frame count exceeds playback buffer capacity");
-    return false;
-  }
-
-  if (!audio_chunk_encode_interleaved(chunk, fmt, channels, frames,
-                                      scratch_buf)) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Failed to encode audio samples");
-    return false;
-  }
 
   uint32_t retries = (max_retries > 0) ? max_retries : 1;
   for (uint32_t retry = 0; retry < retries; retry++) {
@@ -1272,18 +1310,89 @@ bool audio_backend_ring_buffer_write(
   // Audio chunks must be written as atomic units. If the ring buffer cannot fit
   // the complete chunk after backoff, drop the entire chunk rather than pushing
   // a fractured sub-chunk to prevent time-domain waveform discontinuity.
-  if (spsc_byte_ring_buffer_get_available_to_write(ring_buffer) >=
+  if (spsc_byte_ring_buffer_get_available_to_write(ring_buffer) <
       bytes_to_write) {
-    spsc_byte_ring_buffer_write(ring_buffer, (const uint8_t *)scratch_buf,
-                                bytes_to_write);
-  } else {
     logger_debug(
         &g_logger,
         "Playback ring buffer is full after %u retries, dropped entire "
         "chunk of %zu bytes to preserve audio framing",
         retries, bytes_to_write);
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Playback ring buffer full");
+    return false;
   }
 
+  uint8_t *s1 = NULL, *s2 = NULL;
+  size_t l1 = 0, l2 = 0;
+  size_t write_avail = spsc_byte_ring_buffer_get_write_slices(
+      ring_buffer, bytes_to_write, &s1, &l1, &s2, &l2);
+  if (write_avail < bytes_to_write || !s1) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Failed to get write slices from ring buffer");
+    return false;
+  }
+
+  if (l1 % blockalign == 0) {
+    size_t f1 = l1 / blockalign;
+    if (f1 > 0) {
+      if (!audio_chunk_encode_interleaved_offset(chunk, fmt, channels, f1, s1,
+                                                 0)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "Failed to encode audio samples");
+        return false;
+      }
+    }
+    size_t f2 = l2 / blockalign;
+    if (f2 > 0 && s2) {
+      if (!audio_chunk_encode_interleaved_offset(chunk, fmt, channels, f2, s2,
+                                                 f1)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "Failed to encode audio samples");
+        return false;
+      }
+    }
+  } else {
+    size_t f1 = l1 / blockalign;
+    if (f1 > 0) {
+      if (!audio_chunk_encode_interleaved_offset(chunk, fmt, channels, f1, s1,
+                                                 0)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "Failed to encode audio samples");
+        return false;
+      }
+    }
+    size_t rem_l1 = l1 % blockalign;
+    size_t rem_l2 = blockalign - rem_l1;
+    uint8_t split_frame[256];
+    if (blockalign <= sizeof(split_frame) && s2 && l2 >= rem_l2) {
+      if (!audio_chunk_encode_interleaved_offset(chunk, fmt, channels, 1,
+                                                 split_frame, f1)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                             "Failed to encode split audio frame");
+        return false;
+      }
+      memcpy(s1 + f1 * blockalign, split_frame, rem_l1);
+      memcpy(s2, split_frame + rem_l1, rem_l2);
+      size_t f2 = (l2 - rem_l2) / blockalign;
+      if (f2 > 0) {
+        if (!audio_chunk_encode_interleaved_offset(chunk, fmt, channels, f2,
+                                                   s2 + rem_l2, f1 + 1)) {
+          if (err)
+            backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                               "Failed to encode audio samples");
+          return false;
+        }
+      }
+    }
+  }
+
+  spsc_byte_ring_buffer_advance_write(ring_buffer, bytes_to_write);
   return true;
 }
 

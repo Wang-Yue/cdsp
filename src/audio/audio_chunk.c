@@ -578,14 +578,16 @@ static inline bool audio_channel_encode(const double *restrict src,
 
 // MARK: - Public Interleaved Decode and Encode APIs
 
-bool audio_chunk_decode_interleaved(const void *src, binary_sample_format_t fmt,
-                                    size_t channels, size_t frames,
-                                    audio_chunk_t *chunk) {
+bool audio_chunk_decode_interleaved_offset(const void *src,
+                                           binary_sample_format_t fmt,
+                                           size_t channels, size_t frames,
+                                           audio_chunk_t *chunk,
+                                           size_t start_frame) {
   if (!src || !chunk || channels == 0 || frames == 0)
     return false;
   if (audio_chunk_get_channels(chunk) < channels)
     return false;
-  if (frames > audio_chunk_get_frames(chunk))
+  if (start_frame + frames > audio_chunk_get_frames(chunk))
     return false;
 
   bool ok = false;
@@ -594,8 +596,8 @@ bool audio_chunk_decode_interleaved(const void *src, binary_sample_format_t fmt,
     double *ch1 = audio_chunk_get_channel(chunk, 1);
     if (!ch0 || !ch1)
       return false;
-    ok = audio_channel_decode_stereo((const uint8_t *)src, fmt, frames, ch0,
-                                     ch1);
+    ok = audio_channel_decode_stereo((const uint8_t *)src, fmt, frames,
+                                     ch0 + start_frame, ch1 + start_frame);
   } else {
     size_t bytes_per_sample = sample_format_bytes_per_sample(fmt);
     if (bytes_per_sample == 0)
@@ -608,27 +610,36 @@ bool audio_chunk_decode_interleaved(const void *src, binary_sample_format_t fmt,
     for (size_t c = 0; c < channels; c++) {
       double *dst = audio_chunk_get_channel(chunk, c);
       if (!dst || !audio_channel_decode(ptr + c * bytes_per_sample, fmt, frames,
-                                        byte_stride, dst)) {
+                                        byte_stride, dst + start_frame)) {
         ok = false;
         break;
       }
     }
   }
 
-  if (ok) {
-    audio_chunk_set_valid_frames(chunk, frames);
-  }
   return ok;
 }
 
-bool audio_chunk_encode_interleaved(const audio_chunk_t *chunk,
-                                    binary_sample_format_t fmt, size_t channels,
-                                    size_t frames, void *dst) {
+bool audio_chunk_decode_interleaved(const void *src, binary_sample_format_t fmt,
+                                    size_t channels, size_t frames,
+                                    audio_chunk_t *chunk) {
+  if (!audio_chunk_decode_interleaved_offset(src, fmt, channels, frames, chunk,
+                                             0)) {
+    return false;
+  }
+  audio_chunk_set_valid_frames(chunk, frames);
+  return true;
+}
+
+bool audio_chunk_encode_interleaved_offset(const audio_chunk_t *chunk,
+                                           binary_sample_format_t fmt,
+                                           size_t channels, size_t frames,
+                                           void *dst, size_t start_frame) {
   if (!chunk || !dst || channels == 0 || frames == 0)
     return false;
   if (audio_chunk_get_channels(chunk) < channels)
     return false;
-  if (frames > audio_chunk_get_frames(chunk))
+  if (start_frame + frames > audio_chunk_get_frames(chunk))
     return false;
 
   if (channels == 2) {
@@ -636,7 +647,8 @@ bool audio_chunk_encode_interleaved(const audio_chunk_t *chunk,
     const double *ch1 = audio_chunk_get_channel(chunk, 1);
     if (!ch0 || !ch1)
       return false;
-    return audio_channel_encode_stereo(ch0, ch1, fmt, frames, (uint8_t *)dst);
+    return audio_channel_encode_stereo(ch0 + start_frame, ch1 + start_frame,
+                                       fmt, frames, (uint8_t *)dst);
   }
 
   size_t bytes_per_sample = sample_format_bytes_per_sample(fmt);
@@ -648,13 +660,21 @@ bool audio_chunk_encode_interleaved(const audio_chunk_t *chunk,
 
   for (size_t c = 0; c < channels; c++) {
     const double *src = audio_chunk_get_channel(chunk, c);
-    if (!src || !audio_channel_encode(src, fmt, frames, byte_stride,
-                                      out_ptr + c * bytes_per_sample)) {
+    if (!src ||
+        !audio_channel_encode(src + start_frame, fmt, frames, byte_stride,
+                              out_ptr + c * bytes_per_sample)) {
       return false;
     }
   }
 
   return true;
+}
+
+bool audio_chunk_encode_interleaved(const audio_chunk_t *chunk,
+                                    binary_sample_format_t fmt, size_t channels,
+                                    size_t frames, void *dst) {
+  return audio_chunk_encode_interleaved_offset(chunk, fmt, channels, frames,
+                                               dst, 0);
 }
 
 double audio_chunk_get_value_range_used(const audio_chunk_t *chunk,

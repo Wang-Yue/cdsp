@@ -47,8 +47,6 @@ struct core_audio_playback {
 
   AudioUnit audio_unit;
   spsc_byte_ring_buffer_t *ring_buffer;
-  uint8_t *write_buf;
-  size_t write_buf_cap;
   size_t bytes_per_sample;
   size_t blockalign;
 
@@ -258,10 +256,6 @@ static void core_audio_playback_close(void *ctx) {
     AudioComponentInstanceDispose(playback->audio_unit);
     playback->audio_unit = NULL;
   }
-  if (playback->write_buf) {
-    free(playback->write_buf);
-    playback->write_buf = NULL;
-  }
   if (playback->did_acquire_hog_mode && playback->opened_device_id != 0) {
     core_audio_device_release_hog_mode(playback->opened_device_id);
     playback->did_acquire_hog_mode = false;
@@ -286,22 +280,6 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
     spsc_byte_ring_buffer_drain(playback->ring_buffer);
   }
   playback_buffer_set_rate(&playback->buffer, playback->sample_rate);
-
-  if (!playback->write_buf ||
-      playback->write_buf_cap <
-          playback->blockalign * (size_t)playback->chunk_size * 2) {
-    if (playback->write_buf)
-      free(playback->write_buf);
-    playback->write_buf_cap =
-        playback->blockalign * (size_t)playback->chunk_size * 2;
-    playback->write_buf = (uint8_t *)malloc(playback->write_buf_cap);
-    if (!playback->write_buf) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                           "Failed to allocate write buffer");
-      goto cleanup;
-    }
-  }
 
   AudioDeviceID dev_id = core_audio_device_id_for_name(
       playback->device_name[0] ? playback->device_name : NULL,
@@ -524,10 +502,9 @@ static bool core_audio_playback_write(void *ctx, const audio_chunk_t *chunk,
   }
   uint32_t max_retries = 8;
   return audio_backend_ring_buffer_write(
-      playback->ring_buffer, playback->write_buf, playback->write_buf_cap,
-      playback->blockalign, chunk, BINARY_SAMPLE_FORMAT_F32_LE,
-      playback->channels, sleep_ms, max_retries, NULL, &playback->stopped,
-      &playback->is_paused, NULL, err);
+      playback->ring_buffer, playback->blockalign, chunk,
+      BINARY_SAMPLE_FORMAT_F32_LE, playback->channels, sleep_ms, max_retries,
+      NULL, &playback->stopped, &playback->is_paused, NULL, err);
 }
 
 /// Get the current buffer level in frames.
@@ -609,10 +586,6 @@ static void core_audio_playback_destroy(void *ctx) {
     spsc_byte_ring_buffer_free(playback->ring_buffer);
     playback->ring_buffer = NULL;
   }
-  if (playback->write_buf) {
-    free(playback->write_buf);
-    playback->write_buf = NULL;
-  }
   free(playback);
 }
 
@@ -688,9 +661,6 @@ static playback_backend_t *core_audio_playback_create(
     core_audio_playback_destroy(playback);
     return NULL;
   }
-
-  playback->write_buf_cap = playback->blockalign * (size_t)chunk_size * 2;
-  playback->write_buf = NULL;
 
   atomic_init(&playback->is_device_alive, true);
   atomic_init(&playback->is_paused, false);

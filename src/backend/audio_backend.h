@@ -855,11 +855,9 @@ void playback_backend_free(playback_backend_t *backend);
 
 /**
  * @brief Reads audio frames from an SPSC byte ring buffer, decoding them into
- * an audio chunk.
+ * an audio chunk directly without intermediate scratch staging.
  *
  * @param ring_buffer Pointer to the SPSC byte ring buffer.
- * @param scratch_buf Pointer to temporary decode byte buffer.
- * @param scratch_cap Capacity of scratch_buf in bytes.
  * @param blockalign Frame block align in bytes (channels * bytes_per_sample).
  * @param frames_requested Number of frames requested to read.
  * @param fmt Binary sample format of raw bytes in the ring buffer.
@@ -874,7 +872,6 @@ void playback_backend_free(playback_backend_t *backend);
  * insufficient data.
  */
 bool audio_backend_ring_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
-                                    void *scratch_buf, size_t scratch_cap,
                                     size_t blockalign, size_t frames_requested,
                                     binary_sample_format_t fmt, size_t channels,
                                     _Atomic bool *thread_running,
@@ -883,12 +880,10 @@ bool audio_backend_ring_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
                                     audio_chunk_t *chunk, backend_error_t *err);
 
 /**
- * @brief Encodes an audio chunk and writes it into an SPSC byte ring buffer
- * with backoff.
+ * @brief Encodes an audio chunk and writes it directly into an SPSC byte ring
+ * buffer with backoff without intermediate scratch staging.
  *
  * @param ring_buffer Pointer to the SPSC byte ring buffer.
- * @param scratch_buf Pointer to temporary encode byte buffer.
- * @param scratch_cap Capacity of scratch_buf in bytes.
  * @param blockalign Frame block align in bytes (channels * bytes_per_sample).
  * @param chunk Source audio chunk to write.
  * @param fmt Binary sample format to encode into.
@@ -905,11 +900,10 @@ bool audio_backend_ring_buffer_read(spsc_byte_ring_buffer_t *ring_buffer,
  * @return True on success (or paused), false on error or stream stop.
  */
 bool audio_backend_ring_buffer_write(
-    spsc_byte_ring_buffer_t *ring_buffer, void *scratch_buf, size_t scratch_cap,
-    size_t blockalign, const audio_chunk_t *chunk, binary_sample_format_t fmt,
-    size_t channels, uint32_t sleep_ms, uint32_t max_retries,
-    _Atomic bool *thread_running, _Atomic bool *stopped,
-    _Atomic bool *is_paused, _Atomic bool *has_pending_rate_change,
-    backend_error_t *err);
+    spsc_byte_ring_buffer_t *ring_buffer, size_t blockalign,
+    const audio_chunk_t *chunk, binary_sample_format_t fmt, size_t channels,
+    uint32_t sleep_ms, uint32_t max_retries, _Atomic bool *thread_running,
+    _Atomic bool *stopped, _Atomic bool *is_paused,
+    _Atomic bool *has_pending_rate_change, backend_error_t *err);
 
 #endif // CLIB_BACKEND_AUDIO_BACKEND_H

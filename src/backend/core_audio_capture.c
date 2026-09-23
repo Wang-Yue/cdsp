@@ -67,8 +67,6 @@ struct core_audio_capture {
   _Atomic bool pitch_control_active;
   _Atomic bool is_device_alive;
 
-  uint8_t *read_scratch;
-  size_t read_scratch_cap;
   cdsp_sem_t semaphore;
   _Atomic bool stopped;
   _Atomic int active_callbacks;
@@ -276,10 +274,6 @@ static void core_audio_capture_close(void *ctx) {
     capture->audio_unit = NULL;
   }
   deallocate_render_buffers(capture);
-  if (capture->read_scratch) {
-    free(capture->read_scratch);
-    capture->read_scratch = NULL;
-  }
   // Destroy the tap only after the AudioUnit bound to the aggregate is gone,
   // otherwise the HAL still holds a client on the device being torn down.
   if (capture->loopback) {
@@ -463,21 +457,6 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
                          "Failed to allocate render buffers");
     goto cleanup;
   }
-  if (!capture->read_scratch ||
-      capture->read_scratch_cap <
-          capture->blockalign * (size_t)capture->chunk_size * 4) {
-    if (capture->read_scratch)
-      free(capture->read_scratch);
-    capture->read_scratch_cap =
-        capture->blockalign * (size_t)capture->chunk_size * 4;
-    capture->read_scratch = (uint8_t *)malloc(capture->read_scratch_cap);
-  }
-  if (!capture->read_scratch) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to allocate read scratch buffer");
-    goto cleanup;
-  }
 
   // Register the real-time callback.
   AURenderCallbackStruct cb = {.inputProc = capture_callback,
@@ -568,9 +547,9 @@ static bool core_audio_capture_read(void *ctx, size_t frames,
                               ? (size_t)capture->chunk_size
                               : frames;
   return audio_backend_ring_buffer_read(
-      capture->ring_buffer, capture->read_scratch, capture->read_scratch_cap,
-      capture->blockalign, frames_to_read, BINARY_SAMPLE_FORMAT_F32_LE,
-      capture->channels, NULL, &capture->stopped, NULL, chunk, err);
+      capture->ring_buffer, capture->blockalign, frames_to_read,
+      BINARY_SAMPLE_FORMAT_F32_LE, capture->channels, NULL, &capture->stopped,
+      NULL, chunk, err);
 }
 
 /// Get any pending sample rate change detected on the capture device.
@@ -654,10 +633,6 @@ static void core_audio_capture_destroy(void *ctx) {
   if (!capture)
     return;
   core_audio_capture_close(capture);
-  if (capture->read_scratch) {
-    free(capture->read_scratch);
-    capture->read_scratch = NULL;
-  }
   if (capture->ring_buffer) {
     spsc_byte_ring_buffer_free(capture->ring_buffer);
     capture->ring_buffer = NULL;
@@ -741,9 +716,6 @@ static capture_backend_t *core_audio_capture_create(
     core_audio_capture_destroy(capture);
     return NULL;
   }
-
-  capture->read_scratch_cap = capture->blockalign * (size_t)chunk_size * 4;
-  capture->read_scratch = NULL;
 
   atomic_init(&capture->is_device_alive, true);
   atomic_init(&capture->stopped, false);
