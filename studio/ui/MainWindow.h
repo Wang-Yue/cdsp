@@ -36,7 +36,7 @@ class MainWindow : public QMainWindow {
 
 public:
     explicit MainWindow(QWidget* parent = nullptr);
-    ~MainWindow() override = default;
+    ~MainWindow() override;
 
 protected:
     void changeEvent(QEvent* event) override;

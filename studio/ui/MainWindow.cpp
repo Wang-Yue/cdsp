@@ -260,8 +260,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     m_monitoring->start();
 
-    // Save state on application shutdown
+    // Stop engine and save state on application shutdown
     connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
+        if (m_monitoring) {
+            m_monitoring->stop();
+        }
+        if (m_dspController) {
+            m_dspController->stopEngine();
+        } else if (m_engine) {
+            m_engine->stop();
+        }
         if (m_pipeline) {
             m_pipeline->save();
         }
@@ -269,6 +277,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             m_settings->savePreferences();
         }
     });
+}
+
+MainWindow::~MainWindow() {
+    if (m_monitoring) {
+        m_monitoring->stop();
+    }
+    if (m_dspController) {
+        m_dspController->stopEngine();
+    } else if (m_engine) {
+        m_engine->stop();
+    }
 }
 
 void MainWindow::setupUi() {

@@ -923,6 +923,7 @@ int main(int argc, char **argv) {
     }
   }
 
+  cdsp_stop(engine);
 #ifdef ENABLE_WEBSOCKET
   if (server)
     websocket_server_free(server);
