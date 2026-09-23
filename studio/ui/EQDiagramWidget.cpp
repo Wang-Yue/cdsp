@@ -38,38 +38,28 @@ EQDiagramWidget::EQDiagramWidget(QWidget* parent) : QWidget(parent) {
 }
 
 EQDiagramWidget::~EQDiagramWidget() {
-    if (isVisible() && m_showAnalyzer && m_spectrum && m_spectrum->visibilityCount > 0) {
-        m_spectrum->visibilityCount--;
+    if (m_spectrum) {
+        m_spectrum->unregisterViewer(this);
     }
 }
 
 void EQDiagramWidget::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_showAnalyzer && m_spectrum) {
-        m_spectrum->visibilityCount++;
-    }
 }
 
 void EQDiagramWidget::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_showAnalyzer && m_spectrum && m_spectrum->visibilityCount > 0) {
-        m_spectrum->visibilityCount--;
-    }
 }
 
 void EQDiagramWidget::setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum) {
     if (m_spectrum) {
-        if (isVisible() && m_showAnalyzer && m_spectrum->visibilityCount > 0) {
-            m_spectrum->visibilityCount--;
-        }
+        m_spectrum->unregisterViewer(this);
         disconnect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update));
     }
     m_spectrum = spectrum;
     if (m_spectrum) {
-        if (isVisible() && m_showAnalyzer) {
-            m_spectrum->visibilityCount++;
-        }
         if (m_showAnalyzer) {
+            m_spectrum->registerViewer(this);
             connect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update),
                     Qt::UniqueConnection);
         }
@@ -79,17 +69,14 @@ void EQDiagramWidget::setSpectrumEngine(std::shared_ptr<SpectrumEngine> spectrum
 
 void EQDiagramWidget::setShowAnalyzer(bool show) {
     if (m_showAnalyzer != show) {
+        m_showAnalyzer = show;
         if (m_spectrum) {
-            if (isVisible()) {
-                if (show)
-                    m_spectrum->visibilityCount++;
-                else if (m_spectrum->visibilityCount > 0)
-                    m_spectrum->visibilityCount--;
-            }
             if (show) {
+                m_spectrum->registerViewer(this);
                 connect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update),
                         Qt::UniqueConnection);
             } else {
+                m_spectrum->unregisterViewer(this);
                 disconnect(m_spectrum.get(), &SpectrumEngine::updated, this, QOverload<>::of(&QWidget::update));
             }
         }

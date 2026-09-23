@@ -27,6 +27,7 @@
 
 #include "audio/audio_chunk.h"
 #include "backend/audio_backend.h"
+#include "backend/backend_buffer.h"
 #include "backend/backend_error.h"
 #include "backend/core_audio_device.h"
 #include "backend/core_audio_tap_bridge.h"
@@ -34,7 +35,6 @@
 #include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
-#include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.capture"};
 
@@ -52,13 +52,13 @@ struct core_audio_capture {
   cdsp_tap_handle_t tap;
 
   AudioUnit audio_unit;
-  spsc_planar_ring_buffer_t *planar_ring;
+  backend_buffer_t *buffer;
   size_t bytes_per_sample;
   size_t blockalign;
 
   AudioBufferList *prealloc_buffer_list;
-  void **prealloc_channel_data_pointers;
-  int prealloc_bytes_per_channel_buffer;
+  void *prealloc_data_buffer;
+  int prealloc_bytes_buffer;
   _Atomic int callback_error_count;
   _Atomic int last_callback_error;
 
@@ -76,9 +76,8 @@ struct core_audio_capture {
  * @brief CoreAudio render callback for capturing audio.
  *
  * This function runs on a high-priority, real-time HAL thread. It renders
- * non-interleaved planar audio directly into the lock-free planar SPSC ring
- * slices (zero copies during steady state), falling back to preallocated
- * buffers only during circular wrap-around boundaries.
+ * interleaved audio directly into the preallocated buffer and pushes it
+ * to the lock-free SPSC buffer.
  */
 static OSStatus capture_callback(void *inRefCon,
                                  AudioUnitRenderActionFlags *ioActionFlags,
@@ -95,16 +94,17 @@ static OSStatus capture_callback(void *inRefCon,
                             memory_order_relaxed);
 
   if (atomic_load_explicit(&capture->stopped, memory_order_relaxed) ||
-      !capture->prealloc_buffer_list ||
-      !capture->prealloc_channel_data_pointers || !capture->audio_unit) {
+      !capture->prealloc_buffer_list || !capture->prealloc_data_buffer ||
+      !capture->audio_unit) {
     atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
                               memory_order_release);
     return noErr;
   }
 
   AudioBufferList *buffer_list = capture->prealloc_buffer_list;
-  UInt32 required_bytes = inNumberFrames * (UInt32)sizeof(float);
-  if (required_bytes > (UInt32)capture->prealloc_bytes_per_channel_buffer) {
+  UInt32 required_bytes =
+      inNumberFrames * (UInt32)capture->channels * (UInt32)sizeof(float);
+  if (required_bytes > (UInt32)capture->prealloc_bytes_buffer) {
     atomic_fetch_add_explicit(&capture->callback_error_count, 1,
                               memory_order_relaxed);
     atomic_store_explicit(&capture->last_callback_error, -1,
@@ -117,10 +117,9 @@ static OSStatus capture_callback(void *inRefCon,
     return noErr;
   }
 
-  for (UInt32 i = 0; i < buffer_list->mNumberBuffers; i++) {
-    buffer_list->mBuffers[i].mData = capture->prealloc_channel_data_pointers[i];
-    buffer_list->mBuffers[i].mDataByteSize = required_bytes;
-  }
+  buffer_list->mBuffers[0].mData = capture->prealloc_data_buffer;
+  buffer_list->mBuffers[0].mDataByteSize = required_bytes;
+
   OSStatus status =
       AudioUnitRender(capture->audio_unit, ioActionFlags, inTimeStamp, 1,
                       inNumberFrames, buffer_list);
@@ -137,10 +136,8 @@ static OSStatus capture_callback(void *inRefCon,
     return noErr;
   }
 
-  spsc_planar_ring_buffer_write_channels(
-      capture->planar_ring,
-      (const void *const *)capture->prealloc_channel_data_pointers,
-      (size_t)inNumberFrames);
+  backend_buffer_push(capture->buffer, buffer_list->mBuffers[0].mData,
+                      (size_t)inNumberFrames);
 
   atomic_store_explicit(&capture->callback_error_count, 0,
                         memory_order_relaxed);
@@ -160,25 +157,20 @@ static OSStatus capture_callback(void *inRefCon,
  * @brief Helper function to free preallocated render buffers.
  */
 static void deallocate_render_buffers(core_audio_capture_t *capture) {
-  if (capture->prealloc_channel_data_pointers) {
-    for (size_t ch = 0; ch < capture->channels; ch++) {
-      if (capture->prealloc_channel_data_pointers[ch]) {
-        free(capture->prealloc_channel_data_pointers[ch]);
-      }
-    }
-    free(capture->prealloc_channel_data_pointers);
-    capture->prealloc_channel_data_pointers = NULL;
+  if (capture->prealloc_data_buffer) {
+    free(capture->prealloc_data_buffer);
+    capture->prealloc_data_buffer = NULL;
   }
   if (capture->prealloc_buffer_list) {
     free(capture->prealloc_buffer_list);
     capture->prealloc_buffer_list = NULL;
   }
-  capture->prealloc_bytes_per_channel_buffer = 0;
+  capture->prealloc_bytes_buffer = 0;
 }
 
 /**
  * @brief Helper function to preallocate the AudioBufferList and internal raw
- * buffers.
+ * buffer.
  */
 static bool allocate_render_buffers(core_audio_capture_t *capture) {
   deallocate_render_buffers(capture);
@@ -196,33 +188,24 @@ static bool allocate_render_buffers(core_audio_capture_t *capture) {
     buffer_frames = 8192;
   }
 
-  int bytes_per_channel_buffer = buffer_frames * (int)sizeof(float);
-  size_t list_byte_count = offsetof(AudioBufferList, mBuffers) +
-                           capture->channels * sizeof(AudioBuffer);
+  int bytes_buffer =
+      buffer_frames * (int)capture->channels * (int)sizeof(float);
+  size_t list_byte_count = sizeof(AudioBufferList);
   capture->prealloc_buffer_list = (AudioBufferList *)calloc(1, list_byte_count);
-  capture->prealloc_channel_data_pointers =
-      (void **)calloc(capture->channels, sizeof(void *));
-  if (!capture->prealloc_buffer_list ||
-      !capture->prealloc_channel_data_pointers) {
+  capture->prealloc_data_buffer = calloc(1, (size_t)bytes_buffer);
+  if (!capture->prealloc_buffer_list || !capture->prealloc_data_buffer) {
     deallocate_render_buffers(capture);
     return false;
   }
 
-  for (size_t ch = 0; ch < capture->channels; ch++) {
-    capture->prealloc_channel_data_pointers[ch] =
-        calloc(1, bytes_per_channel_buffer);
-    if (!capture->prealloc_channel_data_pointers[ch]) {
-      deallocate_render_buffers(capture);
-      return false;
-    }
-    capture->prealloc_buffer_list->mBuffers[ch].mNumberChannels = 1;
-    capture->prealloc_buffer_list->mBuffers[ch].mDataByteSize =
-        (UInt32)bytes_per_channel_buffer;
-    capture->prealloc_buffer_list->mBuffers[ch].mData =
-        capture->prealloc_channel_data_pointers[ch];
-  }
-  capture->prealloc_buffer_list->mNumberBuffers = (UInt32)capture->channels;
-  capture->prealloc_bytes_per_channel_buffer = bytes_per_channel_buffer;
+  capture->prealloc_buffer_list->mNumberBuffers = 1;
+  capture->prealloc_buffer_list->mBuffers[0].mNumberChannels =
+      (UInt32)capture->channels;
+  capture->prealloc_buffer_list->mBuffers[0].mDataByteSize =
+      (UInt32)bytes_buffer;
+  capture->prealloc_buffer_list->mBuffers[0].mData =
+      capture->prealloc_data_buffer;
+  capture->prealloc_bytes_buffer = bytes_buffer;
   return true;
 }
 
@@ -280,9 +263,7 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
     return false;
   core_audio_capture_close(capture);
 
-  if (capture->planar_ring) {
-    spsc_planar_ring_buffer_drain(capture->planar_ring);
-  }
+  backend_buffer_drain(capture->buffer);
   atomic_store_explicit(&capture->callback_error_count, 0,
                         memory_order_relaxed);
   atomic_store_explicit(&capture->last_callback_error, 0, memory_order_relaxed);
@@ -401,13 +382,16 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
     }
 
     core_audio_device_add_alive_watcher(dev_id, &capture->is_device_alive);
+
+    core_audio_device_set_buffer_frame_size(dev_id, CORE_AUDIO_SCOPE_INPUT,
+                                            (uint32_t)capture->chunk_size);
   }
 
   // Configure the client stream format on the output scope of the input bus
-  // (bus 1) to non-interleaved planar float32 for zero-copy transfers.
+  // (bus 1) to interleaved float32.
   AudioStreamBasicDescription stream_format =
-      core_audio_device_planar_float32_stream_format(capture->sample_rate,
-                                                     (int)capture->channels);
+      core_audio_device_float32_stream_format(capture->sample_rate,
+                                              (int)capture->channels);
   status = AudioUnitSetProperty(
       capture->audio_unit, kAudioUnitProperty_StreamFormat,
       kAudioUnitScope_Output, 1, &stream_format, sizeof(stream_format));
@@ -543,9 +527,7 @@ static bool core_audio_capture_read(void *ctx, size_t frames,
   size_t frames_to_read = (frames > (size_t)capture->chunk_size)
                               ? (size_t)capture->chunk_size
                               : frames;
-  return audio_backend_planar_ring_buffer_read(
-      capture->planar_ring, frames_to_read, BINARY_SAMPLE_FORMAT_F32_LE,
-      capture->channels, NULL, &capture->stopped, NULL, chunk, err);
+  return backend_buffer_read_chunk(capture->buffer, frames_to_read, chunk, err);
 }
 
 /// Get any pending sample rate change detected on the capture device.
@@ -629,9 +611,9 @@ static void core_audio_capture_destroy(void *ctx) {
   if (!capture)
     return;
   core_audio_capture_close(capture);
-  if (capture->planar_ring) {
-    spsc_planar_ring_buffer_free(capture->planar_ring);
-    capture->planar_ring = NULL;
+  if (capture->buffer) {
+    backend_buffer_free(capture->buffer);
+    capture->buffer = NULL;
   }
   if (capture->semaphore) {
     cdsp_sem_destroy(capture->semaphore);
@@ -703,15 +685,18 @@ static capture_backend_t *core_audio_capture_create(
   capture->blockalign = config_channels * sizeof(float);
   const size_t callback_frames = 512;
   size_t ring_frames = 2 * (size_t)chunk_size + 2 * callback_frames;
-  capture->planar_ring = spsc_planar_ring_buffer_create(
-      capture->channels, sizeof(float), ring_frames);
-  if (!capture->planar_ring) {
+  capture->buffer =
+      backend_buffer_create(ring_frames, BINARY_SAMPLE_FORMAT_F32_LE,
+                            capture->channels, capture->sample_rate, false);
+  if (!capture->buffer) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Out of memory");
     core_audio_capture_destroy(capture);
     return NULL;
   }
+  backend_buffer_set_control_flags(capture->buffer, NULL, &capture->stopped,
+                                   NULL, NULL);
 
   atomic_init(&capture->is_device_alive, true);
   atomic_init(&capture->stopped, false);

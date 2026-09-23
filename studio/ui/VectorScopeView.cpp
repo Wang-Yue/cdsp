@@ -32,23 +32,21 @@ VectorScopeView::VectorScopeView(std::shared_ptr<VectorScopeEngine> engine, QWid
 }
 
 VectorScopeView::~VectorScopeView() {
-    if (isVisible() && m_engine && m_engine->visibilityCount > 0) {
-        m_engine->visibilityCount--;
+    if (m_engine) {
+        m_engine->unregisterViewer(this);
     }
 }
 
 void VectorScopeView::setEngine(std::shared_ptr<VectorScopeEngine> engine) {
     if (m_engine) {
-        if (isVisible() && m_engine->visibilityCount > 0)
-            m_engine->visibilityCount--;
+        m_engine->unregisterViewer(this);
         disconnect(m_engine.get(), &VectorScopeEngine::updated, this, nullptr);
     }
     m_engine = engine;
     if (m_engine) {
-        if (isVisible())
-            m_engine->visibilityCount++;
+        m_engine->registerViewer(this);
         connect(m_engine.get(), &VectorScopeEngine::updated, this, [this]() {
-            if (m_engine)
+            if (m_engine && isVisible())
                 setSamples(m_engine->samples, m_engine->showParticles, m_engine->autoScale, m_engine->channelL,
                            m_engine->channelR, m_engine->traceDecayRate);
         });
@@ -59,14 +57,10 @@ void VectorScopeView::setEngine(std::shared_ptr<VectorScopeEngine> engine) {
 
 void VectorScopeView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_engine)
-        m_engine->visibilityCount++;
 }
 
 void VectorScopeView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_engine && m_engine->visibilityCount > 0)
-        m_engine->visibilityCount--;
 }
 
 void VectorScopeView::setSamples(const AudioSamplesData& samples, bool showParticles, bool autoScale, int channelL,

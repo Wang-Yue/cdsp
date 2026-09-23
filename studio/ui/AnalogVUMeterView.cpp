@@ -396,31 +396,27 @@ AnalogVUMeterView::AnalogVUMeterView(QWidget* parent) : QWidget(parent) {
 }
 
 AnalogVUMeterView::~AnalogVUMeterView() {
-    if (isVisible() && m_levelState && m_levelState->visibilityCount > 0) {
-        m_levelState->visibilityCount--;
+    if (m_levelState) {
+        m_levelState->unregisterViewer(this);
     }
 }
 
 void AnalogVUMeterView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_levelState)
-        m_levelState->visibilityCount++;
 }
 
 void AnalogVUMeterView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_levelState && m_levelState->visibilityCount > 0)
-        m_levelState->visibilityCount--;
 }
 
 void AnalogVUMeterView::setLevelState(LevelState* levelState) {
     if (m_levelState == levelState)
         return;
-    if (isVisible() && m_levelState && m_levelState->visibilityCount > 0)
-        m_levelState->visibilityCount--;
+    if (m_levelState)
+        m_levelState->unregisterViewer(this);
     m_levelState = levelState;
-    if (isVisible() && m_levelState)
-        m_levelState->visibilityCount++;
+    if (m_levelState)
+        m_levelState->registerViewer(this);
     updateChannelMeters();
 }
 

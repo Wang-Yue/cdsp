@@ -346,6 +346,46 @@ bool core_audio_device_get_buffer_frame_size(AudioDeviceID device_id,
   return false;
 }
 
+bool core_audio_device_set_buffer_frame_size(AudioDeviceID device_id,
+                                             core_audio_scope_t scope,
+                                             uint32_t frames) {
+  if (device_id == 0 || device_id == kAudioObjectUnknown || frames == 0)
+    return false;
+
+  AudioObjectPropertyScope prop_scope = (scope == CORE_AUDIO_SCOPE_INPUT)
+                                            ? kAudioDevicePropertyScopeInput
+                                            : kAudioDevicePropertyScopeOutput;
+
+  // Query supported range and clamp frames
+  AudioObjectPropertyAddress range_addr = {
+      .mSelector = kAudioDevicePropertyBufferFrameSizeRange,
+      .mScope = prop_scope,
+      .mElement = kAudioObjectPropertyElementMain};
+  AudioValueRange range = {0};
+  uint32_t range_size = sizeof(range);
+  if (AudioObjectGetPropertyData(device_id, &range_addr, 0, NULL, &range_size,
+                                 &range) == noErr) {
+    if (range.mMinimum > 0.0 && (double)frames < range.mMinimum)
+      frames = (uint32_t)range.mMinimum;
+    if (range.mMaximum > 0.0 && (double)frames > range.mMaximum)
+      frames = (uint32_t)range.mMaximum;
+  }
+
+  AudioObjectPropertyAddress addr = {
+      .mSelector = kAudioDevicePropertyBufferFrameSize,
+      .mScope = prop_scope,
+      .mElement = kAudioObjectPropertyElementMain};
+  uint32_t size = sizeof(uint32_t);
+  OSStatus status =
+      AudioObjectSetPropertyData(device_id, &addr, 0, NULL, size, &frames);
+  if (status != noErr) {
+    addr.mScope = kAudioObjectPropertyScopeGlobal;
+    status =
+        AudioObjectSetPropertyData(device_id, &addr, 0, NULL, size, &frames);
+  }
+  return (status == noErr);
+}
+
 // MARK: - Clock-source / pitch control (BlackHole 0.5.0+)
 
 /// Set the device's active clock source by ID. Returns `true` on success.
@@ -649,25 +689,6 @@ core_audio_device_float32_stream_format(double sample_rate, int channels) {
                                       .mBytesPerPacket = bytes_per_frame,
                                       .mFramesPerPacket = 1,
                                       .mBytesPerFrame = bytes_per_frame,
-                                      .mChannelsPerFrame = (uint32_t)channels,
-                                      .mBitsPerChannel = 32,
-                                      .mReserved = 0};
-  return asbd;
-}
-
-AudioStreamBasicDescription
-core_audio_device_planar_float32_stream_format(double sample_rate,
-                                               int channels) {
-  AudioFormatFlags flags = kAudioFormatFlagIsFloat |
-                           kAudioFormatFlagIsNonInterleaved |
-                           kAudioFormatFlagsNativeEndian;
-  AudioStreamBasicDescription asbd = {.mSampleRate = sample_rate,
-                                      .mFormatID = kAudioFormatLinearPCM,
-                                      .mFormatFlags = flags,
-                                      .mBytesPerPacket =
-                                          (uint32_t)sizeof(float),
-                                      .mFramesPerPacket = 1,
-                                      .mBytesPerFrame = (uint32_t)sizeof(float),
                                       .mChannelsPerFrame = (uint32_t)channels,
                                       .mBitsPerChannel = 32,
                                       .mReserved = 0};

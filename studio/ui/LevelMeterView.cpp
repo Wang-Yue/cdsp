@@ -33,19 +33,19 @@
 LevelMeterView::LevelMeterView(QWidget* parent) : QWidget(parent) {}
 
 LevelMeterView::~LevelMeterView() {
-    if (isVisible() && m_levelState && m_levelState->visibilityCount > 0) {
-        m_levelState->visibilityCount--;
+    if (m_levelState) {
+        m_levelState->unregisterViewer(this);
     }
 }
 
 void LevelMeterView::setLevelState(LevelState* levelState) {
     if (m_levelState == levelState)
         return;
-    if (isVisible() && m_levelState && m_levelState->visibilityCount > 0)
-        m_levelState->visibilityCount--;
+    if (m_levelState)
+        m_levelState->unregisterViewer(this);
     m_levelState = levelState;
-    if (isVisible() && m_levelState)
-        m_levelState->visibilityCount++;
+    if (m_levelState)
+        m_levelState->registerViewer(this);
     update();
 }
 
@@ -78,14 +78,10 @@ QSize LevelMeterView::minimumSizeHint() const {
 
 void LevelMeterView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_levelState)
-        m_levelState->visibilityCount++;
 }
 
 void LevelMeterView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_levelState && m_levelState->visibilityCount > 0)
-        m_levelState->visibilityCount--;
 }
 
 static float normDB(float db) {
@@ -328,10 +324,19 @@ public:
         setFixedHeight(6);
         setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     }
+    ~CompactMultiChannelMeter() override {
+        if (m_levelState) {
+            m_levelState->unregisterViewer(this);
+        }
+    }
     void setLevelState(LevelState* levelState) {
         if (m_levelState == levelState)
             return;
+        if (m_levelState)
+            m_levelState->unregisterViewer(this);
         m_levelState = levelState;
+        if (m_levelState)
+            m_levelState->registerViewer(this);
         updateLayoutAndGeometry();
         update();
     }
@@ -344,24 +349,23 @@ public:
             count = m_isPlayback ? m_levelState->playbackChannelCount : m_levelState->captureChannelCount;
         return (count > 0) ? count : 2;
     }
-    void updateLayoutAndGeometry() {
+    int desiredWidth() const {
         size_t count = getCount();
-        if (count == m_lastCount && width() > 0)
-            return;
-        m_lastCount = count;
         int barW = (count > 4) ? 40 : 80;
         int spacing = 4;
-        int totalWidth = (count > 0) ? static_cast<int>((barW + spacing) * count - spacing) : 0;
+        return (count > 0) ? static_cast<int>((barW + spacing) * count - spacing) : 0;
+    }
+    void updateLayoutAndGeometry() {
+        size_t count = getCount();
+        int totalWidth = desiredWidth();
+        if (count == m_lastCount && m_lastWidth == totalWidth)
+            return;
+        m_lastCount = count;
+        m_lastWidth = totalWidth;
         setFixedWidth(totalWidth);
         updateGeometry();
     }
-    QSize sizeHint() const override {
-        size_t count = getCount();
-        int barW = (count > 4) ? 40 : 80;
-        int spacing = 4;
-        int totalWidth = (count > 0) ? static_cast<int>((barW + spacing) * count - spacing) : 0;
-        return QSize(totalWidth, 6);
-    }
+    QSize sizeHint() const override { return QSize(desiredWidth(), 6); }
 
 protected:
     void paintEvent(QPaintEvent* event) override {
@@ -408,6 +412,7 @@ private:
     bool m_isPlayback;
     LevelState* m_levelState = nullptr;
     size_t m_lastCount = 0;
+    int m_lastWidth = 0;
 };
 
 class MeterGroupWidget : public QWidget {
@@ -437,10 +442,10 @@ public:
     }
     void updateWidth() {
         if (m_meter) {
-            int oldW = m_meter->width();
             m_meter->updateLayoutAndGeometry();
-            if (m_meter->width() != oldW || width() == 0) {
-                int totalW = 14 + 6 + m_meter->width();
+            int totalW = 14 + 6 + m_meter->desiredWidth();
+            if (totalW != m_lastTotalWidth || width() != totalW) {
+                m_lastTotalWidth = totalW;
                 setFixedWidth(totalW);
                 updateGeometry();
             }
@@ -451,6 +456,10 @@ public:
         update();
         if (m_meter)
             m_meter->update();
+    }
+    QSize sizeHint() const override {
+        int meterW = m_meter ? m_meter->desiredWidth() : 0;
+        return QSize(14 + 6 + meterW, 16);
     }
 
 protected:
@@ -468,6 +477,7 @@ protected:
 private:
     bool m_isPlayback;
     CompactMultiChannelMeter* m_meter;
+    int m_lastTotalWidth = 0;
 };
 
 // MARK: - CompactLevelMeterBar Implementation
@@ -509,8 +519,8 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
 }
 
 CompactLevelMeterBar::~CompactLevelMeterBar() {
-    if (isVisible() && m_monitoring && m_monitoring->levelState.visibilityCount > 0) {
-        m_monitoring->levelState.visibilityCount--;
+    if (m_monitoring) {
+        m_monitoring->levelState.unregisterViewer(this);
     }
 }
 
@@ -518,11 +528,13 @@ void CompactLevelMeterBar::setMonitoring(std::shared_ptr<MonitoringController> m
     if (m_monitoring == monitoring)
         return;
     if (m_monitoring) {
-        if (isVisible() && m_monitoring->levelState.visibilityCount > 0)
-            m_monitoring->levelState.visibilityCount--;
+        m_monitoring->levelState.unregisterViewer(this);
         disconnect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, nullptr);
     }
     m_monitoring = monitoring;
+    if (m_monitoring) {
+        m_monitoring->levelState.registerViewer(this);
+    }
     LevelState* levelState = m_monitoring ? &m_monitoring->levelState : nullptr;
     if (m_captureGroup)
         m_captureGroup->setLevelState(levelState);
@@ -530,8 +542,6 @@ void CompactLevelMeterBar::setMonitoring(std::shared_ptr<MonitoringController> m
         m_playbackGroup->setLevelState(levelState);
 
     if (m_monitoring) {
-        if (isVisible())
-            m_monitoring->levelState.visibilityCount++;
         connect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, [this]() {
             if (!isVisible())
                 return;
@@ -545,14 +555,14 @@ void CompactLevelMeterBar::setMonitoring(std::shared_ptr<MonitoringController> m
 
 void CompactLevelMeterBar::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_monitoring)
-        m_monitoring->levelState.visibilityCount++;
+    if (m_captureGroup)
+        m_captureGroup->updateMeters();
+    if (m_playbackGroup)
+        m_playbackGroup->updateMeters();
 }
 
 void CompactLevelMeterBar::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_monitoring && m_monitoring->levelState.visibilityCount > 0)
-        m_monitoring->levelState.visibilityCount--;
 }
 
 // MARK: - LevelMetersCard Implementation
@@ -638,22 +648,14 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     }
 }
 
-LevelMetersCard::~LevelMetersCard() {
-    if (isVisible() && m_monitoring && m_monitoring->levelState.visibilityCount > 0) {
-        m_monitoring->levelState.visibilityCount--;
-    }
-}
+LevelMetersCard::~LevelMetersCard() = default;
 
 void LevelMetersCard::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_monitoring)
-        m_monitoring->levelState.visibilityCount++;
 }
 
 void LevelMetersCard::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_monitoring && m_monitoring->levelState.visibilityCount > 0)
-        m_monitoring->levelState.visibilityCount--;
 }
 
 // MARK: - LevelMetersDetailView Implementation
@@ -673,22 +675,14 @@ LevelMetersDetailView::LevelMetersDetailView(std::shared_ptr<MonitoringControlle
     }
 }
 
-LevelMetersDetailView::~LevelMetersDetailView() {
-    if (isVisible() && m_monitoring && m_monitoring->levelState.visibilityCount > 0) {
-        m_monitoring->levelState.visibilityCount--;
-    }
-}
+LevelMetersDetailView::~LevelMetersDetailView() = default;
 
 void LevelMetersDetailView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_monitoring)
-        m_monitoring->levelState.visibilityCount++;
 }
 
 void LevelMetersDetailView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_monitoring && m_monitoring->levelState.visibilityCount > 0)
-        m_monitoring->levelState.visibilityCount--;
 }
 
 void LevelMetersDetailView::setupUi() {

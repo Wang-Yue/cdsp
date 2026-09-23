@@ -17,12 +17,12 @@
 #include "audio/processing_parameters.h"
 #include "backend/alsa_device.h"
 #include "backend/audio_backend.h"
+#include "backend/backend_buffer.h"
 #include "backend/backend_error.h"
 #include "config/config_gen.h"
 #include "engine/cdsp_sem.h"
 #include "engine/thread_priority.h"
 #include "logging/app_logger.h"
-#include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.alsa"};
 
@@ -71,7 +71,7 @@ struct alsa_capture {
   pthread_mutex_t mixer_mutex;
   _Atomic bool stopped;
 
-  spsc_byte_ring_buffer_t *ring_buffer;
+  backend_buffer_t *buffer;
   cdsp_sem_t semaphore;
   pthread_t inner_thread;
   bool inner_thread_created;
@@ -298,13 +298,13 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       if (capture->device_stalled) {
         capture->device_stalled = false;
       }
-      size_t bytes_read = (size_t)frames_read * bytes_per_frame;
-      size_t pushed = spsc_byte_ring_buffer_write(capture->ring_buffer,
-                                                  local_buf, bytes_read);
-      if (pushed < bytes_read) {
-        logger_warn(&g_logger,
-                    "Capture ring buffer is full, dropped %zu out of %zu bytes",
-                    bytes_read - pushed, bytes_read);
+      size_t pushed =
+          backend_buffer_push(capture->buffer, local_buf, (size_t)frames_read);
+      if (pushed < (size_t)frames_read) {
+        logger_warn(
+            &g_logger,
+            "Capture ring buffer is full, dropped %zu out of %zu frames",
+            (size_t)frames_read - pushed, (size_t)frames_read);
       }
       if (capture->semaphore) {
         cdsp_sem_signal(capture->semaphore);
@@ -650,22 +650,24 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
 
-  size_t sample_size = alsa_format_sample_size(capture->format);
-
   alsa_capture_init_controls(capture);
 
   size_t ring_frames = alsa_capture_ring_capacity_frames(
       (size_t)capture->chunk_size, capture->period);
-  capture->ring_buffer = spsc_byte_ring_buffer_create(
-      ring_frames * (size_t)capture->channels * sample_size);
-  if (!capture->ring_buffer) {
+  capture->buffer = backend_buffer_create(
+      ring_frames, alsa_pcm_format_to_binary_format(capture->format),
+      capture->channels, capture->capture_sample_rate, false);
+  if (!capture->buffer) {
     if (err) {
       backend_error_init(
           err, BACKEND_ERROR_INITIALIZATION_FAILED,
-          "Failed to allocate SPSC ring buffer for threaded ALSA capture");
+          "Failed to allocate backend buffer for threaded ALSA capture");
     }
     goto error_cleanup;
   }
+  backend_buffer_set_control_flags(capture->buffer, &capture->inner_running,
+                                   &capture->stopped, NULL,
+                                   &capture->has_pending_rate_change);
   capture->semaphore = cdsp_sem_create();
   if (!capture->semaphore) {
     if (err) {
@@ -691,9 +693,9 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
   return true;
 
 error_cleanup:
-  if (capture->ring_buffer) {
-    spsc_byte_ring_buffer_free(capture->ring_buffer);
-    capture->ring_buffer = NULL;
+  if (capture->buffer) {
+    backend_buffer_free(capture->buffer);
+    capture->buffer = NULL;
   }
   if (capture->semaphore) {
     cdsp_sem_destroy(capture->semaphore);
@@ -748,13 +750,7 @@ static bool alsa_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
     return false;
   }
 
-  size_t sample_bytes = alsa_format_sample_size(capture->format);
-  size_t blockalign = (size_t)capture->channels * sample_bytes;
-  return audio_backend_ring_buffer_read(
-      capture->ring_buffer, blockalign, frames,
-      alsa_pcm_format_to_binary_format(capture->format),
-      (size_t)capture->channels, &capture->inner_running, &capture->stopped,
-      &capture->has_pending_rate_change, chunk, err);
+  return backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
 }
 
 // Close the ALSA capture device
@@ -772,9 +768,9 @@ static void alsa_capture_close(void *ctx) {
     capture->inner_thread_created = false;
     atomic_store_explicit(&capture->inner_running, false, memory_order_release);
   }
-  if (capture->ring_buffer) {
-    spsc_byte_ring_buffer_free(capture->ring_buffer);
-    capture->ring_buffer = NULL;
+  if (capture->buffer) {
+    backend_buffer_free(capture->buffer);
+    capture->buffer = NULL;
   }
   if (capture->semaphore) {
     cdsp_sem_destroy(capture->semaphore);

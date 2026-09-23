@@ -2,6 +2,7 @@
 #define SPECTROGRAM_ENGINE_H
 
 #include "config/DSPConfigTypes.h"
+#include "models/ViewerTracker.h"
 
 #include <QObject>
 #include <QSettings>
@@ -17,7 +18,11 @@ class SpectrogramEngine : public QObject {
 public:
     explicit SpectrogramEngine(QObject* parent = nullptr) : QObject(parent) { loadSettings(); }
 
-    int visibilityCount = 0;
+    ViewerTracker viewerTracker;
+    void registerViewer(QWidget* viewer) { viewerTracker.registerViewer(viewer); }
+    void unregisterViewer(QWidget* viewer) { viewerTracker.unregisterViewer(viewer); }
+    bool isVisible() const { return viewerTracker.isVisible(); }
+
     bool isCapture = true;
     std::optional<int> channel = std::nullopt;
     size_t nBins = 200;

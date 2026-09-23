@@ -6,6 +6,7 @@
 
 #include "audio/audio_chunk.h"
 #include "backend/audio_backend.h"
+#include "backend/backend_buffer.h"
 #include "test_support.h"
 #include "utils/lock_free_ring_buffer.h"
 
@@ -418,9 +419,9 @@ TEST(AudioChunk_PlanarEncodeDecode) {
 TEST(AudioBackend_PlanarRingBuffer_ReadWrite) {
   size_t channels = 2;
   size_t frames = 32;
-  spsc_planar_ring_buffer_t *ring =
-      spsc_planar_ring_buffer_create(channels, sizeof(float), 64);
-  ASSERT_TRUE(ring != NULL);
+  backend_buffer_t *buf = backend_buffer_create(64, BINARY_SAMPLE_FORMAT_F32_LE,
+                                                channels, 48000.0, true);
+  ASSERT_TRUE(buf != NULL);
 
   audio_chunk_t *chunk_in = audio_chunk_create(frames, channels);
   ASSERT_TRUE(chunk_in != NULL);
@@ -433,16 +434,12 @@ TEST(AudioBackend_PlanarRingBuffer_ReadWrite) {
   audio_chunk_set_valid_frames(chunk_in, frames);
 
   backend_error_t err = {0};
-  ASSERT_TRUE(audio_backend_planar_ring_buffer_write(
-      ring, chunk_in, BINARY_SAMPLE_FORMAT_F32_LE, channels, 1, 4, NULL, NULL,
-      NULL, NULL, &err));
-  ASSERT_EQ(32, spsc_planar_ring_buffer_get_available_to_read(ring));
+  ASSERT_TRUE(backend_buffer_write_chunk(buf, chunk_in, 1, 4, &err));
+  ASSERT_EQ(32, backend_buffer_get_available_read_frames(buf));
 
   audio_chunk_t *chunk_out = audio_chunk_create(frames, channels);
   ASSERT_TRUE(chunk_out != NULL);
-  ASSERT_TRUE(audio_backend_planar_ring_buffer_read(
-      ring, frames, BINARY_SAMPLE_FORMAT_F32_LE, channels, NULL, NULL, NULL,
-      chunk_out, &err));
+  ASSERT_TRUE(backend_buffer_read_chunk(buf, frames, chunk_out, &err));
   ASSERT_EQ(frames, audio_chunk_get_valid_frames(chunk_out));
 
   double *out0 = audio_chunk_get_channel(chunk_out, 0);
@@ -454,7 +451,7 @@ TEST(AudioBackend_PlanarRingBuffer_ReadWrite) {
 
   audio_chunk_free(chunk_in);
   audio_chunk_free(chunk_out);
-  spsc_planar_ring_buffer_free(ring);
+  backend_buffer_free(buf);
 }
 
 TEST(SpscByteRingBuffer_WriteSilence) {

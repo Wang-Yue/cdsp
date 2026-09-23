@@ -37,8 +37,8 @@ SpectrumView::SpectrumView(std::shared_ptr<SpectrumEngine> engine, QWidget* pare
 }
 
 SpectrumView::~SpectrumView() {
-    if (isVisible() && m_engine && m_engine->visibilityCount > 0) {
-        m_engine->visibilityCount--;
+    if (m_engine) {
+        m_engine->unregisterViewer(this);
     }
 }
 
@@ -107,16 +107,14 @@ static std::vector<float> applyOctaveSmoothing(const std::vector<float>& freqs, 
 
 void SpectrumView::setEngine(std::shared_ptr<SpectrumEngine> engine) {
     if (m_engine) {
-        if (isVisible() && m_engine->visibilityCount > 0)
-            m_engine->visibilityCount--;
+        m_engine->unregisterViewer(this);
         disconnect(m_engine.get(), &SpectrumEngine::updated, this, nullptr);
     }
     m_engine = engine;
     if (m_engine) {
-        if (isVisible())
-            m_engine->visibilityCount++;
+        m_engine->registerViewer(this);
         connect(m_engine.get(), &SpectrumEngine::updated, this, [this]() {
-            if (m_engine)
+            if (m_engine && isVisible())
                 setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
         });
         setSpectrum(m_engine->data, m_engine->smoothing, m_engine->peakHoldDecayRate);
@@ -125,14 +123,10 @@ void SpectrumView::setEngine(std::shared_ptr<SpectrumEngine> engine) {
 
 void SpectrumView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_engine)
-        m_engine->visibilityCount++;
 }
 
 void SpectrumView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_engine && m_engine->visibilityCount > 0)
-        m_engine->visibilityCount--;
 }
 
 static float normDB(float db, float minDB = -120.0f, float maxDB = 0.0f) {

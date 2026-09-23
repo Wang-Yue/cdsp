@@ -25,12 +25,11 @@
 #include <windows.h>
 
 #include "audio/sample_conversion.h"
-#include "backend/playback_buffer.h"
+#include "backend/backend_buffer.h"
 #include "config/config_gen.h"
 #include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
-#include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.asio"};
 
@@ -1114,18 +1113,17 @@ static bool asio_device_is_dsd_lsb(const char *devname, bool is_input) {
 // MARK: - Internal Contexts and Global Atomics matching CamillaDSP device.rs
 
 typedef struct {
-  spsc_planar_ring_buffer_t *planar_ring;
+  backend_buffer_t *buffer;
   ASIOBufferInfo *buffer_infos;
   void **channel_ptrs;
   size_t num_channels;
   size_t buffer_size;
   size_t bytes_per_sample;
   uint8_t silence_byte;
-  playback_buffer_t buffer;
 } asio_playback_context_t;
 
 typedef struct {
-  spsc_planar_ring_buffer_t *planar_ring;
+  backend_buffer_t *buffer;
   cdsp_sem_t semaphore;
   ASIOBufferInfo *buffer_infos;
   void **channel_ptrs;
@@ -1252,9 +1250,8 @@ static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
     ctx->channel_ptrs[ch] = ctx->buffer_infos[ch].buffers[buffer_index];
   }
 
-  playback_buffer_render_planar(&ctx->buffer, ctx->planar_ring,
-                                ctx->channel_ptrs, ctx->buffer_size,
-                                ctx->silence_byte);
+  backend_buffer_render(ctx->buffer, ctx->channel_ptrs, ctx->buffer_size,
+                        ctx->silence_byte);
 }
 
 /**
@@ -1286,9 +1283,8 @@ static void buffer_switch_capture(long buffer_index, ASIOBool direct_process) {
     ctx->channel_ptrs[ch] = ctx->buffer_infos[ch].buffers[buffer_index];
   }
 
-  size_t pushed_frames = spsc_planar_ring_buffer_write_channels(
-      ctx->planar_ring, (const void *const *)ctx->channel_ptrs,
-      ctx->buffer_size);
+  size_t pushed_frames = backend_buffer_push(
+      ctx->buffer, (const void *const *)ctx->channel_ptrs, ctx->buffer_size);
   if (pushed_frames < ctx->buffer_size) {
     logger_warn(
         &g_logger,
@@ -2215,7 +2211,7 @@ struct asio_playback {
   bool single_mode_allocated_infos;
   ASIOCallbacks callbacks_for_driver;
 
-  spsc_planar_ring_buffer_t *planar_ring;
+  backend_buffer_t *buffer;
 
   asio_playback_context_t *context;
   _Atomic bool is_running;
@@ -2260,9 +2256,9 @@ static void asio_playback_close(void *ctx) {
     playback->buffer_infos = NULL;
   }
 
-  if (playback->planar_ring) {
-    spsc_planar_ring_buffer_free(playback->planar_ring);
-    playback->planar_ring = NULL;
+  if (playback->buffer) {
+    backend_buffer_free(playback->buffer);
+    playback->buffer = NULL;
   }
 }
 
@@ -2342,8 +2338,11 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
   size_t ring_frames = ((size_t)playback->chunk_size > (size_t)asio_buffer_size)
                            ? (size_t)playback->chunk_size
                            : (size_t)asio_buffer_size;
-  playback->planar_ring = spsc_planar_ring_buffer_create(
-      playback->channels, playback->bytes_per_sample, 2 * ring_frames + 2048);
+  playback->buffer =
+      backend_buffer_create(2 * ring_frames + 2048,
+                            asio_sample_format_to_binary_format(
+                                playback->resolved_format, playback->is_lsb),
+                            playback->channels, playback->sample_rate, true);
 
   clear_playback_driver_events();
   reset_playback_callback_seen();
@@ -2360,7 +2359,7 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
     playback->context->channel_ptrs =
         (void **)calloc(playback->channels, sizeof(void *));
   }
-  if (!playback->planar_ring || !playback->context ||
+  if (!playback->buffer || !playback->context ||
       !playback->context->channel_ptrs) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -2373,13 +2372,15 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
 
-  playback->context->planar_ring = playback->planar_ring;
+  backend_buffer_set_control_flags(playback->buffer, &playback->is_running,
+                                   &playback->stopped, &playback->paused,
+                                   &ASIO_PLAYBACK_RATE_CHANGED);
+  backend_buffer_set_target_level(playback->buffer, target_level);
+
+  playback->context->buffer = playback->buffer;
   playback->context->num_channels = playback->channels;
   playback->context->buffer_size = asio_buf_frames;
   playback->context->bytes_per_sample = playback->bytes_per_sample;
-  playback_buffer_init(&playback->context->buffer,
-                       (double)playback->sample_rate);
-  playback_buffer_set_target_level(&playback->context->buffer, target_level);
   playback->context->silence_byte =
       (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) ? 0x69 : 0x00;
 
@@ -2482,20 +2483,14 @@ static bool asio_playback_write(void *ctx, const audio_chunk_t *chunk,
   if (sleep_ms == 0)
     sleep_ms = 1;
 
-  return audio_backend_planar_ring_buffer_write(
-      playback->planar_ring, chunk,
-      asio_sample_format_to_binary_format(playback->resolved_format,
-                                          playback->is_lsb),
-      playback->channels, sleep_ms, 8, &playback->is_running,
-      &playback->stopped, &playback->paused, &ASIO_PLAYBACK_RATE_CHANGED, err);
+  return backend_buffer_write_chunk(playback->buffer, chunk, sleep_ms, 8, err);
 }
 
 static size_t asio_playback_get_buffer_level(void *ctx) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
-  if (!playback || !playback->context)
+  if (!playback || !playback->buffer)
     return 0;
-  return playback_buffer_planar_level(&playback->context->buffer,
-                                      playback->context->planar_ring);
+  return backend_buffer_get_level(playback->buffer);
 }
 
 static bool asio_playback_get_pending_rate_change(void *ctx, double *out_rate) {
@@ -2516,13 +2511,13 @@ static bool asio_playback_prefill_silence(void *ctx, size_t frames,
                                           backend_error_t *err) {
   (void)err;
   asio_playback_t *playback = (asio_playback_t *)ctx;
-  if (!playback)
+  if (!playback || !playback->buffer)
     return false;
   playback->target_level = (int)frames;
-  if (playback->context) {
-    playback_buffer_prefill_planar(&playback->context->buffer,
-                                   playback->context->planar_ring, frames);
-  }
+  backend_buffer_set_target_level(playback->buffer, frames);
+  uint8_t silence_byte =
+      (playback->resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) ? 0x69 : 0x00;
+  backend_buffer_prefill_silence(playback->buffer, frames, silence_byte);
   return true;
 }
 
@@ -2628,7 +2623,7 @@ struct asio_capture {
   bool single_mode_allocated_infos;
   ASIOCallbacks callbacks_for_driver;
 
-  spsc_planar_ring_buffer_t *planar_ring;
+  backend_buffer_t *buffer;
   cdsp_sem_t semaphore;
 
   asio_capture_context_t *context;
@@ -2682,9 +2677,9 @@ static void asio_capture_close(void *ctx) {
     cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
   }
-  if (capture->planar_ring) {
-    spsc_planar_ring_buffer_free(capture->planar_ring);
-    capture->planar_ring = NULL;
+  if (capture->buffer) {
+    backend_buffer_free(capture->buffer);
+    capture->buffer = NULL;
   }
 }
 
@@ -2761,8 +2756,11 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
   size_t ring_frames = ((size_t)capture->chunk_size > (size_t)asio_buffer_size)
                            ? (size_t)capture->chunk_size
                            : (size_t)asio_buffer_size;
-  capture->planar_ring = spsc_planar_ring_buffer_create(
-      capture->channels, capture->bytes_per_sample, 2 * ring_frames + 2048);
+  capture->buffer =
+      backend_buffer_create(2 * ring_frames + 2048,
+                            asio_sample_format_to_binary_format(
+                                capture->resolved_format, capture->is_lsb),
+                            capture->channels, capture->sample_rate, true);
   capture->semaphore = cdsp_sem_create();
 
   clear_capture_driver_events();
@@ -2774,14 +2772,14 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
   if (capture->context) {
     capture->context->channel_ptrs =
         (void **)calloc(capture->channels, sizeof(void *));
-    capture->context->planar_ring = capture->planar_ring;
+    capture->context->buffer = capture->buffer;
     capture->context->semaphore = capture->semaphore;
     capture->context->num_channels = capture->channels;
     capture->context->buffer_size = (size_t)asio_buffer_size;
     capture->context->bytes_per_sample = capture->bytes_per_sample;
   }
 
-  if (!capture->planar_ring || !capture->semaphore || !capture->context ||
+  if (!capture->buffer || !capture->semaphore || !capture->context ||
       !capture->context->channel_ptrs) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -2792,6 +2790,10 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
     }
     goto error_cleanup;
   }
+
+  backend_buffer_set_control_flags(capture->buffer, &capture->is_running,
+                                   &capture->stopped, NULL,
+                                   &ASIO_CAPTURE_RATE_CHANGED);
 
   if (capture->full_duplex) {
     atomic_store_explicit(&CAPTURE_CONTEXT, capture->context,
@@ -2847,13 +2849,12 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
 
   // Discard anything queued before the loop was ready, then open the gate.
   // Matches CamillaDSP device.rs lines 1821-1829.
-  size_t discarded =
-      spsc_planar_ring_buffer_get_available_to_read(capture->planar_ring);
+  size_t discarded = backend_buffer_get_available_read_frames(capture->buffer);
   if (discarded > 0) {
     logger_debug(&g_logger,
                  "Discarding %zu frames captured before the loop was ready.",
                  discarded);
-    spsc_planar_ring_buffer_drain(capture->planar_ring);
+    backend_buffer_drain(capture->buffer);
   }
   atomic_store_explicit(&CAPTURE_STREAM_ACTIVE, true, memory_order_release);
 
@@ -2891,12 +2892,7 @@ static bool asio_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
     return false;
   }
 
-  return audio_backend_planar_ring_buffer_read(
-      capture->planar_ring, frames,
-      asio_sample_format_to_binary_format(capture->resolved_format,
-                                          capture->is_lsb),
-      capture->channels, &capture->is_running, &capture->stopped,
-      &ASIO_CAPTURE_RATE_CHANGED, chunk, err);
+  return backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
 }
 
 static bool asio_capture_wait_for_data(void *ctx, uint32_t timeout_ms) {

@@ -165,9 +165,8 @@ void MonitoringController::poll() {
     size_t pbChannels = m_devices ? m_devices->playbackConfig.channels : 2;
 
     // 2. Poll VU Levels
-    int vuVisibilityCount = (levels ? levels->visibilityCount : 0) + levelState.visibilityCount;
-    if (m_currentStatus != ProcessingState::Inactive && m_currentStatus != ProcessingState::Paused &&
-        vuVisibilityCount > 0) {
+    bool vuVisible = (levels && levels->isVisible()) || levelState.isVisible();
+    if (m_currentStatus != ProcessingState::Inactive && m_currentStatus != ProcessingState::Paused && vuVisible) {
         VuLevels vu = m_engine->getVuLevels();
         for (float& v : vu.capture_peak)
             v = std::max(-100.0f, v);
@@ -192,7 +191,7 @@ void MonitoringController::poll() {
 
     // 3. Poll Spectrum
     if (m_currentStatus != ProcessingState::Inactive && m_currentStatus != ProcessingState::Paused &&
-        m_spectrumEngine && m_spectrumEngine->visibilityCount > 0) {
+        m_spectrumEngine && m_spectrumEngine->isVisible()) {
         SpectrumData specData;
         int specCh = m_spectrumEngine->channel.value_or(-1);
         if (m_engine->getSpectrum(m_spectrumEngine->isCapture, specCh, m_spectrumEngine->minFreq,
@@ -207,7 +206,7 @@ void MonitoringController::poll() {
 
     // 4. Poll Spectrogram
     if (m_currentStatus != ProcessingState::Inactive && m_currentStatus != ProcessingState::Paused &&
-        m_spectrogramEngine && m_spectrogramEngine->visibilityCount > 0) {
+        m_spectrogramEngine && m_spectrogramEngine->isVisible()) {
         SpectrumData spectroData;
         int spectroCh = m_spectrogramEngine->channel.value_or(-1);
         if (m_engine->getSpectrum(m_spectrogramEngine->isCapture, spectroCh, m_spectrogramEngine->minFreq,
@@ -220,7 +219,7 @@ void MonitoringController::poll() {
 
     // 5. Poll Vector Scope
     if (m_currentStatus != ProcessingState::Inactive && m_currentStatus != ProcessingState::Paused &&
-        m_vectorScopeEngine && m_vectorScopeEngine->visibilityCount > 0) {
+        m_vectorScopeEngine && m_vectorScopeEngine->isVisible()) {
         AudioSamplesData samples;
         double playbackRate = m_devices ? static_cast<double>(m_devices->playbackConfig.sampleRate) : 48000.0;
         double captureRate = (m_settings && m_settings->resamplerEnabled && m_devices)

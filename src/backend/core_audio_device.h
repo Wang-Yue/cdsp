@@ -156,6 +156,21 @@ bool core_audio_device_get_buffer_frame_size(AudioDeviceID device_id,
                                              core_audio_scope_t scope,
                                              uint32_t *out_frames);
 
+/**
+ * @brief Set the device's buffer frame size for a given scope.
+ *
+ * Clamps to the device's supported range if available, then updates the
+ * kAudioDevicePropertyBufferFrameSize property on the device.
+ *
+ * @param device_id The HAL Device ID.
+ * @param scope The direction scope.
+ * @param frames Desired buffer size in frames.
+ * @return true on success, false otherwise.
+ */
+bool core_audio_device_set_buffer_frame_size(AudioDeviceID device_id,
+                                             core_audio_scope_t scope,
+                                             uint32_t frames);
+
 // MARK: - Clock-source / pitch control (BlackHole 0.5.0+)
 
 /**
@@ -205,18 +220,6 @@ bool core_audio_device_has_nominal_sample_rate_property(
  */
 AudioStreamBasicDescription
 core_audio_device_float32_stream_format(double sample_rate, int channels);
-
-/**
- * @brief Build a canonical planar non-interleaved IEEE-754 32-bit float
- * AudioStreamBasicDescription (ASBD) for zero-copy CoreAudio transfers.
- *
- * @param sample_rate Sample rate in Hz.
- * @param channels Number of channels.
- * @return The constructed non-interleaved ASBD.
- */
-AudioStreamBasicDescription
-core_audio_device_planar_float32_stream_format(double sample_rate,
-                                               int channels);
 
 /**
  * @brief Build an AudioStreamBasicDescription for a given format token string

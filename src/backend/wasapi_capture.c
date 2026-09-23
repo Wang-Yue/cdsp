@@ -28,12 +28,12 @@
 #include <string.h>
 
 #include "audio/sample_conversion.h"
+#include "backend/backend_buffer.h"
 #include "backend/wasapi_capabilities.h"
 #include "backend/wasapi_device.h"
 #include "config/config_gen.h"
 #include "engine/cdsp_sem.h"
 #include "utils/cdsp_time.h"
-#include "utils/lock_free_ring_buffer.h"
 
 struct wasapi_capture {
   char device[256];
@@ -62,8 +62,6 @@ struct wasapi_capture {
   HANDLE event_handle;
   cdsp_sem_t semaphore;
 
-  spsc_byte_ring_buffer_t *ring_buffer;
-
   pthread_t inner_thread;
   bool inner_thread_created;
   _Atomic bool thread_running;
@@ -71,6 +69,7 @@ struct wasapi_capture {
   _Atomic bool paused;
   double pending_rate;
   _Atomic bool has_pending_rate_change;
+  backend_buffer_t *buffer;
 };
 
 static void wasapi_capture_on_format_change(void *parent, double new_rate) {
@@ -328,12 +327,12 @@ static void *wasapi_capture_loop(void *arg) {
           memset(data, 0, nbr_bytes_loop);
         }
 
-        if (spsc_byte_ring_buffer_get_available_to_write(capture->ring_buffer) <
-            nbr_bytes_loop) {
+        if (backend_buffer_get_available_write_frames(capture->buffer) <
+            (size_t)nbr_frames_read) {
           logger_debug(&g_wasapi_logger,
                        "Dropping captured chunk, channel full");
         }
-        spsc_byte_ring_buffer_write(capture->ring_buffer, data, nbr_bytes_loop);
+        backend_buffer_push(capture->buffer, data, (size_t)nbr_frames_read);
         if (capture->semaphore) {
           cdsp_sem_signal(capture->semaphore);
         }
@@ -459,10 +458,20 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
   capture->bytes_per_sample = sample_format_bytes_per_sample(capture->bin_fmt);
   capture->blockalign = (size_t)capture->channels * capture->bytes_per_sample;
 
-  // Allocate SPSC byte ring buffer for audio samples
-  size_t ring_size =
-      (size_t)capture->channels * 4 * (2 * (size_t)capture->chunk_size + 2048);
-  capture->ring_buffer = spsc_byte_ring_buffer_create(ring_size);
+  // Allocate backend buffer for audio samples
+  size_t ring_frames = 2 * (size_t)capture->chunk_size + 2048;
+  capture->buffer =
+      backend_buffer_create(ring_frames, capture->bin_fmt, capture->channels,
+                            (double)capture->sample_rate, false);
+  if (!capture->buffer) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to allocate capture buffer");
+    goto error_cleanup;
+  }
+  backend_buffer_set_control_flags(capture->buffer, &capture->thread_running,
+                                   &capture->stopped, NULL,
+                                   &capture->has_pending_rate_change);
 
   capture->semaphore = cdsp_sem_create();
   if (!capture->semaphore) {
@@ -487,9 +496,9 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
   return true;
 
 error_cleanup:
-  if (capture->ring_buffer) {
-    spsc_byte_ring_buffer_free(capture->ring_buffer);
-    capture->ring_buffer = NULL;
+  if (capture->buffer) {
+    backend_buffer_free(capture->buffer);
+    capture->buffer = NULL;
   }
   if (capture->semaphore) {
     cdsp_sem_destroy(capture->semaphore);
@@ -510,11 +519,7 @@ static bool wasapi_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
   if (!capture)
     return false;
-  return audio_backend_ring_buffer_read(
-      capture->ring_buffer, capture->blockalign, frames,
-      (binary_sample_format_t)capture->bin_fmt, (size_t)capture->channels,
-      &capture->thread_running, &capture->stopped,
-      &capture->has_pending_rate_change, chunk, err);
+  return backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
 }
 
 static void wasapi_capture_close(void *ctx) {
@@ -534,9 +539,9 @@ static void wasapi_capture_close(void *ctx) {
     capture->inner_thread_created = false;
   }
 
-  if (capture->ring_buffer) {
-    spsc_byte_ring_buffer_free(capture->ring_buffer);
-    capture->ring_buffer = NULL;
+  if (capture->buffer) {
+    backend_buffer_free(capture->buffer);
+    capture->buffer = NULL;
   }
   if (capture->semaphore) {
     cdsp_sem_destroy(capture->semaphore);

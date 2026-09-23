@@ -2,12 +2,17 @@
 #define LEVEL_STATE_H
 
 #include "config/DSPConfigTypes.h"
+#include "models/ViewerTracker.h"
 
 #include <mutex>
 #include <vector>
 
 struct LevelState {
-    int visibilityCount = 0;
+    ViewerTracker viewerTracker;
+    void registerViewer(QWidget* viewer) { viewerTracker.registerViewer(viewer); }
+    void unregisterViewer(QWidget* viewer) { viewerTracker.unregisterViewer(viewer); }
+    bool isVisible() const { return viewerTracker.isVisible(); }
+
     int captureChannelCount = 0;
     int playbackChannelCount = 0;
     mutable std::mutex mutex;

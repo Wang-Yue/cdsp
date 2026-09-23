@@ -30,13 +30,12 @@
 
 #include "audio/audio_chunk.h"
 #include "backend/audio_backend.h"
+#include "backend/backend_buffer.h"
 #include "backend/backend_error.h"
-#include "backend/playback_buffer.h"
 #include "config/config_gen.h"
 #include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
-#include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.pipewire"};
 
@@ -66,7 +65,7 @@ struct pipewire_capture {
   struct pw_context *context;
   struct pw_stream *stream;
 
-  spsc_byte_ring_buffer_t *ring;
+  backend_buffer_t *buffer;
   size_t blockalign;
   cdsp_sem_t semaphore;
   bool stopped;
@@ -80,6 +79,7 @@ struct pipewire_playback {
   int sample_rate;
   size_t channels;
   int chunk_size;
+  size_t target_level;
 
   char node_name[256];
   char node_description[256];
@@ -94,9 +94,7 @@ struct pipewire_playback {
   struct pw_context *context;
   struct pw_stream *stream;
 
-  spsc_byte_ring_buffer_t *ring;
-  size_t blockalign;
-  playback_buffer_t buffer;
+  backend_buffer_t *buffer;
   _Atomic bool paused;
   bool stopped;
 
@@ -126,11 +124,12 @@ static void on_capture_process(void *data) {
   struct spa_buffer *buf = b->buffer;
   if (buf && buf->n_datas > 0 && buf->datas[0].data && buf->datas[0].chunk) {
     size_t size = buf->datas[0].chunk->size;
-    if (size > 0) {
+    if (size > 0 && c->blockalign > 0) {
       const uint8_t *src = (const uint8_t *)buf->datas[0].data;
       size_t offset = buf->datas[0].chunk->offset;
+      size_t frames = size / c->blockalign;
 
-      spsc_byte_ring_buffer_write(c->ring, src + offset, size);
+      backend_buffer_push(c->buffer, src + offset, frames);
       if (c->semaphore)
         cdsp_sem_signal(c->semaphore);
     }
@@ -216,8 +215,7 @@ static void on_playback_process(void *data) {
     if (atomic_load_explicit(&p->paused, memory_order_acquire)) {
       memset(dst, 0, callback_bytes);
     } else {
-      playback_buffer_render_byte(&p->buffer, p->ring, dst,
-                                  callback_bytes / stride, stride, 0x00);
+      backend_buffer_render(p->buffer, dst, callback_bytes / stride, 0x00);
     }
 
     buf->datas[0].chunk->offset = 0;
@@ -293,9 +291,9 @@ static void pipewire_capture_close(void *ctx) {
     capture->loop = NULL;
   }
 
-  if (capture->ring) {
-    spsc_byte_ring_buffer_free(capture->ring);
-    capture->ring = NULL;
+  if (capture->buffer) {
+    backend_buffer_free(capture->buffer);
+    capture->buffer = NULL;
   }
 
   if (capture->semaphore) {
@@ -439,12 +437,12 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
   size_t cap_frames_needed = (size_t)(4 * capture->chunk_size);
   if (cap_frames_needed < cap_min_frames)
     cap_frames_needed = cap_min_frames;
-  size_t cap_ring_size = cap_frames_needed * capture->blockalign;
-
-  capture->ring = spsc_byte_ring_buffer_create(cap_ring_size);
+  capture->buffer =
+      backend_buffer_create(cap_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE,
+                            capture->channels, capture->sample_rate, false);
   capture->semaphore = cdsp_sem_create();
 
-  if (!capture->ring || !capture->semaphore) {
+  if (!capture->buffer || !capture->semaphore) {
     pipewire_capture_close(capture);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -474,9 +472,7 @@ static bool pipewire_capture_read(void *ctx, size_t frames,
   pipewire_capture_t *capture = (pipewire_capture_t *)ctx;
   if (!capture)
     return false;
-  return audio_backend_ring_buffer_read(
-      capture->ring, capture->blockalign, frames, BINARY_SAMPLE_FORMAT_F32_LE,
-      (size_t)capture->channels, NULL, NULL, NULL, chunk, err);
+  return backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
 }
 
 /**
@@ -538,7 +534,7 @@ static void pipewire_capture_set_pitch(void *ctx, double multiplier) {
  */
 static bool pipewire_capture_wait(void *ctx, uint32_t timeout_ms) {
   pipewire_capture_t *capture = (pipewire_capture_t *)ctx;
-  if (!capture || !capture->ring || !capture->semaphore)
+  if (!capture || !capture->buffer || !capture->semaphore)
     return false;
   if (capture->stopped)
     return false;
@@ -677,8 +673,8 @@ static void pipewire_playback_close(void *ctx) {
     // Wait for the ring buffer to drain before closing the stream,
     // ensuring all remaining audio is played back.
     int retries = 200; // wait up to 200ms
-    while (!playback->stopped && playback->ring &&
-           spsc_byte_ring_buffer_get_available_to_read(playback->ring) > 0 &&
+    while (!playback->stopped && playback->buffer &&
+           backend_buffer_get_available_read_frames(playback->buffer) > 0 &&
            retries-- > 0) {
       cdsp_sleep_ms(1);
     }
@@ -699,9 +695,9 @@ static void pipewire_playback_close(void *ctx) {
     playback->loop = NULL;
   }
 
-  if (playback->ring) {
-    spsc_byte_ring_buffer_free(playback->ring);
-    playback->ring = NULL;
+  if (playback->buffer) {
+    backend_buffer_free(playback->buffer);
+    playback->buffer = NULL;
   }
 }
 
@@ -831,11 +827,10 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
     return false;
   }
 
-  playback->blockalign = (size_t)playback->channels * sizeof(float);
   size_t pb_min_frames = (size_t)ceil((double)playback->sample_rate * 0.025);
-  size_t tl = atomic_load_explicit(&playback->buffer.target_level,
-                                   memory_order_relaxed);
-  size_t target_level = tl > 0 ? tl : (size_t)playback->chunk_size;
+  size_t target_level = playback->target_level > 0
+                            ? playback->target_level
+                            : (size_t)playback->chunk_size;
   size_t pb_prefill_frames = target_level > (size_t)(3 * playback->chunk_size)
                                  ? target_level
                                  : (size_t)(3 * playback->chunk_size);
@@ -843,19 +838,22 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
       pb_prefill_frames + (size_t)(4 * playback->chunk_size);
   if (pb_frames_needed < pb_min_frames)
     pb_frames_needed = pb_min_frames;
-  size_t pb_ring_size = pb_frames_needed * playback->blockalign;
 
-  playback->ring = spsc_byte_ring_buffer_create(pb_ring_size);
+  playback->buffer =
+      backend_buffer_create(pb_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE,
+                            playback->channels, playback->sample_rate, false);
 
-  if (!playback->ring) {
+  if (!playback->buffer) {
     pipewire_playback_close(playback);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to allocate playback ring buffer");
+                         "Failed to allocate playback buffer");
     return false;
   }
+  backend_buffer_set_control_flags(playback->buffer, NULL, NULL,
+                                   &playback->paused, NULL);
+  backend_buffer_set_target_level(playback->buffer, target_level);
   playback->paused = false;
-  playback_buffer_set_rate(&playback->buffer, (double)playback->sample_rate);
 
   logger_info(&g_logger,
               "Opened PipeWire playback: device=%s, rate=%d, channels=%d",
@@ -882,10 +880,7 @@ static bool pipewire_playback_write(void *ctx, const audio_chunk_t *chunk,
                                  (double)playback->sample_rate / 2.0);
   if (sleep_ms < 1)
     sleep_ms = 1;
-  return audio_backend_ring_buffer_write(
-      playback->ring, playback->blockalign, chunk, BINARY_SAMPLE_FORMAT_F32_LE,
-      (size_t)playback->channels, sleep_ms, 8, NULL, NULL, &playback->paused,
-      NULL, err);
+  return backend_buffer_write_chunk(playback->buffer, chunk, sleep_ms, 8, err);
 }
 
 /**
@@ -896,10 +891,9 @@ static bool pipewire_playback_write(void *ctx, const audio_chunk_t *chunk,
  */
 static size_t pipewire_playback_get_buffer_level(void *ctx) {
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
-  if (!playback)
+  if (!playback || !playback->buffer)
     return 0;
-  return playback_buffer_level(&playback->buffer, playback->ring,
-                               playback->blockalign);
+  return backend_buffer_get_level(playback->buffer);
 }
 
 /**
@@ -939,11 +933,10 @@ static bool pipewire_playback_prefill_silence(void *ctx, size_t frames,
                                               backend_error_t *err) {
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
   (void)err;
-  if (!playback)
+  if (!playback || !playback->buffer)
     return false;
 
-  playback_buffer_prefill_byte(&playback->buffer, playback->ring, frames,
-                               playback->blockalign, 0x00);
+  backend_buffer_prefill_silence(playback->buffer, frames, 0x00);
   return true;
 }
 
@@ -1039,11 +1032,9 @@ static playback_backend_t *pipewire_playback_create(
   playback->sample_rate = sample_rate;
   playback->channels = config->cfg.pipewire.channels;
   playback->chunk_size = chunk_size;
-  playback_buffer_init(&playback->buffer, (double)playback->sample_rate);
-  playback_buffer_set_target_level(
-      &playback->buffer, config->cfg.pipewire.has_target_level
-                             ? (size_t)config->cfg.pipewire.target_level
-                             : (size_t)chunk_size);
+  playback->target_level = config->cfg.pipewire.has_target_level
+                               ? (size_t)config->cfg.pipewire.target_level
+                               : (size_t)chunk_size;
 
   if (config->cfg.pipewire.has_node_name) {
     snprintf(playback->node_name, sizeof(playback->node_name), "%s",

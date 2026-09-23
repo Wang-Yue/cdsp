@@ -25,13 +25,12 @@
 
 #include "audio/audio_chunk.h"
 #include "backend/audio_backend.h"
+#include "backend/backend_buffer.h"
 #include "backend/backend_error.h"
 #include "backend/core_audio_device.h"
-#include "backend/playback_buffer.h"
 #include "config/config_gen.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
-#include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.backend.coreaudio.playback"};
 
@@ -45,7 +44,6 @@ struct core_audio_playback {
   bool has_sample_format;
 
   AudioUnit audio_unit;
-  spsc_planar_ring_buffer_t *planar_ring;
   size_t bytes_per_sample;
   size_t blockalign;
 
@@ -56,15 +54,14 @@ struct core_audio_playback {
   _Atomic bool is_paused;
   _Atomic bool stopped;
   _Atomic int active_callbacks;
-  playback_buffer_t buffer;
-  void **channel_data_pointers;
+  backend_buffer_t *buffer;
 };
 
 /**
  * @brief CoreAudio render callback for playback.
  *
- * Called by the CoreAudio real-time thread to pull non-interleaved audio data
- * from the planar ring buffers and write it to the output device's buffers.
+ * Called by the CoreAudio real-time thread to pull interleaved audio data
+ * from the ring buffer and write it directly to the output device's buffers.
  */
 static OSStatus playback_callback(void *inRefCon,
                                   AudioUnitRenderActionFlags *ioActionFlags,
@@ -87,16 +84,10 @@ static OSStatus playback_callback(void *inRefCon,
     return noErr;
   }
 
-  for (UInt32 b = 0; b < ioData->mNumberBuffers && b < playback->channels;
-       b++) {
-    playback->channel_data_pointers[b] = ioData->mBuffers[b].mData;
-  }
-
   if (atomic_load_explicit(&playback->is_paused, memory_order_relaxed)) {
-    for (size_t b = 0; b < playback->channels; b++) {
-      if (playback->channel_data_pointers[b]) {
-        memset(playback->channel_data_pointers[b], 0,
-               inNumberFrames * sizeof(float));
+    for (UInt32 b = 0; b < ioData->mNumberBuffers; b++) {
+      if (ioData->mBuffers[b].mData) {
+        memset(ioData->mBuffers[b].mData, 0, ioData->mBuffers[b].mDataByteSize);
       }
     }
     atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
@@ -104,9 +95,10 @@ static OSStatus playback_callback(void *inRefCon,
     return noErr;
   }
 
-  playback_buffer_render_planar(&playback->buffer, playback->planar_ring,
-                                playback->channel_data_pointers,
-                                (size_t)inNumberFrames, 0x00);
+  if (ioData->mBuffers[0].mData) {
+    backend_buffer_render(playback->buffer, ioData->mBuffers[0].mData,
+                          (size_t)inNumberFrames, 0x00);
+  }
 
   atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
                             memory_order_release);
@@ -188,10 +180,8 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
               playback->exclusive ? 1 : 0);
   core_audio_playback_close(playback);
 
-  if (playback->planar_ring) {
-    spsc_planar_ring_buffer_drain(playback->planar_ring);
-  }
-  playback_buffer_set_rate(&playback->buffer, playback->sample_rate);
+  backend_buffer_drain(playback->buffer);
+  backend_buffer_set_rate(playback->buffer, playback->sample_rate);
 
   AudioDeviceID dev_id = core_audio_device_id_for_name(
       playback->device_name[0] ? playback->device_name : NULL,
@@ -317,9 +307,12 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
 
   core_audio_device_add_alive_watcher(dev_id, &playback->is_device_alive);
 
+  core_audio_device_set_buffer_frame_size(dev_id, CORE_AUDIO_SCOPE_OUTPUT,
+                                          (uint32_t)playback->chunk_size);
+
   AudioStreamBasicDescription stream_format =
-      core_audio_device_planar_float32_stream_format(playback->sample_rate,
-                                                     (int)playback->channels);
+      core_audio_device_float32_stream_format(playback->sample_rate,
+                                              (int)playback->channels);
   status = AudioUnitSetProperty(
       playback->audio_unit, kAudioUnitProperty_StreamFormat,
       kAudioUnitScope_Input, 0, &stream_format, sizeof(stream_format));
@@ -412,10 +405,7 @@ static bool core_audio_playback_write(void *ctx, const audio_chunk_t *chunk,
   if (sleep_ms == 0)
     sleep_ms = 1;
 
-  return audio_backend_planar_ring_buffer_write(
-      playback->planar_ring, chunk, BINARY_SAMPLE_FORMAT_F32_LE,
-      playback->channels, sleep_ms, 8, NULL, &playback->stopped,
-      &playback->is_paused, NULL, err);
+  return backend_buffer_write_chunk(playback->buffer, chunk, sleep_ms, 8, err);
 }
 
 /// Get the current buffer level in frames.
@@ -423,7 +413,7 @@ static size_t core_audio_playback_get_buffer_level(void *ctx) {
   core_audio_playback_t *playback = (core_audio_playback_t *)ctx;
   if (!playback)
     return 0;
-  return playback_buffer_planar_level(&playback->buffer, playback->planar_ring);
+  return backend_buffer_get_level(playback->buffer);
 }
 
 /// Get any pending sample rate change detected on the playback device.
@@ -444,8 +434,7 @@ static bool core_audio_playback_prefill_silence(void *ctx, size_t frames,
   (void)err;
   if (!playback)
     return true;
-  playback_buffer_prefill_planar(&playback->buffer, playback->planar_ring,
-                                 frames);
+  backend_buffer_prefill_silence(playback->buffer, frames, 0x00);
   return true;
 }
 
@@ -481,13 +470,9 @@ static void core_audio_playback_destroy(void *ctx) {
   if (!playback)
     return;
   core_audio_playback_close(playback);
-  if (playback->channel_data_pointers) {
-    free(playback->channel_data_pointers);
-    playback->channel_data_pointers = NULL;
-  }
-  if (playback->planar_ring) {
-    spsc_planar_ring_buffer_free(playback->planar_ring);
-    playback->planar_ring = NULL;
+  if (playback->buffer) {
+    backend_buffer_free(playback->buffer);
+    playback->buffer = NULL;
   }
   free(playback);
 }
@@ -538,8 +523,6 @@ static playback_backend_t *core_audio_playback_create(
                          config->cfg.coreaudio.target_level > 0)
                             ? (size_t)config->cfg.coreaudio.target_level
                             : (size_t)chunk_size;
-  playback_buffer_init(&playback->buffer, playback->sample_rate);
-  playback_buffer_set_target_level(&playback->buffer, target_level);
   playback->exclusive = playback_device_config_get_exclusive(config);
 
   coreaudio_sample_format_t fmt = playback_device_config_get_format(config);
@@ -550,28 +533,22 @@ static playback_backend_t *core_audio_playback_create(
     playback->has_sample_format = true;
   }
 
-  playback->channel_data_pointers =
-      (void **)calloc(playback->channels, sizeof(void *));
-  if (!playback->channel_data_pointers) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Out of memory");
-    core_audio_playback_destroy(playback);
-    return NULL;
-  }
-
   playback->bytes_per_sample = sizeof(float);
   playback->blockalign = config_channels * sizeof(float);
   size_t ring_frames = 16 * (size_t)chunk_size + target_level + 2048;
-  playback->planar_ring = spsc_planar_ring_buffer_create(
-      playback->channels, sizeof(float), ring_frames);
-  if (!playback->planar_ring) {
+  playback->buffer =
+      backend_buffer_create(ring_frames, BINARY_SAMPLE_FORMAT_F32_LE,
+                            playback->channels, playback->sample_rate, false);
+  if (!playback->buffer) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Out of memory");
     core_audio_playback_destroy(playback);
     return NULL;
   }
+  backend_buffer_set_target_level(playback->buffer, target_level);
+  backend_buffer_set_control_flags(playback->buffer, NULL, &playback->stopped,
+                                   &playback->is_paused, NULL);
 
   atomic_init(&playback->is_device_alive, true);
   atomic_init(&playback->is_paused, false);

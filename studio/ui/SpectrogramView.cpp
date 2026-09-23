@@ -36,23 +36,21 @@ SpectrogramView::SpectrogramView(std::shared_ptr<SpectrogramEngine> engine, QWid
 }
 
 SpectrogramView::~SpectrogramView() {
-    if (isVisible() && m_engine && m_engine->visibilityCount > 0) {
-        m_engine->visibilityCount--;
+    if (m_engine) {
+        m_engine->unregisterViewer(this);
     }
 }
 
 void SpectrogramView::setEngine(std::shared_ptr<SpectrogramEngine> engine) {
     if (m_engine) {
-        if (isVisible() && m_engine->visibilityCount > 0)
-            m_engine->visibilityCount--;
+        m_engine->unregisterViewer(this);
         disconnect(m_engine.get(), &SpectrogramEngine::updated, this, nullptr);
     }
     m_engine = engine;
     if (m_engine) {
-        if (isVisible())
-            m_engine->visibilityCount++;
+        m_engine->registerViewer(this);
         connect(m_engine.get(), &SpectrogramEngine::updated, this, [this]() {
-            if (m_engine)
+            if (m_engine && isVisible())
                 setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
         });
         setHistory(m_engine->history, m_engine->show3D, m_engine->colorPalette);
@@ -61,14 +59,10 @@ void SpectrogramView::setEngine(std::shared_ptr<SpectrogramEngine> engine) {
 
 void SpectrogramView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (m_engine)
-        m_engine->visibilityCount++;
 }
 
 void SpectrogramView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
-    if (m_engine && m_engine->visibilityCount > 0)
-        m_engine->visibilityCount--;
 }
 
 void SpectrogramView::changeEvent(QEvent* event) {
