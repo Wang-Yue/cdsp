@@ -46,7 +46,7 @@ struct core_audio_playback {
   bool has_sample_format;
 
   AudioUnit audio_unit;
-  spsc_byte_ring_buffer_t *ring_buffer;
+  spsc_planar_ring_buffer_t *planar_ring;
   size_t bytes_per_sample;
   size_t blockalign;
 
@@ -60,8 +60,9 @@ struct core_audio_playback {
   _Atomic bool is_running;
   _Atomic size_t underrun_silence_frames;
   // Frames pending outside the ring buffer. The ring itself is read live by
-  // playback_buffer_level().
+  // playback_buffer_planar_level().
   playback_buffer_t buffer;
+  void **channel_data_pointers;
 };
 
 // Publish what the render callback is leaving queued ahead of the ring
@@ -78,14 +79,8 @@ static void core_audio_publish_buffer_level(core_audio_playback_t *playback) {
 /**
  * @brief CoreAudio render callback for playback.
  *
- * Called by the CoreAudio real-time thread to pull audio data
- * from the internal ring buffers and write it to the output device's buffers.
- *
- * @note This function runs on a real-time thread. It must be wait-free and must
- * not:
- *       - Allocate or free memory.
- *       - Take locks (mutexes).
- *       - Call any blocking APIs.
+ * Called by the CoreAudio real-time thread to pull non-interleaved audio data
+ * from the planar ring buffers and write it to the output device's buffers.
  */
 static OSStatus playback_callback(void *inRefCon,
                                   AudioUnitRenderActionFlags *ioActionFlags,
@@ -101,17 +96,23 @@ static OSStatus playback_callback(void *inRefCon,
 
   atomic_fetch_add_explicit(&playback->active_callbacks, 1,
                             memory_order_relaxed);
-  if (!ioData || ioData->mNumberBuffers == 0 || !ioData->mBuffers[0].mData ||
+  if (!ioData || ioData->mNumberBuffers == 0 ||
       atomic_load_explicit(&playback->stopped, memory_order_relaxed)) {
     atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
                               memory_order_relaxed);
     return noErr;
   }
 
+  for (UInt32 b = 0; b < ioData->mNumberBuffers && b < playback->channels;
+       b++) {
+    playback->channel_data_pointers[b] = ioData->mBuffers[b].mData;
+  }
+
   if (atomic_load_explicit(&playback->is_paused, memory_order_relaxed)) {
-    for (UInt32 b = 0; b < ioData->mNumberBuffers; b++) {
-      if (ioData->mBuffers[b].mData) {
-        memset(ioData->mBuffers[b].mData, 0, ioData->mBuffers[b].mDataByteSize);
+    for (size_t b = 0; b < playback->channels; b++) {
+      if (playback->channel_data_pointers[b]) {
+        memset(playback->channel_data_pointers[b], 0,
+               inNumberFrames * sizeof(float));
       }
     }
     atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
@@ -119,81 +120,21 @@ static OSStatus playback_callback(void *inRefCon,
     return noErr;
   }
 
-  size_t frame_count = (size_t)inNumberFrames;
-  uint8_t *dst = (uint8_t *)ioData->mBuffers[0].mData;
-  if (dst) {
-    size_t bytes_needed = frame_count * playback->blockalign;
-    size_t silence_frames = atomic_load_explicit(
-        &playback->underrun_silence_frames, memory_order_relaxed);
-
-    if (silence_frames > 0) {
-      size_t silence_to_output =
-          (silence_frames < frame_count) ? silence_frames : frame_count;
-      size_t silence_bytes = silence_to_output * playback->blockalign;
-      memset(dst, 0, silence_bytes);
-      atomic_fetch_sub_explicit(&playback->underrun_silence_frames,
-                                silence_to_output, memory_order_relaxed);
-
-      size_t remaining_frames = frame_count - silence_to_output;
-      if (remaining_frames > 0) {
-        size_t rem_bytes = remaining_frames * playback->blockalign;
-        size_t copied = spsc_byte_ring_buffer_consume(
-            playback->ring_buffer, dst + silence_bytes, rem_bytes);
-        if (copied < rem_bytes) {
-          memset(dst + silence_bytes + copied, 0, rem_bytes - copied);
-          atomic_store_explicit(&playback->is_running, false,
-                                memory_order_relaxed);
-        }
-      }
-    } else {
-      size_t avail =
-          spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer);
-      if (!atomic_load_explicit(&playback->is_running, memory_order_relaxed)) {
-        if (avail > 0) {
-          atomic_store_explicit(&playback->is_running, true,
-                                memory_order_relaxed);
-          size_t silence_to_output = (playback->target_level < frame_count)
-                                         ? playback->target_level
-                                         : frame_count;
-          size_t silence_bytes = silence_to_output * playback->blockalign;
-          memset(dst, 0, silence_bytes);
-          size_t rem_silence = playback->target_level - silence_to_output;
-          atomic_store_explicit(&playback->underrun_silence_frames, rem_silence,
-                                memory_order_relaxed);
-
-          size_t remaining_frames = frame_count - silence_to_output;
-          if (remaining_frames > 0) {
-            size_t rem_bytes = remaining_frames * playback->blockalign;
-            size_t copied = spsc_byte_ring_buffer_consume(
-                playback->ring_buffer, dst + silence_bytes, rem_bytes);
-            if (copied < rem_bytes) {
-              memset(dst + silence_bytes + copied, 0, rem_bytes - copied);
-              atomic_store_explicit(&playback->is_running, false,
-                                    memory_order_relaxed);
-            }
-          }
-          core_audio_publish_buffer_level(playback);
-          atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
-                                    memory_order_release);
-          return noErr;
-        } else {
-          memset(dst, 0, bytes_needed);
-          core_audio_publish_buffer_level(playback);
-          atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
-                                    memory_order_release);
-          return noErr;
-        }
-      }
-
-      size_t copied = spsc_byte_ring_buffer_consume(playback->ring_buffer, dst,
-                                                    bytes_needed);
-      if (copied < bytes_needed) {
-        memset(dst + copied, 0, bytes_needed - copied);
-        atomic_store_explicit(&playback->is_running, false,
-                              memory_order_relaxed);
-      }
+  // If starting or restarting after underrun, prefill target level silence
+  if (!atomic_load_explicit(&playback->is_running, memory_order_relaxed)) {
+    size_t avail =
+        spsc_planar_ring_buffer_get_available_to_read(playback->planar_ring);
+    if (avail > 0) {
+      atomic_store_explicit(&playback->is_running, true, memory_order_relaxed);
+      atomic_store_explicit(&playback->underrun_silence_frames,
+                            playback->target_level, memory_order_relaxed);
     }
   }
+
+  spsc_planar_ring_buffer_read_with_silence(
+      playback->planar_ring, playback->channel_data_pointers,
+      (size_t)inNumberFrames, 0, &playback->underrun_silence_frames,
+      &playback->is_running);
 
   core_audio_publish_buffer_level(playback);
   atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
@@ -276,8 +217,8 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
               playback->exclusive ? 1 : 0);
   core_audio_playback_close(playback);
 
-  if (playback->ring_buffer) {
-    spsc_byte_ring_buffer_drain(playback->ring_buffer);
+  if (playback->planar_ring) {
+    spsc_planar_ring_buffer_drain(playback->planar_ring);
   }
   playback_buffer_set_rate(&playback->buffer, playback->sample_rate);
 
@@ -406,8 +347,8 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
   core_audio_device_add_alive_watcher(dev_id, &playback->is_device_alive);
 
   AudioStreamBasicDescription stream_format =
-      core_audio_device_float32_stream_format(playback->sample_rate,
-                                              (int)playback->channels);
+      core_audio_device_planar_float32_stream_format(playback->sample_rate,
+                                                     (int)playback->channels);
   status = AudioUnitSetProperty(
       playback->audio_unit, kAudioUnitProperty_StreamFormat,
       kAudioUnitScope_Input, 0, &stream_format, sizeof(stream_format));
@@ -493,18 +434,17 @@ static bool core_audio_playback_write(void *ctx, const audio_chunk_t *chunk,
                          "Playback device disconnected");
     return false;
   }
-  uint32_t sleep_ms = 1;
-  if (playback->sample_rate > 0) {
-    sleep_ms =
-        (uint32_t)((playback->chunk_size * 1000) / (playback->sample_rate * 2));
-    if (sleep_ms == 0)
-      sleep_ms = 1;
-  }
-  uint32_t max_retries = 8;
-  return audio_backend_ring_buffer_write(
-      playback->ring_buffer, playback->blockalign, chunk,
-      BINARY_SAMPLE_FORMAT_F32_LE, playback->channels, sleep_ms, max_retries,
-      NULL, &playback->stopped, &playback->is_paused, NULL, err);
+  size_t sleep_duration_us =
+      (size_t)(1000000ULL * (unsigned long long)playback->chunk_size /
+               (unsigned long long)playback->sample_rate / 2ULL);
+  uint32_t sleep_ms = (uint32_t)(sleep_duration_us / 1000);
+  if (sleep_ms == 0)
+    sleep_ms = 1;
+
+  return audio_backend_planar_ring_buffer_write(
+      playback->planar_ring, chunk, BINARY_SAMPLE_FORMAT_F32_LE,
+      playback->channels, sleep_ms, 8, NULL, &playback->stopped,
+      &playback->is_paused, NULL, err);
 }
 
 /// Get the current buffer level in frames.
@@ -512,8 +452,7 @@ static size_t core_audio_playback_get_buffer_level(void *ctx) {
   core_audio_playback_t *playback = (core_audio_playback_t *)ctx;
   if (!playback)
     return 0;
-  return playback_buffer_level(&playback->buffer, playback->ring_buffer,
-                               playback->blockalign);
+  return playback_buffer_planar_level(&playback->buffer, playback->planar_ring);
 }
 
 /// Get any pending sample rate change detected on the playback device.
@@ -532,21 +471,12 @@ static bool core_audio_playback_prefill_silence(void *ctx, size_t frames,
                                                 backend_error_t *err) {
   core_audio_playback_t *playback = (core_audio_playback_t *)ctx;
   (void)err;
-  if (!playback || frames == 0 || !playback->ring_buffer)
+  if (!playback || frames == 0 || !playback->planar_ring)
     return true;
   atomic_store_explicit(&playback->is_running, true, memory_order_release);
   atomic_store_explicit(&playback->underrun_silence_frames, 0,
                         memory_order_release);
-  size_t bytes = frames * playback->blockalign;
-  uint8_t zero_buf[512] = {0};
-  while (bytes > 0) {
-    size_t chunk_bytes = bytes < sizeof(zero_buf) ? bytes : sizeof(zero_buf);
-    size_t written = spsc_byte_ring_buffer_write(playback->ring_buffer,
-                                                 zero_buf, chunk_bytes);
-    if (written == 0)
-      break;
-    bytes -= written;
-  }
+  spsc_planar_ring_buffer_write_silence(playback->planar_ring, frames);
   return true;
 }
 
@@ -582,9 +512,13 @@ static void core_audio_playback_destroy(void *ctx) {
   if (!playback)
     return;
   core_audio_playback_close(playback);
-  if (playback->ring_buffer) {
-    spsc_byte_ring_buffer_free(playback->ring_buffer);
-    playback->ring_buffer = NULL;
+  if (playback->channel_data_pointers) {
+    free(playback->channel_data_pointers);
+    playback->channel_data_pointers = NULL;
+  }
+  if (playback->planar_ring) {
+    spsc_planar_ring_buffer_free(playback->planar_ring);
+    playback->planar_ring = NULL;
   }
   free(playback);
 }
@@ -649,12 +583,22 @@ static playback_backend_t *core_audio_playback_create(
     playback->has_sample_format = true;
   }
 
+  playback->channel_data_pointers =
+      (void **)calloc(playback->channels, sizeof(void *));
+  if (!playback->channel_data_pointers) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Out of memory");
+    core_audio_playback_destroy(playback);
+    return NULL;
+  }
+
   playback->bytes_per_sample = sizeof(float);
   playback->blockalign = config_channels * sizeof(float);
-  size_t ring_size =
-      playback->blockalign * (16 * (size_t)chunk_size + target_level + 2048);
-  playback->ring_buffer = spsc_byte_ring_buffer_create(ring_size);
-  if (!playback->ring_buffer) {
+  size_t ring_frames = 16 * (size_t)chunk_size + target_level + 2048;
+  playback->planar_ring = spsc_planar_ring_buffer_create(
+      playback->channels, sizeof(float), ring_frames);
+  if (!playback->planar_ring) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Out of memory");

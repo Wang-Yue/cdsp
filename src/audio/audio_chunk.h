@@ -251,6 +251,103 @@ bool audio_chunk_encode_interleaved_offset(const audio_chunk_t *chunk,
                                            void *dst, size_t start_frame);
 
 /**
+ * @brief Decodes a single planar channel from raw bytes into an audio chunk at
+ * a given frame offset.
+ *
+ * @param src Pointer to channel raw byte buffer.
+ * @param fmt Binary sample format of source bytes.
+ * @param frames Number of frames to decode.
+ * @param chunk Destination audio chunk.
+ * @param channel Destination channel index in chunk.
+ * @param start_frame Starting frame offset in chunk channel.
+ * @return True on success, false on invalid format or parameters.
+ */
+bool audio_chunk_decode_channel(const void *src, binary_sample_format_t fmt,
+                                size_t frames, audio_chunk_t *chunk,
+                                size_t channel, size_t start_frame);
+
+/**
+ * @brief Encodes a single planar channel from an audio chunk at a given frame
+ * offset into raw bytes.
+ *
+ * @param chunk Source audio chunk.
+ * @param fmt Binary sample format of destination bytes.
+ * @param frames Number of frames to encode.
+ * @param dst Pointer to destination channel byte buffer.
+ * @param channel Source channel index in chunk.
+ * @param start_frame Starting frame offset in chunk channel.
+ * @return True on success, false on invalid format or parameters.
+ */
+bool audio_chunk_encode_channel(const audio_chunk_t *chunk,
+                                binary_sample_format_t fmt, size_t frames,
+                                void *dst, size_t channel, size_t start_frame);
+
+/**
+ * @brief Decodes planar (non-interleaved) raw audio channels into an audio
+ * chunk at a given frame offset.
+ *
+ * @param src_channels Array of pointers to channel byte buffers.
+ * @param fmt Binary sample format of source bytes.
+ * @param channels Number of channels.
+ * @param frames Number of frames to decode.
+ * @param chunk Destination audio chunk.
+ * @param start_frame Starting frame offset in the destination chunk.
+ * @return True on success, false on invalid format or parameters.
+ */
+bool audio_chunk_decode_planar_offset(const void *const *src_channels,
+                                      binary_sample_format_t fmt,
+                                      size_t channels, size_t frames,
+                                      audio_chunk_t *chunk, size_t start_frame);
+
+/**
+ * @brief Decodes planar (non-interleaved) raw audio channels into an audio
+ * chunk.
+ *
+ * @param src_channels Array of pointers to channel byte buffers.
+ * @param fmt Binary sample format of source bytes.
+ * @param channels Number of channels.
+ * @param frames Number of frames to decode.
+ * @param chunk Destination audio chunk.
+ * @return True on success, false on invalid format or parameters.
+ */
+bool audio_chunk_decode_planar(const void *const *src_channels,
+                               binary_sample_format_t fmt, size_t channels,
+                               size_t frames, audio_chunk_t *chunk);
+
+/**
+ * @brief Encodes an audio chunk into planar (non-interleaved) raw audio
+ * channels at a given frame offset.
+ *
+ * @param chunk Source audio chunk.
+ * @param fmt Binary sample format of destination buffers.
+ * @param channels Number of channels.
+ * @param frames Number of frames to encode.
+ * @param dst_channels Array of pointers to channel destination byte buffers.
+ * @param start_frame Starting frame offset in the chunk.
+ * @return True on success, false on invalid format or parameters.
+ */
+bool audio_chunk_encode_planar_offset(const audio_chunk_t *chunk,
+                                      binary_sample_format_t fmt,
+                                      size_t channels, size_t frames,
+                                      void *const *dst_channels,
+                                      size_t start_frame);
+
+/**
+ * @brief Encodes an audio chunk into planar (non-interleaved) raw audio
+ * channels.
+ *
+ * @param chunk Source audio chunk.
+ * @param fmt Binary sample format of destination buffers.
+ * @param channels Number of channels.
+ * @param frames Number of frames to encode.
+ * @param dst_channels Array of pointers to channel destination byte buffers.
+ * @return True on success, false on invalid format or parameters.
+ */
+bool audio_chunk_encode_planar(const audio_chunk_t *chunk,
+                               binary_sample_format_t fmt, size_t channels,
+                               size_t frames, void *const *dst_channels);
+
+/**
  * @brief Sets the used channels mask for the chunk.
  *
  * @param chunk Pointer to audio chunk.

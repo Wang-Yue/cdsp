@@ -906,4 +906,53 @@ bool audio_backend_ring_buffer_write(
     _Atomic bool *stopped, _Atomic bool *is_paused,
     _Atomic bool *has_pending_rate_change, backend_error_t *err);
 
+/**
+ * @brief Reads audio frames from an SPSC planar ring buffer, decoding channel
+ * slices into an audio chunk directly with zero intermediate scratch staging.
+ *
+ * @param ring_buffer Pointer to the SPSC planar ring buffer.
+ * @param frames_requested Number of frames requested to read.
+ * @param fmt Binary sample format of raw bytes in the planar ring buffer.
+ * @param channels Number of audio channels.
+ * @param thread_running Optional pointer to atomic thread_running flag.
+ * @param stopped Optional pointer to atomic stopped flag.
+ * @param has_pending_rate_change Optional pointer to atomic
+ * has_pending_rate_change flag.
+ * @param chunk Destination audio chunk.
+ * @param err Pointer to backend_error_t to record errors.
+ * @return True on success, false on error, stream stop, format change, or
+ * insufficient data.
+ */
+bool audio_backend_planar_ring_buffer_read(
+    spsc_planar_ring_buffer_t *ring_buffer, size_t frames_requested,
+    binary_sample_format_t fmt, size_t channels, _Atomic bool *thread_running,
+    _Atomic bool *stopped, _Atomic bool *has_pending_rate_change,
+    audio_chunk_t *chunk, backend_error_t *err);
+
+/**
+ * @brief Encodes an audio chunk directly into planar channel slices of an SPSC
+ * planar ring buffer with backoff without intermediate staging copies.
+ *
+ * @param ring_buffer Pointer to the SPSC planar ring buffer.
+ * @param chunk Source audio chunk to write.
+ * @param fmt Binary sample format to encode into.
+ * @param channels Number of audio channels.
+ * @param sleep_ms Sleep duration in milliseconds per retry attempt when buffer
+ * is full.
+ * @param max_retries Maximum retry attempts when planar ring buffer is full.
+ * @param thread_running Optional pointer to atomic thread_running flag.
+ * @param stopped Optional pointer to atomic stopped flag.
+ * @param is_paused Optional pointer to atomic paused flag.
+ * @param has_pending_rate_change Optional pointer to atomic
+ * has_pending_rate_change flag.
+ * @param err Pointer to backend_error_t to record errors.
+ * @return True on success (or paused), false on error or stream stop.
+ */
+bool audio_backend_planar_ring_buffer_write(
+    spsc_planar_ring_buffer_t *ring_buffer, const audio_chunk_t *chunk,
+    binary_sample_format_t fmt, size_t channels, uint32_t sleep_ms,
+    uint32_t max_retries, _Atomic bool *thread_running, _Atomic bool *stopped,
+    _Atomic bool *is_paused, _Atomic bool *has_pending_rate_change,
+    backend_error_t *err);
+
 #endif // CLIB_BACKEND_AUDIO_BACKEND_H

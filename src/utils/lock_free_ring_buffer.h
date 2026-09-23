@@ -205,6 +205,26 @@ size_t spsc_byte_ring_buffer_consume(spsc_byte_ring_buffer_t *ring,
                                      uint8_t *dest, size_t count);
 
 /**
+ * @brief Consume audio from the byte ring buffer to fill a destination buffer,
+ * handling silence prefixes and zeroing on underrun.
+ *
+ * @param ring Pointer to the byte ring buffer.
+ * @param dst Destination buffer.
+ * @param frames Number of frames requested.
+ * @param blockalign Frame size in bytes (channels * bytes_per_sample).
+ * @param silence_byte Byte pattern to use for silence (e.g. 0x00 for PCM/Float,
+ * 0x69 for DSD).
+ * @param silence_frames Optional pointer to silence frames remaining to output
+ * before ring data.
+ * @param is_running Optional pointer to running state boolean (set to false on
+ * underrun).
+ * @return Number of audio frames actually read from the ring.
+ */
+size_t spsc_byte_ring_buffer_consume_with_silence(
+    spsc_byte_ring_buffer_t *ring, void *dst, size_t frames, size_t blockalign,
+    uint8_t silence_byte, size_t *silence_frames, bool *is_running);
+
+/**
  * @brief Get direct pointers to readable contiguous slices in the ring buffer.
  *
  * **Consumer-only.** Does not advance the read cursor.
@@ -261,6 +281,20 @@ void spsc_byte_ring_buffer_advance_write(spsc_byte_ring_buffer_t *ring,
                                          size_t count);
 
 /**
+ * @brief Fill the byte ring buffer with silence bytes for a given byte count.
+ *
+ * **Producer-only.** Directly zeroes/fills the internal buffer storage without
+ * temporary buffers.
+ *
+ * @param ring Pointer to the ring buffer.
+ * @param bytes Number of bytes to fill.
+ * @param silence_byte Byte pattern to fill (e.g. 0x00 for PCM, 0x69 for DSD).
+ * @return Number of bytes actually written.
+ */
+size_t spsc_byte_ring_buffer_write_silence(spsc_byte_ring_buffer_t *ring,
+                                           size_t bytes, uint8_t silence_byte);
+
+/**
  * @brief Discard all pending bytes.
  *
  * **Consumer-only.**
@@ -268,6 +302,251 @@ void spsc_byte_ring_buffer_advance_write(spsc_byte_ring_buffer_t *ring,
  * @param ring Pointer to the ring buffer.
  */
 void spsc_byte_ring_buffer_drain(spsc_byte_ring_buffer_t *ring);
+
+// MARK: - SPSCPlanarRingBuffer
+
+/**
+ * @struct spsc_planar_ring_buffer
+ * @brief Lock-free single-producer / single-consumer multi-channel planar ring
+ * buffer.
+ *
+ * Stores non-interleaved audio channels (e.g. CoreAudio planar float, ASIO
+ * channel buffers) with synchronized atomic frame indices, enabling zero-copy
+ * rendering and direct per-channel DMA/vector transfers without interleaving.
+ */
+typedef struct spsc_planar_ring_buffer spsc_planar_ring_buffer_t;
+
+/**
+ * @brief Create a new SPSC planar ring buffer.
+ *
+ * @param channels Number of audio channels.
+ * @param bytes_per_sample Byte width of a single sample (e.g. sizeof(float)).
+ * @param minimum_capacity_frames Minimum requested capacity in frames.
+ * @return Pointer to allocated buffer, or NULL on failure.
+ */
+spsc_planar_ring_buffer_t *
+spsc_planar_ring_buffer_create(size_t channels, size_t bytes_per_sample,
+                               size_t minimum_capacity_frames);
+
+/**
+ * @brief Free the SPSC planar ring buffer.
+ *
+ * @param ring Pointer to the ring buffer to free.
+ */
+void spsc_planar_ring_buffer_free(spsc_planar_ring_buffer_t *ring);
+
+/**
+ * @brief Number of frames available to read / consume.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @return Number of available frames.
+ */
+size_t spsc_planar_ring_buffer_get_available_to_read(
+    const spsc_planar_ring_buffer_t *ring);
+
+/**
+ * @brief Number of frames available to write.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @return Number of free frames.
+ */
+size_t spsc_planar_ring_buffer_get_available_to_write(
+    const spsc_planar_ring_buffer_t *ring);
+
+/**
+ * @brief Total frame capacity of the planar ring buffer.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @return Total frame capacity.
+ */
+size_t
+spsc_planar_ring_buffer_get_capacity(const spsc_planar_ring_buffer_t *ring);
+
+/**
+ * @brief Get channel count.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @return Number of channels.
+ */
+size_t
+spsc_planar_ring_buffer_get_channels(const spsc_planar_ring_buffer_t *ring);
+
+/**
+ * @brief Get bytes per sample.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @return Bytes per sample.
+ */
+size_t spsc_planar_ring_buffer_get_bytes_per_sample(
+    const spsc_planar_ring_buffer_t *ring);
+
+/**
+ * @brief Get direct pointers to readable contiguous planar slices in the ring.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param max_frames Maximum frames to inspect.
+ * @param slice1 Array of pointers (length >= channels) to store start of first
+ * slice per channel.
+ * @param len1 Pointer to store frame length of first slice.
+ * @param slice2 Optional array of pointers (length >= channels) for wrap-around
+ * second slice.
+ * @param len2 Optional pointer to store frame length of second slice.
+ * @return Total readable frames available across both slices (up to
+ * max_frames).
+ */
+size_t spsc_planar_ring_buffer_get_read_slices(
+    const spsc_planar_ring_buffer_t *ring, size_t max_frames,
+    const uint8_t **slice1, size_t *len1, const uint8_t **slice2, size_t *len2);
+
+/**
+ * @brief Advance the read cursor by a given number of frames.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param frames Number of frames to advance.
+ */
+void spsc_planar_ring_buffer_advance_read(spsc_planar_ring_buffer_t *ring,
+                                          size_t frames);
+
+/**
+ * @brief Get direct pointers to writable contiguous planar slices in the ring.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param max_frames Maximum frames to inspect.
+ * @param slice1 Array of pointers (length >= channels) to store start of first
+ * slice per channel.
+ * @param len1 Pointer to store frame length of first slice.
+ * @param slice2 Optional array of pointers (length >= channels) for wrap-around
+ * second slice.
+ * @param len2 Optional pointer to store frame length of second slice.
+ * @return Total writable frames available across both slices (up to
+ * max_frames).
+ */
+size_t spsc_planar_ring_buffer_get_write_slices(
+    const spsc_planar_ring_buffer_t *ring, size_t max_frames, uint8_t **slice1,
+    size_t *len1, uint8_t **slice2, size_t *len2);
+
+/**
+ * @brief Advance the write cursor by a given number of frames.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param frames Number of frames to advance.
+ */
+void spsc_planar_ring_buffer_advance_write(spsc_planar_ring_buffer_t *ring,
+                                           size_t frames);
+
+/**
+ * @brief Write frames from planar channel arrays into the planar ring buffer.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param channel_ptrs Array of pointers to channel data (each of length >=
+ * frames).
+ * @param frames Number of frames to write.
+ * @return Number of frames actually written.
+ */
+size_t spsc_planar_ring_buffer_write_channels(spsc_planar_ring_buffer_t *ring,
+                                              const void *const *channel_ptrs,
+                                              size_t frames);
+
+/**
+ * @brief Read/consume frames from the planar ring buffer into planar channel
+ * arrays.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param channel_ptrs Array of pointers to channel destination buffers.
+ * @param frames Number of frames to read.
+ * @return Number of frames actually read.
+ */
+size_t spsc_planar_ring_buffer_read_channels(spsc_planar_ring_buffer_t *ring,
+                                             void *const *channel_ptrs,
+                                             size_t frames);
+
+/**
+ * @brief Consume audio from the planar ring buffer to fill destination channel
+ * buffers, handling silence prefixes and zeroing on underrun.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param dst_channels Array of channel pointers (length >= ring->channels).
+ * @param frames Number of frames requested.
+ * @param silence_byte Byte pattern to use for silence (e.g. 0x00 for PCM/Float,
+ * 0x69 for DSD).
+ * @param silence_frames Optional pointer to silence frames remaining to output
+ * before ring data (updated atomically).
+ * @param is_running Optional pointer to running state boolean (set to false on
+ * underrun).
+ * @return Number of audio frames actually read from the ring.
+ */
+size_t spsc_planar_ring_buffer_read_with_silence(
+    spsc_planar_ring_buffer_t *ring, void *const *dst_channels, size_t frames,
+    uint8_t silence_byte, _Atomic size_t *silence_frames,
+    _Atomic bool *is_running);
+
+/**
+ * @brief Get slice offset and lengths for reading without building pointer
+ * arrays.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param max_frames Maximum frames to inspect.
+ * @param offset Pointer to store starting frame offset for the first slice.
+ * @param len1 Pointer to store length in frames of the first slice.
+ * @param len2 Pointer to store length in frames of the wrapped second slice (if
+ * any).
+ * @return Total readable frames available across both slices (up to
+ * max_frames).
+ */
+size_t
+spsc_planar_ring_buffer_get_read_indices(const spsc_planar_ring_buffer_t *ring,
+                                         size_t max_frames, size_t *offset,
+                                         size_t *len1, size_t *len2);
+
+/**
+ * @brief Get slice offset and lengths for writing without building pointer
+ * arrays.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param max_frames Maximum frames to inspect.
+ * @param offset Pointer to store starting frame offset for the first slice.
+ * @param len1 Pointer to store length in frames of the first slice.
+ * @param len2 Pointer to store length in frames of the wrapped second slice (if
+ * any).
+ * @return Total writable frames available across both slices (up to
+ * max_frames).
+ */
+size_t
+spsc_planar_ring_buffer_get_write_indices(const spsc_planar_ring_buffer_t *ring,
+                                          size_t max_frames, size_t *offset,
+                                          size_t *len1, size_t *len2);
+
+/**
+ * @brief Get base pointer to the contiguous storage for a specific channel.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param channel Channel index.
+ * @return Pointer to channel buffer storage, or NULL if channel is invalid.
+ */
+uint8_t *
+spsc_planar_ring_buffer_get_channel_ptr(const spsc_planar_ring_buffer_t *ring,
+                                        size_t channel);
+
+/**
+ * @brief Fill the planar ring buffer with silence (zero samples) for a given
+ * number of frames.
+ *
+ * Directly zeroes the internal ring buffer storage with zero memory allocations
+ * and no temporary buffers.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param frames Number of silence frames to write.
+ * @return Number of frames actually written.
+ */
+size_t spsc_planar_ring_buffer_write_silence(spsc_planar_ring_buffer_t *ring,
+                                             size_t frames);
+
+/**
+ * @brief Discard all pending frames in the planar ring buffer.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ */
+void spsc_planar_ring_buffer_drain(spsc_planar_ring_buffer_t *ring);
 
 // MARK: - AtomicDouble
 

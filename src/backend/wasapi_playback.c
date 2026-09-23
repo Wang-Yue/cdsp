@@ -217,46 +217,24 @@ static void *wasapi_playback_loop(void *arg) {
         silence_frames_to_insert = target_level;
       }
 
-      size_t frames_to_write = (size_t)buffer_free_frame_count;
-      size_t silence_frames = 0;
-      if (silence_frames_to_insert > 0) {
-        silence_frames = (silence_frames_to_insert < frames_to_write)
-                             ? silence_frames_to_insert
-                             : frames_to_write;
-        silence_frames_to_insert -= silence_frames;
-      }
-
-      size_t silence_bytes = silence_frames * blockalign;
-      size_t frames_from_ring = frames_to_write - silence_frames;
-      size_t bytes_from_ring = frames_from_ring * blockalign;
-
       BYTE *bufferptr = NULL;
       HRESULT hr = IAudioRenderClient_GetBuffer(
-          playback->render_client, (UINT32)frames_to_write, &bufferptr);
+          playback->render_client, (UINT32)buffer_free_frame_count, &bufferptr);
       if (SUCCEEDED(hr) && bufferptr) {
-        if (silence_bytes > 0) {
-          memset(bufferptr, 0, silence_bytes);
+        bool was_running = started && running;
+        bool stream_running = was_running;
+        spsc_byte_ring_buffer_consume_with_silence(
+            playback->ring_buffer, bufferptr, (size_t)buffer_free_frame_count,
+            blockalign, 0, &silence_frames_to_insert, &stream_running);
+
+        if (was_running && !stream_running) {
+          running = false;
+          logger_warn(&g_wasapi_logger,
+                      "Playback interrupted, no data available.");
         }
-        size_t consumed_bytes = 0;
-        if (bytes_from_ring > 0) {
-          consumed_bytes = spsc_byte_ring_buffer_consume(
-              playback->ring_buffer, bufferptr + silence_bytes,
-              bytes_from_ring);
-        }
-        if (consumed_bytes < bytes_from_ring) {
-          memset(bufferptr + silence_bytes + consumed_bytes, 0,
-                 bytes_from_ring - consumed_bytes);
-          // While prefilling (before the stream is started) a short
-          // fill just gets padded with silence and is not an
-          // interruption, so skip the underrun handling until started.
-          if (started && running) {
-            running = false;
-            logger_warn(&g_wasapi_logger,
-                        "Playback interrupted, no data available.");
-          }
-        }
+
         IAudioRenderClient_ReleaseBuffer(playback->render_client,
-                                         (UINT32)frames_to_write, 0);
+                                         (UINT32)buffer_free_frame_count, 0);
         // Only the silence still to be inserted lives outside the ring;
         // frames already handed to the device are not counted, as upstream
         // also leaves them out (src/wasapi_backend/device.rs:622-625).

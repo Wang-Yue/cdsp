@@ -656,6 +656,25 @@ core_audio_device_float32_stream_format(double sample_rate, int channels) {
 }
 
 AudioStreamBasicDescription
+core_audio_device_planar_float32_stream_format(double sample_rate,
+                                               int channels) {
+  AudioFormatFlags flags = kAudioFormatFlagIsFloat |
+                           kAudioFormatFlagIsNonInterleaved |
+                           kAudioFormatFlagsNativeEndian;
+  AudioStreamBasicDescription asbd = {.mSampleRate = sample_rate,
+                                      .mFormatID = kAudioFormatLinearPCM,
+                                      .mFormatFlags = flags,
+                                      .mBytesPerPacket =
+                                          (uint32_t)sizeof(float),
+                                      .mFramesPerPacket = 1,
+                                      .mBytesPerFrame = (uint32_t)sizeof(float),
+                                      .mChannelsPerFrame = (uint32_t)channels,
+                                      .mBitsPerChannel = 32,
+                                      .mReserved = 0};
+  return asbd;
+}
+
+AudioStreamBasicDescription
 core_audio_device_asbd_for_format(double sample_rate, size_t channels,
                                   const char *format_str) {
   AudioStreamBasicDescription asbd = {0};

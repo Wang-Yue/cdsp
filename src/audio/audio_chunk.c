@@ -677,6 +677,112 @@ bool audio_chunk_encode_interleaved(const audio_chunk_t *chunk,
                                                dst, 0);
 }
 
+// MARK: - Public Planar Decode and Encode APIs
+
+bool audio_chunk_decode_channel(const void *src, binary_sample_format_t fmt,
+                                size_t frames, audio_chunk_t *chunk,
+                                size_t channel, size_t start_frame) {
+  if (!src || !chunk || frames == 0)
+    return false;
+  if (channel >= audio_chunk_get_channels(chunk))
+    return false;
+  if (start_frame + frames > audio_chunk_get_frames(chunk))
+    return false;
+
+  size_t bytes_per_sample = sample_format_bytes_per_sample(fmt);
+  if (bytes_per_sample == 0)
+    return false;
+
+  double *dst = audio_chunk_get_channel(chunk, channel);
+  if (!dst)
+    return false;
+
+  return audio_channel_decode((const uint8_t *)src, fmt, frames,
+                              bytes_per_sample, dst + start_frame);
+}
+
+bool audio_chunk_encode_channel(const audio_chunk_t *chunk,
+                                binary_sample_format_t fmt, size_t frames,
+                                void *dst, size_t channel, size_t start_frame) {
+  if (!chunk || !dst || frames == 0)
+    return false;
+  if (channel >= audio_chunk_get_channels(chunk))
+    return false;
+  if (start_frame + frames > audio_chunk_get_frames(chunk))
+    return false;
+
+  size_t bytes_per_sample = sample_format_bytes_per_sample(fmt);
+  if (bytes_per_sample == 0)
+    return false;
+
+  const double *src = audio_chunk_get_channel(chunk, channel);
+  if (!src)
+    return false;
+
+  return audio_channel_encode(src + start_frame, fmt, frames, bytes_per_sample,
+                              (uint8_t *)dst);
+}
+
+bool audio_chunk_decode_planar_offset(const void *const *src_channels,
+                                      binary_sample_format_t fmt,
+                                      size_t channels, size_t frames,
+                                      audio_chunk_t *chunk,
+                                      size_t start_frame) {
+  if (!src_channels || !chunk || channels == 0 || frames == 0)
+    return false;
+  if (audio_chunk_get_channels(chunk) < channels)
+    return false;
+
+  for (size_t c = 0; c < channels; c++) {
+    const uint8_t *src = (const uint8_t *)src_channels[c];
+    if (!src ||
+        !audio_chunk_decode_channel(src, fmt, frames, chunk, c, start_frame)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool audio_chunk_decode_planar(const void *const *src_channels,
+                               binary_sample_format_t fmt, size_t channels,
+                               size_t frames, audio_chunk_t *chunk) {
+  if (!audio_chunk_decode_planar_offset(src_channels, fmt, channels, frames,
+                                        chunk, 0)) {
+    return false;
+  }
+  audio_chunk_set_valid_frames(chunk, frames);
+  return true;
+}
+
+bool audio_chunk_encode_planar_offset(const audio_chunk_t *chunk,
+                                      binary_sample_format_t fmt,
+                                      size_t channels, size_t frames,
+                                      void *const *dst_channels,
+                                      size_t start_frame) {
+  if (!chunk || !dst_channels || channels == 0 || frames == 0)
+    return false;
+  if (audio_chunk_get_channels(chunk) < channels)
+    return false;
+
+  for (size_t c = 0; c < channels; c++) {
+    uint8_t *dst = (uint8_t *)dst_channels[c];
+    if (!dst ||
+        !audio_chunk_encode_channel(chunk, fmt, frames, dst, c, start_frame)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool audio_chunk_encode_planar(const audio_chunk_t *chunk,
+                               binary_sample_format_t fmt, size_t channels,
+                               size_t frames, void *const *dst_channels) {
+  return audio_chunk_encode_planar_offset(chunk, fmt, channels, frames,
+                                          dst_channels, 0);
+}
+
 double audio_chunk_get_value_range_used(const audio_chunk_t *chunk,
                                         const bool *used_channels) {
   if (!chunk)

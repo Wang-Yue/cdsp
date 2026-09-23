@@ -207,6 +207,18 @@ AudioStreamBasicDescription
 core_audio_device_float32_stream_format(double sample_rate, int channels);
 
 /**
+ * @brief Build a canonical planar non-interleaved IEEE-754 32-bit float
+ * AudioStreamBasicDescription (ASBD) for zero-copy CoreAudio transfers.
+ *
+ * @param sample_rate Sample rate in Hz.
+ * @param channels Number of channels.
+ * @return The constructed non-interleaved ASBD.
+ */
+AudioStreamBasicDescription
+core_audio_device_planar_float32_stream_format(double sample_rate,
+                                               int channels);
+
+/**
  * @brief Build an AudioStreamBasicDescription for a given format token string
  * ("S16", "S24", "S32", "F32").
  *

@@ -35,3 +35,13 @@ size_t playback_buffer_level(const playback_buffer_t *pb,
   return ring_frames +
          device_buffer_estimator_estimate(pb ? &pb->device : NULL);
 }
+
+size_t playback_buffer_planar_level(const playback_buffer_t *pb,
+                                    const spsc_planar_ring_buffer_t *ring) {
+  size_t ring_frames = 0;
+  if (ring) {
+    ring_frames = spsc_planar_ring_buffer_get_available_to_read(ring);
+  }
+  return ring_frames +
+         device_buffer_estimator_estimate(pb ? &pb->device : NULL);
+}

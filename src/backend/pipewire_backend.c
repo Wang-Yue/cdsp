@@ -220,12 +220,8 @@ static void on_playback_process(void *data) {
     if (atomic_load_explicit(&p->paused, memory_order_acquire)) {
       memset(dst, 0, callback_bytes);
     } else {
-      size_t consumed_bytes =
-          spsc_byte_ring_buffer_consume(p->ring, dst, callback_bytes);
-
-      if (consumed_bytes < callback_bytes) {
-        memset(dst + consumed_bytes, 0, callback_bytes - consumed_bytes);
-      }
+      spsc_byte_ring_buffer_consume_with_silence(
+          p->ring, dst, callback_bytes / stride, stride, 0, NULL, NULL);
     }
 
     buf->datas[0].chunk->offset = 0;
@@ -951,15 +947,7 @@ static bool pipewire_playback_prefill_silence(void *ctx, size_t frames,
     return false;
 
   size_t bytes = frames * playback->blockalign;
-  uint8_t zero_buf[512] = {0};
-  while (bytes > 0) {
-    size_t chunk_bytes = bytes < sizeof(zero_buf) ? bytes : sizeof(zero_buf);
-    size_t written =
-        spsc_byte_ring_buffer_write(playback->ring, zero_buf, chunk_bytes);
-    if (written == 0)
-      break;
-    bytes -= written;
-  }
+  spsc_byte_ring_buffer_write_silence(playback->ring, bytes, 0x00);
   return true;
 }
 

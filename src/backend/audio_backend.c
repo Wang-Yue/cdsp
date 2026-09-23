@@ -1396,6 +1396,239 @@ bool audio_backend_ring_buffer_write(
   return true;
 }
 
+bool audio_backend_planar_ring_buffer_read(
+    spsc_planar_ring_buffer_t *ring_buffer, size_t frames_requested,
+    binary_sample_format_t fmt, size_t channels, _Atomic bool *thread_running,
+    _Atomic bool *stopped, _Atomic bool *has_pending_rate_change,
+    audio_chunk_t *chunk, backend_error_t *err) {
+  if (!ring_buffer || !chunk || channels == 0 || frames_requested == 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Invalid parameters");
+    return false;
+  }
+
+  if (has_pending_rate_change &&
+      atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+    return false;
+  }
+
+  if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
+      (thread_running &&
+       !atomic_load_explicit(thread_running, memory_order_acquire))) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         "Capture stream stopped");
+    return false;
+  }
+
+  if (audio_chunk_get_channels(chunk) < channels) {
+    if (err)
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match capture channels");
+    return false;
+  }
+
+  size_t available_frames =
+      spsc_planar_ring_buffer_get_available_to_read(ring_buffer);
+  if (available_frames < frames_requested) {
+    if (stopped && atomic_load_explicit(stopped, memory_order_acquire)) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                           "Capture stream stopped");
+      return false;
+    }
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_NONE, "");
+    return false;
+  }
+
+  size_t offset = 0, l1 = 0, l2 = 0;
+  size_t read_avail = spsc_planar_ring_buffer_get_read_indices(
+      ring_buffer, frames_requested, &offset, &l1, &l2);
+  if (read_avail < frames_requested) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         "Failed to get read slices from planar ring buffer");
+    return false;
+  }
+
+  size_t bps = sample_format_bytes_per_sample(fmt);
+  if (bps == 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                         "Invalid sample format");
+    return false;
+  }
+
+  for (size_t c = 0; c < channels; c++) {
+    const uint8_t *chan_storage =
+        spsc_planar_ring_buffer_get_channel_ptr(ring_buffer, c);
+    if (!chan_storage) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                           "Failed to access planar channel buffer");
+      return false;
+    }
+    if (l1 > 0) {
+      if (!audio_chunk_decode_channel(chan_storage + offset * bps, fmt, l1,
+                                      chunk, c, 0)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "Failed to decode captured planar audio data");
+        return false;
+      }
+    }
+    if (l2 > 0) {
+      if (!audio_chunk_decode_channel(chan_storage, fmt, l2, chunk, c, l1)) {
+        if (err)
+          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                             "Failed to decode captured planar audio data");
+        return false;
+      }
+    }
+  }
+
+  spsc_planar_ring_buffer_advance_read(ring_buffer, frames_requested);
+  audio_chunk_set_valid_frames(chunk, frames_requested);
+  return true;
+}
+
+bool audio_backend_planar_ring_buffer_write(
+    spsc_planar_ring_buffer_t *ring_buffer, const audio_chunk_t *chunk,
+    binary_sample_format_t fmt, size_t channels, uint32_t sleep_ms,
+    uint32_t max_retries, _Atomic bool *thread_running, _Atomic bool *stopped,
+    _Atomic bool *is_paused, _Atomic bool *has_pending_rate_change,
+    backend_error_t *err) {
+  if (!ring_buffer || !chunk || channels == 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, "Invalid parameters");
+    return false;
+  }
+
+  if (is_paused && atomic_load_explicit(is_paused, memory_order_acquire)) {
+    return true;
+  }
+
+  if (has_pending_rate_change &&
+      atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+    return false;
+  }
+
+  if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
+      (thread_running &&
+       !atomic_load_explicit(thread_running, memory_order_acquire))) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Playback stream stopped");
+    return false;
+  }
+
+  if (audio_chunk_get_channels(chunk) < channels) {
+    if (err)
+      backend_error_init(
+          err, BACKEND_ERROR_INVALID_CHANNELS,
+          "Chunk channels count does not match playback channels");
+    return false;
+  }
+
+  size_t frames = audio_chunk_get_valid_frames(chunk);
+  if (frames == 0)
+    return true;
+
+  uint32_t retries = (max_retries > 0) ? max_retries : 1;
+  for (uint32_t retry = 0; retry < retries; retry++) {
+    if (spsc_planar_ring_buffer_get_available_to_write(ring_buffer) >= frames) {
+      break;
+    }
+    if (has_pending_rate_change &&
+        atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+      return false;
+    }
+    if ((stopped && atomic_load_explicit(stopped, memory_order_acquire)) ||
+        (thread_running &&
+         !atomic_load_explicit(thread_running, memory_order_acquire))) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "Playback stream stopped");
+      return false;
+    }
+    if (is_paused && atomic_load_explicit(is_paused, memory_order_acquire)) {
+      return true;
+    }
+    cdsp_sleep_ms(sleep_ms > 0 ? sleep_ms : 1);
+  }
+
+  if (spsc_planar_ring_buffer_get_available_to_write(ring_buffer) < frames) {
+    logger_debug(
+        &g_logger,
+        "Playback planar ring buffer is full after %u retries, dropped entire "
+        "chunk of %zu frames to preserve audio framing",
+        retries, frames);
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Playback ring buffer full");
+    return false;
+  }
+
+  size_t offset = 0, l1 = 0, l2 = 0;
+  size_t write_avail = spsc_planar_ring_buffer_get_write_indices(
+      ring_buffer, frames, &offset, &l1, &l2);
+  if (write_avail < frames) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Failed to get write slices from planar ring buffer");
+    return false;
+  }
+
+  size_t bps = sample_format_bytes_per_sample(fmt);
+  if (bps == 0) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                         "Invalid sample format");
+    return false;
+  }
+
+  for (size_t c = 0; c < channels; c++) {
+    uint8_t *chan_storage =
+        spsc_planar_ring_buffer_get_channel_ptr(ring_buffer, c);
+    if (!chan_storage) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "Failed to access planar channel buffer");
+      return false;
+    }
+    if (l1 > 0) {
+      if (!audio_chunk_encode_channel(chunk, fmt, l1,
+                                      chan_storage + offset * bps, c, 0)) {
+        if (err)
+          backend_error_init(
+              err, BACKEND_ERROR_WRITE_ERROR,
+              "Failed to encode audio samples into planar buffer");
+        return false;
+      }
+    }
+    if (l2 > 0) {
+      if (!audio_chunk_encode_channel(chunk, fmt, l2, chan_storage, c, l1)) {
+        if (err)
+          backend_error_init(
+              err, BACKEND_ERROR_WRITE_ERROR,
+              "Failed to encode audio samples into planar buffer");
+        return false;
+      }
+    }
+  }
+
+  spsc_planar_ring_buffer_advance_write(ring_buffer, frames);
+  return true;
+}
+
 int audio_backend_validate_devices(const devices_config_t *devices,
                                    config_error_t *err) {
   if (!devices)

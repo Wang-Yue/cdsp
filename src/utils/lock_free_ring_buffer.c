@@ -202,6 +202,43 @@ size_t spsc_byte_ring_buffer_consume(spsc_byte_ring_buffer_t *ring,
   return to_read;
 }
 
+size_t spsc_byte_ring_buffer_consume_with_silence(
+    spsc_byte_ring_buffer_t *ring, void *dst, size_t frames, size_t blockalign,
+    uint8_t silence_byte, size_t *silence_frames, bool *is_running) {
+  if (!dst || frames == 0 || blockalign == 0)
+    return 0;
+
+  size_t prefix_silence = 0;
+  if (silence_frames && *silence_frames > 0) {
+    prefix_silence = (*silence_frames < frames) ? *silence_frames : frames;
+    *silence_frames -= prefix_silence;
+  }
+
+  uint8_t *ptr = (uint8_t *)dst;
+  if (prefix_silence > 0) {
+    memset(ptr, silence_byte, prefix_silence * blockalign);
+    ptr += prefix_silence * blockalign;
+  }
+
+  size_t frames_from_ring = frames - prefix_silence;
+  size_t consumed_bytes = 0;
+  if (ring && frames_from_ring > 0) {
+    consumed_bytes =
+        spsc_byte_ring_buffer_consume(ring, ptr, frames_from_ring * blockalign);
+  }
+
+  size_t consumed_frames = consumed_bytes / blockalign;
+  if (consumed_frames < frames_from_ring) {
+    size_t missing_bytes = (frames_from_ring - consumed_frames) * blockalign;
+    memset(ptr + consumed_bytes, silence_byte, missing_bytes);
+    if (is_running && *is_running) {
+      *is_running = false;
+    }
+  }
+
+  return consumed_frames;
+}
+
 size_t
 spsc_byte_ring_buffer_get_read_slices(const spsc_byte_ring_buffer_t *ring,
                                       size_t max_bytes, const uint8_t **slice1,
@@ -302,7 +339,521 @@ void spsc_byte_ring_buffer_advance_write(spsc_byte_ring_buffer_t *ring,
   atomic_store_explicit(&ring->write_index, w + count, memory_order_release);
 }
 
+size_t spsc_byte_ring_buffer_write_silence(spsc_byte_ring_buffer_t *ring,
+                                           size_t bytes, uint8_t silence_byte) {
+  if (!ring || bytes == 0)
+    return 0;
+
+  uint8_t *s1 = NULL, *s2 = NULL;
+  size_t l1 = 0, l2 = 0;
+  size_t to_write =
+      spsc_byte_ring_buffer_get_write_slices(ring, bytes, &s1, &l1, &s2, &l2);
+  if (to_write == 0)
+    return 0;
+
+  if (s1 && l1 > 0) {
+    memset(s1, silence_byte, l1);
+  }
+  if (s2 && l2 > 0) {
+    memset(s2, silence_byte, l2);
+  }
+  spsc_byte_ring_buffer_advance_write(ring, to_write);
+  return to_write;
+}
+
 void spsc_byte_ring_buffer_drain(spsc_byte_ring_buffer_t *ring) {
+  if (!ring)
+    return;
+  uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_acquire);
+  atomic_store_explicit(&ring->read_index, w, memory_order_release);
+}
+
+// MARK: - SPSCPlanarRingBuffer Implementation
+
+struct spsc_planar_ring_buffer {
+  size_t channels;
+  size_t bytes_per_sample;
+  size_t capacity; // in frames (power of 2)
+  size_t mask;
+  uint8_t **channel_storage;
+  _Atomic uint64_t write_index __attribute__((aligned(64)));
+  _Atomic uint64_t read_index __attribute__((aligned(64)));
+};
+
+spsc_planar_ring_buffer_t *
+spsc_planar_ring_buffer_create(size_t channels, size_t bytes_per_sample,
+                               size_t minimum_capacity_frames) {
+  if (channels == 0 || bytes_per_sample == 0)
+    return NULL;
+
+  size_t cap = spsc_round_up_to_power_of_two(
+      minimum_capacity_frames < 2 ? 2 : minimum_capacity_frames);
+
+  spsc_planar_ring_buffer_t *ring =
+      (spsc_planar_ring_buffer_t *)cdsp_aligned_alloc(
+          64, sizeof(spsc_planar_ring_buffer_t));
+  if (!ring)
+    return NULL;
+
+  memset(ring, 0, sizeof(spsc_planar_ring_buffer_t));
+  ring->channels = channels;
+  ring->bytes_per_sample = bytes_per_sample;
+  ring->capacity = cap;
+  ring->mask = cap - 1;
+
+  ring->channel_storage =
+      (uint8_t **)cdsp_aligned_alloc(64, channels * sizeof(uint8_t *));
+  if (!ring->channel_storage) {
+    cdsp_aligned_free(ring);
+    return NULL;
+  }
+  memset(ring->channel_storage, 0, channels * sizeof(uint8_t *));
+
+  size_t bytes_per_channel = cap * bytes_per_sample;
+  for (size_t ch = 0; ch < channels; ch++) {
+    ring->channel_storage[ch] =
+        (uint8_t *)cdsp_aligned_alloc(64, bytes_per_channel);
+    if (!ring->channel_storage[ch]) {
+      for (size_t i = 0; i < ch; i++) {
+        cdsp_aligned_free(ring->channel_storage[i]);
+      }
+      cdsp_aligned_free(ring->channel_storage);
+      cdsp_aligned_free(ring);
+      return NULL;
+    }
+    memset(ring->channel_storage[ch], 0, bytes_per_channel);
+  }
+
+  atomic_init(&ring->write_index, 0);
+  atomic_init(&ring->read_index, 0);
+  return ring;
+}
+
+void spsc_planar_ring_buffer_free(spsc_planar_ring_buffer_t *ring) {
+  if (!ring)
+    return;
+  if (ring->channel_storage) {
+    for (size_t ch = 0; ch < ring->channels; ch++) {
+      if (ring->channel_storage[ch]) {
+        cdsp_aligned_free(ring->channel_storage[ch]);
+      }
+    }
+    cdsp_aligned_free(ring->channel_storage);
+  }
+  cdsp_aligned_free(ring);
+}
+
+size_t spsc_planar_ring_buffer_get_available_to_read(
+    const spsc_planar_ring_buffer_t *ring) {
+  if (!ring)
+    return 0;
+  uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_acquire);
+  uint64_t r = atomic_load_explicit(&ring->read_index, memory_order_relaxed);
+  return (w >= r) ? (size_t)(w - r) : 0;
+}
+
+size_t spsc_planar_ring_buffer_get_available_to_write(
+    const spsc_planar_ring_buffer_t *ring) {
+  if (!ring)
+    return 0;
+  uint64_t r = atomic_load_explicit(&ring->read_index, memory_order_acquire);
+  uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
+  size_t used = (w >= r) ? (size_t)(w - r) : 0;
+  return (ring->capacity > used) ? (ring->capacity - used) : 0;
+}
+
+size_t
+spsc_planar_ring_buffer_get_capacity(const spsc_planar_ring_buffer_t *ring) {
+  return ring ? ring->capacity : 0;
+}
+
+size_t
+spsc_planar_ring_buffer_get_channels(const spsc_planar_ring_buffer_t *ring) {
+  return ring ? ring->channels : 0;
+}
+
+size_t spsc_planar_ring_buffer_get_bytes_per_sample(
+    const spsc_planar_ring_buffer_t *ring) {
+  return ring ? ring->bytes_per_sample : 0;
+}
+
+size_t
+spsc_planar_ring_buffer_get_read_slices(const spsc_planar_ring_buffer_t *ring,
+                                        size_t max_frames,
+                                        const uint8_t **slice1, size_t *len1,
+                                        const uint8_t **slice2, size_t *len2) {
+  if (len1)
+    *len1 = 0;
+  if (len2)
+    *len2 = 0;
+  if (!ring || max_frames == 0)
+    return 0;
+
+  size_t avail = spsc_planar_ring_buffer_get_available_to_read(ring);
+  size_t to_read = (max_frames < avail) ? max_frames : avail;
+  if (to_read == 0)
+    return 0;
+
+  uint64_t r = atomic_load_explicit(&ring->read_index, memory_order_relaxed);
+  size_t offset = (size_t)(r & ring->mask);
+  size_t first_chunk = ring->capacity - offset;
+  size_t bps = ring->bytes_per_sample;
+
+  if (to_read <= first_chunk) {
+    if (len1)
+      *len1 = to_read;
+    if (slice1) {
+      for (size_t ch = 0; ch < ring->channels; ch++) {
+        slice1[ch] = ring->channel_storage[ch] + offset * bps;
+      }
+    }
+    if (slice2) {
+      for (size_t ch = 0; ch < ring->channels; ch++) {
+        slice2[ch] = NULL;
+      }
+    }
+  } else {
+    if (len1)
+      *len1 = first_chunk;
+    if (len2)
+      *len2 = to_read - first_chunk;
+    if (slice1) {
+      for (size_t ch = 0; ch < ring->channels; ch++) {
+        slice1[ch] = ring->channel_storage[ch] + offset * bps;
+      }
+    }
+    if (slice2) {
+      for (size_t ch = 0; ch < ring->channels; ch++) {
+        slice2[ch] = ring->channel_storage[ch];
+      }
+    }
+  }
+  return to_read;
+}
+
+void spsc_planar_ring_buffer_advance_read(spsc_planar_ring_buffer_t *ring,
+                                          size_t frames) {
+  if (!ring || frames == 0)
+    return;
+  uint64_t r = atomic_load_explicit(&ring->read_index, memory_order_relaxed);
+  atomic_store_explicit(&ring->read_index, r + frames, memory_order_release);
+}
+
+size_t spsc_planar_ring_buffer_get_write_slices(
+    const spsc_planar_ring_buffer_t *ring, size_t max_frames, uint8_t **slice1,
+    size_t *len1, uint8_t **slice2, size_t *len2) {
+  if (len1)
+    *len1 = 0;
+  if (len2)
+    *len2 = 0;
+  if (!ring || max_frames == 0)
+    return 0;
+
+  size_t free_space = spsc_planar_ring_buffer_get_available_to_write(ring);
+  size_t to_write = (max_frames < free_space) ? max_frames : free_space;
+  if (to_write == 0)
+    return 0;
+
+  uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
+  size_t offset = (size_t)(w & ring->mask);
+  size_t first_chunk = ring->capacity - offset;
+  size_t bps = ring->bytes_per_sample;
+
+  if (to_write <= first_chunk) {
+    if (len1)
+      *len1 = to_write;
+    if (slice1) {
+      for (size_t ch = 0; ch < ring->channels; ch++) {
+        slice1[ch] = ring->channel_storage[ch] + offset * bps;
+      }
+    }
+    if (slice2) {
+      for (size_t ch = 0; ch < ring->channels; ch++) {
+        slice2[ch] = NULL;
+      }
+    }
+  } else {
+    if (len1)
+      *len1 = first_chunk;
+    if (len2)
+      *len2 = to_write - first_chunk;
+    if (slice1) {
+      for (size_t ch = 0; ch < ring->channels; ch++) {
+        slice1[ch] = ring->channel_storage[ch] + offset * bps;
+      }
+    }
+    if (slice2) {
+      for (size_t ch = 0; ch < ring->channels; ch++) {
+        slice2[ch] = ring->channel_storage[ch];
+      }
+    }
+  }
+  return to_write;
+}
+
+void spsc_planar_ring_buffer_advance_write(spsc_planar_ring_buffer_t *ring,
+                                           size_t frames) {
+  if (!ring || frames == 0)
+    return;
+  uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
+  atomic_store_explicit(&ring->write_index, w + frames, memory_order_release);
+}
+
+size_t spsc_planar_ring_buffer_write_channels(spsc_planar_ring_buffer_t *ring,
+                                              const void *const *channel_ptrs,
+                                              size_t frames) {
+  if (!ring || !channel_ptrs || frames == 0)
+    return 0;
+
+  size_t free_space = spsc_planar_ring_buffer_get_available_to_write(ring);
+  size_t to_write = (frames < free_space) ? frames : free_space;
+  if (to_write == 0)
+    return 0;
+
+  uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
+  size_t offset = (size_t)(w & ring->mask);
+  size_t first_chunk = ring->capacity - offset;
+  size_t bps = ring->bytes_per_sample;
+
+  size_t l1 = (to_write <= first_chunk) ? to_write : first_chunk;
+  size_t l2 = to_write - l1;
+
+  for (size_t ch = 0; ch < ring->channels; ch++) {
+    const uint8_t *src = (const uint8_t *)channel_ptrs[ch];
+    if (src) {
+      uint8_t *dst = ring->channel_storage[ch];
+      memcpy(dst + offset * bps, src, l1 * bps);
+      if (l2 > 0) {
+        memcpy(dst, src + l1 * bps, l2 * bps);
+      }
+    }
+  }
+
+  atomic_store_explicit(&ring->write_index, w + to_write, memory_order_release);
+  return to_write;
+}
+
+size_t spsc_planar_ring_buffer_read_channels(spsc_planar_ring_buffer_t *ring,
+                                             void *const *channel_ptrs,
+                                             size_t frames) {
+  if (!ring || !channel_ptrs || frames == 0)
+    return 0;
+
+  size_t avail = spsc_planar_ring_buffer_get_available_to_read(ring);
+  size_t to_read = (frames < avail) ? frames : avail;
+  if (to_read == 0)
+    return 0;
+
+  uint64_t r = atomic_load_explicit(&ring->read_index, memory_order_relaxed);
+  size_t offset = (size_t)(r & ring->mask);
+  size_t first_chunk = ring->capacity - offset;
+  size_t bps = ring->bytes_per_sample;
+
+  size_t l1 = (to_read <= first_chunk) ? to_read : first_chunk;
+  size_t l2 = to_read - l1;
+
+  for (size_t ch = 0; ch < ring->channels; ch++) {
+    uint8_t *dst = (uint8_t *)channel_ptrs[ch];
+    if (dst) {
+      const uint8_t *src = ring->channel_storage[ch];
+      memcpy(dst, src + offset * bps, l1 * bps);
+      if (l2 > 0) {
+        memcpy(dst + l1 * bps, src, l2 * bps);
+      }
+    }
+  }
+
+  atomic_store_explicit(&ring->read_index, r + to_read, memory_order_release);
+  return to_read;
+}
+
+size_t spsc_planar_ring_buffer_read_with_silence(
+    spsc_planar_ring_buffer_t *ring, void *const *dst_channels, size_t frames,
+    uint8_t silence_byte, _Atomic size_t *silence_frames,
+    _Atomic bool *is_running) {
+  if (!ring || !dst_channels || frames == 0)
+    return 0;
+
+  size_t silence = 0;
+  if (silence_frames) {
+    size_t pending = atomic_load_explicit(silence_frames, memory_order_relaxed);
+    silence = (pending < frames) ? pending : frames;
+    if (silence > 0) {
+      atomic_fetch_sub_explicit(silence_frames, silence, memory_order_relaxed);
+    }
+  }
+
+  size_t bps = ring->bytes_per_sample;
+  size_t channels = ring->channels;
+
+  // 1. Fill silence prefix
+  if (silence > 0) {
+    for (size_t ch = 0; ch < channels; ch++) {
+      if (dst_channels[ch]) {
+        memset(dst_channels[ch], silence_byte, silence * bps);
+      }
+    }
+  }
+
+  // 2. Read audio frames from ring buffer into remaining space
+  size_t audio_needed = frames - silence;
+  size_t copied = 0;
+  if (audio_needed > 0) {
+    size_t avail = spsc_planar_ring_buffer_get_available_to_read(ring);
+    copied = (audio_needed < avail) ? audio_needed : avail;
+
+    if (copied > 0) {
+      uint64_t r =
+          atomic_load_explicit(&ring->read_index, memory_order_relaxed);
+      size_t offset = (size_t)(r & ring->mask);
+      size_t first_chunk = ring->capacity - offset;
+      size_t cl1 = (copied <= first_chunk) ? copied : first_chunk;
+      size_t cl2 = copied - cl1;
+
+      for (size_t ch = 0; ch < channels; ch++) {
+        uint8_t *dst = (uint8_t *)dst_channels[ch] + silence * bps;
+        const uint8_t *src = ring->channel_storage[ch];
+        if (dst && src) {
+          if (cl1 > 0) {
+            memcpy(dst, src + offset * bps, cl1 * bps);
+          }
+          if (cl2 > 0) {
+            memcpy(dst + cl1 * bps, src, cl2 * bps);
+          }
+        }
+      }
+      atomic_store_explicit(&ring->read_index, r + copied,
+                            memory_order_release);
+    }
+
+    // 3. If underrun, fill missing remainder with silence_byte
+    if (copied < audio_needed) {
+      size_t missing = audio_needed - copied;
+      for (size_t ch = 0; ch < channels; ch++) {
+        if (dst_channels[ch]) {
+          memset((uint8_t *)dst_channels[ch] + (silence + copied) * bps,
+                 silence_byte, missing * bps);
+        }
+      }
+      if (is_running) {
+        atomic_store_explicit(is_running, false, memory_order_relaxed);
+      }
+    }
+  }
+
+  return copied;
+}
+
+size_t
+spsc_planar_ring_buffer_get_read_indices(const spsc_planar_ring_buffer_t *ring,
+                                         size_t max_frames, size_t *offset,
+                                         size_t *len1, size_t *len2) {
+  if (offset)
+    *offset = 0;
+  if (len1)
+    *len1 = 0;
+  if (len2)
+    *len2 = 0;
+  if (!ring || max_frames == 0)
+    return 0;
+
+  size_t avail = spsc_planar_ring_buffer_get_available_to_read(ring);
+  size_t to_read = (max_frames < avail) ? max_frames : avail;
+  if (to_read == 0)
+    return 0;
+
+  uint64_t r = atomic_load_explicit(&ring->read_index, memory_order_relaxed);
+  size_t off = (size_t)(r & ring->mask);
+  size_t first_chunk = ring->capacity - off;
+
+  if (offset)
+    *offset = off;
+  if (to_read <= first_chunk) {
+    if (len1)
+      *len1 = to_read;
+  } else {
+    if (len1)
+      *len1 = first_chunk;
+    if (len2)
+      *len2 = to_read - first_chunk;
+  }
+  return to_read;
+}
+
+size_t
+spsc_planar_ring_buffer_get_write_indices(const spsc_planar_ring_buffer_t *ring,
+                                          size_t max_frames, size_t *offset,
+                                          size_t *len1, size_t *len2) {
+  if (offset)
+    *offset = 0;
+  if (len1)
+    *len1 = 0;
+  if (len2)
+    *len2 = 0;
+  if (!ring || max_frames == 0)
+    return 0;
+
+  size_t free_space = spsc_planar_ring_buffer_get_available_to_write(ring);
+  size_t to_write = (max_frames < free_space) ? max_frames : free_space;
+  if (to_write == 0)
+    return 0;
+
+  uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
+  size_t off = (size_t)(w & ring->mask);
+  size_t first_chunk = ring->capacity - off;
+
+  if (offset)
+    *offset = off;
+  if (to_write <= first_chunk) {
+    if (len1)
+      *len1 = to_write;
+  } else {
+    if (len1)
+      *len1 = first_chunk;
+    if (len2)
+      *len2 = to_write - first_chunk;
+  }
+  return to_write;
+}
+
+uint8_t *
+spsc_planar_ring_buffer_get_channel_ptr(const spsc_planar_ring_buffer_t *ring,
+                                        size_t channel) {
+  if (!ring || channel >= ring->channels || !ring->channel_storage)
+    return NULL;
+  return ring->channel_storage[channel];
+}
+
+size_t spsc_planar_ring_buffer_write_silence(spsc_planar_ring_buffer_t *ring,
+                                             size_t frames) {
+  if (!ring || frames == 0)
+    return 0;
+
+  size_t offset = 0, l1 = 0, l2 = 0;
+  size_t to_write = spsc_planar_ring_buffer_get_write_indices(
+      ring, frames, &offset, &l1, &l2);
+  if (to_write == 0)
+    return 0;
+
+  size_t bps = ring->bytes_per_sample;
+  for (size_t ch = 0; ch < ring->channels; ch++) {
+    uint8_t *dst = ring->channel_storage[ch];
+    if (dst) {
+      if (l1 > 0) {
+        memset(dst + offset * bps, 0, l1 * bps);
+      }
+      if (l2 > 0) {
+        memset(dst, 0, l2 * bps);
+      }
+    }
+  }
+
+  uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_relaxed);
+  atomic_store_explicit(&ring->write_index, w + to_write, memory_order_release);
+  return to_write;
+}
+
+void spsc_planar_ring_buffer_drain(spsc_planar_ring_buffer_t *ring) {
   if (!ring)
     return;
   uint64_t w = atomic_load_explicit(&ring->write_index, memory_order_acquire);

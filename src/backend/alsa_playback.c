@@ -718,28 +718,10 @@ static bool alsa_playback_prefill_silence(void *ctx, size_t frames,
       playback->blockalign == 0)
     return true;
 
-  uint8_t zero_buf[512] = {0};
-  if (alsa_is_dsd_format(playback->format)) {
-    memset(zero_buf, 0x69, sizeof(zero_buf));
-  }
-  // Transfer whole frames only. A partial frame left in the ring would offset
-  // every subsequent sample and permanently rotate the channel mapping.
-  size_t max_frames_per_pass = sizeof(zero_buf) / playback->blockalign;
-  if (max_frames_per_pass == 0) {
-    return true;
-  }
-  size_t remaining_frames = frames;
-  while (remaining_frames > 0) {
-    size_t pass_frames = remaining_frames < max_frames_per_pass
-                             ? remaining_frames
-                             : max_frames_per_pass;
-    size_t pass_bytes = pass_frames * playback->blockalign;
-    size_t written = spsc_byte_ring_buffer_write(playback->ring_buffer,
-                                                 zero_buf, pass_bytes);
-    if (written != pass_bytes)
-      break;
-    remaining_frames -= pass_frames;
-  }
+  uint8_t silence_byte = alsa_is_dsd_format(playback->format) ? 0x69 : 0x00;
+  size_t bytes = frames * playback->blockalign;
+  spsc_byte_ring_buffer_write_silence(playback->ring_buffer, bytes,
+                                      silence_byte);
   return true;
 }
 

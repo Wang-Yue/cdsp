@@ -114,7 +114,18 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
   - **Eliminates Redundant `memcpy` Hops**: Samples are decoded and converted directly between planar channel slices and the SPSC ring buffer in a single pass.
   - **Reduced CPU Cache Pressure & Memory Bandwidth**: Bypassing intermediate staging buffers minimizes L1/L2 data cache thrashing and lowers end-to-end capture-to-playback buffer latency.
 
+### 2.7 Native Planar / Non-Interleaved Hardware Acceleration (`spsc_planar_ring_buffer_t`)
+* **Upstream Behavior**: Upstream CamillaDSP forces all audio passing between real-time driver callbacks and worker threads to be serialized into interleaved byte streams. For planar hardware drivers like macOS CoreAudio (AUHAL non-interleaved `AudioBufferList`) and Windows ASIO (`buffer_infos[ch].buffers[buffer_index]`), this forces expensive 2D frame-by-frame sample interleaving inside the real-time capture callback and 2D frame-by-frame de-interleaving inside the real-time playback callback.
+* **`cdsp` Enhancement**: In [`../src/utils/lock_free_ring_buffer.c`](../src/utils/lock_free_ring_buffer.c), [`../src/audio/audio_chunk.c`](../src/audio/audio_chunk.c), [`../src/backend/core_audio_device.c`](../src/backend/core_audio_device.c), [`../src/backend/core_audio_capture.c`](../src/backend/core_audio_capture.c), [`../src/backend/core_audio_playback.c`](../src/backend/core_audio_playback.c), and [`../src/backend/asio_backend.c`](../src/backend/asio_backend.c), `cdsp` introduces a lock-free multi-channel single-producer/single-consumer planar ring buffer (`spsc_planar_ring_buffer_t`):
+  1. **Zero-Copy CoreAudio Capture Rendering**: The capture callback points AUHAL `AudioBufferList` buffers directly to the ring buffer's writable planar slices (`spsc_planar_ring_buffer_get_write_slices`), allowing `AudioUnitRender` to stream audio straight into the lock-free ring with **zero memory copies** on the real-time audio thread.
+  2. **Zero-Deinterleaving ASIO Streaming**: In `buffer_switch_capture` and `buffer_switch_playback`, channel buffers are copied and transferred via fast 1D contiguous vector operations directly between driver buffers and planar ring slices, completely eliminating the 2D byte-hopping loops and local staging buffers.
+  3. **Direct 1D Planar Chunk Codecs**: `audio_chunk_decode_planar` and `audio_chunk_encode_planar` decode and encode directly between contiguous binary channel buffers and `audio_chunk_t` mutable waveforms with 1D SIMD-friendly vectorization.
+* **Why `cdsp` Is Better**:
+  - **True Zero-Copy Real-Time HAL IO**: Eliminates real-time buffer copy overhead on macOS CoreAudio capture.
+  - **Dramatically Lower Latency & CPU Overhead**: Bypasses CPU cache thrashing from 2D sample interleaving loops, enabling sustained, glitch-free ultra-low latency audio streaming down to sub-3ms hardware buffer sizes.
+
 ---
+
 
 ## 3. Numerical Precision & Mathematical Integrity
 

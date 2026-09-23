@@ -1114,32 +1114,26 @@ static bool asio_device_is_dsd_lsb(const char *devname, bool is_input) {
 // MARK: - Internal Contexts and Global Atomics matching CamillaDSP device.rs
 
 typedef struct {
-  spsc_byte_ring_buffer_t *ring_buffer;
+  spsc_planar_ring_buffer_t *planar_ring;
   ASIOBufferInfo *buffer_infos;
+  void **channel_ptrs;
   size_t num_channels;
   size_t buffer_size;
   size_t bytes_per_sample;
-  uint8_t *read_tmp;
-  uint8_t *sample_queue;
-  size_t sample_queue_len;
-  size_t sample_queue_cap;
   _Atomic size_t target_level;
   uint8_t silence_byte;
-  // Frames pending outside the ring buffer, i.e. still in sample_queue.
-  // The ring itself is read live by playback_buffer_level().
   playback_buffer_t buffer;
   bool running;
 } asio_playback_context_t;
 
 typedef struct {
-  spsc_byte_ring_buffer_t *ring_buffer;
+  spsc_planar_ring_buffer_t *planar_ring;
   cdsp_sem_t semaphore;
   ASIOBufferInfo *buffer_infos;
+  void **channel_ptrs;
   size_t num_channels;
   size_t buffer_size;
   size_t bytes_per_sample;
-  uint8_t *transfer_buf;
-  size_t transfer_buf_size;
 } asio_capture_context_t;
 
 static _Atomic(asio_playback_context_t *) PLAYBACK_CONTEXT = NULL;
@@ -1236,30 +1230,15 @@ static bool wait_for_playback_callback(DWORD timeout_ms) {
 
 static void buffer_switch_combined(long buffer_index, ASIOBool direct_process);
 
-static inline bool ensure_sample_queue_cap(asio_playback_context_t *ctx,
-                                           size_t needed_cap) {
-  if (ctx->sample_queue_cap < needed_cap) {
-    size_t new_cap = ctx->sample_queue_cap * 2;
-    if (new_cap < needed_cap)
-      new_cap = needed_cap;
-    uint8_t *new_buf = (uint8_t *)realloc(ctx->sample_queue, new_cap);
-    if (!new_buf) {
-      return false;
-    }
-    ctx->sample_queue = new_buf;
-    ctx->sample_queue_cap = new_cap;
-  }
-  return true;
-}
-
 /**
- * @brief buffer_switch_playback matching CamillaDSP device.rs.
+ * @brief buffer_switch_playback matching CamillaDSP device.rs with planar
+ * acceleration.
  */
 static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
   (void)direct_process;
   asio_playback_context_t *ctx =
       atomic_load_explicit(&PLAYBACK_CONTEXT, memory_order_acquire);
-  if (!ctx) {
+  if (!ctx || !ctx->buffer_infos || !ctx->channel_ptrs) {
     return;
   }
   if (buffer_index < 0 || buffer_index > 1) {
@@ -1269,131 +1248,22 @@ static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
         buffer_index);
     return;
   }
-  if (!ctx->buffer_infos) {
-    return;
-  }
   mark_playback_callback_seen();
 
-  size_t bytes_per_frame = ctx->bytes_per_sample * ctx->num_channels;
-  size_t needed_bytes = ctx->buffer_size * bytes_per_frame;
-
-  // Fill the sample queue from the ring buffer
-  while (ctx->sample_queue_len < needed_bytes) {
-    size_t available =
-        spsc_byte_ring_buffer_get_available_to_read(ctx->ring_buffer);
-    if (available == 0) {
-      // No data — fill remainder with silence
-      size_t missing = needed_bytes - ctx->sample_queue_len;
-      logger_warn(
-          &g_logger,
-          "ASIO playback callback: underrun, filled %zu bytes of silence.",
-          missing);
-      if (ensure_sample_queue_cap(ctx, needed_bytes)) {
-        memset(ctx->sample_queue + ctx->sample_queue_len, ctx->silence_byte,
-               missing);
-        ctx->sample_queue_len = needed_bytes;
-      } else {
-        size_t fit = (ctx->sample_queue_cap > ctx->sample_queue_len)
-                         ? (ctx->sample_queue_cap - ctx->sample_queue_len)
-                         : 0;
-        if (fit > 0) {
-          memset(ctx->sample_queue + ctx->sample_queue_len, ctx->silence_byte,
-                 fit);
-          ctx->sample_queue_len += fit;
-        }
-      }
-      if (ctx->running) {
-        ctx->running = false;
-      }
-      break;
-    }
-    if (!ctx->running) {
-      ctx->running = true;
-      // Prefill at least one full callback's worth of frames so the loop
-      // below doesn't immediately re-drain the ring buffer to empty and
-      // re-trigger an underrun when target_level is smaller than the
-      // driver's actual buffer size (see issue #498).
-      size_t target_level =
-          atomic_load_explicit(&ctx->target_level, memory_order_acquire);
-      size_t prefill_frames =
-          (target_level > ctx->buffer_size) ? target_level : ctx->buffer_size;
-      size_t prefill_bytes = prefill_frames * bytes_per_frame;
-      size_t new_len = ctx->sample_queue_len + prefill_bytes;
-      if (ensure_sample_queue_cap(ctx, new_len)) {
-        memset(ctx->sample_queue + ctx->sample_queue_len, ctx->silence_byte,
-               prefill_bytes);
-        ctx->sample_queue_len = new_len;
-      } else {
-        size_t fit = (ctx->sample_queue_cap > ctx->sample_queue_len)
-                         ? (ctx->sample_queue_cap - ctx->sample_queue_len)
-                         : 0;
-        if (fit > 0) {
-          memset(ctx->sample_queue + ctx->sample_queue_len, ctx->silence_byte,
-                 fit);
-          ctx->sample_queue_len += fit;
-        }
-      }
-    }
-    size_t missing = (needed_bytes > ctx->sample_queue_len)
-                         ? (needed_bytes - ctx->sample_queue_len)
-                         : 0;
-    size_t to_read = (available < missing) ? available : missing;
-    if (to_read > 0) {
-      size_t read_bytes = spsc_byte_ring_buffer_consume(ctx->ring_buffer,
-                                                        ctx->read_tmp, to_read);
-      if (ensure_sample_queue_cap(ctx, ctx->sample_queue_len + read_bytes)) {
-        memcpy(ctx->sample_queue + ctx->sample_queue_len, ctx->read_tmp,
-               read_bytes);
-        ctx->sample_queue_len += read_bytes;
-      } else {
-        size_t fit = (ctx->sample_queue_cap > ctx->sample_queue_len)
-                         ? (ctx->sample_queue_cap - ctx->sample_queue_len)
-                         : 0;
-        if (fit > 0) {
-          size_t copy_bytes = (read_bytes < fit) ? read_bytes : fit;
-          memcpy(ctx->sample_queue + ctx->sample_queue_len, ctx->read_tmp,
-                 copy_bytes);
-          ctx->sample_queue_len += copy_bytes;
-        }
-      }
-    }
+  for (size_t ch = 0; ch < ctx->num_channels; ch++) {
+    ctx->channel_ptrs[ch] = ctx->buffer_infos[ch].buffers[buffer_index];
   }
 
-  // Copy interleaved data into per-channel ASIO buffers (de-interleave)
-  size_t src_offset = 0;
-  for (size_t frame = 0; frame < ctx->buffer_size; frame++) {
-    for (size_t ch = 0; ch < ctx->num_channels; ch++) {
-      void *out_ptr = ctx->buffer_infos[ch].buffers[buffer_index];
-      if (out_ptr) {
-        uint8_t *dst = (uint8_t *)out_ptr + frame * ctx->bytes_per_sample;
-        memcpy(dst, ctx->sample_queue + src_offset, ctx->bytes_per_sample);
-      } else if (frame == 0) {
-        logger_trace(
-            &g_logger,
-            "ASIO playback callback: null output buffer pointer at channel "
-            "%zu, index %ld.",
-            ch, buffer_index);
-      }
-      src_offset += ctx->bytes_per_sample;
-    }
-  }
-  if (needed_bytes > 0 && ctx->sample_queue_len >= needed_bytes) {
-    size_t remaining = ctx->sample_queue_len - needed_bytes;
-    if (remaining > 0) {
-      memmove(ctx->sample_queue, ctx->sample_queue + needed_bytes, remaining);
-    }
-    ctx->sample_queue_len = remaining;
-  }
+  spsc_planar_ring_buffer_read_with_silence(ctx->planar_ring, ctx->channel_ptrs,
+                                            ctx->buffer_size, ctx->silence_byte,
+                                            NULL, NULL);
 
-  // Only the callback-local staging queue lives outside the ring buffer.
-  if (bytes_per_frame > 0) {
-    playback_buffer_publish(&ctx->buffer,
-                            ctx->sample_queue_len / bytes_per_frame);
-  }
+  playback_buffer_planar_level(&ctx->buffer, ctx->planar_ring);
 }
 
 /**
- * @brief buffer_switch_capture matching CamillaDSP device.rs.
+ * @brief buffer_switch_capture matching CamillaDSP device.rs with planar
+ * acceleration.
  */
 static void buffer_switch_capture(long buffer_index, ASIOBool direct_process) {
   (void)direct_process;
@@ -1405,7 +1275,7 @@ static void buffer_switch_capture(long buffer_index, ASIOBool direct_process) {
   }
   asio_capture_context_t *ctx =
       atomic_load_explicit(&CAPTURE_CONTEXT, memory_order_acquire);
-  if (!ctx) {
+  if (!ctx || !ctx->buffer_infos || !ctx->channel_ptrs) {
     return;
   }
   if (buffer_index < 0 || buffer_index > 1) {
@@ -1415,41 +1285,19 @@ static void buffer_switch_capture(long buffer_index, ASIOBool direct_process) {
         buffer_index);
     return;
   }
-  if (!ctx->buffer_infos || !ctx->transfer_buf) {
-    return;
+
+  for (size_t ch = 0; ch < ctx->num_channels; ch++) {
+    ctx->channel_ptrs[ch] = ctx->buffer_infos[ch].buffers[buffer_index];
   }
 
-  size_t total_bytes =
-      ctx->buffer_size * ctx->num_channels * ctx->bytes_per_sample;
-  if (ctx->transfer_buf_size != total_bytes) {
-    logger_error(&g_logger,
-                 "ASIO capture callback buffer size mismatch: scratch=%zu, "
-                 "expected=%zu",
-                 ctx->transfer_buf_size, total_bytes);
-    return;
-  }
-
-  // Read from per-channel ASIO input buffers and interleave into transfer_buf
-  for (size_t frame = 0; frame < ctx->buffer_size; frame++) {
-    for (size_t ch = 0; ch < ctx->num_channels; ch++) {
-      void *in_ptr = ctx->buffer_infos[ch].buffers[buffer_index];
-      if (in_ptr) {
-        const uint8_t *src =
-            (const uint8_t *)in_ptr + frame * ctx->bytes_per_sample;
-        size_t offset =
-            (frame * ctx->num_channels + ch) * ctx->bytes_per_sample;
-        memcpy(&ctx->transfer_buf[offset], src, ctx->bytes_per_sample);
-      }
-    }
-  }
-
-  size_t pushed_bytes = spsc_byte_ring_buffer_write(
-      ctx->ring_buffer, ctx->transfer_buf, total_bytes);
-  if (pushed_bytes < total_bytes) {
+  size_t pushed_frames = spsc_planar_ring_buffer_write_channels(
+      ctx->planar_ring, (const void *const *)ctx->channel_ptrs,
+      ctx->buffer_size);
+  if (pushed_frames < ctx->buffer_size) {
     logger_warn(
         &g_logger,
-        "ASIO capture callback: ringbuffer full, dropped %zu of %zu bytes.",
-        total_bytes - pushed_bytes, total_bytes);
+        "ASIO capture callback: ringbuffer full, dropped %zu of %zu frames.",
+        ctx->buffer_size - pushed_frames, ctx->buffer_size);
   }
   if (ctx->semaphore) {
     cdsp_sem_signal(ctx->semaphore);
@@ -1457,6 +1305,7 @@ static void buffer_switch_capture(long buffer_index, ASIOBool direct_process) {
 }
 
 static void buffer_switch_combined(long buffer_index, ASIOBool direct_process) {
+
   buffer_switch_playback(buffer_index, direct_process);
   buffer_switch_capture(buffer_index, direct_process);
 }
@@ -2370,7 +2219,7 @@ struct asio_playback {
   bool single_mode_allocated_infos;
   ASIOCallbacks callbacks_for_driver;
 
-  spsc_byte_ring_buffer_t *ring_buffer;
+  spsc_planar_ring_buffer_t *planar_ring;
 
   asio_playback_context_t *context;
   _Atomic bool is_running;
@@ -2402,11 +2251,9 @@ static void asio_playback_close(void *ctx) {
   atomic_store_explicit(&PLAYBACK_CONTEXT, NULL, memory_order_release);
 
   if (playback->context) {
-    if (playback->context->read_tmp) {
-      free(playback->context->read_tmp);
-    }
-    if (playback->context->sample_queue) {
-      free(playback->context->sample_queue);
+    if (playback->context->channel_ptrs) {
+      free(playback->context->channel_ptrs);
+      playback->context->channel_ptrs = NULL;
     }
     free(playback->context);
     playback->context = NULL;
@@ -2417,9 +2264,9 @@ static void asio_playback_close(void *ctx) {
     playback->buffer_infos = NULL;
   }
 
-  if (playback->ring_buffer) {
-    spsc_byte_ring_buffer_free(playback->ring_buffer);
-    playback->ring_buffer = NULL;
+  if (playback->planar_ring) {
+    spsc_planar_ring_buffer_free(playback->planar_ring);
+    playback->planar_ring = NULL;
   }
 }
 
@@ -2499,9 +2346,8 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
   size_t ring_frames = ((size_t)playback->chunk_size > (size_t)asio_buffer_size)
                            ? (size_t)playback->chunk_size
                            : (size_t)asio_buffer_size;
-  size_t ring_bytes = playback->channels * playback->bytes_per_sample *
-                      (2 * ring_frames + 2048);
-  playback->ring_buffer = spsc_byte_ring_buffer_create(ring_bytes);
+  playback->planar_ring = spsc_planar_ring_buffer_create(
+      playback->channels, playback->bytes_per_sample, 2 * ring_frames + 2048);
 
   clear_playback_driver_events();
   reset_playback_callback_seen();
@@ -2510,12 +2356,16 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
                             ? (size_t)playback->target_level
                             : (size_t)playback->chunk_size;
 
-  size_t bytes_per_frame = playback->bytes_per_sample * playback->channels;
   size_t asio_buf_frames = (size_t)asio_buffer_size;
 
   playback->context =
       (asio_playback_context_t *)calloc(1, sizeof(asio_playback_context_t));
-  if (!playback->ring_buffer || !playback->context) {
+  if (playback->context) {
+    playback->context->channel_ptrs =
+        (void **)calloc(playback->channels, sizeof(void *));
+  }
+  if (!playback->planar_ring || !playback->context ||
+      !playback->context->channel_ptrs) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to allocate playback buffers or context");
@@ -2527,35 +2377,10 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
 
-  playback->context->ring_buffer = playback->ring_buffer;
+  playback->context->planar_ring = playback->planar_ring;
   playback->context->num_channels = playback->channels;
   playback->context->buffer_size = asio_buf_frames;
   playback->context->bytes_per_sample = playback->bytes_per_sample;
-  playback->context->read_tmp =
-      (uint8_t *)calloc(1, asio_buf_frames * bytes_per_frame);
-
-  size_t initial_queue_cap =
-      (16 * ring_frames + target_level + asio_buf_frames * 2) * bytes_per_frame;
-  if (initial_queue_cap < asio_buf_frames * bytes_per_frame * 4) {
-    initial_queue_cap = asio_buf_frames * bytes_per_frame * 4;
-  }
-  playback->context->sample_queue = (uint8_t *)malloc(initial_queue_cap);
-  if (!playback->context->read_tmp || !playback->context->sample_queue) {
-    if (err) {
-      backend_error_init(
-          err, BACKEND_ERROR_INITIALIZATION_FAILED,
-          "Failed to allocate playback sample queue or temporary buffer");
-    }
-    if (playback->full_duplex && playback->shared_claimed) {
-      abort_shared_asio(
-          "Failed to allocate playback sample queue or temporary buffer");
-      playback->shared_claimed = false;
-    }
-    goto error_cleanup;
-  }
-
-  playback->context->sample_queue_len = 0;
-  playback->context->sample_queue_cap = initial_queue_cap;
   atomic_init(&playback->context->target_level, target_level);
   playback->context->running = false;
   playback->context->silence_byte =
@@ -2633,7 +2458,7 @@ error_cleanup:
 }
 
 /**
- * @brief write matching CamillaDSP device.rs.
+ * @brief write matching CamillaDSP device.rs with planar acceleration.
  */
 static bool asio_playback_write(void *ctx, const audio_chunk_t *chunk,
                                 backend_error_t *err) {
@@ -2655,7 +2480,6 @@ static bool asio_playback_write(void *ctx, const audio_chunk_t *chunk,
     return false;
   }
 
-  size_t blockalign = playback->channels * playback->bytes_per_sample;
   size_t sleep_duration_us =
       (size_t)(1000000ULL * (unsigned long long)playback->chunk_size /
                (unsigned long long)playback->sample_rate / 2ULL);
@@ -2663,8 +2487,8 @@ static bool asio_playback_write(void *ctx, const audio_chunk_t *chunk,
   if (sleep_ms == 0)
     sleep_ms = 1;
 
-  return audio_backend_ring_buffer_write(
-      playback->ring_buffer, blockalign, chunk,
+  return audio_backend_planar_ring_buffer_write(
+      playback->planar_ring, chunk,
       asio_sample_format_to_binary_format(playback->resolved_format,
                                           playback->is_lsb),
       playback->channels, sleep_ms, 8, &playback->is_running,
@@ -2675,9 +2499,8 @@ static size_t asio_playback_get_buffer_level(void *ctx) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
   if (!playback || !playback->context)
     return 0;
-  return playback_buffer_level(&playback->context->buffer,
-                               playback->context->ring_buffer,
-                               playback->bytes_per_sample * playback->channels);
+  return playback_buffer_planar_level(&playback->context->buffer,
+                                      playback->context->planar_ring);
 }
 
 static bool asio_playback_get_pending_rate_change(void *ctx, double *out_rate) {
@@ -2810,7 +2633,7 @@ struct asio_capture {
   bool single_mode_allocated_infos;
   ASIOCallbacks callbacks_for_driver;
 
-  spsc_byte_ring_buffer_t *ring_buffer;
+  spsc_planar_ring_buffer_t *planar_ring;
   cdsp_sem_t semaphore;
 
   asio_capture_context_t *context;
@@ -2846,8 +2669,9 @@ static void asio_capture_close(void *ctx) {
   atomic_store_explicit(&CAPTURE_CONTEXT, NULL, memory_order_release);
 
   if (capture->context) {
-    if (capture->context->transfer_buf) {
-      free(capture->context->transfer_buf);
+    if (capture->context->channel_ptrs) {
+      free(capture->context->channel_ptrs);
+      capture->context->channel_ptrs = NULL;
     }
     free(capture->context);
     capture->context = NULL;
@@ -2863,9 +2687,9 @@ static void asio_capture_close(void *ctx) {
     cdsp_sem_destroy(capture->semaphore);
     capture->semaphore = NULL;
   }
-  if (capture->ring_buffer) {
-    spsc_byte_ring_buffer_free(capture->ring_buffer);
-    capture->ring_buffer = NULL;
+  if (capture->planar_ring) {
+    spsc_planar_ring_buffer_free(capture->planar_ring);
+    capture->planar_ring = NULL;
   }
 }
 
@@ -2942,9 +2766,8 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
   size_t ring_frames = ((size_t)capture->chunk_size > (size_t)asio_buffer_size)
                            ? (size_t)capture->chunk_size
                            : (size_t)asio_buffer_size;
-  size_t ring_bytes =
-      capture->channels * capture->bytes_per_sample * (2 * ring_frames + 2048);
-  capture->ring_buffer = spsc_byte_ring_buffer_create(ring_bytes);
+  capture->planar_ring = spsc_planar_ring_buffer_create(
+      capture->channels, capture->bytes_per_sample, 2 * ring_frames + 2048);
   capture->semaphore = cdsp_sem_create();
 
   clear_capture_driver_events();
@@ -2954,20 +2777,17 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
   capture->context =
       (asio_capture_context_t *)calloc(1, sizeof(asio_capture_context_t));
   if (capture->context) {
-    capture->context->ring_buffer = capture->ring_buffer;
+    capture->context->channel_ptrs =
+        (void **)calloc(capture->channels, sizeof(void *));
+    capture->context->planar_ring = capture->planar_ring;
     capture->context->semaphore = capture->semaphore;
     capture->context->num_channels = capture->channels;
     capture->context->buffer_size = (size_t)asio_buffer_size;
     capture->context->bytes_per_sample = capture->bytes_per_sample;
-    capture->context->transfer_buf_size = (size_t)asio_buffer_size *
-                                          capture->bytes_per_sample *
-                                          capture->channels;
-    capture->context->transfer_buf =
-        (uint8_t *)malloc(capture->context->transfer_buf_size);
   }
 
-  if (!capture->ring_buffer || !capture->semaphore || !capture->context ||
-      !capture->context->transfer_buf) {
+  if (!capture->planar_ring || !capture->semaphore || !capture->context ||
+      !capture->context->channel_ptrs) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to allocate capture buffers or semaphore");
@@ -3033,12 +2853,12 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
   // Discard anything queued before the loop was ready, then open the gate.
   // Matches CamillaDSP device.rs lines 1821-1829.
   size_t discarded =
-      spsc_byte_ring_buffer_get_available_to_read(capture->ring_buffer);
+      spsc_planar_ring_buffer_get_available_to_read(capture->planar_ring);
   if (discarded > 0) {
     logger_debug(&g_logger,
-                 "Discarding %zu bytes captured before the loop was ready.",
+                 "Discarding %zu frames captured before the loop was ready.",
                  discarded);
-    spsc_byte_ring_buffer_drain(capture->ring_buffer);
+    spsc_planar_ring_buffer_drain(capture->planar_ring);
   }
   atomic_store_explicit(&CAPTURE_STREAM_ACTIVE, true, memory_order_release);
 
@@ -3054,7 +2874,7 @@ error_cleanup:
 }
 
 /**
- * @brief read matching CamillaDSP device.rs.
+ * @brief read matching CamillaDSP device.rs with planar acceleration.
  */
 static bool asio_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
                               backend_error_t *err) {
@@ -3076,9 +2896,8 @@ static bool asio_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
     return false;
   }
 
-  size_t blockalign = capture->channels * capture->bytes_per_sample;
-  return audio_backend_ring_buffer_read(
-      capture->ring_buffer, blockalign, frames,
+  return audio_backend_planar_ring_buffer_read(
+      capture->planar_ring, frames,
       asio_sample_format_to_binary_format(capture->resolved_format,
                                           capture->is_lsb),
       capture->channels, &capture->is_running, &capture->stopped,

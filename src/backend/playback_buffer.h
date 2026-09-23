@@ -88,4 +88,15 @@ size_t playback_buffer_level(const playback_buffer_t *pb,
                              const spsc_byte_ring_buffer_t *ring,
                              size_t blockalign);
 
+/**
+ * @brief Total frames still pending playback for planar ring buffers.
+ *
+ * @param pb Buffer tracker to read. May be NULL.
+ * @param ring Planar ring buffer feeding the device. May be NULL.
+ * @return Live planar ring fill plus the extrapolated device-side level, in
+ * frames.
+ */
+size_t playback_buffer_planar_level(const playback_buffer_t *pb,
+                                    const spsc_planar_ring_buffer_t *ring);
+
 #endif // CDSP_PLAYBACK_BUFFER_H
