@@ -86,7 +86,7 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 * **Upstream Behavior**: Upstream's `DeviceBufferEstimator` (`src/utils/countertimer.rs:23-54`) is shared between the device thread and the outer thread as `Arc<Mutex<DeviceBufferEstimator>>`, and **both sides access it with `try_lock()`**. The device thread skips the update entirely when the lock is contended (`alsa_backend/threaded_device.rs:457-459`), and the reader falls back to `unwrap_or_default()` — i.e. **it reports a buffer level of `0`** (`threaded_device.rs:1198-1201`, and the identical pattern in the WASAPI, CoreAudio, ASIO and PipeWire backends). The estimator also stores the ring/channel fill *and* the device-side frames as a single snapshot, so the whole sum is extrapolated from one timestamp.
 * **`cdsp` Enhancement**: Two pieces, shared by all five playback backends:
   - [`../src/utils/device_buffer_estimator.c`](../src/utils/device_buffer_estimator.c) holds the level in atomics instead of a mutex. The producer stores the frame count (relaxed) and then the timestamp (release); the reader loads the timestamp (acquire) and then the frame count (relaxed).
-  - [`../src/backend/playback_buffer.c`](../src/backend/playback_buffer.c) splits the two terms by how they can be measured. Only frames that live *outside* the ring buffer are published to the estimator — the ALSA hardware delay, ASIO's callback-local staging queue, WASAPI/CoreAudio queued silence. The SPSC ring fill is read live on every query and added on top. PipeWire exposes no device-side buffer information at all, so it publishes nothing and reports the live ring fill alone.
+  - [`../src/backend/playback_buffer.c`](../src/backend/playback_buffer.c) splits the two terms by how they can be measured. Only frames that live *outside* the ring buffer are published to the estimator — the ALSA hardware delay, or committed underrun/prefill silence across ASIO, WASAPI, CoreAudio, and PipeWire managed by the shared `playback_buffer_t` state machine. The SPSC ring fill is read live on every query and added on top.
 * **Why `cdsp` Is Better**:
   - **No lock on the real-time path.** The device thread can never be delayed by, or skip an update because of, a reader holding the mutex.
   - **No spurious zero readings.** Upstream's contended read feeds a buffer level of `0` straight into the PI rate controller and the published `buffer_level` status, which is indistinguishable from a genuine underrun. A lock-free read cannot fail.
@@ -97,12 +97,14 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
   | Backend | Upstream `estimator.add(...)` | `cdsp` published term | `cdsp` live term |
   |---|---|---|---|
   | ALSA | hardware delay + ring fill | hardware delay (`bufsize - avail`) | ring fill |
-  | ASIO | `sample_queue` + ring fill | `sample_queue_len` | ring fill |
-  | PipeWire | ring fill only | *(nothing published)* | ring fill |
-  | WASAPI | leftover `sample_queue` + inner channel depth | `silence_frames_to_insert` | ring fill |
-  | CoreAudio | leftover `sample_queue` + inner channel depth | `underrun_silence_frames` | ring fill |
+  | ASIO | `sample_queue` + ring fill | `playback_buffer.silence_to_insert` | ring fill |
+  | PipeWire | ring fill only | `playback_buffer.silence_to_insert` | ring fill |
+  | WASAPI | leftover `sample_queue` + inner channel depth | `playback_buffer.silence_to_insert` | ring fill |
+  | CoreAudio | leftover `sample_queue` + inner channel depth | `playback_buffer.silence_to_insert` | ring fill |
 
-  WASAPI and CoreAudio look the most different, but the divergence there is structural rather than behavioral. Upstream stages bytes in a callback-local `sample_queue` fed by an inner channel, and pads that same queue with zeros on underrun (`wasapi_backend/device.rs:597-601`), so its silence is counted by virtue of sitting in the queue. `cdsp` has neither structure — the inner loop writes straight from the SPSC ring to the device — so the ring *is* the staging queue, and the only frames left outside it are silence that has been committed but not yet written.
+  The divergence across the real-time callback-driven backends (ASIO, WASAPI, CoreAudio, PipeWire) is structural rather than behavioral:
+  - **Behavioral Equivalence**: Both upstream and `cdsp` insert `target_level` silence on startup and upon underrun recovery, ensuring identical buffer headroom and rate-controller feedback.
+  - **Structural Simplification**: Upstream stages bytes in a callback-local `VecDeque<u8> sample_queue` and pads that queue with zeros via push loops on the real-time thread (`for _ in 0..(blockalign * target_level)`). In `cdsp`, the circular SPSC ring *is* the staging queue (either byte or planar), zero-byte loops are eliminated, and underrun silence injection/prefill is unified into the lock-free [`playback_buffer_t`](../src/backend/playback_buffer.h) state machine. Any committed silence frames remaining to be written are tracked atomically via `playback_buffer.silence_to_insert` and published to the estimator without heap allocation.
 
   In all five cases the frames already handed to the device are deliberately excluded, matching upstream. The outer-queue term that upstream adds at the call site as `channel.len() * chunksize` is added by `cdsp` in [`playback_loop_update_rate_adjust`](../src/engine/engine_playback_loop.c) as `processed_queued`, so it is accounted for once, in the engine, rather than per backend.
 

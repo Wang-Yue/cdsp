@@ -215,14 +215,17 @@ size_t spsc_byte_ring_buffer_consume(spsc_byte_ring_buffer_t *ring,
  * @param silence_byte Byte pattern to use for silence (e.g. 0x00 for PCM/Float,
  * 0x69 for DSD).
  * @param silence_frames Optional pointer to silence frames remaining to output
- * before ring data.
+ * before ring data (updated atomically).
  * @param is_running Optional pointer to running state boolean (set to false on
  * underrun).
  * @return Number of audio frames actually read from the ring.
  */
-size_t spsc_byte_ring_buffer_consume_with_silence(
-    spsc_byte_ring_buffer_t *ring, void *dst, size_t frames, size_t blockalign,
-    uint8_t silence_byte, size_t *silence_frames, bool *is_running);
+size_t spsc_byte_ring_buffer_read_with_silence(spsc_byte_ring_buffer_t *ring,
+                                               void *dst, size_t frames,
+                                               size_t blockalign,
+                                               uint8_t silence_byte,
+                                               _Atomic size_t *silence_frames,
+                                               _Atomic bool *is_running);
 
 /**
  * @brief Get direct pointers to readable contiguous slices in the ring buffer.

@@ -202,37 +202,43 @@ size_t spsc_byte_ring_buffer_consume(spsc_byte_ring_buffer_t *ring,
   return to_read;
 }
 
-size_t spsc_byte_ring_buffer_consume_with_silence(
-    spsc_byte_ring_buffer_t *ring, void *dst, size_t frames, size_t blockalign,
-    uint8_t silence_byte, size_t *silence_frames, bool *is_running) {
+size_t spsc_byte_ring_buffer_read_with_silence(spsc_byte_ring_buffer_t *ring,
+                                               void *dst, size_t frames,
+                                               size_t blockalign,
+                                               uint8_t silence_byte,
+                                               _Atomic size_t *silence_frames,
+                                               _Atomic bool *is_running) {
   if (!dst || frames == 0 || blockalign == 0)
     return 0;
 
-  size_t prefix_silence = 0;
-  if (silence_frames && *silence_frames > 0) {
-    prefix_silence = (*silence_frames < frames) ? *silence_frames : frames;
-    *silence_frames -= prefix_silence;
+  size_t silence = 0;
+  if (silence_frames) {
+    size_t pending = atomic_load_explicit(silence_frames, memory_order_relaxed);
+    silence = (pending < frames) ? pending : frames;
+    if (silence > 0) {
+      atomic_fetch_sub_explicit(silence_frames, silence, memory_order_relaxed);
+    }
   }
 
   uint8_t *ptr = (uint8_t *)dst;
-  if (prefix_silence > 0) {
-    memset(ptr, silence_byte, prefix_silence * blockalign);
-    ptr += prefix_silence * blockalign;
+  if (silence > 0) {
+    memset(ptr, silence_byte, silence * blockalign);
+    ptr += silence * blockalign;
   }
 
-  size_t frames_from_ring = frames - prefix_silence;
+  size_t audio_needed = frames - silence;
   size_t consumed_bytes = 0;
-  if (ring && frames_from_ring > 0) {
+  if (ring && audio_needed > 0) {
     consumed_bytes =
-        spsc_byte_ring_buffer_consume(ring, ptr, frames_from_ring * blockalign);
+        spsc_byte_ring_buffer_consume(ring, ptr, audio_needed * blockalign);
   }
 
   size_t consumed_frames = consumed_bytes / blockalign;
-  if (consumed_frames < frames_from_ring) {
-    size_t missing_bytes = (frames_from_ring - consumed_frames) * blockalign;
+  if (consumed_frames < audio_needed) {
+    size_t missing_bytes = (audio_needed - consumed_frames) * blockalign;
     memset(ptr + consumed_bytes, silence_byte, missing_bytes);
-    if (is_running && *is_running) {
-      *is_running = false;
+    if (is_running) {
+      atomic_store_explicit(is_running, false, memory_order_release);
     }
   }
 

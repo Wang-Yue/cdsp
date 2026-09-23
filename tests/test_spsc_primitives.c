@@ -502,7 +502,7 @@ TEST(SpscPlanarRingBuffer_WriteSilence) {
   spsc_planar_ring_buffer_free(ring);
 }
 
-TEST(SpscByteRingBuffer_ConsumeWithSilence) {
+TEST(SpscByteRingBuffer_ReadWithSilence) {
   spsc_byte_ring_buffer_t *ring = spsc_byte_ring_buffer_create(128);
   ASSERT_TRUE(ring != NULL);
 
@@ -517,12 +517,12 @@ TEST(SpscByteRingBuffer_ConsumeWithSilence) {
   // - 5 frames of silence prefix
   // - 10 frames of audio from ring
   // - 5 frames of underrun tail silence
-  size_t silence_prefix = 5;
-  bool running = true;
+  _Atomic size_t silence_prefix = 5;
+  _Atomic bool running = true;
   uint8_t dst[20 * 4];
   memset(dst, 0xEE, sizeof(dst));
 
-  size_t consumed = spsc_byte_ring_buffer_consume_with_silence(
+  size_t consumed = spsc_byte_ring_buffer_read_with_silence(
       ring, dst, 20, 4, 0x00, &silence_prefix, &running);
 
   ASSERT_EQ(10, consumed);

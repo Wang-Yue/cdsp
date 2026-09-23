@@ -1120,10 +1120,8 @@ typedef struct {
   size_t num_channels;
   size_t buffer_size;
   size_t bytes_per_sample;
-  _Atomic size_t target_level;
   uint8_t silence_byte;
   playback_buffer_t buffer;
-  bool running;
 } asio_playback_context_t;
 
 typedef struct {
@@ -1254,11 +1252,9 @@ static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
     ctx->channel_ptrs[ch] = ctx->buffer_infos[ch].buffers[buffer_index];
   }
 
-  spsc_planar_ring_buffer_read_with_silence(ctx->planar_ring, ctx->channel_ptrs,
-                                            ctx->buffer_size, ctx->silence_byte,
-                                            NULL, NULL);
-
-  playback_buffer_planar_level(&ctx->buffer, ctx->planar_ring);
+  playback_buffer_render_planar(&ctx->buffer, ctx->planar_ring,
+                                ctx->channel_ptrs, ctx->buffer_size,
+                                ctx->silence_byte);
 }
 
 /**
@@ -2381,12 +2377,11 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
   playback->context->num_channels = playback->channels;
   playback->context->buffer_size = asio_buf_frames;
   playback->context->bytes_per_sample = playback->bytes_per_sample;
-  atomic_init(&playback->context->target_level, target_level);
-  playback->context->running = false;
-  playback->context->silence_byte =
-      (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) ? 0x69 : 0x00;
   playback_buffer_init(&playback->context->buffer,
                        (double)playback->sample_rate);
+  playback_buffer_set_target_level(&playback->context->buffer, target_level);
+  playback->context->silence_byte =
+      (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) ? 0x69 : 0x00;
 
   if (playback->full_duplex) {
     atomic_store_explicit(&PLAYBACK_CONTEXT, playback->context,
@@ -2525,8 +2520,8 @@ static bool asio_playback_prefill_silence(void *ctx, size_t frames,
     return false;
   playback->target_level = (int)frames;
   if (playback->context) {
-    atomic_store_explicit(&playback->context->target_level, frames,
-                          memory_order_release);
+    playback_buffer_prefill_planar(&playback->context->buffer,
+                                   playback->context->planar_ring, frames);
   }
   return true;
 }

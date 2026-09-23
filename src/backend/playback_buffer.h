@@ -1,14 +1,18 @@
 #ifndef CDSP_PLAYBACK_BUFFER_H
 #define CDSP_PLAYBACK_BUFFER_H
 
+#include <stdatomic.h>
+#include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "utils/device_buffer_estimator.h"
 #include "utils/lock_free_ring_buffer.h"
 
 /**
  * @file playback_buffer.h
- * @brief Reports how many frames a playback backend still has pending.
+ * @brief Reports how many frames a playback backend still has pending and
+ * coordinates unified realtime silence injection and underrun recovery.
  *
  * Every playback backend has the same two-part answer to "how much audio is
  * still queued?", and this splits the two parts by how they can be measured:
@@ -25,16 +29,12 @@
  * non-ring frames, and playback_buffer_level() adds the live ring fill back
  * on. Publishing the ring contents as well would double-count them, and would
  * also make a stalled device appear to drain when it is not.
- *
- * @note This intentionally does not own the ring buffer. Backends create and
- *       free their ring in open()/close() while this struct lives for the
- *       lifetime of the backend, and several of them keep the ring somewhere
- *       else entirely (ASIO stores it in the driver-callback context). Taking
- *       the ring as an argument keeps a single owner and avoids a second
- *       pointer that could go stale.
  */
 typedef struct {
   device_buffer_estimator_t device;
+  _Atomic size_t target_level;
+  _Atomic size_t silence_to_insert;
+  _Atomic bool is_running;
 } playback_buffer_t;
 
 /**
@@ -98,5 +98,74 @@ size_t playback_buffer_level(const playback_buffer_t *pb,
  */
 size_t playback_buffer_planar_level(const playback_buffer_t *pb,
                                     const spsc_planar_ring_buffer_t *ring);
+
+/**
+ * @brief Configure target delay cushion level (in frames).
+ *
+ * @param pb Buffer tracker.
+ * @param target_level Desired buffer level cushion in frames.
+ */
+void playback_buffer_set_target_level(playback_buffer_t *pb,
+                                      size_t target_level);
+
+/**
+ * @brief Prefill silence into planar ring buffer to establish target delay.
+ *
+ * @param pb Buffer tracker.
+ * @param ring Planar ring buffer (optional).
+ * @param frames Frames of silence to prefill.
+ */
+void playback_buffer_prefill_planar(playback_buffer_t *pb,
+                                    spsc_planar_ring_buffer_t *ring,
+                                    size_t frames);
+
+/**
+ * @brief Prefill silence into byte ring buffer to establish target delay.
+ *
+ * @param pb Buffer tracker.
+ * @param ring Byte ring buffer (optional).
+ * @param frames Frames of silence to prefill.
+ * @param blockalign Frame size in bytes (channels * bytes_per_sample).
+ * @param silence_byte Byte pattern for silence (typically 0x00, or 0x69 for
+ * DSD).
+ */
+void playback_buffer_prefill_byte(playback_buffer_t *pb,
+                                  spsc_byte_ring_buffer_t *ring, size_t frames,
+                                  size_t blockalign, uint8_t silence_byte);
+
+/**
+ * @brief Render planar audio from ring buffer to device destination channels,
+ * handling startup/underrun silence rebuilding, tail zeroing, and buffer level
+ * tracking.
+ *
+ * @param pb Buffer tracker.
+ * @param ring Planar ring buffer.
+ * @param dst_channels Array of channel output pointers.
+ * @param frames Number of frames to render.
+ * @param silence_byte Byte pattern for silence.
+ * @return Number of audio frames read from ring.
+ */
+size_t playback_buffer_render_planar(playback_buffer_t *pb,
+                                     spsc_planar_ring_buffer_t *ring,
+                                     void *const *dst_channels, size_t frames,
+                                     uint8_t silence_byte);
+
+/**
+ * @brief Render interleaved audio from byte ring buffer to device destination,
+ * handling startup/underrun silence rebuilding, tail zeroing, and buffer level
+ * tracking.
+ *
+ * @param pb Buffer tracker.
+ * @param ring Byte ring buffer.
+ * @param dst Destination output buffer.
+ * @param frames Number of frames to render.
+ * @param blockalign Frame size in bytes (channels * bytes_per_sample).
+ * @param silence_byte Byte pattern for silence.
+ * @return Number of audio frames read from ring.
+ */
+size_t playback_buffer_render_byte(playback_buffer_t *pb,
+                                   spsc_byte_ring_buffer_t *ring, void *dst,
+                                   size_t frames, size_t blockalign,
+                                   uint8_t silence_byte);
 
 #endif // CDSP_PLAYBACK_BUFFER_H

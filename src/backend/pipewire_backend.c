@@ -80,7 +80,6 @@ struct pipewire_playback {
   int sample_rate;
   size_t channels;
   int chunk_size;
-  int target_level;
 
   char node_name[256];
   char node_description[256];
@@ -97,12 +96,9 @@ struct pipewire_playback {
 
   spsc_byte_ring_buffer_t *ring;
   size_t blockalign;
-  // PipeWire exposes no device-side buffer level, so nothing is ever
-  // published here and the reported level is the live ring fill alone.
   playback_buffer_t buffer;
   _Atomic bool paused;
   bool stopped;
-  bool running;
 
   double pending_rate;
   bool has_pending_rate;
@@ -220,8 +216,8 @@ static void on_playback_process(void *data) {
     if (atomic_load_explicit(&p->paused, memory_order_acquire)) {
       memset(dst, 0, callback_bytes);
     } else {
-      spsc_byte_ring_buffer_consume_with_silence(
-          p->ring, dst, callback_bytes / stride, stride, 0, NULL, NULL);
+      playback_buffer_render_byte(&p->buffer, p->ring, dst,
+                                  callback_bytes / stride, stride, 0x00);
     }
 
     buf->datas[0].chunk->offset = 0;
@@ -837,9 +833,9 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
 
   playback->blockalign = (size_t)playback->channels * sizeof(float);
   size_t pb_min_frames = (size_t)ceil((double)playback->sample_rate * 0.025);
-  size_t target_level = playback->target_level > 0
-                            ? (size_t)playback->target_level
-                            : (size_t)playback->chunk_size;
+  size_t tl = atomic_load_explicit(&playback->buffer.target_level,
+                                   memory_order_relaxed);
+  size_t target_level = tl > 0 ? tl : (size_t)playback->chunk_size;
   size_t pb_prefill_frames = target_level > (size_t)(3 * playback->chunk_size)
                                  ? target_level
                                  : (size_t)(3 * playback->chunk_size);
@@ -943,11 +939,11 @@ static bool pipewire_playback_prefill_silence(void *ctx, size_t frames,
                                               backend_error_t *err) {
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
   (void)err;
-  if (!playback || !playback->ring)
+  if (!playback)
     return false;
 
-  size_t bytes = frames * playback->blockalign;
-  spsc_byte_ring_buffer_write_silence(playback->ring, bytes, 0x00);
+  playback_buffer_prefill_byte(&playback->buffer, playback->ring, frames,
+                               playback->blockalign, 0x00);
   return true;
 }
 
@@ -1043,9 +1039,11 @@ static playback_backend_t *pipewire_playback_create(
   playback->sample_rate = sample_rate;
   playback->channels = config->cfg.pipewire.channels;
   playback->chunk_size = chunk_size;
-  playback->target_level = config->cfg.pipewire.has_target_level
-                               ? config->cfg.pipewire.target_level
-                               : chunk_size;
+  playback_buffer_init(&playback->buffer, (double)playback->sample_rate);
+  playback_buffer_set_target_level(
+      &playback->buffer, config->cfg.pipewire.has_target_level
+                             ? (size_t)config->cfg.pipewire.target_level
+                             : (size_t)chunk_size);
 
   if (config->cfg.pipewire.has_node_name) {
     snprintf(playback->node_name, sizeof(playback->node_name), "%s",
@@ -1069,7 +1067,6 @@ static playback_backend_t *pipewire_playback_create(
   }
 
   atomic_init(&playback->paused, false);
-  playback_buffer_init(&playback->buffer, (double)playback->sample_rate);
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
   if (!backend) {

@@ -45,7 +45,6 @@ struct wasapi_playback {
   bool has_format;
   bool exclusive;
   bool polling;
-  _Atomic int target_level;
 
   binary_sample_format_t bin_fmt;
   size_t bytes_per_sample;
@@ -118,8 +117,6 @@ static void *wasapi_playback_loop(void *arg) {
 
   size_t chunksize = (size_t)playback->chunk_size;
   size_t blockalign = playback->blockalign;
-  int tl = atomic_load_explicit(&playback->target_level, memory_order_acquire);
-  size_t target_level = tl > 0 ? (size_t)tl : chunksize;
 
   // Pre-roll wait: wait for data to start playback, will time out after one
   // second
@@ -149,10 +146,7 @@ static void *wasapi_playback_loop(void *arg) {
   }
 #endif
 
-  bool running = false;
-  bool starting = true;
   bool started = false;
-  size_t silence_frames_to_insert = 0;
   REFERENCE_TIME def_time = 0, min_time = 0;
   IAudioClient_GetDevicePeriod(playback->client, &def_time, &min_time);
   uint64_t poll_delay_us = (uint64_t)(def_time / 10);
@@ -198,47 +192,16 @@ static void *wasapi_playback_loop(void *arg) {
                  buffer_free_frame_count);
 
     if (buffer_free_frame_count > 0) {
-      size_t avail_bytes =
-          spsc_byte_ring_buffer_get_available_to_read(playback->ring_buffer);
-      size_t avail_frames = (blockalign > 0) ? (avail_bytes / blockalign) : 0;
-
-      if (!running && avail_frames > 0) {
-        running = true;
-        if (starting) {
-          starting = false;
-        } else {
-          logger_warn(&g_wasapi_logger,
-                      "Restarting playback after buffer underrun.");
-        }
-        logger_debug(
-            &g_wasapi_logger,
-            "Playback, inserting %zu silent frames to reach target delay.",
-            target_level);
-        silence_frames_to_insert = target_level;
-      }
-
       BYTE *bufferptr = NULL;
       HRESULT hr = IAudioRenderClient_GetBuffer(
           playback->render_client, (UINT32)buffer_free_frame_count, &bufferptr);
       if (SUCCEEDED(hr) && bufferptr) {
-        bool was_running = started && running;
-        bool stream_running = was_running;
-        spsc_byte_ring_buffer_consume_with_silence(
-            playback->ring_buffer, bufferptr, (size_t)buffer_free_frame_count,
-            blockalign, 0, &silence_frames_to_insert, &stream_running);
-
-        if (was_running && !stream_running) {
-          running = false;
-          logger_warn(&g_wasapi_logger,
-                      "Playback interrupted, no data available.");
-        }
+        playback_buffer_render_byte(&playback->buffer, playback->ring_buffer,
+                                    bufferptr, (size_t)buffer_free_frame_count,
+                                    blockalign, 0);
 
         IAudioRenderClient_ReleaseBuffer(playback->render_client,
                                          (UINT32)buffer_free_frame_count, 0);
-        // Only the silence still to be inserted lives outside the ring;
-        // frames already handed to the device are not counted, as upstream
-        // also leaves them out (src/wasapi_backend/device.rs:622-625).
-        playback_buffer_publish(&playback->buffer, silence_frames_to_insert);
       } else {
         for (int retry = 0; retry < 10; retry++) {
           if (atomic_load_explicit(&playback->has_pending_rate_change,
@@ -475,8 +438,8 @@ static bool wasapi_playback_prefill_silence(void *ctx, size_t frames,
   wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
   if (!playback)
     return false;
-  atomic_store_explicit(&playback->target_level, (int)frames,
-                        memory_order_release);
+  playback_buffer_prefill_byte(&playback->buffer, playback->ring_buffer, frames,
+                               playback->blockalign, 0);
   return true;
 }
 
@@ -548,12 +511,12 @@ wasapi_playback_create(const playback_device_config_t *config, int sample_rate,
       config->cfg.wasapi.has_exclusive ? config->cfg.wasapi.exclusive : false;
   playback->polling =
       config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
-  atomic_init(&playback->target_level, config->cfg.wasapi.has_target_level
-                                           ? config->cfg.wasapi.target_level
-                                           : 0);
-
   atomic_init(&playback->paused, false);
   playback_buffer_init(&playback->buffer, (double)playback->sample_rate);
+  playback_buffer_set_target_level(&playback->buffer,
+                                   config->cfg.wasapi.has_target_level
+                                       ? (size_t)config->cfg.wasapi.target_level
+                                       : (size_t)chunk_size);
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
   if (!backend) {

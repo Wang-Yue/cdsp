@@ -40,7 +40,6 @@ struct core_audio_playback {
   size_t channels;
   double sample_rate;
   size_t chunk_size;
-  size_t target_level;
   bool exclusive;
   char sample_format[16];
   bool has_sample_format;
@@ -57,24 +56,9 @@ struct core_audio_playback {
   _Atomic bool is_paused;
   _Atomic bool stopped;
   _Atomic int active_callbacks;
-  _Atomic bool is_running;
-  _Atomic size_t underrun_silence_frames;
-  // Frames pending outside the ring buffer. The ring itself is read live by
-  // playback_buffer_planar_level().
   playback_buffer_t buffer;
   void **channel_data_pointers;
 };
-
-// Publish what the render callback is leaving queued ahead of the ring
-// buffer. The ring itself is read live, so only the silence counts here.
-static void core_audio_publish_buffer_level(core_audio_playback_t *playback) {
-  if (!playback)
-    return;
-  playback_buffer_publish(
-      &playback->buffer,
-      atomic_load_explicit(&playback->underrun_silence_frames,
-                           memory_order_relaxed));
-}
 
 /**
  * @brief CoreAudio render callback for playback.
@@ -120,23 +104,10 @@ static OSStatus playback_callback(void *inRefCon,
     return noErr;
   }
 
-  // If starting or restarting after underrun, prefill target level silence
-  if (!atomic_load_explicit(&playback->is_running, memory_order_relaxed)) {
-    size_t avail =
-        spsc_planar_ring_buffer_get_available_to_read(playback->planar_ring);
-    if (avail > 0) {
-      atomic_store_explicit(&playback->is_running, true, memory_order_relaxed);
-      atomic_store_explicit(&playback->underrun_silence_frames,
-                            playback->target_level, memory_order_relaxed);
-    }
-  }
+  playback_buffer_render_planar(&playback->buffer, playback->planar_ring,
+                                playback->channel_data_pointers,
+                                (size_t)inNumberFrames, 0x00);
 
-  spsc_planar_ring_buffer_read_with_silence(
-      playback->planar_ring, playback->channel_data_pointers,
-      (size_t)inNumberFrames, 0, &playback->underrun_silence_frames,
-      &playback->is_running);
-
-  core_audio_publish_buffer_level(playback);
   atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
                             memory_order_release);
   return noErr;
@@ -471,12 +442,10 @@ static bool core_audio_playback_prefill_silence(void *ctx, size_t frames,
                                                 backend_error_t *err) {
   core_audio_playback_t *playback = (core_audio_playback_t *)ctx;
   (void)err;
-  if (!playback || frames == 0 || !playback->planar_ring)
+  if (!playback)
     return true;
-  atomic_store_explicit(&playback->is_running, true, memory_order_release);
-  atomic_store_explicit(&playback->underrun_silence_frames, 0,
-                        memory_order_release);
-  spsc_planar_ring_buffer_write_silence(playback->planar_ring, frames);
+  playback_buffer_prefill_planar(&playback->buffer, playback->planar_ring,
+                                 frames);
   return true;
 }
 
@@ -569,10 +538,8 @@ static playback_backend_t *core_audio_playback_create(
                          config->cfg.coreaudio.target_level > 0)
                             ? (size_t)config->cfg.coreaudio.target_level
                             : (size_t)chunk_size;
-  playback->target_level = target_level;
-  atomic_init(&playback->is_running, true);
-  atomic_init(&playback->underrun_silence_frames, 0);
   playback_buffer_init(&playback->buffer, playback->sample_rate);
+  playback_buffer_set_target_level(&playback->buffer, target_level);
   playback->exclusive = playback_device_config_get_exclusive(config);
 
   coreaudio_sample_format_t fmt = playback_device_config_get_format(config);

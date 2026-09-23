@@ -719,9 +719,8 @@ static bool alsa_playback_prefill_silence(void *ctx, size_t frames,
     return true;
 
   uint8_t silence_byte = alsa_is_dsd_format(playback->format) ? 0x69 : 0x00;
-  size_t bytes = frames * playback->blockalign;
-  spsc_byte_ring_buffer_write_silence(playback->ring_buffer, bytes,
-                                      silence_byte);
+  playback_buffer_prefill_byte(&playback->buffer, playback->ring_buffer, frames,
+                               playback->blockalign, silence_byte);
   return true;
 }
 
