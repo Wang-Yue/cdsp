@@ -102,12 +102,19 @@ static inline const char *test_find_harness_binary(const char *base_name) {
 #endif
 
   const char *dirs[] = {
-#ifdef CDSP_SOURCE_ROOT
-      CDSP_SOURCE_ROOT "/Tests/RustHarnesses/target/release/",
+#ifdef CDSP_BINARY_DIR
+      CDSP_BINARY_DIR "/rust_target/release/",
 #endif
-      "./Tests/RustHarnesses/target/release/",
-      "../Tests/RustHarnesses/target/release/",
-      "../../Tests/RustHarnesses/target/release/", NULL};
+      "./rust_target/release/",
+      "../rust_target/release/",
+      "../../rust_target/release/",
+#ifdef CDSP_SOURCE_ROOT
+      CDSP_SOURCE_ROOT "/tests/rust_harnesses/target/release/",
+#endif
+      "./tests/rust_harnesses/target/release/",
+      "../tests/rust_harnesses/target/release/",
+      "../../tests/rust_harnesses/target/release/",
+      NULL};
 
   for (int i = 0; dirs[i]; i++) {
     char test_path[1024];

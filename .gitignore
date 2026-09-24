@@ -1,5 +1,3 @@
 build*/
-.build/
 .DS_Store
-target/
 compile_commands.json

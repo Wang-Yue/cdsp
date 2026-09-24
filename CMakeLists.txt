@@ -481,10 +481,12 @@ if(BUILD_TESTING)
     # Optional Rust Harness Build (if cargo is installed)
     find_program(CARGO_EXECUTABLE cargo)
     if(CARGO_EXECUTABLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/rust_harnesses/Cargo.toml")
+        set(RUST_HARNESS_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust_target")
         add_custom_target(test-rust-build
-            COMMAND ${CARGO_EXECUTABLE} build --release
+            COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${RUST_HARNESS_TARGET_DIR} ${CARGO_EXECUTABLE} build --release
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/rust_harnesses
-            COMMENT "Building Rust harness binaries..."
+            COMMENT "Building Rust harness binaries in ${RUST_HARNESS_TARGET_DIR}..."
+            VERBATIM
         )
     endif()
 
@@ -519,7 +521,10 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/app
         ${CMAKE_CURRENT_SOURCE_DIR}/app/server
     )
-    target_compile_definitions(test_runner PRIVATE CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(test_runner PRIVATE
+        CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
+        CDSP_BINARY_DIR="${CMAKE_BINARY_DIR}"
+    )
 
     if(TARGET test-rust-build)
         add_dependencies(test_runner test-rust-build)
@@ -577,7 +582,10 @@ if(BUILD_BENCHMARKS)
         add_executable(${bench_name} tests/${bench_name}.c)
         target_link_libraries(${bench_name} PRIVATE dsp)
         target_include_directories(${bench_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
-        target_compile_definitions(${bench_name} PRIVATE CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+        target_compile_definitions(${bench_name} PRIVATE
+            CDSP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
+            CDSP_BINARY_DIR="${CMAKE_BINARY_DIR}"
+        )
         list(APPEND BENCH_TARGETS ${bench_name})
     endforeach()
 
