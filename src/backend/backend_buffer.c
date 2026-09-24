@@ -227,9 +227,22 @@ static size_t backend_buffer_render_planar(backend_buffer_t *bb,
     }
   }
 
+  size_t silence_pending =
+      atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed);
+  size_t intentional_silence =
+      (silence_pending < frames) ? silence_pending : frames;
+  size_t audio_needed = frames - intentional_silence;
+
   size_t consumed = spsc_planar_ring_buffer_read_with_silence(
       ring, dst_channels, frames, silence_byte, &bb->silence_to_insert,
       &bb->cushion_active);
+
+  if (consumed < audio_needed) {
+    logger_warn(
+        &g_logger,
+        "Playback buffer underrun: padded %zu missing frames with silence",
+        audio_needed - consumed);
+  }
 
   backend_buffer_publish(
       bb, atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed));
@@ -256,9 +269,22 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
     }
   }
 
+  size_t silence_pending =
+      atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed);
+  size_t intentional_silence =
+      (silence_pending < frames) ? silence_pending : frames;
+  size_t audio_needed = frames - intentional_silence;
+
   size_t consumed = spsc_byte_ring_buffer_read_with_silence(
       ring, dst, frames, blockalign, silence_byte, &bb->silence_to_insert,
       &bb->cushion_active);
+
+  if (consumed < audio_needed) {
+    logger_warn(
+        &g_logger,
+        "Playback buffer underrun: padded %zu missing frames with silence",
+        audio_needed - consumed);
+  }
 
   backend_buffer_publish(
       bb, atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed));
@@ -486,7 +512,7 @@ static bool backend_buffer_write(const backend_buffer_t *bb,
   // a fractured sub-chunk to prevent time-domain waveform discontinuity.
   if (spsc_byte_ring_buffer_get_available_to_write(bb->byte_ring) <
       bytes_to_write) {
-    logger_debug(
+    logger_warn(
         &g_logger,
         "Playback ring buffer is full after %u retries, dropped entire "
         "chunk of %zu bytes to preserve audio framing",
@@ -736,7 +762,7 @@ static bool backend_buffer_planar_write(const backend_buffer_t *bb,
 
   if (spsc_planar_ring_buffer_get_available_to_write(bb->planar_ring) <
       frames) {
-    logger_debug(
+    logger_warn(
         &g_logger,
         "Playback planar ring buffer is full after %u retries, dropped entire "
         "chunk of %zu frames to preserve audio framing",
@@ -879,8 +905,9 @@ size_t backend_buffer_push(backend_buffer_t *bb, const void *src,
                            size_t frames) {
   if (!bb || !src || frames == 0)
     return 0;
+  size_t pushed = 0;
   if (bb->type == BACKEND_BUFFER_PLANAR) {
-    return spsc_planar_ring_buffer_write_channels(
+    pushed = spsc_planar_ring_buffer_write_channels(
         bb->planar_ring, (const void *const *)src, frames);
   } else {
     if (bb->blockalign == 0)
@@ -888,8 +915,14 @@ size_t backend_buffer_push(backend_buffer_t *bb, const void *src,
     size_t bytes = frames * bb->blockalign;
     size_t written_bytes =
         spsc_byte_ring_buffer_write(bb->byte_ring, (const uint8_t *)src, bytes);
-    return written_bytes / bb->blockalign;
+    pushed = written_bytes / bb->blockalign;
   }
+  if (pushed < frames) {
+    logger_warn(&g_logger,
+                "Capture ring buffer is full, dropped %zu out of %zu frames",
+                frames - pushed, frames);
+  }
+  return pushed;
 }
 
 size_t backend_buffer_consume(backend_buffer_t *bb, void *dst, size_t frames) {

@@ -295,14 +295,7 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       if (capture->device_stalled) {
         capture->device_stalled = false;
       }
-      size_t pushed =
-          backend_buffer_push(capture->buffer, local_buf, (size_t)frames_read);
-      if (pushed < (size_t)frames_read) {
-        logger_warn(
-            &g_logger,
-            "Capture ring buffer is full, dropped %zu out of %zu frames",
-            (size_t)frames_read - pushed, (size_t)frames_read);
-      }
+      backend_buffer_push(capture->buffer, local_buf, (size_t)frames_read);
       if (capture->semaphore) {
         cdsp_sem_signal(capture->semaphore);
       }

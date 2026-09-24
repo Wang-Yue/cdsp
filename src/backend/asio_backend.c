@@ -1283,14 +1283,8 @@ static void buffer_switch_capture(long buffer_index, ASIOBool direct_process) {
     ctx->channel_ptrs[ch] = ctx->buffer_infos[ch].buffers[buffer_index];
   }
 
-  size_t pushed_frames = backend_buffer_push(
+  backend_buffer_push(
       ctx->buffer, (const void *const *)ctx->channel_ptrs, ctx->buffer_size);
-  if (pushed_frames < ctx->buffer_size) {
-    logger_warn(
-        &g_logger,
-        "ASIO capture callback: ringbuffer full, dropped %zu of %zu frames.",
-        ctx->buffer_size - pushed_frames, ctx->buffer_size);
-  }
   if (ctx->semaphore) {
     cdsp_sem_signal(ctx->semaphore);
   }

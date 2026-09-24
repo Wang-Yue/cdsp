@@ -313,11 +313,6 @@ static void *wasapi_capture_loop(void *arg) {
           memset(data, 0, nbr_bytes_loop);
         }
 
-        if (backend_buffer_get_available_write_frames(capture->buffer) <
-            (size_t)nbr_frames_read) {
-          logger_debug(&g_wasapi_logger,
-                       "Dropping captured chunk, channel full");
-        }
         backend_buffer_push(capture->buffer, data, (size_t)nbr_frames_read);
         if (capture->semaphore) {
           cdsp_sem_signal(capture->semaphore);
