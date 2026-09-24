@@ -55,6 +55,9 @@ public:
     DevicePickerView(std::shared_ptr<AudioDeviceManager> devices, std::shared_ptr<AudioSettings> settings,
                      QWidget* parent = nullptr);
 
+protected:
+    void showEvent(QShowEvent* event) override;
+
 private slots:
     void refreshUi();
     void applySettings();

@@ -18,6 +18,7 @@
 #include <QListWidgetItem>   // for QListWidgetItem
 #include <QPushButton>       // for QPushButton
 #include <QScrollArea>       // for QScrollArea
+#include <QShowEvent>        // for QShowEvent
 #include <QTimer>            // for QTimer
 #include <QVBoxLayout>       // for QVBoxLayout
 #include <QVariant>          // for QVariant
@@ -43,6 +44,41 @@ DevicePickerView::DevicePickerView(std::shared_ptr<AudioDeviceManager> devices, 
     }
 
     refreshUi();
+}
+
+static void updateListHeight(QListWidget* listWidget) {
+    if (!listWidget)
+        return;
+    int count = listWidget->count();
+    if (count == 0) {
+        listWidget->setFixedHeight(0);
+        return;
+    }
+    int totalH = 0;
+    for (int i = 0; i < count; ++i) {
+        int h = listWidget->sizeHintForRow(i);
+        if (h <= 0) {
+            auto* item = listWidget->item(i);
+            if (item) {
+                h = listWidget->visualItemRect(item).height();
+            }
+        }
+        if (h <= 0) {
+            h = listWidget->fontMetrics().lineSpacing() + 6;
+        }
+        totalH += h;
+    }
+    if (listWidget->spacing() > 0) {
+        totalH += (count - 1) * listWidget->spacing();
+    }
+    totalH += listWidget->frameWidth() * 2 + 2;
+    listWidget->setFixedHeight(totalH);
+}
+
+void DevicePickerView::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    updateListHeight(m_capDeviceList);
+    updateListHeight(m_pbDeviceList);
 }
 
 static void synchronizeFormLabels(const QList<QFormLayout*>& forms) {
@@ -300,6 +336,7 @@ void DevicePickerView::populateDeviceList(QListWidget* listWidget, QWidget* warn
         selectRow = 0;
     }
     listWidget->setCurrentRow(selectRow);
+    updateListHeight(listWidget);
     listWidget->blockSignals(false);
 }
 
@@ -312,7 +349,8 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
 
     m_capDeviceList = new QListWidget(w);
     m_capDeviceList->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_capDeviceList->setMaximumHeight(130);
+    m_capDeviceList->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_capDeviceList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     connect(m_capDeviceList, &QListWidget::currentItemChanged, [this](QListWidgetItem* current) {
         if (m_isRefreshing || !current)
@@ -786,7 +824,8 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
 
     m_pbDeviceList = new QListWidget(w);
     m_pbDeviceList->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_pbDeviceList->setMaximumHeight(130);
+    m_pbDeviceList->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_pbDeviceList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     connect(m_pbDeviceList, &QListWidget::currentItemChanged, [this](QListWidgetItem* current) {
         if (m_isRefreshing || !current)
