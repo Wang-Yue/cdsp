@@ -235,177 +235,12 @@ void DevicePickerView::setupUi() {
     pbLayout->addWidget(m_pbStack);
 
     mainLayout->addWidget(pbGroup);
-
-    // 3. Processing Group
-    auto procGroup = new QGroupBox(tr("Processing"), container);
-    m_procForm = new QFormLayout(procGroup);
-
-    auto chunkLayout = new QHBoxLayout();
-    m_chunkSizeCombo = new QComboBox(procGroup);
-    for (int size : {64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768}) {
-        m_chunkSizeCombo->addItem(QString("%1 samples").arg(size), size);
-    }
-    chunkLayout->addWidget(m_chunkSizeCombo);
-
-    m_latencyLabel = new QLabel(procGroup);
-    connect(m_chunkSizeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
-        if (m_isRefreshing)
-            return;
-        QTimer::singleShot(0, [this]() {
-            if (m_chunkSizeCombo && m_settings) {
-                m_settings->chunkSize = m_chunkSizeCombo->currentData().toInt();
-            }
-            if (m_targetLevelSpin && m_settings) {
-                m_targetLevelSpin->setSpecialValueText(QString(tr("Auto (%1 samples)")).arg(m_settings->chunkSize));
-            }
-            updateLatencyText();
-            applySettings();
-        });
-    });
-    chunkLayout->addWidget(m_latencyLabel);
-    chunkLayout->addStretch();
-    m_procForm->addRow(tr("Chunk Size:"), chunkLayout);
-
-    m_latencyEquationLabel = new QLabel(procGroup);
-    QFont eqFont = m_latencyEquationLabel->font();
-    eqFont.setPointSize(eqFont.pointSize() > 2 ? eqFont.pointSize() - 1 : 10);
-    m_latencyEquationLabel->setFont(eqFont);
-    m_latencyEquationLabel->setWordWrap(true);
-    m_latencyEquationLabel->setForegroundRole(QPalette::PlaceholderText);
-    m_procForm->addRow(m_latencyEquationLabel);
-
-    m_targetLevelSpin = new QSpinBox(procGroup);
-    m_targetLevelSpin->setRange(0, 1048576);
-    m_targetLevelSpin->setSingleStep(64);
-    m_targetLevelSpin->setSpecialValueText(tr("Auto (match chunk size)"));
-    m_targetLevelSpin->setSuffix(tr(" samples"));
-    connect(m_targetLevelSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
-        if (m_isRefreshing)
-            return;
-        if (m_settings) {
-            m_settings->targetLevel = val;
-        }
-        updateLatencyText();
-        applySettings();
-    });
-    m_procForm->addRow(tr("Target Level:"), m_targetLevelSpin);
-
-    m_targetLevelSub = new QLabel(tr("Playback buffer target level in samples. Default matches chunk size. Regulated "
-                                     "by rate adjust to prevent underruns."),
-                                  procGroup);
-    QFont targetSubFont = m_targetLevelSub->font();
-    targetSubFont.setPointSize(targetSubFont.pointSize() > 2 ? targetSubFont.pointSize() - 1 : 10);
-    m_targetLevelSub->setFont(targetSubFont);
-    m_targetLevelSub->setWordWrap(true);
-    m_procForm->addRow(m_targetLevelSub);
-
-    m_enableRateAdjustCheck = new QCheckBox(tr("Enable Rate Adjust"), procGroup);
-    connect(m_enableRateAdjustCheck, &QCheckBox::toggled, [this](bool checked) {
-        if (m_isRefreshing)
-            return;
-        if (m_procForm && m_rateAdjustIntervalRow) {
-            m_procForm->setRowVisible(m_rateAdjustIntervalRow, checked);
-        }
-        applySettings();
-    });
-    m_procForm->addRow(m_enableRateAdjustCheck);
-
-    m_rateAdjustSub = new QLabel(tr("Compensate for clock drift between capture and playback devices"), procGroup);
-    QFont subFont = m_rateAdjustSub->font();
-    subFont.setPointSize(subFont.pointSize() > 2 ? subFont.pointSize() - 1 : 10);
-    m_rateAdjustSub->setFont(subFont);
-    m_rateAdjustSub->setWordWrap(true);
-    m_procForm->addRow(m_rateAdjustSub);
-
-    m_rateAdjustIntervalRow = new QWidget(procGroup);
-    auto rateAdjustIntervalBox = new QHBoxLayout(m_rateAdjustIntervalRow);
-    rateAdjustIntervalBox->setContentsMargins(0, 0, 0, 0);
-    m_rateAdjustIntervalSlider = new QSlider(Qt::Horizontal, m_rateAdjustIntervalRow);
-    m_rateAdjustIntervalSlider->setRange(5, 300); // 0.5 to 30.0 s
-
-    m_rateAdjustIntervalValLabel = new QLabel(m_rateAdjustIntervalRow);
-    m_rateAdjustIntervalValLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    m_rateAdjustIntervalValLabel->setMinimumWidth(50);
-
-    connect(m_rateAdjustIntervalSlider, &QSlider::valueChanged, [this](int val) {
-        if (m_isRefreshing)
-            return;
-        double dVal = val / 10.0;
-        m_rateAdjustIntervalValLabel->setText(QString("%1 s").arg(dVal, 0, 'f', 1));
-        applySettings();
-    });
-    rateAdjustIntervalBox->addWidget(m_rateAdjustIntervalSlider);
-    rateAdjustIntervalBox->addWidget(m_rateAdjustIntervalValLabel);
-    rateAdjustIntervalBox->addStretch();
-    m_procForm->addRow(tr("Rate Adjust Interval:"), m_rateAdjustIntervalRow);
-
-    auto intervalBox = new QHBoxLayout();
-    m_measureIntervalSlider = new QSlider(Qt::Horizontal, procGroup);
-    m_measureIntervalSlider->setRange(1, 100); // 0.1 to 10.0 s
-
-    m_measureIntervalValLabel = new QLabel(procGroup);
-    m_measureIntervalValLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    m_measureIntervalValLabel->setMinimumWidth(50);
-
-    connect(m_measureIntervalSlider, &QSlider::valueChanged, [this](int val) {
-        if (m_isRefreshing)
-            return;
-        double dVal = val / 10.0;
-        m_measureIntervalValLabel->setText(QString("%1 s").arg(dVal, 0, 'f', 1));
-        applySettings();
-    });
-    intervalBox->addWidget(m_measureIntervalSlider);
-    intervalBox->addWidget(m_measureIntervalValLabel);
-    intervalBox->addStretch();
-    m_procForm->addRow(tr("Rate Measure Interval:"), intervalBox);
-
-    m_queueLimitSpin = new QSpinBox(procGroup);
-    m_queueLimitSpin->setRange(1, 32);
-    connect(m_queueLimitSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
-        if (m_isRefreshing)
-            return;
-        if (m_settings)
-            m_settings->queuelimit = val;
-        applySettings();
-        updateLatencyText();
-    });
-    m_procForm->addRow(tr("Queue Limit:"), m_queueLimitSpin);
-
-    m_stopOnRateChangeCheck = new QCheckBox(tr("Stop on Rate Change"), procGroup);
-    connect(m_stopOnRateChangeCheck, &QCheckBox::toggled, [this](bool) {
-        if (m_isRefreshing)
-            return;
-        applySettings();
-    });
-    m_procForm->addRow(m_stopOnRateChangeCheck);
-
-    m_multithreadedCheck = new QCheckBox(tr("Multithreaded"), procGroup);
-    connect(m_multithreadedCheck, &QCheckBox::toggled, [this](bool checked) {
-        if (m_isRefreshing)
-            return;
-        if (m_procForm && m_workerThreadsSpin) {
-            m_procForm->setRowVisible(m_workerThreadsSpin, checked);
-        }
-        applySettings();
-    });
-    m_procForm->addRow(m_multithreadedCheck);
-
-    m_workerThreadsSpin = new QSpinBox(procGroup);
-    m_workerThreadsSpin->setRange(0, 32);
-    m_workerThreadsSpin->setSpecialValueText(tr("Auto"));
-    connect(m_workerThreadsSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int) {
-        if (m_isRefreshing)
-            return;
-        applySettings();
-    });
-    m_procForm->addRow(tr("Worker Threads:"), m_workerThreadsSpin);
-
-    mainLayout->addWidget(procGroup);
+    mainLayout->addStretch();
 
     scroll->setWidget(container);
 
     synchronizeFormLabels({m_capBackendForm, m_capCoreAudioForm, m_capRawFileForm, m_capWavFileForm, m_capGenForm,
-                           m_pbBackendForm, m_pbCoreAudioForm, m_pbRawFileForm, m_pbWavFileForm, m_procForm});
+                           m_pbBackendForm, m_pbCoreAudioForm, m_pbRawFileForm, m_pbWavFileForm});
 
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -546,10 +381,7 @@ QWidget* DevicePickerView::createCapCoreAudioView() {
     connect(m_capRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) {
         if (m_isRefreshing)
             return;
-        QTimer::singleShot(0, [this]() {
-            applySettings();
-            updateLatencyText();
-        });
+        QTimer::singleShot(0, [this]() { applySettings(); });
     });
 
     m_capRateLabel = new QLabel(m_capRateRow);
@@ -1022,7 +854,6 @@ QWidget* DevicePickerView::createPbCoreAudioView() {
         QTimer::singleShot(0, [this]() {
             applySettings();
             updateDoPCapability();
-            updateLatencyText();
         });
     });
     m_pbCoreAudioForm->addRow(tr("Sample Rate:"), m_pbRateCombo);
@@ -1819,130 +1650,14 @@ void DevicePickerView::refreshUi() {
             m_pbWavUseRf64Combo->setCurrentIndex(idx);
     }
 
-    // 5. Refresh Processing Settings
-    int chunkIdx = m_chunkSizeCombo->findData(m_settings->chunkSize);
-    if (chunkIdx >= 0)
-        m_chunkSizeCombo->setCurrentIndex(chunkIdx);
-
-    if (m_targetLevelSpin) {
-        m_targetLevelSpin->blockSignals(true);
-        m_targetLevelSpin->setSpecialValueText(QString(tr("Auto (%1 samples)")).arg(m_settings->chunkSize));
-        m_targetLevelSpin->setValue(m_settings->targetLevel);
-        m_targetLevelSpin->blockSignals(false);
-    }
-
-    updateLatencyText();
-
-    m_enableRateAdjustCheck->setChecked(m_settings->enableRateAdjust);
-    m_rateAdjustIntervalSlider->setValue(static_cast<int>(m_settings->rateAdjustInterval * 10.0));
-    m_rateAdjustIntervalValLabel->setText(QString("%1 s").arg(m_settings->rateAdjustInterval, 0, 'f', 1));
-    if (m_procForm && m_rateAdjustIntervalRow) {
-        m_procForm->setRowVisible(m_rateAdjustIntervalRow, m_settings->enableRateAdjust);
-    }
-    m_queueLimitSpin->setValue(m_settings->queuelimit);
-    m_stopOnRateChangeCheck->setChecked(m_settings->stopOnRateChange);
-
-    m_measureIntervalSlider->setValue(static_cast<int>(m_settings->rateMeasureInterval * 10.0));
-    m_measureIntervalValLabel->setText(QString("%1 s").arg(m_settings->rateMeasureInterval, 0, 'f', 1));
-
-    m_multithreadedCheck->setChecked(m_settings->multithreaded);
-    if (m_procForm) {
-        m_procForm->setRowVisible(m_workerThreadsSpin, m_settings->multithreaded);
-    }
-    m_workerThreadsSpin->setValue(m_settings->workerThreads);
-
     m_isRefreshing = false;
-}
-
-void DevicePickerView::updateLatencyText() {
-    if (!m_latencyLabel || !m_devices)
-        return;
-
-    auto info = m_devices->latencyInfo();
-    m_latencyLabel->setText(QString(tr("(~%1 ms nominal | bounds: %2 – %3 ms)"))
-                                .arg(info.nominalMs, 0, 'f', 1)
-                                .arg(info.minMs, 0, 'f', 1)
-                                .arg(info.maxMs, 0, 'f', 1));
-
-    QString tooltip =
-        QString(
-            tr("<b>End-to-End Latency Breakdown:</b><br>"
-               "• <b>Capture Buffer:</b> %1 samples @ %2 Hz = <b>%3 ms</b> (1 chunk accumulation)<br>"
-               "• <b>Inter-Thread Queues:</b> %4 chunk(s) limit per queue<br>"
-               "&nbsp;&nbsp;- Nominal steady-state in-flight: 1 chunk = <b>%5 ms</b><br>"
-               "&nbsp;&nbsp;- Max queue backlog: 2 × %4 = %6 chunks = <b>%7 ms</b><br>"
-               "• <b>Playback Target Level:</b> %8 samples @ %9 Hz = <b>%10 ms</b>%11<br>"
-               "%12<br>"
-               "<b>Equations:</b><br>"
-               "• <b>Nominal:</b> <code>(chunk / fs_cap) + (chunk + target_level) / fs_pb%13</code> = <b>%14 ms</b><br>"
-               "• <b>Lower Bound (Min):</b> <code>(chunk / fs_cap) + (target_level / fs_pb)%13</code> = <b>%15 "
-               "ms</b><br>"
-               "• <b>Upper Bound (Max):</b> <code>(chunk / fs_cap) + ((2 × queuelimit × chunk + target_level) / "
-               "fs_pb)%13</code> = <b>%16 ms</b>"))
-            .arg(info.chunkSize)
-            .arg(info.captureRate)
-            .arg(info.captureMs, 0, 'f', 1)
-            .arg(info.queueLimit)
-            .arg(info.queueNominalMs, 0, 'f', 1)
-            .arg(2 * info.queueLimit)
-            .arg(info.queueMaxMs, 0, 'f', 1)
-            .arg(info.targetLevel)
-            .arg(info.playbackRate)
-            .arg(info.playbackTargetMs, 0, 'f', 1)
-            .arg(m_settings && m_settings->targetLevel == 0 ? tr(" <i>(auto = chunk size)</i>") : "")
-            .arg(info.hasResampler ? QString(tr("• <b>Resampler Filter Delay:</b> <b>%1 ms</b><br>"))
-                                         .arg(info.resamplerDelayMs, 0, 'f', 1)
-                                   : "")
-            .arg(info.hasResampler ? tr(" + resampler_delay") : "")
-            .arg(info.nominalMs, 0, 'f', 1)
-            .arg(info.minMs, 0, 'f', 1)
-            .arg(info.maxMs, 0, 'f', 1);
-
-    m_latencyLabel->setToolTip(tooltip);
-
-    if (m_latencyEquationLabel) {
-        if (info.hasResampler) {
-            m_latencyEquationLabel->setText(
-                tr("Latency Eq: Nominal ≈ (chunk/fs_cap) + (chunk + target_level)/fs_pb + filter_delay "
-                   "| Bounds: [%1 ms – %2 ms]")
-                    .arg(info.minMs, 0, 'f', 1)
-                    .arg(info.maxMs, 0, 'f', 1));
-        } else {
-            m_latencyEquationLabel->setText(tr("Latency Eq: Nominal ≈ (2·chunk + target_level)/fs "
-                                               "| Bounds: [%1 ms – %2 ms]")
-                                                .arg(info.minMs, 0, 'f', 1)
-                                                .arg(info.maxMs, 0, 'f', 1));
-        }
-        m_latencyEquationLabel->setToolTip(tooltip);
-    }
 }
 
 void DevicePickerView::applySettings() {
     if (m_isRefreshing)
         return;
 
-    // 1. Processing settings
-    if (m_chunkSizeCombo)
-        m_settings->chunkSize = m_chunkSizeCombo->currentData().toInt();
-    if (m_targetLevelSpin)
-        m_settings->targetLevel = m_targetLevelSpin->value();
-    if (m_enableRateAdjustCheck)
-        m_settings->enableRateAdjust = m_enableRateAdjustCheck->isChecked();
-    if (m_rateAdjustIntervalSlider)
-        m_settings->rateAdjustInterval = m_rateAdjustIntervalSlider->value() / 10.0;
-    if (m_queueLimitSpin)
-        m_settings->queuelimit = m_queueLimitSpin->value();
-    if (m_stopOnRateChangeCheck)
-        m_settings->stopOnRateChange = m_stopOnRateChangeCheck->isChecked();
-    if (m_measureIntervalSlider)
-        m_settings->rateMeasureInterval = m_measureIntervalSlider->value() / 10.0;
-    if (m_multithreadedCheck)
-        m_settings->multithreaded = m_multithreadedCheck->isChecked();
-    if (m_workerThreadsSpin)
-        m_settings->workerThreads = m_workerThreadsSpin->value();
-    m_settings->savePreferences();
-
-    // 2. Playback settings (resolved first so capture can sync sample rate if non-resampling)
+    // 1. Playback settings (resolved first so capture can sync sample rate if non-resampling)
     DeviceConfig pbCfg = m_devices->playbackConfig;
     if (m_pbBackendCombo->currentIndex() >= 0) {
         pbCfg.backend = static_cast<AudioBackendType>(m_pbBackendCombo->currentData().toInt());

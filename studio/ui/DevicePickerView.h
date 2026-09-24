@@ -169,25 +169,6 @@ private:
     QSpinBox* m_pbWavFileChannelsSpin = nullptr;
     QComboBox* m_pbWavUseRf64Combo = nullptr;
 
-    // Processing Settings
-    QFormLayout* m_procForm = nullptr;
-    QComboBox* m_chunkSizeCombo = nullptr;
-    QLabel* m_latencyLabel = nullptr;
-    QLabel* m_latencyEquationLabel = nullptr;
-    QSpinBox* m_targetLevelSpin = nullptr;
-    QLabel* m_targetLevelSub = nullptr;
-    QCheckBox* m_enableRateAdjustCheck = nullptr;
-    QLabel* m_rateAdjustSub = nullptr;
-    QWidget* m_rateAdjustIntervalRow = nullptr;
-    QSlider* m_rateAdjustIntervalSlider = nullptr;
-    QLabel* m_rateAdjustIntervalValLabel = nullptr;
-    QSpinBox* m_queueLimitSpin = nullptr;
-    QCheckBox* m_stopOnRateChangeCheck = nullptr;
-    QSlider* m_measureIntervalSlider = nullptr;
-    QLabel* m_measureIntervalValLabel = nullptr;
-    QCheckBox* m_multithreadedCheck = nullptr;
-    QSpinBox* m_workerThreadsSpin = nullptr;
-
     void setupUi();
     QWidget* createCapCoreAudioView();
     QWidget* createCapFileView(bool isWav);
@@ -198,7 +179,6 @@ private:
 
     static QString formatSampleRate(int rate);
     void updateDoPCapability();
-    void updateLatencyText();
     void populateDeviceList(QListWidget* listWidget, QWidget* warningWidget, const std::vector<AudioDevice>& devices,
                             const std::optional<std::string>& selectedDeviceName);
 };

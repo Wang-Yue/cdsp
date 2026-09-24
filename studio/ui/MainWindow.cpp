@@ -541,7 +541,7 @@ void MainWindow::setupMenuBar() {
     auto settingsAct = new QAction("Settings...", this);
     settingsAct->setMenuRole(QAction::PreferencesRole);
     settingsAct->setShortcut(QKeySequence::Preferences);
-    connect(settingsAct, &QAction::triggered, [this]() { handleNavigationTag("general_settings"); });
+    connect(settingsAct, &QAction::triggered, [this]() { handleNavigationTag("setting"); });
     fileMenu->addAction(settingsAct);
 
     auto aboutAct = new QAction("About CDSP Studio", this);
@@ -570,14 +570,14 @@ void MainWindow::setupMenuBar() {
     };
 
     setupViewAct("Devices", QKeySequence(Qt::CTRL | Qt::Key_1), "devices");
-    setupViewAct("Dashboard", QKeySequence(Qt::CTRL | Qt::Key_2), "dashboard");
-    setupViewAct("Level Meters", QKeySequence(Qt::CTRL | Qt::Key_3), "levels");
-    setupViewAct("Spectrum", QKeySequence(Qt::CTRL | Qt::Key_4), "spectrum");
-    setupViewAct("Spectroscope Waterfall", QKeySequence(Qt::CTRL | Qt::Key_5), "spectroscope");
-    setupViewAct("Vector Scope", QKeySequence(Qt::CTRL | Qt::Key_6), "vectorscope");
-    setupViewAct("Analog VU Meter", QKeySequence(Qt::CTRL | Qt::Key_7), "analogVU");
-    setupViewAct("Console Logs", QKeySequence(Qt::CTRL | Qt::Key_8), "logs");
-    setupViewAct("General Settings", QKeySequence(Qt::CTRL | Qt::Key_9), "general_settings");
+    setupViewAct("Setting", QKeySequence(Qt::CTRL | Qt::Key_2), "setting");
+    setupViewAct("Dashboard", QKeySequence(Qt::CTRL | Qt::Key_3), "dashboard");
+    setupViewAct("Level Meters", QKeySequence(Qt::CTRL | Qt::Key_4), "levels");
+    setupViewAct("Spectrum", QKeySequence(Qt::CTRL | Qt::Key_5), "spectrum");
+    setupViewAct("Spectroscope Waterfall", QKeySequence(Qt::CTRL | Qt::Key_6), "spectroscope");
+    setupViewAct("Vector Scope", QKeySequence(Qt::CTRL | Qt::Key_7), "vectorscope");
+    setupViewAct("Analog VU Meter", QKeySequence(Qt::CTRL | Qt::Key_8), "analogVU");
+    setupViewAct("Console Logs", QKeySequence(Qt::CTRL | Qt::Key_9), "logs");
 
     viewMenu->addSeparator();
 
@@ -953,6 +953,9 @@ void MainWindow::refreshSidebarItems() {
     auto devItem = new QTreeWidgetItem(audioGroup, {"Devices"});
     devItem->setData(0, Qt::UserRole, "devices");
     devItem->setSizeHint(0, QSize(0, 26));
+    auto setItem = new QTreeWidgetItem(audioGroup, {"Setting"});
+    setItem->setData(0, Qt::UserRole, "setting");
+    setItem->setSizeHint(0, QSize(0, 26));
     auto dashItem = new QTreeWidgetItem(audioGroup, {"Dashboard"});
     dashItem->setData(0, Qt::UserRole, "dashboard");
     dashItem->setSizeHint(0, QSize(0, 26));
@@ -1245,6 +1248,8 @@ void MainWindow::handleNavigationTag(const QString& tag) {
                               this);
     } else if (tag == "devices") {
         w = new DevicePickerView(m_devices, m_settings, this);
+    } else if (tag == "setting") {
+        w = new GeneralSettingsView(m_settings, m_devices, m_monitoring, this);
     } else if (tag == "levels") {
         w = new LevelMetersDetailView(m_monitoring, this);
     } else if (tag == "spectrum") {
@@ -1257,8 +1262,6 @@ void MainWindow::handleNavigationTag(const QString& tag) {
         w = new AnalogVUDetailView(m_monitoring, this);
     } else if (tag == "resampler") {
         w = new ResamplerDetailView(m_settings, m_devices, m_dspController, this);
-    } else if (tag == "general_settings") {
-        w = new GeneralSettingsView(m_settings, m_monitoring, this);
     } else if (tag == "logs") {
         w = new ConsoleLogsView(this);
     } else if (tag.startsWith("stage_")) {
