@@ -80,6 +80,8 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
     }
 
     if (m_settings) {
+        if (m_settings->targetLevel > 0)
+            config.devices.targetLevel = m_settings->targetLevel;
         config.devices.queuelimit = m_settings->queuelimit;
         config.devices.stopOnRateChange = m_settings->stopOnRateChange;
         config.devices.rateMeasureInterval = m_settings->rateMeasureInterval;

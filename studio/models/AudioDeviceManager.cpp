@@ -289,10 +289,83 @@ std::vector<int> AudioDeviceManager::playbackRateOptions() const {
     return rateOptions(false);
 }
 
+AudioDeviceManager::LatencyInfo AudioDeviceManager::latencyInfo() const {
+    LatencyInfo info;
+    info.chunkSize = m_settings ? m_settings->chunkSize : 1024;
+    if (info.chunkSize <= 0)
+        info.chunkSize = 1024;
+
+    info.queueLimit = m_settings ? m_settings->queuelimit : 4;
+    if (info.queueLimit <= 0)
+        info.queueLimit = 4;
+
+    int tLevel = (m_settings && m_settings->targetLevel > 0) ? m_settings->targetLevel : info.chunkSize;
+    info.targetLevel = tLevel;
+
+    info.captureRate = std::max(1, captureConfig.sampleRate);
+    info.playbackRate = std::max(1, playbackConfig.sampleRate);
+
+    // 1. Capture accumulation delay: duration to fill one chunk of samples
+    info.captureMs = (static_cast<double>(info.chunkSize) / static_cast<double>(info.captureRate)) * 1000.0;
+
+    // 2. Playback hardware / DAC buffer delay: target_level samples maintained by rate adjust / prefilled silence
+    info.playbackTargetMs = (static_cast<double>(info.targetLevel) / static_cast<double>(info.playbackRate)) * 1000.0;
+
+    // 3. Inter-thread synchronization queues:
+    // Two queues: capture-to-process and process-to-playback.
+    // In nominal steady state: ~1 chunk in flight for processing
+    info.queueNominalMs = (static_cast<double>(info.chunkSize) / static_cast<double>(info.playbackRate)) * 1000.0;
+
+    // Under maximum queue capacity: both queues completely full (2 * queueLimit chunks)
+    info.queueMaxMs =
+        (static_cast<double>(2 * info.queueLimit * info.chunkSize) / static_cast<double>(info.playbackRate)) * 1000.0;
+
+    // 4. Resampler filter delay (if resampler is enabled)
+    info.hasResampler = m_settings && m_settings->resamplerEnabled;
+    if (info.hasResampler) {
+        int filterDelaySamples = 0;
+        if (m_settings->resamplerType == ResamplerType::AsyncSinc ||
+            m_settings->resamplerType == ResamplerType::Synchronous) {
+            int sincLen = m_settings->resamplerSincLen;
+            if (m_settings->resamplerUseProfile) {
+                switch (m_settings->resamplerProfile) {
+                case ResamplerProfile::VeryFast:
+                    sincLen = 64;
+                    break;
+                case ResamplerProfile::Fast:
+                    sincLen = 128;
+                    break;
+                case ResamplerProfile::Balanced:
+                    sincLen = 192;
+                    break;
+                case ResamplerProfile::Accurate:
+                    sincLen = 512;
+                    break;
+                }
+            }
+            filterDelaySamples = sincLen / 2;
+        } else if (m_settings->resamplerType == ResamplerType::AsyncPoly) {
+            filterDelaySamples = 4;
+        }
+        info.resamplerDelayMs =
+            (static_cast<double>(filterDelaySamples) / static_cast<double>(info.playbackRate)) * 1000.0;
+    }
+
+    // Minimum lower bound: capture 1 chunk + target_level in playback buffer + filter delay (empty queues)
+    info.minMs = info.captureMs + info.playbackTargetMs + info.resamplerDelayMs;
+
+    // Nominal steady-state: capture 1 chunk + 1 chunk in processing queue + target_level in playback + filter delay
+    info.nominalMs = info.captureMs + info.queueNominalMs + info.playbackTargetMs + info.resamplerDelayMs;
+
+    // Maximum upper bound: capture 1 chunk + full queues (2 * queueLimit chunks) + target_level in playback + filter
+    // delay
+    info.maxMs = info.captureMs + info.queueMaxMs + info.playbackTargetMs + info.resamplerDelayMs;
+
+    return info;
+}
+
 double AudioDeviceManager::latencyMs() const {
-    int chunkSize = m_settings ? m_settings->chunkSize : 1024;
-    int rate = std::max(1, captureConfig.sampleRate);
-    return (static_cast<double>(chunkSize) / static_cast<double>(rate)) * 1000.0;
+    return latencyInfo().nominalMs;
 }
 
 bool AudioDeviceManager::isDeviceAvailable(const DeviceConfig& cfg, bool isCapture) const {

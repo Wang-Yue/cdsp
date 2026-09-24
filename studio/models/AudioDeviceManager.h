@@ -47,6 +47,24 @@ public:
     std::vector<int> rateOptions(bool isCapture) const;
     std::vector<int> captureRateOptions() const;
     std::vector<int> playbackRateOptions() const;
+    struct LatencyInfo {
+        double nominalMs = 0.0;
+        double minMs = 0.0;
+        double maxMs = 0.0;
+        double captureMs = 0.0;
+        double playbackTargetMs = 0.0;
+        double queueNominalMs = 0.0;
+        double queueMaxMs = 0.0;
+        double resamplerDelayMs = 0.0;
+        int chunkSize = 1024;
+        int targetLevel = 1024;
+        int queueLimit = 4;
+        int captureRate = 48000;
+        int playbackRate = 48000;
+        bool hasResampler = false;
+    };
+
+    LatencyInfo latencyInfo() const;
     double latencyMs() const;
 
     bool devicesAvailable() const;

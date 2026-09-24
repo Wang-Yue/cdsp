@@ -116,6 +116,9 @@ void AudioSettings::loadPreferences() {
     chunkSize = s.value("chunksize", 1024).toInt();
     if (chunkSize <= 0)
         chunkSize = 1024;
+    targetLevel = s.value("targetLevel", 0).toInt();
+    if (targetLevel < 0)
+        targetLevel = 0;
     enableRateAdjust = s.value("enableRateAdjust", false).toBool();
     resamplerEnabled = s.value("resamplerEnabled", false).toBool();
 
@@ -204,6 +207,7 @@ void AudioSettings::loadPreferences() {
 void AudioSettings::savePreferences() {
     QSettings s;
     s.setValue("chunksize", chunkSize);
+    s.setValue("targetLevel", targetLevel);
     s.setValue("enableRateAdjust", enableRateAdjust);
     s.setValue("resamplerEnabled", resamplerEnabled);
     s.setValue("resamplerType", QString::fromStdString(resamplerTypeToString(resamplerType)));

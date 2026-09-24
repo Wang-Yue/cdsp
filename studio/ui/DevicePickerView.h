@@ -173,6 +173,9 @@ private:
     QFormLayout* m_procForm = nullptr;
     QComboBox* m_chunkSizeCombo = nullptr;
     QLabel* m_latencyLabel = nullptr;
+    QLabel* m_latencyEquationLabel = nullptr;
+    QSpinBox* m_targetLevelSpin = nullptr;
+    QLabel* m_targetLevelSub = nullptr;
     QCheckBox* m_enableRateAdjustCheck = nullptr;
     QLabel* m_rateAdjustSub = nullptr;
     QWidget* m_rateAdjustIntervalRow = nullptr;

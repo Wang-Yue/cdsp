@@ -17,6 +17,7 @@ public:
 
     DevicesConfig deviceConfig;
     int chunkSize = 1024;
+    int targetLevel = 0; // 0 = Auto (defaults to chunkSize in DSP engine)
     bool enableRateAdjust = false;
 
     bool resamplerEnabled = false;
