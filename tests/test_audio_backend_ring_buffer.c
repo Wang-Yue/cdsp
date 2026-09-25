@@ -69,20 +69,23 @@ TEST(AudioBackendRingBufferRead_ZeroFrames) {
   backend_buffer_free(buf);
 }
 
-TEST(AudioBackendRingBufferRead_InsufficientChunkCapacity) {
+TEST(AudioBackendRingBufferRead_ClampsToChunkCapacity) {
   size_t channels = 2;
   backend_buffer_t *buf = backend_buffer_create(
       1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
   ASSERT_TRUE(buf != NULL);
   audio_chunk_t *chunk = audio_chunk_create(32, channels);
 
+  float raw_data[128] = {0};
+  backend_buffer_push(buf, raw_data, 64);
+
   backend_error_t err;
   backend_error_init(&err, BACKEND_ERROR_NONE, "");
 
-  // Requesting 64 frames on a chunk of capacity 32 must fail safely
+  // Requesting 64 frames on a chunk of capacity 32 should clamp to 32 frames
   bool ok = backend_buffer_read_chunk(buf, 64, chunk, &err);
-  ASSERT_FALSE(ok);
-  ASSERT_EQ(err.type, BACKEND_ERROR_READ_ERROR);
+  ASSERT_TRUE(ok);
+  ASSERT_EQ(audio_chunk_get_valid_frames(chunk), 32);
 
   audio_chunk_free(chunk);
   backend_buffer_free(buf);
@@ -290,6 +293,64 @@ TEST(BackendBuffer_WaitAndSignal) {
   backend_buffer_set_state(buf, BACKEND_STREAM_STOPPED);
   ASSERT_FALSE(backend_buffer_wait(buf, 10));
 
+  backend_buffer_free(buf);
+}
+
+TEST(BackendBuffer_PlaybackWaitAndWakeup) {
+  // Verify that rendering or consuming data signals the semaphore, waking up playback writers
+  backend_buffer_t *buf = backend_buffer_create(
+      128, BINARY_SAMPLE_FORMAT_F32_LE, 2, 44100.0, false);
+  ASSERT_TRUE(buf != NULL);
+
+  audio_chunk_t *write_chunk = audio_chunk_create(64, 2);
+  audio_chunk_set_valid_frames(write_chunk, 64);
+  backend_error_t err;
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+
+  // Write 64 frames
+  ASSERT_TRUE(backend_buffer_write_chunk(buf, write_chunk, 1, 1, &err));
+
+  // Render 32 frames, should signal semaphore
+  float out_buf[64] = {0};
+  size_t rendered = backend_buffer_render(buf, out_buf, 32, 0x00);
+  ASSERT_EQ(rendered, 32);
+
+  // Semaphore should be signaled and wait immediately returns true
+  ASSERT_TRUE(backend_buffer_wait(buf, 50));
+
+  // Consuming frames should also signal semaphore
+  size_t consumed = backend_buffer_consume(buf, out_buf, 16);
+  ASSERT_EQ(consumed, 16);
+  ASSERT_TRUE(backend_buffer_wait(buf, 50));
+
+  audio_chunk_free(write_chunk);
+  backend_buffer_free(buf);
+}
+
+TEST(BackendBuffer_ChannelMismatchValidation) {
+  backend_buffer_t *buf = backend_buffer_create(
+      128, BINARY_SAMPLE_FORMAT_F32_LE, 4, 44100.0, false);
+  ASSERT_TRUE(buf != NULL);
+
+  // Chunk with only 2 channels for a 4-channel backend buffer
+  audio_chunk_t *chunk = audio_chunk_create(32, 2);
+  audio_chunk_set_valid_frames(chunk, 32);
+
+  backend_error_t err;
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+
+  // Write should fail with BACKEND_ERROR_INVALID_CHANNELS
+  bool w_ok = backend_buffer_write_chunk(buf, chunk, 1, 1, &err);
+  ASSERT_FALSE(w_ok);
+  ASSERT_EQ(err.type, BACKEND_ERROR_INVALID_CHANNELS);
+
+  // Read should also fail with BACKEND_ERROR_INVALID_CHANNELS
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+  bool r_ok = backend_buffer_read_chunk(buf, 32, chunk, &err);
+  ASSERT_FALSE(r_ok);
+  ASSERT_EQ(err.type, BACKEND_ERROR_INVALID_CHANNELS);
+
+  audio_chunk_free(chunk);
   backend_buffer_free(buf);
 }
 

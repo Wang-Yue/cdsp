@@ -592,15 +592,6 @@ static bool alsa_playback_write(void *ctx, const audio_chunk_t *chunk,
     return false;
   }
 
-  if (audio_chunk_get_channels(chunk) < (size_t)playback->channels) {
-    if (err) {
-      backend_error_init(
-          err, BACKEND_ERROR_WRITE_ERROR,
-          "Chunk channels count is smaller than playback device channels");
-    }
-    return false;
-  }
-
   size_t total_frames = audio_chunk_get_valid_frames(chunk);
   if (total_frames == 0)
     return true;

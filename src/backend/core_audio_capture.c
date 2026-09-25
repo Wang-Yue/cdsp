@@ -503,17 +503,7 @@ static bool core_audio_capture_read(void *ctx, size_t frames,
     }
     return false;
   }
-  if (audio_chunk_get_channels(chunk) < capture->channels) {
-    if (err)
-      backend_error_init(
-          err, BACKEND_ERROR_INVALID_CHANNELS,
-          "Chunk channels count does not match capture channels");
-    return false;
-  }
-  size_t frames_to_read = (frames > (size_t)capture->chunk_size)
-                              ? (size_t)capture->chunk_size
-                              : frames;
-  return backend_buffer_read_chunk(capture->buffer, frames_to_read, chunk, err);
+  return backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
 }
 
 /// Get any pending sample rate change detected on the capture device.

@@ -265,6 +265,9 @@ static size_t backend_buffer_render_planar(backend_buffer_t *bb,
 
   backend_buffer_publish(
       bb, atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed));
+  if (consumed > 0 && bb->semaphore) {
+    cdsp_sem_signal(bb->semaphore);
+  }
   return consumed;
 }
 
@@ -307,6 +310,9 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
 
   backend_buffer_publish(
       bb, atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed));
+  if (consumed > 0 && bb->semaphore) {
+    cdsp_sem_signal(bb->semaphore);
+  }
   return consumed;
 }
 
@@ -331,11 +337,6 @@ static bool backend_buffer_read(const backend_buffer_t *bb,
     return false;
   }
 
-  if (frames_requested == 0) {
-    audio_chunk_set_valid_frames(chunk, 0);
-    return true;
-  }
-
   if (audio_chunk_get_channels(chunk) < bb->channels) {
     if (err)
       backend_error_init(
@@ -344,11 +345,14 @@ static bool backend_buffer_read(const backend_buffer_t *bb,
     return false;
   }
 
-  if (audio_chunk_get_frames(chunk) < frames_requested) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                         "Chunk frame capacity too small for requested frames");
-    return false;
+  size_t chunk_capacity = audio_chunk_get_frames(chunk);
+  if (frames_requested > chunk_capacity) {
+    frames_requested = chunk_capacity;
+  }
+
+  if (frames_requested == 0) {
+    audio_chunk_set_valid_frames(chunk, 0);
+    return true;
   }
 
   if (frames_requested > SIZE_MAX / bb->blockalign) {
@@ -502,6 +506,7 @@ static bool backend_buffer_write(const backend_buffer_t *bb,
   size_t bytes_to_write = frames * bb->blockalign;
 
   uint32_t retries = (max_retries > 0) ? max_retries : 1;
+  uint32_t wait_timeout = (sleep_ms > 0) ? sleep_ms : 1;
   for (uint32_t retry = 0; retry < retries; retry++) {
     if (spsc_byte_ring_buffer_get_available_to_write(bb->byte_ring) >=
         bytes_to_write) {
@@ -523,7 +528,11 @@ static bool backend_buffer_write(const backend_buffer_t *bb,
     if (state == BACKEND_STREAM_PAUSED) {
       return true;
     }
-    cdsp_sleep_ms(sleep_ms > 0 ? sleep_ms : 1);
+    if (bb->semaphore) {
+      cdsp_sem_timedwait(bb->semaphore, wait_timeout);
+    } else {
+      cdsp_sleep_ms(wait_timeout);
+    }
   }
 
   // Audio chunks must be written as atomic units. If the ring buffer cannot fit
@@ -619,7 +628,7 @@ static bool backend_buffer_planar_read(const backend_buffer_t *bb,
                                        size_t frames_requested,
                                        audio_chunk_t *chunk,
                                        backend_error_t *err) {
-  if (!bb || !chunk || bb->channels == 0 || frames_requested == 0) {
+  if (!bb || !chunk || bb->channels == 0) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Invalid parameters");
     return false;
@@ -632,19 +641,22 @@ static bool backend_buffer_planar_read(const backend_buffer_t *bb,
     return false;
   }
 
-  if (backend_buffer_get_state(bb) == BACKEND_STREAM_STOPPED) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                         "Capture stream stopped");
-    return false;
-  }
-
   if (audio_chunk_get_channels(chunk) < bb->channels) {
     if (err)
       backend_error_init(
           err, BACKEND_ERROR_INVALID_CHANNELS,
           "Chunk channels count does not match capture channels");
     return false;
+  }
+
+  size_t chunk_capacity = audio_chunk_get_frames(chunk);
+  if (frames_requested > chunk_capacity) {
+    frames_requested = chunk_capacity;
+  }
+
+  if (frames_requested == 0) {
+    audio_chunk_set_valid_frames(chunk, 0);
+    return true;
   }
 
   size_t available_frames =
@@ -755,6 +767,7 @@ static bool backend_buffer_planar_write(const backend_buffer_t *bb,
     return true;
 
   uint32_t retries = (max_retries > 0) ? max_retries : 1;
+  uint32_t wait_timeout = (sleep_ms > 0) ? sleep_ms : 1;
   for (uint32_t retry = 0; retry < retries; retry++) {
     if (spsc_planar_ring_buffer_get_available_to_write(bb->planar_ring) >=
         frames) {
@@ -776,7 +789,11 @@ static bool backend_buffer_planar_write(const backend_buffer_t *bb,
     if (state == BACKEND_STREAM_PAUSED) {
       return true;
     }
-    cdsp_sleep_ms(sleep_ms > 0 ? sleep_ms : 1);
+    if (bb->semaphore) {
+      cdsp_sem_timedwait(bb->semaphore, wait_timeout);
+    } else {
+      cdsp_sleep_ms(wait_timeout);
+    }
   }
 
   if (spsc_planar_ring_buffer_get_available_to_write(bb->planar_ring) <
@@ -856,7 +873,7 @@ bool backend_buffer_write_chunk(backend_buffer_t *bb,
 }
 
 bool backend_buffer_read_chunk(backend_buffer_t *bb, size_t frames_requested,
-                               audio_chunk_t *chunk, backend_error_t *err) {
+                                audio_chunk_t *chunk, backend_error_t *err) {
   if (!bb) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Null backend buffer");
@@ -950,17 +967,22 @@ size_t backend_buffer_push(backend_buffer_t *bb, const void *src,
 size_t backend_buffer_consume(backend_buffer_t *bb, void *dst, size_t frames) {
   if (!bb || !dst || frames == 0)
     return 0;
+  size_t consumed = 0;
   if (bb->type == BACKEND_BUFFER_PLANAR) {
-    return spsc_planar_ring_buffer_read_channels(bb->planar_ring,
-                                                 (void *const *)dst, frames);
+    consumed = spsc_planar_ring_buffer_read_channels(bb->planar_ring,
+                                                     (void *const *)dst, frames);
   } else {
     if (bb->blockalign == 0)
       return 0;
     size_t bytes = frames * bb->blockalign;
     size_t consumed_bytes =
         spsc_byte_ring_buffer_consume(bb->byte_ring, (uint8_t *)dst, bytes);
-    return consumed_bytes / bb->blockalign;
+    consumed = consumed_bytes / bb->blockalign;
   }
+  if (consumed > 0 && bb->semaphore) {
+    cdsp_sem_signal(bb->semaphore);
+  }
+  return consumed;
 }
 
 size_t backend_buffer_get_available_read_frames(const backend_buffer_t *bb) {
