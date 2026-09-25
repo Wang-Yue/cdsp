@@ -667,14 +667,14 @@ void MiniPlayerView::setupUi() {
     m_metersView = new LevelMeterView(this);
     m_metersView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     if (m_monitoring)
-        m_metersView->setLevelState(&m_monitoring->levelState);
+        m_metersView->setLevelState(m_monitoring->levels);
     m_viewStack->addWidget(m_metersView);
 
     // Mode 3: Analog VU
     m_analogVUView = new AnalogVUMeterView(this);
     m_analogVUView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     if (m_monitoring)
-        m_analogVUView->setLevelState(&m_monitoring->levelState);
+        m_analogVUView->setLevelState(m_monitoring->levels);
     m_viewStack->addWidget(m_analogVUView);
 
     // Mode 4: Spectrogram

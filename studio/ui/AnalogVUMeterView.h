@@ -57,7 +57,7 @@ public:
     explicit AnalogVUMeterView(QWidget* parent = nullptr);
     ~AnalogVUMeterView() override;
 
-    void setLevelState(LevelState* levelState);
+    void setLevelState(std::shared_ptr<LevelState> levelState);
     void setLevels(const std::vector<float>& levels);
     void setLevelDB(float leftDB, float rightDB);
     void setVUSettings(const VUSettings& settings);
@@ -75,7 +75,7 @@ protected:
     void changeEvent(QEvent* event) override;
 
 private:
-    LevelState* m_levelState = nullptr;
+    std::shared_ptr<LevelState> m_levelState;
     std::vector<float> m_levels;
     float m_gainCalibrationDb = 0.0f;
     VUSettings m_settings;

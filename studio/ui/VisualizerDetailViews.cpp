@@ -96,7 +96,7 @@ void AnalogVUDetailView::setupUi() {
     // VU Meter Display
     m_vuMeter = new AnalogVUMeterView(displayCanvas);
     if (m_monitoring)
-        m_vuMeter->setLevelState(&m_monitoring->levelState);
+        m_vuMeter->setLevelState(m_monitoring->levels);
     m_vuMeter->setVUSettings(m_settings);
     canvasLayout->addWidget(m_vuMeter, 1);
 

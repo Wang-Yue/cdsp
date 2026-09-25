@@ -239,7 +239,8 @@ void DashboardView::setupUi() {
     vuLayout->setSpacing(10);
 
     m_analogVUView = new AnalogVUMeterView(m_analogVUGroup);
-    m_analogVUView->setLevelState(&m_monitoring->levelState);
+    if (m_monitoring)
+        m_analogVUView->setLevelState(m_monitoring->levels);
     m_analogVUView->setFixedHeight(200);
     vuLayout->addWidget(m_analogVUView);
 

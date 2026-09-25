@@ -38,7 +38,7 @@ LevelMeterView::~LevelMeterView() {
     }
 }
 
-void LevelMeterView::setLevelState(LevelState* levelState) {
+void LevelMeterView::setLevelState(std::shared_ptr<LevelState> levelState) {
     if (m_levelState == levelState)
         return;
     if (m_levelState)
@@ -329,7 +329,7 @@ public:
             m_levelState->unregisterViewer(this);
         }
     }
-    void setLevelState(LevelState* levelState) {
+    void setLevelState(std::shared_ptr<LevelState> levelState) {
         if (m_levelState == levelState)
             return;
         if (m_levelState)
@@ -410,14 +410,14 @@ protected:
 
 private:
     bool m_isPlayback;
-    LevelState* m_levelState = nullptr;
+    std::shared_ptr<LevelState> m_levelState;
     size_t m_lastCount = 0;
     int m_lastWidth = 0;
 };
 
 class MeterGroupWidget : public QWidget {
 public:
-    MeterGroupWidget(bool isPlayback, LevelState* levelState, QWidget* parent = nullptr)
+    MeterGroupWidget(bool isPlayback, std::shared_ptr<LevelState> levelState, QWidget* parent = nullptr)
         : QWidget(parent), m_isPlayback(isPlayback) {
         auto layout = new QHBoxLayout(this);
         layout->setContentsMargins(0, 0, 0, 0);
@@ -436,7 +436,7 @@ public:
         setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         updateWidth();
     }
-    void setLevelState(LevelState* levelState) {
+    void setLevelState(std::shared_ptr<LevelState> levelState) {
         m_meter->setLevelState(levelState);
         updateWidth();
     }
@@ -519,8 +519,8 @@ CompactLevelMeterBar::CompactLevelMeterBar(std::shared_ptr<MonitoringController>
 }
 
 CompactLevelMeterBar::~CompactLevelMeterBar() {
-    if (m_monitoring) {
-        m_monitoring->levelState.unregisterViewer(this);
+    if (m_monitoring && m_monitoring->levels) {
+        m_monitoring->levels->unregisterViewer(this);
     }
 }
 
@@ -528,14 +528,15 @@ void CompactLevelMeterBar::setMonitoring(std::shared_ptr<MonitoringController> m
     if (m_monitoring == monitoring)
         return;
     if (m_monitoring) {
-        m_monitoring->levelState.unregisterViewer(this);
+        if (m_monitoring->levels)
+            m_monitoring->levels->unregisterViewer(this);
         disconnect(m_monitoring.get(), &MonitoringController::levelsUpdated, this, nullptr);
     }
     m_monitoring = monitoring;
-    if (m_monitoring) {
-        m_monitoring->levelState.registerViewer(this);
+    if (m_monitoring && m_monitoring->levels) {
+        m_monitoring->levels->registerViewer(this);
     }
-    LevelState* levelState = m_monitoring ? &m_monitoring->levelState : nullptr;
+    std::shared_ptr<LevelState> levelState = m_monitoring ? m_monitoring->levels : nullptr;
     if (m_captureGroup)
         m_captureGroup->setLevelState(levelState);
     if (m_playbackGroup)
@@ -614,7 +615,7 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     m_captureMeters = new LevelMeterView(this);
     m_captureMeters->setIsCapture(true);
     if (m_monitoring)
-        m_captureMeters->setLevelState(&m_monitoring->levelState);
+        m_captureMeters->setLevelState(m_monitoring->levels);
     capCol->addWidget(m_captureMeters);
     columnsLayout->addLayout(capCol, 1);
 
@@ -630,7 +631,7 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     m_playbackMeters = new LevelMeterView(this);
     m_playbackMeters->setIsCapture(false);
     if (m_monitoring)
-        m_playbackMeters->setLevelState(&m_monitoring->levelState);
+        m_playbackMeters->setLevelState(m_monitoring->levels);
     pbCol->addWidget(m_playbackMeters);
     columnsLayout->addLayout(pbCol, 1);
 
@@ -648,7 +649,12 @@ LevelMetersCard::LevelMetersCard(std::shared_ptr<MonitoringController> monitorin
     }
 }
 
-LevelMetersCard::~LevelMetersCard() = default;
+LevelMetersCard::~LevelMetersCard() {
+    if (m_captureMeters)
+        m_captureMeters->setLevelState(nullptr);
+    if (m_playbackMeters)
+        m_playbackMeters->setLevelState(nullptr);
+}
 
 void LevelMetersCard::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
@@ -675,7 +681,12 @@ LevelMetersDetailView::LevelMetersDetailView(std::shared_ptr<MonitoringControlle
     }
 }
 
-LevelMetersDetailView::~LevelMetersDetailView() = default;
+LevelMetersDetailView::~LevelMetersDetailView() {
+    if (m_captureMeters)
+        m_captureMeters->setLevelState(nullptr);
+    if (m_playbackMeters)
+        m_playbackMeters->setLevelState(nullptr);
+}
 
 void LevelMetersDetailView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
@@ -732,7 +743,7 @@ void LevelMetersDetailView::setupUi() {
     m_captureMeters = new LevelMeterView(displayCanvas);
     m_captureMeters->setIsCapture(true);
     if (m_monitoring)
-        m_captureMeters->setLevelState(&m_monitoring->levelState);
+        m_captureMeters->setLevelState(m_monitoring->levels);
     capCol->addWidget(m_captureMeters);
     capCol->addStretch();
     columnsLayout->addLayout(capCol, 1);
@@ -748,7 +759,7 @@ void LevelMetersDetailView::setupUi() {
     m_playbackMeters = new LevelMeterView(displayCanvas);
     m_playbackMeters->setIsCapture(false);
     if (m_monitoring)
-        m_playbackMeters->setLevelState(&m_monitoring->levelState);
+        m_playbackMeters->setLevelState(m_monitoring->levels);
     pbCol->addWidget(m_playbackMeters);
     pbCol->addStretch();
     columnsLayout->addLayout(pbCol, 1);

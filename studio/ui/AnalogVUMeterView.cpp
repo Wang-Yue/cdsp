@@ -409,7 +409,7 @@ void AnalogVUMeterView::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
 }
 
-void AnalogVUMeterView::setLevelState(LevelState* levelState) {
+void AnalogVUMeterView::setLevelState(std::shared_ptr<LevelState> levelState) {
     if (m_levelState == levelState)
         return;
     if (m_levelState)
