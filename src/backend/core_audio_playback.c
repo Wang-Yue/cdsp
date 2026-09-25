@@ -44,9 +44,6 @@ struct core_audio_playback {
   bool has_sample_format;
 
   AudioUnit audio_unit;
-  size_t bytes_per_sample;
-  size_t blockalign;
-
   AudioDeviceID opened_device_id;
   bool did_acquire_hog_mode;
   rate_change_watcher_t *rate_watcher;
@@ -529,8 +526,6 @@ static playback_backend_t *core_audio_playback_create(
     playback->has_sample_format = true;
   }
 
-  playback->bytes_per_sample = sizeof(float);
-  playback->blockalign = config_channels * sizeof(float);
   size_t ring_frames = 16 * (size_t)chunk_size + target_level + 2048;
   playback->buffer =
       backend_buffer_create(ring_frames, BINARY_SAMPLE_FORMAT_F32_LE,
