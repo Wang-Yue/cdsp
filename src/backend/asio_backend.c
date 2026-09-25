@@ -27,7 +27,6 @@
 #include "audio/sample_conversion.h"
 #include "backend/backend_buffer.h"
 #include "config/config_gen.h"
-#include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
 
@@ -1124,7 +1123,6 @@ typedef struct {
 
 typedef struct {
   backend_buffer_t *buffer;
-  cdsp_sem_t semaphore;
   ASIOBufferInfo *buffer_infos;
   void **channel_ptrs;
   size_t num_channels;
@@ -1285,9 +1283,6 @@ static void buffer_switch_capture(long buffer_index, ASIOBool direct_process) {
 
   backend_buffer_push(
       ctx->buffer, (const void *const *)ctx->channel_ptrs, ctx->buffer_size);
-  if (ctx->semaphore) {
-    cdsp_sem_signal(ctx->semaphore);
-  }
 }
 
 static void buffer_switch_combined(long buffer_index, ASIOBool direct_process) {
@@ -1396,8 +1391,8 @@ static long handle_asio_message(long selector, long value, bool playback,
                             memory_order_release);
       asio_capture_context_t *cap_ctx =
           atomic_load_explicit(&CAPTURE_CONTEXT, memory_order_acquire);
-      if (cap_ctx && cap_ctx->semaphore) {
-        cdsp_sem_signal(cap_ctx->semaphore);
+      if (cap_ctx) {
+        backend_buffer_signal(cap_ctx->buffer);
       }
     }
     return 1;
@@ -2610,7 +2605,6 @@ struct asio_capture {
   ASIOCallbacks callbacks_for_driver;
 
   backend_buffer_t *buffer;
-  cdsp_sem_t semaphore;
 
   asio_capture_context_t *context;
   bool com_initialized;
@@ -2658,11 +2652,6 @@ static void asio_capture_close(void *ctx) {
     capture->buffer_infos = NULL;
   }
 
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-    cdsp_sem_destroy(capture->semaphore);
-    capture->semaphore = NULL;
-  }
   backend_buffer_free(capture->buffer);
   capture->buffer = NULL;
 }
@@ -2745,7 +2734,6 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
                             asio_sample_format_to_binary_format(
                                 capture->resolved_format, capture->is_lsb),
                             capture->channels, capture->sample_rate, true);
-  capture->semaphore = cdsp_sem_create();
 
   clear_capture_driver_events();
   // Keep the callback from pushing until the loop is ready to consume
@@ -2757,19 +2745,18 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
     capture->context->channel_ptrs =
         (void **)calloc(capture->channels, sizeof(void *));
     capture->context->buffer = capture->buffer;
-    capture->context->semaphore = capture->semaphore;
     capture->context->num_channels = capture->channels;
     capture->context->buffer_size = (size_t)asio_buffer_size;
     capture->context->bytes_per_sample = capture->bytes_per_sample;
   }
 
-  if (!capture->buffer || !capture->semaphore || !capture->context ||
+  if (!capture->buffer || !capture->context ||
       !capture->context->channel_ptrs) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to allocate capture buffers or semaphore");
+                         "Failed to allocate capture buffers");
     if (capture->full_duplex && capture->shared_claimed) {
-      abort_shared_asio("Failed to allocate capture buffers or semaphore");
+      abort_shared_asio("Failed to allocate capture buffers");
       capture->shared_claimed = false;
     }
     goto error_cleanup;
@@ -2879,11 +2866,9 @@ static bool asio_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
 
 static bool asio_capture_wait_for_data(void *ctx, uint32_t timeout_ms) {
   asio_capture_t *capture = (asio_capture_t *)ctx;
-  if (!capture || !capture->semaphore)
+  if (!capture)
     return false;
-  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED)
-    return false;
-  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
+  return backend_buffer_wait(capture->buffer, timeout_ms);
 }
 
 static bool asio_capture_get_pending_rate_change(void *ctx, double *out_rate) {
@@ -2905,9 +2890,6 @@ static void asio_capture_stop(void *ctx) {
   if (!capture)
     return;
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-  }
 }
 
 static void asio_capture_destroy(void *ctx) {

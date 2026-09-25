@@ -32,7 +32,6 @@
 #include "backend/wasapi_capabilities.h"
 #include "backend/wasapi_device.h"
 #include "config/config_gen.h"
-#include "engine/cdsp_sem.h"
 #include "utils/cdsp_time.h"
 
 struct wasapi_playback {

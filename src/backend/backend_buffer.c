@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
 #include "utils/device_buffer_estimator.h"
@@ -37,6 +38,9 @@ struct backend_buffer {
   // Stream lifecycle state & events
   _Atomic backend_stream_state_t state;
   _Atomic bool has_pending_rate_change;
+
+  // Synchronization semaphore for data readiness and lifecycle wakeups
+  cdsp_sem_t semaphore;
 };
 
 /* --- Lifecycle Management --- */
@@ -70,10 +74,17 @@ backend_buffer_t *backend_buffer_create(size_t capacity_frames,
   atomic_init(&bb->state, BACKEND_STREAM_RUNNING);
   atomic_init(&bb->has_pending_rate_change, false);
 
+  bb->semaphore = cdsp_sem_create();
+  if (!bb->semaphore) {
+    free(bb);
+    return NULL;
+  }
+
   if (is_planar) {
     bb->planar_ring = spsc_planar_ring_buffer_create(
         channels, bb->bytes_per_sample, capacity_frames);
     if (!bb->planar_ring) {
+      cdsp_sem_destroy(bb->semaphore);
       free(bb);
       return NULL;
     }
@@ -81,6 +92,7 @@ backend_buffer_t *backend_buffer_create(size_t capacity_frames,
     size_t capacity_bytes = capacity_frames * bb->blockalign;
     bb->byte_ring = spsc_byte_ring_buffer_create(capacity_bytes);
     if (!bb->byte_ring) {
+      cdsp_sem_destroy(bb->semaphore);
       free(bb);
       return NULL;
     }
@@ -91,6 +103,10 @@ backend_buffer_t *backend_buffer_create(size_t capacity_frames,
 void backend_buffer_free(backend_buffer_t *bb) {
   if (!bb)
     return;
+  if (bb->semaphore) {
+    cdsp_sem_destroy(bb->semaphore);
+    bb->semaphore = NULL;
+  }
   if (bb->byte_ring) {
     spsc_byte_ring_buffer_free(bb->byte_ring);
     bb->byte_ring = NULL;
@@ -113,6 +129,9 @@ void backend_buffer_set_state(backend_buffer_t *bb,
                               backend_stream_state_t state) {
   if (bb) {
     atomic_store_explicit(&bb->state, state, memory_order_release);
+    if (state == BACKEND_STREAM_STOPPED && bb->semaphore) {
+      cdsp_sem_signal(bb->semaphore);
+    }
   }
 }
 
@@ -922,6 +941,9 @@ size_t backend_buffer_push(backend_buffer_t *bb, const void *src,
                 "Capture ring buffer is full, dropped %zu out of %zu frames",
                 frames - pushed, frames);
   }
+  if (pushed > 0 && bb->semaphore) {
+    cdsp_sem_signal(bb->semaphore);
+  }
   return pushed;
 }
 
@@ -983,4 +1005,22 @@ void backend_buffer_drain(backend_buffer_t *bb) {
       spsc_byte_ring_buffer_drain(bb->byte_ring);
     }
   }
+}
+
+/* --- Thread Synchronization --- */
+
+void backend_buffer_signal(backend_buffer_t *bb) {
+  if (bb && bb->semaphore) {
+    cdsp_sem_signal(bb->semaphore);
+  }
+}
+
+bool backend_buffer_wait(backend_buffer_t *bb, uint32_t timeout_ms) {
+  if (!bb || !bb->semaphore) {
+    return false;
+  }
+  if (backend_buffer_get_state(bb) == BACKEND_STREAM_STOPPED) {
+    return false;
+  }
+  return cdsp_sem_timedwait(bb->semaphore, timeout_ms);
 }

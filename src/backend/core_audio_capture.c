@@ -32,7 +32,6 @@
 #include "backend/core_audio_device.h"
 #include "backend/core_audio_tap_bridge.h"
 #include "config/config_gen.h"
-#include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
 
@@ -67,7 +66,6 @@ struct core_audio_capture {
   _Atomic bool pitch_control_active;
   _Atomic bool is_device_alive;
 
-  cdsp_sem_t semaphore;
   _Atomic int active_callbacks;
 };
 
@@ -108,9 +106,7 @@ static OSStatus capture_callback(void *inRefCon,
                               memory_order_relaxed);
     atomic_store_explicit(&capture->last_callback_error, -1,
                           memory_order_relaxed);
-    if (capture->semaphore) {
-      cdsp_sem_signal(capture->semaphore);
-    }
+    backend_buffer_signal(capture->buffer);
     atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
                               memory_order_release);
     return noErr;
@@ -127,9 +123,7 @@ static OSStatus capture_callback(void *inRefCon,
                               memory_order_relaxed);
     atomic_store_explicit(&capture->last_callback_error, (int)status,
                           memory_order_relaxed);
-    if (capture->semaphore) {
-      cdsp_sem_signal(capture->semaphore);
-    }
+    backend_buffer_signal(capture->buffer);
     atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
                               memory_order_release);
     return noErr;
@@ -140,10 +134,6 @@ static OSStatus capture_callback(void *inRefCon,
 
   atomic_store_explicit(&capture->callback_error_count, 0,
                         memory_order_relaxed);
-
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-  }
 
   atomic_fetch_sub_explicit(&capture->active_callbacks, 1,
                             memory_order_release);
@@ -217,9 +207,6 @@ static void core_audio_capture_close(void *ctx) {
   if (!capture->audio_unit && capture->opened_device_id == 0)
     return;
   logger_info(&g_logger, "Closing CoreAudio capture device");
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-  }
   if (capture->rate_watcher) {
     rate_change_watcher_free(capture->rate_watcher);
     capture->rate_watcher = NULL;
@@ -568,11 +555,9 @@ static void core_audio_capture_set_pitch(void *ctx, double multiplier) {
  */
 static bool core_audio_capture_wait(void *ctx, uint32_t timeout_ms) {
   core_audio_capture_t *capture = (core_audio_capture_t *)ctx;
-  if (!capture || !capture->semaphore)
+  if (!capture)
     return false;
-  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED)
-    return false;
-  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
+  return backend_buffer_wait(capture->buffer, timeout_ms);
 }
 
 /**
@@ -588,9 +573,6 @@ static void core_audio_capture_stop(void *ctx) {
   if (capture->audio_unit) {
     AudioOutputUnitStop(capture->audio_unit);
   }
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-  }
 }
 
 /// Destroy and free the CoreAudio capture backend.
@@ -601,10 +583,6 @@ static void core_audio_capture_destroy(void *ctx) {
   core_audio_capture_close(capture);
   backend_buffer_free(capture->buffer);
   capture->buffer = NULL;
-  if (capture->semaphore) {
-    cdsp_sem_destroy(capture->semaphore);
-    capture->semaphore = NULL;
-  }
   free(capture);
 }
 
@@ -636,14 +614,6 @@ static capture_backend_t *core_audio_capture_create(
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Out of memory");
-    return NULL;
-  }
-  capture->semaphore = cdsp_sem_create();
-  if (!capture->semaphore) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to create semaphore");
-    core_audio_capture_destroy(capture);
     return NULL;
   }
   const char *config_device = capture_device_config_get_device(config);

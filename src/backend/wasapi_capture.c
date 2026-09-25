@@ -32,7 +32,6 @@
 #include "backend/wasapi_capabilities.h"
 #include "backend/wasapi_device.h"
 #include "config/config_gen.h"
-#include "engine/cdsp_sem.h"
 #include "utils/cdsp_time.h"
 
 struct wasapi_capture {
@@ -60,7 +59,6 @@ struct wasapi_capture {
   UINT32 buffer_frame_count;
   REFERENCE_TIME def_period;
   HANDLE event_handle;
-  cdsp_sem_t semaphore;
 
   pthread_t inner_thread;
   bool inner_thread_created;
@@ -162,9 +160,6 @@ static void *wasapi_capture_loop(void *arg) {
                  "Capture failed to allocate %zu byte transfer buffer",
                  data_buf_size);
     backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-    if (capture->semaphore) {
-      cdsp_sem_signal(capture->semaphore);
-    }
     if (com_ok) {
       CoUninitialize();
     }
@@ -199,9 +194,6 @@ static void *wasapi_capture_loop(void *arg) {
     logger_error(&g_wasapi_logger, "Capture start stream failed: hr=0x%08lX",
                  (unsigned long)hr);
     backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-    if (capture->semaphore) {
-      cdsp_sem_signal(capture->semaphore);
-    }
     free(data);
     if (com_ok) {
       CoUninitialize();
@@ -314,9 +306,6 @@ static void *wasapi_capture_loop(void *arg) {
         }
 
         backend_buffer_push(capture->buffer, data, (size_t)nbr_frames_read);
-        if (capture->semaphore) {
-          cdsp_sem_signal(capture->semaphore);
-        }
 
         if (capture->exclusive && capture->event_handle) {
           break;
@@ -355,9 +344,6 @@ static void *wasapi_capture_loop(void *arg) {
   }
 
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-  }
   IAudioClient_Stop(capture->client);
   free(data);
   if (com_ok) {
@@ -450,14 +436,6 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
   }
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
 
-  capture->semaphore = cdsp_sem_create();
-  if (!capture->semaphore) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to create semaphore");
-    goto error_cleanup;
-  }
-
   if (pthread_create(&capture->inner_thread, NULL, wasapi_capture_loop,
                      capture) != 0) {
     backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
@@ -473,10 +451,6 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
 error_cleanup:
   backend_buffer_free(capture->buffer);
   capture->buffer = NULL;
-  if (capture->semaphore) {
-    cdsp_sem_destroy(capture->semaphore);
-    capture->semaphore = NULL;
-  }
   wasapi_cleanup_device_resources(
       &capture->client, (IUnknown **)&capture->capture_client,
       &capture->session_control, &capture->session_events_listener,
@@ -504,18 +478,12 @@ static void wasapi_capture_close(void *ctx) {
     backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     if (capture->event_handle)
       SetEvent(capture->event_handle);
-    if (capture->semaphore)
-      cdsp_sem_signal(capture->semaphore);
     pthread_join(capture->inner_thread, NULL);
     capture->inner_thread_created = false;
   }
 
   backend_buffer_free(capture->buffer);
   capture->buffer = NULL;
-  if (capture->semaphore) {
-    cdsp_sem_destroy(capture->semaphore);
-    capture->semaphore = NULL;
-  }
   wasapi_cleanup_device_resources(
       &capture->client, (IUnknown **)&capture->capture_client,
       &capture->session_control, &capture->session_events_listener,
@@ -545,11 +513,9 @@ static void wasapi_capture_set_pitch(void *ctx, double multiplier) {
 
 static bool wasapi_capture_wait(void *ctx, uint32_t timeout_ms) {
   wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
-  if (!capture || !capture->semaphore)
+  if (!capture)
     return false;
-  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED)
-    return false;
-  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
+  return backend_buffer_wait(capture->buffer, timeout_ms);
 }
 
 static void wasapi_capture_stop(void *ctx) {
@@ -559,9 +525,6 @@ static void wasapi_capture_stop(void *ctx) {
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   if (capture->event_handle) {
     SetEvent(capture->event_handle);
-  }
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
   }
 }
 

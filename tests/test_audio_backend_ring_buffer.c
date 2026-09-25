@@ -268,4 +268,29 @@ TEST(AudioBackendRingBuffer_StreamStateLifecycle) {
   backend_buffer_free(buf);
 }
 
+TEST(BackendBuffer_WaitAndSignal) {
+  backend_buffer_t *buf = backend_buffer_create(
+      64, BINARY_SAMPLE_FORMAT_F32_LE, 2, 44100.0, false);
+  ASSERT_TRUE(buf != NULL);
+
+  // Initial wait with short timeout should timeout because no signal or data
+  ASSERT_FALSE(backend_buffer_wait(buf, 10));
+
+  // Signal directly wakes up wait
+  backend_buffer_signal(buf);
+  ASSERT_TRUE(backend_buffer_wait(buf, 100));
+
+  // Pushing data automatically signals
+  float test_data[4] = {0.5f, -0.5f, 0.25f, -0.25f};
+  size_t pushed = backend_buffer_push(buf, test_data, 2);
+  ASSERT_EQ(pushed, 2);
+  ASSERT_TRUE(backend_buffer_wait(buf, 100));
+
+  // Stopping the stream unblocks wait and subsequent waits return false
+  backend_buffer_set_state(buf, BACKEND_STREAM_STOPPED);
+  ASSERT_FALSE(backend_buffer_wait(buf, 10));
+
+  backend_buffer_free(buf);
+}
+
 TEST_MAIN()

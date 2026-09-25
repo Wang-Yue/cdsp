@@ -20,7 +20,6 @@
 #include "backend/backend_buffer.h"
 #include "backend/backend_error.h"
 #include "config/config_gen.h"
-#include "engine/cdsp_sem.h"
 #include "engine/thread_priority.h"
 #include "logging/app_logger.h"
 
@@ -70,7 +69,6 @@ struct alsa_capture {
   pthread_mutex_t mixer_mutex;
 
   backend_buffer_t *buffer;
-  cdsp_sem_t semaphore;
   pthread_t inner_thread;
   bool inner_thread_created;
   bool device_stalled;
@@ -147,9 +145,6 @@ static void *alsa_capture_inner_thread_func(void *arg) {
   if (!local_buf) {
     logger_error(&g_logger, "Failed to allocate ALSA capture read buffer");
     backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-    if (capture->semaphore) {
-      cdsp_sem_signal(capture->semaphore);
-    }
     if (rt_handle) {
       demote_current_thread_from_realtime(rt_handle);
     }
@@ -174,9 +169,6 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     logger_error(&g_logger, "Failed to get ALSA capture poll descriptors");
     free(local_buf);
     backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-    if (capture->semaphore) {
-      cdsp_sem_signal(capture->semaphore);
-    }
     if (rt_handle) {
       demote_current_thread_from_realtime(rt_handle);
     }
@@ -296,9 +288,6 @@ static void *alsa_capture_inner_thread_func(void *arg) {
         capture->device_stalled = false;
       }
       backend_buffer_push(capture->buffer, local_buf, (size_t)frames_read);
-      if (capture->semaphore) {
-        cdsp_sem_signal(capture->semaphore);
-      }
     } else if (frames_read == -EPIPE) {
       logger_warn(&g_logger, "Capture: read overrun, trying to recover");
       if (snd_pcm_prepare(capture->pcm) < 0) {
@@ -331,9 +320,6 @@ static void *alsa_capture_inner_thread_func(void *arg) {
   }
 
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-  }
   if (local_buf)
     free(local_buf);
   if (rt_handle) {
@@ -654,15 +640,6 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
     }
     goto error_cleanup;
   }
-  capture->semaphore = cdsp_sem_create();
-  if (!capture->semaphore) {
-    if (err) {
-      backend_error_init(
-          err, BACKEND_ERROR_INITIALIZATION_FAILED,
-          "Failed to allocate semaphore for threaded ALSA capture");
-    }
-    goto error_cleanup;
-  }
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
   if (pthread_create(&capture->inner_thread, NULL,
                      alsa_capture_inner_thread_func, capture) != 0) {
@@ -681,10 +658,6 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
 error_cleanup:
   backend_buffer_free(capture->buffer);
   capture->buffer = NULL;
-  if (capture->semaphore) {
-    cdsp_sem_destroy(capture->semaphore);
-    capture->semaphore = NULL;
-  }
   if (capture->pcm) {
     snd_pcm_close(capture->pcm);
     capture->pcm = NULL;
@@ -745,19 +718,12 @@ static void alsa_capture_close(void *ctx) {
 
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
 
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-  }
   if (capture->inner_thread_created) {
     pthread_join(capture->inner_thread, NULL);
     capture->inner_thread_created = false;
   }
   backend_buffer_free(capture->buffer);
   capture->buffer = NULL;
-  if (capture->semaphore) {
-    cdsp_sem_destroy(capture->semaphore);
-    capture->semaphore = NULL;
-  }
 
   pthread_mutex_lock(&g_alsa_mutex);
   if (capture->pcm) {
@@ -833,12 +799,7 @@ static bool alsa_capture_wait(void *ctx, uint32_t timeout_ms) {
   alsa_capture_t *capture = (alsa_capture_t *)ctx;
   if (!capture)
     return false;
-  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED) {
-    return false;
-  }
-  if (!capture->semaphore)
-    return false;
-  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
+  return backend_buffer_wait(capture->buffer, timeout_ms);
 }
 
 static void alsa_capture_stop(void *ctx) {
@@ -846,9 +807,6 @@ static void alsa_capture_stop(void *ctx) {
   if (!capture)
     return;
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-  }
   pthread_mutex_lock(&g_alsa_mutex);
   if (capture->pcm) {
     snd_pcm_drop(capture->pcm);

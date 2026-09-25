@@ -240,4 +240,25 @@ void backend_buffer_reset(backend_buffer_t *bb);
  */
 void backend_buffer_set_target_level(backend_buffer_t *bb, size_t target_level);
 
+/* --- Thread Synchronization --- */
+
+/**
+ * @brief Signals the backend buffer's semaphore to wake waiting consumers/readers.
+ *
+ * @param bb Pointer to backend buffer.
+ */
+void backend_buffer_signal(backend_buffer_t *bb);
+
+/**
+ * @brief Waits for new data or stream state changes on the backend buffer.
+ *
+ * Checks if the stream is stopped (returning false if stopped), then waits
+ * on the internal semaphore up to @p timeout_ms.
+ *
+ * @param bb Pointer to backend buffer.
+ * @param timeout_ms Maximum time to wait in milliseconds.
+ * @return True if signaled/data available, false on timeout or if stream stopped.
+ */
+bool backend_buffer_wait(backend_buffer_t *bb, uint32_t timeout_ms);
+
 #endif // CDSP_BACKEND_BUFFER_H

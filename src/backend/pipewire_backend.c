@@ -33,7 +33,6 @@
 #include "backend/backend_buffer.h"
 #include "backend/backend_error.h"
 #include "config/config_gen.h"
-#include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
 
@@ -67,7 +66,6 @@ struct pipewire_capture {
 
   backend_buffer_t *buffer;
   size_t blockalign;
-  cdsp_sem_t semaphore;
 
   double pending_rate;
   bool has_pending_rate;
@@ -127,8 +125,6 @@ static void on_capture_process(void *data) {
       size_t frames = size / c->blockalign;
 
       backend_buffer_push(c->buffer, src + offset, frames);
-      if (c->semaphore)
-        cdsp_sem_signal(c->semaphore);
     }
   }
 
@@ -287,12 +283,6 @@ static void pipewire_capture_close(void *ctx) {
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   backend_buffer_free(capture->buffer);
   capture->buffer = NULL;
-
-  if (capture->semaphore) {
-    cdsp_sem_signal(capture->semaphore);
-    cdsp_sem_destroy(capture->semaphore);
-    capture->semaphore = NULL;
-  }
 }
 
 /**
@@ -432,13 +422,12 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
   capture->buffer =
       backend_buffer_create(cap_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE,
                             capture->channels, capture->sample_rate, false);
-  capture->semaphore = cdsp_sem_create();
 
-  if (!capture->buffer || !capture->semaphore) {
+  if (!capture->buffer) {
     pipewire_capture_close(capture);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to allocate capture buffers or semaphore");
+                         "Failed to allocate capture buffer");
     return false;
   }
 
@@ -526,11 +515,9 @@ static void pipewire_capture_set_pitch(void *ctx, double multiplier) {
  */
 static bool pipewire_capture_wait(void *ctx, uint32_t timeout_ms) {
   pipewire_capture_t *capture = (pipewire_capture_t *)ctx;
-  if (!capture || !capture->semaphore)
+  if (!capture)
     return false;
-  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED)
-    return false;
-  return cdsp_sem_timedwait(capture->semaphore, timeout_ms);
+  return backend_buffer_wait(capture->buffer, timeout_ms);
 }
 
 /**
@@ -547,9 +534,6 @@ static void pipewire_capture_stop(void *ctx) {
     pw_thread_loop_lock(capture->loop);
     if (capture->stream) {
       pw_stream_set_active(capture->stream, false);
-    }
-    if (capture->semaphore) {
-      cdsp_sem_signal(capture->semaphore);
     }
     pw_thread_loop_unlock(capture->loop);
   }
