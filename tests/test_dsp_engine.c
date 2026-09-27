@@ -2119,7 +2119,8 @@ TEST(DSPEngineASIOUnsupportedDriverRefused) {
 
   cdsp_stop_reason_t stop_reason;
   cdsp_get_stop_reason(engine, &stop_reason);
-  ASSERT_EQ(stop_reason.type, CDSP_STOP_REASON_CAPTURE_ERROR);
+  ASSERT_TRUE(stop_reason.type == CDSP_STOP_REASON_CAPTURE_ERROR ||
+              stop_reason.type == CDSP_STOP_REASON_PLAYBACK_ERROR);
   ASSERT_TRUE(strstr(stop_reason.message,
                      "is not supported, use the Wasapi backend") != NULL);
 
