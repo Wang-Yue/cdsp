@@ -12,10 +12,12 @@ if [ "$OS" = "Darwin" ]; then
     if [ -z "$CC" ]; then
         if [ -x "/opt/homebrew/opt/llvm/bin/clang" ]; then
             export CC="/opt/homebrew/opt/llvm/bin/clang"
+            export CXX="/opt/homebrew/opt/llvm/bin/clang++"
             export AR="/opt/homebrew/opt/llvm/bin/llvm-ar"
             export RANLIB="/opt/homebrew/opt/llvm/bin/llvm-ranlib"
         elif [ -x "/usr/local/opt/llvm/bin/clang" ]; then
             export CC="/usr/local/opt/llvm/bin/clang"
+            export CXX="/usr/local/opt/llvm/bin/clang++"
             export AR="/usr/local/opt/llvm/bin/llvm-ar"
             export RANLIB="/usr/local/opt/llvm/bin/llvm-ranlib"
         else
@@ -27,12 +29,23 @@ elif [ "$OS" = "Linux" ]; then
     if [ -z "$CC" ]; then
         export CC="clang"
     fi
+    if [ -z "$CXX" ]; then
+        export CXX="clang++"
+    fi
     if [ -z "$AR" ] && command -v llvm-ar >/dev/null 2>&1; then
-        export AR="llvm-ar"
+        export AR="$(command -v llvm-ar)"
     fi
     if [ -z "$RANLIB" ] && command -v llvm-ranlib >/dev/null 2>&1; then
-        export RANLIB="llvm-ranlib"
+        export RANLIB="$(command -v llvm-ranlib)"
     fi
+fi
+
+# Ensure AR and RANLIB are absolute paths if they were provided as bare binary names
+if [ -n "$AR" ] && ! [[ "$AR" = /* ]]; then
+    AR="$(command -v "$AR" || echo "$AR")"
+fi
+if [ -n "$RANLIB" ] && ! [[ "$RANLIB" = /* ]]; then
+    RANLIB="$(command -v "$RANLIB" || echo "$RANLIB")"
 fi
 
 JOBS=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
@@ -67,7 +80,15 @@ for san in "${SANITIZERS[@]}"; do
     echo "================================================================="
 
     EXTRA_ENV=()
-    CMAKE_ARGS=("-B" "$BUILD_DIR" "-DENABLE_SANITIZER=$san" "-DCMAKE_BUILD_TYPE=Debug")
+    CMAKE_ARGS=(
+        "-B" "$BUILD_DIR"
+        "-DENABLE_SANITIZER=$san"
+        "-DCMAKE_BUILD_TYPE=Debug"
+        "-DBUILD_TESTING=ON"
+        "-DBUILD_RUST_HARNESS=OFF"
+        "-DBUILD_BENCHMARKS=OFF"
+        "-DENABLE_STUDIO=OFF"
+    )
     if [ -n "$AR" ]; then
         CMAKE_ARGS+=("-DCMAKE_AR=$AR")
     fi
@@ -85,7 +106,7 @@ for san in "${SANITIZERS[@]}"; do
     fi
 
     if cmake "${CMAKE_ARGS[@]}" && \
-       cmake --build "$BUILD_DIR" -j"$JOBS" && \
+       cmake --build "$BUILD_DIR" --target test_runner -j"$JOBS" && \
        env "${EXTRA_ENV[@]}" ctest --test-dir "$BUILD_DIR" --output-on-failure -j"$JOBS"; then
         echo "✅ Sanitizer [$san] PASSED"
         PASSED_SANITIZERS+=("$san")

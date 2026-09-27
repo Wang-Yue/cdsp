@@ -1761,6 +1761,8 @@ TEST(WebSocket_ReadAndValidateConfigDefaultsAndValidation) {
   ASSERT_STR_EQ("ConfigReadError",
                 cJSON_GetObjectItem(root, "result")->valuestring);
   ASSERT_TRUE(cJSON_GetObjectItem(root, "value") != NULL);
+  cJSON_Delete(root);
+
   // 5. ReadConfigFile with non-existent file: fails with ConfigReadError
   memset(resp, 0, sizeof(resp));
   websocket_server_handle_command(server, 0,

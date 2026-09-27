@@ -1286,6 +1286,7 @@ TEST(FileBackendStdinSkipBytes) {
             write(pipefd[1], to_write, sizeof(to_write)));
   close(pipefd[1]);
 
+  clearerr(stdin);
   dup2(pipefd[0], STDIN_FILENO);
   close(pipefd[0]);
 
@@ -1317,6 +1318,7 @@ TEST(FileBackendStdinSkipBytes) {
   audio_chunk_free(chunk);
 
   dup2(saved_stdin, STDIN_FILENO);
+  clearerr(stdin);
   close(saved_stdin);
 }
 

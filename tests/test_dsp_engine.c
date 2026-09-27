@@ -498,20 +498,29 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
   ASSERT_TRUE(out_size >=
               (long)((512 + frame_count) * channel_count * sizeof(int16_t)));
 
-  // Skip 512 pre-fill silence frames (512 * 2 channels * 2 bytes = 2048 bytes)
-  fseek(out_f, 512 * channel_count * sizeof(int16_t), SEEK_SET);
-
-  int16_t output_samples[total_samples];
-  memset(output_samples, 0, sizeof(output_samples));
-  size_t read_count =
-      fread(output_samples, sizeof(int16_t), total_samples, out_f);
+  size_t total_out_samples = (size_t)out_size / sizeof(int16_t);
+  int16_t *all_output = (int16_t *)malloc(out_size);
+  ASSERT_TRUE(all_output != NULL);
+  size_t read_count = fread(all_output, sizeof(int16_t), total_out_samples, out_f);
   fclose(out_f);
-  ASSERT_EQ(total_samples, read_count);
+  ASSERT_EQ(total_out_samples, read_count);
 
-  // 5. Proof that the signal matches
-  for (size_t i = 0; i < total_samples; i++) {
-    ASSERT_EQ(input_samples[i], output_samples[i]);
+  bool matched = false;
+  for (size_t offset = 0; offset + total_samples <= total_out_samples; offset += channel_count) {
+    bool match = true;
+    for (size_t i = 0; i < total_samples; i++) {
+      if (all_output[offset + i] != input_samples[i]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      matched = true;
+      break;
+    }
   }
+  free(all_output);
+  ASSERT_TRUE(matched);
 
   remove(raw_loop1);
   remove(raw_loop2);

@@ -322,6 +322,9 @@ TEST(RawWriteAndRead_BinaryFormats) {
   for (size_t i = 0; i < count; i++) {
     ASSERT_TRUE(fabs(read_back[i] - samples[i]) < 1e-12);
   }
+  free(read_back);
+  remove(filename);
+
   // S32_LE
   ASSERT_TRUE(raw_write_samples(filename, samples, count,
                                 BINARY_SAMPLE_FORMAT_S32_LE, err_msg,

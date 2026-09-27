@@ -5027,6 +5027,8 @@ void devices_config_init(devices_config_t *out) {
 void free_devices_config_contents(devices_config_t *in) {
   if (!in) return;
   free_resampler_config_contents(&in->resampler);
+  free_capture_device_config_contents(&in->capture);
+  free_playback_device_config_contents(&in->playback);
 }
 
 int parse_devices_config(const cJSON *obj, const char *ctx, devices_config_t *out, config_error_t *err) {

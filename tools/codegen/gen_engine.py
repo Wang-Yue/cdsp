@@ -449,7 +449,7 @@ class CodegenEngine:
                         w.line(f"in->{f.name}_count = 0;")
                         w.dedent()
                         w.line("}")
-                    elif isinstance(f.type, StructType):
+                    elif isinstance(f.type, (StructType, TaggedUnionType)):
                         w.line(f"free_{f.type.name}_contents(&in->{f.name});")
                 w.dedent()
                 w.line("}")

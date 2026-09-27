@@ -119,7 +119,7 @@ struct websocket_server {
   char host[128];
   dsp_engine_t *engine;
 
-  struct lws_context *context;
+  struct lws_context *_Atomic context;
   lws_sorted_usec_list_t sul;
   _Atomic bool running;
   _Atomic bool exit_requested;
@@ -2650,10 +2650,11 @@ static void *server_thread_func(void *arg) {
   info.user = server;
   info.vhost_name = "cdsp";
 
-  server->context = lws_create_context(&info);
+  struct lws_context *ctx = lws_create_context(&info);
+  atomic_store(&server->context, ctx);
 
   pthread_mutex_lock(&server->start_mutex);
-  if (!server->context) {
+  if (!ctx) {
     server->start_status = -1;
     pthread_cond_signal(&server->start_cond);
     pthread_mutex_unlock(&server->start_mutex);
@@ -2669,19 +2670,19 @@ static void *server_thread_func(void *arg) {
   logger_info(&server_logger, "WebSocket server listening on %s:%u",
               server->host, server->port);
 
-  lws_sul_schedule(server->context, 0, &server->sul, periodic_sul_cb,
+  lws_sul_schedule(ctx, 0, &server->sul, periodic_sul_cb,
                    20 * LWS_US_PER_MS);
 
   while (atomic_load(&server->running)) {
-    int ret = lws_service(server->context, 0);
+    int ret = lws_service(ctx, 0);
     if (ret < 0 || !atomic_load(&server->running))
       break;
   }
 
   logger_info(&server_logger, "WebSocket server event loop stopping");
   lws_sul_cancel(&server->sul);
-  lws_context_destroy(server->context);
-  server->context = NULL;
+  lws_context_destroy(ctx);
+  atomic_store(&server->context, NULL);
   return NULL;
 }
 
@@ -2698,6 +2699,7 @@ websocket_server_t *websocket_server_create(uint16_t port, const char *host) {
   server->update_interval = 1000;
   atomic_init(&server->running, false);
   atomic_init(&server->exit_requested, false);
+  atomic_init(&server->context, NULL);
   pthread_mutex_init(&server->sessions_mutex, NULL);
   pthread_mutex_init(&server->start_mutex, NULL);
   pthread_cond_init(&server->start_cond, NULL);
@@ -2743,8 +2745,9 @@ void websocket_server_stop(websocket_server_t *server) {
   if (!server || !atomic_load(&server->running))
     return;
   atomic_store(&server->running, false);
-  if (server->context)
-    lws_cancel_service(server->context);
+  struct lws_context *ctx = atomic_load(&server->context);
+  if (ctx)
+    lws_cancel_service(ctx);
   pthread_join(server->thread, NULL);
 }
 
