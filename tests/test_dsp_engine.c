@@ -1067,6 +1067,15 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
     engine->free(engine->ctx);
 
   // Reconfigure engine with 48kHz for playback
+  static alsa_loopback_player_t player48k;
+  memset(&player48k, 0, sizeof(player48k));
+  player48k.pcm_name = "cdsp_loop1_play";
+  player48k.sample_rate = 48000;
+  player48k.change_rate = 0;
+  player48k.stop = false;
+  pthread_create(&player48k.thread, NULL, alsa_loopback_player_func,
+                 &player48k);
+
   char json_48k[1024];
   snprintf(json_48k, sizeof(json_48k),
            "{\n"
@@ -1075,13 +1084,10 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 64,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"SignalGenerator\",\n"
-           "            \"channels\": 2,\n"
-           "            \"signal\": {\n"
-           "                \"type\": \"Sine\",\n"
-           "                \"freq\": 1000.0,\n"
-           "                \"level\": 0.0\n"
-           "            }\n"
+           "            \"type\": \"Alsa\",\n"
+           "            \"device\": \"cdsp_loop1_cap\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Alsa\",\n"
@@ -1110,6 +1116,10 @@ TEST(DSPEngineE2E_ALSAPlaybackSampleRateChange) {
   ASSERT_TRUE(running);
 
   cdsp_sleep_ms(150);
+
+  atomic_store(&player48k.stop, true);
+  pthread_join(player48k.thread, NULL);
+
   ASSERT_EQ(CDSP_PROCESSING_STATE_RUNNING, cdsp_get_state(engine));
 
   cdsp_stop(engine);

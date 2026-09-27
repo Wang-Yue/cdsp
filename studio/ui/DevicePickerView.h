@@ -5,24 +5,24 @@
 #include "models/AudioDeviceManager.h" // for AudioDeviceManager
 #include "models/AudioSettings.h"      // for AudioSettings
 
-#include <QCheckBox>             // for QCheckBox
-#include <QComboBox>             // for QComboBox
-#include <QDoubleSpinBox>        // for QDoubleSpinBox
-#include <QFormLayout>           // for QFormLayout
-#include <QLabel>                // for QLabel
-#include <QLineEdit>             // for QLineEdit
-#include <QListWidget>           // for QListWidget
-#include <QObject>               // for Q_OBJECT, slots
-#include <QSlider>               // for QSlider
-#include <QSpinBox>              // for QSpinBox
-#include <QStackedWidget>        // for QStackedWidget
-#include <QString>               // for QString
-#include <QWidget>               // for QWidget
-#include <memory>                // for shared_ptr
-#include <optional>              // for optional
-#include <qtclasshelpermacros.h> // for Q_DISABLE_COPY
-#include <string>                // for string
-#include <vector>                // for vector
+#include <QCheckBox>        // for QCheckBox
+#include <QComboBox>        // for QComboBox
+#include <QDoubleSpinBox>   // for QDoubleSpinBox
+#include <QFormLayout>      // for QFormLayout
+#include <QLabel>           // for QLabel
+#include <QLineEdit>        // for QLineEdit
+#include <QListWidget>      // for QListWidget
+#include <QObject>          // for Q_OBJECT, slots
+#include <QSlider>          // for QSlider
+#include <QSpinBox>         // for QSpinBox
+#include <QStackedWidget>   // for QStackedWidget
+#include <QString>          // for QString
+#include <QWidget>          // for QWidget
+#include <QtCore/qglobal.h> // for Q_DISABLE_COPY
+#include <memory>           // for shared_ptr
+#include <optional>         // for optional
+#include <string>           // for string
+#include <vector>           // for vector
 
 /* clang-format off */
 /**

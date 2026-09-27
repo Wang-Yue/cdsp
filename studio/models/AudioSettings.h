@@ -3,10 +3,10 @@
 
 #include "config/DSPConfigTypes.h" // for ResamplerInterpolation, ResamplerProfile, ResamplerType, SincInterpolation
 
-#include <QObject>               // for QObject, Q_OBJECT, signals
-#include <functional>            // for function
-#include <qtclasshelpermacros.h> // for Q_DISABLE_COPY
-#include <string>                // for basic_string, string
+#include <QObject>          // for QObject, Q_OBJECT, signals
+#include <QtCore/qglobal.h> // for Q_DISABLE_COPY
+#include <functional>       // for function
+#include <string>           // for basic_string, string
 
 class AudioSettings : public QObject {
     Q_OBJECT
