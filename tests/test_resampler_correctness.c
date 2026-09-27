@@ -498,8 +498,14 @@ TEST(SlipResampler_Vs_Rubato) {
   ASSERT_TRUE(write_raw_f64(input, total_frames, in_path));
 
   char cmd[1024];
+#ifdef _WIN32
+  snprintf(cmd, sizeof(cmd),
+           "\"\"%s\" slip \"%s\" \"%s\" %d %d %zu --no-partial > NUL 2>&1\"",
+           g_rubato_bin_path, in_path, ref_path, fs_in, fs_out, chunk_size);
+#else
   snprintf(cmd, sizeof(cmd), "\"%s\" slip \"%s\" \"%s\" %d %d %zu --no-partial",
            g_rubato_bin_path, in_path, ref_path, fs_in, fs_out, chunk_size);
+#endif
   int status = system(cmd);
   ASSERT_EQ(0, status);
 
@@ -559,8 +565,14 @@ TEST(SlipResampler_Vs_Rubato) {
   }
 
   remove(ref_path);
+#ifdef _WIN32
+  snprintf(cmd, sizeof(cmd),
+           "\"\"%s\" slip \"%s\" \"%s\" %d %d %zu --no-partial > NUL 2>&1\"",
+           g_rubato_bin_path, in_path, ref_path, fs_in, fs_out, chunk_size);
+#else
   snprintf(cmd, sizeof(cmd), "\"%s\" slip \"%s\" \"%s\" %d %d %zu --no-partial",
            g_rubato_bin_path, in_path, ref_path, fs_in, fs_out, chunk_size);
+#endif
   status = system(cmd);
   ASSERT_EQ(0, status);
 
