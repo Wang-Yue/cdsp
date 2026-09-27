@@ -7,6 +7,7 @@
 #include "audio/audio_chunk.h"
 #include "audio/audio_history_buffer.h"
 #include "test_support.h"
+#include "utils/cdsp_time.h"
 
 TEST(Reset) {
   audio_history_buffer_t *buffer = audio_history_buffer_create();
@@ -178,7 +179,11 @@ static void *history_producer_thread(void *arg) {
     audio_chunk_set_valid_frames(chunk, a->chunk_size);
     audio_history_buffer_append(a->buffer, chunk);
     written += a->chunk_size;
-    sched_yield();
+    if ((written % (a->chunk_size * 8)) == 0) {
+      cdsp_sleep_ms(1);
+    } else {
+      sched_yield();
+    }
   }
   audio_chunk_free(chunk);
   atomic_store_explicit(&a->producer_done, true, memory_order_release);

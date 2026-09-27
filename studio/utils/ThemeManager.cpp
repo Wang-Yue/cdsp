@@ -28,10 +28,12 @@ void ThemeManager::init() {
     }
 
     // Listen to system color scheme changes dynamically
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     if (QGuiApplication::styleHints()) {
         QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
                          []() { QApplication::setStyle(QStyleFactory::create("Fusion")); });
     }
+#endif
 }
 
 bool ThemeManager::isMiniPlayer(const QWidget* widget) {
