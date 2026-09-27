@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/Wang-Yue/cdsp/actions/workflows/ci.yml"><img src="https://github.com/Wang-Yue/cdsp/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/Wang-Yue/cdsp/releases"><img src="https://img.shields.io/github/v/release/Wang-Yue/cdsp?include_prereleases&label=release&style=flat-square&color=blue" alt="Release" /></a>
   <img src="https://img.shields.io/badge/Language-C11%20%7C%20C%2B%2B17-blue.svg?style=flat-square" alt="Language" />
   <img src="https://img.shields.io/badge/GUI-Qt%206-green.svg?style=flat-square&logo=qt" alt="Qt 6" />
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg?style=flat-square" alt="Platform" />
@@ -26,6 +27,20 @@ The repository is organized into three primary components:
    A cross-platform Qt 6 / C++ desktop application providing real-time DSP signal chain visualization, interactive parametric EQ design, FIR impulse response filtering, acoustic room correction wizards, headphone AutoEQ / Oratory1990 preset databases, and floating mini-players.
 3. **[ALSA Rate Notify Plugin (`plugins/`)](plugins/README.md)**:
    A native Linux ALSA `ioplug` module enabling automatic, bit-perfect sample rate and format switching over `snd-aloop` without audio drops.
+
+---
+
+## Downloads
+
+Standalone, pre-built packages of **CDSP Studio** are automatically published with every build:
+
+| Platform | Format | Direct Download |
+| :--- | :--- | :--- |
+| 🍏 **macOS** (Apple Silicon) | Standalone `.app` bundle | [CDSPStudio-macOS-arm64.zip](https://github.com/Wang-Yue/cdsp/releases/download/continuous/CDSPStudio-macOS-arm64.zip) |
+| 🐧 **Linux** (x86_64) | Standalone AppImage | [CDSPStudio-Linux-x86_64.AppImage](https://github.com/Wang-Yue/cdsp/releases/download/continuous/CDSPStudio-Linux-x86_64.AppImage) |
+| 🪟 **Windows** (x86_64) | Standalone Executable | [CDSPStudio-Windows-x86_64.exe](https://github.com/Wang-Yue/cdsp/releases/download/continuous/CDSPStudio-Windows-x86_64.exe) |
+
+> All builds, tags, and checksums (`SHA256SUMS.txt`) are available on the **[Releases](https://github.com/Wang-Yue/cdsp/releases)** page. Downloads are 100% public and do not require a GitHub account.
 
 ---
 

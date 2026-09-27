@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
 
@@ -217,9 +218,64 @@ jobs:
         shell: msys2 {0}
         run: ctest --test-dir build --output-on-failure
 
+      - name: Package CDSP Studio (Windows)
+        shell: msys2 {0}
+        run: cp build/bin/CDSPStudio.exe build/bin/CDSPStudio-Windows-x86_64.exe
+
       - name: Upload Windows Studio Artifact
         uses: actions/upload-artifact@v4
         with:
           name: CDSPStudio-Windows-x86_64
-          path: build/bin/CDSPStudio.exe
+          path: build/bin/CDSPStudio-Windows-x86_64.exe
           if-no-files-found: error
+
+  release:
+    name: Publish Continuous Release
+    needs: [macos, linux, windows, linux-sanitizers]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Compute SHA256 checksums
+        run: |
+          cd release-assets
+          sha256sum CDSPStudio* > SHA256SUMS.txt
+          ls -la
+
+      - name: Update continuous tag
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f continuous ${{ github.sha }}
+          git push -f origin continuous
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'continuous' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Continuous Build' }}
+          body: |
+            Automated continuous release built from commit ${{ github.sha }}.
+
+            ### Downloads
+            - **macOS (Apple Silicon)**: [`CDSPStudio-macOS-arm64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'continuous' }}/CDSPStudio-macOS-arm64.zip)
+            - **Linux (x86_64)**: [`CDSPStudio-Linux-x86_64.AppImage`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'continuous' }}/CDSPStudio-Linux-x86_64.AppImage)
+            - **Windows (x86_64)**: [`CDSPStudio-Windows-x86_64.exe`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'continuous' }}/CDSPStudio-Windows-x86_64.exe)
+
+            Verify integrity with `SHA256SUMS.txt`.
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
