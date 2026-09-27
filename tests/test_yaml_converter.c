@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -214,6 +215,110 @@ TEST(YamlConverter_QuotedKeyListItems) {
   ASSERT_STR_EQ("filter2", cJSON_GetArrayItem(names, 1)->valuestring);
 
   cJSON_Delete(json);
+}
+
+TEST(YamlConverter_FlowSequence) {
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json("names: [Bass, Treble]", &err);
+  ASSERT_TRUE(json != NULL);
+  cJSON *names = cJSON_GetObjectItem(json, "names");
+  ASSERT_TRUE(names != NULL && cJSON_IsArray(names));
+  ASSERT_EQ(2, cJSON_GetArraySize(names));
+  ASSERT_STR_EQ("Bass", cJSON_GetArrayItem(names, 0)->valuestring);
+  ASSERT_STR_EQ("Treble", cJSON_GetArrayItem(names, 1)->valuestring);
+  cJSON_Delete(json);
+}
+
+TEST(YamlConverter_FlowMapping) {
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json("p: {type: Gain, gain: -3}", &err);
+  ASSERT_TRUE(json != NULL);
+  cJSON *p = cJSON_GetObjectItem(json, "p");
+  ASSERT_TRUE(p != NULL && cJSON_IsObject(p));
+  ASSERT_STR_EQ("Gain", cJSON_GetObjectItem(p, "type")->valuestring);
+  ASSERT_EQ(-3, cJSON_GetObjectItem(p, "gain")->valueint);
+  cJSON_Delete(json);
+}
+
+TEST(YamlConverter_NestedFlowSequenceInList) {
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json("- [b, c]", &err);
+  ASSERT_TRUE(json != NULL && cJSON_IsArray(json));
+  cJSON *inner = cJSON_GetArrayItem(json, 0);
+  ASSERT_TRUE(inner != NULL && cJSON_IsArray(inner));
+  ASSERT_EQ(2, cJSON_GetArraySize(inner));
+  ASSERT_STR_EQ("b", cJSON_GetArrayItem(inner, 0)->valuestring);
+  ASSERT_STR_EQ("c", cJSON_GetArrayItem(inner, 1)->valuestring);
+  cJSON_Delete(json);
+}
+
+TEST(YamlConverter_HashInUnquotedScalar) {
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json("desc: a#b", &err);
+  ASSERT_TRUE(json != NULL);
+  cJSON *desc = cJSON_GetObjectItem(json, "desc");
+  ASSERT_TRUE(desc != NULL && cJSON_IsString(desc));
+  ASSERT_STR_EQ("a#b", desc->valuestring);
+  cJSON_Delete(json);
+}
+
+TEST(YamlConverter_AnchorsAndAliases) {
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json("a: &g\n  q: 1\nb: *g", &err);
+  ASSERT_TRUE(json != NULL);
+  cJSON *a_node = cJSON_GetObjectItem(json, "a");
+  cJSON *b_node = cJSON_GetObjectItem(json, "b");
+  ASSERT_TRUE(a_node != NULL && cJSON_IsObject(a_node));
+  ASSERT_TRUE(b_node != NULL && cJSON_IsObject(b_node));
+  ASSERT_EQ(1, cJSON_GetObjectItem(a_node, "q")->valueint);
+  ASSERT_EQ(1, cJSON_GetObjectItem(b_node, "q")->valueint);
+  cJSON_Delete(json);
+}
+
+TEST(YamlConverter_EscapedSingleQuote) {
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json("key: 'it''s'", &err);
+  ASSERT_TRUE(json != NULL);
+  cJSON *k = cJSON_GetObjectItem(json, "key");
+  ASSERT_TRUE(k != NULL && cJSON_IsString(k));
+  ASSERT_STR_EQ("it's", k->valuestring);
+  cJSON_Delete(json);
+}
+
+TEST(YamlConverter_HexEscapeInDoubleQuote) {
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json("key: \"a\\x41\"", &err);
+  ASSERT_TRUE(json != NULL);
+  cJSON *k = cJSON_GetObjectItem(json, "key");
+  ASSERT_TRUE(k != NULL && cJSON_IsString(k));
+  ASSERT_STR_EQ("aA", k->valuestring);
+  cJSON_Delete(json);
+}
+
+TEST(YamlConverter_InfinityFloat) {
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json("val: .inf", &err);
+  ASSERT_TRUE(json != NULL);
+  cJSON *k = cJSON_GetObjectItem(json, "val");
+  ASSERT_TRUE(k != NULL && cJSON_IsNumber(k));
+  ASSERT_TRUE(isinf(k->valuedouble));
+  cJSON_Delete(json);
+}
+
+TEST(YamlConverter_RejectTabIndentation) {
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json("a:\n\tb: 1", &err);
+  ASSERT_TRUE(json == NULL);
+  ASSERT_TRUE(err != NULL);
+  free(err);
+}
+
+TEST(YamlConverter_RejectBadIndentation) {
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json("a:\n  b: 1\n c: 2", &err);
+  ASSERT_TRUE(json == NULL);
+  ASSERT_TRUE(err != NULL);
+  free(err);
 }
 
 TEST(YamlConverter_ValidateConfigFileYaml) {

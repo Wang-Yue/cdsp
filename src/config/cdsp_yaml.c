@@ -1,552 +1,363 @@
 #include "config/cdsp_yaml.h"
 
-#include <ctype.h>
-#include <stdbool.h>
-#include <stdint.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <yaml.h>
 
 #include "config/cJSON.h"
 
-/* --- Dynamic String Buffer --- */
+#define MAX_YAML_DEPTH 128
+
+/* --- Dynamic Buffer for libyaml Emitter Output --- */
 
 typedef struct {
   char *data;
   size_t size;
   size_t capacity;
-} buf_t;
+} yaml_buffer_t;
 
-static void buf_init(buf_t *b) {
-  b->capacity = 256;
-  b->size = 0;
-  b->data = (char *)malloc(b->capacity);
-  if (b->data)
-    b->data[0] = '\0';
-}
-
-static void buf_append_str(buf_t *b, const char *str) {
-  if (!str || !b->data)
-    return;
-  size_t len = strlen(str);
-  if (b->size + len + 1 > b->capacity) {
-    size_t new_cap = (b->capacity + len + 256) * 2;
+static int yaml_buf_write_handler(void *data, unsigned char *buffer,
+                                  size_t size) {
+  yaml_buffer_t *b = (yaml_buffer_t *)data;
+  if (!b)
+    return 0;
+  if (b->size + size + 1 > b->capacity) {
+    size_t new_cap = (b->capacity + size + 256) * 2;
     char *new_data = (char *)realloc(b->data, new_cap);
     if (!new_data)
-      return;
+      return 0;
     b->data = new_data;
     b->capacity = new_cap;
   }
-  memcpy(b->data + b->size, str, len);
-  b->size += len;
+  memcpy(b->data + b->size, buffer, size);
+  b->size += size;
   b->data[b->size] = '\0';
+  return 1;
 }
 
-static void buf_append_indent(buf_t *b, int indent) {
-  for (int i = 0; i < indent; ++i) {
-    buf_append_str(b, " ");
-  }
-}
+/* --- YAML Document to cJSON Tree --- */
 
-static char *buf_detach(buf_t *b) {
-  char *res = b->data;
-  b->data = NULL;
-  b->size = 0;
-  b->capacity = 0;
-  return res;
-}
+static cJSON *yaml_node_to_json(yaml_document_t *doc, yaml_node_t *node,
+                                int depth, char **out_err) {
+  if (!node)
+    return cJSON_CreateNull();
 
-/* --- JSON to YAML Emitter --- */
-
-static bool needs_quotes(const char *str) {
-  if (!str || !*str)
-    return true;
-  if (strcmp(str, "true") == 0 || strcmp(str, "false") == 0 ||
-      strcmp(str, "yes") == 0 || strcmp(str, "no") == 0 ||
-      strcmp(str, "null") == 0 || strcmp(str, "~") == 0) {
-    return true;
-  }
-  for (const char *p = str; *p; ++p) {
-    if (strchr(":{}[]#,&\n*?|-<>=!%@`'\"", *p))
-      return true;
-    if (isspace((unsigned char)*p))
-      return true;
-  }
-  char *endptr = NULL;
-  strtod(str, &endptr);
-  if (endptr && *endptr == '\0')
-    return true;
-  return false;
-}
-
-static void emit_string_scalar(buf_t *b, const char *str) {
-  if (!str) {
-    buf_append_str(b, "null");
-    return;
-  }
-  if (!needs_quotes(str)) {
-    buf_append_str(b, str);
-    return;
-  }
-  buf_append_str(b, "\"");
-  for (const char *p = str; *p; ++p) {
-    if (*p == '"') {
-      buf_append_str(b, "\\\"");
-    } else if (*p == '\\') {
-      buf_append_str(b, "\\\\");
-    } else if (*p == '\n') {
-      buf_append_str(b, "\\n");
-    } else if (*p == '\r') {
-      buf_append_str(b, "\\r");
-    } else if (*p == '\t') {
-      buf_append_str(b, "\\t");
-    } else {
-      char tmp[2] = {*p, '\0'};
-      buf_append_str(b, tmp);
-    }
-  }
-  buf_append_str(b, "\"");
-}
-
-static void emit_yaml_node(const cJSON *item, int indent, buf_t *b,
-                           bool is_array_element) {
-  if (!item)
-    return;
-
-  if (cJSON_IsObject(item)) {
-    if (!item->child) {
-      buf_append_str(b, "{}\n");
-      return;
-    }
-    if (is_array_element) {
-      // First line of array element is already indented with '- '
-    }
-    bool first = true;
-    for (const cJSON *child = item->child; child; child = child->next) {
-      if (!first || !is_array_element) {
-        buf_append_indent(b, indent);
-      }
-      first = false;
-      if (child->string) {
-        if (needs_quotes(child->string)) {
-          emit_string_scalar(b, child->string);
-        } else {
-          buf_append_str(b, child->string);
-        }
-        buf_append_str(b, ": ");
-      }
-      if (cJSON_IsObject(child)) {
-        buf_append_str(b, "\n");
-        emit_yaml_node(child, indent + 2, b, false);
-      } else if (cJSON_IsArray(child)) {
-        if (!child->child) {
-          buf_append_str(b, "[]\n");
-        } else {
-          buf_append_str(b, "\n");
-          emit_yaml_node(child, indent + 2, b, false);
-        }
-      } else {
-        emit_yaml_node(child, 0, b, false);
-        buf_append_str(b, "\n");
-      }
-    }
-  } else if (cJSON_IsArray(item)) {
-    if (!item->child) {
-      buf_append_str(b, "[]\n");
-      return;
-    }
-    for (const cJSON *child = item->child; child; child = child->next) {
-      buf_append_indent(b, indent);
-      buf_append_str(b, "- ");
-      if (cJSON_IsObject(child)) {
-        emit_yaml_node(child, indent + 2, b, true);
-      } else if (cJSON_IsArray(child)) {
-        buf_append_str(b, "\n");
-        emit_yaml_node(child, indent + 2, b, false);
-      } else {
-        emit_yaml_node(child, 0, b, false);
-        buf_append_str(b, "\n");
-      }
-    }
-  } else if (cJSON_IsString(item)) {
-    emit_string_scalar(b, item->valuestring);
-  } else if (cJSON_IsNumber(item)) {
-    char num_buf[64];
-    int64_t int_val = (int64_t)item->valuedouble;
-    if (item->valuedouble == (double)int_val) {
-      snprintf(num_buf, sizeof(num_buf), "%lld", (long long)int_val);
-    } else {
-      snprintf(num_buf, sizeof(num_buf), "%.15g", item->valuedouble);
-    }
-    buf_append_str(b, num_buf);
-  } else if (cJSON_IsTrue(item)) {
-    buf_append_str(b, "true");
-  } else if (cJSON_IsFalse(item)) {
-    buf_append_str(b, "false");
-  } else if (cJSON_IsNull(item)) {
-    buf_append_str(b, "null");
-  }
-}
-
-char *cdsp_json_to_yaml(const cJSON *json) {
-  if (!json)
+  if (depth > MAX_YAML_DEPTH) {
+    if (out_err && !*out_err)
+      *out_err = strdup("YAML document nesting depth exceeded maximum depth");
     return NULL;
-  buf_t b;
-  buf_init(&b);
-  emit_yaml_node(json, 0, &b, false);
-  return buf_detach(&b);
-}
+  }
 
-/* --- YAML to JSON Parser --- */
+  switch (node->type) {
+  case YAML_SCALAR_NODE: {
+    const char *val = (const char *)node->data.scalar.value;
 
-static char *trim_str(char *str) {
-  while (isspace((unsigned char)*str))
-    str++;
-  if (*str == 0)
-    return str;
-  char *end = str + strlen(str) - 1;
-  while (end > str && isspace((unsigned char)*end))
-    end--;
-  end[1] = '\0';
-  return str;
-}
+    // Explicitly quoted or block scalars are always strings
+    if (node->data.scalar.style != YAML_PLAIN_SCALAR_STYLE) {
+      return cJSON_CreateString(val ? val : "");
+    }
 
-static cJSON *parse_scalar_val(const char *str) {
-  if (!str || !*str || strcmp(str, "~") == 0 || strcasecmp(str, "null") == 0) {
+    // YAML nulls: empty, ~ or case-insensitive null
+    if (!val || !*val || strcmp(val, "~") == 0 ||
+        strcasecmp(val, "null") == 0) {
+      return cJSON_CreateNull();
+    }
+
+    // Case-insensitive booleans
+    if (strcasecmp(val, "true") == 0) {
+      return cJSON_CreateTrue();
+    }
+    if (strcasecmp(val, "false") == 0) {
+      return cJSON_CreateFalse();
+    }
+
+    // YAML special floats (.inf, +.inf, -.inf, .nan)
+    if (strcasecmp(val, ".inf") == 0 || strcasecmp(val, "+.inf") == 0) {
+      return cJSON_CreateNumber(INFINITY);
+    }
+    if (strcasecmp(val, "-.inf") == 0) {
+      return cJSON_CreateNumber(-INFINITY);
+    }
+    if (strcasecmp(val, ".nan") == 0) {
+      return cJSON_CreateNumber(NAN);
+    }
+
+    // Rely on cJSON to parse numbers and standard literals
+    cJSON *literal = cJSON_ParseWithOpts(val, NULL, 1);
+    if (literal) {
+      return literal;
+    }
+
+    // Unquoted plain string fallback
+    return cJSON_CreateString(val);
+  }
+
+  case YAML_SEQUENCE_NODE: {
+    cJSON *arr = cJSON_CreateArray();
+    if (!arr) {
+      if (out_err && !*out_err)
+        *out_err = strdup("Out of memory during YAML parsing");
+      return NULL;
+    }
+
+    for (yaml_node_item_t *item = node->data.sequence.items.start;
+         item < node->data.sequence.items.top; item++) {
+      yaml_node_t *child = yaml_document_get_node(doc, *item);
+      cJSON *child_json = yaml_node_to_json(doc, child, depth + 1, out_err);
+      if (!child_json) {
+        cJSON_Delete(arr);
+        return NULL;
+      }
+      cJSON_AddItemToArray(arr, child_json);
+    }
+    return arr;
+  }
+
+  case YAML_MAPPING_NODE: {
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) {
+      if (out_err && !*out_err)
+        *out_err = strdup("Out of memory during YAML parsing");
+      return NULL;
+    }
+
+    for (yaml_node_pair_t *pair = node->data.mapping.pairs.start;
+         pair < node->data.mapping.pairs.top; pair++) {
+      yaml_node_t *key_node = yaml_document_get_node(doc, pair->key);
+      yaml_node_t *val_node = yaml_document_get_node(doc, pair->value);
+
+      if (!key_node || key_node->type != YAML_SCALAR_NODE) {
+        cJSON_Delete(obj);
+        if (out_err && !*out_err)
+          *out_err = strdup("YAML mapping keys must be scalars");
+        return NULL;
+      }
+
+      const char *key_str = (const char *)key_node->data.scalar.value;
+      if (!key_str)
+        key_str = "";
+
+      if (cJSON_GetObjectItemCaseSensitive(obj, key_str) != NULL) {
+        cJSON_Delete(obj);
+        if (out_err && !*out_err) {
+          char err_buf[256];
+          snprintf(err_buf, sizeof(err_buf),
+                   "Duplicate YAML key '%s' in mapping", key_str);
+          *out_err = strdup(err_buf);
+        }
+        return NULL;
+      }
+
+      cJSON *val_json = yaml_node_to_json(doc, val_node, depth + 1, out_err);
+      if (!val_json) {
+        cJSON_Delete(obj);
+        return NULL;
+      }
+      cJSON_AddItemToObject(obj, key_str, val_json);
+    }
+    return obj;
+  }
+
+  case YAML_NO_NODE:
+  default:
     return cJSON_CreateNull();
   }
-  if (*str == '[' || *str == '{') {
-    cJSON *parsed = cJSON_Parse(str);
-    if (parsed)
-      return parsed;
-  }
-  if (strcasecmp(str, "true") == 0) {
-    return cJSON_CreateTrue();
-  }
-  if (strcasecmp(str, "false") == 0) {
-    return cJSON_CreateFalse();
-  }
-
-  size_t len = strlen(str);
-  if (len >= 2 && ((str[0] == '"' && str[len - 1] == '"') ||
-                   (str[0] == '\'' && str[len - 1] == '\''))) {
-    char *unquoted = (char *)malloc(len);
-    if (!unquoted)
-      return NULL;
-    size_t out_idx = 0;
-    for (size_t i = 1; i < len - 1; ++i) {
-      if (str[i] == '\\' && i + 1 < len - 1) {
-        i++;
-        if (str[i] == 'n')
-          unquoted[out_idx++] = '\n';
-        else if (str[i] == 't')
-          unquoted[out_idx++] = '\t';
-        else if (str[i] == 'r')
-          unquoted[out_idx++] = '\r';
-        else
-          unquoted[out_idx++] = str[i];
-      } else {
-        unquoted[out_idx++] = str[i];
-      }
-    }
-    unquoted[out_idx] = '\0';
-    cJSON *node = cJSON_CreateString(unquoted);
-    free(unquoted);
-    return node;
-  }
-
-  char *endptr = NULL;
-  double dval = strtod(str, &endptr);
-  if (endptr && *endptr == '\0') {
-    return cJSON_CreateNumber(dval);
-  }
-
-  return cJSON_CreateString(str);
 }
-
-static char *find_unquoted_colon(char *str) {
-  if (!str)
-    return NULL;
-  char in_quote = '\0';
-  for (char *p = str; *p; p++) {
-    if (in_quote) {
-      if (*p == in_quote) {
-        in_quote = '\0';
-      }
-    } else {
-      if (*p == '"' || *p == '\'') {
-        in_quote = *p;
-      } else if (*p == ':') {
-        return p;
-      }
-    }
-  }
-  return NULL;
-}
-
-typedef struct {
-  int indent;
-  cJSON *node;
-  bool is_array;
-} stack_frame_t;
 
 cJSON *cdsp_yaml_to_json(const char *yaml_str, char **out_err) {
+  if (out_err)
+    *out_err = NULL;
+
   if (!yaml_str) {
     if (out_err)
       *out_err = strdup("Null input YAML string");
     return NULL;
   }
 
-  const char *p = yaml_str;
-  while (isspace((unsigned char)*p))
-    p++;
-  if (*p == '{' || *p == '[') {
-    cJSON *json = cJSON_Parse(yaml_str);
-    if (!json && out_err) {
-      *out_err = strdup("Failed to parse inline JSON/YAML string");
-    }
-    return json;
+  yaml_parser_t parser;
+  if (!yaml_parser_initialize(&parser)) {
+    if (out_err)
+      *out_err = strdup("Failed to initialize libyaml parser");
+    return NULL;
   }
 
-  cJSON *root = NULL;
-  stack_frame_t stack[64];
-  int depth = 0;
+  yaml_parser_set_input_string(&parser, (const unsigned char *)yaml_str,
+                               strlen(yaml_str));
 
-  char line[4096];
-  const char *cur = yaml_str;
-
-  while (*cur) {
-    const char *next_line = strchr(cur, '\n');
-    size_t line_len = next_line ? (size_t)(next_line - cur) : strlen(cur);
-    if (line_len >= sizeof(line)) {
-      if (out_err)
-        *out_err =
-            strdup("YAML line exceeds maximum length of 4095 characters");
-      if (root)
-        cJSON_Delete(root);
-      return NULL;
-    }
-    memcpy(line, cur, line_len);
-    line[line_len] = '\0';
-    cur = next_line ? next_line + 1 : cur + line_len;
-
-    int indent = 0;
-    while (line[indent] == ' ')
-      indent++;
-    char *content = line + indent;
-
-    char *comment = strchr(content, '#');
-    if (comment) {
-      bool in_quote = false;
-      char q_char = 0;
-      for (char *s = content; s < comment; ++s) {
-        if ((*s == '"' || *s == '\'') && (!in_quote || q_char == *s)) {
-          in_quote = !in_quote;
-          q_char = in_quote ? *s : 0;
-        }
-      }
-      if (!in_quote)
-        *comment = '\0';
-    }
-
-    content = trim_str(content);
-    if (*content == '\0')
-      continue;
-
-    if (strcmp(content, "---") == 0) {
-      if (depth == 0)
-        continue;
-      if (out_err)
-        *out_err =
-            strdup("YAML syntax error: multiple documents not supported");
-      if (root)
-        cJSON_Delete(root);
-      return NULL;
-    }
-
-    if (content[0] == '&' || content[0] == '*') {
-      if (out_err)
-        *out_err = strdup(
-            "Unsupported YAML construct: anchors and aliases (&/*) are not "
-            "supported");
-      if (root)
-        cJSON_Delete(root);
-      return NULL;
-    }
-
-    bool is_list_item =
-        (content[0] == '-' && (content[1] == ' ' || content[1] == '\0'));
-
-#define PUSH_STACK(node_ptr, indent_val, array_flag)                           \
-  do {                                                                         \
-    if (depth >= 64) {                                                         \
-      if (out_err)                                                             \
-        *out_err = strdup(                                                     \
-            "YAML document nesting depth exceeds maximum of 63 levels");       \
-      if (root)                                                                \
-        cJSON_Delete(root);                                                    \
-      return NULL;                                                             \
-    }                                                                          \
-    stack[depth] = (stack_frame_t){                                            \
-        .indent = (indent_val), .node = (node_ptr), .is_array = (array_flag)}; \
-    depth++;                                                                   \
-  } while (0)
-
-#define CHECK_OOM(ptr)                                                         \
-  do {                                                                         \
-    if (!(ptr)) {                                                              \
-      if (out_err)                                                             \
-        *out_err = strdup("Out of memory during YAML parsing");                \
-      if (root)                                                                \
-        cJSON_Delete(root);                                                    \
-      return NULL;                                                             \
-    }                                                                          \
-  } while (0)
-
-    if (depth == 0) {
-      if (is_list_item) {
-        root = cJSON_CreateArray();
-        CHECK_OOM(root);
-        stack[0] =
-            (stack_frame_t){.indent = indent, .node = root, .is_array = true};
-      } else {
-        root = cJSON_CreateObject();
-        CHECK_OOM(root);
-        stack[0] =
-            (stack_frame_t){.indent = indent, .node = root, .is_array = false};
-      }
-      depth = 1;
-    } else {
-      while (depth > 1 && indent < stack[depth - 1].indent) {
-        if (is_list_item && depth > 1 &&
-            indent >= stack[depth - 1].indent - 2 && stack[depth - 1].node &&
-            (stack[depth - 1].node->type & 0xFF) == cJSON_Object &&
-            stack[depth - 1].node->child == NULL) {
-          stack[depth - 1].indent = indent;
-          break;
-        }
-        depth--;
-      }
-    }
-
-    stack_frame_t *top = &stack[depth - 1];
-
-    if (is_list_item) {
-      if (top->node && (top->node->type & 0xFF) == cJSON_Object &&
-          top->node->child == NULL) {
-        top->node->type = cJSON_Array;
-        top->is_array = true;
-      }
-      char *item_val = trim_str(content + 1);
-      if (*item_val == '\0') {
-        cJSON *new_obj = cJSON_CreateObject();
-        CHECK_OOM(new_obj);
-        cJSON_AddItemToArray(top->node, new_obj);
-        PUSH_STACK(new_obj, indent + 2, false);
-      } else {
-        char *colon = find_unquoted_colon(item_val);
-        if (colon) {
-          cJSON *new_obj = cJSON_CreateObject();
-          CHECK_OOM(new_obj);
-          cJSON_AddItemToArray(top->node, new_obj);
-          *colon = '\0';
-          char *key = trim_str(item_val);
-          if ((key[0] == '"' || key[0] == '\'') &&
-              key[strlen(key) - 1] == key[0] && strlen(key) >= 2) {
-            key[strlen(key) - 1] = '\0';
-            key++;
-          }
-          char *val = trim_str(colon + 1);
-          if (*val == '|' || *val == '>') {
-            if (out_err)
-              *out_err =
-                  strdup("Unsupported YAML construct: block scalar (|/>)");
-            if (root)
-              cJSON_Delete(root);
-            return NULL;
-          }
-          if (*val == '\0') {
-            cJSON *child = cJSON_CreateObject();
-            CHECK_OOM(child);
-            cJSON_AddItemToObject(new_obj, key, child);
-            PUSH_STACK(new_obj, indent + 2, false);
-            PUSH_STACK(child, indent + 4, false);
-          } else {
-            cJSON *scalar = parse_scalar_val(val);
-            CHECK_OOM(scalar);
-            cJSON_AddItemToObject(new_obj, key, scalar);
-            PUSH_STACK(new_obj, indent + 2, false);
-          }
-        } else {
-          cJSON *scalar = parse_scalar_val(item_val);
-          CHECK_OOM(scalar);
-          cJSON_AddItemToArray(top->node, scalar);
-        }
-      }
-    } else {
-      char *colon = find_unquoted_colon(content);
-      if (colon) {
-        *colon = '\0';
-        char *key = trim_str(content);
-        if ((key[0] == '"' || key[0] == '\'') &&
-            key[strlen(key) - 1] == key[0] && strlen(key) >= 2) {
-          key[strlen(key) - 1] = '\0';
-          key++;
-        }
-        char *val = trim_str(colon + 1);
-        if (*val == '|' || *val == '>') {
-          if (out_err)
-            *out_err = strdup("Unsupported YAML construct: block scalar (|/>)");
-          if (root)
-            cJSON_Delete(root);
-          return NULL;
-        }
-
-        if (cJSON_GetObjectItemCaseSensitive(top->node, key) != NULL) {
-          if (out_err) {
-            char err_buf[256];
-            snprintf(err_buf, sizeof(err_buf),
-                     "Duplicate YAML key '%s' in mapping", key);
-            *out_err = strdup(err_buf);
-          }
-          if (root)
-            cJSON_Delete(root);
-          return NULL;
-        }
-
-        if (*val == '\0') {
-          cJSON *placeholder = cJSON_CreateObject();
-          CHECK_OOM(placeholder);
-          cJSON_AddItemToObject(top->node, key, placeholder);
-          PUSH_STACK(placeholder, indent + 2, false);
-        } else {
-          cJSON *scalar = parse_scalar_val(val);
-          CHECK_OOM(scalar);
-          cJSON_AddItemToObject(top->node, key, scalar);
-        }
-      } else {
-        if (out_err) {
-          char err_buf[256];
+  yaml_document_t document;
+  if (!yaml_parser_load(&parser, &document)) {
+    if (out_err) {
+      char err_buf[512];
+      if (parser.problem) {
+        if (parser.context) {
           snprintf(err_buf, sizeof(err_buf),
-                   "YAML syntax error: unparsed line '%s'", content);
-          *out_err = strdup(err_buf);
+                   "YAML parse error: %s (line %zu, column %zu, while %s at "
+                   "line %zu, column %zu)",
+                   parser.problem, parser.problem_mark.line + 1,
+                   parser.problem_mark.column + 1, parser.context,
+                   parser.context_mark.line + 1,
+                   parser.context_mark.column + 1);
+        } else {
+          snprintf(err_buf, sizeof(err_buf),
+                   "YAML parse error: %s (line %zu, column %zu)",
+                   parser.problem, parser.problem_mark.line + 1,
+                   parser.problem_mark.column + 1);
         }
-        if (root)
-          cJSON_Delete(root);
-        return NULL;
+      } else {
+        snprintf(err_buf, sizeof(err_buf), "Unknown YAML syntax error");
       }
+      *out_err = strdup(err_buf);
     }
+    yaml_parser_delete(&parser);
+    return NULL;
   }
 
-#undef PUSH_STACK
-#undef CHECK_OOM
-
+  yaml_node_t *root = yaml_document_get_root_node(&document);
   if (!root) {
+    yaml_document_delete(&document);
+    yaml_parser_delete(&parser);
     if (out_err)
       *out_err = strdup("Empty or invalid YAML document");
     return NULL;
   }
 
-  return root;
+  // Check for multiple documents in stream
+  yaml_document_t doc2;
+  if (yaml_parser_load(&parser, &doc2)) {
+    if (yaml_document_get_root_node(&doc2) != NULL) {
+      yaml_document_delete(&doc2);
+      yaml_document_delete(&document);
+      yaml_parser_delete(&parser);
+      if (out_err)
+        *out_err =
+            strdup("YAML syntax error: multiple documents not supported");
+      return NULL;
+    }
+    yaml_document_delete(&doc2);
+  }
+
+  cJSON *root_json = yaml_node_to_json(&document, root, 0, out_err);
+  yaml_document_delete(&document);
+  yaml_parser_delete(&parser);
+
+  return root_json;
+}
+
+/* --- cJSON Tree to YAML String --- */
+
+static void configure_yaml_styles(yaml_document_t *doc, yaml_node_t *node) {
+  if (!node)
+    return;
+
+  if (node->type == YAML_MAPPING_NODE) {
+    if (node->data.mapping.pairs.start == node->data.mapping.pairs.top) {
+      node->data.mapping.style = YAML_FLOW_MAPPING_STYLE;
+      return;
+    }
+    node->data.mapping.style = YAML_BLOCK_MAPPING_STYLE;
+    for (yaml_node_pair_t *p = node->data.mapping.pairs.start;
+         p < node->data.mapping.pairs.top; p++) {
+      yaml_node_t *k = yaml_document_get_node(doc, p->key);
+      yaml_node_t *v = yaml_document_get_node(doc, p->value);
+
+      if (k && k->type == YAML_SCALAR_NODE) {
+        k->data.scalar.style = YAML_PLAIN_SCALAR_STYLE;
+      }
+      if (v && v->type == YAML_SCALAR_NODE) {
+        // Leave numbers, booleans, and plain strings unquoted; quote string
+        // literals that collide with JSON/YAML literals (e.g. "44100", "true")
+        const char *v_str = (const char *)v->data.scalar.value;
+        cJSON *lit = v_str ? cJSON_ParseWithOpts(v_str, NULL, 1) : NULL;
+        if (!lit) {
+          v->data.scalar.style = YAML_PLAIN_SCALAR_STYLE;
+        } else {
+          cJSON_Delete(lit);
+        }
+      }
+      configure_yaml_styles(doc, v);
+    }
+  } else if (node->type == YAML_SEQUENCE_NODE) {
+    if (node->data.sequence.items.start == node->data.sequence.items.top) {
+      node->data.sequence.style = YAML_FLOW_SEQUENCE_STYLE;
+      return;
+    }
+    node->data.sequence.style = YAML_BLOCK_SEQUENCE_STYLE;
+    for (yaml_node_item_t *it = node->data.sequence.items.start;
+         it < node->data.sequence.items.top; it++) {
+      yaml_node_t *v = yaml_document_get_node(doc, *it);
+      if (v && v->type == YAML_SCALAR_NODE) {
+        const char *v_str = (const char *)v->data.scalar.value;
+        cJSON *lit = v_str ? cJSON_ParseWithOpts(v_str, NULL, 1) : NULL;
+        if (!lit) {
+          v->data.scalar.style = YAML_PLAIN_SCALAR_STYLE;
+        } else {
+          cJSON_Delete(lit);
+        }
+      }
+      configure_yaml_styles(doc, v);
+    }
+  }
+}
+
+char *cdsp_json_to_yaml(const cJSON *json) {
+  if (!json)
+    return NULL;
+
+  char *json_str = cJSON_PrintUnformatted(json);
+  if (!json_str)
+    return NULL;
+
+  yaml_parser_t parser;
+  if (!yaml_parser_initialize(&parser)) {
+    free(json_str);
+    return NULL;
+  }
+
+  yaml_parser_set_input_string(&parser, (const unsigned char *)json_str,
+                               strlen(json_str));
+
+  yaml_document_t doc;
+  if (!yaml_parser_load(&parser, &doc)) {
+    yaml_parser_delete(&parser);
+    free(json_str);
+    return NULL;
+  }
+  yaml_parser_delete(&parser);
+  free(json_str);
+
+  configure_yaml_styles(&doc, yaml_document_get_root_node(&doc));
+
+  yaml_buffer_t buf = {
+      .data = (char *)malloc(256),
+      .size = 0,
+      .capacity = 256,
+  };
+  if (!buf.data) {
+    yaml_document_delete(&doc);
+    return NULL;
+  }
+  buf.data[0] = '\0';
+
+  yaml_emitter_t emitter;
+  if (!yaml_emitter_initialize(&emitter)) {
+    free(buf.data);
+    yaml_document_delete(&doc);
+    return NULL;
+  }
+
+  yaml_emitter_set_output(&emitter, yaml_buf_write_handler, &buf);
+  yaml_emitter_set_indent(&emitter, 2);
+  yaml_emitter_set_unicode(&emitter, 1);
+
+  if (!yaml_emitter_dump(&emitter, &doc)) {
+    free(buf.data);
+    yaml_emitter_delete(&emitter);
+    return NULL;
+  }
+
+  yaml_emitter_delete(&emitter);
+  return buf.data;
 }

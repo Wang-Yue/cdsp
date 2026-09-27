@@ -252,6 +252,7 @@ if(WIN32)
         UNICODE
         _UNICODE
         _USE_MATH_DEFINES
+        YAML_DECLARE_STATIC
     )
     target_link_libraries(dsp PUBLIC ws2_32 winmm ole32 uuid ksuser ksguid avrt)
 elseif(APPLE)
@@ -355,6 +356,37 @@ endif()
 
 if(NOT FFTW_FOUND_FLAG)
     message(FATAL_ERROR "FFTW3 (both double-precision 'fftw3' and single-precision 'fftw3f') is required to build cdsp.")
+endif()
+
+# -----------------------------------------------------------------------------
+# YAML Parser & Emitter (libyaml Required)
+# -----------------------------------------------------------------------------
+set(YAML_FOUND_FLAG FALSE)
+find_path(YAML_INCLUDE_DIR NAMES yaml.h PATHS /opt/homebrew/include /usr/local/include /usr/include)
+find_library(YAML_LIB NAMES yaml libyaml PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
+
+if(YAML_INCLUDE_DIR AND YAML_LIB)
+    target_include_directories(dsp PUBLIC ${YAML_INCLUDE_DIR})
+    target_link_libraries(dsp PUBLIC ${YAML_LIB})
+    set(YAML_FOUND_FLAG TRUE)
+elseif(PKG_CONFIG_FOUND)
+    pkg_check_modules(YAML QUIET IMPORTED_TARGET yaml-0.1)
+    if(TARGET PkgConfig::YAML)
+        target_link_libraries(dsp PUBLIC PkgConfig::YAML)
+        set(YAML_FOUND_FLAG TRUE)
+    endif()
+endif()
+
+if(NOT YAML_FOUND_FLAG)
+    find_package(yaml CONFIG QUIET)
+    if(TARGET yaml)
+        target_link_libraries(dsp PUBLIC yaml)
+        set(YAML_FOUND_FLAG TRUE)
+    endif()
+endif()
+
+if(NOT YAML_FOUND_FLAG)
+    message(FATAL_ERROR "libyaml is required to build cdsp.")
 endif()
 
 
