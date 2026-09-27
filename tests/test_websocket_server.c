@@ -1,4 +1,5 @@
 #include <cjson/cJSON.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -13,7 +14,6 @@
 #include "cdsp/processing.h"
 #include "engine/dsp_engine.h" // IWYU pragma: keep
 #include "server/websocket_server.h"
-#include "server/websocket_server_internal.h"
 #include "utils/cdsp_time.h"
 
 static void test_handle_command(websocket_server_t *server, int client_idx,
@@ -1761,6 +1761,33 @@ TEST(WebSocket_ReadAndValidateConfigDefaultsAndValidation) {
   ASSERT_STR_EQ("ConfigReadError",
                 cJSON_GetObjectItem(root, "result")->valuestring);
   ASSERT_TRUE(cJSON_GetObjectItem(root, "value") != NULL);
+  // 5. ReadConfigFile with non-existent file: fails with ConfigReadError
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(server, 0,
+                                  "{\"command\":\"ReadConfigFile\",\"value\":"
+                                  "\"/path/to/nonexistent/file.yml\"}",
+                                  resp, sizeof(resp));
+  root = cJSON_Parse(resp);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("ReadConfigFile",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("ConfigReadError",
+                cJSON_GetObjectItem(root, "result")->valuestring);
+  cJSON_Delete(root);
+
+  // 6. ValidateConfigFile with non-existent file: fails with ConfigReadError
+  memset(resp, 0, sizeof(resp));
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"ValidateConfigFile\",\"value\":\"/path/to/nonexistent/"
+      "file.yml\"}",
+      resp, sizeof(resp));
+  root = cJSON_Parse(resp);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_STR_EQ("ValidateConfigFile",
+                cJSON_GetObjectItem(root, "reply")->valuestring);
+  ASSERT_STR_EQ("ConfigReadError",
+                cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
 
   websocket_server_free(server);

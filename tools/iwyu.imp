@@ -1542,37 +1542,5 @@
       "\"Server/websocket_server.h\"",
       "public"
     ]
-  },
-  {
-    "include": [
-      "\"websocket_server_internal.h\"",
-      "private",
-      "\"Server/websocket_server_internal.h\"",
-      "public"
-    ]
-  },
-  {
-    "include": [
-      "\"ws_framing.h\"",
-      "private",
-      "\"Server/ws_framing.h\"",
-      "public"
-    ]
-  },
-  {
-    "include": [
-      "\"ws_handshake.h\"",
-      "private",
-      "\"Server/ws_handshake.h\"",
-      "public"
-    ]
-  },
-  {
-    "include": [
-      "\"ws_rpc_dispatcher.h\"",
-      "private",
-      "\"Server/ws_rpc_dispatcher.h\"",
-      "public"
-    ]
   }
 ]

@@ -897,6 +897,12 @@ int main(int argc, char **argv) {
   while (keep_running) {
     cdsp_sleep_ms(100);
     cdsp_engine_poll(engine);
+#ifdef ENABLE_WEBSOCKET
+    if (server && websocket_server_is_exit_requested(server)) {
+      logger_info(&g_logger, "Exit requested via WebSocket");
+      break;
+    }
+#endif
 #ifdef SIGHUP
     if (g_reload_requested) {
       g_reload_requested = 0;

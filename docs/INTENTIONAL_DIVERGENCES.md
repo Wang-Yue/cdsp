@@ -150,7 +150,7 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 * **Upstream Behavior**: Upstream hard-codes constant lower floors: `-200.0 dB` in `linear_to_db` and `1e-30` (`-300.0 dB`) in spectrum power calculation.
 * **`cdsp` Enhancement**:
   - **Internal DSP**: In [`../src/audio/processing_parameters.c`](../src/audio/processing_parameters.c), [`../src/utils/float_helpers.h`](../src/utils/float_helpers.h), and [`../src/audio/spectrum_analyzer.c`](../src/audio/spectrum_analyzer.c), `cdsp` retains pure IEEE 754 mathematical `-INFINITY` for zero-amplitude inputs.
-  - **JSON Serialization Boundary**: In [`Server/websocket_server.c`](../app/server/websocket_server.c) and [`Server/ws_rpc_dispatcher.c`](../app/server/ws_rpc_dispatcher.c), numbers are clamped to `-200.0f` only when serializing for the WebSocket RPC API.
+  - **JSON Serialization Boundary**: In [`app/server/websocket_server.c`](../app/server/websocket_server.c), numbers are clamped to `-200.0f` only when serializing for the WebSocket RPC API.
 * **Why `cdsp` Is Better**: Internal DSP mathematics remains completely free of arbitrary constant noise floors and software clamps, while JSON consumers never receive illegal non-finite tokens that violate RFC 8259.
 
 ### 3.4 Partial-Chunk Accurate RMS Metering
