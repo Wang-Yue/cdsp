@@ -23,7 +23,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
-          brew install fftw libyaml cjson libwebsockets blackhole-2ch blackhole-16ch qt dylibbundler
+          brew install fftw libyaml cjson libwebsockets blackhole-2ch blackhole-16ch qt
           sudo killall coreaudiod || true
           sleep 2
 
@@ -45,10 +45,10 @@ jobs:
       - name: Package CDSP Studio (.app)
         run: |
           export PATH="$(brew --prefix qt 2>/dev/null || echo /opt/homebrew/opt/qt)/bin:$PATH"
-          macdeployqt "build/bin/CDSP Studio.app" -always-overwrite || true
-          dylibbundler -od -b -x "build/bin/CDSP Studio.app/Contents/MacOS/CDSP Studio" \
-                       -d "build/bin/CDSP Studio.app/Contents/Frameworks" \
-                       -p "@executable_path/../Frameworks" || true
+          rm -f "$(brew --prefix qt 2>/dev/null)/share/qt/plugins/platforminputcontexts/libqtvirtualkeyboardplugin.dylib" 2>/dev/null || true
+          rm -f "/opt/homebrew/share/qt/plugins/platforminputcontexts/libqtvirtualkeyboardplugin.dylib" 2>/dev/null || true
+          macdeployqt "build/bin/CDSP Studio.app" -always-overwrite
+          rm -rf "build/bin/CDSP Studio.app/Contents/PlugIns/platforminputcontexts" 2>/dev/null || true
           codesign --force --deep --sign - "build/bin/CDSP Studio.app"
           ditto -c -k --keepParent "build/bin/CDSP Studio.app" build/bin/CDSPStudio-macOS-arm64.zip
 
