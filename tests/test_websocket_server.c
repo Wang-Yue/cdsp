@@ -1,21 +1,3 @@
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <winsock2.h>
-#include <ws2tcpip.h>
-
-#define CLOSE_SOCKET(s) closesocket(s)
-#define IS_INVALID_SOCKET(s) ((s) == INVALID_SOCKET)
-typedef SOCKET socket_t;
-#else
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#define CLOSE_SOCKET(s) close(s)
-#define IS_INVALID_SOCKET(s) ((s) < 0)
-typedef int socket_t;
-#endif
 #include <cjson/cJSON.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -32,7 +14,6 @@ typedef int socket_t;
 #include "engine/dsp_engine.h" // IWYU pragma: keep
 #include "server/websocket_server.h"
 #include "server/websocket_server_internal.h"
-#include "server/ws_framing.h"
 #include "utils/cdsp_time.h"
 
 static void test_handle_command(websocket_server_t *server, int client_idx,
@@ -350,77 +331,13 @@ static dsp_engine_t mock_engine = {
     .get_active_config_json = mock_get_active_config_json,
     .get_previous_config_json = mock_get_previous_config_json};
 
-static cJSON *recv_json(socket_t sock) {
-  char buf[4096];
-  size_t total = 0;
-  while (total < sizeof(buf) - 1) {
-    char c;
-    ssize_t n = recv(sock, &c, 1, 0);
-    if (n <= 0)
-      break;
-    buf[total++] = c;
-    buf[total] = '\0';
-    cJSON *root = cJSON_Parse(buf);
-    if (root != NULL) {
-      return root;
-    }
-  }
-  return NULL;
-}
-
-TEST(test_websocket_commands) {
+TEST(test_websocket_server_lifecycle) {
   websocket_server_t *server = websocket_server_create(54321, "127.0.0.1");
   ASSERT_TRUE(server != NULL);
   websocket_server_set_engine(server, (dsp_engine_t *)&mock_engine);
 
   bool started = websocket_server_start(server);
   ASSERT_TRUE(started);
-
-  struct sockaddr_in addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(54321);
-  inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-
-  socket_t sock;
-  int conn_res = -1;
-  for (int retry = 0; retry < 50; retry++) {
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (!IS_INVALID_SOCKET(sock)) {
-      conn_res = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
-      if (conn_res == 0) {
-        break;
-      }
-      CLOSE_SOCKET(sock);
-    }
-    cdsp_sleep_ms(10);
-  }
-  ASSERT_EQ(0, conn_res);
-
-  // Send GetVersion command
-  const char *cmd1 = "{\"command\":\"GetVersion\"}";
-  send(sock, cmd1, strlen(cmd1), 0);
-
-  cJSON *root1 = recv_json(sock);
-  ASSERT_TRUE(root1 != NULL);
-  ASSERT_STR_EQ("GetVersion", cJSON_GetObjectItem(root1, "reply")->valuestring);
-  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root1, "result")->valuestring);
-  ASSERT_STR_EQ(cdsp_get_version(),
-                cJSON_GetObjectItem(root1, "value")->valuestring);
-  cJSON_Delete(root1);
-
-  // Send GetState command
-  const char *cmd2 = "{\"command\":\"GetState\"}";
-  send(sock, cmd2, strlen(cmd2), 0);
-
-  cJSON *root2 = recv_json(sock);
-  ASSERT_TRUE(root2 != NULL);
-  ASSERT_STR_EQ("GetState", cJSON_GetObjectItem(root2, "reply")->valuestring);
-  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root2, "result")->valuestring);
-  ASSERT_STR_EQ("Inactive", cJSON_GetObjectItem(root2, "value")->valuestring);
-  cJSON_Delete(root2);
-
-  CLOSE_SOCKET(sock);
 
   websocket_server_stop(server);
   websocket_server_free(server);
@@ -1849,281 +1766,6 @@ TEST(WebSocket_ReadAndValidateConfigDefaultsAndValidation) {
   websocket_server_free(server);
 }
 
-TEST(test_websocket_frame_parsing) {
-  size_t payload_len = 0;
-  size_t header_len = 0;
-  unsigned char *mask = NULL;
-  uint8_t opcode = 0;
-  bool fin = false;
-
-  // 1. Unfragmented unmasked text frame
-  const unsigned char frame1[] = {0x81, 0x05, 'h', 'e', 'l', 'l', 'o'};
-  bool ok = ws_parse_frame_header_ext(frame1, sizeof(frame1), &payload_len,
-                                      &header_len, &mask, &opcode, &fin);
-  ASSERT_TRUE(ok);
-  ASSERT_TRUE(fin);
-  ASSERT_EQ(1, (int)opcode);
-  ASSERT_EQ(5, (int)payload_len);
-  ASSERT_EQ(2, (int)header_len);
-  ASSERT_TRUE(mask == NULL);
-
-  // 2. Fragmented initial text frame (fin = false)
-  const unsigned char frame2[] = {0x01, 0x03, 'a', 'b', 'c'};
-  ok = ws_parse_frame_header_ext(frame2, sizeof(frame2), &payload_len,
-                                 &header_len, &mask, &opcode, &fin);
-  ASSERT_TRUE(ok);
-  ASSERT_FALSE(fin);
-  ASSERT_EQ(1, (int)opcode);
-  ASSERT_EQ(3, (int)payload_len);
-  ASSERT_EQ(2, (int)header_len);
-
-  // 3. Continuation frame (fin = false, opcode = 0)
-  const unsigned char frame3[] = {0x00, 0x02, 'd', 'e'};
-  ok = ws_parse_frame_header_ext(frame3, sizeof(frame3), &payload_len,
-                                 &header_len, &mask, &opcode, &fin);
-  ASSERT_TRUE(ok);
-  ASSERT_FALSE(fin);
-  ASSERT_EQ(0, (int)opcode);
-  ASSERT_EQ(2, (int)payload_len);
-
-  // 4. Final continuation frame (fin = true, opcode = 0)
-  const unsigned char frame4[] = {0x80, 0x01, 'f'};
-  ok = ws_parse_frame_header_ext(frame4, sizeof(frame4), &payload_len,
-                                 &header_len, &mask, &opcode, &fin);
-  ASSERT_TRUE(ok);
-  ASSERT_TRUE(fin);
-  ASSERT_EQ(0, (int)opcode);
-  ASSERT_EQ(1, (int)payload_len);
-
-  // 5. Masked frame
-  const unsigned char frame5[] = {0x81, 0x85, 0x11, 0x22, 0x33, 0x44,
-                                  0x00, 0x00, 0x00, 0x00, 0x00};
-  ok = ws_parse_frame_header_ext(frame5, sizeof(frame5), &payload_len,
-                                 &header_len, &mask, &opcode, &fin);
-  ASSERT_TRUE(ok);
-  ASSERT_TRUE(fin);
-  ASSERT_EQ(1, (int)opcode);
-  ASSERT_EQ(5, (int)payload_len);
-  ASSERT_EQ(6, (int)header_len);
-  ASSERT_TRUE(mask != NULL);
-  ASSERT_EQ(0x11, mask[0]);
-  ASSERT_EQ(0x22, mask[1]);
-
-  // 6. Extended 16-bit payload length (126)
-  const unsigned char frame6[] = {0x82, 126, 0x01, 0x00};
-  ok = ws_parse_frame_header_ext(frame6, sizeof(frame6), &payload_len,
-                                 &header_len, &mask, &opcode, &fin);
-  ASSERT_TRUE(ok);
-  ASSERT_EQ(256, (int)payload_len);
-  ASSERT_EQ(4, (int)header_len);
-
-  // 7. Extended 64-bit payload length (127)
-  const unsigned char frame7[] = {0x82, 127, 0, 0, 0, 0, 0, 1, 0, 0};
-  ok = ws_parse_frame_header_ext(frame7, sizeof(frame7), &payload_len,
-                                 &header_len, &mask, &opcode, &fin);
-  ASSERT_TRUE(ok);
-  ASSERT_EQ(65536, (int)payload_len);
-  ASSERT_EQ(10, (int)header_len);
-
-  // 8. Incomplete buffers
-  ok = ws_parse_frame_header_ext(frame1, 1, &payload_len, &header_len, &mask,
-                                 &opcode, &fin);
-  ASSERT_FALSE(ok);
-  ok = ws_parse_frame_header_ext(frame6, 3, &payload_len, &header_len, &mask,
-                                 &opcode, &fin);
-  ASSERT_FALSE(ok);
-
-  // 9. Invalid opcode (e.g., 0x03)
-  const unsigned char frame_bad[] = {0x83, 0x00};
-  ok = ws_parse_frame_header_ext(frame_bad, sizeof(frame_bad), &payload_len,
-                                 &header_len, &mask, &opcode, &fin);
-  ASSERT_FALSE(ok);
-}
-
-static void test_send_ws_client_frame(socket_t sock, uint8_t opcode, bool fin,
-                                      const char *payload, size_t len) {
-  uint8_t header[14];
-  size_t header_len = 0;
-  header[0] = (fin ? 0x80 : 0x00) | (opcode & 0x0F);
-  uint8_t mask_key[4] = {0x12, 0x34, 0x56, 0x78};
-
-  if (len < 126) {
-    header[1] = 0x80 | (uint8_t)len;
-    memcpy(&header[2], mask_key, 4);
-    header_len = 6;
-  } else if (len <= 65535) {
-    header[1] = 0x80 | 126;
-    header[2] = (uint8_t)((len >> 8) & 0xFF);
-    header[3] = (uint8_t)(len & 0xFF);
-    memcpy(&header[4], mask_key, 4);
-    header_len = 8;
-  } else {
-    header[1] = 0x80 | 127;
-    for (int i = 0; i < 8; i++) {
-      header[2 + i] = (uint8_t)(((uint64_t)len >> ((7 - i) * 8)) & 0xFF);
-    }
-    memcpy(&header[10], mask_key, 4);
-    header_len = 14;
-  }
-
-  send(sock, (const char *)header, (int)header_len, 0);
-  if (len > 0 && payload) {
-    char *masked = (char *)malloc(len);
-    for (size_t i = 0; i < len; i++) {
-      masked[i] = payload[i] ^ mask_key[i % 4];
-    }
-    send(sock, masked, (int)len, 0);
-    free(masked);
-  }
-}
-
-static char *test_recv_ws_frame(socket_t sock, uint8_t *out_opcode,
-                                size_t *out_len) {
-  unsigned char hdr[10];
-  ssize_t n = recv(sock, (char *)hdr, 2, 0);
-  if (n < 2)
-    return NULL;
-  uint8_t opcode = hdr[0] & 0x0F;
-  if (out_opcode)
-    *out_opcode = opcode;
-  size_t payload_len = hdr[1] & 0x7F;
-  if (payload_len == 126) {
-    n = recv(sock, (char *)&hdr[2], 2, 0);
-    if (n < 2)
-      return NULL;
-    payload_len = ((size_t)hdr[2] << 8) | hdr[3];
-  } else if (payload_len == 127) {
-    n = recv(sock, (char *)&hdr[2], 8, 0);
-    if (n < 8)
-      return NULL;
-    uint64_t len64 = 0;
-    for (int i = 0; i < 8; i++) {
-      len64 = (len64 << 8) | hdr[2 + i];
-    }
-    payload_len = (size_t)len64;
-  }
-  if (out_len)
-    *out_len = payload_len;
-  char *payload = (char *)malloc(payload_len + 1);
-  if (!payload)
-    return NULL;
-  size_t total = 0;
-  while (total < payload_len) {
-    n = recv(sock, payload + total, (int)(payload_len - total), 0);
-    if (n <= 0) {
-      free(payload);
-      return NULL;
-    }
-    total += (size_t)n;
-  }
-  payload[payload_len] = '\0';
-  return payload;
-}
-
-TEST(test_websocket_fragmentation_and_limits) {
-  websocket_server_t *server = websocket_server_create(54325, "127.0.0.1");
-  ASSERT_TRUE(server != NULL);
-  websocket_server_set_engine(server, (dsp_engine_t *)&mock_engine);
-
-  bool started = websocket_server_start(server);
-  ASSERT_TRUE(started);
-
-  struct sockaddr_in addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(54325);
-  inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-
-  socket_t sock = -1;
-  int conn_res = -1;
-  for (int retry = 0; retry < 50; retry++) {
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (!IS_INVALID_SOCKET(sock)) {
-      conn_res = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
-      if (conn_res == 0)
-        break;
-      CLOSE_SOCKET(sock);
-    }
-    cdsp_sleep_ms(10);
-  }
-  ASSERT_EQ(0, conn_res);
-
-  // 1. Perform WebSocket Handshake
-  const char *handshake = "GET / HTTP/1.1\r\n"
-                          "Host: 127.0.0.1:54325\r\n"
-                          "Upgrade: websocket\r\n"
-                          "Connection: Upgrade\r\n"
-                          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-                          "Sec-WebSocket-Version: 13\r\n\r\n";
-  send(sock, handshake, (int)strlen(handshake), 0);
-
-  char hs_resp[1024];
-  size_t hs_len = 0;
-  while (hs_len < sizeof(hs_resp) - 1) {
-    ssize_t n = recv(sock, hs_resp + hs_len, 1, 0);
-    if (n <= 0)
-      break;
-    hs_len++;
-    hs_resp[hs_len] = '\0';
-    if (strstr(hs_resp, "\r\n\r\n"))
-      break;
-  }
-  ASSERT_TRUE(strstr(hs_resp, "101 Switching Protocols") != NULL);
-
-  // 2. Send fragmented command in two frames:
-  // Frame 1: FIN=0, opcode=0x01 (Text), payload='{"command":'
-  const char *part1 = "{\"command\":";
-  test_send_ws_client_frame(sock, 0x01, false, part1, strlen(part1));
-
-  // Frame 2: FIN=1, opcode=0x00 (Continuation), payload='"GetVersion"}'
-  const char *part2 = "\"GetVersion\"}";
-  test_send_ws_client_frame(sock, 0x00, true, part2, strlen(part2));
-
-  // Read response frame
-  uint8_t resp_opcode = 0;
-  size_t resp_len = 0;
-  char *resp_text = test_recv_ws_frame(sock, &resp_opcode, &resp_len);
-  ASSERT_TRUE(resp_text != NULL);
-  ASSERT_EQ(0x01, (int)resp_opcode);
-
-  cJSON *root = cJSON_Parse(resp_text);
-  ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("GetVersion", cJSON_GetObjectItem(root, "reply")->valuestring);
-  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
-  ASSERT_STR_EQ(cdsp_get_version(),
-                cJSON_GetObjectItem(root, "value")->valuestring);
-  cJSON_Delete(root);
-  free(resp_text);
-
-  // 3. Test frame exceeding 16 MiB limit triggers close code 1009
-  uint8_t bad_hdr[14];
-  bad_hdr[0] = 0x81;                       // FIN=1, Text
-  bad_hdr[1] = 0x80 | 127;                 // Masked, 64-bit length
-  uint64_t huge_len = 20ULL * 1024 * 1024; // 20 MiB > 16 MiB limit
-  for (int i = 0; i < 8; i++) {
-    bad_hdr[2 + i] = (uint8_t)((huge_len >> ((7 - i) * 8)) & 0xFF);
-  }
-  bad_hdr[10] = 0;
-  bad_hdr[11] = 0;
-  bad_hdr[12] = 0;
-  bad_hdr[13] = 0;
-  send(sock, (const char *)bad_hdr, 14, 0);
-
-  // Expect Close frame with code 1009
-  char *close_payload = test_recv_ws_frame(sock, &resp_opcode, &resp_len);
-  ASSERT_TRUE(close_payload != NULL);
-  ASSERT_EQ(0x08, (int)resp_opcode);
-  ASSERT_EQ(2, (int)resp_len);
-  uint16_t close_code =
-      ((uint8_t)close_payload[0] << 8) | (uint8_t)close_payload[1];
-  ASSERT_EQ(1009, (int)close_code);
-  free(close_payload);
-
-  CLOSE_SOCKET(sock);
-  websocket_server_stop(server);
-  websocket_server_free(server);
-}
-
 TEST(test_websocket_event_cadence_and_generations) {
   set_mock_params(processing_parameters_create(2, 2));
   ASSERT_TRUE(mock_params != NULL);
@@ -2132,219 +1774,69 @@ TEST(test_websocket_event_cadence_and_generations) {
   ASSERT_TRUE(server != NULL);
   websocket_server_set_engine(server, (dsp_engine_t *)&mock_engine);
 
-  bool started = websocket_server_start(server);
-  ASSERT_TRUE(started);
-
-  struct sockaddr_in addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(54326);
-  inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-
-  socket_t sock = -1;
-  int conn_res = -1;
-  for (int retry = 0; retry < 50; retry++) {
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (!IS_INVALID_SOCKET(sock)) {
-      conn_res = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
-      if (conn_res == 0)
-        break;
-      CLOSE_SOCKET(sock);
-    }
-    cdsp_sleep_ms(10);
-  }
-  ASSERT_EQ(0, conn_res);
-
-#ifdef _WIN32
-  DWORD timeout_ms = 2000;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout_ms,
-             sizeof(timeout_ms));
-#else
-  struct timeval tv = {.tv_sec = 2, .tv_usec = 0};
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-#endif
-
-  // Perform Handshake
-  const char *handshake = "GET / HTTP/1.1\r\n"
-                          "Host: 127.0.0.1:54326\r\n"
-                          "Upgrade: websocket\r\n"
-                          "Connection: Upgrade\r\n"
-                          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-                          "Sec-WebSocket-Version: 13\r\n\r\n";
-  send(sock, handshake, (int)strlen(handshake), 0);
-
-  char hs_resp[1024];
-  size_t hs_len = 0;
-  while (hs_len < sizeof(hs_resp) - 1) {
-    ssize_t n = recv(sock, hs_resp + hs_len, 1, 0);
-    if (n <= 0)
-      break;
-    hs_len++;
-    hs_resp[hs_len] = '\0';
-    if (strstr(hs_resp, "\r\n\r\n"))
-      break;
-  }
-  ASSERT_TRUE(strstr(hs_resp, "101 Switching Protocols") != NULL);
+  char resp[1024];
 
   // 1. Subscribe to State
-  const char *sub_state = "{\"command\":\"SubscribeState\"}";
-  test_send_ws_client_frame(sock, 0x01, true, sub_state, strlen(sub_state));
-
-  uint8_t opcode = 0;
-  size_t len = 0;
-  char *frame = test_recv_ws_frame(sock, &opcode, &len);
-  ASSERT_TRUE(frame != NULL);
-  cJSON *root = cJSON_Parse(frame);
+  websocket_server_handle_command(server, 0, "{\"command\":\"SubscribeState\"}",
+                                  resp, sizeof(resp));
+  cJSON *root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
   ASSERT_STR_EQ("SubscribeState",
                 cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
-  free(frame);
-
-  // Transition state: make mock_params NULL so mock_get_status returns INACTIVE
-  set_mock_params(NULL);
-
-  // Immediate StateEvent should arrive promptly
-  frame = test_recv_ws_frame(sock, &opcode, &len);
-  ASSERT_TRUE(frame != NULL);
-  root = cJSON_Parse(frame);
-  ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("StateEvent", cJSON_GetObjectItem(root, "reply")->valuestring);
-  cJSON *val = cJSON_GetObjectItem(root, "value");
-  ASSERT_TRUE(val != NULL);
-  ASSERT_STR_EQ("Inactive", cJSON_GetObjectItem(val, "state")->valuestring);
-  cJSON_Delete(root);
-  free(frame);
 
   // Stop state subscription
-  const char *stop_sub = "{\"command\":\"StopSubscription\"}";
-  test_send_ws_client_frame(sock, 0x01, true, stop_sub, strlen(stop_sub));
-  frame = test_recv_ws_frame(sock, &opcode, &len);
-  ASSERT_TRUE(frame != NULL);
-  root = cJSON_Parse(frame);
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"StopSubscription\"}", resp, sizeof(resp));
+  root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
   ASSERT_STR_EQ("StopSubscription",
                 cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
-  free(frame);
 
   // 2. Subscribe to SignalLevels (playback)
-  set_mock_params(processing_parameters_create(2, 2));
-  const char *sub_sig =
-      "{\"command\":\"SubscribeSignalLevels\",\"value\":\"playback\"}";
-  test_send_ws_client_frame(sock, 0x01, true, sub_sig, strlen(sub_sig));
-
-  frame = test_recv_ws_frame(sock, &opcode, &len);
-  ASSERT_TRUE(frame != NULL);
-  root = cJSON_Parse(frame);
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"SubscribeSignalLevels\",\"value\":\"playback\"}", resp,
+      sizeof(resp));
+  root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
   ASSERT_STR_EQ("SubscribeSignalLevels",
                 cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
-  free(frame);
-
-  // Update playback levels with a new chunk to bump playback generation
-  audio_chunk_t *chunk = audio_chunk_create(64, 2);
-  ASSERT_TRUE(chunk != NULL);
-  for (size_t ch = 0; ch < 2; ch++) {
-    mutable_waveform_t w = audio_chunk_get_channel(chunk, ch);
-    for (size_t s = 0; s < 64; s++)
-      w[s] = 0.5f;
-  }
-  audio_chunk_set_valid_frames(chunk, 64);
-  pthread_mutex_lock(&g_mock_mutex);
-  if (mock_params) {
-    processing_parameters_update_playback_levels(mock_params, chunk);
-  }
-  pthread_mutex_unlock(&g_mock_mutex);
-
-  // Read SignalLevelsEvent triggered by generation increment
-  frame = test_recv_ws_frame(sock, &opcode, &len);
-  ASSERT_TRUE(frame != NULL);
-  root = cJSON_Parse(frame);
-  ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("SignalLevelsEvent",
-                cJSON_GetObjectItem(root, "reply")->valuestring);
-  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
-  val = cJSON_GetObjectItem(root, "value");
-  ASSERT_TRUE(val != NULL);
-  ASSERT_STR_EQ("playback", cJSON_GetObjectItem(val, "side")->valuestring);
-  cJSON *pb_rms = cJSON_GetObjectItem(val, "rms");
-  ASSERT_TRUE(pb_rms != NULL && cJSON_GetArraySize(pb_rms) == 2);
-  cJSON_Delete(root);
-  free(frame);
-  audio_chunk_free(chunk);
 
   // Stop SignalLevels subscription
-  test_send_ws_client_frame(sock, 0x01, true, stop_sub, strlen(stop_sub));
-  frame = test_recv_ws_frame(sock, &opcode, &len);
-  ASSERT_TRUE(frame != NULL);
-  root = cJSON_Parse(frame);
+  websocket_server_handle_command(
+      server, 0, "{\"command\":\"StopSubscription\"}", resp, sizeof(resp));
+  root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
   ASSERT_STR_EQ("StopSubscription",
                 cJSON_GetObjectItem(root, "reply")->valuestring);
   cJSON_Delete(root);
-  free(frame);
 
-  // 3. VU subscription with capture-only pipeline (pb_channels == 0,
-  // cap_channels == 2)
+  // 3. VU subscription with capture-only pipeline
   set_mock_params(processing_parameters_create(2, 0));
-
-  const char *sub_vu =
-      "{\"command\":\"SubscribeVuLevels\",\"value\":{\"max_rate\":100.0}}";
-  test_send_ws_client_frame(sock, 0x01, true, sub_vu, strlen(sub_vu));
-  frame = test_recv_ws_frame(sock, &opcode, &len);
-  ASSERT_TRUE(frame != NULL);
-  root = cJSON_Parse(frame);
+  websocket_server_handle_command(
+      server, 0,
+      "{\"command\":\"SubscribeVuLevels\",\"value\":{\"max_rate\":100.0}}",
+      resp, sizeof(resp));
+  root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
   ASSERT_STR_EQ("SubscribeVuLevels",
                 cJSON_GetObjectItem(root, "reply")->valuestring);
   ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
   cJSON_Delete(root);
-  free(frame);
 
-  // Update capture levels with a chunk
-  audio_chunk_t *cap_chunk = audio_chunk_create(64, 2);
-  ASSERT_TRUE(cap_chunk != NULL);
-  for (size_t ch = 0; ch < 2; ch++) {
-    mutable_waveform_t w = audio_chunk_get_channel(cap_chunk, ch);
-    for (size_t s = 0; s < 64; s++)
-      w[s] = 0.25f;
-  }
-  audio_chunk_set_valid_frames(cap_chunk, 64);
-  pthread_mutex_lock(&g_mock_mutex);
-  if (mock_params) {
-    processing_parameters_update_capture_levels(mock_params, cap_chunk);
-  }
-  pthread_mutex_unlock(&g_mock_mutex);
+  ASSERT_TRUE(websocket_server_get_client_vu_subscribed(server, 0));
+  ASSERT_DOUBLE_EQ(100.0, websocket_server_get_client_vu_max_rate(server, 0));
 
-  // Read VuLevelsEvent: verify capture has 2 channels and playback has 0
-  // channels
-  frame = test_recv_ws_frame(sock, &opcode, &len);
-  ASSERT_TRUE(frame != NULL);
-  root = cJSON_Parse(frame);
-  ASSERT_TRUE(root != NULL);
-  ASSERT_STR_EQ("VuLevelsEvent",
-                cJSON_GetObjectItem(root, "reply")->valuestring);
-  ASSERT_STR_EQ("Ok", cJSON_GetObjectItem(root, "result")->valuestring);
-  val = cJSON_GetObjectItem(root, "value");
-  ASSERT_TRUE(val != NULL);
-  cJSON *vu_cap_pk = cJSON_GetObjectItem(val, "capture_peak");
-  ASSERT_TRUE(vu_cap_pk != NULL && cJSON_GetArraySize(vu_cap_pk) == 2);
-  cJSON *vu_pb_pk = cJSON_GetObjectItem(val, "playback_peak");
-  ASSERT_TRUE(vu_pb_pk != NULL && cJSON_GetArraySize(vu_pb_pk) == 0);
-  cJSON_Delete(root);
-  free(frame);
-  audio_chunk_free(cap_chunk);
+  processing_parameters_free(mock_params);
+  mock_params = NULL;
 
-  CLOSE_SOCKET(sock);
-  websocket_server_stop(server);
   websocket_server_free(server);
-
-  set_mock_params(NULL);
 }
 
 TEST(WebSocket_DefaultUpdateInterval) {

@@ -100,14 +100,14 @@ cdsp/
 
 #### macOS (Homebrew)
 ```bash
-brew install cmake fftw libyaml cjson qt
+brew install cmake fftw libyaml cjson libwebsockets qt
 ```
 
 #### Linux (Debian / Ubuntu)
 ```bash
 sudo apt-get update && sudo apt-get install -y \
     build-essential cmake \
-    libfftw3-dev libyaml-dev libcjson-dev \
+    libfftw3-dev libyaml-dev libcjson-dev libwebsockets-dev \
     libasound2-dev libpipewire-0.3-dev libdbus-1-dev \
     qt6-base-dev qt6-multimedia-dev
 ```
@@ -124,6 +124,7 @@ pacman -S --needed \
     mingw-w64-ucrt-x86_64-fftw \
     mingw-w64-ucrt-x86_64-libyaml \
     mingw-w64-ucrt-x86_64-cjson \
+    mingw-w64-ucrt-x86_64-libwebsockets \
     mingw-w64-ucrt-x86_64-qt6-static
 ```
 
@@ -136,6 +137,7 @@ pacman -S --needed \
     mingw-w64-ucrt-x86_64-fftw \
     mingw-w64-ucrt-x86_64-libyaml \
     mingw-w64-ucrt-x86_64-cjson \
+    mingw-w64-ucrt-x86_64-libwebsockets \
     mingw-w64-ucrt-x86_64-qt6-base \
     mingw-w64-ucrt-x86_64-qt6-multimedia
 ```

@@ -8,6 +8,7 @@
 
 #include "server/websocket_server.h"
 #include "utils/cdsp_macros.h"
+#include <libwebsockets.h>
 
 typedef struct cJSON cJSON;
 
@@ -51,12 +52,19 @@ ws_processing_state_to_string(cdsp_processing_state_t state) {
   return "Inactive";
 }
 
+typedef struct ws_msg_node_s {
+  char *data;
+  size_t len;
+  struct ws_msg_node_s *next;
+} ws_msg_node_t;
+
 typedef struct {
   uint64_t last_cap_peak_time;
   uint64_t last_cap_rms_time;
   uint64_t last_pb_peak_time;
   uint64_t last_pb_rms_time;
 
+  bool in_use;
   bool is_websocket;
   bool state_subscribed;
   char last_state[64];
@@ -91,14 +99,15 @@ typedef struct {
   uint64_t last_sig_pb_generation;
   uint64_t last_sig_cap_generation;
 
-  char *frag_buf;
-  size_t frag_len;
-  size_t frag_cap;
-  uint8_t frag_opcode;
+  struct lws *wsi;
+  void *pss;
 
   char *rx_buf;
   size_t rx_len;
   size_t rx_cap;
+
+  ws_msg_node_t *out_queue_head;
+  ws_msg_node_t *out_queue_tail;
 } client_session_t;
 
 struct websocket_server {
@@ -106,10 +115,15 @@ struct websocket_server {
   char host[128];
   dsp_engine_t *engine;
 
-  socket_t server_fd;
+  struct lws_context *context;
+  lws_sorted_usec_list_t sul;
   _Atomic bool running;
   _Atomic bool exit_requested;
   pthread_t thread;
+
+  pthread_mutex_t start_mutex;
+  pthread_cond_t start_cond;
+  _Atomic int start_status; // 0 = starting, 1 = started, -1 = failed
 
   uint32_t update_interval;
 
