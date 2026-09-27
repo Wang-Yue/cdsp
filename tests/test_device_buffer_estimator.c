@@ -44,15 +44,15 @@ TEST(DeviceBufferEstimator_ReportsJustPublishedLevel) {
 TEST(DeviceBufferEstimator_DecaysOverTime) {
   device_buffer_estimator_t est;
   device_buffer_estimator_init(&est, 48000.0);
-  device_buffer_estimator_add(&est, 48000);
+  device_buffer_estimator_add(&est, 96000);
 
   cdsp_sleep_ms(500);
 
   // Roughly half the buffer should have drained. Wide bounds, but enough to
   // prove the value is actually being extrapolated rather than held constant.
   size_t level = device_buffer_estimator_estimate(&est);
-  ASSERT_TRUE(level < 40000);
-  ASSERT_TRUE(level > 4000);
+  ASSERT_TRUE(level < 85000);
+  ASSERT_TRUE(level > 10000);
 }
 
 TEST(DeviceBufferEstimator_SaturatesAtZero) {

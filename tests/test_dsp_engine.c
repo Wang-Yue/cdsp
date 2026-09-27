@@ -501,12 +501,14 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
   size_t total_out_samples = (size_t)out_size / sizeof(int16_t);
   int16_t *all_output = (int16_t *)malloc(out_size);
   ASSERT_TRUE(all_output != NULL);
-  size_t read_count = fread(all_output, sizeof(int16_t), total_out_samples, out_f);
+  size_t read_count =
+      fread(all_output, sizeof(int16_t), total_out_samples, out_f);
   fclose(out_f);
   ASSERT_EQ(total_out_samples, read_count);
 
   bool matched = false;
-  for (size_t offset = 0; offset + total_samples <= total_out_samples; offset += channel_count) {
+  for (size_t offset = 0; offset + total_samples <= total_out_samples;
+       offset += channel_count) {
     bool match = true;
     for (size_t i = 0; i < total_samples; i++) {
       if (all_output[offset + i] != input_samples[i]) {
@@ -1481,18 +1483,16 @@ TEST(DSPEngineE2E_CoreAudio) {
 
 TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
 #if defined(__APPLE__) && defined(ENABLE_COREAUDIO)
+  setenv("CDSP_TIME_SCALE", "1", 1);
   cdsp_sleep_ms(150);
 
   // Resolve capture and playback device IDs and nominal rate
   AudioDeviceID dev_id =
       core_audio_device_id_for_name("BlackHole 2ch", CORE_AUDIO_SCOPE_INPUT);
+  ASSERT_NE(0, dev_id);
   AudioDeviceID out_dev_id =
       core_audio_device_id_for_name("BlackHole 16ch", CORE_AUDIO_SCOPE_OUTPUT);
-  if (dev_id == 0 || out_dev_id == 0) {
-    printf("⚠️ [E2E Warning] Skipping CoreAudio rate change test: BlackHole "
-           "devices not found\n");
-    return;
-  }
+  ASSERT_NE(0, out_dev_id);
 
   double initial_rate = 44100.0;
   core_audio_device_get_nominal_sample_rate(dev_id, &initial_rate);
@@ -1525,7 +1525,7 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
            "        \"samplerate\": %d,\n"
            "        \"chunksize\": 512,\n"
            "        \"stop_on_rate_change\": true,\n"
-           "        \"rate_measure_interval_s\": 0.02,\n"
+           "        \"rate_measure_interval_s\": 0.1,\n"
            "        \"capture\": {\n"
            "            \"type\": \"CoreAudio\",\n"
            "            \"device\": \"BlackHole 2ch\",\n"
@@ -1618,7 +1618,7 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
            "        \"samplerate\": %d,\n"
            "        \"chunksize\": 512,\n"
            "        \"stop_on_rate_change\": true,\n"
-           "        \"rate_measure_interval_s\": 0.02,\n"
+           "        \"rate_measure_interval_s\": 0.1,\n"
            "        \"capture\": {\n"
            "            \"type\": \"CoreAudio\",\n"
            "            \"device\": \"BlackHole 2ch\",\n"
@@ -1669,11 +1669,13 @@ TEST(DSPEngineE2E_CoreAudioLoopbackSampleRateChange) {
     cdsp_sleep_ms(20);
   }
   cdsp_sleep_ms(100);
+  unsetenv("CDSP_TIME_SCALE");
 #endif
 }
 
 TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
 #if defined(__APPLE__) && defined(ENABLE_COREAUDIO)
+  setenv("CDSP_TIME_SCALE", "1", 1);
   cdsp_sleep_ms(150);
 
   // Resolve playback device ID and nominal rate
@@ -1861,6 +1863,7 @@ TEST(DSPEngineE2E_CoreAudioPlaybackSampleRateChange) {
     cdsp_sleep_ms(20);
   }
   cdsp_sleep_ms(100);
+  unsetenv("CDSP_TIME_SCALE");
 #endif
 }
 

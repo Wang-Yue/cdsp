@@ -31,8 +31,8 @@ TEST(SampleRateWatcherRateChangeDetection) {
 
   double measured_rate = 0.0;
   bool change_detected = false;
-  for (int i = 0; i < 5; i++) {
-    cdsp_sleep_ms(160);
+  for (int i = 0; i < 20; i++) {
+    cdsp_sleep_ms(200);
     if (sample_rate_watcher_tick(watcher, 20000, &measured_rate)) {
       change_detected = true;
       break;

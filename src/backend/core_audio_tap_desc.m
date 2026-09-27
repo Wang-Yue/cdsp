@@ -42,31 +42,34 @@ OSStatus cdsp_tap_desc_create(CFArrayRef exclude_proc_ids,
         return kAudioHardwareIllegalOperationError;
     }
 
-    @autoreleasepool {
-        NSArray* procArray = (__bridge NSArray*)exclude_proc_ids;
-        NSString* uidString = (__bridge NSString*)target_device_uid;
+    if (@available(macOS 14.2, *)) {
+        @autoreleasepool {
+            NSArray* procArray = (__bridge NSArray*)exclude_proc_ids;
+            NSString* uidString = (__bridge NSString*)target_device_uid;
 
-        CATapDescription* desc = [[CATapDescription alloc] initExcludingProcesses:procArray
-                                                                    andDeviceUID:uidString
-                                                                      withStream:0];
-        if (!desc) {
-            return kAudioHardwareBadDeviceError;
+            CATapDescription* desc = [[CATapDescription alloc] initExcludingProcesses:procArray
+                                                                        andDeviceUID:uidString
+                                                                          withStream:0];
+            if (!desc) {
+                return kAudioHardwareBadDeviceError;
+            }
+
+            desc.UUID = [[NSUUID alloc] init];
+            desc.muteBehavior = CATapMuted;
+            desc.privateTap = YES;
+
+            AudioObjectID tapID = kAudioObjectUnknown;
+            OSStatus status = AudioHardwareCreateProcessTap(desc, &tapID);
+            if (status != noErr || tapID == kAudioObjectUnknown) {
+                return (status != noErr) ? status : kAudioHardwareUnspecifiedError;
+            }
+
+            *out_tap_id = tapID;
+            *out_tap_uuid_str = (__bridge_retained CFStringRef)desc.UUID.UUIDString;
+            return noErr;
         }
-
-        desc.UUID = [[NSUUID alloc] init];
-        desc.muteBehavior = CATapMuted;
-        desc.privateTap = YES;
-
-        AudioObjectID tapID = kAudioObjectUnknown;
-        OSStatus status = AudioHardwareCreateProcessTap(desc, &tapID);
-        if (status != noErr || tapID == kAudioObjectUnknown) {
-            return (status != noErr) ? status : kAudioHardwareUnspecifiedError;
-        }
-
-        *out_tap_id = tapID;
-        *out_tap_uuid_str = (__bridge_retained CFStringRef)desc.UUID.UUIDString;
-        return noErr;
     }
+    return kAudioHardwareIllegalOperationError;
 #else
     (void)exclude_proc_ids;
     (void)target_device_uid;

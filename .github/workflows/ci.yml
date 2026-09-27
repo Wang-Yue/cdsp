@@ -19,10 +19,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install dependencies via Homebrew
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
-          brew update
-          brew install fftw libyaml cjson libwebsockets
-          brew install blackhole-2ch blackhole-16ch
+          brew install fftw libyaml cjson libwebsockets blackhole-2ch blackhole-16ch qt dylibbundler
           sudo killall coreaudiod || true
           sleep 2
 
@@ -33,13 +34,30 @@ jobs:
             -DENABLE_NATIVE_ARCH=OFF \
             -DBUILD_TESTING=ON \
             -DBUILD_BENCHMARKS=ON \
-            -DENABLE_STUDIO=OFF
+            -DENABLE_STUDIO=ON
 
       - name: Build
         run: cmake --build build -j$(sysctl -n hw.ncpu)
 
       - name: Run Tests
         run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.ncpu)
+
+      - name: Package CDSP Studio (.app)
+        run: |
+          export PATH="$(brew --prefix qt 2>/dev/null || echo /opt/homebrew/opt/qt)/bin:$PATH"
+          macdeployqt "build/bin/CDSP Studio.app" -always-overwrite || true
+          dylibbundler -od -b -x "build/bin/CDSP Studio.app/Contents/MacOS/CDSP Studio" \
+                       -d "build/bin/CDSP Studio.app/Contents/Frameworks" \
+                       -p "@executable_path/../Frameworks" || true
+          codesign --force --deep --sign - "build/bin/CDSP Studio.app"
+          ditto -c -k --keepParent "build/bin/CDSP Studio.app" build/bin/CDSPStudio-macOS-arm64.zip
+
+      - name: Upload macOS Studio Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CDSPStudio-macOS-arm64
+          path: build/bin/CDSPStudio-macOS-arm64.zip
+          if-no-files-found: error
 
   linux:
     name: Linux (Ubuntu x86_64)
@@ -65,7 +83,11 @@ jobs:
             libcjson-dev \
             libwebsockets-dev \
             libssl-dev \
-            libopenblas-dev
+            libopenblas-dev \
+            qt6-base-dev \
+            qt6-multimedia-dev \
+            libfuse2 \
+            file
 
       - name: Configure CMake
         run: |
@@ -77,7 +99,7 @@ jobs:
             -DENABLE_DBUS=ON \
             -DBUILD_TESTING=ON \
             -DBUILD_BENCHMARKS=ON \
-            -DENABLE_STUDIO=OFF
+            -DENABLE_STUDIO=ON
 
       - name: Build
         run: cmake --build build
@@ -85,9 +107,36 @@ jobs:
       - name: Run Tests
         run: ctest --test-dir build --output-on-failure -j$(nproc)
 
+      - name: Package CDSP Studio (AppImage)
+        run: |
+          cmake --install build --prefix AppDir/usr
+          curl -sLO https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -sLO https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy*.AppImage
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          export QMAKE="$(command -v qmake6 || echo /usr/lib/qt6/bin/qmake)"
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir \
+            -d studio/cmake/com.wangyue.cdspstudio.desktop \
+            -i studio/resources/icons/app.png \
+            --plugin qt \
+            --output appimage
+          mkdir -p build/dist
+          mv CDSP_Studio*.AppImage build/dist/CDSPStudio-Linux-x86_64.AppImage
+
+      - name: Upload Linux Studio Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CDSPStudio-Linux-x86_64
+          path: build/dist/CDSPStudio-Linux-x86_64.AppImage
+          if-no-files-found: error
+
   linux-sanitizers:
-    name: Linux Sanitizers (ASan, UBSan, LSan)
+    name: Sanitizer (${{ matrix.sanitizer }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined, leak, thread, intsan]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -111,30 +160,41 @@ jobs:
             libssl-dev \
             libopenblas-dev
 
-      - name: Run Sanitizer Suite
-        run: ./run_sanitizers.sh address undefined leak
+      - name: Run Sanitizer
+        run: ./run_sanitizers.sh ${{ matrix.sanitizer }}
 
   windows:
-    name: Windows (MinGW-w64 x86_64)
+    name: Windows (UCRT64 x86_64)
     runs-on: windows-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up MSYS2 & MinGW-w64
+      - name: Set up MSYS2 & UCRT64
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
             git
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-fftw
-            mingw-w64-x86_64-libyaml
-            mingw-w64-x86_64-cjson
-            mingw-w64-x86_64-libwebsockets
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-fftw
+            mingw-w64-ucrt-x86_64-libyaml
+            mingw-w64-ucrt-x86_64-cjson
+            mingw-w64-ucrt-x86_64-libwebsockets
+            mingw-w64-ucrt-x86_64-qt6-static
+            mingw-w64-ucrt-x86_64-libpng
+            mingw-w64-ucrt-x86_64-libjpeg-turbo
+            mingw-w64-ucrt-x86_64-libtiff
+            mingw-w64-ucrt-x86_64-libwebp
+            mingw-w64-ucrt-x86_64-freetype
+            mingw-w64-ucrt-x86_64-harfbuzz
+            mingw-w64-ucrt-x86_64-brotli
+            mingw-w64-ucrt-x86_64-pcre2
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-zstd
 
       - name: Configure CMake
         shell: msys2 {0}
@@ -147,7 +207,7 @@ jobs:
             -DENABLE_STATIC_WINDOWS=ON \
             -DBUILD_TESTING=ON \
             -DBUILD_BENCHMARKS=ON \
-            -DENABLE_STUDIO=OFF
+            -DENABLE_STUDIO=ON
 
       - name: Build
         shell: msys2 {0}
@@ -156,3 +216,10 @@ jobs:
       - name: Run Tests
         shell: msys2 {0}
         run: ctest --test-dir build --output-on-failure
+
+      - name: Upload Windows Studio Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CDSPStudio-Windows-x86_64
+          path: build/bin/CDSPStudio.exe
+          if-no-files-found: error
