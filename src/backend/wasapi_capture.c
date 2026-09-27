@@ -75,6 +75,9 @@ static void wasapi_capture_on_format_change(void *parent, double new_rate) {
   capture->pending_rate = new_rate;
   atomic_store_explicit(&capture->has_pending_rate_change, true,
                         memory_order_release);
+  if (capture->buffer) {
+    backend_buffer_set_pending_rate_change(capture->buffer, true);
+  }
 }
 
 /**

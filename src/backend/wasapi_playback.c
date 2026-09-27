@@ -74,6 +74,9 @@ static void wasapi_playback_on_format_change(void *parent, double new_rate) {
   playback->pending_rate = new_rate;
   atomic_store_explicit(&playback->has_pending_rate_change, true,
                         memory_order_release);
+  if (playback->buffer) {
+    backend_buffer_set_pending_rate_change(playback->buffer, true);
+  }
 }
 
 /**
@@ -364,7 +367,7 @@ static bool wasapi_playback_write(void *ctx, const audio_chunk_t *chunk,
     sleep_duration_ms = 1;
 
   return backend_buffer_write_chunk(playback->buffer, chunk,
-                                    (uint32_t)sleep_duration_ms, 8, err);
+                                    (uint32_t)sleep_duration_ms, 200, err);
 }
 
 static void wasapi_playback_close(void *ctx) {
