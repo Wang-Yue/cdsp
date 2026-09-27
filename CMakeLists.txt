@@ -939,9 +939,9 @@ if(UNIX AND NOT APPLE AND ENABLE_ALSA)
 endif()
 
 set_source_files_properties(
-    src/dsd/dsd_encoder.c
-    src/dsd/sigma_delta_modulator.c
-    tests/test_dsd.c
-    tests/test_resampler_matrix.c
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/dsd/dsd_encoder.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/dsd/sigma_delta_modulator.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dsd.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_resampler_matrix.c"
     PROPERTIES COMPILE_OPTIONS "-fno-associative-math"
 )
