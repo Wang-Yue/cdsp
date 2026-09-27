@@ -6,6 +6,9 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0' # Every Sunday at 00:00 UTC (Weekly build)
+  workflow_dispatch:      # Allows triggering a build manually from Actions tab
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -230,9 +233,9 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Publish Continuous Release
+    name: Publish Release
     needs: [macos, linux, windows, linux-sanitizers]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -252,26 +255,26 @@ jobs:
           sha256sum CDSPStudio* > SHA256SUMS.txt
           ls -la
 
-      - name: Update continuous tag
+      - name: Update weekly tag
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f continuous ${{ github.sha }}
-          git push -f origin continuous
+          git tag -f weekly ${{ github.sha }}
+          git push -f origin weekly
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'continuous' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Continuous Build' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Weekly Build' }}
           body: |
-            Automated continuous release built from commit ${{ github.sha }}.
+            Automated build from commit ${{ github.sha }}.
 
             ### Downloads
-            - **macOS (Apple Silicon)**: [`CDSPStudio-macOS-arm64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'continuous' }}/CDSPStudio-macOS-arm64.zip)
-            - **Linux (x86_64)**: [`CDSPStudio-Linux-x86_64.AppImage`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'continuous' }}/CDSPStudio-Linux-x86_64.AppImage)
-            - **Windows (x86_64)**: [`CDSPStudio-Windows-x86_64.exe`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'continuous' }}/CDSPStudio-Windows-x86_64.exe)
+            - **macOS (Apple Silicon)**: [`CDSPStudio-macOS-arm64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-macOS-arm64.zip)
+            - **Linux (x86_64)**: [`CDSPStudio-Linux-x86_64.AppImage`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-Linux-x86_64.AppImage)
+            - **Windows (x86_64)**: [`CDSPStudio-Windows-x86_64.exe`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-Windows-x86_64.exe)
 
             Verify integrity with `SHA256SUMS.txt`.
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}

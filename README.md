@@ -32,13 +32,13 @@ The repository is organized into three primary components:
 
 ## Downloads
 
-Standalone, pre-built packages of **CDSP Studio** are automatically published with every build:
+Standalone, pre-built packages of **CDSP Studio** are automatically published weekly:
 
 | Platform | Format | Direct Download |
 | :--- | :--- | :--- |
-| 🍏 **macOS** (Apple Silicon) | Standalone `.app` bundle | [CDSPStudio-macOS-arm64.zip](https://github.com/Wang-Yue/cdsp/releases/download/continuous/CDSPStudio-macOS-arm64.zip) |
-| 🐧 **Linux** (x86_64) | Standalone AppImage | [CDSPStudio-Linux-x86_64.AppImage](https://github.com/Wang-Yue/cdsp/releases/download/continuous/CDSPStudio-Linux-x86_64.AppImage) |
-| 🪟 **Windows** (x86_64) | Standalone Executable | [CDSPStudio-Windows-x86_64.exe](https://github.com/Wang-Yue/cdsp/releases/download/continuous/CDSPStudio-Windows-x86_64.exe) |
+| 🍏 **macOS** (Apple Silicon) | Standalone `.app` bundle | [CDSPStudio-macOS-arm64.zip](https://github.com/Wang-Yue/cdsp/releases/download/weekly/CDSPStudio-macOS-arm64.zip) |
+| 🐧 **Linux** (x86_64) | Standalone AppImage | [CDSPStudio-Linux-x86_64.AppImage](https://github.com/Wang-Yue/cdsp/releases/download/weekly/CDSPStudio-Linux-x86_64.AppImage) |
+| 🪟 **Windows** (x86_64) | Standalone Executable | [CDSPStudio-Windows-x86_64.exe](https://github.com/Wang-Yue/cdsp/releases/download/weekly/CDSPStudio-Windows-x86_64.exe) |
 
 > All builds, tags, and checksums (`SHA256SUMS.txt`) are available on the **[Releases](https://github.com/Wang-Yue/cdsp/releases)** page. Downloads are 100% public and do not require a GitHub account.
 
