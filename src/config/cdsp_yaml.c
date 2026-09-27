@@ -1,13 +1,12 @@
 #include "config/cdsp_yaml.h"
 
+#include <cjson/cJSON.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <yaml.h>
-
-#include "config/cJSON.h"
 
 #define MAX_YAML_DEPTH 128
 

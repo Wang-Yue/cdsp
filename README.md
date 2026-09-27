@@ -94,18 +94,20 @@ cdsp/
 - **C/C++ Compiler**: C11 and C++17 compatible compiler (Clang, GCC, or MSVC)
 - **CMake**: `3.20` or newer
 - **FFTW3**: Double & single precision FFT libraries (`libfftw3`, `libfftw3f`)
+- **libyaml**: YAML 1.1 parser and emitter library (`libyaml`)
+- **cJSON**: Ultralightweight JSON parser/generator library (`libcjson`)
 - **Qt 6** *(Required for CDSP Studio GUI)*: `Core`, `Widgets`, `Network`, `Concurrent`, `Multimedia`
 
 #### macOS (Homebrew)
 ```bash
-brew install cmake fftw qt
+brew install cmake fftw libyaml cjson qt
 ```
 
 #### Linux (Debian / Ubuntu)
 ```bash
 sudo apt-get update && sudo apt-get install -y \
     build-essential cmake \
-    libfftw3-dev \
+    libfftw3-dev libyaml-dev libcjson-dev \
     libasound2-dev libpipewire-0.3-dev libdbus-1-dev \
     qt6-base-dev qt6-multimedia-dev
 ```
@@ -120,6 +122,8 @@ pacman -S --needed \
     mingw-w64-ucrt-x86_64-cmake \
     mingw-w64-ucrt-x86_64-ninja \
     mingw-w64-ucrt-x86_64-fftw \
+    mingw-w64-ucrt-x86_64-libyaml \
+    mingw-w64-ucrt-x86_64-cjson \
     mingw-w64-ucrt-x86_64-qt6-static
 ```
 
@@ -130,6 +134,8 @@ pacman -S --needed \
     mingw-w64-ucrt-x86_64-cmake \
     mingw-w64-ucrt-x86_64-ninja \
     mingw-w64-ucrt-x86_64-fftw \
+    mingw-w64-ucrt-x86_64-libyaml \
+    mingw-w64-ucrt-x86_64-cjson \
     mingw-w64-ucrt-x86_64-qt6-base \
     mingw-w64-ucrt-x86_64-qt6-multimedia
 ```

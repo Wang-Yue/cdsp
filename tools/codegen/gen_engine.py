@@ -303,7 +303,7 @@ class CodegenEngine:
         w.line("#include <stdio.h>")
         w.line("#include <stdlib.h>")
         w.line("#include <string.h>")
-        w.line("#include \"config/cJSON.h\"")
+        w.line("#include <cjson/cJSON.h>")
         w.line("#include \"config/config_parser.h\"")
         w.line()
 

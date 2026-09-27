@@ -1,5 +1,6 @@
 #include "cdsp/config.h"
 
+#include <cjson/cJSON.h>
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
@@ -8,7 +9,6 @@
 
 #include "audio/sample_format.h"
 #include "cdsp/cdsp_pub_types.h"
-#include "config/cJSON.h"
 #include "config/cdsp_yaml.h"
 #include "config/config_error.h"
 #include "config/configuration.h"

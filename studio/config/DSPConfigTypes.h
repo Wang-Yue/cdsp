@@ -474,8 +474,8 @@ struct ALSAPlaybackConfig {
     static ALSAPlaybackConfig fromJson(const QJsonObject& json);
 
     bool operator==(const ALSAPlaybackConfig& o) const {
-        return channels == o.channels && device == o.device && format == o.format &&
-               outputDoP == o.outputDoP && dsdEncoderFilter == o.dsdEncoderFilter;
+        return channels == o.channels && device == o.device && format == o.format && outputDoP == o.outputDoP &&
+               dsdEncoderFilter == o.dsdEncoderFilter;
     }
     bool operator!=(const ALSAPlaybackConfig& o) const { return !(*this == o); }
 };

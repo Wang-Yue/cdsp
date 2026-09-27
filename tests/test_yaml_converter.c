@@ -1,3 +1,4 @@
+#include <cjson/cJSON.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -8,7 +9,6 @@
 #include "cdsp/cdsp_pub_types.h"
 #include "cdsp/config.h"
 #include "cdsp/general.h"
-#include "config/cJSON.h"
 #include "config/cdsp_yaml.h"
 #include "test_support.h"
 

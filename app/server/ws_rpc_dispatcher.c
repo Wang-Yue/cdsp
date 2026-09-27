@@ -1,5 +1,6 @@
 #include "server/ws_rpc_dispatcher.h"
 
+#include <cjson/cJSON.h>
 #include <ctype.h>
 #include <math.h>
 #include <pthread.h>
@@ -18,7 +19,6 @@
 #include "cdsp/processing.h"
 #include "cdsp/signal_levels.h"
 #include "cdsp/spectrum.h"
-#include "config/cJSON.h"
 #include "server/websocket_server_internal.h"
 
 static inline bool ws_engine_get_status(dsp_engine_t *engine,

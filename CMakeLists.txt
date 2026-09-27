@@ -253,6 +253,7 @@ if(WIN32)
         _UNICODE
         _USE_MATH_DEFINES
         YAML_DECLARE_STATIC
+        CJSON_HIDE_SYMBOLS
     )
     target_link_libraries(dsp PUBLIC ws2_32 winmm ole32 uuid ksuser ksguid avrt)
 elseif(APPLE)
@@ -387,6 +388,43 @@ endif()
 
 if(NOT YAML_FOUND_FLAG)
     message(FATAL_ERROR "libyaml is required to build cdsp.")
+endif()
+
+# -----------------------------------------------------------------------------
+# JSON Parser & Generator (cJSON Required)
+# -----------------------------------------------------------------------------
+set(CJSON_FOUND_FLAG FALSE)
+find_path(CJSON_INCLUDE_DIR NAMES cjson/cJSON.h cJSON.h PATHS /opt/homebrew/include /usr/local/include /usr/include)
+find_library(CJSON_LIB NAMES cjson libcjson PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
+
+if(CJSON_INCLUDE_DIR AND CJSON_LIB)
+    target_include_directories(dsp PUBLIC ${CJSON_INCLUDE_DIR})
+    if(EXISTS "${CJSON_INCLUDE_DIR}/cjson")
+        target_include_directories(dsp PUBLIC "${CJSON_INCLUDE_DIR}/cjson")
+    endif()
+    target_link_libraries(dsp PUBLIC ${CJSON_LIB})
+    set(CJSON_FOUND_FLAG TRUE)
+elseif(PKG_CONFIG_FOUND)
+    pkg_check_modules(CJSON QUIET IMPORTED_TARGET libcjson cjson)
+    if(TARGET PkgConfig::CJSON)
+        target_link_libraries(dsp PUBLIC PkgConfig::CJSON)
+        set(CJSON_FOUND_FLAG TRUE)
+    endif()
+endif()
+
+if(NOT CJSON_FOUND_FLAG)
+    find_package(cJSON CONFIG QUIET)
+    if(TARGET cjson)
+        target_link_libraries(dsp PUBLIC cjson)
+        set(CJSON_FOUND_FLAG TRUE)
+    elseif(TARGET cJSON::cjson)
+        target_link_libraries(dsp PUBLIC cJSON::cjson)
+        set(CJSON_FOUND_FLAG TRUE)
+    endif()
+endif()
+
+if(NOT CJSON_FOUND_FLAG)
+    message(FATAL_ERROR "cJSON (libcjson) is required to build cdsp.")
 endif()
 
 

@@ -16,6 +16,7 @@ typedef SOCKET socket_t;
 #define IS_INVALID_SOCKET(s) ((s) < 0)
 typedef int socket_t;
 #endif
+#include <cjson/cJSON.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -28,7 +29,6 @@ typedef int socket_t;
 #include "cdsp/cdsp_pub_types.h"
 #include "cdsp/general.h"
 #include "cdsp/processing.h"
-#include "config/cJSON.h"
 #include "engine/dsp_engine.h" // IWYU pragma: keep
 #include "server/websocket_server.h"
 #include "server/websocket_server_internal.h"

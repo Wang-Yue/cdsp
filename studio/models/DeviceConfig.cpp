@@ -546,9 +546,9 @@ bool DeviceConfig::operator==(const DeviceConfig& other) const {
     return backend == other.backend && capabilities == other.capabilities && channels == other.channels &&
            deviceChannels == other.deviceChannels && sampleRate == other.sampleRate && format == other.format &&
            exclusive == other.exclusive && loopback == other.loopback && polling == other.polling &&
-           stopOnInactive == other.stopOnInactive &&
-           linkVolumeControl == other.linkVolumeControl && linkMuteControl == other.linkMuteControl &&
-           bypassDoP == other.bypassDoP && dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
+           stopOnInactive == other.stopOnInactive && linkVolumeControl == other.linkVolumeControl &&
+           linkMuteControl == other.linkMuteControl && bypassDoP == other.bypassDoP &&
+           dopCutoffHz == other.dopCutoffHz && outputDoP == other.outputDoP &&
            dsdEncoderFilter == other.dsdEncoderFilter && filename == other.filename && fileFormat == other.fileFormat &&
            isWav == other.isWav && useRf64 == other.useRf64 && skipBytes == other.skipBytes &&
            readBytes == other.readBytes && extraSamples == other.extraSamples && generatorType == other.generatorType &&

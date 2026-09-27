@@ -549,8 +549,7 @@ static void *alsa_loopback_reader_func(void *arg) {
 TEST(DSPEngineE2E_WavFileToALSAPlaybackExit) {
 #if defined(__linux__) && defined(ENABLE_ALSA)
   char wav_file[256];
-  snprintf(wav_file, sizeof(wav_file), "/tmp/test_alsa_%d.wav",
-           getpid());
+  snprintf(wav_file, sizeof(wav_file), "/tmp/test_alsa_%d.wav", getpid());
   remove(wav_file);
 
   // Create a valid 16-bit stereo 44.1kHz WAV file with 20000 frames (~0.45s) of

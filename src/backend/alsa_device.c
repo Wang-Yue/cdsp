@@ -510,7 +510,6 @@ const char *alsa_state_desc(int state) {
   }
 }
 
-
 int alsa_device_open_and_configure_hw(
     snd_pcm_t **pcm, const char *device_name, snd_pcm_stream_t stream,
     int channels, unsigned int sample_rate, bool has_format,

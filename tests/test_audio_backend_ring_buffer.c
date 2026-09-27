@@ -272,8 +272,8 @@ TEST(AudioBackendRingBuffer_StreamStateLifecycle) {
 }
 
 TEST(BackendBuffer_WaitAndSignal) {
-  backend_buffer_t *buf = backend_buffer_create(
-      64, BINARY_SAMPLE_FORMAT_F32_LE, 2, 44100.0, false);
+  backend_buffer_t *buf =
+      backend_buffer_create(64, BINARY_SAMPLE_FORMAT_F32_LE, 2, 44100.0, false);
   ASSERT_TRUE(buf != NULL);
 
   // Initial wait with short timeout should timeout because no signal or data
@@ -297,7 +297,8 @@ TEST(BackendBuffer_WaitAndSignal) {
 }
 
 TEST(BackendBuffer_PlaybackWaitAndWakeup) {
-  // Verify that rendering or consuming data signals the semaphore, waking up playback writers
+  // Verify that rendering or consuming data signals the semaphore, waking up
+  // playback writers
   backend_buffer_t *buf = backend_buffer_create(
       128, BINARY_SAMPLE_FORMAT_F32_LE, 2, 44100.0, false);
   ASSERT_TRUE(buf != NULL);

@@ -4,6 +4,7 @@
 
 #include "server/websocket_server.h"
 
+#include <cjson/cJSON.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdarg.h>
@@ -15,7 +16,6 @@
 #include "cdsp/processing.h"
 #include "cdsp/signal_levels.h"
 #include "cdsp/spectrum.h"
-#include "config/cJSON.h"
 #include "logging/app_logger.h"
 #include "server/websocket_server_internal.h"
 #include "server/ws_framing.h"

@@ -4,6 +4,7 @@
  * auto-generated codegen.
  */
 
+#include <cjson/cJSON.h>
 #include <limits.h>
 #include <math.h>
 #include <stdbool.h>
@@ -22,7 +23,6 @@
 
 #include "audio/sample_format.h"
 #include "backend/audio_backend.h"
-#include "config/cJSON.h"
 #include "config/config_error.h"
 #include "config/config_parser.h"
 #include "config/configuration.h"
