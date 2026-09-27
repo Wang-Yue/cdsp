@@ -51,13 +51,16 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+
 #if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) ||           \
     defined(__SANITIZE_MEMORY__) || defined(__SANITIZE_LEAK__) ||              \
-    (defined(__has_feature) &&                                                 \
-     (__has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||   \
-      __has_feature(memory_sanitizer) || __has_feature(leak_sanitizer) ||      \
-      __has_feature(cfi) || __has_feature(control_flow_integrity) ||           \
-      __has_feature(undefined_behavior_sanitizer)))
+    __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||     \
+    __has_feature(memory_sanitizer) || __has_feature(leak_sanitizer) ||        \
+    __has_feature(cfi) || __has_feature(control_flow_integrity) ||             \
+    __has_feature(undefined_behavior_sanitizer)
 #define CDSP_SANITIZER_ACTIVE 1
 #else
 #define CDSP_SANITIZER_ACTIVE 0

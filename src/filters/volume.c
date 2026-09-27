@@ -282,13 +282,6 @@ static void volume_filter_process(void *instance, mutable_waveform_t waveform,
     // Apply the ramping gains.
     size_t limit = count < filter->chunk_size ? count : filter->chunk_size;
     dsp_ops_multiply(filter->current_ramp_gains, waveform, limit);
-    // If there is leftover data in the chunk beyond the ramping buffer,
-    // apply the target linear gain to it.
-    if (limit < count) {
-      double final_gain =
-          filter->mute ? 0.0 : double_from_db(filter->target_volume);
-      dsp_ops_scalar_multiply(waveform + limit, final_gain, count - limit);
-    }
   }
   if (!filter->externally_driven) {
     volume_filter_advance_ramp(filter);

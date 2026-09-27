@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Wang-Yue/cdsp/actions/workflows/ci.yml"><img src="https://github.com/Wang-Yue/cdsp/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <img src="https://img.shields.io/badge/Language-C11%20%7C%20C%2B%2B17-blue.svg?style=flat-square" alt="Language" />
   <img src="https://img.shields.io/badge/GUI-Qt%206-green.svg?style=flat-square&logo=qt" alt="Qt 6" />
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg?style=flat-square" alt="Platform" />

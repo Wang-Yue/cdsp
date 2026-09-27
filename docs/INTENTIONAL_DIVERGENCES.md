@@ -4,7 +4,7 @@ This document catalogs every area where **`cdsp`** deliberately diverges from up
 
 Per project design principles, a deviation from upstream is admitted **only when `cdsp` is strictly better**: fixing an upstream acoustic/speaker safety hazard, maintaining hard real-time execution safety, eliminating memory allocations on the audio hot path, improving numerical precision, or adhering to platform driver semantics.
 
-Notably, upstream CamillaDSP has increasingly adopted architectural designs and safety enhancements pioneered in this codebase, steadily shrinking the list of divergences over time. Prominent examples of upstream convergence include:
+Notably, upstream CamillaDSP and `cdsp` have increasingly converged on high-performance architectural designs and safety enhancements. Prominent examples of architectural convergence include:
 - **Background Hot-Reload & IR Loading**: Validating and caching impulse responses (`ImpulseCache`) in memory prior to configuration application, eliminating disk I/O and heavyweight transformations on the real-time audio thread.
 - **Audio Thread Allocation & Lock Reduction**: Reusing preallocated buffer stashes for waveform containers and intermediate filter stages, eliminating hot-path heap allocations (`malloc`/`Vec::new`) during steady-state processing, and avoiding blocking locks on the real-time processing loop.
 - **Stricter Numeric & Parameter Validation**: Rejecting `.nan` / `.inf` tokens across all numeric configuration fields, strictly requiring positive sample rates and chunk sizes, bounding resampler cutoffs to `(0, 1]`, and rejecting hazardous compressor factors (`factor <= 0.0`).
@@ -16,38 +16,32 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 
 | # | Domain | Upstream Behavior | `cdsp` Enhancement | Primary Benefit |
 |---|---|---|---|---|
-| 1 | **Volume** | Leaves residual samples past chunk size unscaled | Scales residual tail by target gain (§1.1) | Acoustic protection against bursts |
-| 2 | **Partial chunks** | Processes zero-padded tail frames | Processes strictly `valid_frames` (§1.2) | Preserves true decay state at stream end |
-| 3 | **Resampler** | Variable-input pull model (`Fixed::Output`) | Fixed-input push model (`Fixed::Both`, `FIXED_ASYNC_INPUT`) (§2.1) | Zero allocation, deterministic HAL/ASIO callbacks |
-| 4 | **Lifecycle** | Heap allocation & disk I/O on real-time audio thread | Background control thread compilation & atomic swap (§2.2) | Hard real-time safety, zero audio dropouts |
-| 5 | **Queue Topology** | Multi-producer crossbeam channel scheduling overhead | Wait-free power-of-two SPSC ring buffers (§2.3) | 1247.7x real-time throughput (25% faster) |
-| 6 | **Queue Overflow** | Blocking back-pressure on full queue | Drop-on-full, non-blocking (§2.4) | Never stalls a driver callback thread |
-| 7 | **Precision** | Single-precision (`f32`) cutoffs, config, and biquads | Double-precision (`double`) computation & storage (§3.1) | Sub-LSB numerical noise < 1e-15, exact anti-aliasing cutoff |
-| 8 | **Interpolation** | Expanded polynomial powers in async **sinc** | Horner form with hardware FMA (§3.2) | Higher SIMD throughput and lower rounding error |
-| 9 | **Dynamic Range** | Arbitrary `-200 dB` / `-300 dB` hard-coded math clamps | Mathematical `-inf` internally, clamped only on JSON output (§3.3) | Exact mathematical purity + RFC 8259 JSON compliance |
-| 10 | **Metering** | Divides partial-chunk RMS power by buffer capacity | Divides power by `valid_frames` (§3.4) | Prevents zero-tail measurement dilution |
-| 11 | **Metering** | Scalar accumulation or intermediate buffer allocations | Single-pass SIMD vectorization in `dsp_ops` (§3.5) | 2x faster calculation, zero allocation |
-| 12 | **Convolution** | Inner-loop division by `fft_len` per sample | Precomputed reciprocal multiplication (`inv_scale`) (§3.6) | ~10x faster scaling in frequency domain |
-| 13 | **Sanitization** | NaNs propagate freely through feedback & conversions | Feedback/sample sanitization & non-finite rejection (§3.7) | Prevents runaway oscillation & NaN math |
-| 14 | **Resampler Headroom** | Exact truncating bounds without vector headroom | Safety guard band (`ceil(...) + 16`) (§3.8) | Guaranteed zero SIMD out-of-bounds access |
-| 15 | **Driver Events** | PipeWire rate change ignored in direct capture | Graph rate change actively captured & reported (§4.1) | Dynamic sample rate renegotiation |
-| 16 | **Formats** | Limited to standard PCM audio formats | Native DSD and DoP (DSD over PCM) subsystem support (§4.2) | High-resolution audiophile format playback |
-| 17 | **Validation** | Accepts degenerate/empty convolution IR configurations | Stricter rejection at validation time (§5) | Fails fast instead of producing NaN/singular filters |
-| 18 | **macOS Capture** | Requires virtual loopback drivers (BlackHole/Soundflower) | Native CoreAudio Device Tap (`"loopback": true`) (§4.3) | Zero driver installation, minimal hardware-direct latency, zero clock drift |
-| 19 | **Buffer Level** | `Arc<Mutex<DeviceBufferEstimator>>` sampled with `try_lock()`, reporting `0` on contention | Lock-free atomic estimator plus live SPSC ring sampling (§2.5) | No spurious zero-level readings into the rate controller; exact ring term |
-| 20 | **Zero-Copy Backends** | Staging scratch buffers (`scratch_buf`, `decode_buf`, `encode_buf`, `interleaved_buf`) and intermediate `memcpy` steps | Direct circular slice decoding/encoding to SPSC ring buffers (§2.6) | Zero staging buffers, reduced CPU cache pollution & minimum latency |
-| 21 | **Driver Layout & Buffers** | Serializes planar drivers (ASIO) into byte streams; unaligned default micro-buffers on CoreAudio | Native planar streaming for ASIO; matched hardware buffer size & interleaved pass-through for CoreAudio (§2.7) | Eliminates 2D sample interleaving on ASIO; bypasses AUHAL `AudioConverter` and drops callback CPU on CoreAudio |
+| 1 | **Partial chunks** | Processes zero-padded tail frames | Processes strictly `valid_frames` (§1.1) | Preserves true decay state at stream end |
+| 2 | **Resampler** | Variable-input pull model (`Fixed::Output`) | Fixed-input push model (`Fixed::Both`, `FIXED_ASYNC_INPUT`) with single-subchunk design (§2.1) | Zero allocation, deterministic HAL/ASIO callbacks, steep anti-alias cutoff ($0.987 \times$ Nyquist) |
+| 3 | **Lifecycle** | Heap allocation & disk I/O on real-time audio thread | Background control thread compilation & atomic swap (§2.2) | Hard real-time safety, zero audio dropouts |
+| 4 | **Queue Topology** | Multi-producer crossbeam channel scheduling overhead | Wait-free power-of-two SPSC ring buffers (§2.3) | 1247.7x real-time throughput (25% faster) |
+| 5 | **Queue Overflow** | Non-blocking driver callbacks; blocking back-pressure between worker threads | Drop-on-full, non-blocking across all internal queues (§2.4) | Never stalls worker threads or processing pipelines under desync |
+| 6 | **Precision** | Single-precision volume faders/parameters (`f32`); `f64` core pipeline | Strict double-precision (`double`) across all faders, parameters, and DSP stages (§3.1) | Sub-LSB numerical noise < 1e-15 throughout the entire DSP pipeline |
+| 7 | **Interpolation** | Expanded polynomial powers in async **sinc** | Horner form with hardware FMA (§3.2) | Higher SIMD throughput and lower rounding error |
+| 8 | **Dynamic Range** | Hard-coded `-200 dB` / `-300 dB` math clamps | Mathematical `-inf` internally, clamped only on JSON output (§3.3) | Branchless SIMD auto-vectorization, macOS `vDSP_vdbcon` acceleration, RFC 8259 JSON compliance |
+| 9 | **Metering** | Divides partial-chunk RMS power by buffer capacity | Divides power by `valid_frames` (§3.4) | Prevents zero-tail measurement dilution |
+| 10 | **Metering** | Scalar accumulation or intermediate buffer allocations | Single-pass SIMD vectorization in `dsp_ops` (§3.5) | 2x faster calculation, zero allocation |
+| 11 | **Convolution** | Per-tap division `coeff / (2 * len)` in coefficient preparation | Precomputed reciprocal multiplication (`inv_scale`) (§3.6) | ~5–10x faster IR compilation & background caching |
+| 12 | **Sanitization** | NaNs propagate freely through feedback & conversions | Feedback/sample sanitization & non-finite rejection (§3.7) | Prevents runaway oscillation & NaN math |
+| 13 | **Resampler Headroom** | Exact truncating bounds without vector headroom | Safety guard band (`ceil(...) + 16`) (§3.8) | Guaranteed zero SIMD out-of-bounds access |
+| 14 | **Driver Events** | PipeWire rate change ignored in direct capture | Graph rate change actively captured & reported (§4.1) | Dynamic sample rate renegotiation |
+| 15 | **Formats** | Limited to standard PCM audio formats | Native DSD and DoP (DSD over PCM) subsystem support (§4.2) | High-resolution audiophile format playback |
+| 16 | **Validation** | Accepts degenerate/empty convolution IR configurations | Stricter rejection at validation time (§5) | Fails fast instead of producing NaN/singular filters |
+| 17 | **macOS Capture** | Requires virtual loopback drivers (BlackHole/Soundflower) | Native CoreAudio Device Tap (`"loopback": true`) (§4.3) | Zero driver installation, minimal hardware-direct latency, zero clock drift |
+| 18 | **Buffer Level** | `Arc<Mutex<DeviceBufferEstimator>>` sampled with `try_lock()`, reporting `0` on contention | Lock-free atomic estimator plus live SPSC ring sampling (§2.5) | No spurious zero-level readings into the rate controller; exact ring term |
+| 19 | **Zero-Copy Backends** | Staging scratch buffers (`scratch_buf`, `decode_buf`, `encode_buf`, `interleaved_buf`) and intermediate `memcpy` steps | Direct circular slice decoding/encoding to SPSC ring buffers (§2.6) | Zero staging buffers, reduced CPU cache pollution & minimum latency |
+| 20 | **Driver Layout & Buffers** | Serializes planar drivers (ASIO) into byte streams; unaligned default micro-buffers on CoreAudio | Native planar streaming for ASIO; matched hardware buffer size & interleaved pass-through for CoreAudio (§2.7) | Eliminates 2D sample interleaving on ASIO; bypasses AUHAL `AudioConverter` and drops callback CPU on CoreAudio |
 
 ---
 
 ## 1. Acoustic & Speaker Safety
 
-### 1.1 Defensive Volume Tail Gain on Oversized Chunks
-* **Upstream Behavior**: Upstream volume filters iterate strictly up to `chunk_size`. If an upstream capture backend delivers an oversized chunk or hardware buffer slice expansion, samples beyond `chunk_size` are left completely unattenuated at full scale (`gain = 1.0`).
-* **`cdsp` Enhancement**: In [`../src/filters/volume.c`](../src/filters/volume.c), `volume_filter_process` applies `final_gain` to all residual samples extending beyond `chunk_size`.
-* **Why `cdsp` Is Better**: Leaving trailing audio frames unscaled at unity gain during high attenuation or muting produces sudden acoustic blasts. Defensive tail gain scaling guarantees consistent level control across all delivered frames.
-
-### 1.2 Partial-Chunk Processing Restricted to `valid_frames`
+### 1.1 Partial-Chunk Processing Restricted to `valid_frames`
 * **Upstream Behavior**: Upstream advances processing across the full buffer capacity (`chunk_size`), including zero-padded tail frames on the stream's final partial chunk.
 * **`cdsp` Enhancement**: `cdsp` restricts processing to `valid_frames`. Audited call sites:
   - **Dynamics envelopes**: [`../src/processors/compressor_processor.c`](../src/processors/compressor_processor.c), [`../src/processors/noise_gate_processor.c`](../src/processors/noise_gate_processor.c), [`../src/filters/lookahead_limiter.c`](../src/filters/lookahead_limiter.c), plus [`../src/processors/lookahead_limiter_processor.c`](../src/processors/lookahead_limiter_processor.c) and [`../src/processors/race_processor.c`](../src/processors/race_processor.c).
@@ -64,7 +58,7 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 * **`cdsp` Enhancement**: `cdsp` uses fixed input chunk sizes across all resamplers:
   - Synchronous resampler: [`../src/resampler/synchronous_resampler.c`](../src/resampler/synchronous_resampler.c) uses `FixedSync::Both` ($K \cdot M \to K \cdot L$) with `num_subchunks = 1`.
   - Slip & Async resamplers: [`../src/resampler/slip_resampler.c`](../src/resampler/slip_resampler.c) and [`../src/resampler/async_poly_resampler.c`](../src/resampler/async_poly_resampler.c) operate in `FIXED_ASYNC_INPUT` mode.
-* **Why `cdsp` Is Better**: macOS CoreAudio HAL callbacks and Windows ASIO drivers strictly deliver fixed-size hardware buffers. Variable-input pull models require buffer stashing and circular copies inside platform backends. `cdsp`'s fixed-input architecture guarantees that every OS audio callback consumes a deterministic input block with zero reallocations, bounded ring-buffer latency, and deterministic real-time scheduling. In synchronous mode, `FixedSync::Both` achieves a steeper anti-aliasing cutoff ($0.987 \times \text{Nyquist}$ vs $0.954 \times \text{Nyquist}$).
+* **Why `cdsp` Is Better**: macOS CoreAudio HAL callbacks and Windows ASIO drivers strictly deliver fixed-size hardware buffers. Variable-input pull models require buffer stashing and circular copies inside platform backends. `cdsp`'s fixed-input architecture guarantees that every OS audio callback consumes a deterministic input block with zero reallocations, bounded ring-buffer latency, and deterministic real-time scheduling. In synchronous mode, running with a single subchunk (`num_subchunks = 1`) achieves a steeper anti-aliasing cutoff ($0.987 \times \text{Nyquist}$ vs $0.954 \times \text{Nyquist}$) at a modest tradeoff in CPU efficiency.
 
 ### 2.2 Hard Real-Time Zero-Allocation Hot-Reload Architecture
 * **Upstream Behavior**: Upstream compiles new pipelines, allocates heap memory, and reads impulse-response files from disk on the audio processing thread during reloads (`src/processing.rs`).
@@ -77,9 +71,9 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 * **Why `cdsp` Is Better**: Bypasses scheduling overhead and achieves a **25% increase in raw data throughput** (1247.7x real-time speed vs 995.1x) with cache-aligned structures.
 
 ### 2.4 Drop-on-Full Queue Overflow Policy
-* **Upstream Behavior**: Upstream applies **blocking back-pressure** — a full queue blocks the producer until the consumer drains it (`coreaudio_backend/device.rs`, `processing.rs`).
-* **`cdsp` Enhancement**: [`../src/engine/engine_capture_loop.c`](../src/engine/engine_capture_loop.c) and [`../src/engine/engine_processing_loop.c`](../src/engine/engine_processing_loop.c) drop the chunk and continue rather than block.
-* **Why `cdsp` Is Better**: Blocking inside a CoreAudio HAL or ASIO driver callback stalls the driver's real-time thread and cascades into a hardware-level overrun affecting the entire audio graph. Dropping a chunk degrades locally and recoverably instead.
+* **Upstream Behavior**: Upstream driver callbacks use non-blocking ring buffers and `try_send`/`try_recv`. Between internal worker threads, upstream uses blocking channels to pace processing to playback device drain rate.
+* **`cdsp` Enhancement**: In [`../src/engine/engine_capture_loop.c`](../src/engine/engine_capture_loop.c) and [`../src/engine/engine_processing_loop.c`](../src/engine/engine_processing_loop.c), all inter-thread SPSC audio queues employ a non-blocking drop-on-full policy.
+* **Why `cdsp` Is Better**: Prevents worker threads from blocking or stalling processing pipelines during transient desynchronization, severe system load, or driver stalls. Dropping a chunk degrades locally and gracefully instead of holding locks or creating upstream backpressure that risks cascading underruns across the engine.
 
 ### 2.5 Lock-Free Device Buffer Estimation with Live Ring Sampling
 * **Upstream Behavior**: Upstream's `DeviceBufferEstimator` (`src/utils/countertimer.rs:23-54`) is shared between the device thread and the outer thread as `Arc<Mutex<DeviceBufferEstimator>>`, and **both sides access it with `try_lock()`**. The device thread skips the update entirely when the lock is contended (`alsa_backend/threaded_device.rs:457-459`), and the reader falls back to `unwrap_or_default()` — i.e. **it reports a buffer level of `0`** (`threaded_device.rs:1198-1201`, and the identical pattern in the WASAPI, CoreAudio, ASIO and PipeWire backends). The estimator also stores the ring/channel fill *and* the device-side frames as a single snapshot, so the whole sum is extrapolated from one timestamp.
@@ -133,10 +127,10 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 
 ## 3. Numerical Precision & Mathematical Integrity
 
-### 3.1 Full Double-Precision Filter & Resampler Design
-* **Upstream Behavior**: Upstream computes anti-alias cutoffs and processes biquad filter coefficients in single-precision (`f32`).
-* **`cdsp` Enhancement**: `cdsp` uses IEEE 754 double precision (`double` / `f64`) for coefficient calculation, cutoff frequencies, volume ramps, and configuration storage ([`../src/filters/biquad.c`](../src/filters/biquad.c), [`../src/resampler/synchronous_resampler.c`](../src/resampler/synchronous_resampler.c)).
-* **Why `cdsp` Is Better**: Prevents coefficient quantization distortion, preserves sub-LSB numerical noise below `1e-15`, and avoids high-Q biquad pole migration near Nyquist.
+### 3.1 Full Double-Precision Pipeline & Resampler Design
+* **Upstream Behavior**: Upstream defaults to `f64` (`CamillaFloat`) for core filter processing and biquad calculation, but uses single-precision `f32` for volume faders, loudness boosts, and resampler cutoff formulas.
+* **`cdsp` Enhancement**: `cdsp` enforces IEEE 754 double precision (`double` / `f64`) uniformly from input ingestion to output conversion: all inputs are converted to doubles prior to entering the DSP, and all faders, volume ramps, loudness curves, biquad coefficients, cutoff frequencies, and filter stages operate exclusively in `double` ([`../src/filters/biquad.c`](../src/filters/biquad.c), [`../src/resampler/synchronous_resampler.c`](../src/resampler/synchronous_resampler.c), [`../src/public/fader.c`](../src/public/fader.c)). Float is retained solely for visualization displays (e.g. FFT and VU meter UI).
+* **Why `cdsp` Is Better**: Eliminates mixed-precision conversions across processing stages, prevents coefficient quantization distortion, preserves sub-LSB numerical noise floor below `1e-15`, and avoids high-Q biquad pole migration near Nyquist.
 
 ### 3.2 Horner Form with Hardware Fused Multiply-Add (FMA)
 * **Scope**: Applies to the **async sinc** resampler.
@@ -145,11 +139,12 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 * **Why `cdsp` Is Better**: Evaluating Horner form with FMA executes in fewer CPU cycles and incurs only a single rounding error at the final step, providing superior accuracy over expanded powers.
 
 ### 3.3 Mathematical `-inf` in DSP Math with Safe RFC 8259 JSON Clamping
-* **Upstream Behavior**: Upstream hard-codes constant lower floors: `-200.0 dB` in `linear_to_db` and `1e-30` (`-300.0 dB`) in spectrum power calculation.
+* **Upstream Behavior**: Upstream hard-codes constant lower floors: `-200.0 dB` in `linear_to_db` (using a conditional branch `if value.abs() < 4.66e-10`) and `1e-30` (`-300.0 dB`) in spectrum power calculation.
 * **`cdsp` Enhancement**:
   - **Internal DSP**: In [`../src/audio/processing_parameters.c`](../src/audio/processing_parameters.c), [`../src/utils/float_helpers.h`](../src/utils/float_helpers.h), and [`../src/audio/spectrum_analyzer.c`](../src/audio/spectrum_analyzer.c), `cdsp` retains pure IEEE 754 mathematical `-INFINITY` for zero-amplitude inputs.
+  - **SIMD & Hardware Vectorization**: Eliminating the conditional branch allows compilers to auto-vectorize decibel conversion loops and unroll SIMD instructions seamlessly. On macOS, this also allows direct integration with Apple's hardware-accelerated `vDSP_vdbcon`, which outperforms compiler-generated branched loops.
   - **JSON Serialization Boundary**: In [`app/server/websocket_server.c`](../app/server/websocket_server.c), numbers are clamped to `-200.0f` only when serializing for the WebSocket RPC API.
-* **Why `cdsp` Is Better**: Internal DSP mathematics remains completely free of arbitrary constant noise floors and software clamps, while JSON consumers never receive illegal non-finite tokens that violate RFC 8259.
+* **Why `cdsp` Is Better**: Internal DSP mathematics remains completely free of arbitrary constant noise floors and software clamps, inner conversion loops run at maximum SIMD throughput, and JSON consumers never receive illegal non-finite tokens that violate RFC 8259.
 
 ### 3.4 Partial-Chunk Accurate RMS Metering
 * **Upstream Behavior**: Computes RMS by dividing sample sum-of-squares by the total chunk capacity, even for partial chunks at stream termination.
@@ -161,10 +156,10 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 * **`cdsp` Enhancement**: In [`../src/utils/float_helpers.h`](../src/utils/float_helpers.h), `dsp_ops_rms`, `dsp_ops_peak_absolute`, and `dsp_ops_min_max` use single-pass float vectorization (`fmaxf`, `sqrtf`, compiler auto-vectorization across AVX/NEON).
 * **Why `cdsp` Is Better**: Executes ~2x faster across SIMD lanes while delivering ample precision for audio telemetry without intermediate memory buffers.
 
-### 3.6 Precomputed Reciprocal Scaling for FFT Partitioned Convolution
-* **Upstream Behavior**: Upstream performs sample-by-sample division by `fft_len` inside the time-domain synthesis loops.
-* **`cdsp` Enhancement**: In [`../src/filters/convolution.c`](../src/filters/convolution.c), `cdsp` precomputes `inv_scale = 1.0 / (double)fft_len` during filter compilation, replacing inner-loop divisions with fast reciprocal multiplications.
-* **Why `cdsp` Is Better**: Floating-point division requires 10–20 clock cycles per sample, whereas multiplication requires 1–3 clock cycles and vectorizes cleanly, resulting in ~10x faster normalization.
+### 3.6 Precomputed Reciprocal Scaling for Partitioned Convolution Coefficients
+* **Upstream Behavior**: When preparing partitioned convolution filters (`src/filters/fftconv.rs:502-504`), upstream normalizes coefficients by performing a floating-point division per tap inside a loop: `coeff / (2 * data_length) as CamillaFloat`.
+* **`cdsp` Enhancement**: In [`../src/filters/convolution.c`](../src/filters/convolution.c), `cdsp` precomputes the reciprocal `inv_scale = 1.0 / (double)fft_len` once outside the loop and scales coefficients via multiplication: `scratch[k] = coeffs[offset + k] * inv_scale`.
+* **Why `cdsp` Is Better**: Floating-point division takes ~10–20 CPU cycles per tap compared to ~1–3 cycles for multiplication and vectorizes cleanly across SIMD lanes, speeding up impulse response compilation and caching during background filter hot-reloads (especially beneficial for long room correction filters with hundreds of thousands of taps).
 
 ### 3.7 Defensive Numerical Sanitization & Singularity Protection
 * **EPS Clamps**: In [`../src/filters/biquad.c`](../src/filters/biquad.c), `cdsp` clamps `|sin_w0|`, `A`, `|slope_s|`, `|q|` and the shelf `term` to a floor of `1e-12` to eliminate division-by-zero singularities.

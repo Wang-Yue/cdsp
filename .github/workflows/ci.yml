@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS (Apple Silicon)
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies via Homebrew
+        run: |
+          brew update
+          brew install fftw libyaml cjson libwebsockets
+          brew install blackhole-2ch blackhole-16ch
+          sudo killall coreaudiod || true
+          sleep 2
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_NATIVE_ARCH=OFF \
+            -DBUILD_TESTING=ON \
+            -DBUILD_BENCHMARKS=ON \
+            -DENABLE_STUDIO=OFF
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: Run Tests
+        run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.ncpu)
+
+  linux:
+    name: Linux (Ubuntu x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            clang \
+            llvm \
+            libasound2-dev \
+            libpipewire-0.3-dev \
+            libdbus-1-dev \
+            libfftw3-dev \
+            libyaml-dev \
+            libcjson-dev \
+            libwebsockets-dev \
+            libssl-dev \
+            libopenblas-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_NATIVE_ARCH=OFF \
+            -DENABLE_ALSA=ON \
+            -DENABLE_PIPEWIRE=ON \
+            -DENABLE_DBUS=ON \
+            -DBUILD_TESTING=ON \
+            -DBUILD_BENCHMARKS=ON \
+            -DENABLE_STUDIO=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run Tests
+        run: ctest --test-dir build --output-on-failure -j$(nproc)
+
+  linux-sanitizers:
+    name: Linux Sanitizers (ASan, UBSan, LSan)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            clang \
+            llvm \
+            libasound2-dev \
+            libpipewire-0.3-dev \
+            libdbus-1-dev \
+            libfftw3-dev \
+            libyaml-dev \
+            libcjson-dev \
+            libwebsockets-dev \
+            libssl-dev \
+            libopenblas-dev
+
+      - name: Run Sanitizer Suite
+        run: ./run_sanitizers.sh address undefined leak
+
+  windows:
+    name: Windows (MinGW-w64 x86_64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 & MinGW-w64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-fftw
+            mingw-w64-x86_64-libyaml
+            mingw-w64-x86_64-cjson
+            mingw-w64-x86_64-libwebsockets
+
+      - name: Configure CMake
+        shell: msys2 {0}
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_NATIVE_ARCH=OFF \
+            -DENABLE_WASAPI=ON \
+            -DENABLE_ASIO=ON \
+            -DENABLE_STATIC_WINDOWS=ON \
+            -DBUILD_TESTING=ON \
+            -DBUILD_BENCHMARKS=ON \
+            -DENABLE_STUDIO=OFF
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build
+
+      - name: Run Tests
+        shell: msys2 {0}
+        run: ctest --test-dir build --output-on-failure
