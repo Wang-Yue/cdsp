@@ -639,7 +639,7 @@ void MainWindow::setupMenuBar() {
     auto helpMenu = bar->addMenu("&Help");
     auto helpAct = new QAction("CDSP Studio Help", this);
     connect(helpAct, &QAction::triggered,
-            []() { QDesktopServices::openUrl(QUrl("https://github.com/Wang-Yue/cdsp-studio")); });
+            []() { QDesktopServices::openUrl(QUrl("https://github.com/Wang-Yue/cdsp")); });
     helpMenu->addAction(helpAct);
 }
 
