@@ -720,43 +720,30 @@ static void biquad_choose_split(size_t channels, size_t depth,
 #define CANON_STAGE(c, k, in_val)                                              \
   do {                                                                         \
     double _in = (in_val);                                                     \
-    double _out = b0[c][k] * _in + s1[c][k];                                   \
-    double _tmp = b1[c][k] * _in + s2[c][k];                                   \
-    s1[c][k] = neg_a1[c][k] * _out + _tmp;                                     \
-    s2[c][k] = b2[c][k] * _in + neg_a2[c][k] * _out;                           \
+    double _out = v.b0[c][k] * _in + v.s1[c][k];                               \
+    double _tmp = v.b1[c][k] * _in + v.s2[c][k];                               \
+    v.s1[c][k] = v.neg_a1[c][k] * _out + _tmp;                                 \
+    v.s2[c][k] = v.b2[c][k] * _in + v.neg_a2[c][k] * _out;                     \
     pipe[c][k] = _out;                                                         \
   } while (0)
 
 #define DEFINE_2D_CANON_KERNEL(C, S)                                           \
   _Static_assert((S) >= 1, "biquad cascade depth S must be at least 1");       \
   _Static_assert((C) >= 1, "channel count C must be at least 1");              \
-  static void biquad_canon_kernel_##C##_##S(                                   \
-      biquad_filter_t ***cascades, double **waveforms,                         \
-      const size_t *channel_of, const size_t *members, size_t start,           \
-      size_t n) {                                                              \
-    double b0[C][S], b1[C][S], b2[C][S], neg_a1[C][S], neg_a2[C][S];           \
-    double s1[C][S], s2[C][S];                                                 \
-    double *waves[C];                                                          \
-    for (size_t c = 0; c < C; c++) {                                           \
-      size_t mem = members[c];                                                 \
-      waves[c] = waveforms[channel_of[mem]];                                   \
-      for (size_t k = 0; k < S; k++) {                                         \
-        biquad_filter_t *f = cascades[mem][start + k];                         \
-        b0[c][k] = f->coeffs.b0;                                               \
-        b1[c][k] = f->coeffs.b1;                                               \
-        b2[c][k] = f->coeffs.b2;                                               \
-        neg_a1[c][k] = f->neg_a1;                                              \
-        neg_a2[c][k] = f->neg_a2;                                              \
-        s1[c][k] = f->z1;                                                      \
-        s2[c][k] = f->z2;                                                      \
-      }                                                                        \
-    }                                                                          \
-    for (size_t c1 = 0; c1 < C; c1++) {                                        \
-      for (size_t c2 = c1 + 1; c2 < C; c2++) {                                 \
-        assert(channel_of[members[c1]] != channel_of[members[c2]] &&           \
-               "each cascade of a group must filter a different channel");     \
-      }                                                                        \
-    }                                                                          \
+  typedef struct {                                                             \
+    double s1[C][S];                                                           \
+    double s2[C][S];                                                           \
+    double b0[C][S];                                                           \
+    double b1[C][S];                                                           \
+    double b2[C][S];                                                           \
+    double neg_a1[C][S];                                                       \
+    double neg_a2[C][S];                                                       \
+  } canon_voices_##C##_##S;                                                    \
+                                                                               \
+  static __attribute__((noinline)) void biquad_canon_kernel_##C##_##S(         \
+      double *__restrict const waves[C],                                       \
+      canon_voices_##C##_##S *__restrict in_v, size_t n) {                     \
+    canon_voices_##C##_##S v = *in_v;                                          \
     double pipe[C][S];                                                         \
     memset(pipe, 0, sizeof(pipe));                                             \
     size_t ramp = (S - 1 < n) ? (S - 1) : n;                                   \
@@ -797,15 +784,41 @@ static void biquad_choose_split(size_t channels, size_t depth,
         }                                                                      \
       }                                                                        \
     }                                                                          \
+    *in_v = v;                                                                 \
+  }                                                                            \
+                                                                               \
+  static void run_group_##C##_##S(                                             \
+      biquad_filter_t ***cascades, double **waveforms,                         \
+      const size_t *channel_of, const size_t *members, size_t start,           \
+      size_t n) {                                                              \
+    canon_voices_##C##_##S v;                                                  \
+    double *__restrict waves[C];                                               \
+    for (size_t c = 0; c < C; c++) {                                           \
+      size_t mem = members[c];                                                 \
+      waves[c] = waveforms[channel_of[mem]];                                   \
+      for (size_t k = 0; k < S; k++) {                                         \
+        biquad_filter_t *f = cascades[mem][start + k];                         \
+        v.b0[c][k] = f->coeffs.b0;                                             \
+        v.b1[c][k] = f->coeffs.b1;                                             \
+        v.b2[c][k] = f->coeffs.b2;                                             \
+        v.neg_a1[c][k] = f->neg_a1;                                            \
+        v.neg_a2[c][k] = f->neg_a2;                                            \
+        v.s1[c][k] = f->z1;                                                    \
+        v.s2[c][k] = f->z2;                                                    \
+      }                                                                        \
+    }                                                                          \
+    biquad_canon_kernel_##C##_##S(waves, &v, n);                               \
     for (size_t c = 0; c < C; c++) {                                           \
       size_t mem = members[c];                                                 \
       for (size_t k = 0; k < S; k++) {                                         \
-        if (fpclassify(s1[c][k]) == FP_SUBNORMAL)                              \
-          s1[c][k] = 0.0;                                                      \
-        if (fpclassify(s2[c][k]) == FP_SUBNORMAL)                              \
-          s2[c][k] = 0.0;                                                      \
-        cascades[mem][start + k]->z1 = s1[c][k];                               \
-        cascades[mem][start + k]->z2 = s2[c][k];                               \
+        double z1 = v.s1[c][k];                                                \
+        double z2 = v.s2[c][k];                                                \
+        if (fpclassify(z1) == FP_SUBNORMAL)                                    \
+          z1 = 0.0;                                                            \
+        if (fpclassify(z2) == FP_SUBNORMAL)                                    \
+          z2 = 0.0;                                                            \
+        cascades[mem][start + k]->z1 = z1;                                     \
+        cascades[mem][start + k]->z2 = z2;                                     \
       }                                                                        \
     }                                                                          \
   }
@@ -834,36 +847,36 @@ static void dispatch_pass(biquad_filter_t ***cascades, double **waveforms,
 #define DISPATCH_DEPTH(C)                                                      \
   switch (depth) {                                                             \
   case 1:                                                                      \
-    biquad_canon_kernel_##C##_1(cascades, waveforms, channel_of, members,      \
-                                start, n_frames);                              \
+    run_group_##C##_1(cascades, waveforms, channel_of, members, start,         \
+                      n_frames);                                               \
     break;                                                                     \
   case 2:                                                                      \
-    biquad_canon_kernel_##C##_2(cascades, waveforms, channel_of, members,      \
-                                start, n_frames);                              \
+    run_group_##C##_2(cascades, waveforms, channel_of, members, start,         \
+                      n_frames);                                               \
     break;                                                                     \
   case 3:                                                                      \
-    biquad_canon_kernel_##C##_3(cascades, waveforms, channel_of, members,      \
-                                start, n_frames);                              \
+    run_group_##C##_3(cascades, waveforms, channel_of, members, start,         \
+                      n_frames);                                               \
     break;                                                                     \
   case 4:                                                                      \
-    biquad_canon_kernel_##C##_4(cascades, waveforms, channel_of, members,      \
-                                start, n_frames);                              \
+    run_group_##C##_4(cascades, waveforms, channel_of, members, start,         \
+                      n_frames);                                               \
     break;                                                                     \
   case 5:                                                                      \
-    biquad_canon_kernel_##C##_5(cascades, waveforms, channel_of, members,      \
-                                start, n_frames);                              \
+    run_group_##C##_5(cascades, waveforms, channel_of, members, start,         \
+                      n_frames);                                               \
     break;                                                                     \
   case 6:                                                                      \
-    biquad_canon_kernel_##C##_6(cascades, waveforms, channel_of, members,      \
-                                start, n_frames);                              \
+    run_group_##C##_6(cascades, waveforms, channel_of, members, start,         \
+                      n_frames);                                               \
     break;                                                                     \
   case 7:                                                                      \
-    biquad_canon_kernel_##C##_7(cascades, waveforms, channel_of, members,      \
-                                start, n_frames);                              \
+    run_group_##C##_7(cascades, waveforms, channel_of, members, start,         \
+                      n_frames);                                               \
     break;                                                                     \
   case 8:                                                                      \
-    biquad_canon_kernel_##C##_8(cascades, waveforms, channel_of, members,      \
-                                start, n_frames);                              \
+    run_group_##C##_8(cascades, waveforms, channel_of, members, start,         \
+                      n_frames);                                               \
     break;                                                                     \
   }                                                                            \
   assert((depth >= 1 && depth <= 8) && "depth is clamped to MAX_DEPTH");
