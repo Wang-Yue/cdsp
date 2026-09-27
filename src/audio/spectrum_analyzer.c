@@ -28,7 +28,7 @@ struct spectrum_analyzer {
   size_t fft_n;
   real_fftf_t *fft_setup;
   float *window;
-  float window_sum;
+  double window_sum;
   // Preallocated reusable scratch buffers to eliminate frame-by-frame
   // allocations
   float *data;
@@ -114,19 +114,20 @@ static bool spectrum_analyzer_reconfigure_fft(spectrum_analyzer_t *analyzer,
   memset(new_mags, 0, (new_n / 2 + 1) * sizeof(float));
   memset(new_db_mags, 0, (new_n / 2 + 1) * sizeof(float));
 
-  // Compute symmetric Hann window (accumulated in float for performance)
-  // (src/spectrum.rs:152-156)
-  float sum = 0.0f;
+  // Compute symmetric Hann window, accumulating in double precision to prevent
+  // precision loss on large FFT sizes (matching upstream CamillaDSP
+  // src/spectrum.rs:152-156)
+  double sum = 0.0;
   if (new_n > 1) {
     double denom = (double)(new_n - 1);
     for (size_t i = 0; i < new_n; i++) {
-      new_window[i] =
-          (float)(0.5 * (1.0 - cos(2.0 * M_PI * (double)i / denom)));
-      sum += new_window[i];
+      double w = 0.5 * (1.0 - cos(2.0 * M_PI * (double)i / denom));
+      new_window[i] = (float)w;
+      sum += w;
     }
   } else if (new_n == 1) {
     new_window[0] = 1.0f;
-    sum = 1.0f;
+    sum = 1.0;
   }
 
   if (analyzer->fft_setup)
@@ -297,7 +298,7 @@ spectrum_status_t spectrum_analyzer_compute(spectrum_analyzer_t *analyzer,
   real_fftf_forward(analyzer->fft_setup, analyzer->data, analyzer->spec);
 
   // 3. Compute magnitudes in dBFS directly into preallocated arrays
-  float scale = 2.0f / analyzer->window_sum;
+  float scale = (float)(2.0 / analyzer->window_sum);
 
   dsp_ops_float_complex_abs(analyzer->spec, analyzer->magnitudes, half_n + 1);
   dsp_ops_float_scalar_multiply(analyzer->magnitudes, scale, half_n + 1);

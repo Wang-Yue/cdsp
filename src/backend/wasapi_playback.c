@@ -64,6 +64,7 @@ struct wasapi_playback {
   double pending_rate;
   _Atomic bool has_pending_rate_change;
   backend_buffer_t *buffer;
+  processing_parameters_t *params;
 };
 
 static void wasapi_playback_on_format_change(void *parent, double new_rate) {
@@ -310,9 +311,9 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
 
   // Allocate backend buffer matching upstream CamillaDSP
   size_t ring_frames = 2 * (size_t)playback->chunk_size + 2048;
-  playback->buffer =
-      backend_buffer_create(ring_frames, playback->bin_fmt, playback->channels,
-                            (double)playback->sample_rate, false);
+  playback->buffer = backend_buffer_create(
+      ring_frames, playback->bin_fmt, playback->channels,
+      (double)playback->sample_rate, false, playback->params);
   if (!playback->buffer) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -483,6 +484,7 @@ wasapi_playback_create(const playback_device_config_t *config, int sample_rate,
       config->cfg.wasapi.has_exclusive ? config->cfg.wasapi.exclusive : false;
   playback->polling =
       config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
+  playback->params = params;
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
   if (!backend) {

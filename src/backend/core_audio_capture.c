@@ -52,6 +52,7 @@ struct core_audio_capture {
 
   AudioUnit audio_unit;
   backend_buffer_t *buffer;
+  processing_parameters_t *params;
   size_t bytes_per_sample;
   size_t blockalign;
 
@@ -204,8 +205,13 @@ static void core_audio_capture_close(void *ctx) {
   if (!capture)
     return;
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-  if (!capture->audio_unit && capture->opened_device_id == 0)
+  if (!capture->audio_unit && capture->opened_device_id == 0) {
+    if (capture->buffer) {
+      backend_buffer_free(capture->buffer);
+      capture->buffer = NULL;
+    }
     return;
+  }
   logger_info(&g_logger, "Closing CoreAudio capture device");
   if (capture->rate_watcher) {
     rate_change_watcher_free(capture->rate_watcher);
@@ -239,6 +245,10 @@ static void core_audio_capture_close(void *ctx) {
     cdsp_tap_destroy_handle(&capture->tap);
   }
   capture->opened_device_id = 0;
+  if (capture->buffer) {
+    backend_buffer_free(capture->buffer);
+    capture->buffer = NULL;
+  }
 }
 
 /// Open the CoreAudio capture device and initialize the AudioUnit and render
@@ -249,7 +259,18 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
     return false;
   core_audio_capture_close(capture);
 
-  backend_buffer_drain(capture->buffer);
+  const size_t callback_frames = 512;
+  size_t ring_frames = 2 * capture->chunk_size + 2 * callback_frames;
+  capture->buffer = backend_buffer_create(
+      ring_frames, BINARY_SAMPLE_FORMAT_F32_LE, capture->channels,
+      capture->sample_rate, false, capture->params);
+  if (!capture->buffer) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Out of memory");
+    return false;
+  }
+
   atomic_store_explicit(&capture->callback_error_count, 0,
                         memory_order_relaxed);
   atomic_store_explicit(&capture->last_callback_error, 0, memory_order_relaxed);
@@ -627,20 +648,7 @@ static capture_backend_t *core_audio_capture_create(
     capture->has_sample_format = true;
   }
 
-  capture->bytes_per_sample = sizeof(float);
-  capture->blockalign = config_channels * sizeof(float);
-  const size_t callback_frames = 512;
-  size_t ring_frames = 2 * (size_t)chunk_size + 2 * callback_frames;
-  capture->buffer =
-      backend_buffer_create(ring_frames, BINARY_SAMPLE_FORMAT_F32_LE,
-                            capture->channels, capture->sample_rate, false);
-  if (!capture->buffer) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Out of memory");
-    core_audio_capture_destroy(capture);
-    return NULL;
-  }
+  capture->params = params;
   atomic_init(&capture->is_device_alive, true);
   atomic_init(&capture->active_callbacks, 0);
 

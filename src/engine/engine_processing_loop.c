@@ -298,21 +298,6 @@ static void processing_loop_record_metrics(engine_processing_loop_t *loop,
       }
     }
   }
-
-  // Scan the output chunk for clipped samples (outside [-1.0, 1.0) range).
-  // Samples >= 1.0 or < -1.0 cannot be represented in standard fixed-point.
-  size_t channels = audio_chunk_get_channels(chunk);
-  size_t c_frames = audio_chunk_get_valid_frames(chunk);
-  uint64_t clipped = 0;
-  for (size_t c = 0; c < channels; c++) {
-    mutable_waveform_t data = audio_chunk_get_channel(chunk, c);
-    for (size_t f = 0; f < c_frames; f++) {
-      if (data[f] >= 1.0 || data[f] < -1.0) {
-        clipped++;
-      }
-    }
-  }
-  processing_parameters_add_clipped_samples(loop->processing_params, clipped);
 }
 
 /**

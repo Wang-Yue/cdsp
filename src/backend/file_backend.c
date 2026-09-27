@@ -15,6 +15,7 @@
 #endif
 
 #include "audio/audio_chunk.h"
+#include "audio/processing_parameters.h"
 #include "backend/audio_backend.h"
 #include "backend/backend_error.h"
 #include "config/config_gen.h"
@@ -75,6 +76,7 @@ struct file_playback {
   uint64_t total_bytes_written;
   uint8_t *raw_buf;
   size_t raw_buf_capacity;
+  processing_parameters_t *params;
 #ifdef CDSP_TEST
   bool realtime;
   uint64_t start_time_ns;
@@ -726,6 +728,25 @@ static bool file_playback_write(void *ctx, const audio_chunk_t *chunk,
 #endif
   size_t frames = audio_chunk_get_valid_frames(chunk);
   (void)frames;
+
+  if (playback->params && !sample_format_is_float(playback->format) &&
+      !sample_format_is_dsd(playback->format)) {
+    size_t channels = audio_chunk_get_channels(chunk);
+    size_t c_frames = audio_chunk_get_valid_frames(chunk);
+    uint64_t clipped = 0;
+    for (size_t c = 0; c < channels; c++) {
+      mutable_waveform_t data = audio_chunk_get_channel(chunk, c);
+      for (size_t f = 0; f < c_frames; f++) {
+        if (data[f] >= 1.0 || data[f] < -1.0) {
+          clipped++;
+        }
+      }
+    }
+    if (clipped > 0) {
+      processing_parameters_add_clipped_samples(playback->params, clipped);
+    }
+  }
+
   bool reached_4gb = false;
   char err_msg[256] = {0};
 
@@ -963,6 +984,7 @@ file_playback_create(const playback_device_config_t *config, int sample_rate,
   }
   playback->chunk_size = chunk_size;
   playback->sample_rate = sample_rate;
+  playback->params = params;
 
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));

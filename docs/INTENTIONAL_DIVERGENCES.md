@@ -29,16 +29,14 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 | 11 | **Metering** | Scalar accumulation or intermediate buffer allocations | Single-pass SIMD vectorization in `dsp_ops` (§3.5) | 2x faster calculation, zero allocation |
 | 12 | **Convolution** | Inner-loop division by `fft_len` per sample | Precomputed reciprocal multiplication (`inv_scale`) (§3.6) | ~10x faster scaling in frequency domain |
 | 13 | **Sanitization** | NaNs propagate freely through feedback & conversions | Feedback/sample sanitization & non-finite rejection (§3.7) | Prevents runaway oscillation & NaN math |
-| 14 | **Spectrum** | Sums window normalization in `f64` | Computes & sums window normalization in `float` (§3.8) | Maximum performance and SIMD throughput in real-time metering |
-| 15 | **Resampler Headroom** | Exact truncating bounds without vector headroom | Safety guard band (`ceil(...) + 16`) (§3.9) | Guaranteed zero SIMD out-of-bounds access |
-| 16 | **Metering** | Clipped samples counted only at integer output | Floating-point peak saturation monitored across pipeline (§4.1) | Catches inter-stage digital clipping early |
-| 17 | **Driver Events** | PipeWire rate change ignored in direct capture | Graph rate change actively captured & reported (§4.2) | Dynamic sample rate renegotiation |
-| 18 | **Formats** | Limited to standard PCM audio formats | Native DSD and DoP (DSD over PCM) subsystem support (§4.3) | High-resolution audiophile format playback |
-| 19 | **Validation** | Accepts degenerate/empty convolution IR configurations | Stricter rejection at validation time (§5) | Fails fast instead of producing NaN/singular filters |
-| 20 | **macOS Capture** | Requires virtual loopback drivers (BlackHole/Soundflower) | Native CoreAudio Device Tap (`"loopback": true`) (§4.4) | Zero driver installation, minimal hardware-direct latency, zero clock drift |
-| 21 | **Buffer Level** | `Arc<Mutex<DeviceBufferEstimator>>` sampled with `try_lock()`, reporting `0` on contention | Lock-free atomic estimator plus live SPSC ring sampling (§2.5) | No spurious zero-level readings into the rate controller; exact ring term |
-| 22 | **Zero-Copy Backends** | Staging scratch buffers (`scratch_buf`, `decode_buf`, `encode_buf`, `interleaved_buf`) and intermediate `memcpy` steps | Direct circular slice decoding/encoding to SPSC ring buffers (§2.6) | Zero staging buffers, reduced CPU cache pollution & minimum latency |
-| 23 | **Driver Layout & Buffers** | Serializes planar drivers (ASIO) into byte streams; unaligned default micro-buffers on CoreAudio | Native planar streaming for ASIO; matched hardware buffer size & interleaved pass-through for CoreAudio (§2.7) | Eliminates 2D sample interleaving on ASIO; bypasses AUHAL `AudioConverter` and drops callback CPU on CoreAudio |
+| 14 | **Resampler Headroom** | Exact truncating bounds without vector headroom | Safety guard band (`ceil(...) + 16`) (§3.8) | Guaranteed zero SIMD out-of-bounds access |
+| 15 | **Driver Events** | PipeWire rate change ignored in direct capture | Graph rate change actively captured & reported (§4.1) | Dynamic sample rate renegotiation |
+| 16 | **Formats** | Limited to standard PCM audio formats | Native DSD and DoP (DSD over PCM) subsystem support (§4.2) | High-resolution audiophile format playback |
+| 17 | **Validation** | Accepts degenerate/empty convolution IR configurations | Stricter rejection at validation time (§5) | Fails fast instead of producing NaN/singular filters |
+| 18 | **macOS Capture** | Requires virtual loopback drivers (BlackHole/Soundflower) | Native CoreAudio Device Tap (`"loopback": true`) (§4.3) | Zero driver installation, minimal hardware-direct latency, zero clock drift |
+| 19 | **Buffer Level** | `Arc<Mutex<DeviceBufferEstimator>>` sampled with `try_lock()`, reporting `0` on contention | Lock-free atomic estimator plus live SPSC ring sampling (§2.5) | No spurious zero-level readings into the rate controller; exact ring term |
+| 20 | **Zero-Copy Backends** | Staging scratch buffers (`scratch_buf`, `decode_buf`, `encode_buf`, `interleaved_buf`) and intermediate `memcpy` steps | Direct circular slice decoding/encoding to SPSC ring buffers (§2.6) | Zero staging buffers, reduced CPU cache pollution & minimum latency |
+| 21 | **Driver Layout & Buffers** | Serializes planar drivers (ASIO) into byte streams; unaligned default micro-buffers on CoreAudio | Native planar streaming for ASIO; matched hardware buffer size & interleaved pass-through for CoreAudio (§2.7) | Eliminates 2D sample interleaving on ASIO; bypasses AUHAL `AudioConverter` and drops callback CPU on CoreAudio |
 
 ---
 
@@ -180,12 +178,7 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
   - [`../src/filters/clipper.c`](../src/filters/clipper.c) — rejects clipper limits that underflow to zero.
   - All processor validators additionally reject `channels == 0`.
 
-### 3.8 Spectrum Analyzer Window Normalization in Single Precision
-* **Upstream Behavior**: Upstream CamillaDSP (`src/spectrum.rs`) maps window values to `f64` and accumulates them in double precision.
-* **`cdsp` Enhancement**: In [`../src/audio/spectrum_analyzer.c`](../src/audio/spectrum_analyzer.c), `cdsp` computes and accumulates the symmetric Hann window in single precision (`float`).
-* **Why `cdsp` Is Better**: Keeping the window buffer and its normalization sum entirely in single-precision `float` avoids conversion overhead, aligns with the single-precision `real_fftf` transform pipeline, and provides maximum SIMD throughput in real-time spectrum analysis.
-
-### 3.9 Async Sinc Resampler Buffer Headroom and Ramped Ratio
+### 3.8 Async Sinc Resampler Buffer Headroom and Ramped Ratio
 * **Upstream Behavior**: Upstream Rubato sizes async buffers using exact truncating bounds (`+10.0` / `+2.0 + len/2`).
 * **`cdsp` Enhancement**: In [`../src/resampler/async_sinc_resampler.c`](../src/resampler/async_sinc_resampler.c), `cdsp` sizes internal working scratch buffers with an extra `+16` frame safety margin (`ceil(...) + 16`) and provides smooth ramped ratio transitions.
 * **Why `cdsp` Is Better**: The extra 16-frame guard band ensures SIMD vector operations (AVX/NEON) have aligned padding and never read/write out of bounds during extreme dynamic ratio swings.
@@ -194,22 +187,17 @@ Notably, upstream CamillaDSP has increasingly adopted architectural designs and 
 
 ## 4. Hardware Driver & Subsystem Enhancements
 
-### 4.1 Inter-Stage Floating-Point Peak Saturation Metering
-* **Upstream Behavior**: Clipped samples are counted only during integer format conversion at the final audio backend.
-* **`cdsp` Enhancement**: In [`../src/engine/engine_processing_loop.c`](../src/engine/engine_processing_loop.c), peak saturation is monitored directly on floating-point audio data (`|sample| > 1.0`).
-* **Why `cdsp` Is Better**: Catches inter-stage digital clipping across pipeline filters and mixers even if subsequent stages attenuate the signal before format conversion.
-
-### 4.2 PipeWire Dynamic Graph Rate Change Reporting
+### 4.1 PipeWire Dynamic Graph Rate Change Reporting
 * **Upstream Behavior**: PipeWire direct capture does not inspect or propagate graph sample rate changes.
 * **`cdsp` Enhancement**: In [`../src/backend/pipewire_backend.c`](../src/backend/pipewire_backend.c), `cdsp` tracks graph rate changes via `capture_backend_get_pending_rate_change()`, reporting them to the engine supervisor for seamless dynamic re-configuration.
 * **Why `cdsp` Is Better**: Dynamically detects sample rate shifts in PipeWire graphs and notifies the supervisor instead of continuing with mismatched clock rates.
 
-### 4.3 Native DSD and DoP (DSD over PCM) Subsystem Support
+### 4.2 Native DSD and DoP (DSD over PCM) Subsystem Support
 * **Upstream Behavior**: Upstream CamillaDSP is strictly limited to PCM audio formats.
 * **`cdsp` Enhancement**: [`../src/dsd`](../src/dsd) implements high-performance Native DSD and DoP (DSD over PCM) encoding/decoding supporting up to DSD256 with SDM-6 modulators.
 * **Why `cdsp` Is Better**: Expands high-end audiophile format support without sacrificing real-time speed, processing carrier streams up to 45x faster than real-time.
 
-### 4.4 Native macOS CoreAudio Device Tap Loopback Capture (`"loopback": true`)
+### 4.3 Native macOS CoreAudio Device Tap Loopback Capture (`"loopback": true`)
 * **Upstream Behavior**: Capturing system-wide audio on macOS requires installing third-party virtual audio loopback drivers (such as BlackHole, Soundflower, or Loopback). This forces users to manually redirect OS default output devices, creates multiple asynchronous clock domains with inevitable clock drift, and introduces heavy double-buffering latency (typically 30ms – 80ms).
   - `"loopback": true` (captures the output stream routed to that DAC, or system-wide audio when targeting the default device)
 

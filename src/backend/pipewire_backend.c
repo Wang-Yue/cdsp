@@ -69,6 +69,7 @@ struct pipewire_capture {
 
   double pending_rate;
   bool has_pending_rate;
+  processing_parameters_t *params;
 };
 
 struct pipewire_playback {
@@ -95,6 +96,7 @@ struct pipewire_playback {
 
   double pending_rate;
   bool has_pending_rate;
+  processing_parameters_t *params;
 };
 
 // MARK: - PipeWire Callbacks
@@ -419,9 +421,9 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
   size_t cap_frames_needed = (size_t)(4 * capture->chunk_size);
   if (cap_frames_needed < cap_min_frames)
     cap_frames_needed = cap_min_frames;
-  capture->buffer =
-      backend_buffer_create(cap_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE,
-                            capture->channels, capture->sample_rate, false);
+  capture->buffer = backend_buffer_create(
+      cap_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE, capture->channels,
+      capture->sample_rate, false, capture->params);
 
   if (!capture->buffer) {
     pipewire_capture_close(capture);
@@ -609,6 +611,7 @@ pipewire_capture_create(const capture_device_config_t *config, int sample_rate,
     capture->has_autoconnect_to = true;
   }
   capture->loopback = config->cfg.pipewire.loopback;
+  capture->params = params;
 
   capture_backend_t *backend =
       (capture_backend_t *)calloc(1, sizeof(capture_backend_t));
@@ -816,9 +819,9 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
   if (pb_frames_needed < pb_min_frames)
     pb_frames_needed = pb_min_frames;
 
-  playback->buffer =
-      backend_buffer_create(pb_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE,
-                            playback->channels, playback->sample_rate, false);
+  playback->buffer = backend_buffer_create(
+      pb_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE, playback->channels,
+      playback->sample_rate, false, playback->params);
 
   if (!playback->buffer) {
     pipewire_playback_close(playback);
@@ -1032,6 +1035,7 @@ static playback_backend_t *pipewire_playback_create(
              config->cfg.pipewire.autoconnect_to);
     playback->has_autoconnect_to = true;
   }
+  playback->params = params;
 
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));

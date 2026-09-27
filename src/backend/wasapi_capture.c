@@ -65,6 +65,7 @@ struct wasapi_capture {
   double pending_rate;
   _Atomic bool has_pending_rate_change;
   backend_buffer_t *buffer;
+  processing_parameters_t *params;
 };
 
 static void wasapi_capture_on_format_change(void *parent, double new_rate) {
@@ -425,9 +426,9 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
 
   // Allocate backend buffer for audio samples
   size_t ring_frames = 2 * (size_t)capture->chunk_size + 2048;
-  capture->buffer =
-      backend_buffer_create(ring_frames, capture->bin_fmt, capture->channels,
-                            (double)capture->sample_rate, false);
+  capture->buffer = backend_buffer_create(
+      ring_frames, capture->bin_fmt, capture->channels,
+      (double)capture->sample_rate, false, capture->params);
   if (!capture->buffer) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -563,6 +564,7 @@ wasapi_capture_create(const capture_device_config_t *config, int sample_rate,
       config->cfg.wasapi.has_exclusive ? config->cfg.wasapi.exclusive : false;
   capture->polling =
       config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
+  capture->params = params;
 
   capture_backend_t *backend =
       (capture_backend_t *)calloc(1, sizeof(capture_backend_t));

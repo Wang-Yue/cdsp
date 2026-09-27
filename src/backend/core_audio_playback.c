@@ -43,6 +43,8 @@ struct core_audio_playback {
   char sample_format[16];
   bool has_sample_format;
 
+  size_t target_level;
+  processing_parameters_t *params;
   AudioUnit audio_unit;
   AudioDeviceID opened_device_id;
   bool did_acquire_hog_mode;
@@ -127,8 +129,13 @@ static void core_audio_playback_close(void *ctx) {
   if (!playback)
     return;
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
-  if (!playback->audio_unit && playback->opened_device_id == 0)
+  if (!playback->audio_unit && playback->opened_device_id == 0) {
+    if (playback->buffer) {
+      backend_buffer_free(playback->buffer);
+      playback->buffer = NULL;
+    }
     return;
+  }
   logger_info(&g_logger, "Closing CoreAudio playback device");
   if (playback->rate_watcher) {
     rate_change_watcher_free(playback->rate_watcher);
@@ -160,6 +167,10 @@ static void core_audio_playback_close(void *ctx) {
     playback->did_acquire_hog_mode = false;
   }
   playback->opened_device_id = 0;
+  if (playback->buffer) {
+    backend_buffer_free(playback->buffer);
+    playback->buffer = NULL;
+  }
 }
 
 /// Open the CoreAudio playback device and initialize output AudioUnit.
@@ -175,7 +186,18 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
               playback->exclusive ? 1 : 0);
   core_audio_playback_close(playback);
 
-  backend_buffer_drain(playback->buffer);
+  size_t ring_frames =
+      16 * playback->chunk_size + playback->target_level + 2048;
+  playback->buffer = backend_buffer_create(
+      ring_frames, BINARY_SAMPLE_FORMAT_F32_LE, playback->channels,
+      playback->sample_rate, false, playback->params);
+  if (!playback->buffer) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Out of memory");
+    return false;
+  }
+  backend_buffer_set_target_level(playback->buffer, playback->target_level);
   backend_buffer_set_rate(playback->buffer, playback->sample_rate);
 
   AudioDeviceID dev_id = core_audio_device_id_for_name(
@@ -512,10 +534,11 @@ static playback_backend_t *core_audio_playback_create(
   playback->channels = config_channels;
   playback->sample_rate = (double)sample_rate;
   playback->chunk_size = (size_t)chunk_size;
-  size_t target_level = (config->cfg.coreaudio.has_target_level &&
-                         config->cfg.coreaudio.target_level > 0)
-                            ? (size_t)config->cfg.coreaudio.target_level
-                            : (size_t)chunk_size;
+  playback->target_level = (config->cfg.coreaudio.has_target_level &&
+                            config->cfg.coreaudio.target_level > 0)
+                               ? (size_t)config->cfg.coreaudio.target_level
+                               : (size_t)chunk_size;
+  playback->params = params;
   playback->exclusive = playback_device_config_get_exclusive(config);
 
   coreaudio_sample_format_t fmt = playback_device_config_get_format(config);
@@ -525,19 +548,6 @@ static playback_backend_t *core_audio_playback_create(
             sizeof(playback->sample_format) - 1);
     playback->has_sample_format = true;
   }
-
-  size_t ring_frames = 16 * (size_t)chunk_size + target_level + 2048;
-  playback->buffer =
-      backend_buffer_create(ring_frames, BINARY_SAMPLE_FORMAT_F32_LE,
-                            playback->channels, playback->sample_rate, false);
-  if (!playback->buffer) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Out of memory");
-    core_audio_playback_destroy(playback);
-    return NULL;
-  }
-  backend_buffer_set_target_level(playback->buffer, target_level);
 
   atomic_init(&playback->is_device_alive, true);
 

@@ -2204,6 +2204,7 @@ struct asio_playback {
 
   asio_playback_context_t *context;
   bool com_initialized;
+  processing_parameters_t *params;
 };
 
 static void asio_playback_close(void *ctx) {
@@ -2324,11 +2325,11 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
   size_t ring_frames = ((size_t)playback->chunk_size > (size_t)asio_buffer_size)
                            ? (size_t)playback->chunk_size
                            : (size_t)asio_buffer_size;
-  playback->buffer =
-      backend_buffer_create(2 * ring_frames + 2048,
-                            asio_sample_format_to_binary_format(
-                                playback->resolved_format, playback->is_lsb),
-                            playback->channels, playback->sample_rate, true);
+  playback->buffer = backend_buffer_create(
+      2 * ring_frames + 2048,
+      asio_sample_format_to_binary_format(playback->resolved_format,
+                                          playback->is_lsb),
+      playback->channels, playback->sample_rate, true, playback->params);
 
   clear_playback_driver_events();
   reset_playback_callback_seen();
@@ -2555,6 +2556,7 @@ asio_playback_create(const playback_device_config_t *config, int sample_rate,
   playback->format = config->cfg.asio.format;
   playback->has_format = config->cfg.asio.has_format;
   playback->full_duplex = full_duplex;
+  playback->params = params;
 
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
@@ -2608,6 +2610,7 @@ struct asio_capture {
 
   asio_capture_context_t *context;
   bool com_initialized;
+  processing_parameters_t *params;
 };
 
 static void asio_capture_close(void *ctx) {
@@ -2729,11 +2732,11 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
   size_t ring_frames = ((size_t)capture->chunk_size > (size_t)asio_buffer_size)
                            ? (size_t)capture->chunk_size
                            : (size_t)asio_buffer_size;
-  capture->buffer =
-      backend_buffer_create(2 * ring_frames + 2048,
-                            asio_sample_format_to_binary_format(
-                                capture->resolved_format, capture->is_lsb),
-                            capture->channels, capture->sample_rate, true);
+  capture->buffer = backend_buffer_create(
+      2 * ring_frames + 2048,
+      asio_sample_format_to_binary_format(capture->resolved_format,
+                                          capture->is_lsb),
+      capture->channels, capture->sample_rate, true, capture->params);
 
   clear_capture_driver_events();
   // Keep the callback from pushing until the loop is ready to consume
@@ -2919,6 +2922,7 @@ asio_capture_create(const capture_device_config_t *config, int sample_rate,
   capture->format = config->cfg.asio.format;
   capture->has_format = config->cfg.asio.has_format;
   capture->full_duplex = full_duplex;
+  capture->params = params;
 
   capture_backend_t *backend =
       (capture_backend_t *)calloc(1, sizeof(capture_backend_t));

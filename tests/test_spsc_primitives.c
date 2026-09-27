@@ -420,7 +420,7 @@ TEST(AudioBackend_PlanarRingBuffer_ReadWrite) {
   size_t channels = 2;
   size_t frames = 32;
   backend_buffer_t *buf = backend_buffer_create(64, BINARY_SAMPLE_FORMAT_F32_LE,
-                                                channels, 48000.0, true);
+                                                channels, 48000.0, true, NULL);
   ASSERT_TRUE(buf != NULL);
 
   audio_chunk_t *chunk_in = audio_chunk_create(frames, channels);

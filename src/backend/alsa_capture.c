@@ -631,7 +631,7 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
       (size_t)capture->chunk_size, capture->period);
   capture->buffer = backend_buffer_create(
       ring_frames, alsa_pcm_format_to_binary_format(capture->format),
-      capture->channels, capture->capture_sample_rate, false);
+      capture->channels, capture->capture_sample_rate, false, capture->params);
   if (!capture->buffer) {
     if (err) {
       backend_error_init(

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "audio/processing_parameters.h"
 #include "engine/cdsp_sem.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
@@ -41,6 +42,9 @@ struct backend_buffer {
 
   // Synchronization semaphore for data readiness and lifecycle wakeups
   cdsp_sem_t semaphore;
+
+  // Processing parameters telemetry sink (optional)
+  processing_parameters_t *processing_params;
 };
 
 /* --- Lifecycle Management --- */
@@ -48,7 +52,8 @@ struct backend_buffer {
 backend_buffer_t *backend_buffer_create(size_t capacity_frames,
                                         binary_sample_format_t format,
                                         size_t channels, double sample_rate,
-                                        bool is_planar) {
+                                        bool is_planar,
+                                        processing_parameters_t *params) {
   if (channels == 0 || capacity_frames == 0)
     return NULL;
   backend_buffer_t *bb =
@@ -65,6 +70,7 @@ backend_buffer_t *backend_buffer_create(size_t capacity_frames,
   }
   bb->blockalign = bb->bytes_per_sample * channels;
   bb->capacity_frames = capacity_frames;
+  bb->processing_params = params;
 
   device_buffer_estimator_init(&bb->device, sample_rate);
   atomic_init(&bb->target_level, 0);
@@ -540,11 +546,10 @@ static bool backend_buffer_write(const backend_buffer_t *bb,
   // a fractured sub-chunk to prevent time-domain waveform discontinuity.
   if (spsc_byte_ring_buffer_get_available_to_write(bb->byte_ring) <
       bytes_to_write) {
-    logger_warn(
-        &g_logger,
-        "Playback ring buffer is full after %u retries, dropped entire "
-        "chunk of %zu bytes to preserve audio framing",
-        retries, bytes_to_write);
+    logger_warn(&g_logger,
+                "Playback ring buffer is full after %u retries, dropped entire "
+                "chunk of %zu bytes to preserve audio framing",
+                retries, bytes_to_write);
     if (err)
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
                          "Playback ring buffer full");
@@ -865,6 +870,30 @@ bool backend_buffer_write_chunk(backend_buffer_t *bb,
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, "Null backend buffer");
     return false;
   }
+
+  // Scan output chunk for clipped samples (outside [-1.0, 1.0) range).
+  // Samples >= 1.0 or < -1.0 cannot be represented in standard fixed-point
+  // integers. Matching upstream CamillaDSP, clipping is only counted for
+  // integer playback formats; floating-point output formats (F32, F64) can
+  // represent values outside [-1.0, 1.0] without clipping.
+  if (bb->processing_params && !sample_format_is_float(bb->format) &&
+      !sample_format_is_dsd(bb->format) && chunk) {
+    size_t channels = audio_chunk_get_channels(chunk);
+    size_t c_frames = audio_chunk_get_valid_frames(chunk);
+    uint64_t clipped = 0;
+    for (size_t c = 0; c < channels; c++) {
+      mutable_waveform_t data = audio_chunk_get_channel(chunk, c);
+      for (size_t f = 0; f < c_frames; f++) {
+        if (data[f] >= 1.0 || data[f] < -1.0) {
+          clipped++;
+        }
+      }
+    }
+    if (clipped > 0) {
+      processing_parameters_add_clipped_samples(bb->processing_params, clipped);
+    }
+  }
+
   if (bb->type == BACKEND_BUFFER_PLANAR) {
     return backend_buffer_planar_write(bb, chunk, sleep_ms, max_retries, err);
   } else {
@@ -873,7 +902,7 @@ bool backend_buffer_write_chunk(backend_buffer_t *bb,
 }
 
 bool backend_buffer_read_chunk(backend_buffer_t *bb, size_t frames_requested,
-                                audio_chunk_t *chunk, backend_error_t *err) {
+                               audio_chunk_t *chunk, backend_error_t *err) {
   if (!bb) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Null backend buffer");
@@ -969,8 +998,8 @@ size_t backend_buffer_consume(backend_buffer_t *bb, void *dst, size_t frames) {
     return 0;
   size_t consumed = 0;
   if (bb->type == BACKEND_BUFFER_PLANAR) {
-    consumed = spsc_planar_ring_buffer_read_channels(bb->planar_ring,
-                                                     (void *const *)dst, frames);
+    consumed = spsc_planar_ring_buffer_read_channels(
+        bb->planar_ring, (void *const *)dst, frames);
   } else {
     if (bb->blockalign == 0)
       return 0;

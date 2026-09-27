@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "audio/audio_chunk.h"
+#include "audio/processing_parameters.h"
 #include "backend/backend_buffer.h"
 #include "backend/backend_error.h"
 #include "test_support.h"
@@ -11,7 +12,7 @@ TEST(AudioBackendRingBufferRead_BasicRoundTrip) {
   size_t channels = 2;
   size_t frames = 64;
   backend_buffer_t *buf = backend_buffer_create(
-      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
+      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
 
   audio_chunk_t *write_chunk = audio_chunk_create(frames, channels);
@@ -54,7 +55,7 @@ TEST(AudioBackendRingBufferRead_BasicRoundTrip) {
 TEST(AudioBackendRingBufferRead_ZeroFrames) {
   size_t channels = 2;
   backend_buffer_t *buf = backend_buffer_create(
-      256, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
+      256, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
   audio_chunk_t *chunk = audio_chunk_create(64, channels);
 
@@ -72,7 +73,7 @@ TEST(AudioBackendRingBufferRead_ZeroFrames) {
 TEST(AudioBackendRingBufferRead_ClampsToChunkCapacity) {
   size_t channels = 2;
   backend_buffer_t *buf = backend_buffer_create(
-      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
+      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
   audio_chunk_t *chunk = audio_chunk_create(32, channels);
 
@@ -95,7 +96,7 @@ TEST(AudioBackendRingBufferRead_DrainOnStreamStopped) {
   size_t channels = 2;
   size_t frames = 32;
   backend_buffer_t *buf = backend_buffer_create(
-      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
+      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
   audio_chunk_t *chunk = audio_chunk_create(frames, channels);
 
@@ -126,7 +127,7 @@ TEST(AudioBackendRingBufferRead_DrainOnStreamStopped) {
 TEST(AudioBackendRingBufferRead_PendingRateChange) {
   size_t channels = 2;
   backend_buffer_t *buf = backend_buffer_create(
-      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
+      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
   audio_chunk_t *chunk = audio_chunk_create(32, channels);
 
@@ -147,7 +148,7 @@ TEST(AudioBackendRingBufferRead_StreamStopped_RaisesReadError) {
   size_t channels = 2;
   size_t frames = 32;
   backend_buffer_t *buf = backend_buffer_create(
-      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
+      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
   audio_chunk_t *chunk = audio_chunk_create(frames, channels);
 
@@ -170,7 +171,7 @@ TEST(AudioBackendRingBufferWrite_StreamStopped_RaisesWriteError) {
   size_t channels = 2;
   size_t frames = 32;
   backend_buffer_t *buf = backend_buffer_create(
-      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
+      1024, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
   audio_chunk_t *chunk = audio_chunk_create(frames, channels);
   audio_chunk_set_valid_frames(chunk, frames);
@@ -195,7 +196,7 @@ TEST(AudioBackendRingBuffer_WrapAroundRoundTrip) {
   size_t frames = 64;
   // Small capacity power of 2: 128 frames capacity
   backend_buffer_t *buf = backend_buffer_create(
-      128, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
+      128, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
 
   audio_chunk_t *write_chunk = audio_chunk_create(frames, channels);
@@ -238,7 +239,7 @@ TEST(AudioBackendRingBuffer_WrapAroundRoundTrip) {
 TEST(AudioBackendRingBuffer_StreamStateLifecycle) {
   size_t channels = 2;
   backend_buffer_t *buf = backend_buffer_create(
-      128, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false);
+      128, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
 
   // Initial state should be running
@@ -272,8 +273,8 @@ TEST(AudioBackendRingBuffer_StreamStateLifecycle) {
 }
 
 TEST(BackendBuffer_WaitAndSignal) {
-  backend_buffer_t *buf =
-      backend_buffer_create(64, BINARY_SAMPLE_FORMAT_F32_LE, 2, 44100.0, false);
+  backend_buffer_t *buf = backend_buffer_create(64, BINARY_SAMPLE_FORMAT_F32_LE,
+                                                2, 44100.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
 
   // Initial wait with short timeout should timeout because no signal or data
@@ -300,7 +301,7 @@ TEST(BackendBuffer_PlaybackWaitAndWakeup) {
   // Verify that rendering or consuming data signals the semaphore, waking up
   // playback writers
   backend_buffer_t *buf = backend_buffer_create(
-      128, BINARY_SAMPLE_FORMAT_F32_LE, 2, 44100.0, false);
+      128, BINARY_SAMPLE_FORMAT_F32_LE, 2, 44100.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
 
   audio_chunk_t *write_chunk = audio_chunk_create(64, 2);
@@ -330,7 +331,7 @@ TEST(BackendBuffer_PlaybackWaitAndWakeup) {
 
 TEST(BackendBuffer_ChannelMismatchValidation) {
   backend_buffer_t *buf = backend_buffer_create(
-      128, BINARY_SAMPLE_FORMAT_F32_LE, 4, 44100.0, false);
+      128, BINARY_SAMPLE_FORMAT_F32_LE, 4, 44100.0, false, NULL);
   ASSERT_TRUE(buf != NULL);
 
   // Chunk with only 2 channels for a 4-channel backend buffer
@@ -353,6 +354,94 @@ TEST(BackendBuffer_ChannelMismatchValidation) {
 
   audio_chunk_free(chunk);
   backend_buffer_free(buf);
+}
+
+TEST(BackendBuffer_ClippedSamplesIntegerFormat) {
+  size_t channels = 2;
+  size_t frames = 5;
+
+  processing_parameters_t *params =
+      processing_parameters_create(channels, channels);
+  ASSERT_TRUE(params != NULL);
+
+  backend_buffer_t *buf = backend_buffer_create(
+      128, BINARY_SAMPLE_FORMAT_S16_LE, channels, 48000.0, false, params);
+  ASSERT_TRUE(buf != NULL);
+
+  audio_chunk_t *chunk = audio_chunk_create(frames, channels);
+  double *ch0 = audio_chunk_get_channel(chunk, 0);
+  double *ch1 = audio_chunk_get_channel(chunk, 1);
+
+  // [-1.0, 1.0) is the unclipped range.
+  // ch0: 0.5 (ok), 1.0 (clipped: >= 1.0), -1.05 (clipped: < -1.0), -1.0 (ok:
+  // -1.0 is valid), 1.5 (clipped) -> 3 clips
+  ch0[0] = 0.5;
+  ch0[1] = 1.0;
+  ch0[2] = -1.05;
+  ch0[3] = -1.0;
+  ch0[4] = 1.5;
+
+  // ch1: 0.0 (ok), 0.99 (ok), -0.99 (ok), 2.0 (clipped), -2.0 (clipped) -> 2
+  // clips
+  ch1[0] = 0.0;
+  ch1[1] = 0.99;
+  ch1[2] = -0.99;
+  ch1[3] = 2.0;
+  ch1[4] = -2.0;
+  audio_chunk_set_valid_frames(chunk, frames);
+
+  backend_error_t err;
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+  bool w_ok = backend_buffer_write_chunk(buf, chunk, 1, 1, &err);
+  ASSERT_TRUE(w_ok);
+
+  // Total clipped samples should be 3 + 2 = 5
+  ASSERT_EQ(processing_parameters_get_clipped_samples(params), 5);
+
+  audio_chunk_free(chunk);
+  backend_buffer_free(buf);
+  processing_parameters_free(params);
+}
+
+TEST(BackendBuffer_ClippedSamplesFloatFormatNoClip) {
+  size_t channels = 2;
+  size_t frames = 4;
+
+  processing_parameters_t *params =
+      processing_parameters_create(channels, channels);
+  ASSERT_TRUE(params != NULL);
+
+  backend_buffer_t *buf = backend_buffer_create(
+      128, BINARY_SAMPLE_FORMAT_F32_LE, channels, 48000.0, false, params);
+  ASSERT_TRUE(buf != NULL);
+
+  audio_chunk_t *chunk = audio_chunk_create(frames, channels);
+  double *ch0 = audio_chunk_get_channel(chunk, 0);
+  double *ch1 = audio_chunk_get_channel(chunk, 1);
+
+  // Floating-point output formats can represent samples beyond [-1.0, 1.0)
+  // without clipping
+  ch0[0] = 1.5;
+  ch0[1] = 2.5;
+  ch0[2] = -3.0;
+  ch0[3] = 0.0;
+  ch1[0] = 10.0;
+  ch1[1] = -10.0;
+  ch1[2] = 1.0;
+  ch1[3] = -1.5;
+  audio_chunk_set_valid_frames(chunk, frames);
+
+  backend_error_t err;
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+  bool w_ok = backend_buffer_write_chunk(buf, chunk, 1, 1, &err);
+  ASSERT_TRUE(w_ok);
+
+  // Float output formats must NOT count clipping
+  ASSERT_EQ(processing_parameters_get_clipped_samples(params), 0);
+
+  audio_chunk_free(chunk);
+  backend_buffer_free(buf);
+  processing_parameters_free(params);
 }
 
 TEST_MAIN()

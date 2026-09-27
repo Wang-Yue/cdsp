@@ -538,7 +538,7 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
       playback->target_level, playback->chunk_size);
   playback->buffer = backend_buffer_create(
       ring_frames, alsa_pcm_format_to_binary_format(playback->format),
-      playback->channels, playback->sample_rate, false);
+      playback->channels, playback->sample_rate, false, playback->params);
   if (!playback->buffer) {
     if (err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -605,17 +605,19 @@ static void alsa_playback_close(void *ctx) {
   if (!playback)
     return;
 
+  bool is_paused =
+      backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED;
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
 
   if (playback->inner_thread_created) {
     pthread_join(playback->inner_thread, NULL);
     playback->inner_thread_created = false;
-    backend_buffer_free(playback->buffer);
-    playback->buffer = NULL;
   }
+  backend_buffer_free(playback->buffer);
+  playback->buffer = NULL;
 
   if (playback->pcm) {
-    if (backend_buffer_get_state(playback->buffer) != BACKEND_STREAM_PAUSED) {
+    if (!is_paused) {
       snd_pcm_drain(playback->pcm);
     }
   }

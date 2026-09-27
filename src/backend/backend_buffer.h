@@ -22,6 +22,8 @@
 
 typedef struct backend_buffer backend_buffer_t;
 
+typedef struct processing_parameters processing_parameters_t;
+
 /* --- Lifecycle Management --- */
 
 /**
@@ -32,12 +34,15 @@ typedef struct backend_buffer backend_buffer_t;
  * @param channels Number of audio channels.
  * @param sample_rate Device sample rate in Hz.
  * @param is_planar True for planar multi-channel layout, false for interleaved.
+ * @param params Optional processing parameters for clipping telemetry (or
+ * NULL).
  * @return Allocated backend_buffer_t pointer on success, NULL on failure.
  */
 backend_buffer_t *backend_buffer_create(size_t capacity_frames,
                                         binary_sample_format_t format,
                                         size_t channels, double sample_rate,
-                                        bool is_planar);
+                                        bool is_planar,
+                                        processing_parameters_t *params);
 
 /**
  * @brief Frees the backend buffer and its underlying ring buffer.
@@ -243,7 +248,8 @@ void backend_buffer_set_target_level(backend_buffer_t *bb, size_t target_level);
 /* --- Thread Synchronization --- */
 
 /**
- * @brief Signals the backend buffer's semaphore to wake waiting consumers/readers.
+ * @brief Signals the backend buffer's semaphore to wake waiting
+ * consumers/readers.
  *
  * @param bb Pointer to backend buffer.
  */
@@ -257,7 +263,8 @@ void backend_buffer_signal(backend_buffer_t *bb);
  *
  * @param bb Pointer to backend buffer.
  * @param timeout_ms Maximum time to wait in milliseconds.
- * @return True if signaled/data available, false on timeout or if stream stopped.
+ * @return True if signaled/data available, false on timeout or if stream
+ * stopped.
  */
 bool backend_buffer_wait(backend_buffer_t *bb, uint32_t timeout_ms);
 
