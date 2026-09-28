@@ -195,8 +195,6 @@ Routing system or application audio into real-time DSP pipelines on macOS has hi
 
 All intentional divergences, architectural enhancements, technical rationales, and verification details are comprehensively documented in:
 
-👉 **[INTENTIONAL_DIVERGENCES.md](INTENTIONAL_DIVERGENCES.md)**
-
 
 ---
 

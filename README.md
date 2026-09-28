@@ -82,7 +82,6 @@ cdsp/
 │   └── README.md
 ├── docs/                       # Technical specifications, audits, and architecture deep dives
 │   ├── ENGINE.md               # Core engine architecture & benchmark evaluation
-│   ├── INTENTIONAL_DIVERGENCES.md # Architectural enhancements & safety guarantees
 │   ├── engine_state_management.md # Real-time state machine & thread concurrency model
 │   ├── dsp_engine_public_api_alignment.md # Public C API dispatch contract
 │   └── callgraph_audit_report.md # Real-time audio loop zero-lock/zero-alloc audit
@@ -217,7 +216,6 @@ cmake --build build --target iwyu
 
 - 📖 **[Core DSP Engine Deep Dive](docs/ENGINE.md)** — In-depth concurrency design, benchmarks, and performance evaluation.
 - 🎨 **[CDSP Studio Guide](studio/README.md)** — GUI features, screenshots, and acoustic wizards.
-- 🛡️ **[Intentional Divergences & Safety Enhancements](docs/INTENTIONAL_DIVERGENCES.md)** — Safe volume ramping, DSP precision, and real-time invariants.
 - 🔄 **[Engine State Management Specification](docs/engine_state_management.md)** — Lock-free thread coordination and atomic state machine.
 - 🔌 **[Public C API Specification](docs/dsp_engine_public_api_alignment.md)** — Direct C library embedding and FFI dispatch contract.
 - 🔬 **[Static Call Graph Audit Report](docs/callgraph_audit_report.md)** — Formal verification of zero-lock and zero-allocation hot paths.
