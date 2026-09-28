@@ -15,19 +15,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  macos:
-    name: macOS (Apple Silicon)
+  # ============================================================================
+  # macOS (Apple Silicon)
+  # ============================================================================
+  macos-test:
+    name: macOS Test
     runs-on: macos-14
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Cache Homebrew packages
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/Homebrew
+          key: macos-test-brew-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: macos-test-brew-
 
       - name: Install dependencies via Homebrew
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
-          brew install fftw libyaml cjson libwebsockets blackhole-2ch blackhole-16ch qt
+          brew install fftw libyaml cjson libwebsockets blackhole-2ch blackhole-16ch
           sudo killall coreaudiod || true
           sleep 2
 
@@ -37,14 +47,47 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DENABLE_NATIVE_ARCH=OFF \
             -DBUILD_TESTING=ON \
-            -DBUILD_BENCHMARKS=ON \
-            -DENABLE_STUDIO=ON
+            -DBUILD_BENCHMARKS=OFF \
+            -DENABLE_STUDIO=OFF
 
-      - name: Build
-        run: cmake --build build -j$(sysctl -n hw.ncpu)
+      - name: Build Test Runner
+        run: cmake --build build --target test_runner -j$(sysctl -n hw.ncpu)
 
       - name: Run Tests
         run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.ncpu)
+
+  macos-studio:
+    name: macOS Studio Build
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Homebrew packages
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/Homebrew
+          key: macos-studio-brew-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: macos-studio-brew-
+
+      - name: Install dependencies via Homebrew
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          brew install fftw libyaml cjson libwebsockets qt
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_NATIVE_ARCH=OFF \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_BENCHMARKS=OFF \
+            -DENABLE_STUDIO=ON
+
+      - name: Build CDSP Studio
+        run: cmake --build build --target cdsp-studio -j$(sysctl -n hw.ncpu)
 
       - name: Package CDSP Studio (.app)
         run: |
@@ -63,12 +106,27 @@ jobs:
           path: build/bin/CDSPStudio-macOS-arm64.zip
           if-no-files-found: error
 
-  linux:
-    name: Linux (Ubuntu x86_64)
+  # ============================================================================
+  # Linux (Ubuntu x86_64)
+  # ============================================================================
+  linux-test:
+    name: Linux Test (with KVM & snd-aloop)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Cache APT packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: linux-test-apt-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: linux-test-apt-
+
+      - name: Configure APT cache
+        run: |
+          sudo rm -f /etc/apt/apt.conf.d/docker-clean
+          echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' | sudo tee /etc/apt/apt.conf.d/01keep-debs
 
       - name: Install system dependencies
         run: |
@@ -87,11 +145,7 @@ jobs:
             libcjson-dev \
             libwebsockets-dev \
             libssl-dev \
-            libopenblas-dev \
-            qt6-base-dev \
-            qt6-multimedia-dev \
-            libfuse2 \
-            file
+            libopenblas-dev
 
       - name: Configure CMake
         run: |
@@ -102,11 +156,11 @@ jobs:
             -DENABLE_PIPEWIRE=ON \
             -DENABLE_DBUS=ON \
             -DBUILD_TESTING=ON \
-            -DBUILD_BENCHMARKS=ON \
-            -DENABLE_STUDIO=ON
+            -DBUILD_BENCHMARKS=OFF \
+            -DENABLE_STUDIO=OFF
 
-      - name: Build
-        run: cmake --build build
+      - name: Build Test Runner
+        run: cmake --build build --target test_runner
 
       - name: Make KVM usable
         run: |
@@ -121,9 +175,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils
 
-      - name: Boot the VM for ALSA snd-aloop
+      - name: Cache Ubuntu cloud image
+        id: cache-cloud-image
+        uses: actions/cache@v4
+        with:
+          path: base.img
+          key: ubuntu-cloudimg-noble-24.04
+
+      - name: Download Ubuntu cloud image if not cached
+        if: steps.cache-cloud-image.outputs.cache-hit != 'true'
         run: |
           curl -sSfL -o base.img "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
+
+      - name: Boot the VM for ALSA snd-aloop
+        run: |
           qemu-img create -f qcow2 -F qcow2 -b base.img vm.qcow2 10G
           ssh-keygen -q -t ed25519 -N '' -f vm_key
           cat > user-data <<EOF
@@ -199,9 +264,66 @@ jobs:
         if: failure()
         run: cat console.log || true
 
+  linux-studio:
+    name: Linux Studio Build (AppImage)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache APT packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: linux-studio-apt-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: linux-studio-apt-
+
+      - name: Configure APT cache
+        run: |
+          sudo rm -f /etc/apt/apt.conf.d/docker-clean
+          echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' | sudo tee /etc/apt/apt.conf.d/01keep-debs
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            clang \
+            llvm \
+            libasound2-dev \
+            libpipewire-0.3-dev \
+            libdbus-1-dev \
+            libfftw3-dev \
+            libyaml-dev \
+            libcjson-dev \
+            libwebsockets-dev \
+            libssl-dev \
+            libopenblas-dev \
+            qt6-base-dev \
+            qt6-multimedia-dev \
+            libfuse2 \
+            file
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_NATIVE_ARCH=OFF \
+            -DENABLE_ALSA=ON \
+            -DENABLE_PIPEWIRE=ON \
+            -DENABLE_DBUS=ON \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_BENCHMARKS=OFF \
+            -DENABLE_STUDIO=ON
+
+      - name: Build CDSP Studio
+        run: cmake --build build --target cdsp-studio
+
       - name: Package CDSP Studio (AppImage)
         run: |
-          cmake --install build --prefix AppDir/usr
+          cmake --install build/studio --prefix AppDir/usr
           curl -sLO https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           curl -sLO https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy*.AppImage
@@ -222,6 +344,9 @@ jobs:
           path: build/dist/CDSPStudio-Linux-x86_64.AppImage
           if-no-files-found: error
 
+  # ============================================================================
+  # Sanitizers
+  # ============================================================================
   linux-sanitizers:
     name: Sanitizer (${{ matrix.sanitizer }})
     runs-on: ubuntu-latest
@@ -232,6 +357,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Cache APT packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: linux-sanitizer-apt-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: linux-sanitizer-apt-
+
+      - name: Configure APT cache
+        run: |
+          sudo rm -f /etc/apt/apt.conf.d/docker-clean
+          echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' | sudo tee /etc/apt/apt.conf.d/01keep-debs
 
       - name: Install system dependencies
         run: |
@@ -255,8 +392,11 @@ jobs:
       - name: Run Sanitizer
         run: ./run_sanitizers.sh ${{ matrix.sanitizer }}
 
-  windows:
-    name: Windows (UCRT64 x86_64)
+  # ============================================================================
+  # Windows (UCRT64 x86_64)
+  # ============================================================================
+  windows-test:
+    name: Windows Test
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -266,7 +406,99 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
-          update: true
+          update: false
+          cache: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-fftw
+            mingw-w64-ucrt-x86_64-libyaml
+            mingw-w64-ucrt-x86_64-cjson
+            mingw-w64-ucrt-x86_64-libwebsockets
+
+      - name: Configure CMake
+        shell: msys2 {0}
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_NATIVE_ARCH=OFF \
+            -DENABLE_WASAPI=ON \
+            -DENABLE_ASIO=ON \
+            -DENABLE_STATIC_WINDOWS=ON \
+            -DBUILD_TESTING=ON \
+            -DBUILD_BENCHMARKS=OFF \
+            -DENABLE_STUDIO=OFF
+
+      - name: Build Test Runner
+        shell: msys2 {0}
+        run: cmake --build build --target test_runner
+
+      - name: Start the audio service and allow microphone access
+        shell: pwsh
+        run: |
+          Set-Service audiosrv -StartupType Automatic
+          Start-Service audiosrv
+          $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy'
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name LetAppsAccessMicrophone -Value 1 -PropertyType DWord -Force | Out-Null
+
+      - name: Cache VB-Cable and FlexASIO Installers
+        id: cache-audio-drivers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vbcable.zip
+            ${{ runner.temp }}/FlexASIO.exe
+          key: win-audio-drivers-vbcable45-flexasio110b
+
+      - name: Download VB-Cable if not cached
+        if: steps.cache-audio-drivers.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\vbcable.zip"
+          Invoke-WebRequest https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip -OutFile $zip
+
+      - name: Install VB-Cable
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\vbcable.zip"
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\vbcable" -Force
+          tools/install_vbcable.ps1 -Dir "$env:RUNNER_TEMP\vbcable"
+          Get-PnpDevice -FriendlyName '*CABLE*' | Format-Table Class, Status, FriendlyName -AutoSize
+
+      - name: Download FlexASIO if not cached
+        if: steps.cache-audio-drivers.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $exe = "$env:RUNNER_TEMP\FlexASIO.exe"
+          Invoke-WebRequest https://github.com/dechamps/FlexASIO/releases/download/flexasio-1.10b/FlexASIO-1.10b.exe -OutFile $exe
+
+      - name: Install FlexASIO
+        shell: pwsh
+        run: |
+          $exe = "$env:RUNNER_TEMP\FlexASIO.exe"
+          Start-Process $exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
+          Get-ChildItem 'HKLM:\SOFTWARE\ASIO' | Format-Table PSChildName
+
+      - name: Run Tests
+        shell: msys2 {0}
+        run: ctest --test-dir build --output-on-failure
+
+  windows-studio:
+    name: Windows Studio Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 & UCRT64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          cache: true
           install: >-
             git
             mingw-w64-ucrt-x86_64-toolchain
@@ -297,43 +529,13 @@ jobs:
             -DENABLE_WASAPI=ON \
             -DENABLE_ASIO=ON \
             -DENABLE_STATIC_WINDOWS=ON \
-            -DBUILD_TESTING=ON \
-            -DBUILD_BENCHMARKS=ON \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_BENCHMARKS=OFF \
             -DENABLE_STUDIO=ON
 
-      - name: Build
+      - name: Build CDSP Studio
         shell: msys2 {0}
-        run: cmake --build build
-
-      - name: Start the audio service and allow microphone access
-        shell: pwsh
-        run: |
-          Set-Service audiosrv -StartupType Automatic
-          Start-Service audiosrv
-          $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy'
-          New-Item -Path $key -Force | Out-Null
-          New-ItemProperty -Path $key -Name LetAppsAccessMicrophone -Value 1 -PropertyType DWord -Force | Out-Null
-
-      - name: Install VB-Cable
-        shell: pwsh
-        run: |
-          $zip = "$env:RUNNER_TEMP\vbcable.zip"
-          Invoke-WebRequest https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip -OutFile $zip
-          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\vbcable"
-          tools/install_vbcable.ps1 -Dir "$env:RUNNER_TEMP\vbcable"
-          Get-PnpDevice -FriendlyName '*CABLE*' | Format-Table Class, Status, FriendlyName -AutoSize
-
-      - name: Install FlexASIO
-        shell: pwsh
-        run: |
-          $exe = "$env:RUNNER_TEMP\FlexASIO.exe"
-          Invoke-WebRequest https://github.com/dechamps/FlexASIO/releases/download/flexasio-1.10b/FlexASIO-1.10b.exe -OutFile $exe
-          Start-Process $exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
-          Get-ChildItem 'HKLM:\SOFTWARE\ASIO' | Format-Table PSChildName
-
-      - name: Run Tests
-        shell: msys2 {0}
-        run: ctest --test-dir build --output-on-failure
+        run: cmake --build build --target cdsp-studio
 
       - name: Package CDSP Studio (Windows)
         shell: msys2 {0}
@@ -346,9 +548,12 @@ jobs:
           path: build/bin/CDSPStudio-Windows-x86_64.exe
           if-no-files-found: error
 
+  # ============================================================================
+  # Release Publishing
+  # ============================================================================
   release:
     name: Publish Release
-    needs: [macos, linux, windows, linux-sanitizers]
+    needs: [macos-test, macos-studio, linux-test, linux-studio, windows-test, windows-studio, linux-sanitizers]
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -395,4 +600,3 @@ jobs:
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
