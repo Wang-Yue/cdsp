@@ -207,6 +207,12 @@ dsp_session_stop_and_free(dsp_session_t *core,
     core->threads_created = false;
   }
 
+  // Ref: Commit 5423b1e - Set state to INACTIVE once both device threads have
+  // exited and joined, ensuring backends are closed before publishing INACTIVE.
+  if (core->shared) {
+    engine_shared_state_set_state(core->shared, PROCESSING_STATE_INACTIVE);
+  }
+
   // Drain any chunks left in the lock-free queues before the
   // device handles go away. Prevents stale-chunk pollution.
   if (core->shared) {
@@ -365,6 +371,18 @@ bool dsp_session_reload_config(dsp_session_t *core, dsp_config_t *new_config,
   if (core->processing_loop) {
     engine_processing_loop_set_pipeline(core->processing_loop, new_pipeline,
                                         transfer_filters);
+    const bool *used_channels =
+        pipeline_get_used_capture_channels(new_pipeline, NULL);
+    if (used_channels) {
+      if (core->capture_chunk_pool) {
+        round_robin_chunk_pool_set_used_channels(core->capture_chunk_pool,
+                                                 used_channels);
+      }
+      if (core->capture_loop) {
+        engine_capture_loop_set_used_channels(core->capture_loop,
+                                              used_channels);
+      }
+    }
   } else {
     pipeline_free(new_pipeline);
     if (err) {

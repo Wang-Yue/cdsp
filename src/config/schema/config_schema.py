@@ -472,13 +472,13 @@ STRUCT_COMPRESSOR = StructType(
     name="compressor_config",
     c_type="compressor_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T),
+        Field("channels", TYPE_SIZE_T, required=True),
         Field("monitor_channels", ArrayType(TYPE_SIZE_T)),
         Field("process_channels", ArrayType(TYPE_SIZE_T)),
         Field("attack", TYPE_DOUBLE, required=True),
-        Field("attack_unit", ENUM_TIME_UNIT, default="TIME_UNIT_MS"),
+        Field("attack_unit", ENUM_TIME_UNIT, required=True),
         Field("release", TYPE_DOUBLE, required=True),
-        Field("release_unit", ENUM_TIME_UNIT, default="TIME_UNIT_MS"),
+        Field("release_unit", ENUM_TIME_UNIT, required=True),
         Field("threshold", TYPE_DOUBLE, required=True),
         Field("factor", TYPE_DOUBLE, required=True),
         Field("makeup_gain", TYPE_DOUBLE, has_flag=True, getter_default=0.0),
@@ -492,13 +492,13 @@ STRUCT_NOISE_GATE = StructType(
     name="noise_gate_config",
     c_type="noise_gate_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T),
+        Field("channels", TYPE_SIZE_T, required=True),
         Field("monitor_channels", ArrayType(TYPE_SIZE_T)),
         Field("process_channels", ArrayType(TYPE_SIZE_T)),
         Field("attack", TYPE_DOUBLE, required=True),
-        Field("attack_unit", ENUM_TIME_UNIT, default="TIME_UNIT_MS"),
+        Field("attack_unit", ENUM_TIME_UNIT, required=True),
         Field("release", TYPE_DOUBLE, required=True),
-        Field("release_unit", ENUM_TIME_UNIT, default="TIME_UNIT_MS"),
+        Field("release_unit", ENUM_TIME_UNIT, required=True),
         Field("threshold", TYPE_DOUBLE, required=True),
         Field("attenuation", TYPE_DOUBLE, required=True),
     ],
@@ -509,12 +509,12 @@ STRUCT_RACE = StructType(
     name="race_config",
     c_type="race_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T),
-        Field("channel_a", TYPE_SIZE_T),
-        Field("channel_b", TYPE_SIZE_T),
+        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channel_a", TYPE_SIZE_T, required=True),
+        Field("channel_b", TYPE_SIZE_T, required=True),
         Field("delay", TYPE_DOUBLE, required=True),
         Field("subsample_delay", TYPE_BOOL, has_flag=True, default=False),
-        Field("delay_unit", ENUM_DELAY_UNIT, has_flag=True, default="DELAY_UNIT_MS"),
+        Field("delay_unit", ENUM_DELAY_UNIT, required=True),
         Field("attenuation", TYPE_DOUBLE, required=True),
     ],
     allowed_extra_keys=PROCESSOR_EXTRA_KEYS
@@ -524,14 +524,14 @@ STRUCT_LOOKAHEAD_LIMITER_PROC = StructType(
     name="lookahead_limiter_processor_config",
     c_type="lookahead_limiter_processor_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T),
+        Field("channels", TYPE_SIZE_T, required=True),
         Field("monitor_channels", ArrayType(TYPE_SIZE_T)),
         Field("process_channels", ArrayType(TYPE_SIZE_T)),
-        Field("limit", TYPE_DOUBLE, required=True),
+        Field("limit", TYPE_DOUBLE, has_flag=True, getter_default=0.0),
         Field("attack", TYPE_DOUBLE, required=True),
-        Field("attack_unit", ENUM_TIME_UNIT, default="TIME_UNIT_MS"),
+        Field("attack_unit", ENUM_TIME_UNIT, required=True),
         Field("release", TYPE_DOUBLE, required=True),
-        Field("release_unit", ENUM_TIME_UNIT, default="TIME_UNIT_MS"),
+        Field("release_unit", ENUM_TIME_UNIT, required=True),
         Field("delay_processed_only", TYPE_BOOL, default=False),
     ],
     allowed_extra_keys=PROCESSOR_EXTRA_KEYS
@@ -559,7 +559,7 @@ STRUCT_GAIN = StructType(
     name="gain_config",
     c_type="gain_config_t",
     fields=[
-        Field("gain", TYPE_DOUBLE, has_flag=True, getter_default=0.0),
+        Field("gain", TYPE_DOUBLE, required=True),
         Field("scale", ENUM_GAIN_SCALE, default="GAIN_SCALE_DB"),
         Field("inverted", TYPE_BOOL, default=False),
         Field("mute", TYPE_BOOL, default=False),
@@ -610,8 +610,8 @@ STRUCT_BIQUAD = StructType(
         Field("b0", TYPE_DOUBLE, has_flag=True),
         Field("b1", TYPE_DOUBLE, has_flag=True),
         Field("b2", TYPE_DOUBLE, has_flag=True),
-        Field("freq_notch", TYPE_DOUBLE, has_flag=True),
-        Field("freq_pole", TYPE_DOUBLE, has_flag=True),
+        Field("freq_z", TYPE_DOUBLE, has_flag=True),
+        Field("freq_p", TYPE_DOUBLE, has_flag=True),
         Field("q_p", TYPE_DOUBLE, has_flag=True),
         Field("normalize_at_dc", TYPE_BOOL, default=False),
         Field("freq_act", TYPE_DOUBLE, has_flag=True),
@@ -679,8 +679,8 @@ STRUCT_BIQUAD = StructType(
         ),
         VariantRule(
             tag_value="BIQUAD_TYPE_GENERAL_NOTCH",
-            required_keys=["freq_notch", "freq_pole"],
-            fields=["freq_notch", "freq_pole", "q_p", "q", "normalize_at_dc"]
+            required_keys=["freq_z", "freq_p", "q_p"],
+            fields=["freq_z", "freq_p", "q_p", "normalize_at_dc"]
         ),
         VariantRule(
             tag_value="BIQUAD_TYPE_LINKWITZ_TRANSFORM",
@@ -709,12 +709,13 @@ STRUCT_CONVOLUTION = StructType(
         VariantRule(
             tag_value="CONV_TYPE_WAV",
             required_keys=["filename"],
-            fields=["filename", "channel", "length", "skip_bytes_lines", "read_bytes_lines"]
+            fields=["filename", "channel"]
         ),
         VariantRule(
             tag_value="CONV_TYPE_RAW",
-            required_keys=["filename", "format"],
-            fields=["filename", "format", "channel", "length", "skip_bytes_lines", "read_bytes_lines"]
+            required_keys=["filename"],
+            fields=["filename", "format", "skip_bytes_lines", "read_bytes_lines"],
+            default_assignments={"format": "TEXT", "has_format": "true"}
         ),
         VariantRule(
             tag_value="CONV_TYPE_VALUES",
@@ -723,6 +724,7 @@ STRUCT_CONVOLUTION = StructType(
         ),
         VariantRule(
             tag_value="CONV_TYPE_DUMMY",
+            required_keys=["length"],
             fields=["length"]
         ),
     ]
@@ -733,7 +735,7 @@ STRUCT_DELAY = StructType(
     c_type="delay_config_t",
     fields=[
         Field("delay", TYPE_DOUBLE, required=True),
-        Field("delay_unit", ENUM_DELAY_UNIT, default="DELAY_UNIT_MS"),
+        Field("delay_unit", ENUM_DELAY_UNIT, required=True),
         Field("subsample", TYPE_BOOL, default=False),
     ],
     allowed_extra_keys=FILTER_EXTRA_KEYS
@@ -757,7 +759,6 @@ STRUCT_BIQUAD_COMBO = StructType(
         Field("freq", TYPE_DOUBLE, has_flag=True),
         Field("order", TYPE_INT, has_flag=True),
         Field("gain", TYPE_DOUBLE, has_flag=True),
-        Field("high_gain", TYPE_DOUBLE, has_flag=True),
         Field("bands", ArrayType(STRUCT_PEQ_BAND)),
         Field("freq_min", TYPE_DOUBLE, has_flag=True),
         Field("freq_max", TYPE_DOUBLE, has_flag=True),
@@ -778,14 +779,17 @@ STRUCT_BIQUAD_COMBO = StructType(
         ),
         VariantRule(
             tag_value="BIQUAD_COMBO_TYPE_TILT",
-            fields=["gain", "high_gain", "freq"]
+            required_keys=["gain"],
+            fields=["gain"]
         ),
         VariantRule(
             tag_value="BIQUAD_COMBO_TYPE_N_POINT_PEQ",
+            required_keys=["bands"],
             fields=["bands"]
         ),
         VariantRule(
             tag_value="BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER",
+            required_keys=["gains"],
             fields=["freq_min", "freq_max", "gains"]
         ),
     ]
@@ -795,8 +799,8 @@ STRUCT_DIFFEQ = StructType(
     name="diff_eq_config",
     c_type="diff_eq_config_t",
     fields=[
-        Field("a", ArrayType(TYPE_DOUBLE), required=True),
-        Field("b", ArrayType(TYPE_DOUBLE), required=True),
+        Field("a", ArrayType(TYPE_DOUBLE), has_flag=True),
+        Field("b", ArrayType(TYPE_DOUBLE), has_flag=True),
     ],
     allowed_extra_keys=FILTER_EXTRA_KEYS
 )
@@ -816,7 +820,7 @@ STRUCT_CLIPPER = StructType(
     name="clipper_config",
     c_type="clipper_config_t",
     fields=[
-        Field("clip_limit", TYPE_DOUBLE, required=True),
+        Field("clip_limit", TYPE_DOUBLE, has_flag=True, getter_default=0.0),
         Field("soft_clip", TYPE_BOOL, default=False),
     ],
     allowed_extra_keys=FILTER_EXTRA_KEYS
@@ -826,11 +830,11 @@ STRUCT_LOOKAHEAD_LIMITER_FILTER = StructType(
     name="lookahead_limiter_filter_config",
     c_type="lookahead_limiter_filter_config_t",
     fields=[
-        Field("limit", TYPE_DOUBLE, required=True),
+        Field("limit", TYPE_DOUBLE, has_flag=True, getter_default=0.0),
         Field("attack", TYPE_DOUBLE, required=True),
-        Field("attack_unit", ENUM_TIME_UNIT, default="TIME_UNIT_MS"),
+        Field("attack_unit", ENUM_TIME_UNIT, required=True),
         Field("release", TYPE_DOUBLE, required=True),
-        Field("release_unit", ENUM_TIME_UNIT, default="TIME_UNIT_MS"),
+        Field("release_unit", ENUM_TIME_UNIT, required=True),
     ],
     allowed_extra_keys=FILTER_EXTRA_KEYS
 )
@@ -1076,7 +1080,7 @@ STRUCT_WAV_FILE_CAPTURE = StructType(
     c_type="wav_file_capture_config_t",
     fields=[
         Field("channels", TYPE_SIZE_T),
-        Field("filename", StringType(512), required=True, has_flag=True),
+        Field("filename", StringType(512), required=True),
         Field("extra_samples", TYPE_INT, has_flag=True),
         Field("realtime", TYPE_BOOL, has_flag=True, default=False),
     ],
@@ -1087,8 +1091,8 @@ STRUCT_RAW_FILE_CAPTURE = StructType(
     name="raw_file_capture_config",
     c_type="raw_file_capture_config_t",
     fields=[
-        Field("filename", StringType(512), required=True, has_flag=True),
-        Field("format", ENUM_BINARY_SAMPLE_FORMAT, required=True, has_flag=True),
+        Field("filename", StringType(512), required=True),
+        Field("format", ENUM_BINARY_SAMPLE_FORMAT, required=True),
         Field("channels", TYPE_SIZE_T, required=True),
         Field("skip_bytes", TYPE_SIZE_T, has_flag=True),
         Field("read_bytes", TYPE_SIZE_T, has_flag=True),
@@ -1102,8 +1106,8 @@ STRUCT_RAW_FILE_PLAYBACK = StructType(
     name="raw_file_playback_config",
     c_type="raw_file_playback_config_t",
     fields=[
-        Field("filename", StringType(512), required=True, has_flag=True),
-        Field("format", ENUM_BINARY_SAMPLE_FORMAT, required=True, has_flag=True),
+        Field("filename", StringType(512), required=True),
+        Field("format", ENUM_BINARY_SAMPLE_FORMAT, required=True),
         Field("channels", TYPE_SIZE_T, required=True),
         Field("wav_header", TYPE_BOOL, has_flag=True, default=False),
         Field("use_rf64", TYPE_BOOL, has_flag=True, default=False),

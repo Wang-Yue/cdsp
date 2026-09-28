@@ -11,7 +11,7 @@
 
 TEST(GainInvert) {
   gain_config_t params = {
-      .gain = 0.0, .has_gain = true, .scale = GAIN_SCALE_DB, .inverted = true};
+      .gain = 0.0, .scale = GAIN_SCALE_DB, .inverted = true};
   filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
   void *filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -25,7 +25,7 @@ TEST(GainInvert) {
 
 TEST(GainAmplify) {
   gain_config_t params = {
-      .gain = 20.0, .has_gain = true, .scale = GAIN_SCALE_DB};
+      .gain = 20.0, .scale = GAIN_SCALE_DB};
   filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
   void *filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -38,7 +38,7 @@ TEST(GainAmplify) {
 }
 
 TEST(GainMute) {
-  gain_config_t params = {.gain = 0.0, .has_gain = true, .mute = true};
+  gain_config_t params = {.gain = 0.0, .mute = true};
   filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
   void *filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -52,7 +52,7 @@ TEST(GainMute) {
 
 TEST(GainLinearScale) {
   gain_config_t params = {
-      .gain = 0.5, .has_gain = true, .scale = GAIN_SCALE_LINEAR};
+      .gain = 0.5, .scale = GAIN_SCALE_LINEAR};
   filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
   void *filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -440,11 +440,11 @@ TEST(VolumeUnrampedMuteAndPublishing) {
   processing_parameters_set_muted_for_fader(proc_params, true, FADER_MAIN);
   process_vol(filter, chunk, 4);
 
-  // 02-1: Un-ramped mute sets current_volume to 0.0 dB (not -100 dB)
+  // 02-1: Un-ramped mute sets current_volume to -100.0 dB (MUTE_LEVEL_DB)
   // 02-2: Published unconditionally to proc_params
   cur_vol = processing_parameters_get_current_volume_for_fader(proc_params,
                                                                FADER_MAIN);
-  ASSERT_NEAR(0.0, cur_vol, 1e-6);
+  ASSERT_NEAR(-100.0, cur_vol, 1e-6);
 
   // Unmute without ramp
   processing_parameters_set_muted_for_fader(proc_params, false, FADER_MAIN);

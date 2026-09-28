@@ -40,8 +40,8 @@ struct BiquadParameters {
     std::optional<double> b2;
 
     // GeneralNotch
-    std::optional<double> freqNotch;
-    std::optional<double> freqPole;
+    std::optional<double> freqZ;
+    std::optional<double> freqP;
     std::optional<double> qP;
     std::optional<bool> normalizeAtDc;
 
@@ -57,8 +57,8 @@ struct BiquadParameters {
     bool operator==(const BiquadParameters& other) const {
         return type == other.type && freq == other.freq && gain == other.gain && q == other.q &&
                bandwidth == other.bandwidth && slope == other.slope && a1 == other.a1 && a2 == other.a2 &&
-               b0 == other.b0 && b1 == other.b1 && b2 == other.b2 && freqNotch == other.freqNotch &&
-               freqPole == other.freqPole && qP == other.qP && normalizeAtDc == other.normalizeAtDc &&
+               b0 == other.b0 && b1 == other.b1 && b2 == other.b2 && freqZ == other.freqZ &&
+               freqP == other.freqP && qP == other.qP && normalizeAtDc == other.normalizeAtDc &&
                freqAct == other.freqAct && qAct == other.qAct && freqTarget == other.freqTarget &&
                qTarget == other.qTarget;
     }

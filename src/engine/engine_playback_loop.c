@@ -478,15 +478,15 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
 
   if (rate_controller)
     pi_rate_controller_free(rate_controller);
-  if (loop->shared) {
-    // Ref: docs/engine_state_management.md - Section 3.5: Graceful EOF Teardown
-    // (Queue Drain) Step 3: Sets state to INACTIVE via
-    // engine_shared_state_set_state(state, INACTIVE).
-    engine_shared_state_set_state(loop->shared, PROCESSING_STATE_INACTIVE);
-  }
+
   if (loop->playback) {
     playback_backend_stop(loop->playback);
     playback_backend_close(loop->playback);
+  }
+  if (reached_eos && loop->shared) {
+    engine_shared_state_request_stop(
+        loop->shared, (processing_stop_reason_t){.type = STOP_REASON_DONE});
+    engine_shared_state_set_state(loop->shared, PROCESSING_STATE_INACTIVE);
   }
   logger_info(&g_logger, "Playback thread stopped");
 }

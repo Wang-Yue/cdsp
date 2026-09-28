@@ -1072,8 +1072,35 @@ static void config_fill_defaults(cJSON *root) {
   }
 }
 
-bool cdsp_read_config_json(const char *json_str, char **out_result,
-                           cdsp_config_error_type_t *out_err_type) {
+static void get_dir_from_path(const char *path, char *out_dir,
+                               size_t out_size) {
+  if (!path || !out_dir || out_size == 0) {
+    if (out_dir && out_size > 0)
+      out_dir[0] = '\0';
+    return;
+  }
+  const char *last_slash = strrchr(path, '/');
+#ifdef _WIN32
+  const char *last_backslash = strrchr(path, '\\');
+  if (!last_slash || (last_backslash && last_backslash > last_slash)) {
+    last_slash = last_backslash;
+  }
+#endif
+  if (last_slash) {
+    size_t len = (size_t)(last_slash - path);
+    if (len >= out_size)
+      len = out_size - 1;
+    memcpy(out_dir, path, len);
+    out_dir[len] = '\0';
+  } else {
+    out_dir[0] = '\0';
+  }
+}
+
+static bool read_config_json_with_dir(const char *json_str,
+                                      const char *config_dir,
+                                      char **out_result,
+                                      cdsp_config_error_type_t *out_err_type) {
   if (!json_str || !out_result || !out_err_type)
     return false;
   cJSON *root = cJSON_Parse(json_str);
@@ -1084,7 +1111,8 @@ bool cdsp_read_config_json(const char *json_str, char **out_result,
   }
   dsp_config_t *parsed = NULL;
   config_error_t cerr = {0};
-  if (dsp_config_parse_json_no_validate(json_str, &parsed, &cerr) != 0 ||
+  if (dsp_config_parse_json_with_dir_and_overrides_ext(
+          json_str, config_dir, NULL, &parsed, false, &cerr) != 0 ||
       !parsed) {
     cJSON_Delete(root);
     *out_result =
@@ -1101,8 +1129,14 @@ bool cdsp_read_config_json(const char *json_str, char **out_result,
   return true;
 }
 
-bool cdsp_validate_config_json(const char *json_str, char **out_result,
-                               cdsp_config_error_type_t *out_err_type) {
+bool cdsp_read_config_json(const char *json_str, char **out_result,
+                           cdsp_config_error_type_t *out_err_type) {
+  return read_config_json_with_dir(json_str, NULL, out_result, out_err_type);
+}
+
+static bool validate_config_json_with_dir(
+    const char *json_str, const char *config_dir, char **out_result,
+    cdsp_config_error_type_t *out_err_type) {
   if (!json_str || !out_result || !out_err_type)
     return false;
 
@@ -1136,7 +1170,8 @@ bool cdsp_validate_config_json(const char *json_str, char **out_result,
   }
   dsp_config_t *parsed = NULL;
   config_error_t cerr = {0};
-  if (dsp_config_parse_json_no_validate(json_to_use, &parsed, &cerr) != 0 ||
+  if (dsp_config_parse_json_with_dir_and_overrides_ext(
+          json_to_use, config_dir, NULL, &parsed, false, &cerr) != 0 ||
       !parsed) {
     if (overridden_json)
       free(overridden_json);
@@ -1166,6 +1201,12 @@ bool cdsp_validate_config_json(const char *json_str, char **out_result,
     free(overridden_json);
   *out_err_type = CDSP_CONFIG_ERR_NONE;
   return true;
+}
+
+bool cdsp_validate_config_json(const char *json_str, char **out_result,
+                               cdsp_config_error_type_t *out_err_type) {
+  return validate_config_json_with_dir(json_str, NULL, out_result,
+                                       out_err_type);
 }
 
 bool cdsp_read_config_yaml(const char *yaml_str, char **out_result,
@@ -1234,6 +1275,10 @@ bool cdsp_read_config_file(const char *path, char **out_result,
                            cdsp_config_error_type_t *out_err_type) {
   if (!path)
     return false;
+  char dir_buf[1024] = {0};
+  get_dir_from_path(path, dir_buf, sizeof(dir_buf));
+  const char *config_dir = (dir_buf[0] != '\0') ? dir_buf : NULL;
+
   char err_msg[256] = {0};
   bool is_json = false;
   char *updated_json = read_config_file_as_json_with_overrides(
@@ -1246,7 +1291,8 @@ bool cdsp_read_config_file(const char *path, char **out_result,
     return false;
   }
 
-  bool ok = cdsp_read_config_json(updated_json, out_result, out_err_type);
+  bool ok = read_config_json_with_dir(updated_json, config_dir, out_result,
+                                      out_err_type);
   free(updated_json);
 
   if (ok && !is_json && out_result && *out_result &&
@@ -1273,6 +1319,10 @@ bool cdsp_validate_config_file_with_overrides(
     cdsp_config_error_type_t *out_err_type) {
   if (!path)
     return false;
+  char dir_buf[1024] = {0};
+  get_dir_from_path(path, dir_buf, sizeof(dir_buf));
+  const char *config_dir = (dir_buf[0] != '\0') ? dir_buf : NULL;
+
   char err_msg[256] = {0};
   bool is_json = false;
   char *updated_json = read_config_file_as_json_with_overrides(
@@ -1286,7 +1336,8 @@ bool cdsp_validate_config_file_with_overrides(
     return false;
   }
 
-  bool ok = cdsp_validate_config_json(updated_json, out_result, out_err_type);
+  bool ok = validate_config_json_with_dir(updated_json, config_dir, out_result,
+                                          out_err_type);
   free(updated_json);
 
   if (ok && !is_json && out_result && *out_result &&

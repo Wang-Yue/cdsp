@@ -163,6 +163,81 @@ static bool validate_processor_step(const pipeline_step_config_t *step,
   return true;
 }
 
+typedef struct {
+  double ramp_time_ms;
+  double limit;
+} fader_setting_t;
+
+static bool validate_fader_settings(const dsp_config_t *config,
+                                    config_error_t *err) {
+  fader_setting_t settings[5];
+  const char *set_by[5] = {NULL, NULL, NULL, NULL, NULL};
+
+  settings[0].ramp_time_ms =
+      config->devices.has_volume_ramp_time_ms
+          ? config->devices.volume_ramp_time_ms
+          : 400.0;
+  settings[0].limit =
+      config->devices.has_volume_limit ? config->devices.volume_limit : 50.0;
+  set_by[0] = "devices";
+
+  for (size_t f = 1; f < 5; f++) {
+    settings[f].ramp_time_ms = 0.0;
+    settings[f].limit = 50.0;
+  }
+
+  if (!config->pipeline || config->pipeline_count == 0 ||
+      !config->filters || config->filters_count == 0) {
+    return true;
+  }
+
+  for (size_t i = 0; i < config->pipeline_count; i++) {
+    const pipeline_step_config_t *step = &config->pipeline[i];
+    if (step->bypassed)
+      continue;
+    if (step->type != PIPELINE_STEP_TYPE_FILTER)
+      continue;
+    if (step->has_channels && step->channels_count == 0)
+      continue;
+
+    for (size_t j = 0; j < step->names_count; j++) {
+      const char *name = step->names[j];
+      if (!name || name[0] == '\0')
+        continue;
+      const filter_config_t *filt = dsp_config_get_filter(config, name);
+      if (!filt || filt->type != FILTER_TYPE_VOLUME)
+        continue;
+
+      const volume_config_t *vol = &filt->parameters.volume;
+      int fader_idx = (int)vol->fader;
+      if (fader_idx < 1 || fader_idx > 4)
+        continue;
+
+      fader_setting_t these;
+      these.ramp_time_ms =
+          vol->has_ramp_time_ms ? vol->ramp_time_ms : 400.0;
+      these.limit = vol->has_limit ? vol->limit : 50.0;
+
+      if (!set_by[fader_idx]) {
+        settings[fader_idx] = these;
+        set_by[fader_idx] = name;
+      } else {
+        if (settings[fader_idx].ramp_time_ms != these.ramp_time_ms ||
+            settings[fader_idx].limit != these.limit) {
+          config_error_set(
+              err, CONFIG_ERR_INVALID_FILTER,
+              "Volume filters '%s' and '%s' use the same fader %s, but have "
+              "different ramp_time_ms or limit",
+              set_by[fader_idx], name, volume_fader_to_string(vol->fader));
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
 int pipeline_config_validate(const dsp_config_t *config, config_error_t *err) {
   if (!config) {
     config_error_set(err, CONFIG_ERR_PARSE, "Configuration is null");
@@ -214,6 +289,10 @@ int pipeline_config_validate(const dsp_config_t *config, config_error_t *err) {
         err, CONFIG_ERR_INVALID_PIPELINE,
         "Pipeline outputs %zu channel(s) but playback device expects %zu",
         num_channels, playback_channels);
+    return -1;
+  }
+
+  if (!validate_fader_settings(config, err)) {
     return -1;
   }
 

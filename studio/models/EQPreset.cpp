@@ -177,9 +177,9 @@ std::optional<BiquadCoefficients> EQBand::coefficients(int sampleRate) const {
         params.a2 = a2;
         break;
     case EQBandType::GeneralNotch:
-        params.freqNotch = freqNotch;
-        params.freqPole = freqPole;
-        params.qP = qPole;
+        params.freqZ = freqZ;
+        params.freqP = freqP;
+        params.qP = qP;
         params.normalizeAtDc = normalizeAtDc;
         break;
     case EQBandType::LinkwitzTransform:
@@ -249,9 +249,9 @@ QJsonObject EQBand::toJson() const {
     obj["b2"] = b2;
     obj["a1"] = a1;
     obj["a2"] = a2;
-    obj["freqNotch"] = freqNotch;
-    obj["freqPole"] = freqPole;
-    obj["qPole"] = qPole;
+    obj["freq_z"] = freqZ;
+    obj["freq_p"] = freqP;
+    obj["q_p"] = qP;
     obj["normalizeAtDc"] = normalizeAtDc;
     obj["slope"] = slope;
     obj["bandwidth"] = bandwidth;
@@ -288,12 +288,12 @@ EQBand EQBand::fromJson(const QJsonObject& json) {
         b.a1 = json["a1"].toDouble();
     if (json.contains("a2"))
         b.a2 = json["a2"].toDouble();
-    if (json.contains("freqNotch"))
-        b.freqNotch = json["freqNotch"].toDouble();
-    if (json.contains("freqPole"))
-        b.freqPole = json["freqPole"].toDouble();
-    if (json.contains("qPole"))
-        b.qPole = json["qPole"].toDouble();
+    if (json.contains("freq_z"))
+        b.freqZ = json["freq_z"].toDouble();
+    if (json.contains("freq_p"))
+        b.freqP = json["freq_p"].toDouble();
+    if (json.contains("q_p"))
+        b.qP = json["q_p"].toDouble();
     if (json.contains("normalizeAtDc"))
         b.normalizeAtDc = json["normalizeAtDc"].toBool();
     if (json.contains("slope"))
@@ -318,7 +318,7 @@ EQBand EQBand::fromJson(const QJsonObject& json) {
 bool EQBand::operator==(const EQBand& other) const {
     return id == other.id && type == other.type && freq == other.freq && gain == other.gain && q == other.q &&
            isEnabled == other.isEnabled && b0 == other.b0 && b1 == other.b1 && b2 == other.b2 && a1 == other.a1 &&
-           a2 == other.a2 && freqNotch == other.freqNotch && freqPole == other.freqPole && qPole == other.qPole &&
+           a2 == other.a2 && freqZ == other.freqZ && freqP == other.freqP && qP == other.qP &&
            normalizeAtDc == other.normalizeAtDc && slope == other.slope && bandwidth == other.bandwidth &&
            useSlope == other.useSlope && useBandwidth == other.useBandwidth && freqAct == other.freqAct &&
            qAct == other.qAct && freqTarget == other.freqTarget && qTarget == other.qTarget;
@@ -373,9 +373,9 @@ std::string EQPreset::toCSV() const {
         if (band.type == EQBandType::Free) {
             ss << " B0 " << band.b0 << " B1 " << band.b1 << " B2 " << band.b2 << " A1 " << band.a1 << " A2 " << band.a2;
         } else if (band.type == EQBandType::GeneralNotch) {
-            ss << " Fc " << static_cast<int>(std::round(band.freqNotch)) << " Hz Fp "
-               << static_cast<int>(std::round(band.freqPole)) << " Hz Qp " << std::fixed << std::setprecision(2)
-               << band.qPole << " Norm " << (band.normalizeAtDc ? 1 : 0);
+            ss << " Fz " << static_cast<int>(std::round(band.freqZ)) << " Hz Fp "
+               << static_cast<int>(std::round(band.freqP)) << " Hz Qp " << std::fixed << std::setprecision(2)
+               << band.qP << " Norm " << (band.normalizeAtDc ? 1 : 0);
         } else if (band.type == EQBandType::LinkwitzTransform) {
             ss << " Fa " << std::fixed << std::setprecision(1) << band.freqAct << " Hz Qa " << std::fixed
                << std::setprecision(3) << band.qAct << " Ft " << std::fixed << std::setprecision(1) << band.freqTarget
@@ -507,9 +507,9 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
                         bool matchedKey = true;
 
                         try {
-                            if (k == "fc") {
+                            if (k == "fc" || k == "fz") {
                                 band.freq = std::stod(v);
-                                band.freqNotch = band.freq;
+                                band.freqZ = band.freq;
                             } else if (k == "gain") {
                                 band.gain = std::stod(v);
                             } else if (k == "q") {
@@ -521,9 +521,9 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
                                 band.bandwidth = std::stod(v);
                                 band.useBandwidth = true;
                             } else if (k == "fp") {
-                                band.freqPole = std::stod(v);
+                                band.freqP = std::stod(v);
                             } else if (k == "qp") {
-                                band.qPole = std::stod(v);
+                                band.qP = std::stod(v);
                             } else if (k == "norm") {
                                 band.normalizeAtDc = (std::stod(v) != 0.0);
                             } else if (k == "fa") {

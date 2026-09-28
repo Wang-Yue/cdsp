@@ -182,8 +182,7 @@ static void *race_processor_create(const char *name,
                              ? params->channel_a
                              : params->channel_b;
 
-  delay_unit_t unit =
-      params->has_delay_unit ? params->delay_unit : DELAY_UNIT_MS;
+  delay_unit_t unit = params->delay_unit;
 
   /* Calculate the duration of one sample in the requested delay units.
      This is used to compensate for the implicit 1-sample delay introduced
@@ -234,7 +233,6 @@ static void *race_processor_create(const char *name,
 
   gain_config_t gparams = {0};
   gparams.gain = double_from_db(-params->attenuation);
-  gparams.has_gain = true;
   gparams.scale = GAIN_SCALE_LINEAR;
   gparams.inverted = true;
   gparams.mute = false;

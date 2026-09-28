@@ -182,7 +182,6 @@ TEST(race_basic) {
   params.subsample_delay = false;
   params.has_subsample_delay = true;
   params.delay_unit = DELAY_UNIT_SAMPLES;
-  params.has_delay_unit = true;
   params.attenuation = 6.02;
 
   processor_config_t config = {.type = PROCESSOR_TYPE_RACE,
@@ -220,7 +219,6 @@ TEST(race_transfer_state) {
   params.subsample_delay = false;
   params.has_subsample_delay = true;
   params.delay_unit = DELAY_UNIT_SAMPLES;
-  params.has_delay_unit = true;
   params.attenuation = 6.02;
 
   processor_config_t config = {.type = PROCESSOR_TYPE_RACE,
@@ -779,7 +777,6 @@ TEST(test_race_large_attenuation) {
       .attenuation = 160.0,
       .delay = 0.0001,
       .delay_unit = DELAY_UNIT_S,
-      .has_delay_unit = true,
   };
   processor_config_t cfg = {
       .type = PROCESSOR_TYPE_RACE,

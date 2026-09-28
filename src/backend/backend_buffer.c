@@ -977,9 +977,20 @@ size_t backend_buffer_push(backend_buffer_t *bb, const void *src,
   } else {
     if (bb->blockalign == 0)
       return 0;
-    size_t bytes = frames * bb->blockalign;
-    size_t written_bytes =
-        spsc_byte_ring_buffer_write(bb->byte_ring, (const uint8_t *)src, bytes);
+    // Push whole frames only. With formats where sample size is not a power of 2 (e.g. S24_3),
+    // a partial byte push could end inside a frame and shift every later sample.
+    size_t avail_bytes =
+        spsc_byte_ring_buffer_get_available_to_write(bb->byte_ring);
+    size_t whole_frames = avail_bytes / bb->blockalign;
+    if (whole_frames > frames) {
+      whole_frames = frames;
+    }
+    size_t bytes_to_write = whole_frames * bb->blockalign;
+    size_t written_bytes = 0;
+    if (bytes_to_write > 0) {
+      written_bytes = spsc_byte_ring_buffer_write(
+          bb->byte_ring, (const uint8_t *)src, bytes_to_write);
+    }
     pushed = written_bytes / bb->blockalign;
   }
   if (pushed < frames) {

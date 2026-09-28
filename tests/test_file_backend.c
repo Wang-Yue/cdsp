@@ -43,9 +43,7 @@ TEST(FileBackendRawRoundTrip) {
   play_cfg.cfg.raw_file.channels = 2;
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "%s", raw_filename);
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
-  play_cfg.cfg.raw_file.has_format = true;
 
   backend_error_t err;
   playback_backend_t *playback =
@@ -73,9 +71,7 @@ TEST(FileBackendRawRoundTrip) {
   cap_cfg.cfg.raw_file.channels = 2;
   snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
            "%s", raw_filename);
-  cap_cfg.cfg.raw_file.has_filename = true;
   cap_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
-  cap_cfg.cfg.raw_file.has_format = true;
 
   capture_backend_t *capture =
       create_capture_backend(&cap_cfg, 44100, 1024, false, NULL, &err);
@@ -115,9 +111,7 @@ TEST(FileBackendLargeReadDynamicRealloc) {
   play_cfg.cfg.raw_file.channels = 2;
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "%s", raw_filename);
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
-  play_cfg.cfg.raw_file.has_format = true;
 
   backend_error_t err;
   playback_backend_t *playback =
@@ -144,9 +138,7 @@ TEST(FileBackendLargeReadDynamicRealloc) {
   cap_cfg.cfg.raw_file.channels = 2;
   snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
            "%s", raw_filename);
-  cap_cfg.cfg.raw_file.has_filename = true;
   cap_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
-  cap_cfg.cfg.raw_file.has_format = true;
 
   // Initialize capture with small chunk_size (64)
   capture_backend_t *capture =
@@ -189,9 +181,7 @@ TEST(FileBackendWavRoundTrip) {
   play_cfg.cfg.raw_file.channels = 1;
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "%s", wav_filename);
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
-  play_cfg.cfg.raw_file.has_format = true;
   play_cfg.cfg.raw_file.wav_header = true;
   play_cfg.cfg.raw_file.has_wav_header = true;
 
@@ -220,7 +210,6 @@ TEST(FileBackendWavRoundTrip) {
   cap_cfg.has_is_wav = true;
   snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
            "%s", wav_filename);
-  cap_cfg.cfg.wav_file.has_filename = true;
 
   // Notice we pass sample_rate = 0, channels = 0 to verify that the
   // open routine updates them from the WAV header!
@@ -263,9 +252,7 @@ TEST(FileBackendSequentialRead) {
   play_cfg.cfg.raw_file.channels = 2;
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "%s", raw_filename);
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
-  play_cfg.cfg.raw_file.has_format = true;
 
   backend_error_t err;
   playback_backend_t *playback =
@@ -293,9 +280,7 @@ TEST(FileBackendSequentialRead) {
   cap_cfg.cfg.raw_file.channels = 2;
   snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
            "%s", raw_filename);
-  cap_cfg.cfg.raw_file.has_filename = true;
   cap_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
-  cap_cfg.cfg.raw_file.has_format = true;
 
   capture_backend_t *capture =
       create_capture_backend(&cap_cfg, 44100, 1024, false, NULL, &err);
@@ -350,9 +335,7 @@ static void run_format_roundtrip_test(binary_sample_format_t format,
   play_cfg.cfg.raw_file.channels = 2;
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "%s", raw_filename);
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = format;
-  play_cfg.cfg.raw_file.has_format = true;
 
   backend_error_t err;
   playback_backend_t *playback =
@@ -379,9 +362,7 @@ static void run_format_roundtrip_test(binary_sample_format_t format,
   cap_cfg.cfg.raw_file.channels = 2;
   snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
            "%s", raw_filename);
-  cap_cfg.cfg.raw_file.has_filename = true;
   cap_cfg.cfg.raw_file.format = format;
-  cap_cfg.cfg.raw_file.has_format = true;
 
   capture_backend_t *capture =
       create_capture_backend(&cap_cfg, 44100, 64, false, NULL, &err);
@@ -451,9 +432,7 @@ static void run_wav_format_roundtrip_test(binary_sample_format_t format,
   play_cfg.cfg.raw_file.channels = 2;
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "%s", wav_filename);
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = format;
-  play_cfg.cfg.raw_file.has_format = true;
   play_cfg.cfg.raw_file.wav_header = true;
   play_cfg.cfg.raw_file.has_wav_header = true;
   play_cfg.cfg.raw_file.use_rf64 = false;
@@ -484,7 +463,6 @@ static void run_wav_format_roundtrip_test(binary_sample_format_t format,
   cap_cfg.has_is_wav = true;
   snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
            "%s", wav_filename);
-  cap_cfg.cfg.wav_file.has_filename = true;
 
   capture_backend_t *capture =
       create_capture_backend(&cap_cfg, 44100, 64, false, NULL, &err);
@@ -549,9 +527,7 @@ TEST(FileBackendRealtimeThrottling) {
   play_cfg.cfg.raw_file.channels = channels;
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "%s", raw_filename);
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
-  play_cfg.cfg.raw_file.has_format = true;
 
   backend_error_t err;
   playback_backend_t *playback =
@@ -577,9 +553,7 @@ TEST(FileBackendRealtimeThrottling) {
   cap_cfg.cfg.raw_file.channels = channels;
   snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
            "%s", raw_filename);
-  cap_cfg.cfg.raw_file.has_filename = true;
   cap_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
-  cap_cfg.cfg.raw_file.has_format = true;
   cap_cfg.cfg.raw_file.realtime = false;
   cap_cfg.cfg.raw_file.has_realtime = true;
 
@@ -648,9 +622,7 @@ TEST(FileBackendPlaybackRealtimeThrottling) {
   play_cfg.cfg.raw_file.channels = channels;
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "%s", raw_filename);
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
-  play_cfg.cfg.raw_file.has_format = true;
   play_cfg.cfg.raw_file.realtime = false;
   play_cfg.cfg.raw_file.has_realtime = true;
 
@@ -721,9 +693,7 @@ TEST(FileBackendWavRealtimeThrottling) {
   play_cfg.cfg.raw_file.channels = channels;
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "%s", wav_filename);
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
-  play_cfg.cfg.raw_file.has_format = true;
   play_cfg.cfg.raw_file.wav_header = true;
   play_cfg.cfg.raw_file.has_wav_header = true;
 
@@ -750,7 +720,6 @@ TEST(FileBackendWavRealtimeThrottling) {
   cap_cfg.has_is_wav = true;
   snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
            "%s", wav_filename);
-  cap_cfg.cfg.wav_file.has_filename = true;
   cap_cfg.cfg.wav_file.realtime = false;
   cap_cfg.cfg.wav_file.has_realtime = true;
 
@@ -847,7 +816,6 @@ TEST(FileBackendRF64Read) {
   cap_cfg.has_is_wav = true;
   snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
            "%s", wav_filename);
-  cap_cfg.cfg.wav_file.has_filename = true;
 
   backend_error_t err;
   capture_backend_t *capture =
@@ -887,9 +855,7 @@ TEST(FileBackendRF64RoundTrip) {
   play_cfg.cfg.raw_file.channels = 1;
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "%s", wav_filename);
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
-  play_cfg.cfg.raw_file.has_format = true;
   play_cfg.cfg.raw_file.wav_header = true;
   play_cfg.cfg.raw_file.has_wav_header = true;
   play_cfg.cfg.raw_file.use_rf64 = true;
@@ -927,7 +893,6 @@ TEST(FileBackendRF64RoundTrip) {
   cap_cfg.has_is_wav = true;
   snprintf(cap_cfg.cfg.wav_file.filename, sizeof(cap_cfg.cfg.wav_file.filename),
            "%s", wav_filename);
-  cap_cfg.cfg.wav_file.has_filename = true;
 
   capture_backend_t *capture =
       create_capture_backend(&cap_cfg, 0, 1024, false, NULL, &err);
@@ -1004,7 +969,6 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   cap_cfg_1.has_is_wav = true;
   snprintf(cap_cfg_1.cfg.wav_file.filename,
            sizeof(cap_cfg_1.cfg.wav_file.filename), "%s", rf64_in_filename);
-  cap_cfg_1.cfg.wav_file.has_filename = true;
 
   backend_error_t err;
   capture_backend_t *capture_1 =
@@ -1020,9 +984,7 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   play_cfg_1.cfg.raw_file.channels = 1;
   snprintf(play_cfg_1.cfg.raw_file.filename,
            sizeof(play_cfg_1.cfg.raw_file.filename), "%s", wav_mid_filename);
-  play_cfg_1.cfg.raw_file.has_filename = true;
   play_cfg_1.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
-  play_cfg_1.cfg.raw_file.has_format = true;
   play_cfg_1.cfg.raw_file.wav_header = true;
   play_cfg_1.cfg.raw_file.has_wav_header = true;
   play_cfg_1.cfg.raw_file.use_rf64 = false; // Plain WAV
@@ -1058,7 +1020,6 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   cap_cfg_2.has_is_wav = true;
   snprintf(cap_cfg_2.cfg.wav_file.filename,
            sizeof(cap_cfg_2.cfg.wav_file.filename), "%s", wav_mid_filename);
-  cap_cfg_2.cfg.wav_file.has_filename = true;
 
   capture_backend_t *capture_2 =
       create_capture_backend(&cap_cfg_2, 0, 1024, false, NULL, &err);
@@ -1073,9 +1034,7 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   play_cfg_2.cfg.raw_file.channels = 1;
   snprintf(play_cfg_2.cfg.raw_file.filename,
            sizeof(play_cfg_2.cfg.raw_file.filename), "%s", rf64_out_filename);
-  play_cfg_2.cfg.raw_file.has_filename = true;
   play_cfg_2.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_S16_LE;
-  play_cfg_2.cfg.raw_file.has_format = true;
   play_cfg_2.cfg.raw_file.wav_header = true;
   play_cfg_2.cfg.raw_file.has_wav_header = true;
   play_cfg_2.cfg.raw_file.use_rf64 = true; // RF64 WAV
@@ -1111,7 +1070,6 @@ TEST(FileBackendWavRF64CrossRoundTrip) {
   snprintf(cap_cfg_final.cfg.wav_file.filename,
            sizeof(cap_cfg_final.cfg.wav_file.filename), "%s",
            rf64_out_filename);
-  cap_cfg_final.cfg.wav_file.has_filename = true;
 
   capture_backend_t *capture_final =
       create_capture_backend(&cap_cfg_final, 0, 1024, false, NULL, &err);

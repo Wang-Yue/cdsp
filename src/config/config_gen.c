@@ -1085,8 +1085,6 @@ bool mixer_config_equal(const mixer_config_t *a, const mixer_config_t *b) {
 void compressor_config_init(compressor_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(compressor_config_t));
-  out->attack_unit = TIME_UNIT_MS;
-  out->release_unit = TIME_UNIT_MS;
   out->soft_clip = false;
 }
 
@@ -1116,7 +1114,7 @@ int parse_compressor_config(const cJSON *obj, const char *ctx, compressor_config
   static const char *const allowed_keys[] = {"channels", "monitor_channels", "process_channels", "attack", "attack_unit", "release", "release_unit", "threshold", "factor", "makeup_gain", "soft_clip", "clip_limit", "type", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "compressor_config", err) != 0) return -1;
 
-  static const char *const req_keys[] = {"attack", "release", "threshold", "factor", NULL};
+  static const char *const req_keys[] = {"channels", "attack", "attack_unit", "release", "release_unit", "threshold", "factor", NULL};
   if (require_json_fields(obj, req_keys, ctx ? ctx : "compressor_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "compressor_config", &out->channels, NULL, err) != 0) return -1;
@@ -1138,9 +1136,8 @@ int parse_compressor_config(const cJSON *obj, const char *ctx, compressor_config
       {NULL, 0}
     };
     int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "attack_unit", attack_unit_time_unit_variants, ctx ? ctx : "compressor_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    if (has_enum) out->attack_unit = (time_unit_t)enum_tmp;
+    if (parse_enum_required(obj, "attack_unit", attack_unit_time_unit_variants, ctx ? ctx : "compressor_config", &enum_tmp, err) != 0) return -1;
+    out->attack_unit = (time_unit_t)enum_tmp;
   }
   if (parse_json_double_strict(obj, "release", ctx ? ctx : "compressor_config", &out->release, NULL, err) != 0) return -1;
   {
@@ -1152,9 +1149,8 @@ int parse_compressor_config(const cJSON *obj, const char *ctx, compressor_config
       {NULL, 0}
     };
     int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "release_unit", release_unit_time_unit_variants, ctx ? ctx : "compressor_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    if (has_enum) out->release_unit = (time_unit_t)enum_tmp;
+    if (parse_enum_required(obj, "release_unit", release_unit_time_unit_variants, ctx ? ctx : "compressor_config", &enum_tmp, err) != 0) return -1;
+    out->release_unit = (time_unit_t)enum_tmp;
   }
   if (parse_json_double_strict(obj, "threshold", ctx ? ctx : "compressor_config", &out->threshold, NULL, err) != 0) return -1;
   if (parse_json_double_strict(obj, "factor", ctx ? ctx : "compressor_config", &out->factor, NULL, err) != 0) return -1;
@@ -1235,8 +1231,6 @@ bool compressor_config_equal(const compressor_config_t *a, const compressor_conf
 void noise_gate_config_init(noise_gate_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(noise_gate_config_t));
-  out->attack_unit = TIME_UNIT_MS;
-  out->release_unit = TIME_UNIT_MS;
 }
 
 void free_noise_gate_config_contents(noise_gate_config_t *in) {
@@ -1255,7 +1249,7 @@ int parse_noise_gate_config(const cJSON *obj, const char *ctx, noise_gate_config
   static const char *const allowed_keys[] = {"channels", "monitor_channels", "process_channels", "attack", "attack_unit", "release", "release_unit", "threshold", "attenuation", "type", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "noise_gate_config", err) != 0) return -1;
 
-  static const char *const req_keys[] = {"attack", "release", "threshold", "attenuation", NULL};
+  static const char *const req_keys[] = {"channels", "attack", "attack_unit", "release", "release_unit", "threshold", "attenuation", NULL};
   if (require_json_fields(obj, req_keys, ctx ? ctx : "noise_gate_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "noise_gate_config", &out->channels, NULL, err) != 0) return -1;
@@ -1277,9 +1271,8 @@ int parse_noise_gate_config(const cJSON *obj, const char *ctx, noise_gate_config
       {NULL, 0}
     };
     int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "attack_unit", attack_unit_time_unit_variants, ctx ? ctx : "noise_gate_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    if (has_enum) out->attack_unit = (time_unit_t)enum_tmp;
+    if (parse_enum_required(obj, "attack_unit", attack_unit_time_unit_variants, ctx ? ctx : "noise_gate_config", &enum_tmp, err) != 0) return -1;
+    out->attack_unit = (time_unit_t)enum_tmp;
   }
   if (parse_json_double_strict(obj, "release", ctx ? ctx : "noise_gate_config", &out->release, NULL, err) != 0) return -1;
   {
@@ -1291,9 +1284,8 @@ int parse_noise_gate_config(const cJSON *obj, const char *ctx, noise_gate_config
       {NULL, 0}
     };
     int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "release_unit", release_unit_time_unit_variants, ctx ? ctx : "noise_gate_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    if (has_enum) out->release_unit = (time_unit_t)enum_tmp;
+    if (parse_enum_required(obj, "release_unit", release_unit_time_unit_variants, ctx ? ctx : "noise_gate_config", &enum_tmp, err) != 0) return -1;
+    out->release_unit = (time_unit_t)enum_tmp;
   }
   if (parse_json_double_strict(obj, "threshold", ctx ? ctx : "noise_gate_config", &out->threshold, NULL, err) != 0) return -1;
   if (parse_json_double_strict(obj, "attenuation", ctx ? ctx : "noise_gate_config", &out->attenuation, NULL, err) != 0) return -1;
@@ -1360,7 +1352,6 @@ void race_config_init(race_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(race_config_t));
   out->subsample_delay = false;
-  out->delay_unit = DELAY_UNIT_MS;
 }
 
 void free_race_config_contents(race_config_t *in) {
@@ -1377,7 +1368,7 @@ int parse_race_config(const cJSON *obj, const char *ctx, race_config_t *out, con
   static const char *const allowed_keys[] = {"channels", "channel_a", "channel_b", "delay", "subsample_delay", "delay_unit", "attenuation", "type", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "race_config", err) != 0) return -1;
 
-  static const char *const req_keys[] = {"delay", "attenuation", NULL};
+  static const char *const req_keys[] = {"channels", "channel_a", "channel_b", "delay", "delay_unit", "attenuation", NULL};
   if (require_json_fields(obj, req_keys, ctx ? ctx : "race_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "race_config", &out->channels, NULL, err) != 0) return -1;
@@ -1395,10 +1386,8 @@ int parse_race_config(const cJSON *obj, const char *ctx, race_config_t *out, con
       {NULL, 0}
     };
     int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "delay_unit", delay_unit_delay_unit_variants, ctx ? ctx : "race_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    out->has_delay_unit = has_enum;
-    if (has_enum) out->delay_unit = (delay_unit_t)enum_tmp;
+    if (parse_enum_required(obj, "delay_unit", delay_unit_delay_unit_variants, ctx ? ctx : "race_config", &enum_tmp, err) != 0) return -1;
+    out->delay_unit = (delay_unit_t)enum_tmp;
   }
   if (parse_json_double_strict(obj, "attenuation", ctx ? ctx : "race_config", &out->attenuation, NULL, err) != 0) return -1;
   return 0;
@@ -1413,7 +1402,7 @@ cJSON *serialize_race_config(const race_config_t *in) {
   if (1) cJSON_AddNumberToObject(obj, "channel_b", (double)in->channel_b);
   if (1) cJSON_AddNumberToObject(obj, "delay", (double)in->delay);
   if (in->has_subsample_delay) cJSON_AddBoolToObject(obj, "subsample_delay", in->subsample_delay);
-  if (in->has_delay_unit) cJSON_AddStringToObject(obj, "delay_unit", delay_unit_to_string(in->delay_unit));
+  if (1) cJSON_AddStringToObject(obj, "delay_unit", delay_unit_to_string(in->delay_unit));
   if (1) cJSON_AddNumberToObject(obj, "attenuation", (double)in->attenuation);
   return obj;
 }
@@ -1429,10 +1418,7 @@ bool race_config_equal(const race_config_t *a, const race_config_t *b) {
   if (a->has_subsample_delay) {
     if (a->subsample_delay != b->subsample_delay) return false;
   }
-  if (a->has_delay_unit != b->has_delay_unit) return false;
-  if (a->has_delay_unit) {
-    if (a->delay_unit != b->delay_unit) return false;
-  }
+  if (a->delay_unit != b->delay_unit) return false;
   if (a->attenuation != b->attenuation) return false;
   return true;
 }
@@ -1441,9 +1427,12 @@ bool race_config_equal(const race_config_t *a, const race_config_t *b) {
 void lookahead_limiter_processor_config_init(lookahead_limiter_processor_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(lookahead_limiter_processor_config_t));
-  out->attack_unit = TIME_UNIT_MS;
-  out->release_unit = TIME_UNIT_MS;
   out->delay_processed_only = false;
+}
+
+double lookahead_limiter_processor_config_get_limit(const lookahead_limiter_processor_config_t *in) {
+  if (!in || !in->has_limit) return 0.0;
+  return in->limit;
 }
 
 void free_lookahead_limiter_processor_config_contents(lookahead_limiter_processor_config_t *in) {
@@ -1462,7 +1451,7 @@ int parse_lookahead_limiter_processor_config(const cJSON *obj, const char *ctx, 
   static const char *const allowed_keys[] = {"channels", "monitor_channels", "process_channels", "limit", "attack", "attack_unit", "release", "release_unit", "delay_processed_only", "type", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "lookahead_limiter_processor_config", err) != 0) return -1;
 
-  static const char *const req_keys[] = {"limit", "attack", "release", NULL};
+  static const char *const req_keys[] = {"channels", "attack", "attack_unit", "release", "release_unit", NULL};
   if (require_json_fields(obj, req_keys, ctx ? ctx : "lookahead_limiter_processor_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "lookahead_limiter_processor_config", &out->channels, NULL, err) != 0) return -1;
@@ -1474,7 +1463,7 @@ int parse_lookahead_limiter_processor_config(const cJSON *obj, const char *ctx, 
   if (arr_process_channels) {
     if (parse_size_t_array_strict(arr_process_channels, "process_channels", ctx ? ctx : "lookahead_limiter_processor_config", &out->process_channels, &out->process_channels_count, err) != 0) return -1;
   }
-  if (parse_json_double_strict(obj, "limit", ctx ? ctx : "lookahead_limiter_processor_config", &out->limit, NULL, err) != 0) return -1;
+  if (parse_json_double_strict(obj, "limit", ctx ? ctx : "lookahead_limiter_processor_config", &out->limit, &out->has_limit, err) != 0) return -1;
   if (parse_json_double_strict(obj, "attack", ctx ? ctx : "lookahead_limiter_processor_config", &out->attack, NULL, err) != 0) return -1;
   {
     static const config_enum_variant_t attack_unit_time_unit_variants[] = {
@@ -1485,9 +1474,8 @@ int parse_lookahead_limiter_processor_config(const cJSON *obj, const char *ctx, 
       {NULL, 0}
     };
     int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "attack_unit", attack_unit_time_unit_variants, ctx ? ctx : "lookahead_limiter_processor_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    if (has_enum) out->attack_unit = (time_unit_t)enum_tmp;
+    if (parse_enum_required(obj, "attack_unit", attack_unit_time_unit_variants, ctx ? ctx : "lookahead_limiter_processor_config", &enum_tmp, err) != 0) return -1;
+    out->attack_unit = (time_unit_t)enum_tmp;
   }
   if (parse_json_double_strict(obj, "release", ctx ? ctx : "lookahead_limiter_processor_config", &out->release, NULL, err) != 0) return -1;
   {
@@ -1499,9 +1487,8 @@ int parse_lookahead_limiter_processor_config(const cJSON *obj, const char *ctx, 
       {NULL, 0}
     };
     int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "release_unit", release_unit_time_unit_variants, ctx ? ctx : "lookahead_limiter_processor_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    if (has_enum) out->release_unit = (time_unit_t)enum_tmp;
+    if (parse_enum_required(obj, "release_unit", release_unit_time_unit_variants, ctx ? ctx : "lookahead_limiter_processor_config", &enum_tmp, err) != 0) return -1;
+    out->release_unit = (time_unit_t)enum_tmp;
   }
   if (parse_json_bool_strict(obj, "delay_processed_only", ctx ? ctx : "lookahead_limiter_processor_config", &out->delay_processed_only, NULL, err) != 0) return -1;
   return 0;
@@ -1526,7 +1513,7 @@ cJSON *serialize_lookahead_limiter_processor_config(const lookahead_limiter_proc
     }
     cJSON_AddItemToObject(obj, "process_channels", arr);
   }
-  if (1) cJSON_AddNumberToObject(obj, "limit", (double)in->limit);
+  if (in->has_limit) cJSON_AddNumberToObject(obj, "limit", (double)in->limit);
   if (1) cJSON_AddNumberToObject(obj, "attack", (double)in->attack);
   if (1) cJSON_AddStringToObject(obj, "attack_unit", time_unit_to_string(in->attack_unit));
   if (1) cJSON_AddNumberToObject(obj, "release", (double)in->release);
@@ -1553,7 +1540,10 @@ bool lookahead_limiter_processor_config_equal(const lookahead_limiter_processor_
       if (a->process_channels[i] != b->process_channels[i]) return false;
     }
   }
-  if (a->limit != b->limit) return false;
+  if (a->has_limit != b->has_limit) return false;
+  if (a->has_limit) {
+    if (a->limit != b->limit) return false;
+  }
   if (a->attack != b->attack) return false;
   if (a->attack_unit != b->attack_unit) return false;
   if (a->release != b->release) return false;
@@ -1679,11 +1669,6 @@ void gain_config_init(gain_config_t *out) {
   out->mute = false;
 }
 
-double gain_config_get_gain(const gain_config_t *in) {
-  if (!in || !in->has_gain) return 0.0;
-  return in->gain;
-}
-
 void free_gain_config_contents(gain_config_t *in) {
   if (!in) return;
 }
@@ -1698,7 +1683,10 @@ int parse_gain_config(const cJSON *obj, const char *ctx, gain_config_t *out, con
   static const char *const allowed_keys[] = {"gain", "scale", "inverted", "mute", "type", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "gain_config", err) != 0) return -1;
 
-  if (parse_json_double_strict(obj, "gain", ctx ? ctx : "gain_config", &out->gain, &out->has_gain, err) != 0) return -1;
+  static const char *const req_keys[] = {"gain", NULL};
+  if (require_json_fields(obj, req_keys, ctx ? ctx : "gain_config", NULL, err) != 0) return -1;
+
+  if (parse_json_double_strict(obj, "gain", ctx ? ctx : "gain_config", &out->gain, NULL, err) != 0) return -1;
   {
     static const config_enum_variant_t scale_gain_scale_variants[] = {
       {"dB", GAIN_SCALE_DB},
@@ -1719,7 +1707,7 @@ cJSON *serialize_gain_config(const gain_config_t *in) {
   if (!in) return NULL;
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
-  if (in->has_gain) cJSON_AddNumberToObject(obj, "gain", (double)in->gain);
+  if (1) cJSON_AddNumberToObject(obj, "gain", (double)in->gain);
   if (1) cJSON_AddStringToObject(obj, "scale", gain_scale_to_string(in->scale));
   if (1) cJSON_AddBoolToObject(obj, "inverted", in->inverted);
   if (1) cJSON_AddBoolToObject(obj, "mute", in->mute);
@@ -1729,10 +1717,7 @@ cJSON *serialize_gain_config(const gain_config_t *in) {
 bool gain_config_equal(const gain_config_t *a, const gain_config_t *b) {
   if (a == b) return true;
   if (!a || !b) return false;
-  if (a->has_gain != b->has_gain) return false;
-  if (a->has_gain) {
-    if (a->gain != b->gain) return false;
-  }
+  if (a->gain != b->gain) return false;
   if (a->scale != b->scale) return false;
   if (a->inverted != b->inverted) return false;
   if (a->mute != b->mute) return false;
@@ -2054,12 +2039,11 @@ int parse_biquad_config(const cJSON *obj, const char *ctx, biquad_config_t *out,
       }
     case BIQUAD_TYPE_GENERAL_NOTCH:
       {
-        static const char *const req[] = {"freq_notch", "freq_pole", NULL};
+        static const char *const req[] = {"freq_z", "freq_p", "q_p", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_config", NULL, err) != 0) return -1;
-        if (parse_json_double_strict(obj, "freq_notch", ctx ? ctx : "biquad_config", &out->freq_notch, &out->has_freq_notch, err) != 0) return -1;
-        if (parse_json_double_strict(obj, "freq_pole", ctx ? ctx : "biquad_config", &out->freq_pole, &out->has_freq_pole, err) != 0) return -1;
+        if (parse_json_double_strict(obj, "freq_z", ctx ? ctx : "biquad_config", &out->freq_z, &out->has_freq_z, err) != 0) return -1;
+        if (parse_json_double_strict(obj, "freq_p", ctx ? ctx : "biquad_config", &out->freq_p, &out->has_freq_p, err) != 0) return -1;
         if (parse_json_double_strict(obj, "q_p", ctx ? ctx : "biquad_config", &out->q_p, &out->has_q_p, err) != 0) return -1;
-        if (parse_json_double_strict(obj, "q", ctx ? ctx : "biquad_config", &out->q, &out->has_q, err) != 0) return -1;
         if (parse_json_bool_strict(obj, "normalize_at_dc", ctx ? ctx : "biquad_config", &out->normalize_at_dc, NULL, err) != 0) return -1;
         break;
       }
@@ -2092,8 +2076,8 @@ cJSON *serialize_biquad_config(const biquad_config_t *in) {
   if (in->has_b0) cJSON_AddNumberToObject(obj, "b0", (double)in->b0);
   if (in->has_b1) cJSON_AddNumberToObject(obj, "b1", (double)in->b1);
   if (in->has_b2) cJSON_AddNumberToObject(obj, "b2", (double)in->b2);
-  if (in->has_freq_notch) cJSON_AddNumberToObject(obj, "freq_notch", (double)in->freq_notch);
-  if (in->has_freq_pole) cJSON_AddNumberToObject(obj, "freq_pole", (double)in->freq_pole);
+  if (in->has_freq_z) cJSON_AddNumberToObject(obj, "freq_z", (double)in->freq_z);
+  if (in->has_freq_p) cJSON_AddNumberToObject(obj, "freq_p", (double)in->freq_p);
   if (in->has_q_p) cJSON_AddNumberToObject(obj, "q_p", (double)in->q_p);
   if (1) cJSON_AddBoolToObject(obj, "normalize_at_dc", in->normalize_at_dc);
   if (in->has_freq_act) cJSON_AddNumberToObject(obj, "freq_act", (double)in->freq_act);
@@ -2148,13 +2132,13 @@ bool biquad_config_equal(const biquad_config_t *a, const biquad_config_t *b) {
   if (a->has_b2) {
     if (a->b2 != b->b2) return false;
   }
-  if (a->has_freq_notch != b->has_freq_notch) return false;
-  if (a->has_freq_notch) {
-    if (a->freq_notch != b->freq_notch) return false;
+  if (a->has_freq_z != b->has_freq_z) return false;
+  if (a->has_freq_z) {
+    if (a->freq_z != b->freq_z) return false;
   }
-  if (a->has_freq_pole != b->has_freq_pole) return false;
-  if (a->has_freq_pole) {
-    if (a->freq_pole != b->freq_pole) return false;
+  if (a->has_freq_p != b->has_freq_p) return false;
+  if (a->has_freq_p) {
+    if (a->freq_p != b->freq_p) return false;
   }
   if (a->has_q_p != b->has_q_p) return false;
   if (a->has_q_p) {
@@ -2217,19 +2201,16 @@ int parse_conv_config(const cJSON *obj, const char *ctx, conv_config_t *out, con
         if (require_json_fields(obj, req, ctx ? ctx : "conv_config", NULL, err) != 0) return -1;
         if (parse_json_str_strict(obj, "filename", ctx ? ctx : "conv_config", out->filename, sizeof(out->filename), &out->has_filename, err) != 0) return -1;
         if (parse_json_int_strict(obj, "channel", ctx ? ctx : "conv_config", &out->channel, &out->has_channel, err) != 0) return -1;
-        if (parse_json_int_strict(obj, "length", ctx ? ctx : "conv_config", &out->length, &out->has_length, err) != 0) return -1;
-        if (parse_json_size_t_strict(obj, "skip_bytes_lines", ctx ? ctx : "conv_config", &out->skip_bytes_lines, &out->has_skip_bytes_lines, err) != 0) return -1;
-        if (parse_json_size_t_strict(obj, "read_bytes_lines", ctx ? ctx : "conv_config", &out->read_bytes_lines, &out->has_read_bytes_lines, err) != 0) return -1;
         break;
       }
     case CONV_TYPE_RAW:
       {
-        static const char *const req[] = {"filename", "format", NULL};
+        static const char *const req[] = {"filename", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "conv_config", NULL, err) != 0) return -1;
+        strncpy(out->format, "TEXT", sizeof(out->format) - 1);
+        out->has_format = true;
         if (parse_json_str_strict(obj, "filename", ctx ? ctx : "conv_config", out->filename, sizeof(out->filename), &out->has_filename, err) != 0) return -1;
         if (parse_json_str_strict(obj, "format", ctx ? ctx : "conv_config", out->format, sizeof(out->format), &out->has_format, err) != 0) return -1;
-        if (parse_json_int_strict(obj, "channel", ctx ? ctx : "conv_config", &out->channel, &out->has_channel, err) != 0) return -1;
-        if (parse_json_int_strict(obj, "length", ctx ? ctx : "conv_config", &out->length, &out->has_length, err) != 0) return -1;
         if (parse_json_size_t_strict(obj, "skip_bytes_lines", ctx ? ctx : "conv_config", &out->skip_bytes_lines, &out->has_skip_bytes_lines, err) != 0) return -1;
         if (parse_json_size_t_strict(obj, "read_bytes_lines", ctx ? ctx : "conv_config", &out->read_bytes_lines, &out->has_read_bytes_lines, err) != 0) return -1;
         break;
@@ -2247,6 +2228,8 @@ int parse_conv_config(const cJSON *obj, const char *ctx, conv_config_t *out, con
       }
     case CONV_TYPE_DUMMY:
       {
+        static const char *const req[] = {"length", NULL};
+        if (require_json_fields(obj, req, ctx ? ctx : "conv_config", NULL, err) != 0) return -1;
         if (parse_json_int_strict(obj, "length", ctx ? ctx : "conv_config", &out->length, &out->has_length, err) != 0) return -1;
         break;
       }
@@ -2320,7 +2303,6 @@ bool conv_config_equal(const conv_config_t *a, const conv_config_t *b) {
 void delay_config_init(delay_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(delay_config_t));
-  out->delay_unit = DELAY_UNIT_MS;
   out->subsample = false;
 }
 
@@ -2338,7 +2320,7 @@ int parse_delay_config(const cJSON *obj, const char *ctx, delay_config_t *out, c
   static const char *const allowed_keys[] = {"delay", "delay_unit", "subsample", "type", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "delay_config", err) != 0) return -1;
 
-  static const char *const req_keys[] = {"delay", NULL};
+  static const char *const req_keys[] = {"delay", "delay_unit", NULL};
   if (require_json_fields(obj, req_keys, ctx ? ctx : "delay_config", NULL, err) != 0) return -1;
 
   if (parse_json_double_strict(obj, "delay", ctx ? ctx : "delay_config", &out->delay, NULL, err) != 0) return -1;
@@ -2352,9 +2334,8 @@ int parse_delay_config(const cJSON *obj, const char *ctx, delay_config_t *out, c
       {NULL, 0}
     };
     int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "delay_unit", delay_unit_delay_unit_variants, ctx ? ctx : "delay_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    if (has_enum) out->delay_unit = (delay_unit_t)enum_tmp;
+    if (parse_enum_required(obj, "delay_unit", delay_unit_delay_unit_variants, ctx ? ctx : "delay_config", &enum_tmp, err) != 0) return -1;
+    out->delay_unit = (delay_unit_t)enum_tmp;
   }
   if (parse_json_bool_strict(obj, "subsample", ctx ? ctx : "delay_config", &out->subsample, NULL, err) != 0) return -1;
   return 0;
@@ -2479,13 +2460,15 @@ int parse_biquad_combo_config(const cJSON *obj, const char *ctx, biquad_combo_co
       }
     case BIQUAD_COMBO_TYPE_TILT:
       {
+        static const char *const req[] = {"gain", NULL};
+        if (require_json_fields(obj, req, ctx ? ctx : "biquad_combo_config", NULL, err) != 0) return -1;
         if (parse_json_double_strict(obj, "gain", ctx ? ctx : "biquad_combo_config", &out->gain, &out->has_gain, err) != 0) return -1;
-        if (parse_json_double_strict(obj, "high_gain", ctx ? ctx : "biquad_combo_config", &out->high_gain, &out->has_high_gain, err) != 0) return -1;
-        if (parse_json_double_strict(obj, "freq", ctx ? ctx : "biquad_combo_config", &out->freq, &out->has_freq, err) != 0) return -1;
         break;
       }
     case BIQUAD_COMBO_TYPE_N_POINT_PEQ:
       {
+        static const char *const req[] = {"bands", NULL};
+        if (require_json_fields(obj, req, ctx ? ctx : "biquad_combo_config", NULL, err) != 0) return -1;
         cJSON *arr_bands = cJSON_GetObjectItemCaseSensitive(obj, "bands");
         if (arr_bands) {
           if (!cJSON_IsArray(arr_bands)) {
@@ -2507,6 +2490,8 @@ int parse_biquad_combo_config(const cJSON *obj, const char *ctx, biquad_combo_co
       }
     case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER:
       {
+        static const char *const req[] = {"gains", NULL};
+        if (require_json_fields(obj, req, ctx ? ctx : "biquad_combo_config", NULL, err) != 0) return -1;
         if (parse_json_double_strict(obj, "freq_min", ctx ? ctx : "biquad_combo_config", &out->freq_min, &out->has_freq_min, err) != 0) return -1;
         if (parse_json_double_strict(obj, "freq_max", ctx ? ctx : "biquad_combo_config", &out->freq_max, &out->has_freq_max, err) != 0) return -1;
         cJSON *arr_gains = cJSON_GetObjectItemCaseSensitive(obj, "gains");
@@ -2527,7 +2512,6 @@ cJSON *serialize_biquad_combo_config(const biquad_combo_config_t *in) {
   if (in->has_freq) cJSON_AddNumberToObject(obj, "freq", (double)in->freq);
   if (in->has_order) cJSON_AddNumberToObject(obj, "order", (double)in->order);
   if (in->has_gain) cJSON_AddNumberToObject(obj, "gain", (double)in->gain);
-  if (in->has_high_gain) cJSON_AddNumberToObject(obj, "high_gain", (double)in->high_gain);
   if (in->bands && in->bands_count > 0) {
     cJSON *arr = cJSON_CreateArray();
     for (size_t i = 0; i < in->bands_count; i++) {
@@ -2562,10 +2546,6 @@ bool biquad_combo_config_equal(const biquad_combo_config_t *a, const biquad_comb
   if (a->has_gain != b->has_gain) return false;
   if (a->has_gain) {
     if (a->gain != b->gain) return false;
-  }
-  if (a->has_high_gain != b->has_high_gain) return false;
-  if (a->has_high_gain) {
-    if (a->high_gain != b->high_gain) return false;
   }
   if (a->bands_count != b->bands_count) return false;
   if (a->bands_count > 0) {
@@ -2614,15 +2594,14 @@ int parse_diff_eq_config(const cJSON *obj, const char *ctx, diff_eq_config_t *ou
   static const char *const allowed_keys[] = {"a", "b", "type", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "diff_eq_config", err) != 0) return -1;
 
-  static const char *const req_keys[] = {"a", "b", NULL};
-  if (require_json_fields(obj, req_keys, ctx ? ctx : "diff_eq_config", NULL, err) != 0) return -1;
-
   cJSON *arr_a = cJSON_GetObjectItemCaseSensitive(obj, "a");
   if (arr_a) {
+    out->has_a = true;
     if (parse_double_array_strict(arr_a, "a", ctx ? ctx : "diff_eq_config", &out->a, &out->a_count, err) != 0) return -1;
   }
   cJSON *arr_b = cJSON_GetObjectItemCaseSensitive(obj, "b");
   if (arr_b) {
+    out->has_b = true;
     if (parse_double_array_strict(arr_b, "b", ctx ? ctx : "diff_eq_config", &out->b, &out->b_count, err) != 0) return -1;
   }
   return 0;
@@ -2652,18 +2631,24 @@ cJSON *serialize_diff_eq_config(const diff_eq_config_t *in) {
 bool diff_eq_config_equal(const diff_eq_config_t *a, const diff_eq_config_t *b) {
   if (a == b) return true;
   if (!a || !b) return false;
-  if (a->a_count != b->a_count) return false;
-  if (a->a_count > 0) {
-    if (!a->a || !b->a) return false;
-    for (size_t i = 0; i < a->a_count; i++) {
-      if (a->a[i] != b->a[i]) return false;
+  if (a->has_a != b->has_a) return false;
+  if (a->has_a) {
+    if (a->a_count != b->a_count) return false;
+    if (a->a_count > 0) {
+      if (!a->a || !b->a) return false;
+      for (size_t i = 0; i < a->a_count; i++) {
+        if (a->a[i] != b->a[i]) return false;
+      }
     }
   }
-  if (a->b_count != b->b_count) return false;
-  if (a->b_count > 0) {
-    if (!a->b || !b->b) return false;
-    for (size_t i = 0; i < a->b_count; i++) {
-      if (a->b[i] != b->b[i]) return false;
+  if (a->has_b != b->has_b) return false;
+  if (a->has_b) {
+    if (a->b_count != b->b_count) return false;
+    if (a->b_count > 0) {
+      if (!a->b || !b->b) return false;
+      for (size_t i = 0; i < a->b_count; i++) {
+        if (a->b[i] != b->b[i]) return false;
+      }
     }
   }
   return true;
@@ -2763,6 +2748,11 @@ void clipper_config_init(clipper_config_t *out) {
   out->soft_clip = false;
 }
 
+double clipper_config_get_clip_limit(const clipper_config_t *in) {
+  if (!in || !in->has_clip_limit) return 0.0;
+  return in->clip_limit;
+}
+
 void free_clipper_config_contents(clipper_config_t *in) {
   if (!in) return;
 }
@@ -2777,10 +2767,7 @@ int parse_clipper_config(const cJSON *obj, const char *ctx, clipper_config_t *ou
   static const char *const allowed_keys[] = {"clip_limit", "soft_clip", "type", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "clipper_config", err) != 0) return -1;
 
-  static const char *const req_keys[] = {"clip_limit", NULL};
-  if (require_json_fields(obj, req_keys, ctx ? ctx : "clipper_config", NULL, err) != 0) return -1;
-
-  if (parse_json_double_strict(obj, "clip_limit", ctx ? ctx : "clipper_config", &out->clip_limit, NULL, err) != 0) return -1;
+  if (parse_json_double_strict(obj, "clip_limit", ctx ? ctx : "clipper_config", &out->clip_limit, &out->has_clip_limit, err) != 0) return -1;
   if (parse_json_bool_strict(obj, "soft_clip", ctx ? ctx : "clipper_config", &out->soft_clip, NULL, err) != 0) return -1;
   return 0;
 }
@@ -2789,7 +2776,7 @@ cJSON *serialize_clipper_config(const clipper_config_t *in) {
   if (!in) return NULL;
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
-  if (1) cJSON_AddNumberToObject(obj, "clip_limit", (double)in->clip_limit);
+  if (in->has_clip_limit) cJSON_AddNumberToObject(obj, "clip_limit", (double)in->clip_limit);
   if (1) cJSON_AddBoolToObject(obj, "soft_clip", in->soft_clip);
   return obj;
 }
@@ -2797,7 +2784,10 @@ cJSON *serialize_clipper_config(const clipper_config_t *in) {
 bool clipper_config_equal(const clipper_config_t *a, const clipper_config_t *b) {
   if (a == b) return true;
   if (!a || !b) return false;
-  if (a->clip_limit != b->clip_limit) return false;
+  if (a->has_clip_limit != b->has_clip_limit) return false;
+  if (a->has_clip_limit) {
+    if (a->clip_limit != b->clip_limit) return false;
+  }
   if (a->soft_clip != b->soft_clip) return false;
   return true;
 }
@@ -2806,8 +2796,11 @@ bool clipper_config_equal(const clipper_config_t *a, const clipper_config_t *b) 
 void lookahead_limiter_filter_config_init(lookahead_limiter_filter_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(lookahead_limiter_filter_config_t));
-  out->attack_unit = TIME_UNIT_MS;
-  out->release_unit = TIME_UNIT_MS;
+}
+
+double lookahead_limiter_filter_config_get_limit(const lookahead_limiter_filter_config_t *in) {
+  if (!in || !in->has_limit) return 0.0;
+  return in->limit;
 }
 
 void free_lookahead_limiter_filter_config_contents(lookahead_limiter_filter_config_t *in) {
@@ -2824,10 +2817,10 @@ int parse_lookahead_limiter_filter_config(const cJSON *obj, const char *ctx, loo
   static const char *const allowed_keys[] = {"limit", "attack", "attack_unit", "release", "release_unit", "type", "description", NULL};
   if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "lookahead_limiter_filter_config", err) != 0) return -1;
 
-  static const char *const req_keys[] = {"limit", "attack", "release", NULL};
+  static const char *const req_keys[] = {"attack", "attack_unit", "release", "release_unit", NULL};
   if (require_json_fields(obj, req_keys, ctx ? ctx : "lookahead_limiter_filter_config", NULL, err) != 0) return -1;
 
-  if (parse_json_double_strict(obj, "limit", ctx ? ctx : "lookahead_limiter_filter_config", &out->limit, NULL, err) != 0) return -1;
+  if (parse_json_double_strict(obj, "limit", ctx ? ctx : "lookahead_limiter_filter_config", &out->limit, &out->has_limit, err) != 0) return -1;
   if (parse_json_double_strict(obj, "attack", ctx ? ctx : "lookahead_limiter_filter_config", &out->attack, NULL, err) != 0) return -1;
   {
     static const config_enum_variant_t attack_unit_time_unit_variants[] = {
@@ -2838,9 +2831,8 @@ int parse_lookahead_limiter_filter_config(const cJSON *obj, const char *ctx, loo
       {NULL, 0}
     };
     int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "attack_unit", attack_unit_time_unit_variants, ctx ? ctx : "lookahead_limiter_filter_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    if (has_enum) out->attack_unit = (time_unit_t)enum_tmp;
+    if (parse_enum_required(obj, "attack_unit", attack_unit_time_unit_variants, ctx ? ctx : "lookahead_limiter_filter_config", &enum_tmp, err) != 0) return -1;
+    out->attack_unit = (time_unit_t)enum_tmp;
   }
   if (parse_json_double_strict(obj, "release", ctx ? ctx : "lookahead_limiter_filter_config", &out->release, NULL, err) != 0) return -1;
   {
@@ -2852,9 +2844,8 @@ int parse_lookahead_limiter_filter_config(const cJSON *obj, const char *ctx, loo
       {NULL, 0}
     };
     int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "release_unit", release_unit_time_unit_variants, ctx ? ctx : "lookahead_limiter_filter_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    if (has_enum) out->release_unit = (time_unit_t)enum_tmp;
+    if (parse_enum_required(obj, "release_unit", release_unit_time_unit_variants, ctx ? ctx : "lookahead_limiter_filter_config", &enum_tmp, err) != 0) return -1;
+    out->release_unit = (time_unit_t)enum_tmp;
   }
   return 0;
 }
@@ -2863,7 +2854,7 @@ cJSON *serialize_lookahead_limiter_filter_config(const lookahead_limiter_filter_
   if (!in) return NULL;
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
-  if (1) cJSON_AddNumberToObject(obj, "limit", (double)in->limit);
+  if (in->has_limit) cJSON_AddNumberToObject(obj, "limit", (double)in->limit);
   if (1) cJSON_AddNumberToObject(obj, "attack", (double)in->attack);
   if (1) cJSON_AddStringToObject(obj, "attack_unit", time_unit_to_string(in->attack_unit));
   if (1) cJSON_AddNumberToObject(obj, "release", (double)in->release);
@@ -2874,7 +2865,10 @@ cJSON *serialize_lookahead_limiter_filter_config(const lookahead_limiter_filter_
 bool lookahead_limiter_filter_config_equal(const lookahead_limiter_filter_config_t *a, const lookahead_limiter_filter_config_t *b) {
   if (a == b) return true;
   if (!a || !b) return false;
-  if (a->limit != b->limit) return false;
+  if (a->has_limit != b->has_limit) return false;
+  if (a->has_limit) {
+    if (a->limit != b->limit) return false;
+  }
   if (a->attack != b->attack) return false;
   if (a->attack_unit != b->attack_unit) return false;
   if (a->release != b->release) return false;
@@ -4268,7 +4262,7 @@ int parse_wav_file_capture_config(const cJSON *obj, const char *ctx, wav_file_ca
   if (require_json_fields(obj, req_keys, ctx ? ctx : "wav_file_capture_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "wav_file_capture_config", &out->channels, NULL, err) != 0) return -1;
-  if (parse_json_str_strict(obj, "filename", ctx ? ctx : "wav_file_capture_config", out->filename, sizeof(out->filename), &out->has_filename, err) != 0) return -1;
+  if (parse_json_str_strict(obj, "filename", ctx ? ctx : "wav_file_capture_config", out->filename, sizeof(out->filename), NULL, err) != 0) return -1;
   if (parse_json_int_strict(obj, "extra_samples", ctx ? ctx : "wav_file_capture_config", &out->extra_samples, &out->has_extra_samples, err) != 0) return -1;
   if (parse_json_bool_strict(obj, "realtime", ctx ? ctx : "wav_file_capture_config", &out->realtime, &out->has_realtime, err) != 0) return -1;
   return 0;
@@ -4279,7 +4273,7 @@ cJSON *serialize_wav_file_capture_config(const wav_file_capture_config_t *in) {
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->has_filename) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
+  if (1) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
   if (in->has_extra_samples) cJSON_AddNumberToObject(obj, "extra_samples", (double)in->extra_samples);
   if (in->has_realtime) cJSON_AddBoolToObject(obj, "realtime", in->realtime);
   return obj;
@@ -4289,10 +4283,7 @@ bool wav_file_capture_config_equal(const wav_file_capture_config_t *a, const wav
   if (a == b) return true;
   if (!a || !b) return false;
   if (a->channels != b->channels) return false;
-  if (a->has_filename != b->has_filename) return false;
-  if (a->has_filename) {
-    if (strncmp(a->filename, b->filename, sizeof(a->filename)) != 0) return false;
-  }
+  if (strncmp(a->filename, b->filename, sizeof(a->filename)) != 0) return false;
   if (a->has_extra_samples != b->has_extra_samples) return false;
   if (a->has_extra_samples) {
     if (a->extra_samples != b->extra_samples) return false;
@@ -4328,7 +4319,7 @@ int parse_raw_file_capture_config(const cJSON *obj, const char *ctx, raw_file_ca
   static const char *const req_keys[] = {"filename", "format", "channels", NULL};
   if (require_json_fields(obj, req_keys, ctx ? ctx : "raw_file_capture_config", NULL, err) != 0) return -1;
 
-  if (parse_json_str_strict(obj, "filename", ctx ? ctx : "raw_file_capture_config", out->filename, sizeof(out->filename), &out->has_filename, err) != 0) return -1;
+  if (parse_json_str_strict(obj, "filename", ctx ? ctx : "raw_file_capture_config", out->filename, sizeof(out->filename), NULL, err) != 0) return -1;
   {
     static const config_enum_variant_t format_binary_sample_format_variants[] = {
       {"S16_LE", BINARY_SAMPLE_FORMAT_S16_LE},
@@ -4349,7 +4340,6 @@ int parse_raw_file_capture_config(const cJSON *obj, const char *ctx, raw_file_ca
     int enum_tmp = 0;
     if (parse_enum_required(obj, "format", format_binary_sample_format_variants, ctx ? ctx : "raw_file_capture_config", &enum_tmp, err) != 0) return -1;
     out->format = (binary_sample_format_t)enum_tmp;
-    out->has_format = true;
   }
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "raw_file_capture_config", &out->channels, NULL, err) != 0) return -1;
   if (parse_json_size_t_strict(obj, "skip_bytes", ctx ? ctx : "raw_file_capture_config", &out->skip_bytes, &out->has_skip_bytes, err) != 0) return -1;
@@ -4363,8 +4353,8 @@ cJSON *serialize_raw_file_capture_config(const raw_file_capture_config_t *in) {
   if (!in) return NULL;
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
-  if (in->has_filename) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
-  if (in->has_format) cJSON_AddStringToObject(obj, "format", binary_sample_format_to_string(in->format));
+  if (1) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
+  if (1) cJSON_AddStringToObject(obj, "format", binary_sample_format_to_string(in->format));
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
   if (in->has_skip_bytes) cJSON_AddNumberToObject(obj, "skip_bytes", (double)in->skip_bytes);
   if (in->has_read_bytes) cJSON_AddNumberToObject(obj, "read_bytes", (double)in->read_bytes);
@@ -4376,14 +4366,8 @@ cJSON *serialize_raw_file_capture_config(const raw_file_capture_config_t *in) {
 bool raw_file_capture_config_equal(const raw_file_capture_config_t *a, const raw_file_capture_config_t *b) {
   if (a == b) return true;
   if (!a || !b) return false;
-  if (a->has_filename != b->has_filename) return false;
-  if (a->has_filename) {
-    if (strncmp(a->filename, b->filename, sizeof(a->filename)) != 0) return false;
-  }
-  if (a->has_format != b->has_format) return false;
-  if (a->has_format) {
-    if (a->format != b->format) return false;
-  }
+  if (strncmp(a->filename, b->filename, sizeof(a->filename)) != 0) return false;
+  if (a->format != b->format) return false;
   if (a->channels != b->channels) return false;
   if (a->has_skip_bytes != b->has_skip_bytes) return false;
   if (a->has_skip_bytes) {
@@ -4430,7 +4414,7 @@ int parse_raw_file_playback_config(const cJSON *obj, const char *ctx, raw_file_p
   static const char *const req_keys[] = {"filename", "format", "channels", NULL};
   if (require_json_fields(obj, req_keys, ctx ? ctx : "raw_file_playback_config", NULL, err) != 0) return -1;
 
-  if (parse_json_str_strict(obj, "filename", ctx ? ctx : "raw_file_playback_config", out->filename, sizeof(out->filename), &out->has_filename, err) != 0) return -1;
+  if (parse_json_str_strict(obj, "filename", ctx ? ctx : "raw_file_playback_config", out->filename, sizeof(out->filename), NULL, err) != 0) return -1;
   {
     static const config_enum_variant_t format_binary_sample_format_variants[] = {
       {"S16_LE", BINARY_SAMPLE_FORMAT_S16_LE},
@@ -4451,7 +4435,6 @@ int parse_raw_file_playback_config(const cJSON *obj, const char *ctx, raw_file_p
     int enum_tmp = 0;
     if (parse_enum_required(obj, "format", format_binary_sample_format_variants, ctx ? ctx : "raw_file_playback_config", &enum_tmp, err) != 0) return -1;
     out->format = (binary_sample_format_t)enum_tmp;
-    out->has_format = true;
   }
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "raw_file_playback_config", &out->channels, NULL, err) != 0) return -1;
   if (parse_json_bool_strict(obj, "wav_header", ctx ? ctx : "raw_file_playback_config", &out->wav_header, &out->has_wav_header, err) != 0) return -1;
@@ -4464,8 +4447,8 @@ cJSON *serialize_raw_file_playback_config(const raw_file_playback_config_t *in) 
   if (!in) return NULL;
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
-  if (in->has_filename) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
-  if (in->has_format) cJSON_AddStringToObject(obj, "format", binary_sample_format_to_string(in->format));
+  if (1) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
+  if (1) cJSON_AddStringToObject(obj, "format", binary_sample_format_to_string(in->format));
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
   if (in->has_wav_header) cJSON_AddBoolToObject(obj, "wav_header", in->wav_header);
   if (in->has_use_rf64) cJSON_AddBoolToObject(obj, "use_rf64", in->use_rf64);
@@ -4476,14 +4459,8 @@ cJSON *serialize_raw_file_playback_config(const raw_file_playback_config_t *in) 
 bool raw_file_playback_config_equal(const raw_file_playback_config_t *a, const raw_file_playback_config_t *b) {
   if (a == b) return true;
   if (!a || !b) return false;
-  if (a->has_filename != b->has_filename) return false;
-  if (a->has_filename) {
-    if (strncmp(a->filename, b->filename, sizeof(a->filename)) != 0) return false;
-  }
-  if (a->has_format != b->has_format) return false;
-  if (a->has_format) {
-    if (a->format != b->format) return false;
-  }
+  if (strncmp(a->filename, b->filename, sizeof(a->filename)) != 0) return false;
+  if (a->format != b->format) return false;
   if (a->channels != b->channels) return false;
   if (a->has_wav_header != b->has_wav_header) return false;
   if (a->has_wav_header) {

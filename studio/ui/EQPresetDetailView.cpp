@@ -219,7 +219,7 @@ void EQPresetDetailView::setupUi() {
         if (idx >= 0 && idx < static_cast<int>(m_preset.bands.size())) {
             auto& b = m_preset.bands[idx];
             if (b.type == EQBandType::GeneralNotch)
-                b.freqNotch = f;
+                b.freqZ = f;
             else if (b.type == EQBandType::LinkwitzTransform)
                 b.freqTarget = f;
             else
@@ -491,20 +491,20 @@ void EQPresetDetailView::refreshUi() {
             notchBox->setContentsMargins(0, 0, 0, 0);
             auto fcSpin = new QDoubleSpinBox(notchWidget);
             fcSpin->setRange(10, 24000);
-            fcSpin->setValue(b.freqNotch);
+            fcSpin->setValue(b.freqZ);
             connect(fcSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
-                m_preset.bands[i].freqNotch = v;
+                m_preset.bands[i].freqZ = v;
                 m_diagramWidget->setPreset(m_preset);
                 applyConfig();
             });
-            notchBox->addWidget(new QLabel("Fc:", notchWidget));
+            notchBox->addWidget(new QLabel("Fz:", notchWidget));
             notchBox->addWidget(fcSpin);
 
             auto fpSpin = new QDoubleSpinBox(notchWidget);
             fpSpin->setRange(10, 24000);
-            fpSpin->setValue(b.freqPole);
+            fpSpin->setValue(b.freqP);
             connect(fpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
-                m_preset.bands[i].freqPole = v;
+                m_preset.bands[i].freqP = v;
                 m_diagramWidget->setPreset(m_preset);
                 applyConfig();
             });
@@ -513,9 +513,9 @@ void EQPresetDetailView::refreshUi() {
 
             auto qpSpin = new QDoubleSpinBox(notchWidget);
             qpSpin->setRange(0.01, 100.0);
-            qpSpin->setValue(b.qPole);
+            qpSpin->setValue(b.qP);
             connect(qpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this, i](double v) {
-                m_preset.bands[i].qPole = v;
+                m_preset.bands[i].qP = v;
                 m_diagramWidget->setPreset(m_preset);
                 applyConfig();
             });
@@ -763,7 +763,7 @@ void EQPresetDetailView::updateBandChipsBar() {
         if (b.type != EQBandType::Free) {
             double displayFreq = b.freq;
             if (b.type == EQBandType::GeneralNotch)
-                displayFreq = b.freqNotch;
+                displayFreq = b.freqZ;
             else if (b.type == EQBandType::LinkwitzTransform)
                 displayFreq = b.freqTarget;
 
@@ -773,7 +773,7 @@ void EQPresetDetailView::updateBandChipsBar() {
             }
             if (eqBandTypeHasQ(b.type)) {
                 if (b.type == EQBandType::GeneralNotch)
-                    valText += QString(" Qp:%1").arg(b.qPole, 0, 'f', 2);
+                    valText += QString(" Qp:%1").arg(b.qP, 0, 'f', 2);
                 else if (b.type == EQBandType::LinkwitzTransform)
                     valText += QString(" Qt:%1").arg(b.qTarget, 0, 'f', 2);
                 else if (b.useSlope)
@@ -934,7 +934,7 @@ void EQPresetDetailView::updateBandChipText(int bandIdx) {
 
     double displayFreq = b.freq;
     if (b.type == EQBandType::GeneralNotch)
-        displayFreq = b.freqNotch;
+        displayFreq = b.freqZ;
     else if (b.type == EQBandType::LinkwitzTransform)
         displayFreq = b.freqTarget;
 
@@ -944,7 +944,7 @@ void EQPresetDetailView::updateBandChipText(int bandIdx) {
     }
     if (eqBandTypeHasQ(b.type)) {
         if (b.type == EQBandType::GeneralNotch)
-            valText += QString(" Qp:%1").arg(b.qPole, 0, 'f', 2);
+            valText += QString(" Qp:%1").arg(b.qP, 0, 'f', 2);
         else if (b.type == EQBandType::LinkwitzTransform)
             valText += QString(" Qt:%1").arg(b.qTarget, 0, 'f', 2);
         else if (b.useSlope)

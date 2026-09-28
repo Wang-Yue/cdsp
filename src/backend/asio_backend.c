@@ -786,9 +786,6 @@ asio_sample_format_t asio_sample_type_to_format(int type_id) {
   case ASIO_ST_INT24_LSB:
     return ASIO_SAMPLE_FORMAT_S24_3_LE;
   case ASIO_ST_INT32_LSB:
-  case ASIO_ST_INT32_LSB_16:
-  case ASIO_ST_INT32_LSB_18:
-  case ASIO_ST_INT32_LSB_20:
     return ASIO_SAMPLE_FORMAT_S32_LE;
   case ASIO_ST_INT32_LSB_24:
     return ASIO_SAMPLE_FORMAT_S24_4_LE;

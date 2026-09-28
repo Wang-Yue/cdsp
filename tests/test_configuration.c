@@ -23,7 +23,6 @@ static void set_test_channels(dsp_config_t *config, int cap_chs, int play_chs) {
   config->devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
   snprintf(config->devices.capture.cfg.raw_file.filename,
            sizeof(config->devices.capture.cfg.raw_file.filename), "/dev/null");
-  config->devices.capture.cfg.raw_file.has_filename = true;
   config->devices.capture.cfg.raw_file.channels = cap_chs;
   config->devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
   config->devices.playback.cfg.raw_file.channels = play_chs;
@@ -227,7 +226,6 @@ TEST(ValidateRawFileCapture_NonexistentFile) {
   snprintf(config.devices.capture.cfg.raw_file.filename,
            sizeof(config.devices.capture.cfg.raw_file.filename),
            "/nonexistent/file/path/that/does/not/exist.raw");
-  config.devices.capture.cfg.raw_file.has_filename = true;
   config.devices.capture.cfg.raw_file.channels = 2;
   config.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
   config.devices.playback.cfg.raw_file.channels = 2;
@@ -304,7 +302,6 @@ TEST(ValidatePipelineFilterChannelOutOfRange) {
   strcpy(nf.name, "myfilter");
   nf.filter.type = FILTER_TYPE_GAIN;
   nf.filter.parameters.gain.gain = 0.0;
-  nf.filter.parameters.gain.has_gain = true;
 
   config.filters = &nf;
   config.filters_count = 1;
@@ -459,7 +456,6 @@ TEST(ValidatePipelineBypassedStep) {
   strcpy(nf.name, "myfilter");
   nf.filter.type = FILTER_TYPE_GAIN;
   nf.filter.parameters.gain.gain = 0.0;
-  nf.filter.parameters.gain.has_gain = true;
 
   config.filters = &nf;
   config.filters_count = 1;
@@ -613,7 +609,6 @@ TEST(ValidateInvalidFilterConfig) {
   strcpy(nf.name, "mygain");
   nf.filter.type = FILTER_TYPE_GAIN;
   nf.filter.parameters.gain.gain = 200.0;
-  nf.filter.parameters.gain.has_gain = true;
 
   dsp_config_t config;
   memset(&config, 0, sizeof(config));

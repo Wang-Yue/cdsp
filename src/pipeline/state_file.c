@@ -120,25 +120,9 @@ static bool parse_bool_scalar(const char *val, bool *out) {
  * @return true if @p val is entirely consumed as a number, false otherwise.
  */
 static bool parse_double_scalar(const char *val, double *out) {
-  if (strcmp(val, ".inf") == 0 || strcmp(val, "+.inf") == 0 ||
-      strcmp(val, ".Inf") == 0 || strcmp(val, "+.Inf") == 0 ||
-      strcmp(val, ".INF") == 0 || strcmp(val, "+.INF") == 0) {
-    *out = INFINITY;
-    return true;
-  }
-  if (strcmp(val, "-.inf") == 0 || strcmp(val, "-.Inf") == 0 ||
-      strcmp(val, "-.INF") == 0) {
-    *out = -INFINITY;
-    return true;
-  }
-  if (strcmp(val, ".nan") == 0 || strcmp(val, ".NaN") == 0 ||
-      strcmp(val, ".NAN") == 0) {
-    *out = NAN;
-    return true;
-  }
   char *end = NULL;
   double parsed = strtod(val, &end);
-  if (end == val || !end || *end != '\0') {
+  if (end == val || !end || *end != '\0' || !isfinite(parsed)) {
     return false;
   }
   *out = parsed;
@@ -428,6 +412,14 @@ bool dsp_state_load(const char *filename, dsp_state_t *out_state) {
 bool dsp_state_save(const char *filename, const dsp_state_t *state) {
   if (!filename || !state)
     return false;
+
+  for (int i = 0; i < 5; i++) {
+    if (!isfinite(state->volume[i])) {
+      logger_error(&g_logger, "Not saving state to '%s', error: volume[%d] is not finite (%f)",
+                   filename, i, state->volume[i]);
+      return false;
+    }
+  }
 
   // Save to a temporary file first, then rename to the target filename.
   // This ensures an atomic write, preventing corruption of the state file

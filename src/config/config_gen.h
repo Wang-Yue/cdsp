@@ -407,7 +407,6 @@ struct race_config_t {
   double delay;
   bool has_subsample_delay;
   bool subsample_delay;
-  bool has_delay_unit;
   delay_unit_t delay_unit;
   double attenuation;
 };
@@ -419,6 +418,7 @@ struct lookahead_limiter_processor_config_t {
   size_t monitor_channels_count;
   size_t *process_channels;
   size_t process_channels_count;
+  bool has_limit;
   double limit;
   double attack;
   time_unit_t attack_unit;
@@ -440,7 +440,6 @@ struct processor_config_t {
 
 /** Struct: gain_config */
 struct gain_config_t {
-  bool has_gain;
   double gain;
   gain_scale_t scale;
   bool inverted;
@@ -499,10 +498,10 @@ struct biquad_config_t {
   double b1;
   bool has_b2;
   double b2;
-  bool has_freq_notch;
-  double freq_notch;
-  bool has_freq_pole;
-  double freq_pole;
+  bool has_freq_z;
+  double freq_z;
+  bool has_freq_p;
+  double freq_p;
   bool has_q_p;
   double q_p;
   bool normalize_at_dc;
@@ -560,8 +559,6 @@ struct biquad_combo_config_t {
   int order;
   bool has_gain;
   double gain;
-  bool has_high_gain;
-  double high_gain;
   peq_band_t *bands;
   size_t bands_count;
   bool has_freq_min;
@@ -574,8 +571,10 @@ struct biquad_combo_config_t {
 
 /** Struct: diff_eq_config */
 struct diff_eq_config_t {
+  bool has_a;
   double *a;
   size_t a_count;
+  bool has_b;
   double *b;
   size_t b_count;
 };
@@ -590,12 +589,14 @@ struct dither_config_t {
 
 /** Struct: clipper_config */
 struct clipper_config_t {
+  bool has_clip_limit;
   double clip_limit;
   bool soft_clip;
 };
 
 /** Struct: lookahead_limiter_filter_config */
 struct lookahead_limiter_filter_config_t {
+  bool has_limit;
   double limit;
   double attack;
   time_unit_t attack_unit;
@@ -819,7 +820,6 @@ struct asio_playback_config_t {
 /** Struct: wav_file_capture_config */
 struct wav_file_capture_config_t {
   size_t channels;
-  bool has_filename;
   char filename[512];
   bool has_extra_samples;
   int extra_samples;
@@ -829,9 +829,7 @@ struct wav_file_capture_config_t {
 
 /** Struct: raw_file_capture_config */
 struct raw_file_capture_config_t {
-  bool has_filename;
   char filename[512];
-  bool has_format;
   binary_sample_format_t format;
   size_t channels;
   bool has_skip_bytes;
@@ -846,9 +844,7 @@ struct raw_file_capture_config_t {
 
 /** Struct: raw_file_playback_config */
 struct raw_file_playback_config_t {
-  bool has_filename;
   char filename[512];
-  bool has_format;
   binary_sample_format_t format;
   size_t channels;
   bool has_wav_header;
@@ -1051,6 +1047,7 @@ bool lookahead_limiter_processor_config_equal(const lookahead_limiter_processor_
 int parse_lookahead_limiter_processor_config(const cJSON *obj, const char *ctx, lookahead_limiter_processor_config_t *out, config_error_t *err);
 cJSON *serialize_lookahead_limiter_processor_config(const lookahead_limiter_processor_config_t *in);
 void free_lookahead_limiter_processor_config_contents(lookahead_limiter_processor_config_t *in);
+double lookahead_limiter_processor_config_get_limit(const lookahead_limiter_processor_config_t *in);
 
 void processor_config_init(processor_config_t *out);
 bool processor_config_equal(const processor_config_t *a, const processor_config_t *b);
@@ -1063,7 +1060,6 @@ bool gain_config_equal(const gain_config_t *a, const gain_config_t *b);
 int parse_gain_config(const cJSON *obj, const char *ctx, gain_config_t *out, config_error_t *err);
 cJSON *serialize_gain_config(const gain_config_t *in);
 void free_gain_config_contents(gain_config_t *in);
-double gain_config_get_gain(const gain_config_t *in);
 
 void volume_config_init(volume_config_t *out);
 bool volume_config_equal(const volume_config_t *a, const volume_config_t *b);
@@ -1127,12 +1123,14 @@ bool clipper_config_equal(const clipper_config_t *a, const clipper_config_t *b);
 int parse_clipper_config(const cJSON *obj, const char *ctx, clipper_config_t *out, config_error_t *err);
 cJSON *serialize_clipper_config(const clipper_config_t *in);
 void free_clipper_config_contents(clipper_config_t *in);
+double clipper_config_get_clip_limit(const clipper_config_t *in);
 
 void lookahead_limiter_filter_config_init(lookahead_limiter_filter_config_t *out);
 bool lookahead_limiter_filter_config_equal(const lookahead_limiter_filter_config_t *a, const lookahead_limiter_filter_config_t *b);
 int parse_lookahead_limiter_filter_config(const cJSON *obj, const char *ctx, lookahead_limiter_filter_config_t *out, config_error_t *err);
 cJSON *serialize_lookahead_limiter_filter_config(const lookahead_limiter_filter_config_t *in);
 void free_lookahead_limiter_filter_config_contents(lookahead_limiter_filter_config_t *in);
+double lookahead_limiter_filter_config_get_limit(const lookahead_limiter_filter_config_t *in);
 
 void filter_config_init(filter_config_t *out);
 bool filter_config_equal(const filter_config_t *a, const filter_config_t *b);

@@ -459,8 +459,8 @@ std::optional<EQBand> MeasurementSession::eqBandFromBiquadParameters(const Biqua
         band.a2 = p.a2.value_or(0.0);
         break;
     case EQBandType::GeneralNotch:
-        band.freqNotch = p.freqNotch.value_or(1000.0);
-        band.freqPole = p.freqPole.value_or(1000.0);
+        band.freqZ = p.freqZ.value_or(1000.0);
+        band.freqP = p.freqP.value_or(1000.0);
         band.normalizeAtDc = p.normalizeAtDc.value_or(true);
         break;
     case EQBandType::LinkwitzTransform:
@@ -495,8 +495,8 @@ BiquadParameters MeasurementSession::biquadParametersFromEQBand(const EQBand& ba
         params.a2 = band.a2;
         break;
     case EQBandType::GeneralNotch:
-        params.freqNotch = band.freqNotch;
-        params.freqPole = band.freqPole;
+        params.freqZ = band.freqZ;
+        params.freqP = band.freqP;
         params.normalizeAtDc = band.normalizeAtDc;
         break;
     case EQBandType::LinkwitzTransform:

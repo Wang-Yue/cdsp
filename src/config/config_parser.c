@@ -168,9 +168,9 @@ int parse_double_array_strict(const cJSON *arr, const char *field_name,
   }
   for (int i = 0; i < size; i++) {
     const cJSON *el = cJSON_GetArrayItem(arr, i);
-    if (!cJSON_IsNumber(el)) {
+    if (!cJSON_IsNumber(el) || !isfinite(el->valuedouble)) {
       config_error_set(err, CONFIG_ERR_PARSE,
-                       "element %d of '%s' in %s must be a number", i,
+                       "element %d of '%s' in %s must be a finite number", i,
                        field_name, section_name ? section_name : "object");
       free(values);
       return -1;

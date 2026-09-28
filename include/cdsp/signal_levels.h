@@ -83,6 +83,23 @@ CDSP_API bool cdsp_get_channel_labels(const dsp_engine_t *engine,
  */
 CDSP_API void cdsp_free_channel_labels(char **labels, size_t count);
 
+/**
+ * @brief Get global peak levels across channels for capture or playback.
+ * @param engine Pointer to the engine.
+ * @param is_capture true for capture stream, false for playback stream.
+ * @param out_peaks Output float array allocated by caller.
+ * @param out_channels Output pointer to receive channel count.
+ * @return true on success, false otherwise.
+ */
+CDSP_API bool cdsp_get_global_peaks(const dsp_engine_t *engine, bool is_capture,
+                                   float *out_peaks, size_t *out_channels);
+
+/**
+ * @brief Reset global peak levels to -inf for capture and playback.
+ * @param engine Pointer to the engine.
+ */
+CDSP_API void cdsp_reset_global_peaks(dsp_engine_t *engine);
+
 #ifdef __cplusplus
 }
 #endif

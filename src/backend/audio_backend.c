@@ -283,7 +283,7 @@ asio_sample_format_to_binary_format(asio_sample_format_t fmt, bool is_lsb) {
   case ASIO_SAMPLE_FORMAT_S24_3_LE:
     return BINARY_SAMPLE_FORMAT_S24_3_LE;
   case ASIO_SAMPLE_FORMAT_S24_4_LE:
-    return BINARY_SAMPLE_FORMAT_S24_4_LJ_LE;
+    return BINARY_SAMPLE_FORMAT_S24_4_RJ_LE;
   case ASIO_SAMPLE_FORMAT_S32_LE:
     return BINARY_SAMPLE_FORMAT_S32_LE;
   case ASIO_SAMPLE_FORMAT_F32_LE:
@@ -567,8 +567,7 @@ capture_device_config_get_binary_format(const capture_device_config_t *config) {
     if (config->is_wav) {
       return BINARY_SAMPLE_FORMAT_INVALID;
     }
-    return config->cfg.raw_file.has_format ? config->cfg.raw_file.format
-                                           : BINARY_SAMPLE_FORMAT_INVALID;
+    return config->cfg.raw_file.format;
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return config->cfg.stdin_in.format;
   case AUDIO_BACKEND_TYPE_GENERATOR:
@@ -615,8 +614,7 @@ binary_sample_format_t playback_device_config_get_binary_format(
                                        : BINARY_SAMPLE_FORMAT_INVALID;
 #endif
   case AUDIO_BACKEND_TYPE_FILE:
-    return config->cfg.raw_file.has_format ? config->cfg.raw_file.format
-                                           : BINARY_SAMPLE_FORMAT_INVALID;
+    return config->cfg.raw_file.format;
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return config->cfg.stdout_out.format;
   case AUDIO_BACKEND_TYPE_GENERATOR:
@@ -1216,7 +1214,7 @@ int audio_backend_apply_device_overrides(
 
   // 1. If capture device is WavFile, read WAV info to populate base overrides
   if (devices->capture.type == AUDIO_BACKEND_TYPE_FILE &&
-      devices->capture.is_wav && devices->capture.cfg.wav_file.has_filename) {
+      devices->capture.is_wav && devices->capture.cfg.wav_file.filename[0] != '\0') {
     const char *fname = devices->capture.cfg.wav_file.filename;
     wav_info_t wav_info;
     char wav_err[256];
@@ -1360,7 +1358,6 @@ int audio_backend_apply_device_overrides(
     case AUDIO_BACKEND_TYPE_FILE:
       if (!devices->capture.is_wav) {
         devices->capture.cfg.raw_file.format = overrides.sample_format;
-        devices->capture.cfg.raw_file.has_format = true;
         logger_debug(&g_logger, "Apply override for capture sample format: %s",
                      file_sample_format_to_string(overrides.sample_format));
       }

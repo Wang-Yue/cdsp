@@ -1618,8 +1618,7 @@ GainParameters GainParameters::fromJson(const QJsonObject& json) {
 
 QJsonObject GainParameters::toJson() const {
     QJsonObject obj;
-    if (gain.has_value())
-        obj["gain"] = gain.value();
+    obj["gain"] = gain.value_or(0.0);
     if (scale.has_value())
         obj["scale"] = QString::fromStdString(gainScaleToString(scale.value()));
     if (inverted.has_value())
@@ -1658,8 +1657,7 @@ LoudnessParameters LoudnessParameters::fromJson(const QJsonObject& json) {
 
 QJsonObject LoudnessParameters::toJson() const {
     QJsonObject obj;
-    if (referenceLevel.has_value())
-        obj["reference_level"] = referenceLevel.value();
+    obj["reference_level"] = referenceLevel.value_or(0.0);
     if (highBoost.has_value())
         obj["high_boost"] = highBoost.value();
     if (lowBoost.has_value())
@@ -1729,24 +1727,36 @@ QJsonObject ConvParameters::toJson() const {
         break;
     }
     obj["type"] = QString::fromStdString(typeStr);
-    if (!values.empty()) {
-        QJsonArray arr;
-        for (double v : values)
-            arr.append(v);
-        obj["values"] = arr;
+    switch (type) {
+    case ConvType::Values:
+        if (!values.empty()) {
+            QJsonArray arr;
+            for (double v : values)
+                arr.append(v);
+            obj["values"] = arr;
+        }
+        break;
+    case ConvType::Wav:
+        if (!filename.empty())
+            obj["filename"] = QString::fromStdString(filename);
+        if (channel.has_value())
+            obj["channel"] = channel.value();
+        break;
+    case ConvType::Raw:
+        if (!filename.empty())
+            obj["filename"] = QString::fromStdString(filename);
+        if (!format.empty())
+            obj["format"] = QString::fromStdString(format);
+        if (skipBytesLines.has_value())
+            obj["skip_bytes_lines"] = skipBytesLines.value();
+        if (readBytesLines.has_value())
+            obj["read_bytes_lines"] = readBytesLines.value();
+        break;
+    case ConvType::Dummy:
+        if (length.has_value())
+            obj["length"] = length.value();
+        break;
     }
-    if (!filename.empty())
-        obj["filename"] = QString::fromStdString(filename);
-    if (!format.empty())
-        obj["format"] = QString::fromStdString(format);
-    if (channel.has_value())
-        obj["channel"] = channel.value();
-    if (length.has_value())
-        obj["length"] = length.value();
-    if (skipBytesLines.has_value())
-        obj["skip_bytes_lines"] = skipBytesLines.value();
-    if (readBytesLines.has_value())
-        obj["read_bytes_lines"] = readBytesLines.value();
     return obj;
 }
 
@@ -1775,14 +1785,6 @@ QJsonObject DelayParameters::toJson() const {
     return obj;
 }
 
-QJsonObject PeqBand::toJson() const {
-    QJsonObject obj;
-    obj["freq"] = freq;
-    obj["q"] = q;
-    obj["gain"] = gain;
-    return obj;
-}
-
 PeqBand PeqBand::fromJson(const QJsonObject& json) {
     PeqBand b;
     if (json.contains("freq"))
@@ -1792,6 +1794,14 @@ PeqBand PeqBand::fromJson(const QJsonObject& json) {
     if (json.contains("gain"))
         b.gain = json["gain"].toDouble();
     return b;
+}
+
+QJsonObject PeqBand::toJson() const {
+    QJsonObject obj;
+    obj["freq"] = freq;
+    obj["q"] = q;
+    obj["gain"] = gain;
+    return obj;
 }
 
 BiquadComboParameters BiquadComboParameters::fromJson(const QJsonObject& json) {
@@ -1826,27 +1836,38 @@ BiquadComboParameters BiquadComboParameters::fromJson(const QJsonObject& json) {
 QJsonObject BiquadComboParameters::toJson() const {
     QJsonObject obj;
     obj["type"] = QString::fromStdString(biquadComboTypeToString(type));
-    if (freq.has_value())
-        obj["freq"] = freq.value();
-    if (order.has_value())
-        obj["order"] = order.value();
-    if (gain.has_value())
-        obj["gain"] = gain.value();
-    if (type == BiquadComboType::NPointPeq) {
+    switch (type) {
+    case BiquadComboType::ButterworthHighpass:
+    case BiquadComboType::ButterworthLowpass:
+    case BiquadComboType::LinkwitzRileyHighpass:
+    case BiquadComboType::LinkwitzRileyLowpass:
+        if (freq.has_value())
+            obj["freq"] = freq.value();
+        if (order.has_value())
+            obj["order"] = order.value();
+        break;
+    case BiquadComboType::Tilt:
+        obj["gain"] = gain.value_or(0.0);
+        break;
+    case BiquadComboType::NPointPeq: {
         QJsonArray arr;
         for (const auto& b : bands)
             arr.append(b.toJson());
         obj["bands"] = arr;
+        break;
     }
-    if (freqMin.has_value())
-        obj["freq_min"] = freqMin.value();
-    if (freqMax.has_value())
-        obj["freq_max"] = freqMax.value();
-    if (!gains.empty()) {
-        QJsonArray arr;
-        for (double g : gains)
-            arr.append(g);
-        obj["gains"] = arr;
+    case BiquadComboType::GraphicEqualizer:
+        if (freqMin.has_value())
+            obj["freq_min"] = freqMin.value();
+        if (freqMax.has_value())
+            obj["freq_max"] = freqMax.value();
+        {
+            QJsonArray arr;
+            for (double g : gains)
+                arr.append(g);
+            obj["gains"] = arr;
+        }
+        break;
     }
     return obj;
 }
@@ -1966,8 +1987,7 @@ QJsonObject VolumeParameters::toJson() const {
         obj["ramp_time_ms"] = rampTime.value();
     if (limit.has_value())
         obj["limit"] = limit.value();
-    if (fader.has_value())
-        obj["fader"] = QString::fromStdString(faderToString(fader.value()));
+    obj["fader"] = QString::fromStdString(faderToString(fader.value_or(Fader::Aux1)));
     return obj;
 }
 

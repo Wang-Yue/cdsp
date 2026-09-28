@@ -134,12 +134,12 @@ static bool biquad_coefficients_compute(const biquad_config_t *params,
   case BIQUAD_TYPE_GENERAL_NOTCH: {
     // General notch filter allows independent control of notch frequency and
     // pole frequency. Uses bilinear transform.
-    if (params->freq_notch <= 0.0 || params->freq_pole <= 0.0 ||
+    if (params->freq_z <= 0.0 || params->freq_p <= 0.0 ||
         params->q_p <= 0.0) {
       return false;
     }
-    double freq_z = params->freq_notch;
-    double freq_p = params->freq_pole;
+    double freq_z = params->freq_z;
+    double freq_p = params->freq_p;
     double q_p = params->q_p;
     bool normalize = params->normalize_at_dc;
     double tn_z = tan(M_PI * freq_z / fs);
@@ -516,14 +516,14 @@ static int biquad_config_validate(const filter_config_t *config,
 
   // 6. Check GeneralNotch frequencies (matching Rust GeneralNotch block)
   if (params->type == BIQUAD_TYPE_GENERAL_NOTCH) {
-    if (params->freq_pole <= 0.0 || params->freq_notch <= 0.0) {
+    if (params->freq_p <= 0.0 || params->freq_z <= 0.0) {
       if (err) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                          "Pole and zero frequencies must be > 0");
       }
       return -1;
     }
-    if (params->freq_pole >= nyquist || params->freq_notch >= nyquist) {
+    if (params->freq_p >= nyquist || params->freq_z >= nyquist) {
       if (err) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                          "Pole and zero frequencies must be < samplerate/2");

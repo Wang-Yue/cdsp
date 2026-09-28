@@ -54,9 +54,9 @@ public:
     double a2 = 0.0;
 
     // GeneralNotch
-    double freqNotch = 1000.0;
-    double freqPole = 1000.0;
-    double qPole = 0.707;
+    double freqZ = 1000.0;
+    double freqP = 1000.0;
+    double qP = 0.707;
     bool normalizeAtDc = true;
 
     // Slope / Bandwidth

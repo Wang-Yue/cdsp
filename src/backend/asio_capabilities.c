@@ -111,16 +111,16 @@ probe_device_capabilities(const char *target_dev_name, bool is_capture,
 
   asio_sample_format_t sample_fmt = asio_sample_type_to_format(chan_info.type);
   if (sample_fmt == ASIO_SAMPLE_FORMAT_INVALID) {
-    if (err) {
-      const char *direction_name = is_capture ? "capture" : "playback";
-      char msg[512];
-      snprintf(msg, sizeof(msg),
-               "Failed to detect %s sample format for ASIO device '%s'",
-               direction_name, target_dev_name);
-      device_error_init(err, DEVICE_ERROR_OTHER, msg);
-    }
     asio_driver_teardown(target_dev_name);
-    return NULL;
+    desc = (audio_device_descriptor_t *)calloc(1, sizeof(audio_device_descriptor_t));
+    if (desc) {
+      snprintf(desc->name, sizeof(desc->name), "%s", target_dev_name);
+      desc->capability_sets_count = 0;
+      desc->capability_sets = NULL;
+    } else if (err) {
+      device_error_init(err, DEVICE_ERROR_OTHER, "Out of memory");
+    }
+    return desc;
   }
   const char *fmt_str = asio_format_to_str(sample_fmt);
 

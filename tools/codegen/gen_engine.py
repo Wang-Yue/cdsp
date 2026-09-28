@@ -852,12 +852,20 @@ class CodegenEngine:
                         w.line("else {")
                         w.indent()
                         for k, v in rule.default_assignments.items():
-                            w.line(f"out->{k} = {v};")
+                            kf = field_map.get(k)
+                            if kf and isinstance(kf.type, StringType):
+                                w.line(f"strncpy(out->{k}, \"{v}\", sizeof(out->{k}) - 1);")
+                            else:
+                                w.line(f"out->{k} = {v};")
                         w.dedent()
                         w.line("}")
                 elif rule.default_assignments:
                     for k, v in rule.default_assignments.items():
-                        w.line(f"out->{k} = {v};")
+                        kf = field_map.get(k)
+                        if kf and isinstance(kf.type, StringType):
+                            w.line(f"strncpy(out->{k}, \"{v}\", sizeof(out->{k}) - 1);")
+                        else:
+                            w.line(f"out->{k} = {v};")
                 if rule.sets_field:
                     w.line(f"out->{rule.sets_field[0]} = {rule.sets_field[1]};")
                 for fn in rule.fields:

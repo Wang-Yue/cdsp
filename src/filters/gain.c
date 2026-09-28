@@ -33,7 +33,7 @@ static int gain_config_validate(const filter_config_t *config, int sample_rate,
   if (!config || config->type != FILTER_TYPE_GAIN)
     return -1;
   const gain_config_t *params = &config->parameters.gain;
-  if (!params || !params->has_gain) {
+  if (!params) {
     if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "gain is a required parameter for the Gain filter");

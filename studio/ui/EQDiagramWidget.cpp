@@ -431,7 +431,7 @@ void EQDiagramWidget::paintEvent(QPaintEvent* event) {
 
         double handleFreq = b.freq;
         if (b.type == EQBandType::GeneralNotch)
-            handleFreq = b.freqNotch;
+            handleFreq = b.freqZ;
         else if (b.type == EQBandType::LinkwitzTransform)
             handleFreq = b.freqTarget;
 
@@ -482,11 +482,11 @@ void EQDiagramWidget::drawOverlayReadout(QPainter& painter, int w, int h) {
                        .arg(b.a2, 0, 'f', 4)
                        .arg(b.isEnabled ? "" : " (OFF)");
         } else if (b.type == EQBandType::GeneralNotch) {
-            text = QString("Band #%1 [GeneralNotch]%6 | Fc: %2 Hz | Fp: %3 Hz | Qp: %4 | Norm: %5")
+            text = QString("Band #%1 [GeneralNotch]%6 | Fz: %2 Hz | Fp: %3 Hz | Qp: %4 | Norm: %5")
                        .arg(activeIndex + 1)
-                       .arg(static_cast<int>(std::round(b.freqNotch)))
-                       .arg(static_cast<int>(std::round(b.freqPole)))
-                       .arg(b.qPole, 0, 'f', 2)
+                       .arg(static_cast<int>(std::round(b.freqZ)))
+                       .arg(static_cast<int>(std::round(b.freqP)))
+                       .arg(b.qP, 0, 'f', 2)
                        .arg(b.normalizeAtDc ? "ON" : "OFF")
                        .arg(b.isEnabled ? "" : " (OFF)");
         } else if (b.type == EQBandType::LinkwitzTransform) {
@@ -570,7 +570,7 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
 
         double handleFreq = b.freq;
         if (b.type == EQBandType::GeneralNotch)
-            handleFreq = b.freqNotch;
+            handleFreq = b.freqZ;
         else if (b.type == EQBandType::LinkwitzTransform)
             handleFreq = b.freqTarget;
 
@@ -671,7 +671,7 @@ void EQDiagramWidget::mousePressEvent(QMouseEvent* event) {
 
             double handleFreq = b.freq;
             if (b.type == EQBandType::GeneralNotch)
-                handleFreq = b.freqNotch;
+                handleFreq = b.freqZ;
             else if (b.type == EQBandType::LinkwitzTransform)
                 handleFreq = b.freqTarget;
 
@@ -730,7 +730,7 @@ void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
             db = std::max(-20.0, std::min(20.0, db));
 
             if (b.type == EQBandType::GeneralNotch)
-                b.freqNotch = f;
+                b.freqZ = f;
             else if (b.type == EQBandType::LinkwitzTransform)
                 b.freqTarget = f;
             else
@@ -756,7 +756,7 @@ void EQDiagramWidget::mouseMoveEvent(QMouseEvent* event) {
 
             double handleFreq = b.freq;
             if (b.type == EQBandType::GeneralNotch)
-                handleFreq = b.freqNotch;
+                handleFreq = b.freqZ;
             else if (b.type == EQBandType::LinkwitzTransform)
                 handleFreq = b.freqTarget;
 
@@ -803,7 +803,7 @@ void EQDiagramWidget::wheelEvent(QWheelEvent* event) {
 
             double handleFreq = b.freq;
             if (b.type == EQBandType::GeneralNotch)
-                handleFreq = b.freqNotch;
+                handleFreq = b.freqZ;
             else if (b.type == EQBandType::LinkwitzTransform)
                 handleFreq = b.freqTarget;
 

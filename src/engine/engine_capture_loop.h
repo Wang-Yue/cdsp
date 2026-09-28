@@ -82,6 +82,15 @@ engine_capture_loop_create(const engine_capture_loop_config_t *config);
 void engine_capture_loop_free(engine_capture_loop_t *loop);
 
 /**
+ * @brief Updates the used capture channels mask in the capture loop.
+ *
+ * @param loop Pointer to the capture loop instance.
+ * @param used_channels Pointer to the array of boolean flags indicating used channels.
+ */
+void engine_capture_loop_set_used_channels(engine_capture_loop_t *loop,
+                                           const bool *used_channels);
+
+/**
  * @brief Runs the capture loop.
  *
  * This function blocks and runs the capture loop until it is requested to stop

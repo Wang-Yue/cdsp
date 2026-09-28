@@ -242,7 +242,7 @@ void volume_filter_prepare_chunk(volume_filter_t *filter) {
       filter->ramp_start = filter->current_volume;
       filter->ramp_step = 1;
     } else {
-      filter->current_volume = shared_mute ? 0.0 : target_vol;
+      filter->current_volume = shared_mute ? -100.0 : target_vol;
       filter->ramp_step = 0;
     }
     filter->target_volume = target_vol;

@@ -287,7 +287,6 @@ static void compare_gain(double gain_db, bool inverted, bool mute,
   ASSERT_EQ(NBR_FRAMES, ref_count);
 
   gain_config_t params = {.gain = gain_db,
-                          .has_gain = true,
                           .scale = GAIN_SCALE_DB,
                           .inverted = inverted,
                           .mute = mute};
@@ -1555,7 +1554,6 @@ TEST(RACE_Vs_RustReference) {
   params.subsample_delay = false;
   params.has_subsample_delay = true;
   params.delay_unit = DELAY_UNIT_SAMPLES;
-  params.has_delay_unit = true;
   params.attenuation = attenuation;
 
   processor_config_t config = {.type = PROCESSOR_TYPE_RACE,

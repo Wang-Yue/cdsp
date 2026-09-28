@@ -60,6 +60,37 @@ CDSP_API void cdsp_set_fader_volume(dsp_engine_t *engine, cdsp_fader_t fader,
                                     float db, bool instant);
 
 /**
+ * @brief Adjust the volume of a specific fader by a delta in dB.
+ * @param engine Pointer to the engine.
+ * @param fader Fader identifier.
+ * @param delta Volume change in dB.
+ * @return New volume in dB.
+ */
+CDSP_API float cdsp_adjust_fader_volume(dsp_engine_t *engine, cdsp_fader_t fader,
+                                        float delta);
+
+/**
+ * @brief Adjust the volume of a specific fader by a delta in dB, clamped to [min_db, max_db].
+ * @param engine Pointer to the engine.
+ * @param fader Fader identifier.
+ * @param delta Volume change in dB.
+ * @param min_db Minimum allowable volume in dB.
+ * @param max_db Maximum allowable volume in dB.
+ * @return New volume in dB.
+ */
+CDSP_API float cdsp_adjust_fader_volume_clamped(dsp_engine_t *engine,
+                                                cdsp_fader_t fader, float delta,
+                                                float min_db, float max_db);
+
+/**
+ * @brief Adjust the volume of the main fader by a delta in dB.
+ * @param engine Pointer to the engine.
+ * @param delta Volume change in dB.
+ * @return New volume in dB.
+ */
+CDSP_API float cdsp_adjust_volume(dsp_engine_t *engine, float delta);
+
+/**
  * @brief Get the mute state of a specific fader (WebSocket: GetFaderMute).
  * @param engine Pointer to the engine.
  * @param fader Fader identifier.

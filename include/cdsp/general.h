@@ -66,6 +66,20 @@ CDSP_API void cdsp_engine_poll(dsp_engine_t *engine);
 CDSP_API void cdsp_set_log_level(const char *level_str);
 
 /**
+ * @brief Set the polling update interval in milliseconds.
+ * @param engine Pointer to the engine.
+ * @param interval_ms Update interval in milliseconds.
+ */
+CDSP_API void cdsp_set_update_interval(dsp_engine_t *engine, uint32_t interval_ms);
+
+/**
+ * @brief Get the polling update interval in milliseconds.
+ * @param engine Pointer to the engine.
+ * @return Update interval in milliseconds.
+ */
+CDSP_API uint32_t cdsp_get_update_interval(const dsp_engine_t *engine);
+
+/**
  * @brief Log callback signature for the public API.
  * @param level Log severity level as a string (e.g. "INFO", "WARN", "ERROR").
  * @param label Component label (e.g. "dsp.engine").

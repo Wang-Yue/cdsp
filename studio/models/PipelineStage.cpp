@@ -1104,9 +1104,9 @@ StageBuildResult StageBuilders::buildStage(const PipelineStage& stage, int sampl
                 f.biquadParams.a2 = band.a2;
                 break;
             case EQBandType::GeneralNotch:
-                f.biquadParams.freqNotch = band.freqNotch;
-                f.biquadParams.freqPole = band.freqPole;
-                f.biquadParams.qP = band.qPole;
+                f.biquadParams.freqZ = band.freqZ;
+                f.biquadParams.freqP = band.freqP;
+                f.biquadParams.qP = band.qP;
                 f.biquadParams.normalizeAtDc = band.normalizeAtDc;
                 break;
             case EQBandType::LinkwitzTransform:

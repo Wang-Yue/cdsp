@@ -110,9 +110,9 @@ BiquadParameters BiquadParameters::fromJson(const QJsonObject& json) {
     if (json.contains("a2"))
         b.a2 = json["a2"].toDouble();
     if (json.contains("freq_z"))
-        b.freqNotch = json["freq_z"].toDouble();
+        b.freqZ = json["freq_z"].toDouble();
     if (json.contains("freq_p"))
-        b.freqPole = json["freq_p"].toDouble();
+        b.freqP = json["freq_p"].toDouble();
     if (json.contains("q_p"))
         b.qP = json["q_p"].toDouble();
     if (json.contains("normalize_at_dc"))
@@ -130,44 +130,66 @@ BiquadParameters BiquadParameters::fromJson(const QJsonObject& json) {
 
 QJsonObject BiquadParameters::toJson() const {
     QJsonObject bObj;
-    if (type.has_value())
-        bObj["type"] = QString::fromStdString(biquadTypeToString(type.value()));
-    if (freq.has_value())
-        bObj["freq"] = freq.value();
-    if (gain.has_value())
-        bObj["gain"] = gain.value();
-    if (q.has_value())
-        bObj["q"] = q.value();
-    if (bandwidth.has_value())
-        bObj["bandwidth"] = bandwidth.value();
-    if (slope.has_value())
-        bObj["slope"] = slope.value();
-    if (b0.has_value())
-        bObj["b0"] = b0.value();
-    if (b1.has_value())
-        bObj["b1"] = b1.value();
-    if (b2.has_value())
-        bObj["b2"] = b2.value();
-    if (a1.has_value())
-        bObj["a1"] = a1.value();
-    if (a2.has_value())
-        bObj["a2"] = a2.value();
-    if (freqNotch.has_value())
-        bObj["freq_z"] = freqNotch.value();
-    if (freqPole.has_value())
-        bObj["freq_p"] = freqPole.value();
-    if (qP.has_value())
-        bObj["q_p"] = qP.value();
-    if (normalizeAtDc.has_value())
-        bObj["normalize_at_dc"] = normalizeAtDc.value();
-    if (freqAct.has_value())
-        bObj["freq_act"] = freqAct.value();
-    if (qAct.has_value())
-        bObj["q_act"] = qAct.value();
-    if (freqTarget.has_value())
-        bObj["freq_target"] = freqTarget.value();
-    if (qTarget.has_value())
-        bObj["q_target"] = qTarget.value();
+    if (!type.has_value())
+        return bObj;
+
+    bObj["type"] = QString::fromStdString(biquadTypeToString(type.value()));
+    switch (type.value()) {
+    case BiquadType::Free:
+        bObj["a1"] = a1.value_or(0.0);
+        bObj["a2"] = a2.value_or(0.0);
+        bObj["b0"] = b0.value_or(1.0);
+        bObj["b1"] = b1.value_or(0.0);
+        bObj["b2"] = b2.value_or(0.0);
+        break;
+    case BiquadType::GeneralNotch:
+        bObj["freq_z"] = freqZ.value_or(freq.value_or(1000.0));
+        bObj["freq_p"] = freqP.value_or(freq.value_or(1000.0));
+        bObj["q_p"] = qP.value_or(q.value_or(0.707));
+        if (normalizeAtDc.has_value()) bObj["normalize_at_dc"] = normalizeAtDc.value();
+        break;
+    case BiquadType::LinkwitzTransform:
+        bObj["freq_act"] = freqAct.value_or(1000.0);
+        bObj["q_act"] = qAct.value_or(0.707);
+        bObj["freq_target"] = freqTarget.value_or(1000.0);
+        bObj["q_target"] = qTarget.value_or(0.707);
+        break;
+    case BiquadType::Peaking:
+        if (freq.has_value()) bObj["freq"] = freq.value();
+        if (gain.has_value()) bObj["gain"] = gain.value();
+        if (bandwidth.has_value()) bObj["bandwidth"] = bandwidth.value();
+        else if (q.has_value()) bObj["q"] = q.value();
+        break;
+    case BiquadType::Highshelf:
+    case BiquadType::Lowshelf:
+        if (freq.has_value()) bObj["freq"] = freq.value();
+        if (gain.has_value()) bObj["gain"] = gain.value();
+        if (slope.has_value()) bObj["slope"] = slope.value();
+        else if (q.has_value()) bObj["q"] = q.value();
+        break;
+    case BiquadType::HighshelfFO:
+    case BiquadType::LowshelfFO:
+        if (freq.has_value()) bObj["freq"] = freq.value();
+        if (gain.has_value()) bObj["gain"] = gain.value();
+        break;
+    case BiquadType::Highpass:
+    case BiquadType::Lowpass:
+        if (freq.has_value()) bObj["freq"] = freq.value();
+        if (q.has_value()) bObj["q"] = q.value();
+        break;
+    case BiquadType::HighpassFO:
+    case BiquadType::LowpassFO:
+    case BiquadType::AllpassFO:
+        if (freq.has_value()) bObj["freq"] = freq.value();
+        break;
+    case BiquadType::Notch:
+    case BiquadType::Bandpass:
+    case BiquadType::Allpass:
+        if (freq.has_value()) bObj["freq"] = freq.value();
+        if (bandwidth.has_value()) bObj["bandwidth"] = bandwidth.value();
+        else if (q.has_value()) bObj["q"] = q.value();
+        break;
+    }
     return bObj;
 }
 
@@ -223,8 +245,8 @@ std::optional<BiquadCoefficients> BiquadCoefficients::compute(const BiquadParame
         break;
 
     case BiquadType::GeneralNotch: {
-        double freqZ = params.freqNotch.value_or(1000.0);
-        double freqP = params.freqPole.value_or(1000.0);
+        double freqZ = params.freqZ.value_or(1000.0);
+        double freqP = params.freqP.value_or(1000.0);
         double qP = params.qP.value_or(params.q.value_or(0.5));
         bool normalize = params.normalizeAtDc.value_or(false);
         double tnZ = std::tan(M_PI * freqZ / fs);

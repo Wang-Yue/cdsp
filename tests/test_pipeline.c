@@ -44,7 +44,6 @@ static void init_default_config(dsp_config_t *config) {
   config->devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
   snprintf(config->devices.capture.cfg.raw_file.filename,
            sizeof(config->devices.capture.cfg.raw_file.filename), "/dev/null");
-  config->devices.capture.cfg.raw_file.has_filename = true;
   config->devices.capture.cfg.raw_file.channels = 2;
   config->devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
   config->devices.playback.cfg.raw_file.channels = 2;
@@ -118,7 +117,6 @@ TEST(PipelineMultithreadedCorrectness) {
     snprintf(filters[i].name, sizeof(filters[i].name), "gain_%d", i + 1);
     filters[i].filter.type = FILTER_TYPE_GAIN;
     filters[i].filter.parameters.gain.gain = -3.0 * (i + 1);
-    filters[i].filter.parameters.gain.has_gain = true;
     filters[i].filter.parameters.gain.scale = GAIN_SCALE_DB;
   }
 
@@ -194,7 +192,6 @@ TEST(PipelineWithFilter) {
   strcpy(filter_cfg.name, "mygain");
   filter_cfg.filter.type = FILTER_TYPE_GAIN;
   filter_cfg.filter.parameters.gain.gain = -6.0;
-  filter_cfg.filter.parameters.gain.has_gain = true;
   filter_cfg.filter.parameters.gain.scale = GAIN_SCALE_DB;
   config.filters = &filter_cfg;
   config.filters_count = 1;
@@ -402,7 +399,6 @@ TEST(PipelineBypassedFilter) {
   strcpy(filter_cfg.name, "mygain");
   filter_cfg.filter.type = FILTER_TYPE_GAIN;
   filter_cfg.filter.parameters.gain.gain = -6.0;
-  filter_cfg.filter.parameters.gain.has_gain = true;
   filter_cfg.filter.parameters.gain.scale = GAIN_SCALE_DB;
   config.filters = &filter_cfg;
   config.filters_count = 1;
@@ -515,7 +511,6 @@ TEST(PipelineFilterChannelOutOfBounds) {
   strcpy(filter_cfg.name, "mygain");
   filter_cfg.filter.type = FILTER_TYPE_GAIN;
   filter_cfg.filter.parameters.gain.gain = -6.0;
-  filter_cfg.filter.parameters.gain.has_gain = true;
   filter_cfg.filter.parameters.gain.scale = GAIN_SCALE_DB;
   config.filters = &filter_cfg;
   config.filters_count = 1;
@@ -680,7 +675,6 @@ TEST(PipelineInitFilterChannels) {
   strcpy(filter_cfg.name, "mygain");
   filter_cfg.filter.type = FILTER_TYPE_GAIN;
   filter_cfg.filter.parameters.gain.gain = -6.0;
-  filter_cfg.filter.parameters.gain.has_gain = true;
   config.filters = &filter_cfg;
   config.filters_count = 1;
 
@@ -714,7 +708,6 @@ TEST(PipelineInitFilterAllChannels) {
   strcpy(filter_cfg.name, "mygain");
   filter_cfg.filter.type = FILTER_TYPE_GAIN;
   filter_cfg.filter.parameters.gain.gain = -6.0;
-  filter_cfg.filter.parameters.gain.has_gain = true;
   config.filters = &filter_cfg;
   config.filters_count = 1;
 
@@ -1137,7 +1130,6 @@ TEST(Pipeline_TransferState_ParallelStepToBiquadProcessor) {
   strcpy(filters_a[1].name, "mygain");
   filters_a[1].filter.type = FILTER_TYPE_GAIN;
   filters_a[1].filter.parameters.gain.gain = 0.0;
-  filters_a[1].filter.parameters.gain.has_gain = true;
   filters_a[1].filter.parameters.gain.scale = GAIN_SCALE_DB;
 
   config_a.filters = filters_a;
@@ -1714,7 +1706,6 @@ TEST(PipelineFiltersWithMoreThan64Runs) {
     } else {
       filters[i].filter.type = FILTER_TYPE_GAIN;
       filters[i].filter.parameters.gain.gain = 0.0;
-      filters[i].filter.parameters.gain.has_gain = true;
       filters[i].filter.parameters.gain.inverted = false;
       filters[i].filter.parameters.gain.mute = false;
     }
@@ -1777,13 +1768,11 @@ TEST(PipelineSingleThreadedPreservesFilterSteps) {
   strncpy(filters[0].name, "gain1", sizeof(filters[0].name) - 1);
   filters[0].filter.type = FILTER_TYPE_GAIN;
   filters[0].filter.parameters.gain.gain = -1.0;
-  filters[0].filter.parameters.gain.has_gain = true;
   filters[0].filter.parameters.gain.scale = GAIN_SCALE_DB;
 
   strncpy(filters[1].name, "gain2", sizeof(filters[1].name) - 1);
   filters[1].filter.type = FILTER_TYPE_GAIN;
   filters[1].filter.parameters.gain.gain = -2.0;
-  filters[1].filter.parameters.gain.has_gain = true;
   filters[1].filter.parameters.gain.scale = GAIN_SCALE_DB;
 
   config.filters = filters;

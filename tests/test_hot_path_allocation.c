@@ -631,7 +631,7 @@ TEST(Convolution_AllocationFree) {
 
 TEST(Gain_AllocationFree) {
   gain_config_t params = {
-      .gain = -6.0, .has_gain = true, .scale = GAIN_SCALE_DB};
+      .gain = -6.0, .scale = GAIN_SCALE_DB};
   filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
   void *filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -899,7 +899,6 @@ TEST(RACE_AllocationFree) {
                           .subsample_delay = false,
                           .has_subsample_delay = true,
                           .delay_unit = DELAY_UNIT_SAMPLES,
-                          .has_delay_unit = true,
                           .attenuation = 6.0};
   processor_config_t config = {.type = PROCESSOR_TYPE_RACE,
                                .parameters.race = params};
@@ -1541,9 +1540,7 @@ TEST(EngineCaptureLoop_AllocationFree) {
   snprintf(cap_cfg.cfg.raw_file.filename, sizeof(cap_cfg.cfg.raw_file.filename),
            "/dev/null");
 #endif
-  cap_cfg.cfg.raw_file.has_filename = true;
   cap_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
-  cap_cfg.cfg.raw_file.has_format = true;
 
   capture_backend_t *capture =
       create_capture_backend(&cap_cfg, 48000, 1024, false, NULL, &err);
@@ -1647,9 +1644,7 @@ TEST(EnginePlaybackLoop_AllocationFree) {
   snprintf(play_cfg.cfg.raw_file.filename,
            sizeof(play_cfg.cfg.raw_file.filename), "/dev/null");
 #endif
-  play_cfg.cfg.raw_file.has_filename = true;
   play_cfg.cfg.raw_file.format = BINARY_SAMPLE_FORMAT_F32_LE;
-  play_cfg.cfg.raw_file.has_format = true;
 
   playback_backend_t *playback =
       create_playback_backend(&play_cfg, 48000, 1024, false, NULL, &err);

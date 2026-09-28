@@ -30,6 +30,7 @@ struct dsp_engine_impl {
   struct {
     dsp_session_t *active;
     processing_stop_reason_t last_stop_reason;
+    uint64_t clipped_samples_accum;
   } session;
 
   /** Audio history buffers and spectrum analyzer. */
@@ -115,6 +116,12 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
       if (dsp_session_reload_config(impl->session.active, config, &berr)) {
         return true;
       } else {
+        processing_parameters_t *old_p =
+            dsp_session_get_processing_params(impl->session.active);
+        if (old_p) {
+          impl->session.clipped_samples_accum =
+              processing_parameters_get_clipped_samples(old_p);
+        }
         impl->session.last_stop_reason = dsp_session_stop_and_free(
             impl->session.active,
             (processing_stop_reason_t){.type = STOP_REASON_NONE});
@@ -127,6 +134,12 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
   }
 
   if (impl->session.active) {
+    processing_parameters_t *old_p =
+        dsp_session_get_processing_params(impl->session.active);
+    if (old_p) {
+      impl->session.clipped_samples_accum =
+          processing_parameters_get_clipped_samples(old_p);
+    }
     impl->session.last_stop_reason = dsp_session_stop_and_free(
         impl->session.active,
         (processing_stop_reason_t){.type = STOP_REASON_NONE});
@@ -150,6 +163,15 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
       impl->state_mgr, err);
   if (!session) {
     return false;
+  }
+
+  if (impl->session.clipped_samples_accum > 0) {
+    processing_parameters_t *new_p =
+        dsp_session_get_processing_params(session);
+    if (new_p) {
+      processing_parameters_add_clipped_samples(
+          new_p, impl->session.clipped_samples_accum);
+    }
   }
 
   impl->session.active = session;
@@ -230,6 +252,12 @@ static void dsp_engine_stop(void *ctx) {
   pthread_mutex_lock(&impl->state_mutex);
   if (impl->session.active) {
     dsp_session_collect_garbage(impl->session.active);
+    processing_parameters_t *old_p =
+        dsp_session_get_processing_params(impl->session.active);
+    if (old_p) {
+      impl->session.clipped_samples_accum =
+          processing_parameters_get_clipped_samples(old_p);
+    }
     processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
     dsp_session_is_stop_requested(impl->session.active, &reason);
     processing_stop_reason_t final_reason =
@@ -420,6 +448,7 @@ static void dsp_engine_reset_clipped_samples(void *ctx) {
     return;
   dsp_engine_impl_t *impl = (dsp_engine_impl_t *)ctx;
   pthread_mutex_lock(&impl->state_mutex);
+  impl->session.clipped_samples_accum = 0;
   processing_parameters_t *p =
       dsp_session_get_processing_params(impl->session.active);
   if (p) {

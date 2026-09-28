@@ -20,6 +20,7 @@
 #include "engine/engine_capture_loop.h"
 
 #include <math.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -42,7 +43,8 @@ struct engine_capture_loop {
   size_t chunk_size;
   size_t channels;
   size_t samplerate;
-  bool *used_channels;
+  _Atomic bool *used_channels;
+  bool *local_channel_mask;
 
   silence_counter_t *silence_counter;
   round_robin_chunk_pool_t *chunk_pool;
@@ -82,12 +84,15 @@ engine_capture_loop_create(const engine_capture_loop_config_t *config) {
   loop->chunk_size = config->chunk_size;
   loop->channels = config->channels;
   loop->samplerate = config->samplerate;
-  if (config->used_channels && config->channels > 0) {
-    loop->used_channels = (bool *)calloc(config->channels, sizeof(bool));
-    if (loop->used_channels) {
-      memcpy(loop->used_channels, config->used_channels,
-             config->channels * sizeof(bool));
+  if (config->channels > 0) {
+    loop->used_channels =
+        (_Atomic bool *)calloc(config->channels, sizeof(_Atomic bool));
+    if (loop->used_channels && config->used_channels) {
+      for (size_t i = 0; i < config->channels; i++) {
+        atomic_init(&loop->used_channels[i], config->used_channels[i]);
+      }
     }
+    loop->local_channel_mask = (bool *)calloc(config->channels, sizeof(bool));
   }
   loop->silence_counter = silence_counter_create(
       config->silence_threshold_db, config->silence_timeout_seconds,
@@ -128,7 +133,26 @@ void engine_capture_loop_free(engine_capture_loop_t *loop) {
   if (loop->used_channels) {
     free(loop->used_channels);
   }
+  if (loop->local_channel_mask) {
+    free(loop->local_channel_mask);
+  }
   free(loop);
+}
+
+void engine_capture_loop_set_used_channels(engine_capture_loop_t *loop,
+                                           const bool *used_channels) {
+  if (!loop || !used_channels || loop->channels == 0)
+    return;
+  if (!loop->used_channels) {
+    loop->used_channels =
+        (_Atomic bool *)calloc(loop->channels, sizeof(_Atomic bool));
+  }
+  if (loop->used_channels) {
+    for (size_t i = 0; i < loop->channels; i++) {
+      atomic_store_explicit(&loop->used_channels[i], used_channels[i],
+                            memory_order_relaxed);
+    }
+  }
 }
 
 /**
@@ -404,8 +428,15 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t *loop,
   // Ref: docs/engine_state_management.md - Section 3.3: Silence Auto-Pause &
   // Resume Flow Step 1-2 (Auto-Pause) & Step 3 (Auto-Resume): Set engine state
   // and toggle capture hardware backend is_paused status accordingly.
-  float value_range =
-      (float)audio_chunk_get_value_range_used(chunk, loop->used_channels);
+  // Copy atomic used_channels into thread-local mask once per chunk without locking.
+  if (loop->used_channels && loop->local_channel_mask) {
+    for (size_t i = 0; i < loop->channels; i++) {
+      loop->local_channel_mask[i] =
+          atomic_load_explicit(&loop->used_channels[i], memory_order_relaxed);
+    }
+  }
+  float value_range = (float)audio_chunk_get_value_range_used(
+      chunk, loop->local_channel_mask ? loop->local_channel_mask : NULL);
   if (loop->processing_params) {
     processing_parameters_set_signal_range(loop->processing_params,
                                            value_range);

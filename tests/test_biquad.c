@@ -331,8 +331,8 @@ TEST(FreeBiquad) {
 TEST(GeneralNotchHP) {
   biquad_config_t params = {.type = BIQUAD_TYPE_GENERAL_NOTCH,
                             .q_p = 1.0,
-                            .freq_notch = 1000.0,
-                            .freq_pole = 2000.0,
+                            .freq_z = 1000.0,
+                            .freq_p = 2000.0,
                             .normalize_at_dc = false};
   double gain_fp, p1, gain_hf, p2, gain_lf, p3;
   gain_and_phase(&params, 1000.0, 44100.0, &gain_fp, &p1);
@@ -346,8 +346,8 @@ TEST(GeneralNotchHP) {
 TEST(GeneralNotchLP) {
   biquad_config_t params = {.type = BIQUAD_TYPE_GENERAL_NOTCH,
                             .q_p = 1.0,
-                            .freq_notch = 1000.0,
-                            .freq_pole = 500.0,
+                            .freq_z = 1000.0,
+                            .freq_p = 500.0,
                             .normalize_at_dc = true};
   double gain_fp, p1, gain_hf, p2, gain_lf, p3;
   gain_and_phase(&params, 1000.0, 44100.0, &gain_fp, &p1);
