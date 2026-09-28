@@ -108,8 +108,96 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      - name: Run Tests
-        run: ctest --test-dir build --output-on-failure -j$(nproc)
+      - name: Make KVM usable
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Install QEMU and cloud utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils
+
+      - name: Boot the VM for ALSA snd-aloop
+        run: |
+          curl -sSfL -o base.img "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
+          qemu-img create -f qcow2 -F qcow2 -b base.img vm.qcow2 10G
+          ssh-keygen -q -t ed25519 -N '' -f vm_key
+          cat > user-data <<EOF
+          #cloud-config
+          ssh_authorized_keys:
+            - $(cat vm_key.pub)
+          EOF
+          echo "instance-id: e2e" > meta-data
+          cloud-localds seed.img user-data meta-data
+          mkdir -p ~/.ssh
+          cat > ~/.ssh/config <<EOF
+          Host vm
+            HostName localhost
+            Port 2222
+            User ubuntu
+            IdentityFile $PWD/vm_key
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            LogLevel ERROR
+            ConnectTimeout 5
+          EOF
+          qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 2048 \
+            -drive file=vm.qcow2,if=virtio \
+            -drive file=seed.img,if=virtio,format=raw \
+            -nic user,model=virtio,hostfwd=tcp:127.0.0.1:2222-:22 \
+            -display none -serial file:console.log -daemonize
+          start=$(date +%s)
+          until ssh vm true 2>/dev/null; do
+            if [ $(( $(date +%s) - start )) -gt 300 ]; then
+              echo "no ssh after 300 s"
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "ssh up after $(( $(date +%s) - start )) s"
+          ssh vm cloud-init status --wait || echo "cloud-init status $?"
+
+      - name: Load snd-aloop and install test dependencies
+        run: |
+          ssh vm bash -s <<'EOF'
+          set -e
+          sudo apt-get update -q
+          if ! modinfo snd-aloop snd-dummy >/dev/null 2>&1; then
+            sudo apt-get install -y -q --no-install-recommends "linux-modules-extra-$(uname -r)"
+          fi
+          sudo apt-get install -y -q --no-install-recommends \
+            alsa-utils \
+            cmake \
+            libasound2-dev \
+            libpipewire-0.3-dev \
+            libdbus-1-dev \
+            libfftw3-dev \
+            libyaml-dev \
+            libcjson-dev \
+            libwebsockets-dev \
+            libssl-dev \
+            libopenblas-dev
+          sudo modprobe snd-aloop pcm_substreams=2
+          sudo modprobe snd-dummy || true
+          sudo usermod -aG audio ubuntu
+          printf '@audio - rtprio 95\n@audio - memlock unlimited\n' \
+            | sudo tee /etc/security/limits.d/95-audio.conf
+          cat /proc/asound/cards
+          EOF
+
+      - name: Run Tests (with snd-aloop)
+        run: |
+          ssh vm "sudo mkdir -p '$GITHUB_WORKSPACE' && sudo chown -R ubuntu:ubuntu /home/runner"
+          tar --exclude="AppDir" --exclude="*.AppImage" -cf - . | ssh vm "tar -xf - -C '$GITHUB_WORKSPACE'"
+          ssh vm "cd '$GITHUB_WORKSPACE' && ctest --test-dir build --output-on-failure -j\$(nproc)"
+
+      - name: Guest console on failure
+        if: failure()
+        run: cat console.log || true
 
       - name: Package CDSP Studio (AppImage)
         run: |
@@ -216,6 +304,32 @@ jobs:
       - name: Build
         shell: msys2 {0}
         run: cmake --build build
+
+      - name: Start the audio service and allow microphone access
+        shell: pwsh
+        run: |
+          Set-Service audiosrv -StartupType Automatic
+          Start-Service audiosrv
+          $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy'
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name LetAppsAccessMicrophone -Value 1 -PropertyType DWord -Force | Out-Null
+
+      - name: Install VB-Cable
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\vbcable.zip"
+          Invoke-WebRequest https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip -OutFile $zip
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\vbcable"
+          tools/install_vbcable.ps1 -Dir "$env:RUNNER_TEMP\vbcable"
+          Get-PnpDevice -FriendlyName '*CABLE*' | Format-Table Class, Status, FriendlyName -AutoSize
+
+      - name: Install FlexASIO
+        shell: pwsh
+        run: |
+          $exe = "$env:RUNNER_TEMP\FlexASIO.exe"
+          Invoke-WebRequest https://github.com/dechamps/FlexASIO/releases/download/flexasio-1.10b/FlexASIO-1.10b.exe -OutFile $exe
+          Start-Process $exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
+          Get-ChildItem 'HKLM:\SOFTWARE\ASIO' | Format-Table PSChildName
 
       - name: Run Tests
         shell: msys2 {0}
