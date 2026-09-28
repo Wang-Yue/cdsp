@@ -189,6 +189,39 @@ TEST(CoreAudioLoopbackOfPlaybackDeviceAcceptsWithoutResampler) {
   dsp_config_free(config);
 }
 
+TEST(CoreAudioLoopbackOfPlaybackDeviceRejectsRateAdjust) {
+  // Loopback of the playback device shares the same hardware clock, so
+  // rate adjust cannot be used and must be rejected.
+  const char *json_str =
+      "{\n"
+      "  \"devices\": {\n"
+      "    \"samplerate\": 48000,\n"
+      "    \"chunksize\": 1024,\n"
+      "    \"enable_rate_adjust\": true,\n"
+      "    \"capture\": {\n"
+      "      \"type\": \"CoreAudio\",\n"
+      "      \"device\": \"DX3 Pro+\",\n"
+      "      \"channels\": 2,\n"
+      "      \"loopback\": true\n"
+      "    },\n"
+      "    \"playback\": {\n"
+      "      \"type\": \"CoreAudio\",\n"
+      "      \"device\": \"DX3 Pro+\",\n"
+      "      \"channels\": 2\n"
+      "    }\n"
+      "  }\n"
+      "}";
+
+  dsp_config_t *config = NULL;
+  config_error_t err;
+  config_error_init(&err);
+  int res = dsp_config_parse_json(json_str, &config, &err);
+  ASSERT_TRUE(res != 0);
+  ASSERT_TRUE(config == NULL);
+  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
+  ASSERT_TRUE(strstr(err.message, "Rate adjust is not supported") != NULL);
+}
+
 TEST(CoreAudioLoopbackOfOtherDeviceAllowsResampling) {
   // Loopback of a device other than the playback device uses two independent
   // clocks, so resampling between them is legitimate and must not be rejected.

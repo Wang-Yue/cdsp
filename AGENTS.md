@@ -158,7 +158,7 @@ Per project design principles, a deviation from upstream is admitted **only when
   4. **Strict Bit-Perfect Native Rate Verification**: `cdsp` reports exactly one sample rate for a hardware loopback capture — the tapped device's current nominal rate — in the same way WASAPI does for shared mode, and integrates with `rate_change_watcher` to emit `CAPTURE_FORMAT_CHANGE` when that device retunes.
   5. **Anti-Feedback Loop & Auto-Mute**: Automatically excludes `cdsp`'s own process from the tap while setting `CATapMuted` on the tapped stream to prevent un-DSP'd raw audio leakage to the DAC.
 
-> **Loopback capture of the device you also play to.** This is the intended "process all system audio" setup, and it makes capture and playback one piece of hardware with a **single** nominal sample rate. Both sides share the exact same hardware clock, so resampling between them is not supported — configuring a resampler in this setup is rejected at validation time.
+> **Loopback capture of the device you also play to.** This is the intended "process all system audio" setup, and it makes capture and playback one piece of hardware with a **single** nominal sample rate. Both sides share the exact same hardware clock, so resampling or rate adjusting between them is not supported — configuring a resampler or `enable_rate_adjust: true` in this setup is rejected at validation time.
 
 ---
 
@@ -168,7 +168,7 @@ Per project design principles, a deviation from upstream is admitted **only when
 |---|---|---|
 | Empty convolution coefficients are a hard error | [`src/filters/convolution.c`](src/filters/convolution.c) | Deliberately non-fatal: one silent segment (`fftconv.rs`) |
 | LookaheadLimiter config_diff escalation on parameter change | [`src/config/config_diff.c`](src/config/config_diff.c) | Escalates to `Pipeline` rebuild on *any* config change if limiter is present |
-| CoreAudio loopback capture of the playback device rejects resampling | [`src/config/configuration.c`](src/config/configuration.c) | No concept of taps; nothing prevents resampling between two endpoints that share one hardware clock |
+| CoreAudio loopback capture of the playback device rejects resampling and rate adjust | [`src/backend/audio_backend.c`](src/backend/audio_backend.c) | No concept of taps; nothing prevents resampling or rate adjusting between two endpoints that share one hardware clock |
 
 ---
 

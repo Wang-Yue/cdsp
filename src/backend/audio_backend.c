@@ -1174,7 +1174,7 @@ int audio_backend_validate_devices(const devices_config_t *devices,
 #if defined(ENABLE_COREAUDIO)
   if (devices->capture.type == AUDIO_BACKEND_TYPE_CORE_AUDIO &&
       devices->playback.type == AUDIO_BACKEND_TYPE_CORE_AUDIO &&
-      devices->capture.cfg.coreaudio.loopback && devices->has_resampler) {
+      devices->capture.cfg.coreaudio.loopback) {
     const char *cap_dev = devices->capture.cfg.coreaudio.has_device
                               ? devices->capture.cfg.coreaudio.device
                               : "";
@@ -1182,12 +1182,22 @@ int audio_backend_validate_devices(const devices_config_t *devices,
                              ? devices->playback.cfg.coreaudio.device
                              : "";
     if (strcasecmp(cap_dev, pb_dev) == 0) {
-      config_error_set(
-          err, CONFIG_ERR_INVALID_DEVICE,
-          "Resampling is not supported when CoreAudio loopback captures from "
-          "the playback device. Both capture and playback share the same "
-          "hardware clock and sample rate");
-      return -1;
+      if (devices->has_resampler) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_DEVICE,
+            "Resampling is not supported when CoreAudio loopback captures from "
+            "the playback device. Both capture and playback share the same "
+            "hardware clock and sample rate");
+        return -1;
+      }
+      if (devices->enable_rate_adjust) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_DEVICE,
+            "Rate adjust is not supported when CoreAudio loopback captures from "
+            "the playback device. Both capture and playback share the same "
+            "hardware clock and sample rate");
+        return -1;
+      }
     }
   }
 #endif
