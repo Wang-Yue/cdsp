@@ -130,6 +130,14 @@ int pipeline_config_validate(const dsp_config_t *config, config_error_t *err);
 bool pipeline_is_multithreaded(const pipeline_t *pipeline);
 
 /**
+ * @brief Get the configured frames per chunk for the pipeline.
+ *
+ * @param[in] pipeline The pipeline instance.
+ * @return Number of frames per chunk.
+ */
+size_t pipeline_get_frames_per_chunk(const pipeline_t *pipeline);
+
+/**
  * @brief Get the configured worker threads count.
  *
  * @param[in] pipeline The pipeline instance.

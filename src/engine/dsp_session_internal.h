@@ -51,8 +51,6 @@ struct dsp_session {
    * resampler is in use, otherwise `effectiveChunkSize`.
    */
   size_t effective_playback_chunk_size;
-  /** Scratch buffer for pipeline. */
-  audio_chunk_t *pipeline_scratch;
   /** Pool of chunks for capture. */
   round_robin_chunk_pool_t *capture_chunk_pool;
   /** Pool of scratch chunks for processing. */

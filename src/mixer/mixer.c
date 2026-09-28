@@ -203,11 +203,13 @@ mixer_error_t mixer_process(mixer_t *mixer, const audio_chunk_t *input,
   }
   if (audio_chunk_get_frames(output) < frames) {
     logger_warn(&g_logger,
-                "Mixer '%s' output buffer frame count too small: valid=%zu, "
+                "Mixer '%s' output buffer frame count too small: needed=%zu, "
                 "allocated=%zu",
                 mixer->name, frames, audio_chunk_get_frames(output));
     return MIXER_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
+
+  audio_chunk_set_valid_frames(output, frames);
 
   // Process each output destination channel in a single pass to maximize L1
   // cache locality
@@ -245,8 +247,8 @@ mixer_error_t mixer_process(mixer_t *mixer, const audio_chunk_t *input,
 audio_chunk_t *mixer_process_chunk(mixer_t *mixer, const audio_chunk_t *input) {
   if (!mixer || !input)
     return NULL;
-  audio_chunk_t *output = audio_chunk_create(
-      audio_chunk_get_frames(input), mixer->channels_out);
+  audio_chunk_t *output =
+      audio_chunk_create(audio_chunk_get_frames(input), mixer->channels_out);
   if (!output)
     return NULL;
   if (mixer_process(mixer, input, output) != MIXER_OK) {

@@ -125,8 +125,8 @@ void pipeline_free(pipeline_t *pipeline) {
   if (pipeline->master_volume) {
     g_volume_vtable.free(pipeline->master_volume);
   }
-  if (pipeline->capture_scratch) {
-    audio_chunk_free(pipeline->capture_scratch);
+  if (pipeline->input_scratch) {
+    audio_chunk_free(pipeline->input_scratch);
   }
   if (pipeline->scratches_for_mixers) {
     for (size_t i = 0; i < pipeline->scratches_for_mixers_count; i++) {
@@ -150,8 +150,8 @@ void pipeline_free(pipeline_t *pipeline) {
 // ============================================================================
 
 static void execute_biquad_step(biquad_step_t *step, audio_chunk_t *chunk,
-                                size_t valid_frames) {
-  if (!step || !chunk || valid_frames == 0 || step->cascade_depth == 0)
+                                size_t frames) {
+  if (!step || !chunk || frames == 0 || step->cascade_depth == 0)
     return;
   size_t chunk_channels = audio_chunk_get_channels(chunk);
   if (chunk_channels > step->waveforms_capacity) {
@@ -177,23 +177,22 @@ static void execute_biquad_step(biquad_step_t *step, audio_chunk_t *chunk,
 
   biquad_process_cascades(step->cascades, step->waveforms, step->channel_of,
                           step->live, step->live_count, step->cascade_depth,
-                          valid_frames);
+                          frames);
 }
 
 static inline void process_filter_chain(const parallel_filter_chain_t *chain,
-                                        audio_chunk_t *chunk,
-                                        size_t valid_frames) {
+                                        audio_chunk_t *chunk, size_t frames) {
   if (chain->channel >= audio_chunk_get_channels(chunk))
     return;
   const bool *used = audio_chunk_get_used_channels(chunk);
   if (used && !used[chain->channel])
     return;
   mutable_waveform_t buf = audio_chunk_get_channel(chunk, chain->channel);
-  if (!buf || valid_frames == 0)
+  if (!buf || frames == 0)
     return;
   for (size_t j = 0; j < chain->filters_count; j++) {
     if (chain->filters[j]) {
-      filter_process(chain->filters[j], buf, valid_frames);
+      filter_process(chain->filters[j], buf, frames);
     }
   }
 }
@@ -201,21 +200,20 @@ static inline void process_filter_chain(const parallel_filter_chain_t *chain,
 #if defined(ENABLE_LIBDISPATCH)
 typedef struct {
   audio_chunk_t *current_chunk;
-  size_t valid_frames;
+  size_t frames;
   parallel_filter_chain_t *chains;
 } dispatch_ctx_t;
 
 static void parallel_filter_worker(void *context, size_t idx) {
   dispatch_ctx_t *ctx = (dispatch_ctx_t *)context;
-  process_filter_chain(&ctx->chains[idx], ctx->current_chunk,
-                       ctx->valid_frames);
+  process_filter_chain(&ctx->chains[idx], ctx->current_chunk, ctx->frames);
 }
 #endif
 
 static void execute_parallel_filters(const pipeline_t *pipeline,
                                      const pipeline_exec_step_t *step,
                                      audio_chunk_t *current_chunk,
-                                     size_t valid_frames) {
+                                     size_t frames) {
   bool use_multithreading = false;
 #if defined(ENABLE_LIBDISPATCH) || defined(ENABLE_OPENMP)
   if (pipeline->multithreaded && step->chains_count > 1) {
@@ -228,7 +226,7 @@ static void execute_parallel_filters(const pipeline_t *pipeline,
 
   if (use_multithreading) {
 #if defined(ENABLE_LIBDISPATCH)
-    dispatch_ctx_t dctx = {current_chunk, valid_frames, step->chains};
+    dispatch_ctx_t dctx = {current_chunk, frames, step->chains};
     dispatch_queue_t queue =
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
     dispatch_apply_f(step->chains_count, queue, &dctx, parallel_filter_worker);
@@ -248,12 +246,12 @@ static void execute_parallel_filters(const pipeline_t *pipeline,
       nthreads = 1;
 #pragma omp parallel for num_threads(nthreads)
     for (size_t idx = 0; idx < step->chains_count; idx++) {
-      process_filter_chain(&step->chains[idx], current_chunk, valid_frames);
+      process_filter_chain(&step->chains[idx], current_chunk, frames);
     }
 #endif
   } else {
     for (size_t idx = 0; idx < step->chains_count; idx++) {
-      process_filter_chain(&step->chains[idx], current_chunk, valid_frames);
+      process_filter_chain(&step->chains[idx], current_chunk, frames);
     }
   }
 }
@@ -339,36 +337,46 @@ pipeline_error_t pipeline_process(pipeline_t *pipeline,
   }
   if (audio_chunk_get_frames(output) < frames) {
     logger_warn(&g_logger,
-                "Pipeline output buffer too small: needed %zu, got %zu",
-                frames, audio_chunk_get_frames(output));
+                "Pipeline output buffer too small: needed %zu, got %zu", frames,
+                audio_chunk_get_frames(output));
     pipeline->last_error_needed = frames;
     pipeline->last_error_got = audio_chunk_get_frames(output);
     return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
 
-  // 2. Copy input into our pre-allocated scratch.
-  for (size_t ch = 0; ch < pipeline->expected_in_channels; ch++) {
-    if (pipeline->used_capture_channels &&
-        !pipeline->used_capture_channels[ch]) {
-      continue;
-    }
-    waveform_t src = audio_chunk_get_channel(input, ch);
-    mutable_waveform_t dst =
-        audio_chunk_get_channel(pipeline->capture_scratch, ch);
-    if (src && dst && frames > 0) {
-      memcpy(dst, src, frames * sizeof(double));
+  // 2. Initialize output buffer with valid frames and copy input samples if
+  // input != output or input_scratch is used.
+  audio_chunk_set_valid_frames(output, valid_frames);
+  audio_chunk_t *current_chunk =
+      pipeline->input_scratch ? pipeline->input_scratch : output;
+  audio_chunk_set_valid_frames(current_chunk, valid_frames);
+
+  if (input != current_chunk) {
+    for (size_t ch = 0; ch < pipeline->expected_in_channels; ch++) {
+      mutable_waveform_t dst = audio_chunk_get_channel(current_chunk, ch);
+      if (!dst) {
+        continue;
+      }
+      if (pipeline->used_capture_channels &&
+          !pipeline->used_capture_channels[ch]) {
+        dsp_ops_clear(dst, frames);
+      } else {
+        waveform_t src = audio_chunk_get_channel(input, ch);
+        if (src) {
+          memcpy(dst, src, frames * sizeof(double));
+        } else {
+          dsp_ops_clear(dst, frames);
+        }
+      }
     }
   }
-  audio_chunk_set_valid_frames(pipeline->capture_scratch, valid_frames);
-
-  audio_chunk_t *current_chunk = pipeline->capture_scratch;
 
   // 3. Implicit main volume with smooth ramp.
   if (pipeline->master_volume) {
     volume_filter_prepare_chunk(pipeline->master_volume);
     for (size_t ch = 0; ch < audio_chunk_get_channels(current_chunk); ch++) {
       if (pipeline->used_capture_channels &&
-          current_chunk == pipeline->capture_scratch &&
+          ch < pipeline->expected_in_channels &&
           !pipeline->used_capture_channels[ch]) {
         continue;
       }
@@ -410,25 +418,27 @@ pipeline_error_t pipeline_process(pipeline_t *pipeline,
   }
 
   // 5. Copy the final computed samples from current_chunk to caller-supplied
-  // output buffer.
-  audio_chunk_set_valid_frames(output, valid_frames);
-  size_t current_channels = audio_chunk_get_channels(current_chunk);
-  for (size_t ch = 0; ch < pipeline->expected_out_channels; ch++) {
-    mutable_waveform_t dst = audio_chunk_get_channel(output, ch);
-    if (!dst || frames == 0)
-      continue;
-    if (ch < current_channels) {
-      waveform_t src = audio_chunk_get_channel(current_chunk, ch);
-      if (src) {
-        memcpy(dst, src, frames * sizeof(double));
+  // output buffer if current_chunk is not already output.
+  if (current_chunk != output) {
+    size_t current_channels = audio_chunk_get_channels(current_chunk);
+    for (size_t ch = 0; ch < pipeline->expected_out_channels; ch++) {
+      mutable_waveform_t dst = audio_chunk_get_channel(output, ch);
+      if (!dst)
+        continue;
+      if (ch < current_channels) {
+        waveform_t src = audio_chunk_get_channel(current_chunk, ch);
+        if (src) {
+          memcpy(dst, src, frames * sizeof(double));
+        } else {
+          dsp_ops_clear(dst, frames);
+        }
       } else {
         dsp_ops_clear(dst, frames);
       }
-    } else {
-      dsp_ops_clear(dst, frames);
     }
   }
 
+  audio_chunk_set_valid_frames(output, valid_frames);
   return PIPELINE_OK;
 }
 
@@ -442,6 +452,10 @@ size_t pipeline_get_last_error_got(const pipeline_t *pipeline) {
 
 bool pipeline_is_multithreaded(const pipeline_t *pipeline) {
   return pipeline ? pipeline->multithreaded : false;
+}
+
+size_t pipeline_get_frames_per_chunk(const pipeline_t *pipeline) {
+  return pipeline ? pipeline->frames_per_chunk : 0;
 }
 
 size_t pipeline_get_worker_threads(const pipeline_t *pipeline) {

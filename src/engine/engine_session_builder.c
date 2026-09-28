@@ -225,28 +225,16 @@ static bool engine_session_build_backends(
 }
 
 /**
- * @brief Step 6: Pre-allocates scratch audio chunks and creates the DSP
- * processing pipeline. Ref: docs/engine_state_management.md - Section 3.1:
- * Startup & Initialization Flow (Step 6)
+ * @brief Step 6: Creates the DSP processing pipeline.
+ * Ref: docs/engine_state_management.md - Section 3.1: Startup &
+ * Initialization Flow (Step 6)
  */
-static bool engine_session_build_pipeline_and_scratch(
-    dsp_session_t *core, dsp_config_t *config, size_t capture_chunk_size,
-    size_t playback_chunk_size, audio_backend_error_t *err) {
+static bool engine_session_build_pipeline(dsp_session_t *core,
+                                          dsp_config_t *config,
+                                          size_t capture_chunk_size,
+                                          size_t playback_chunk_size,
+                                          audio_backend_error_t *err) {
   (void)capture_chunk_size;
-  // 5. Allocate scratch chunk for pipeline temporary data storage.
-  core->pipeline_scratch = audio_chunk_create(
-      playback_chunk_size,
-      playback_device_config_get_channels(&config->devices.playback));
-  if (!core->pipeline_scratch) {
-    if (err) {
-      err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
-      snprintf(err->message, sizeof(err->message),
-               "Failed to allocate pipeline scratch chunk");
-    }
-    return false;
-  }
-  audio_chunk_set_valid_frames(core->pipeline_scratch, 0);
-
   // 6. Create the DSP processing pipeline.
   config_error_t cerr;
   config_error_init(&cerr);
@@ -351,7 +339,6 @@ static bool engine_session_spawn_worker_threads(dsp_session_t *core,
       .processing_params = core->processing_params,
       .pipeline_rate = pipeline_rate,
       .pipeline = core->pipeline,
-      .pipeline_scratch = core->pipeline_scratch,
       .scratch_pool = core->processing_scratch_pool,
       .on_chunk_captured = core->on_chunk_captured,
       .on_chunk_captured_ctx = core->on_chunk_captured_ctx,
@@ -537,10 +524,10 @@ dsp_session_t *engine_session_build_and_start(
   }
 
   // Ref: docs/engine_state_management.md - Section 3.1: Startup &
-  // Initialization Flow Step 6: Call engine_session_build_pipeline_and_scratch
-  // to build DSP pipeline and allocate scratch buffers.
-  if (!engine_session_build_pipeline_and_scratch(
-          core, config, capture_chunk_size, playback_chunk_size, err)) {
+  // Initialization Flow Step 6: Call engine_session_build_pipeline to build
+  // DSP pipeline.
+  if (!engine_session_build_pipeline(core, config, capture_chunk_size,
+                                     playback_chunk_size, err)) {
     dsp_session_stop_and_free(
         core, (processing_stop_reason_t){.type = STOP_REASON_NONE});
     return NULL;

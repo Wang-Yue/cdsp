@@ -614,20 +614,8 @@ pipeline_t *pipeline_create(const dsp_config_t *config,
   // instance per channel and drive themselves instead.
   volume_filter_set_externally_driven(pipeline->master_volume, true);
 
-  // 2. Pre-allocate the capture scratch buffer
-  pipeline->capture_scratch = audio_chunk_create(
-      pipeline->frames_per_chunk, pipeline->expected_in_channels);
-  if (!pipeline->capture_scratch) {
-    logger_error(
-        &g_logger,
-        "Failed to allocate capture scratch buffer (frames=%zu, channels=%zu)",
-        pipeline->frames_per_chunk, pipeline->expected_in_channels);
-    config_error_set(err, CONFIG_ERR_PARSE,
-                     "Failed to allocate capture scratch buffer");
-    pipeline_free(pipeline);
-    return NULL;
-  }
-
+  // 2. Compute used capture channels and allocate input scratch if channel
+  // counts differ
   if (pipeline->expected_in_channels > 0) {
     pipeline->used_capture_channels =
         (bool *)calloc(pipeline->expected_in_channels, sizeof(bool));
@@ -635,7 +623,25 @@ pipeline_t *pipeline_create(const dsp_config_t *config,
       pipeline_compute_used_capture_channels(config,
                                              pipeline->used_capture_channels,
                                              pipeline->expected_in_channels);
-      audio_chunk_set_used_channels(pipeline->capture_scratch,
+    }
+  }
+
+  if (pipeline->expected_in_channels != pipeline->expected_out_channels &&
+      pipeline->expected_in_channels > 0) {
+    pipeline->input_scratch = audio_chunk_create(
+        pipeline->frames_per_chunk, pipeline->expected_in_channels);
+    if (!pipeline->input_scratch) {
+      logger_error(
+          &g_logger,
+          "Failed to allocate input scratch buffer (frames=%zu, channels=%zu)",
+          pipeline->frames_per_chunk, pipeline->expected_in_channels);
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "Failed to allocate input scratch buffer");
+      pipeline_free(pipeline);
+      return NULL;
+    }
+    if (pipeline->used_capture_channels) {
+      audio_chunk_set_used_channels(pipeline->input_scratch,
                                     pipeline->used_capture_channels);
     }
   }

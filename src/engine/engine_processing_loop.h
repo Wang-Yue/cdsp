@@ -51,7 +51,6 @@ typedef struct {
   processing_parameters_t *processing_params;
   size_t pipeline_rate;
   pipeline_t *pipeline;
-  audio_chunk_t *pipeline_scratch;
   round_robin_chunk_pool_t *scratch_pool;
   chunk_callback_t on_chunk_captured;
   void *on_chunk_captured_ctx;

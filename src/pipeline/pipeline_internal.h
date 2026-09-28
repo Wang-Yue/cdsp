@@ -67,7 +67,7 @@ struct pipeline_s {
   bool multithreaded;
   size_t worker_threads;
   volume_filter_t *master_volume;
-  audio_chunk_t *capture_scratch;
+  audio_chunk_t *input_scratch;
   audio_chunk_t **scratches_for_mixers;
   size_t scratches_for_mixers_count;
 

@@ -629,8 +629,7 @@ TEST(Convolution_AllocationFree) {
 }
 
 TEST(Gain_AllocationFree) {
-  gain_config_t params = {
-      .gain = -6.0, .scale = GAIN_SCALE_DB};
+  gain_config_t params = {.gain = -6.0, .scale = GAIN_SCALE_DB};
   filter_config_t cfg = {.type = FILTER_TYPE_GAIN, .parameters.gain = params};
   void *filter = g_gain_vtable.create("gain", &cfg, 0, 0, NULL, NULL);
   ASSERT_TRUE(filter != NULL);
@@ -1178,8 +1177,6 @@ TEST(PipelineReload_AllocationFree) {
   ASSERT_TRUE(shared != NULL);
   engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
 
-  audio_chunk_t *pipeline_scratch = audio_chunk_create(1024, 2);
-
   round_robin_chunk_pool_t *scratch_pool =
       round_robin_chunk_pool_create(32, 1024, 2);
 
@@ -1199,7 +1196,6 @@ TEST(PipelineReload_AllocationFree) {
       .processing_params = params,
       .pipeline_rate = 44100,
       .pipeline = initial_pipeline,
-      .pipeline_scratch = pipeline_scratch,
       .scratch_pool = scratch_pool,
       .on_chunk_captured = on_chunk_captured_cb,
       .on_chunk_captured_ctx = NULL,
@@ -1248,7 +1244,6 @@ TEST(PipelineReload_AllocationFree) {
   }
 
   audio_chunk_free(ctx.input_chunk);
-  audio_chunk_free(pipeline_scratch);
   round_robin_chunk_pool_free(scratch_pool);
   engine_shared_state_free(shared);
   processing_parameters_free(params);
@@ -1453,7 +1448,6 @@ TEST(EngineProcessingLoop_AllocationFree) {
   ASSERT_TRUE(shared != NULL);
   engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
 
-  audio_chunk_t *pipeline_scratch = audio_chunk_create(1024, 2);
   round_robin_chunk_pool_t *scratch_pool =
       round_robin_chunk_pool_create(32, 1024, 2);
 
@@ -1471,7 +1465,6 @@ TEST(EngineProcessingLoop_AllocationFree) {
       .processing_params = params,
       .pipeline_rate = 44100,
       .pipeline = pipeline,
-      .pipeline_scratch = pipeline_scratch,
       .scratch_pool = scratch_pool,
       .on_chunk_captured = NULL,
       .on_chunk_captured_ctx = NULL,
@@ -1510,7 +1503,6 @@ TEST(EngineProcessingLoop_AllocationFree) {
 
   engine_processing_loop_free(loop);
   audio_chunk_free(ctx.input_chunk);
-  audio_chunk_free(pipeline_scratch);
   round_robin_chunk_pool_free(scratch_pool);
   engine_shared_state_free(shared);
   processing_parameters_free(params);

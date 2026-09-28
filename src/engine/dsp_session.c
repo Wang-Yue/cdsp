@@ -232,10 +232,6 @@ dsp_session_stop_and_free(dsp_session_t *core,
     resampler_free(core->resampler);
     core->resampler = NULL;
   }
-  if (core->pipeline_scratch) {
-    audio_chunk_free(core->pipeline_scratch);
-    core->pipeline_scratch = NULL;
-  }
   if (core->capture_loop) {
     engine_capture_loop_free(core->capture_loop);
     core->capture_loop = NULL;

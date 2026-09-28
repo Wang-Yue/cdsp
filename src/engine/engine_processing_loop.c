@@ -54,7 +54,6 @@ struct engine_processing_loop {
   size_t pipeline_rate;
   pipeline_t *active_pipeline;
   _Atomic(pipeline_t *) next_pipeline;
-  audio_chunk_t *pipeline_scratch;
   _Atomic bool transfer_filter_state;
   round_robin_chunk_pool_t *scratch_pool;
   audio_chunk_t *pending_scratch;
@@ -86,7 +85,6 @@ engine_processing_loop_create(const engine_processing_loop_config_t *config) {
   loop->processing_params = config->processing_params;
   loop->pipeline_rate = config->pipeline_rate;
   loop->active_pipeline = config->pipeline;
-  loop->pipeline_scratch = config->pipeline_scratch;
   loop->scratch_pool = config->scratch_pool;
   loop->on_chunk_captured = config->on_chunk_captured;
   loop->on_chunk_captured_ctx = config->on_chunk_captured_ctx;
@@ -183,12 +181,7 @@ static void processing_loop_record_metrics(engine_processing_loop_t *loop,
   // Calculate CPU load of the DSP pipeline and resampler.
   // Denominator is the nominal physical duration of one chunk (chunksize /
   // samplerate).
-  size_t nominal_frames = loop->pipeline_scratch
-                              ? audio_chunk_get_frames(loop->pipeline_scratch)
-                              : audio_chunk_get_valid_frames(chunk);
-  if (nominal_frames == 0) {
-    nominal_frames = audio_chunk_get_valid_frames(chunk);
-  }
+  size_t nominal_frames = audio_chunk_get_valid_frames(chunk);
   if (nominal_frames > 0 && loop->pipeline_rate > 0) {
     uint64_t chunk_duration_ns =
         (uint64_t)nominal_frames * 1000000000ULL / loop->pipeline_rate;
@@ -266,9 +259,9 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
     return;
   logger_info(&g_logger, "Processing thread started");
 
+  size_t buffer_frames = pipeline_get_frames_per_chunk(loop->active_pipeline);
   realtime_thread_handle_t *rt_handle = promote_current_thread_to_realtime(
-      "Processing", audio_chunk_get_frames(loop->pipeline_scratch),
-      loop->pipeline_rate);
+      "Processing", buffer_frames, loop->pipeline_rate);
 
   audio_chunk_t *chunk = NULL;
 
@@ -303,7 +296,8 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
       continue;
     }
 
-    // 1. Pre-processing tap for visualisation (Raw captured samples before pipeline).
+    // 1. Pre-processing tap for visualisation (Raw captured samples before
+    // pipeline).
     if (loop->on_chunk_captured) {
       loop->on_chunk_captured(loop->on_chunk_captured_ctx, chunk);
     }

@@ -3777,7 +3777,6 @@ TEST(DSPEngineE2E_NonRealtimeImmediateAbort_ExitsImmediately) {
       .processing_params = params,
       .pipeline_rate = 48000,
       .pipeline = pipe,
-      .pipeline_scratch = NULL,
       .scratch_pool = pool,
       .on_chunk_captured = NULL,
       .on_chunk_captured_ctx = NULL,
@@ -4123,8 +4122,8 @@ TEST(DSPEngine_Repro_UserStopDuringEOFDrain_UnblocksPlayback) {
 #include <propkey.h>
 #include <windows.h>
 
-#include "backend/wasapi_device.h"
 #include "backend/audio_backend_registry.h"
+#include "backend/wasapi_device.h"
 
 // Define property keys locally to avoid missing header errors on some
 // environments
@@ -4151,7 +4150,8 @@ static const char *wasapi_get_test_device_name(bool is_capture) {
     }
   }
 
-  // Pass 2: Fallback to any matching endpoint (including 16-channel if nothing else)
+  // Pass 2: Fallback to any matching endpoint (including 16-channel if nothing
+  // else)
   for (int i = 0; i < count; i++) {
     if (strstr(devs[i].name, "CABLE") != NULL ||
         strstr(devs[i].name, "Cable") != NULL ||
@@ -4194,7 +4194,8 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
     return false;
   }
 
-  const char *target_device_name = wasapi_get_test_device_name(flow == eCapture);
+  const char *target_device_name =
+      wasapi_get_test_device_name(flow == eCapture);
 
   IMMDevice *device = NULL;
   IMMDeviceCollection *collection = NULL;
@@ -4537,16 +4538,12 @@ static bool wasapi_complete_rate_change(int sample_rate) {
     printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload endpoint "
            "properties...\n");
     wasapi_restart_audio_services();
-    wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(),
-                                    false);
-    wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
-                                    true);
+    wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(), false);
+    wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(), true);
   } else {
     printf("ℹ️ debug: Rates already match. Ensuring endpoints ready...\n");
-    wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(),
-                                    false);
-    wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
-                                    true);
+    wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(), false);
+    wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(), true);
   }
   return cap_ok && render_ok;
 }
@@ -4562,10 +4559,8 @@ static bool wasapi_change_capture_rate_only(int sample_rate) {
   printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload capture "
          "endpoint...\n");
   wasapi_restart_audio_services();
-  wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
-                                  true);
-  wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(),
-                                  false);
+  wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(), true);
+  wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(), false);
   return cap_ok && render_ok;
 }
 
@@ -4580,10 +4575,8 @@ static bool wasapi_change_playback_rate_only(int sample_rate) {
   printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload playback "
          "endpoint...\n");
   wasapi_restart_audio_services();
-  wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(),
-                                  false);
-  wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
-                                  true);
+  wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(), false);
+  wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(), true);
   return cap_ok && render_ok;
 }
 
@@ -4650,29 +4643,28 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
   remove(out_file);
 
   char json_init[1024];
-  snprintf(
-      json_init, sizeof(json_init),
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": %d,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"stop_on_rate_change\": true,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"%s\",\n"
-      "            \"channels\": 2,\n"
-      "            \"loopback\": false,\n"
-      "            \"polling\": true\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"%s\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}",
-      init_sr, wasapi_get_capture_device_name(), out_file);
+  snprintf(json_init, sizeof(json_init),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": %d,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"stop_on_rate_change\": true,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Wasapi\",\n"
+           "            \"device\": \"%s\",\n"
+           "            \"channels\": 2,\n"
+           "            \"loopback\": false,\n"
+           "            \"polling\": true\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           init_sr, wasapi_get_capture_device_name(), out_file);
 
   dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -4743,28 +4735,27 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
 
   // Re-configure for target rate and verify it runs
   char json_target[1024];
-  snprintf(
-      json_target, sizeof(json_target),
-      "{\n"
-      "    \"devices\": {\n"
-      "        \"samplerate\": %d,\n"
-      "        \"chunksize\": 512,\n"
-      "        \"capture\": {\n"
-      "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"%s\",\n"
-      "            \"channels\": 2,\n"
-      "            \"loopback\": false,\n"
-      "            \"polling\": true\n"
-      "        },\n"
-      "        \"playback\": {\n"
-      "            \"type\": \"File\",\n"
-      "            \"filename\": \"%s\",\n"
-      "            \"format\": \"S16_LE\",\n"
-      "            \"channels\": 2\n"
-      "        }\n"
-      "    }\n"
-      "}",
-      target_sr, wasapi_get_capture_device_name(), out_file);
+  snprintf(json_target, sizeof(json_target),
+           "{\n"
+           "    \"devices\": {\n"
+           "        \"samplerate\": %d,\n"
+           "        \"chunksize\": 512,\n"
+           "        \"capture\": {\n"
+           "            \"type\": \"Wasapi\",\n"
+           "            \"device\": \"%s\",\n"
+           "            \"channels\": 2,\n"
+           "            \"loopback\": false,\n"
+           "            \"polling\": true\n"
+           "        },\n"
+           "        \"playback\": {\n"
+           "            \"type\": \"File\",\n"
+           "            \"filename\": \"%s\",\n"
+           "            \"format\": \"S16_LE\",\n"
+           "            \"channels\": 2\n"
+           "        }\n"
+           "    }\n"
+           "}",
+           target_sr, wasapi_get_capture_device_name(), out_file);
 
   engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -4891,10 +4882,8 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
   // Re-enable playback rate change too to keep default formats aligned for
   // subsequent tests
   ASSERT_TRUE(wasapi_complete_rate_change(target_sr));
-  wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(),
-                                  false);
-  wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
-                                  true);
+  wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(), false);
+  wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(), true);
 
   cdsp_sleep_ms(200); // Allow Windows Audio service to apply the deferred
                       // format change once idle
