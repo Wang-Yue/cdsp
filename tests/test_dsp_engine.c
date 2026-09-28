@@ -4433,17 +4433,90 @@ static bool wasapi_restart_audio_services(void) {
   return true;
 }
 
+static bool wasapi_check_endpoint_streamable(const char *device_name,
+                                             bool is_capture) {
+  HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+  bool com_ok = SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
+
+  IMMDeviceEnumerator *enumerator = NULL;
+  hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
+                        &IID_IMMDeviceEnumerator, (void **)&enumerator);
+  if (FAILED(hr) || !enumerator) {
+    if (com_ok)
+      CoUninitialize();
+    return false;
+  }
+
+  IMMDevice *device =
+      wasapi_find_device(enumerator, device_name, is_capture, false);
+  if (!device) {
+    enumerator->lpVtbl->Release(enumerator);
+    if (com_ok)
+      CoUninitialize();
+    return false;
+  }
+
+  IAudioClient *client = NULL;
+  hr = device->lpVtbl->Activate(device, &IID_IAudioClient, CLSCTX_ALL, NULL,
+                                (void **)&client);
+  device->lpVtbl->Release(device);
+  enumerator->lpVtbl->Release(enumerator);
+
+  if (FAILED(hr) || !client) {
+    if (com_ok)
+      CoUninitialize();
+    return false;
+  }
+
+  WAVEFORMATEX *wfx = NULL;
+  hr = client->lpVtbl->GetMixFormat(client, &wfx);
+  if (FAILED(hr) || !wfx) {
+    client->lpVtbl->Release(client);
+    if (com_ok)
+      CoUninitialize();
+    return false;
+  }
+
+  REFERENCE_TIME def_period = 0, min_period = 0;
+  client->lpVtbl->GetDevicePeriod(client, &def_period, &min_period);
+  REFERENCE_TIME buffer_duration =
+      (def_period > 0) ? (8 * def_period) : 1000000;
+
+  hr = client->lpVtbl->Initialize(client, AUDCLNT_SHAREMODE_SHARED, 0,
+                                  buffer_duration, 0, wfx, NULL);
+  CoTaskMemFree(wfx);
+
+  if (FAILED(hr)) {
+    client->lpVtbl->Release(client);
+    if (com_ok)
+      CoUninitialize();
+    return false;
+  }
+
+  IUnknown *sub_client = NULL;
+  const IID *iid =
+      is_capture ? &IID_IAudioCaptureClient : &IID_IAudioRenderClient;
+  hr = client->lpVtbl->GetService(client, iid, (void **)&sub_client);
+  if (SUCCEEDED(hr) && sub_client) {
+    sub_client->lpVtbl->Release(sub_client);
+  }
+  client->lpVtbl->Release(client);
+  if (com_ok)
+    CoUninitialize();
+
+  return SUCCEEDED(hr);
+}
+
 static void wasapi_wait_for_endpoints_ready(const char *device_name,
                                             bool is_capture) {
   printf("ℹ️ debug: Waiting dynamically for WASAPI endpoint '%s' to be "
          "responsive...\n",
          device_name);
   for (int i = 0; i < 150; i++) {
-    double rate = wasapi_device_get_current_mix_rate(device_name, is_capture);
-    if (rate > 0.0) {
-      printf("ℹ️ debug: WASAPI endpoint '%s' ready (rate=%.1f Hz) after %d ms\n",
-             device_name, rate, i * 100);
-      Sleep(200); // Allow streaming subsystem to settle (reduced from 1000)
+    if (wasapi_check_endpoint_streamable(device_name, is_capture)) {
+      printf("ℹ️ debug: WASAPI endpoint '%s' streamable after %d ms\n",
+             device_name, i * 100);
+      Sleep(200);
       break;
     }
     Sleep(100);
@@ -4471,7 +4544,11 @@ static bool wasapi_complete_rate_change(int sample_rate) {
     wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
                                     true);
   } else {
-    printf("ℹ️ debug: Rates already match. Skipping service restart.\n");
+    printf("ℹ️ debug: Rates already match. Ensuring endpoints ready...\n");
+    wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(),
+                                    false);
+    wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
+                                    true);
   }
   return cap_ok && render_ok;
 }
