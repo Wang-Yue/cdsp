@@ -4126,9 +4126,59 @@ TEST(DSPEngine_Repro_UserStopDuringEOFDrain_UnblocksPlayback) {
 #include <windows.h>
 
 #include "backend/wasapi_device.h"
+#include "backend/audio_backend_registry.h"
 
 // Define property keys locally to avoid missing header errors on some
 // environments
+
+static const char *wasapi_get_test_device_name(bool is_capture) {
+  static char s_cap_name[256] = {0};
+  static char s_render_name[256] = {0};
+  char *target_buf = is_capture ? s_cap_name : s_render_name;
+  if (target_buf[0] != '\0') {
+    return target_buf;
+  }
+
+  audio_device_t devs[32];
+  int count = audio_backend_registry_get_available_devices("wasapi", is_capture,
+                                                           devs, 32);
+  // Pass 1: Prioritize standard non-16-channel endpoints
+  for (int i = 0; i < count; i++) {
+    if ((strstr(devs[i].name, "CABLE") != NULL ||
+         strstr(devs[i].name, "Cable") != NULL ||
+         strstr(devs[i].name, "VB-Audio") != NULL) &&
+        strstr(devs[i].name, "16") == NULL) {
+      snprintf(target_buf, 256, "%s", devs[i].name);
+      return target_buf;
+    }
+  }
+
+  // Pass 2: Fallback to any matching endpoint (including 16-channel if nothing else)
+  for (int i = 0; i < count; i++) {
+    if (strstr(devs[i].name, "CABLE") != NULL ||
+        strstr(devs[i].name, "Cable") != NULL ||
+        strstr(devs[i].name, "VB-Audio") != NULL) {
+      snprintf(target_buf, 256, "%s", devs[i].name);
+      return target_buf;
+    }
+  }
+
+  // Fallback if not detected dynamically
+  if (is_capture) {
+    snprintf(target_buf, 256, "CABLE Output (VB-Audio Virtual Cable)");
+  } else {
+    snprintf(target_buf, 256, "CABLE Input (VB-Audio Virtual Cable)");
+  }
+  return target_buf;
+}
+
+static const char *wasapi_get_playback_device_name(void) {
+  return wasapi_get_test_device_name(false);
+}
+
+static const char *wasapi_get_capture_device_name(void) {
+  return wasapi_get_test_device_name(true);
+}
 
 static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
                                           bool *out_modified) {
@@ -4146,6 +4196,8 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
     return false;
   }
 
+  const char *target_device_name = wasapi_get_test_device_name(flow == eCapture);
+
   IMMDevice *device = NULL;
   IMMDeviceCollection *collection = NULL;
   hr = enumerator->lpVtbl->EnumAudioEndpoints(enumerator, flow,
@@ -4162,6 +4214,8 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
     for (UINT i = 0; i < count; i++) {
       IMMDevice *temp_device = NULL;
       collection->lpVtbl->Item(collection, i, &temp_device);
+      if (!temp_device)
+        continue;
       IPropertyStore *temp_store = NULL;
       if (SUCCEEDED(temp_device->lpVtbl->OpenPropertyStore(
               temp_device, STGM_READ, &temp_store))) {
@@ -4169,9 +4223,16 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
         PropVariantInit(&nameProp);
         if (SUCCEEDED(temp_store->lpVtbl->GetValue(
                 temp_store, &friendly_name_key, &nameProp)) &&
-            nameProp.vt == VT_LPWSTR) {
-          if (wcsstr(nameProp.pwszVal, L"CABLE") != NULL ||
-              wcsstr(nameProp.pwszVal, L"Cable") != NULL) {
+            nameProp.vt == VT_LPWSTR && nameProp.pwszVal) {
+          char friendly_name[256] = {0};
+          WideCharToMultiByte(CP_UTF8, 0, nameProp.pwszVal, -1, friendly_name,
+                              (int)sizeof(friendly_name), NULL, NULL);
+          friendly_name[sizeof(friendly_name) - 1] = '\0';
+          if (strcmp(friendly_name, target_device_name) == 0 ||
+              ((wcsstr(nameProp.pwszVal, L"CABLE") != NULL ||
+                wcsstr(nameProp.pwszVal, L"Cable") != NULL ||
+                wcsstr(nameProp.pwszVal, L"VB-Audio") != NULL) &&
+               wcsstr(nameProp.pwszVal, L"16") == NULL)) {
             device = temp_device;
             PropVariantClear(&nameProp);
             temp_store->lpVtbl->Release(temp_store);
@@ -4405,9 +4466,9 @@ static bool wasapi_complete_rate_change(int sample_rate) {
     printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload endpoint "
            "properties...\n");
     wasapi_restart_audio_services();
-    wasapi_wait_for_endpoints_ready("CABLE Input (VB-Audio Virtual Cable)",
+    wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(),
                                     false);
-    wasapi_wait_for_endpoints_ready("CABLE Output (VB-Audio Virtual Cable)",
+    wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
                                     true);
   } else {
     printf("ℹ️ debug: Rates already match. Skipping service restart.\n");
@@ -4426,9 +4487,9 @@ static bool wasapi_change_capture_rate_only(int sample_rate) {
   printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload capture "
          "endpoint...\n");
   wasapi_restart_audio_services();
-  wasapi_wait_for_endpoints_ready("CABLE Output (VB-Audio Virtual Cable)",
+  wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
                                   true);
-  wasapi_wait_for_endpoints_ready("CABLE Input (VB-Audio Virtual Cable)",
+  wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(),
                                   false);
   return cap_ok && render_ok;
 }
@@ -4444,9 +4505,9 @@ static bool wasapi_change_playback_rate_only(int sample_rate) {
   printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload playback "
          "endpoint...\n");
   wasapi_restart_audio_services();
-  wasapi_wait_for_endpoints_ready("CABLE Input (VB-Audio Virtual Cable)",
+  wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(),
                                   false);
-  wasapi_wait_for_endpoints_ready("CABLE Output (VB-Audio Virtual Cable)",
+  wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
                                   true);
   return cap_ok && render_ok;
 }
@@ -4520,9 +4581,10 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
       "    \"devices\": {\n"
       "        \"samplerate\": %d,\n"
       "        \"chunksize\": 512,\n"
+      "        \"stop_on_rate_change\": true,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"CABLE Output (VB-Audio Virtual Cable)\",\n"
+      "            \"device\": \"%s\",\n"
       "            \"channels\": 2,\n"
       "            \"loopback\": false,\n"
       "            \"polling\": true\n"
@@ -4535,7 +4597,7 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
       "        }\n"
       "    }\n"
       "}",
-      init_sr, out_file);
+      init_sr, wasapi_get_capture_device_name(), out_file);
 
   dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -4614,7 +4676,7 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
       "        \"chunksize\": 512,\n"
       "        \"capture\": {\n"
       "            \"type\": \"Wasapi\",\n"
-      "            \"device\": \"CABLE Output (VB-Audio Virtual Cable)\",\n"
+      "            \"device\": \"%s\",\n"
       "            \"channels\": 2,\n"
       "            \"loopback\": false,\n"
       "            \"polling\": true\n"
@@ -4627,7 +4689,7 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
       "        }\n"
       "    }\n"
       "}",
-      target_sr, out_file);
+      target_sr, wasapi_get_capture_device_name(), out_file);
 
   engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -4685,13 +4747,13 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Wasapi\",\n"
-           "            \"device\": \"CABLE Input (VB-Audio Virtual Cable)\",\n"
+           "            \"device\": \"%s\",\n"
            "            \"channels\": 2,\n"
            "            \"polling\": true\n"
            "        }\n"
            "    }\n"
            "}",
-           init_sr);
+           init_sr, wasapi_get_playback_device_name());
 
   dsp_engine_t *engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
@@ -4754,9 +4816,9 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
   // Re-enable playback rate change too to keep default formats aligned for
   // subsequent tests
   ASSERT_TRUE(wasapi_complete_rate_change(target_sr));
-  wasapi_wait_for_endpoints_ready("CABLE Input (VB-Audio Virtual Cable)",
+  wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(),
                                   false);
-  wasapi_wait_for_endpoints_ready("CABLE Output (VB-Audio Virtual Cable)",
+  wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(),
                                   true);
 
   cdsp_sleep_ms(200); // Allow Windows Audio service to apply the deferred
@@ -4781,13 +4843,13 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
            "        },\n"
            "        \"playback\": {\n"
            "            \"type\": \"Wasapi\",\n"
-           "            \"device\": \"CABLE Input (VB-Audio Virtual Cable)\",\n"
+           "            \"device\": \"%s\",\n"
            "            \"channels\": 2,\n"
            "            \"polling\": true\n"
            "        }\n"
            "    }\n"
            "}",
-           target_sr);
+           target_sr, wasapi_get_playback_device_name());
 
   engine = dsp_engine_create();
   ASSERT_TRUE(engine != NULL);
