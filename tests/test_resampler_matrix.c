@@ -44,15 +44,16 @@ typedef struct {
 } swift_bounds_t;
 
 static const swift_bounds_t g_swift_bounds[] = {
-    {"44.1→48k", false, 0.0, 2.0e-2, 0.92, 208.0},
-    {"48→44.1k", true, -185.0, 2.0e-2, 0.70, 204.0},
-    {"48→96k", false, 0.0, 1.0e-2, 2.0e-15, 205.0},
-    {"96→48k", true, -228.0, 2.5e-2, 2.0e-12, 205.0},
-    {"44.1→88.2k", false, 0.0, 1.0e-2, 2.0e-15, 208.0},
-    {"88.2→44.1k", true, -228.0, 2.5e-2, 2.0e-12, 204.0},
-    {"44.1→192k", false, 0.0, 2.0e-2, 0.32, 200.0},
-    {"192→44.1k", true, -230.0, 0.15, 0.45, 199.0},
-    {"37k→41k", false, 0.0, 6.2e-3, 0.21, 250.0}};
+    {"44.1→48k", false, 0.0, 0.040, 1.0e-9, 195.0},
+    {"48→44.1k", true, -230.0, 0.075, 5.0e-10, 190.0},
+    {"48→96k", false, 0.0, 0.280, 5.0e-9, 195.0},
+    {"96→48k", true, -228.0, 0.010, 5.0e-10, 185.0},
+    {"44.1→88.2k", false, 0.0, 0.280, 5.0e-9, 195.0},
+    {"88.2→44.1k", true, -228.0, 0.010, 5.0e-10, 190.0},
+    {"44.1→192k", false, 0.0, 0.025, 2.0e-3, 195.0},
+    {"192→44.1k", true, -245.0, 0.125, 5.0e-10, 185.0},
+    {"61.9→64k", false, 0.0, 0.040, 0.030, 260.0},
+    {"48→48k", false, 0.0, 0.010, 5.0e-10, 200.0}};
 
 static const size_t g_swift_bounds_count =
     sizeof(g_swift_bounds) / sizeof(g_swift_bounds[0]);
@@ -327,7 +328,7 @@ static void get_effective_chunk_sizes(int in_rate, int out_rate, size_t base_cs,
 
 static double *run_resampler_full(resampler_t *res, const double *input,
                                   size_t input_count, size_t *out_count) {
-  size_t max_out_per_chunk = resampler_get_max_output_frames(res);
+  size_t max_out_per_chunk = resampler_get_chunk_size(res);
   double ratio = resampler_get_ratio(res);
 
   size_t estimated_out =
@@ -336,7 +337,7 @@ static double *run_resampler_full(resampler_t *res, const double *input,
   if (!output)
     return NULL;
 
-  size_t max_in_buf = resampler_get_chunk_size(res);
+  size_t max_in_buf = resampler_get_max_input_frames(res);
   if (max_in_buf < 65536)
     max_in_buf = 65536;
 
@@ -633,7 +634,7 @@ static bool measure_swift_perf(int in_rate, int out_rate, resampler_impl_t impl,
     }
   }
 
-  size_t max_out = resampler_get_max_output_frames(resampler);
+  size_t max_out = resampler_get_chunk_size(resampler);
   audio_chunk_t *scratch = audio_chunk_create(max_out, 1);
 
   for (size_t c = 0; c < chunk_count; c++) {

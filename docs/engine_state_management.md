@@ -252,7 +252,7 @@ sequenceDiagram
    - `engine_session_build_backends()` calls the backend factory to allocate `capture_backend_t` and `playback_backend_t` handles (e.g. CoreAudio, ALSA, ASIO, File, or Generator). No hardware syscalls are made here; only handle descriptors are created.
 
 6. **DSP Processing Pipeline & Scratch Chunks**:
-   - `engine_session_build_pipeline_and_scratch()` parses filter configurations, creates the step pipeline (`pipeline_t`), and allocates the `resampler_scratch` and `pipeline_scratch` audio chunks used for processing.
+   - `engine_session_build_pipeline_and_scratch()` parses filter configurations, creates the step pipeline (`pipeline_t`), and allocates the `pipeline_scratch` audio chunk used for processing.
 
 7. **Thread Chunk Pools Sizing**:
    - Pre-allocates two round-robin chunk pools (`capture_chunk_pool` and `processing_scratch_pool`) to completely avoid memory allocations on the audio thread hot path during steady-state processing.

@@ -356,6 +356,16 @@ static void diffeq_filter_transfer_state(void *dest_ptr, const void *src_ptr) {
   if (dest->order != src->order)
     return;
 
+  // Do not carry state into different coefficients to prevent transients.
+  if (dest->a && src->a &&
+      memcmp(dest->a, src->a, (dest->order + 1) * sizeof(double)) != 0) {
+    return;
+  }
+  if (dest->b && src->b &&
+      memcmp(dest->b, src->b, (dest->order + 1) * sizeof(double)) != 0) {
+    return;
+  }
+
   if (dest->s && src->s && dest->order > 0) {
     memcpy(dest->s, src->s, dest->order * sizeof(double));
   }

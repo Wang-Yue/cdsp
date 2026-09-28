@@ -419,7 +419,7 @@ bool core_audio_device_select_adjustable_clock_source(AudioDeviceID device_id) {
   OSStatus sz_status =
       AudioObjectGetPropertyDataSize(device_id, &addr, 0, NULL, &size);
   if (sz_status != noErr) {
-    logger_warn(&g_coreaudio_dev_logger,
+    logger_info(&g_coreaudio_dev_logger,
                 "Unable to read number of clock sources, error code: %d.",
                 (int)sz_status);
     return false;
@@ -975,10 +975,14 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
           continue;
 
         // Match sample rate (checking if requested rate falls within physical
-        // stream limits).
+        // stream limits and matches nominal format sample rate).
         double lo = ranged[i].mSampleRateRange.mMinimum;
         double hi = ranged[i].mSampleRateRange.mMaximum;
         if (sample_rate < lo || sample_rate > hi) {
+          continue;
+        }
+        if (asbd.mSampleRate > 0.0 && fabs(asbd.mSampleRate - sample_rate) >= 0.5 &&
+            (lo == hi)) {
           continue;
         }
 

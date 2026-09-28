@@ -32,6 +32,7 @@
 #include "backend/audio_backend.h"
 #include "dsd/dsd_decoder.h"
 #include "engine/engine_shared_state.h"
+#include "resampler/audio_resampler.h"
 
 /**
  * @brief Opaque structure representing the capture loop.
@@ -55,9 +56,12 @@ typedef struct {
   processing_parameters_t *processing_params;
   dsd_decoder_t *dsd_decoder;
   round_robin_chunk_pool_t *chunk_pool;
+  resampler_t *resampler;
   size_t chunk_size;
+  size_t pipeline_chunk_size;
   size_t channels;
   size_t samplerate;
+  size_t pipeline_rate;
   const bool *used_channels;
   double silence_threshold_db;
   double silence_timeout_seconds;

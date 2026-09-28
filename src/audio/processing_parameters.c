@@ -678,10 +678,11 @@ static float update_levels_internal(const audio_chunk_t *chunk,
   }
 
   float max_peak = -INFINITY;
+  const bool *used_mask = audio_chunk_get_used_channels(chunk);
 
   for (size_t i = 0; i < channel_count; i++) {
     waveform_t buffer = audio_chunk_get_channel(chunk, i);
-    if (!buffer) {
+    if (!buffer || (used_mask && !used_mask[i])) {
       atomic_float_set(&peak_storage[i], -INFINITY);
       atomic_float_set(&rms_storage[i], -INFINITY);
       if (peak_pos != (size_t)-1 && i < peak_hist->channels) {
@@ -883,3 +884,53 @@ void processing_parameters_reset_global_peaks(processing_parameters_t *params) {
   processing_parameters_reset_capture_global_peaks(params);
   processing_parameters_reset_playback_global_peaks(params);
 }
+
+static inline void chunk_level_history_transfer(chunk_level_history_t *dst,
+                                                const chunk_level_history_t *src) {
+  if (!dst || !src || !dst->data || !src->data)
+    return;
+  size_t ch_limit = dst->channels < src->channels ? dst->channels : src->channels;
+  uint64_t seq = atomic_load_explicit(&src->write_seq, memory_order_acquire);
+  size_t pos = atomic_load_explicit(&src->write_pos, memory_order_acquire);
+  size_t total = atomic_load_explicit(&src->total_written, memory_order_acquire);
+
+  memcpy(dst->timestamps_ns, src->timestamps_ns, sizeof(dst->timestamps_ns));
+  for (size_t c = 0; c < ch_limit; c++) {
+    memcpy(&dst->data[c * CHUNK_LEVEL_HISTORY_CAPACITY],
+           &src->data[c * CHUNK_LEVEL_HISTORY_CAPACITY],
+           CHUNK_LEVEL_HISTORY_CAPACITY * sizeof(float));
+  }
+  atomic_store_explicit(&dst->total_written, total, memory_order_release);
+  atomic_store_explicit(&dst->write_pos, pos, memory_order_release);
+  atomic_store_explicit(&dst->write_seq, seq, memory_order_release);
+}
+
+void processing_parameters_transfer_telemetry(processing_parameters_t *dst,
+                                              const processing_parameters_t *src) {
+  if (!dst || !src)
+    return;
+
+  // Transfer global peaks
+  size_t cap_ch = dst->capture_channels < src->capture_channels
+                      ? dst->capture_channels
+                      : src->capture_channels;
+  for (size_t i = 0; i < cap_ch; i++) {
+    float peak = atomic_float_get(&src->capture_global_peaks[i]);
+    atomic_float_set(&dst->capture_global_peaks[i], peak);
+  }
+
+  size_t pb_ch = dst->playback_channels < src->playback_channels
+                     ? dst->playback_channels
+                     : src->playback_channels;
+  for (size_t i = 0; i < pb_ch; i++) {
+    float peak = atomic_float_get(&src->playback_global_peaks[i]);
+    atomic_float_set(&dst->playback_global_peaks[i], peak);
+  }
+
+  // Transfer chunk level histories
+  chunk_level_history_transfer(&dst->capture_peak_history, &src->capture_peak_history);
+  chunk_level_history_transfer(&dst->capture_rms_history, &src->capture_rms_history);
+  chunk_level_history_transfer(&dst->playback_peak_history, &src->playback_peak_history);
+  chunk_level_history_transfer(&dst->playback_rms_history, &src->playback_rms_history);
+}
+

@@ -194,11 +194,6 @@ static int biquad_combo_config_validate(const filter_config_t *config,
       config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Gain must be < 100");
       return -1;
     }
-    if (3500.0 >= nyquist) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Frequency must be < samplerate/2");
-      return -1;
-    }
     break;
   case BIQUAD_COMBO_TYPE_N_POINT_PEQ: {
     if (params->bands_count < 2 || !params->bands) {
@@ -520,9 +515,9 @@ static void biquad_combo_filter_process(void *instance,
  * A changed section count means the combo was reconfigured into a different
  * filter (a different order, or a different combo type altogether), and the
  * per-section histories no longer describe any part of it — so nothing is
- * carried. Within a cascade of equal length, each section is still gated
- * individually by `biquad_filter_transfer_state`, which drops the history when
- * the section's own biquad type changed.
+ * carried. Within a cascade of equal length, each section's history is
+ * transferred and scaled by `biquad_filter_transfer_state` based on the ratio
+ * of ring estimates between the source and destination coefficients.
  *
  * @param dest The destination combo filter instance.
  * @param src The source combo filter instance.

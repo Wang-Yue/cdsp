@@ -65,6 +65,7 @@ config_change_type_t config_diff(const dsp_config_t *current,
       }
     }
     if (!old_nf) {
+      params_changed = true;
       continue;
     }
     if (old_nf->filter.type != new_nf->filter.type) {
@@ -89,6 +90,7 @@ config_change_type_t config_diff(const dsp_config_t *current,
       }
     }
     if (!old_np) {
+      params_changed = true;
       continue;
     }
     if (old_np->processor.type != new_np->processor.type) {
@@ -98,6 +100,11 @@ config_change_type_t config_diff(const dsp_config_t *current,
         !safe_streq(old_np->description, new_np->description)) {
       params_changed = true;
     }
+  }
+
+  if (current->filters_count != new_conf->filters_count ||
+      current->processors_count != new_conf->processors_count) {
+    params_changed = true;
   }
 
   if (params_changed || !safe_streq(current->title, new_conf->title) ||

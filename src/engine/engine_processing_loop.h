@@ -6,22 +6,17 @@
  * @brief Processing thread loop for the DSP engine.
  *
  * Drains the capture→processing SPSC queue, runs each chunk through the
- * (optional) resampler and the pipeline, then enqueues the result on the
- * processing→playback queue.
+ * pipeline, then enqueues the result on the processing→playback queue.
  *
  * @section state_ownership State ownership
- * The pre-allocated scratch chunks (`resamplerScratch`, `pipelineScratch`) are
- * owned by this loop and only mutated here. The resampler's own internal state
- * is also single-threaded: the playback thread publishes a relative ratio via
- * the shared atomic, and the processing thread consumes it once per chunk
- * through `setRelativeRatio`. No cross-thread mutation of resampler state.
+ * The pre-allocated scratch chunk (`pipelineScratch`) is
+ * owned by this loop and only mutated here.
  *
  * @section audio_invariants Audio-thread invariants
  * - No allocations in the steady state. Output chunks are obtained from a
- * pre-allocated `RoundRobinChunkPool`, and the resampler scratch chunk is
+ * pre-allocated `RoundRobinChunkPool`, and the pipeline scratch chunk is
  * pre-allocated at init.
- * - No locks. The shared SPSC queues + semaphores carry chunks and wakeups; the
- * resampler ratio is an atomic Double.
+ * - No locks. The shared SPSC queues + semaphores carry chunks and wakeups.
  * - The thread sets a real-time scheduling policy on entry so the OS prefers it
  * over background work.
  */
@@ -34,7 +29,6 @@
 #include "config/configuration.h"
 #include "engine/engine_shared_state.h"
 #include "pipeline/pipeline.h"
-#include "resampler/audio_resampler.h"
 
 /**
  * @brief Opaque structure representing the processing loop.
@@ -56,9 +50,7 @@ typedef struct {
   engine_shared_state_t *shared;
   processing_parameters_t *processing_params;
   size_t pipeline_rate;
-  resampler_t *resampler;
   pipeline_t *pipeline;
-  audio_chunk_t *resampler_scratch;
   audio_chunk_t *pipeline_scratch;
   round_robin_chunk_pool_t *scratch_pool;
   chunk_callback_t on_chunk_captured;

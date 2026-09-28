@@ -1,5 +1,12 @@
 #include "filters/volume.h"
 
+#include <limits.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "audio/processing_parameters.h"
 #include "config/config_error.h"
 #include "config/config_gen.h"
@@ -21,71 +28,41 @@ struct volume_filter {
   int ramp_step;
   double *current_ramp_gains;
   processing_parameters_t *processing_parameters;
-  /// When true, the owner calls volume_filter_prepare_chunk() /
-  /// volume_filter_advance_ramp() around the per-channel process() calls.
-  /// This is used for the implicit master volume, where a single instance is
-  /// shared by every channel of the chunk.
-  /// When false (the default, and the case for Volume filters instantiated
-  /// from a pipeline step, which get one instance per channel), process()
-  /// drives the ramp itself - matching upstream's Volume::process_waveform.
   bool externally_driven;
 };
 
 typedef struct volume_filter volume_filter_t;
 
-#include <limits.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-
-/**
- * @brief Pre-calculates the gain values for the current step of a volume ramp.
- *
- * This function calculates linear gain coefficients for each sample in the
- * current chunk to smoothly transition from the start volume to the target
- * volume over the ramp duration.
- *
- * @param filter Pointer to the volume filter instance.
- */
 static void fill_ramp(volume_filter_t *filter) {
-  if (filter->chunk_size == 0 || filter->ramptime_in_chunks <= 0)
+  if (filter->chunk_size == 0 || filter->ramptime_in_chunks <= 0 ||
+      !filter->current_ramp_gains)
     return;
   double target_vol = filter->mute ? -100.0 : filter->target_volume;
   double ramprange =
       (target_vol - filter->ramp_start) / (double)filter->ramptime_in_chunks;
-  double stepsize = ramprange / (double)filter->chunk_size;
+  double start_db =
+      filter->ramp_start + ramprange * ((double)filter->ramp_step - 1.0);
+  double end_db = (filter->ramp_step >= filter->ramptime_in_chunks)
+                      ? target_vol
+                      : (filter->ramp_start + ramprange * (double)filter->ramp_step);
+  double stepsize = (end_db - start_db) / (double)filter->chunk_size;
   for (size_t val = 0; val < filter->chunk_size; val++) {
-    double db_val = filter->ramp_start +
-                    ramprange * ((double)filter->ramp_step - 1.0) +
-                    (double)val * stepsize;
+    double db_val = start_db + (double)val * stepsize;
     filter->current_ramp_gains[val] = double_from_db(db_val);
   }
 }
 
-/**
- * @brief Frees the resources allocated for the volume filter instance.
- *
- * @param filter Pointer to the volume filter instance to free.
- */
 static void volume_filter_free(void *instance) {
   volume_filter_t *filter = (volume_filter_t *)instance;
   if (!filter)
     return;
-  if (filter->current_ramp_gains)
+  if (filter->current_ramp_gains) {
     free(filter->current_ramp_gains);
+    filter->current_ramp_gains = NULL;
+  }
   free(filter);
 }
 
-/**
- * @brief Validates volume filter parameters.
- *
- * @param config Pointer to the volume parameters to validate.
- * @param sample_rate The audio sample rate.
- * @param err Pointer to a config error struct to populate on failure.
- * @return 0 on success, -1 on failure.
- */
 static int volume_config_validate(const filter_config_t *config,
                                   int sample_rate, config_error_t *err) {
   (void)sample_rate;
@@ -106,18 +83,6 @@ static int volume_config_validate(const filter_config_t *config,
   return 0;
 }
 
-/**
- * @brief Creates a new volume filter instance.
- *
- * @param name The name of the filter.
- * @param config Pointer to the volume filter configuration.
- * @param sample_rate The sample rate of the audio processing path.
- * @param chunk_size The maximum size of an audio chunk in frames.
- * @param proc_params Pointer to shared processing parameters.
- * @param err Pointer to a config error struct to populate on failure.
- * @return A pointer to the newly created volume_filter_t instance, or NULL on
- * failure.
- */
 static void *volume_filter_create(const char *name,
                                   const filter_config_t *config,
                                   int sample_rate, size_t chunk_size,
@@ -138,6 +103,7 @@ static void *volume_filter_create(const char *name,
                      "VolumeFilter: chunk_size must be positive");
     return NULL;
   }
+
   volume_filter_t *filter =
       (volume_filter_t *)calloc(1, sizeof(volume_filter_t));
   if (!filter) {
@@ -168,38 +134,33 @@ static void *volume_filter_create(const char *name,
   }
   filter->last_pause_count =
       proc_params ? processing_parameters_get_pause_count(proc_params) : 0ULL;
-  // Pre-allocate array
   filter->current_ramp_gains =
       (double *)calloc(chunk_size > 0 ? chunk_size : 1, sizeof(double));
   if (!filter->current_ramp_gains) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "Failed to allocate volume fader ramp gains array");
-    volume_filter_free(filter);
+    free(filter);
     return NULL;
   }
 
-  // Initialize state from shared parameters to prevent volume burst on startup.
-  // Upstream CamillaDSP seeds master volume from current_volume(0), while
-  // pipeline volume filters from config are seeded from target_volume(fader).
+  // Initialize state from shared parameters.
+  // Upstream CamillaDSP seeds from current_volume(fader), clamped to volume_limit.
   double initial_vol = 0.0;
   if (proc_params) {
-    if (processing_parameters_get_pause_count(proc_params) == 0) {
-      // At cold start before any processing has occurred, sync current volume
-      // to preset target volume for all fader slots (matching upstream
-      // processing_params.sync_volumes_to_target() before pipeline build).
-      double target = processing_parameters_get_target_volume_for_fader(
-          proc_params, filter->fader);
+    double cur = processing_parameters_get_current_volume_for_fader(
+        proc_params, filter->fader);
+    double target = processing_parameters_get_target_volume_for_fader(
+        proc_params, filter->fader);
+    if (processing_parameters_get_pause_count(proc_params) == 0 && cur == 0.0 && target != 0.0) {
+      initial_vol = target;
       processing_parameters_set_current_volume_for_fader(proc_params, target,
                                                          filter->fader);
-    }
-    if (name &&
-        (strcmp(name, "master_volume") == 0 || strcmp(name, "default") == 0)) {
-      initial_vol = processing_parameters_get_current_volume_for_fader(
-          proc_params, filter->fader);
     } else {
-      initial_vol = processing_parameters_get_target_volume_for_fader(
-          proc_params, filter->fader);
+      initial_vol = cur;
     }
+  }
+  if (initial_vol > filter->volume_limit) {
+    initial_vol = filter->volume_limit;
   }
   bool initial_mute =
       proc_params
@@ -218,9 +179,6 @@ static void *volume_filter_create(const char *name,
   return filter;
 }
 
-/// Pre-calculates target volume levels and generates ramping array once per
-/// chunk. Must be called once per audio chunk before processing individual
-/// channel waveforms.
 void volume_filter_prepare_chunk(volume_filter_t *filter) {
   if (!filter || !filter->processing_parameters)
     return;
@@ -256,11 +214,6 @@ void volume_filter_prepare_chunk(volume_filter_t *filter) {
   }
 }
 
-/// Conforms to `Filter`. Processes a single channel's waveform slice.
-///
-/// For a self-driven instance (one per channel, as built from a pipeline
-/// filter step) this mirrors upstream's `Volume::process_waveform`: read the
-/// fader, build the ramp, apply it, then advance and publish the level.
 static void volume_filter_process(void *instance, mutable_waveform_t waveform,
                                   size_t count) {
   volume_filter_t *filter = (volume_filter_t *)instance;
@@ -270,16 +223,14 @@ static void volume_filter_process(void *instance, mutable_waveform_t waveform,
     volume_filter_prepare_chunk(filter);
   }
   if (filter->ramp_step == 0) {
-    // Optimization: avoid multiplication if gain is 1.0, or clear if 0.0.
     if (filter->target_linear_gain == 1.0) {
-      // No-op
+      // Unity gain: no-op
     } else if (filter->target_linear_gain == 0.0) {
       dsp_ops_clear(waveform, count);
     } else {
       dsp_ops_scalar_multiply(waveform, filter->target_linear_gain, count);
     }
-  } else {
-    // Apply the ramping gains.
+  } else if (filter->current_ramp_gains) {
     size_t limit = count < filter->chunk_size ? count : filter->chunk_size;
     dsp_ops_multiply(filter->current_ramp_gains, waveform, limit);
   }
@@ -288,22 +239,24 @@ static void volume_filter_process(void *instance, mutable_waveform_t waveform,
   }
 }
 
-/// Advances the fader's ramp steps.
-/// Must be called once per audio chunk after all channels have been processed.
 void volume_filter_advance_ramp(volume_filter_t *filter) {
   if (!filter)
     return;
   if (filter->ramp_step > 0) {
-    if (filter->chunk_size > 0) {
-      // Update current volume based on the last computed gain sample of the
-      // chunk.
-      double last_gain = filter->current_ramp_gains[filter->chunk_size - 1];
-      filter->current_volume = double_to_db(last_gain);
-    }
+    double target_vol = filter->mute ? -100.0 : filter->target_volume;
+    double ramprange =
+        (target_vol - filter->ramp_start) / (double)filter->ramptime_in_chunks;
+    double end_db = (filter->ramp_step >= filter->ramptime_in_chunks)
+                        ? target_vol
+                        : (filter->ramp_start + ramprange * (double)filter->ramp_step);
+    filter->current_volume = end_db;
     filter->ramp_step++;
     if (filter->ramp_step > filter->ramptime_in_chunks) {
       filter->ramp_step = 0;
+      filter->current_volume = target_vol;
     }
+  } else {
+    filter->current_volume = filter->mute ? -100.0 : filter->target_volume;
   }
   if (filter->processing_parameters) {
     processing_parameters_set_current_volume_for_fader(
@@ -318,13 +271,6 @@ void volume_filter_set_externally_driven(volume_filter_t *filter,
   filter->externally_driven = externally_driven;
 }
 
-/**
- * @brief Transfers current volume, fader target level, and ramp state from src
- * to dest.
- *
- * @param dest The destination volume filter instance.
- * @param src The source volume filter instance.
- */
 static void volume_filter_transfer_state(void *dest_ptr, const void *src_ptr) {
   volume_filter_t *dest = (volume_filter_t *)dest_ptr;
   const volume_filter_t *src = (const volume_filter_t *)src_ptr;

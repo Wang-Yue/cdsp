@@ -116,16 +116,9 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
       if (dsp_session_reload_config(impl->session.active, config, &berr)) {
         return true;
       } else {
-        processing_parameters_t *old_p =
-            dsp_session_get_processing_params(impl->session.active);
-        if (old_p) {
-          impl->session.clipped_samples_accum =
-              processing_parameters_get_clipped_samples(old_p);
-        }
-        impl->session.last_stop_reason = dsp_session_stop_and_free(
-            impl->session.active,
-            (processing_stop_reason_t){.type = STOP_REASON_NONE});
-        impl->session.active = NULL;
+        logger_warn(&g_logger,
+                    "Could not reload config, keeping the current one: %s",
+                    berr.message);
         if (err)
           *err = berr;
         return false;
@@ -133,12 +126,19 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
     }
   }
 
+  processing_parameters_t *saved_telemetry = NULL;
   if (impl->session.active) {
     processing_parameters_t *old_p =
         dsp_session_get_processing_params(impl->session.active);
     if (old_p) {
       impl->session.clipped_samples_accum =
           processing_parameters_get_clipped_samples(old_p);
+      size_t old_cap_ch = processing_parameters_get_capture_channels(old_p);
+      size_t old_pb_ch = processing_parameters_get_playback_channels(old_p);
+      saved_telemetry = processing_parameters_create(old_cap_ch, old_pb_ch);
+      if (saved_telemetry) {
+        processing_parameters_transfer_telemetry(saved_telemetry, old_p);
+      }
     }
     impl->session.last_stop_reason = dsp_session_stop_and_free(
         impl->session.active,
@@ -162,20 +162,27 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
       engine_on_chunk_processed_callback, impl->buffers.playback,
       impl->state_mgr, err);
   if (!session) {
+    if (saved_telemetry) {
+      processing_parameters_free(saved_telemetry);
+    }
     return false;
   }
 
-  if (impl->session.clipped_samples_accum > 0) {
-    processing_parameters_t *new_p =
-        dsp_session_get_processing_params(session);
-    if (new_p) {
+  processing_parameters_t *new_p = dsp_session_get_processing_params(session);
+  if (new_p) {
+    if (saved_telemetry) {
+      processing_parameters_transfer_telemetry(new_p, saved_telemetry);
+    }
+    if (impl->session.clipped_samples_accum > 0) {
       processing_parameters_add_clipped_samples(
           new_p, impl->session.clipped_samples_accum);
     }
   }
+  if (saved_telemetry) {
+    processing_parameters_free(saved_telemetry);
+  }
 
   impl->session.active = session;
-  impl->session.last_stop_reason.type = STOP_REASON_NONE;
   return true;
 }
 
@@ -282,6 +289,7 @@ static void dsp_engine_set_fader_volume(void *ctx, fader_t fader, float db,
     processing_parameters_set_target_volume_for_fader(p, (double)db, fader);
     if (instant) {
       processing_parameters_set_current_volume_for_fader(p, (double)db, fader);
+      processing_parameters_bump_pause_count(p);
     }
   }
   pthread_mutex_unlock(&impl->state_mutex);
@@ -321,6 +329,10 @@ static state_update_t dsp_engine_get_status_locked(dsp_engine_impl_t *impl) {
   if (impl->session.active) {
     dsp_session_collect_garbage(impl->session.active);
     res.state = dsp_session_get_state(impl->session.active);
+    if (res.state == PROCESSING_STATE_RUNNING) {
+      impl->session.last_stop_reason =
+          (processing_stop_reason_t){.type = STOP_REASON_NONE};
+    }
     processing_stop_reason_t r =
         dsp_session_get_stop_reason(impl->session.active);
     if (r.type != STOP_REASON_NONE) {

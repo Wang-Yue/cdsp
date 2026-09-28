@@ -575,15 +575,20 @@ fail:
  * 4. Computes the inverse FFT of the accumulated spectrum directly.
  * 5. Reconstructs the output block using overlap-add.
  *
- * @param filter Pointer to the convolution filter.
+ * @param instance Pointer to the convolution filter.
  * @param waveform In-place buffer containing the input block, which will be
- * overwritten with the output.
+ *                 overwritten with the output.
+ * @param count Number of samples in the input block.
  */
-static void process_chunk_internal(convolution_filter_t *filter,
-                                   mutable_waveform_t waveform, size_t len) {
-  if (!filter || filter->num_segments == 0 || !filter->coeffs || len == 0)
+static void convolution_filter_process(void *instance,
+                                       mutable_waveform_t waveform,
+                                       size_t count) {
+  convolution_filter_t *filter = (convolution_filter_t *)instance;
+  if (!filter || !waveform || count == 0 || filter->num_segments == 0 ||
+      !filter->coeffs)
     return;
   size_t cs = filter->chunk_size;
+  size_t len = count < cs ? count : cs;
   size_t spec_len = filter->spec_len;
   size_t spec_stride = filter->spec_stride;
   size_t num_seg = filter->num_segments;
@@ -604,8 +609,7 @@ static void process_chunk_internal(convolution_filter_t *filter,
   //    seg=0 pairs the newest input with coeff[0]; seg=k pairs the input from
   //    `k` blocks ago with coeff[k].
   const complex_t *coeffs_data = filter->coeffs->data;
-  size_t hidx0 = widx;
-  dsp_ops_complex_multiply_interleaved(filter->hist_f + hidx0 * spec_stride,
+  dsp_ops_complex_multiply_interleaved(filter->hist_f + widx * spec_stride,
                                        coeffs_data, filter->temp_buf, spec_len);
 
   for (size_t s = 1; s < num_seg; s++) {
@@ -626,32 +630,6 @@ static void process_chunk_internal(convolution_filter_t *filter,
   memcpy(filter->overlap_buffer, filter->out_buf + cs, cs * sizeof(double));
 
   filter->write_idx = (widx + 1) % num_seg;
-}
-
-/// Process audio block in-place. Full blocks are convolved directly;
-/// any trailing partial block is zero-padded and convolved immediately
-/// (matching upstream CamillaDSP) rather than deferred with stale buffer
-/// contents.
-static void convolution_filter_process(void *instance,
-                                       mutable_waveform_t waveform,
-                                       size_t count) {
-  convolution_filter_t *filter = (convolution_filter_t *)instance;
-  if (!filter || !waveform || count == 0)
-    return;
-  size_t cs = filter->chunk_size;
-  size_t i = 0;
-
-  // Process any full blocks in-place directly from/to the waveform
-  while (i + cs <= count) {
-    process_chunk_internal(filter, waveform + i, cs);
-    i += cs;
-  }
-
-  // Zero-pad and process any remaining partial block immediately
-  size_t rem = count - i;
-  if (rem > 0) {
-    process_chunk_internal(filter, waveform + i, rem);
-  }
 }
 
 static void convolution_filter_transfer_state(void *dest_ptr,

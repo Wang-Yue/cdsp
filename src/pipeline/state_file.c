@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -127,6 +128,143 @@ static bool parse_double_scalar(const char *val, double *out) {
   }
   *out = parsed;
   return true;
+}
+
+static int hex_val(char c) {
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  if (c >= 'a' && c <= 'f')
+    return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F')
+    return c - 'A' + 10;
+  return -1;
+}
+
+/**
+ * @brief Unescape a YAML quoted or plain scalar string.
+ * Supports '' -> ' for single quotes, and standard YAML escape sequences
+ * for double quotes (\0, \a, \b, \t, \n, \v, \f, \r, \e, \", \\, \/, \xNN, \uNNNN).
+ */
+static char *unescape_yaml_scalar(const char *val) {
+  if (!val)
+    return NULL;
+
+  char quote_char = val[0];
+  size_t vlen = strlen(val);
+
+  if ((quote_char == '"' || quote_char == '\'') && vlen >= 2 &&
+      val[vlen - 1] == quote_char) {
+    char *dst = (char *)malloc(vlen + 1);
+    if (!dst)
+      return NULL;
+    size_t d = 0;
+    if (quote_char == '\'') {
+      // Single-quoted scalar: '' is escaped as '
+      for (size_t s = 1; s + 1 < vlen; s++) {
+        if (val[s] == '\'' && s + 1 < vlen - 1 && val[s + 1] == '\'') {
+          dst[d++] = '\'';
+          s++;
+        } else {
+          dst[d++] = val[s];
+        }
+      }
+    } else {
+      // Double-quoted scalar: standard YAML escapes
+      for (size_t s = 1; s + 1 < vlen; s++) {
+        if (val[s] == '\\' && s + 2 < vlen) {
+          s++;
+          switch (val[s]) {
+          case '0':
+            dst[d++] = '\0';
+            break;
+          case 'a':
+            dst[d++] = '\a';
+            break;
+          case 'b':
+            dst[d++] = '\b';
+            break;
+          case 't':
+            dst[d++] = '\t';
+            break;
+          case 'n':
+            dst[d++] = '\n';
+            break;
+          case 'v':
+            dst[d++] = '\v';
+            break;
+          case 'f':
+            dst[d++] = '\f';
+            break;
+          case 'r':
+            dst[d++] = '\r';
+            break;
+          case 'e':
+            dst[d++] = '\x1b';
+            break;
+          case ' ':
+            dst[d++] = ' ';
+            break;
+          case '"':
+            dst[d++] = '"';
+            break;
+          case '/':
+            dst[d++] = '/';
+            break;
+          case '\\':
+            dst[d++] = '\\';
+            break;
+          case 'x': {
+            if (s + 2 < vlen) {
+              int h1 = hex_val(val[s + 1]);
+              int h2 = hex_val(val[s + 2]);
+              if (h1 >= 0 && h2 >= 0) {
+                dst[d++] = (char)((h1 << 4) | h2);
+                s += 2;
+                break;
+              }
+            }
+            dst[d++] = 'x';
+            break;
+          }
+          case 'u': {
+            if (s + 4 < vlen) {
+              int h1 = hex_val(val[s + 1]);
+              int h2 = hex_val(val[s + 2]);
+              int h3 = hex_val(val[s + 3]);
+              int h4 = hex_val(val[s + 4]);
+              if (h1 >= 0 && h2 >= 0 && h3 >= 0 && h4 >= 0) {
+                uint32_t cp =
+                    (uint32_t)((h1 << 12) | (h2 << 8) | (h3 << 4) | h4);
+                s += 4;
+                if (cp <= 0x7F) {
+                  dst[d++] = (char)cp;
+                } else if (cp <= 0x7FF) {
+                  dst[d++] = (char)(0xC0 | ((cp >> 6) & 0x1F));
+                  dst[d++] = (char)(0x80 | (cp & 0x3F));
+                } else {
+                  dst[d++] = (char)(0xE0 | ((cp >> 12) & 0x0F));
+                  dst[d++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                  dst[d++] = (char)(0x80 | (cp & 0x3F));
+                }
+                break;
+              }
+            }
+            dst[d++] = 'u';
+            break;
+          }
+          default:
+            dst[d++] = val[s];
+            break;
+          }
+        } else {
+          dst[d++] = val[s];
+        }
+      }
+    }
+    dst[d] = '\0';
+    return dst;
+  }
+  return strdup(val);
 }
 
 /**
@@ -256,50 +394,13 @@ bool dsp_state_load(const char *filename, dsp_state_t *out_state) {
       while (*val == ' ' || *val == '\t')
         val++;
       if (strcmp(val, "null") != 0 && strcmp(val, "~") != 0 && val[0] != '\0') {
-        // strip quotes if any and unescape
-        if (val[0] == '"' || val[0] == '\'') {
-          char quote_char = val[0];
-          size_t vlen = strlen(val);
-          if (vlen >= 2 && val[vlen - 1] == quote_char) {
-            char *dst = (char *)malloc(vlen);
-            if (!dst) {
-              valid = false;
-              break;
-            }
-            size_t d = 0;
-            for (size_t s = 1; s + 1 < vlen; s++) {
-              if (quote_char == '"' && val[s] == '\\' && s + 2 < vlen) {
-                s++;
-                if (val[s] == '"')
-                  dst[d++] = '"';
-                else if (val[s] == '\\')
-                  dst[d++] = '\\';
-                else if (val[s] == 'n')
-                  dst[d++] = '\n';
-                else if (val[s] == 't')
-                  dst[d++] = '\t';
-                else {
-                  dst[d++] = '\\';
-                  if (d + 1 < vlen) {
-                    dst[d++] = val[s];
-                  }
-                }
-              } else {
-                dst[d++] = val[s];
-              }
-            }
-            dst[d] = '\0';
-            free(out_state->config_path);
-            out_state->config_path = dst;
-          } else {
-            free(out_state->config_path);
-            out_state->config_path = strdup(val + 1);
-          }
-        } else {
-          free(out_state->config_path);
-          out_state->config_path = strdup(val);
+        free(out_state->config_path);
+        out_state->config_path = unescape_yaml_scalar(val);
+        if (!out_state->config_path) {
+          valid = false;
+          break;
         }
-        out_state->has_config_path = (out_state->config_path != NULL);
+        out_state->has_config_path = true;
       }
     } else if (strncmp(trimmed, "mute:", 5) == 0) {
       if (seen_mute) {
@@ -398,7 +499,7 @@ bool dsp_state_load(const char *filename, dsp_state_t *out_state) {
   // caller then uses nothing from the file. Partially parsed state must not be
   // reported as success: doing so used to adopt `config_path` while resetting
   // every fader to 0 dB and unmuted.
-  if (!valid || !seen_config_path || !seen_mute || !seen_volume ||
+  if (!valid || !seen_mute || !seen_volume ||
       mute_idx != 5 || vol_idx != 5) {
     logger_warn(&g_logger, "Invalid statefile, ignoring: %s", filename);
     free(out_state->config_path);
@@ -475,15 +576,39 @@ bool dsp_state_save(const char *filename, const dsp_state_t *state) {
     }
   }
 
-  fflush(fp);
+  bool write_ok = true;
+  if (ferror(fp)) {
+    write_ok = false;
+  }
+  if (fflush(fp) != 0) {
+    write_ok = false;
+  }
 #ifdef _WIN32
-  _commit(fileno(fp));
+  if (_commit(fileno(fp)) != 0) {
+    write_ok = false;
+  }
 #elif defined(__APPLE__)
-  fcntl(fileno(fp), F_FULLFSYNC);
+  if (fcntl(fileno(fp), F_FULLFSYNC) == -1) {
+    write_ok = false;
+  }
 #else
-  fsync(fileno(fp));
+  if (fsync(fileno(fp)) != 0) {
+    write_ok = false;
+  }
 #endif
-  fclose(fp);
+  if (fclose(fp) != 0) {
+    write_ok = false;
+  }
+
+  if (!write_ok) {
+    logger_error(
+        &g_logger,
+        "Failed to write, flush, fsync, or close temporary state file %s",
+        tmp_name);
+    remove(tmp_name);
+    free(tmp_name);
+    return false;
+  }
 
 #ifdef _WIN32
   if (!MoveFileExA(tmp_name, filename,

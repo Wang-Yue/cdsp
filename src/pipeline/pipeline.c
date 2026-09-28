@@ -262,7 +262,7 @@ static pipeline_error_t execute_mixer_step(pipeline_t *pipeline,
                                            const pipeline_exec_step_t *step,
                                            audio_chunk_t **inout_current_chunk,
                                            size_t *inout_mixer_idx,
-                                           size_t valid_frames) {
+                                           size_t frames) {
   size_t mixer_idx = *inout_mixer_idx;
   if (mixer_idx >= pipeline->scratches_for_mixers_count) {
     logger_warn(&g_logger,
@@ -276,11 +276,11 @@ static pipeline_error_t execute_mixer_step(pipeline_t *pipeline,
   if (err != MIXER_OK) {
     if (err == MIXER_ERR_INPUT_SIZE_MISMATCH) {
       pipeline->last_error_needed = pipeline->frames_per_chunk;
-      pipeline->last_error_got = valid_frames;
+      pipeline->last_error_got = frames;
       return PIPELINE_ERR_INPUT_SIZE_MISMATCH;
     }
     if (err == MIXER_ERR_OUTPUT_BUFFER_TOO_SMALL) {
-      pipeline->last_error_needed = valid_frames;
+      pipeline->last_error_needed = frames;
       pipeline->last_error_got = audio_chunk_get_frames(scratch);
       return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
     }
@@ -306,6 +306,10 @@ pipeline_error_t pipeline_process(pipeline_t *pipeline,
   if (!pipeline || !input || !output)
     return PIPELINE_ERR_INPUT_SIZE_MISMATCH;
   size_t valid_frames = audio_chunk_get_valid_frames(input);
+  size_t frames = audio_chunk_get_frames(input);
+  if (frames > pipeline->frames_per_chunk) {
+    frames = pipeline->frames_per_chunk;
+  }
 
   // 1. Validate input and output buffer shapes/capacities against pipeline
   // configurations.
@@ -333,11 +337,11 @@ pipeline_error_t pipeline_process(pipeline_t *pipeline,
     pipeline->last_error_got = audio_chunk_get_channels(output);
     return PIPELINE_ERR_CHANNEL_COUNT_MISMATCH;
   }
-  if (audio_chunk_get_frames(output) < valid_frames) {
+  if (audio_chunk_get_frames(output) < frames) {
     logger_warn(&g_logger,
                 "Pipeline output buffer too small: needed %zu, got %zu",
-                valid_frames, audio_chunk_get_frames(output));
-    pipeline->last_error_needed = valid_frames;
+                frames, audio_chunk_get_frames(output));
+    pipeline->last_error_needed = frames;
     pipeline->last_error_got = audio_chunk_get_frames(output);
     return PIPELINE_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
@@ -351,8 +355,8 @@ pipeline_error_t pipeline_process(pipeline_t *pipeline,
     waveform_t src = audio_chunk_get_channel(input, ch);
     mutable_waveform_t dst =
         audio_chunk_get_channel(pipeline->capture_scratch, ch);
-    if (src && dst && valid_frames > 0) {
-      memcpy(dst, src, valid_frames * sizeof(double));
+    if (src && dst && frames > 0) {
+      memcpy(dst, src, frames * sizeof(double));
     }
   }
   audio_chunk_set_valid_frames(pipeline->capture_scratch, valid_frames);
@@ -360,19 +364,21 @@ pipeline_error_t pipeline_process(pipeline_t *pipeline,
   audio_chunk_t *current_chunk = pipeline->capture_scratch;
 
   // 3. Implicit main volume with smooth ramp.
-  volume_filter_prepare_chunk(pipeline->master_volume);
-  for (size_t ch = 0; ch < audio_chunk_get_channels(current_chunk); ch++) {
-    if (pipeline->used_capture_channels &&
-        current_chunk == pipeline->capture_scratch &&
-        !pipeline->used_capture_channels[ch]) {
-      continue;
+  if (pipeline->master_volume) {
+    volume_filter_prepare_chunk(pipeline->master_volume);
+    for (size_t ch = 0; ch < audio_chunk_get_channels(current_chunk); ch++) {
+      if (pipeline->used_capture_channels &&
+          current_chunk == pipeline->capture_scratch &&
+          !pipeline->used_capture_channels[ch]) {
+        continue;
+      }
+      mutable_waveform_t buf = audio_chunk_get_channel(current_chunk, ch);
+      if (buf && frames > 0) {
+        g_volume_vtable.process(pipeline->master_volume, buf, frames);
+      }
     }
-    mutable_waveform_t buf = audio_chunk_get_channel(current_chunk, ch);
-    if (buf && valid_frames > 0) {
-      g_volume_vtable.process(pipeline->master_volume, buf, valid_frames);
-    }
+    volume_filter_advance_ramp(pipeline->master_volume);
   }
-  volume_filter_advance_ramp(pipeline->master_volume);
 
   // 4. Execute pipeline steps sequentially.
   size_t mixer_idx = 0;
@@ -381,15 +387,15 @@ pipeline_error_t pipeline_process(pipeline_t *pipeline,
     switch (step->type) {
     case EXEC_STEP_BIQUAD:
       if (step->biquad_step) {
-        execute_biquad_step(step->biquad_step, current_chunk, valid_frames);
+        execute_biquad_step(step->biquad_step, current_chunk, frames);
       }
       break;
     case EXEC_STEP_PARALLEL_FILTERS:
-      execute_parallel_filters(pipeline, step, current_chunk, valid_frames);
+      execute_parallel_filters(pipeline, step, current_chunk, frames);
       break;
     case EXEC_STEP_MIXER: {
       pipeline_error_t err = execute_mixer_step(pipeline, step, &current_chunk,
-                                                &mixer_idx, valid_frames);
+                                                &mixer_idx, frames);
       if (err != PIPELINE_OK) {
         return err;
       }
@@ -409,19 +415,20 @@ pipeline_error_t pipeline_process(pipeline_t *pipeline,
   size_t current_channels = audio_chunk_get_channels(current_chunk);
   for (size_t ch = 0; ch < pipeline->expected_out_channels; ch++) {
     mutable_waveform_t dst = audio_chunk_get_channel(output, ch);
-    if (!dst || valid_frames == 0)
+    if (!dst || frames == 0)
       continue;
     if (ch < current_channels) {
       waveform_t src = audio_chunk_get_channel(current_chunk, ch);
       if (src) {
-        memcpy(dst, src, valid_frames * sizeof(double));
+        memcpy(dst, src, frames * sizeof(double));
       } else {
-        dsp_ops_clear(dst, valid_frames);
+        dsp_ops_clear(dst, frames);
       }
     } else {
-      dsp_ops_clear(dst, valid_frames);
+      dsp_ops_clear(dst, frames);
     }
   }
+
   return PIPELINE_OK;
 }
 

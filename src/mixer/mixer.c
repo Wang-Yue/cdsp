@@ -180,7 +180,7 @@ mixer_error_t mixer_process(mixer_t *mixer, const audio_chunk_t *input,
                             audio_chunk_t *output) {
   if (!mixer || !input || !output)
     return MIXER_ERR_INPUT_SIZE_MISMATCH;
-  size_t frames = audio_chunk_get_valid_frames(input);
+  size_t frames = audio_chunk_get_frames(input);
   if (frames > mixer->chunk_size) {
     logger_warn(&g_logger,
                 "Mixer '%s' input frame count exceeds chunk_size: %zu > %zu",
@@ -238,7 +238,7 @@ mixer_error_t mixer_process(mixer_t *mixer, const audio_chunk_t *input,
     }
   }
 
-  audio_chunk_set_valid_frames(output, frames);
+  audio_chunk_set_valid_frames(output, audio_chunk_get_valid_frames(input));
   return MIXER_OK;
 }
 
@@ -246,7 +246,7 @@ audio_chunk_t *mixer_process_chunk(mixer_t *mixer, const audio_chunk_t *input) {
   if (!mixer || !input)
     return NULL;
   audio_chunk_t *output = audio_chunk_create(
-      audio_chunk_get_valid_frames(input), mixer->channels_out);
+      audio_chunk_get_frames(input), mixer->channels_out);
   if (!output)
     return NULL;
   if (mixer_process(mixer, input, output) != MIXER_OK) {

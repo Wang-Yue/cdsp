@@ -237,6 +237,16 @@ static int loudness_config_validate(const filter_config_t *config,
   return 0;
 }
 
+static inline double
+get_effective_fader_level_db(const processing_parameters_t *params,
+                             fader_t fader) {
+  if (!params)
+    return 0.0;
+  if (processing_parameters_is_muted_for_fader(params, fader))
+    return -100.0;
+  return processing_parameters_get_current_volume_for_fader(params, fader);
+}
+
 /**
  * @brief Creates a new loudness filter instance.
  *
@@ -289,8 +299,8 @@ static void *loudness_filter_create(const char *name,
     return NULL;
   }
 
-  double init_vol = processing_parameters_get_target_volume_for_fader(
-      filter->processing_parameters, filter->params.fader);
+  double init_vol =
+      get_effective_fader_level_db(filter->processing_parameters, filter->params.fader);
   filter->last_volume = init_vol;
   recompute_shelves(filter, init_vol, true);
 
@@ -312,8 +322,8 @@ static void loudness_filter_process(void *instance, mutable_waveform_t waveform,
   if (!filter->processing_parameters)
     return;
 
-  double current_vol = processing_parameters_get_current_volume_for_fader(
-      filter->processing_parameters, filter->params.fader);
+  double current_vol =
+      get_effective_fader_level_db(filter->processing_parameters, filter->params.fader);
 
   // Recompute filter coefficients only if the volume has changed significantly.
   if (fabs(current_vol - filter->last_volume) > 0.01) {
@@ -357,8 +367,8 @@ static void loudness_filter_transfer_state(void *dest_ptr,
                                  src->high_shelf_filter);
   double current_vol =
       dest->processing_parameters
-          ? processing_parameters_get_current_volume_for_fader(
-                dest->processing_parameters, dest->params.fader)
+          ? get_effective_fader_level_db(dest->processing_parameters,
+                                         dest->params.fader)
           : src->last_volume;
   dest->last_volume = current_vol;
   recompute_shelves(dest, current_vol, false);

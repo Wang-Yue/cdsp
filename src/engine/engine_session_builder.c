@@ -94,7 +94,8 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t *core,
                     : 0);
   }
 
-  double capture_rate = (double)(config->devices.has_capture_samplerate
+  double capture_rate = (double)((config->devices.has_resampler &&
+                                  config->devices.has_capture_samplerate)
                                      ? config->devices.capture_samplerate
                                      : config->devices.samplerate);
 
@@ -231,24 +232,19 @@ static bool engine_session_build_backends(
 static bool engine_session_build_pipeline_and_scratch(
     dsp_session_t *core, dsp_config_t *config, size_t capture_chunk_size,
     size_t playback_chunk_size, audio_backend_error_t *err) {
-  // 5. Allocate scratch chunks for temporary data storage during
-  // processing/resampling.
-  core->resampler_scratch = audio_chunk_create(
-      core->resampler ? resampler_get_max_output_frames(core->resampler)
-                      : capture_chunk_size,
-      capture_device_config_get_channels(&config->devices.capture));
+  (void)capture_chunk_size;
+  // 5. Allocate scratch chunk for pipeline temporary data storage.
   core->pipeline_scratch = audio_chunk_create(
       playback_chunk_size,
       playback_device_config_get_channels(&config->devices.playback));
-  if (!core->resampler_scratch || !core->pipeline_scratch) {
+  if (!core->pipeline_scratch) {
     if (err) {
       err->type = AUDIO_BACKEND_ERR_COMMAND_SEND;
       snprintf(err->message, sizeof(err->message),
-               "Failed to allocate scratch chunks");
+               "Failed to allocate pipeline scratch chunk");
     }
     return false;
   }
-  audio_chunk_set_valid_frames(core->resampler_scratch, 0);
   audio_chunk_set_valid_frames(core->pipeline_scratch, 0);
 
   // 6. Create the DSP processing pipeline.
@@ -276,6 +272,7 @@ static bool engine_session_build_chunk_pools(dsp_session_t *core,
                                              dsp_config_t *config,
                                              size_t capture_chunk_size,
                                              size_t playback_chunk_size) {
+  (void)capture_chunk_size;
   // 7. Pre-allocate chunk pools.
   // Allocate memory for chunk pools ahead of time to guarantee that the capture
   // and processing loop threads never perform dynamic memory allocations on the
@@ -285,7 +282,7 @@ static bool engine_session_build_chunk_pools(dsp_session_t *core,
           engine_shared_state_get_captured_queue(core->shared)) +
       2;
   core->capture_chunk_pool = round_robin_chunk_pool_create(
-      capture_pool_cap, capture_chunk_size,
+      capture_pool_cap, playback_chunk_size,
       capture_device_config_get_channels(&config->devices.capture));
 
   size_t processing_pool_cap =
@@ -324,11 +321,15 @@ static bool engine_session_spawn_worker_threads(dsp_session_t *core,
       .processing_params = core->processing_params,
       .dsd_decoder = core->dsd_decoder,
       .chunk_pool = core->capture_chunk_pool,
+      .resampler = core->resampler,
       .chunk_size = capture_chunk_size,
+      .pipeline_chunk_size = playback_chunk_size,
       .channels = capture_device_config_get_channels(&config->devices.capture),
-      .samplerate = (size_t)(config->devices.has_capture_samplerate
+      .samplerate = (size_t)((config->devices.has_resampler &&
+                              config->devices.has_capture_samplerate)
                                  ? config->devices.capture_samplerate
                                  : config->devices.samplerate),
+      .pipeline_rate = pipeline_rate,
       .used_channels = used_channels,
       .silence_threshold_db = config->devices.has_silence_threshold
                                   ? config->devices.silence_threshold
@@ -349,9 +350,7 @@ static bool engine_session_spawn_worker_threads(dsp_session_t *core,
       .shared = core->shared,
       .processing_params = core->processing_params,
       .pipeline_rate = pipeline_rate,
-      .resampler = core->resampler,
       .pipeline = core->pipeline,
-      .resampler_scratch = core->resampler_scratch,
       .pipeline_scratch = core->pipeline_scratch,
       .scratch_pool = core->processing_scratch_pool,
       .on_chunk_captured = core->on_chunk_captured,
@@ -504,7 +503,8 @@ dsp_session_t *engine_session_build_and_start(
   }
 
   size_t pipeline_rate = config->devices.samplerate;
-  double capture_rate = (double)(config->devices.has_capture_samplerate
+  double capture_rate = (double)((config->devices.has_resampler &&
+                                  config->devices.has_capture_samplerate)
                                      ? config->devices.capture_samplerate
                                      : config->devices.samplerate);
 
@@ -519,12 +519,10 @@ dsp_session_t *engine_session_build_and_start(
   }
 
   size_t requested_chunk_size = config->devices.chunksize;
-  size_t capture_chunk_size = core->resampler
-                                  ? resampler_get_chunk_size(core->resampler)
-                                  : requested_chunk_size;
-  size_t playback_chunk_size =
-      core->resampler ? resampler_get_max_output_frames(core->resampler)
-                      : capture_chunk_size;
+  size_t capture_chunk_size =
+      core->resampler ? resampler_get_max_input_frames(core->resampler)
+                      : requested_chunk_size;
+  size_t playback_chunk_size = requested_chunk_size;
   core->effective_playback_chunk_size = playback_chunk_size;
 
   // Ref: docs/engine_state_management.md - Section 3.1: Startup &

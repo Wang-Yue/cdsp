@@ -625,26 +625,37 @@ STRUCT_BIQUAD = StructType(
     variant_rules=[
         VariantRule(
             tag_value="BIQUAD_TYPE_FREE",
+            allowed_keys=["a1", "a2", "b0", "b1", "b2"],
             required_keys=["a1", "a2", "b0", "b1", "b2"],
             fields=["a1", "a2", "b0", "b1", "b2"]
         ),
         VariantRule(
             tag_value=[
                 "BIQUAD_TYPE_HIGHPASS_FO", "BIQUAD_TYPE_LOWPASS_FO",
-                "BIQUAD_TYPE_HIGHSHELF_FO", "BIQUAD_TYPE_LOWSHELF_FO",
                 "BIQUAD_TYPE_ALLPASS_FO"
             ],
+            allowed_keys=["freq"],
             required_keys=["freq"],
+            fields=["freq"]
+        ),
+        VariantRule(
+            tag_value=[
+                "BIQUAD_TYPE_HIGHSHELF_FO", "BIQUAD_TYPE_LOWSHELF_FO"
+            ],
+            allowed_keys=["freq", "gain"],
+            required_keys=["freq", "gain"],
             fields=["freq", "gain"]
         ),
         VariantRule(
             tag_value=["BIQUAD_TYPE_HIGHPASS", "BIQUAD_TYPE_LOWPASS"],
+            allowed_keys=["freq", "q"],
             required_keys=["freq", "q"],
             fields=["freq", "q"],
             sets_field=("steepness_type", "STEEPNESS_TYPE_Q")
         ),
         VariantRule(
             tag_value="BIQUAD_TYPE_PEAKING",
+            allowed_keys=["freq", "gain", "q", "bandwidth"],
             required_keys=["freq", "gain"],
             fields=["freq", "gain"],
             one_of=[["q", "bandwidth"]],
@@ -655,6 +666,7 @@ STRUCT_BIQUAD = StructType(
         ),
         VariantRule(
             tag_value=["BIQUAD_TYPE_NOTCH", "BIQUAD_TYPE_BANDPASS", "BIQUAD_TYPE_ALLPASS"],
+            allowed_keys=["freq", "q", "bandwidth"],
             required_keys=["freq"],
             fields=["freq"],
             one_of=[["q", "bandwidth"]],
@@ -665,25 +677,24 @@ STRUCT_BIQUAD = StructType(
         ),
         VariantRule(
             tag_value=["BIQUAD_TYPE_HIGHSHELF", "BIQUAD_TYPE_LOWSHELF"],
+            allowed_keys=["freq", "gain", "q", "slope"],
             required_keys=["freq", "gain"],
             fields=["freq", "gain"],
-            any_of_optional=[
-                ("q", ("steepness_type", "STEEPNESS_TYPE_Q")),
-                ("slope", ("steepness_type", "STEEPNESS_TYPE_SLOPE"))
-            ],
-            default_assignments={
-                "q": "1.0 / sqrt(2.0)",
-                "has_q": "true",
-                "steepness_type": "STEEPNESS_TYPE_Q"
+            one_of=[["q", "slope"]],
+            one_of_sets={
+                "q": ("steepness_type", "STEEPNESS_TYPE_Q"),
+                "slope": ("steepness_type", "STEEPNESS_TYPE_SLOPE")
             }
         ),
         VariantRule(
             tag_value="BIQUAD_TYPE_GENERAL_NOTCH",
+            allowed_keys=["freq_z", "freq_p", "q_p", "normalize_at_dc"],
             required_keys=["freq_z", "freq_p", "q_p"],
             fields=["freq_z", "freq_p", "q_p", "normalize_at_dc"]
         ),
         VariantRule(
             tag_value="BIQUAD_TYPE_LINKWITZ_TRANSFORM",
+            allowed_keys=["freq_act", "q_act", "freq_target", "q_target"],
             required_keys=["freq_act", "q_act", "freq_target", "q_target"],
             fields=["freq_act", "q_act", "freq_target", "q_target"]
         ),
@@ -708,22 +719,26 @@ STRUCT_CONVOLUTION = StructType(
     variant_rules=[
         VariantRule(
             tag_value="CONV_TYPE_WAV",
+            allowed_keys=["filename", "channel"],
             required_keys=["filename"],
             fields=["filename", "channel"]
         ),
         VariantRule(
             tag_value="CONV_TYPE_RAW",
+            allowed_keys=["filename", "format", "skip_bytes_lines", "read_bytes_lines"],
             required_keys=["filename"],
             fields=["filename", "format", "skip_bytes_lines", "read_bytes_lines"],
             default_assignments={"format": "TEXT", "has_format": "true"}
         ),
         VariantRule(
             tag_value="CONV_TYPE_VALUES",
+            allowed_keys=["values"],
             required_keys=["values"],
             fields=["values"]
         ),
         VariantRule(
             tag_value="CONV_TYPE_DUMMY",
+            allowed_keys=["length"],
             required_keys=["length"],
             fields=["length"]
         ),
@@ -774,21 +789,25 @@ STRUCT_BIQUAD_COMBO = StructType(
                 "BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS",
                 "BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS"
             ],
+            allowed_keys=["freq", "order"],
             required_keys=["freq", "order"],
             fields=["freq", "order"]
         ),
         VariantRule(
             tag_value="BIQUAD_COMBO_TYPE_TILT",
+            allowed_keys=["gain"],
             required_keys=["gain"],
             fields=["gain"]
         ),
         VariantRule(
             tag_value="BIQUAD_COMBO_TYPE_N_POINT_PEQ",
+            allowed_keys=["bands"],
             required_keys=["bands"],
             fields=["bands"]
         ),
         VariantRule(
             tag_value="BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER",
+            allowed_keys=["freq_min", "freq_max", "gains"],
             required_keys=["gains"],
             fields=["freq_min", "freq_max", "gains"]
         ),
@@ -809,11 +828,38 @@ STRUCT_DITHER = StructType(
     name="dither_config",
     c_type="dither_config_t",
     fields=[
-        Field("type", ENUM_DITHER_TYPE, default="DITHER_TYPE_NONE"),
+        Field("type", ENUM_DITHER_TYPE, required=True),
         Field("bits", TYPE_INT, required=True),
         Field("amplitude", TYPE_DOUBLE, has_flag=True, getter_default=0.0),
     ],
-    allowed_extra_keys=FILTER_EXTRA_KEYS
+    allowed_extra_keys=FILTER_EXTRA_KEYS,
+    variant_tag_field="type",
+    variant_rules=[
+        VariantRule(
+            tag_value="DITHER_TYPE_FLAT",
+            allowed_keys=["bits", "amplitude"],
+            required_keys=["bits", "amplitude"],
+            fields=["bits", "amplitude"]
+        ),
+        VariantRule(
+            tag_value=[
+                "DITHER_TYPE_NONE", "DITHER_TYPE_HIGHPASS",
+                "DITHER_TYPE_FWEIGHTED_441", "DITHER_TYPE_FWEIGHTED_LONG_441",
+                "DITHER_TYPE_FWEIGHTED_SHORT_441", "DITHER_TYPE_GESEMANN_441",
+                "DITHER_TYPE_GESEMANN_48", "DITHER_TYPE_LIPSHITZ_441",
+                "DITHER_TYPE_LIPSHITZ_LONG_441", "DITHER_TYPE_SHIBATA_441",
+                "DITHER_TYPE_SHIBATA_HIGH_441", "DITHER_TYPE_SHIBATA_LOW_441",
+                "DITHER_TYPE_SHIBATA_48", "DITHER_TYPE_SHIBATA_HIGH_48",
+                "DITHER_TYPE_SHIBATA_LOW_48", "DITHER_TYPE_SHIBATA_882",
+                "DITHER_TYPE_SHIBATA_LOW_882", "DITHER_TYPE_SHIBATA_96",
+                "DITHER_TYPE_SHIBATA_LOW_96", "DITHER_TYPE_SHIBATA_192",
+                "DITHER_TYPE_SHIBATA_LOW_192"
+            ],
+            allowed_keys=["bits"],
+            required_keys=["bits"],
+            fields=["bits"]
+        ),
+    ]
 )
 
 STRUCT_CLIPPER = StructType(
@@ -907,6 +953,21 @@ STRUCT_GENERATOR_SIGNAL = StructType(
         Field("type", ENUM_SIGNAL_TYPE, required=True),
         Field("freq", TYPE_DOUBLE, has_flag=True, getter_default=1000.0),
         Field("level", TYPE_DOUBLE, required=True),
+    ],
+    variant_tag_field="type",
+    variant_rules=[
+        VariantRule(
+            tag_value=["SIGNAL_TYPE_SINE", "SIGNAL_TYPE_SQUARE"],
+            allowed_keys=["type", "freq", "level"],
+            required_keys=["freq", "level"],
+            fields=["freq", "level"]
+        ),
+        VariantRule(
+            tag_value="SIGNAL_TYPE_WHITE_NOISE",
+            allowed_keys=["type", "level"],
+            required_keys=["level"],
+            fields=["level"]
+        ),
     ]
 )
 

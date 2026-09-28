@@ -39,10 +39,14 @@ struct engine_capture_loop {
   capture_backend_t *capture;
   processing_parameters_t *processing_params;
   dsd_decoder_t *dsd_decoder;
+  resampler_t *resampler;
+  audio_chunk_t *raw_chunk;
 
   size_t chunk_size;
+  size_t pipeline_chunk_size;
   size_t channels;
   size_t samplerate;
+  size_t pipeline_rate;
   _Atomic bool *used_channels;
   bool *local_channel_mask;
 
@@ -57,6 +61,7 @@ struct engine_capture_loop {
 
   bool pitch_supported;
   double last_applied_pitch;
+  size_t resampler_overloaded_chunks;
 };
 #include <stdlib.h>
 
@@ -81,7 +86,13 @@ engine_capture_loop_create(const engine_capture_loop_config_t *config) {
   loop->processing_params = config->processing_params;
   loop->dsd_decoder = config->dsd_decoder;
   loop->chunk_pool = config->chunk_pool;
+  loop->resampler = config->resampler;
   loop->chunk_size = config->chunk_size;
+  loop->pipeline_chunk_size = config->pipeline_chunk_size > 0
+                                  ? config->pipeline_chunk_size
+                                  : config->chunk_size;
+  loop->pipeline_rate = config->pipeline_rate > 0 ? config->pipeline_rate
+                                                  : config->samplerate;
   loop->channels = config->channels;
   loop->samplerate = config->samplerate;
   if (config->channels > 0) {
@@ -110,6 +121,18 @@ engine_capture_loop_create(const engine_capture_loop_config_t *config) {
     return NULL;
   }
 
+  if (loop->resampler) {
+    size_t max_in = resampler_get_max_input_frames(loop->resampler);
+    if (max_in < config->chunk_size) {
+      max_in = config->chunk_size;
+    }
+    loop->raw_chunk = audio_chunk_create(max_in, config->channels);
+    if (!loop->raw_chunk) {
+      engine_capture_loop_free(loop);
+      return NULL;
+    }
+  }
+
   loop->pending_chunk = NULL;
   loop->captured_drop_counter = 0;
   loop->last_paused_tick_ns = 0;
@@ -135,6 +158,9 @@ void engine_capture_loop_free(engine_capture_loop_t *loop) {
   }
   if (loop->local_channel_mask) {
     free(loop->local_channel_mask);
+  }
+  if (loop->raw_chunk) {
+    audio_chunk_free(loop->raw_chunk);
   }
   free(loop);
 }
@@ -387,7 +413,8 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t *loop,
 
   // Rate Watcher Measurement:
   double measured_rate = 0.0;
-  if (sample_rate_watcher_tick(loop->rate_watcher, loop->chunk_size,
+  size_t valid_frames = audio_chunk_get_valid_frames(chunk);
+  if (sample_rate_watcher_tick(loop->rate_watcher, valid_frames,
                                &measured_rate)) {
     if (sample_rate_watcher_get_stop_on_rate_change(loop->rate_watcher)) {
       logger_warn(&g_logger,
@@ -461,10 +488,59 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t *loop,
   // - While RUNNING, push active audio chunks to captured_queue for downstream
   // processing.
   if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_PAUSED) {
-    loop->pending_chunk = chunk;
+    if (!loop->resampler) {
+      loop->pending_chunk = chunk;
+    }
     capture_loop_send_paused_tick_if_due(loop);
   } else {
-    capture_loop_enqueue_running_chunk(loop, chunk);
+    if (loop->resampler) {
+      double ratio = engine_shared_state_get_resampler_ratio(loop->shared);
+      resampler_set_relative_ratio(loop->resampler, ratio);
+
+      audio_chunk_t *out_chunk = round_robin_chunk_pool_next(loop->chunk_pool);
+      uint64_t res_start = cdsp_time_now_ns();
+      resampler_error_t rerr =
+          resampler_process(loop->resampler, chunk, out_chunk);
+      uint64_t res_end = cdsp_time_now_ns();
+
+      if (rerr != RESAMPLER_OK) {
+        logger_error(&g_logger, "Capture resampler error: %s",
+                     resampler_error_description(rerr));
+        processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
+        snprintf(reason.message, sizeof(reason.message), "Resampler error: %s",
+                 resampler_error_description(rerr));
+        engine_shared_state_request_stop(loop->shared, reason);
+        return true;
+      }
+
+      if (loop->processing_params && loop->pipeline_rate > 0) {
+        size_t nominal_frames = audio_chunk_get_valid_frames(out_chunk);
+        if (nominal_frames > 0) {
+          uint64_t chunk_dur_ns =
+              (uint64_t)nominal_frames * 1000000000ULL / loop->pipeline_rate;
+          if (chunk_dur_ns > 0) {
+            double r_load =
+                ((double)(res_end - res_start) / (double)chunk_dur_ns) * 100.0;
+            processing_parameters_set_resampler_load(loop->processing_params,
+                                                     r_load);
+            if (r_load > 100.0) {
+              loop->resampler_overloaded_chunks++;
+              if (loop->resampler_overloaded_chunks == 10) {
+                logger_warn(&g_logger,
+                            "Resampler is overloaded (load > 100%% for 10 "
+                            "consecutive chunks)");
+              }
+            } else {
+              loop->resampler_overloaded_chunks = 0;
+            }
+          }
+        }
+      }
+
+      capture_loop_enqueue_running_chunk(loop, out_chunk);
+    } else {
+      capture_loop_enqueue_running_chunk(loop, chunk);
+    }
   }
   return false;
 }
@@ -477,6 +553,28 @@ bool engine_capture_loop_step(engine_capture_loop_t *loop) {
   // If the capture backend supports hardware clock pitch tuning, sync to
   // the shared speed ratio published by the playback rate controller.
   capture_loop_update_pitch(loop);
+
+  if (loop->resampler) {
+    if (loop->pending_chunk) {
+      capture_loop_enqueue_running_chunk(loop, loop->pending_chunk);
+      if (loop->pending_chunk) {
+        capture_backend_wait(loop->capture, 5);
+        return false;
+      }
+    }
+
+    size_t needed_frames = resampler_get_input_frames_next(loop->resampler);
+    backend_error_t err;
+    backend_error_init(&err, BACKEND_ERROR_NONE, "");
+
+    bool got_data =
+        capture_backend_read(loop->capture, needed_frames, loop->raw_chunk, &err);
+    if (!got_data) {
+      return capture_loop_handle_no_data(loop, &err);
+    }
+
+    return capture_loop_process_and_enqueue(loop, loop->raw_chunk);
+  }
 
   // Ref: docs/engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule 5)
   // Fetch a chunk buffer from the pre-allocated round-robin pool,

@@ -54,6 +54,14 @@ static int clipper_config_validate(const filter_config_t *config,
                      params->clip_limit);
     return -1;
   }
+  double lin = double_from_db(params->clip_limit);
+  if (lin <= 0.0) {
+    config_error_set(
+        err, CONFIG_ERR_INVALID_FILTER,
+        "Clipper clip_limit %g dB underflows to zero linear limit",
+        params->clip_limit);
+    return -1;
+  }
   return 0;
 }
 

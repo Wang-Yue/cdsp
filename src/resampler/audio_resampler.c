@@ -125,11 +125,11 @@ double resampler_get_ratio(const resampler_t *resampler) {
              : 1.0;
 }
 
-size_t resampler_get_max_output_frames(const resampler_t *resampler) {
-  return (resampler && resampler->vtable &&
-          resampler->vtable->get_max_output_frames)
-             ? resampler->vtable->get_max_output_frames(resampler->impl)
-             : 0;
+size_t resampler_get_max_input_frames(const resampler_t *resampler) {
+  if (resampler && resampler->vtable && resampler->vtable->get_max_input_frames) {
+    return resampler->vtable->get_max_input_frames(resampler->impl);
+  }
+  return resampler ? resampler_get_chunk_size(resampler) : 0;
 }
 
 size_t resampler_get_chunk_size(const resampler_t *resampler) {

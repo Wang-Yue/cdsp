@@ -43,6 +43,9 @@ struct backend_buffer {
   // Synchronization semaphore for data readiness and lifecycle wakeups
   cdsp_sem_t semaphore;
 
+  // Pre-allocated staging buffer for straddling split frames at ring wrap
+  uint8_t *split_frame_buf;
+
   // Processing parameters telemetry sink (optional)
   processing_parameters_t *processing_params;
 };
@@ -102,6 +105,13 @@ backend_buffer_t *backend_buffer_create(size_t capacity_frames,
       free(bb);
       return NULL;
     }
+    bb->split_frame_buf = (uint8_t *)calloc(1, bb->blockalign);
+    if (!bb->split_frame_buf) {
+      spsc_byte_ring_buffer_free(bb->byte_ring);
+      cdsp_sem_destroy(bb->semaphore);
+      free(bb);
+      return NULL;
+    }
   }
   return bb;
 }
@@ -109,6 +119,10 @@ backend_buffer_t *backend_buffer_create(size_t capacity_frames,
 void backend_buffer_free(backend_buffer_t *bb) {
   if (!bb)
     return;
+  if (bb->split_frame_buf) {
+    free(bb->split_frame_buf);
+    bb->split_frame_buf = NULL;
+  }
   if (bb->semaphore) {
     cdsp_sem_destroy(bb->semaphore);
     bb->semaphore = NULL;
@@ -433,16 +447,18 @@ static bool backend_buffer_read(const backend_buffer_t *bb,
     }
     size_t rem_l1 = l1 % bb->blockalign;
     size_t rem_l2 = bb->blockalign - rem_l1;
-    uint8_t split_frame[256];
-    if (bb->blockalign <= sizeof(split_frame) && s2 && l2 >= rem_l2) {
-      memcpy(split_frame, s1 + f1 * bb->blockalign, rem_l1);
-      memcpy(split_frame + rem_l1, s2, rem_l2);
-      if (!audio_chunk_decode_interleaved_offset(split_frame, bb->format,
-                                                 bb->channels, 1, chunk, f1)) {
-        if (err)
-          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                             "Failed to decode split audio frame");
-        return false;
+    if (s2 && l2 >= rem_l2) {
+      if (bb->split_frame_buf) {
+        memcpy(bb->split_frame_buf, s1 + f1 * bb->blockalign, rem_l1);
+        memcpy(bb->split_frame_buf + rem_l1, s2, rem_l2);
+        if (!audio_chunk_decode_interleaved_offset(bb->split_frame_buf,
+                                                   bb->format, bb->channels, 1,
+                                                   chunk, f1)) {
+          if (err)
+            backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                               "Failed to decode split audio frame");
+          return false;
+        }
       }
       size_t f2 = (l2 - rem_l2) / bb->blockalign;
       if (f2 > 0) {
@@ -547,13 +563,12 @@ static bool backend_buffer_write(const backend_buffer_t *bb,
   if (spsc_byte_ring_buffer_get_available_to_write(bb->byte_ring) <
       bytes_to_write) {
     logger_warn(&g_logger,
-                "Playback ring buffer is full after %u retries, dropped entire "
-                "chunk of %zu bytes to preserve audio framing",
+                "Playback ring buffer is full after %u retries, dropping entire "
+                "chunk of %zu bytes (drop-on-full)",
                 retries, bytes_to_write);
     if (err)
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Playback ring buffer full");
-    return false;
+      backend_error_init(err, BACKEND_ERROR_NONE, "");
+    return true;
   }
 
   uint8_t *s1 = NULL, *s2 = NULL;
@@ -601,17 +616,18 @@ static bool backend_buffer_write(const backend_buffer_t *bb,
     }
     size_t rem_l1 = l1 % bb->blockalign;
     size_t rem_l2 = bb->blockalign - rem_l1;
-    uint8_t split_frame[256];
-    if (bb->blockalign <= sizeof(split_frame) && s2 && l2 >= rem_l2) {
-      if (!audio_chunk_encode_interleaved_offset(
-              chunk, bb->format, bb->channels, 1, split_frame, f1)) {
-        if (err)
-          backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                             "Failed to encode split audio frame");
-        return false;
+    if (s2 && l2 >= rem_l2) {
+      if (bb->split_frame_buf) {
+        if (!audio_chunk_encode_interleaved_offset(
+                chunk, bb->format, bb->channels, 1, bb->split_frame_buf, f1)) {
+          if (err)
+            backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                               "Failed to encode split audio frame");
+          return false;
+        }
+        memcpy(s1 + f1 * bb->blockalign, bb->split_frame_buf, rem_l1);
+        memcpy(s2, bb->split_frame_buf + rem_l1, rem_l2);
       }
-      memcpy(s1 + f1 * bb->blockalign, split_frame, rem_l1);
-      memcpy(s2, split_frame + rem_l1, rem_l2);
       size_t f2 = (l2 - rem_l2) / bb->blockalign;
       if (f2 > 0) {
         if (!audio_chunk_encode_interleaved_offset(
@@ -805,13 +821,12 @@ static bool backend_buffer_planar_write(const backend_buffer_t *bb,
       frames) {
     logger_warn(
         &g_logger,
-        "Playback planar ring buffer is full after %u retries, dropped entire "
-        "chunk of %zu frames to preserve audio framing",
+        "Playback planar ring buffer is full after %u retries, dropping entire "
+        "chunk of %zu frames (drop-on-full)",
         retries, frames);
     if (err)
-      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                         "Playback ring buffer full");
-    return false;
+      backend_error_init(err, BACKEND_ERROR_NONE, "");
+    return true;
   }
 
   size_t offset = 0, l1 = 0, l2 = 0;

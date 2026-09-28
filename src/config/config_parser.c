@@ -31,6 +31,21 @@
 
 static const logger_t g_logger = {"dsp.config.parser"};
 
+static char g_default_base_dir[1024] = {0};
+
+void dsp_config_set_base_dir(const char *dir) {
+  if (dir && dir[0] != '\0') {
+    strncpy(g_default_base_dir, dir, sizeof(g_default_base_dir) - 1);
+    g_default_base_dir[sizeof(g_default_base_dir) - 1] = '\0';
+  } else {
+    g_default_base_dir[0] = '\0';
+  }
+}
+
+const char *dsp_config_get_base_dir(void) {
+  return g_default_base_dir[0] != '\0' ? g_default_base_dir : NULL;
+}
+
 static int compare_named_filters(const void *a, const void *b) {
   const char *na = ((const named_filter_config_t *)a)->name;
   const char *nb = ((const named_filter_config_t *)b)->name;
@@ -453,24 +468,11 @@ static void replace_tokens_in_config(dsp_config_t *config, int samplerate,
   if (!config)
     return;
   for (size_t i = 0; i < config->filters_count; i++) {
-    replace_tokens_in_string(config->filters[i].name,
-                             sizeof(config->filters[i].name), samplerate,
-                             channels);
     if (config->filters[i].filter.type == FILTER_TYPE_CONV) {
       conv_config_t *conv = &config->filters[i].filter.parameters.conv;
       replace_tokens_in_string(conv->filename, sizeof(conv->filename),
                                samplerate, channels);
     }
-  }
-  for (size_t i = 0; i < config->mixers_count; i++) {
-    replace_tokens_in_string(config->mixers[i].name,
-                             sizeof(config->mixers[i].name), samplerate,
-                             channels);
-  }
-  for (size_t i = 0; i < config->processors_count; i++) {
-    replace_tokens_in_string(config->processors[i].name,
-                             sizeof(config->processors[i].name), samplerate,
-                             channels);
   }
   for (size_t i = 0; i < config->pipeline_count; i++) {
     pipeline_step_config_t *step = &config->pipeline[i];
@@ -494,6 +496,22 @@ static void replace_tokens_in_config(dsp_config_t *config, int samplerate,
   }
 }
 
+static bool is_absolute_path(const char *path) {
+  if (!path || path[0] == '\0')
+    return false;
+  if (path[0] == '/')
+    return true;
+#if defined(_WIN32)
+  if (((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z')) &&
+      path[1] == ':') {
+    return true;
+  }
+  if (path[0] == '\\')
+    return true;
+#endif
+  return false;
+}
+
 static void resolve_relative_paths(dsp_config_t *config,
                                    const char *config_dir) {
   if (!config || !config_dir || config_dir[0] == '\0')
@@ -502,11 +520,14 @@ static void resolve_relative_paths(dsp_config_t *config,
     if (config->filters[i].filter.type == FILTER_TYPE_CONV) {
       conv_config_t *conv = &config->filters[i].filter.parameters.conv;
       const char *str = conv->filename;
-      if (str[0] != '\0' && str[0] != '/' &&
-          !(strlen(str) >= 2 && str[1] == ':')) {
+      if (str[0] != '\0' && !is_absolute_path(str)) {
         char resolved[1024];
         size_t dir_len = strlen(config_dir);
-        bool needs_slash = (dir_len > 0 && config_dir[dir_len - 1] != '/');
+        bool needs_slash = (dir_len > 0 && config_dir[dir_len - 1] != '/'
+#if defined(_WIN32)
+                            && config_dir[dir_len - 1] != '\\'
+#endif
+        );
         int n = snprintf(resolved, sizeof(resolved), "%s%s%s", config_dir,
                          needs_slash ? "/" : "", str);
         if (n >= 0 && (size_t)n < sizeof(resolved)) {
@@ -615,8 +636,11 @@ int dsp_config_parse_json_with_dir_and_overrides_ext(
     replace_tokens_in_config(config, final_sr, final_ch);
   }
 
-  if (config_dir && config_dir[0] != '\0') {
-    resolve_relative_paths(config, config_dir);
+  const char *effective_dir = (config_dir && config_dir[0] != '\0')
+                                  ? config_dir
+                                  : (g_default_base_dir[0] != '\0' ? g_default_base_dir : NULL);
+  if (effective_dir) {
+    resolve_relative_paths(config, effective_dir);
   }
 
   // Sort filters, mixers, and processors alphabetically by name to make config

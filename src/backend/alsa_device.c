@@ -785,7 +785,15 @@ bool alsa_device_prime_delay(snd_pcm_t *pcm, size_t target_level,
     size_t frames_to_write = (silence_bytes - bytes_written) / blockalign;
     snd_pcm_sframes_t rc = snd_pcm_writei(pcm, slice, frames_to_write);
     if (rc == 0) {
-      if (snd_pcm_wait(pcm, (int)timeout_millis) <= 0) {
+      int wait_rc = snd_pcm_wait(pcm, (int)timeout_millis);
+      if (wait_rc < 0) {
+        if (wait_rc != -EINTR && wait_rc != -EPIPE && wait_rc != -ESTRPIPE) {
+          logger_error(&g_alsa_dev_logger,
+                       "Wait error while priming playback delay: %s",
+                       snd_strerror(wait_rc));
+          return false;
+        }
+      } else if (wait_rc == 0) {
         logger_warn(&g_alsa_dev_logger,
                     "Timed out while priming playback delay");
         return false;
@@ -795,7 +803,15 @@ bool alsa_device_prime_delay(snd_pcm_t *pcm, size_t target_level,
     } else {
       int err = (int)rc;
       if (err == -EAGAIN) {
-        if (snd_pcm_wait(pcm, (int)timeout_millis) <= 0) {
+        int wait_rc = snd_pcm_wait(pcm, (int)timeout_millis);
+        if (wait_rc < 0) {
+          if (wait_rc != -EINTR && wait_rc != -EPIPE && wait_rc != -ESTRPIPE) {
+            logger_error(&g_alsa_dev_logger,
+                         "Wait error while waiting to prime playback delay: %s",
+                         snd_strerror(wait_rc));
+            return false;
+          }
+        } else if (wait_rc == 0) {
           logger_warn(&g_alsa_dev_logger,
                       "Timed out while waiting to prime playback delay");
           return false;

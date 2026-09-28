@@ -496,9 +496,8 @@ static void resampler_iter(int i, void *ctx) {
 static void run_resampler_hot_path(resampler_t *resampler, int channels,
                                    const char *label) {
   int cs = (int)resampler_get_chunk_size(resampler);
-  int max_out = (int)resampler_get_max_output_frames(resampler);
   audio_chunk_t **inputs = make_random_chunks(32, channels, cs, 1.0);
-  audio_chunk_t *output = audio_chunk_create(max_out, channels);
+  audio_chunk_t *output = audio_chunk_create(cs, channels);
   resampler_test_ctx_t ctx = {resampler, inputs, 32, output};
   assert_allocation_free(label, 0, 30, resampler_iter, &ctx);
   free_chunks(inputs, 32);
@@ -1179,7 +1178,6 @@ TEST(PipelineReload_AllocationFree) {
   ASSERT_TRUE(shared != NULL);
   engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
 
-  audio_chunk_t *resampler_scratch = audio_chunk_create(1024, 2);
   audio_chunk_t *pipeline_scratch = audio_chunk_create(1024, 2);
 
   round_robin_chunk_pool_t *scratch_pool =
@@ -1200,9 +1198,7 @@ TEST(PipelineReload_AllocationFree) {
       .shared = shared,
       .processing_params = params,
       .pipeline_rate = 44100,
-      .resampler = NULL,
       .pipeline = initial_pipeline,
-      .resampler_scratch = resampler_scratch,
       .pipeline_scratch = pipeline_scratch,
       .scratch_pool = scratch_pool,
       .on_chunk_captured = on_chunk_captured_cb,
@@ -1252,7 +1248,6 @@ TEST(PipelineReload_AllocationFree) {
   }
 
   audio_chunk_free(ctx.input_chunk);
-  audio_chunk_free(resampler_scratch);
   audio_chunk_free(pipeline_scratch);
   round_robin_chunk_pool_free(scratch_pool);
   engine_shared_state_free(shared);
@@ -1458,7 +1453,6 @@ TEST(EngineProcessingLoop_AllocationFree) {
   ASSERT_TRUE(shared != NULL);
   engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
 
-  audio_chunk_t *resampler_scratch = audio_chunk_create(1024, 2);
   audio_chunk_t *pipeline_scratch = audio_chunk_create(1024, 2);
   round_robin_chunk_pool_t *scratch_pool =
       round_robin_chunk_pool_create(32, 1024, 2);
@@ -1476,9 +1470,7 @@ TEST(EngineProcessingLoop_AllocationFree) {
       .shared = shared,
       .processing_params = params,
       .pipeline_rate = 44100,
-      .resampler = NULL,
       .pipeline = pipeline,
-      .resampler_scratch = resampler_scratch,
       .pipeline_scratch = pipeline_scratch,
       .scratch_pool = scratch_pool,
       .on_chunk_captured = NULL,
@@ -1518,7 +1510,6 @@ TEST(EngineProcessingLoop_AllocationFree) {
 
   engine_processing_loop_free(loop);
   audio_chunk_free(ctx.input_chunk);
-  audio_chunk_free(resampler_scratch);
   audio_chunk_free(pipeline_scratch);
   round_robin_chunk_pool_free(scratch_pool);
   engine_shared_state_free(shared);

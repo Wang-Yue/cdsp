@@ -43,6 +43,7 @@ struct wasapi_playback {
   bool has_format;
   bool exclusive;
   bool polling;
+  size_t target_level;
 
   binary_sample_format_t bin_fmt;
   size_t bytes_per_sample;
@@ -312,8 +313,9 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
   playback->blockalign =
       (size_t)playback->channels * playback->bytes_per_sample;
 
-  // Allocate backend buffer matching upstream CamillaDSP
-  size_t ring_frames = 2 * (size_t)playback->chunk_size + 2048;
+  // Allocate backend buffer matching upstream CamillaDSP with target_level headroom
+  size_t ring_frames =
+      2 * (size_t)playback->chunk_size + playback->target_level + 2048;
   playback->buffer = backend_buffer_create(
       ring_frames, playback->bin_fmt, playback->channels,
       (double)playback->sample_rate, false, playback->params);
@@ -324,8 +326,7 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
     }
     goto error_cleanup;
   }
-  backend_buffer_set_target_level(playback->buffer,
-                                  (size_t)playback->chunk_size);
+  backend_buffer_set_target_level(playback->buffer, playback->target_level);
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
 
   if (pthread_create(&playback->inner_thread, NULL, wasapi_playback_loop,
@@ -487,6 +488,10 @@ wasapi_playback_create(const playback_device_config_t *config, int sample_rate,
       config->cfg.wasapi.has_exclusive ? config->cfg.wasapi.exclusive : false;
   playback->polling =
       config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
+  playback->target_level = (config->cfg.wasapi.has_target_level &&
+                            config->cfg.wasapi.target_level > 0)
+                               ? (size_t)config->cfg.wasapi.target_level
+                               : (size_t)chunk_size;
   playback->params = params;
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));

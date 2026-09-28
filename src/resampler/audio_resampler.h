@@ -48,7 +48,7 @@ typedef struct resampler_vtable {
                                audio_chunk_t *output);
   void (*set_relative_ratio)(void *impl, double multiplier);
   double (*get_ratio)(const void *impl);
-  size_t (*get_max_output_frames)(const void *impl);
+  size_t (*get_max_input_frames)(const void *impl);
   size_t (*get_chunk_size)(const void *impl);
   size_t (*get_input_frames_next)(const void *impl);
   size_t (*get_output_frames_next)(const void *impl);
@@ -81,11 +81,13 @@ int resampler_config_validate(const resampler_config_t *config,
 /**
  * @brief Creates a resampler based on the provided configuration.
  *
+ * Configured for fixed-size output chunks equal to `chunk_size`.
+ *
  * @param config Configuration parameters for the resampler.
  * @param input_rate Input sample rate in Hz.
  * @param output_rate Output sample rate in Hz.
  * @param channels Number of audio channels.
- * @param chunk_size Fixed number of input frames expected per process call.
+ * @param chunk_size Fixed number of output frames produced per process call.
  * @param err Pointer to a config error struct to populate on failure.
  * @return A new resampler instance, or NULL on error.
  */
@@ -103,10 +105,9 @@ resampler_t *resampler_create_from_config(const resampler_config_t *config,
  * @param resampler The resampler instance.
  * @param input The input audio chunk. `input->validFrames` must equal
  * `chunk_size`.
- * @param output The output audio chunk. Must have capacity for at least the
- * worst-case number of output frames (see @ref
- * resampler_get_max_output_frames). This function updates
- * `output->validFrames` with the actual number of frames written.
+ * @param output The output audio chunk. Must have capacity for at least
+ * `chunk_size` frames. This function updates `output->validFrames` with
+ * the actual number of frames written.
  * @return @ref RESAMPLER_OK on success, or an error code on failure.
  */
 resampler_error_t resampler_process(resampler_t *resampler,
@@ -136,15 +137,15 @@ void resampler_set_relative_ratio(resampler_t *resampler, double multiplier);
 double resampler_get_ratio(const resampler_t *resampler);
 
 /**
- * @brief Gets the maximum number of output frames that could be generated.
+ * @brief Gets the maximum number of input frames that could be required.
  *
- * Use this to size the output buffer before calling @ref
+ * Use this to size the raw capture staging buffer before calling @ref
  * resampler_process.
  *
  * @param resampler The resampler instance.
- * @return The maximum number of output frames.
+ * @return The maximum number of input frames.
  */
-size_t resampler_get_max_output_frames(const resampler_t *resampler);
+size_t resampler_get_max_input_frames(const resampler_t *resampler);
 
 /**
  * @brief Gets the fixed input chunk size expected by the resampler.

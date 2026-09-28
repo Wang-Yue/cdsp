@@ -91,12 +91,16 @@ static void *alsa_playback_inner_thread_func(void *arg) {
 
   while (backend_buffer_get_state(playback->buffer) != BACKEND_STREAM_STOPPED) {
     if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED) {
-      if (playback->can_pause && !playback->currently_paused) {
-        snd_pcm_pause(playback->pcm, 1);
-        playback->currently_paused = true;
+      if (playback->can_pause) {
+        if (!playback->currently_paused) {
+          snd_pcm_pause(playback->pcm, 1);
+          playback->currently_paused = true;
+        }
+        cdsp_sleep_ms(5);
+        continue;
       }
-      cdsp_sleep_ms(5);
-      continue;
+      // Hardware does not support pause: fall through so the keep-alive
+      // silence path keeps the device fed and prevents XRUN.
     } else {
       if (playback->can_pause && playback->currently_paused) {
         snd_pcm_pause(playback->pcm, 0);
@@ -225,16 +229,16 @@ static void *alsa_playback_inner_thread_func(void *arg) {
             }
             playback->device_stalled = true;
           }
-          if (++no_progress > max_no_progress) {
-            logger_error(&g_logger,
-                         "PB: no progress after %d stall attempts, aborting",
-                         max_no_progress);
+          continue;
+        } else if (wait_rc == -EPIPE) {
+          logger_debug(&g_logger, "PB: wait underrun, trying to recover");
+          no_progress = 0;
+          if (snd_pcm_prepare(playback->pcm) < 0) {
             write_fatal = true;
             break;
           }
           continue;
-        } else if (wait_rc < 0 && wait_rc != -EPIPE && wait_rc != -ESTRPIPE &&
-                   wait_rc != -EINTR) {
+        } else if (wait_rc < 0 && wait_rc != -ESTRPIPE && wait_rc != -EINTR) {
           logger_error(&g_logger, "PB: wait error: %s", snd_strerror(wait_rc));
           write_fatal = true;
           break;
@@ -249,16 +253,23 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           remainder_frames -= (size_t)rc;
           no_progress = 0;
         } else if (rc == 0 || rc == -EAGAIN || rc == -EINTR) {
-          if (++no_progress > max_no_progress) {
-            logger_error(&g_logger,
-                         "PB: no write progress after %d attempts, "
-                         "treating device as stalled",
-                         max_no_progress);
-            write_fatal = true;
-            break;
+          if (!playback->device_stalled && ++no_progress > max_no_progress) {
+            logger_warn(&g_logger,
+                        "PB: no write progress after %d attempts, "
+                        "treating device as stalled",
+                        max_no_progress);
+            playback->device_stalled = true;
           }
           int wr = snd_pcm_wait(playback->pcm, 10);
-          if (wr < 0 && wr != -EPIPE && wr != -ESTRPIPE && wr != -EINTR) {
+          if (wr == -EPIPE) {
+            logger_debug(&g_logger, "PB: wait underrun, trying to recover");
+            no_progress = 0;
+            if (snd_pcm_prepare(playback->pcm) < 0) {
+              write_fatal = true;
+              break;
+            }
+            continue;
+          } else if (wr < 0 && wr != -ESTRPIPE && wr != -EINTR) {
             logger_error(&g_logger, "PB: wait error: %s", snd_strerror(wr));
             write_fatal = true;
             break;
@@ -364,8 +375,24 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           if (snd_pcm_prepare(playback->pcm) < 0) {
             break;
           }
+          if (!alsa_device_prime_delay(
+                  playback->pcm, playback->target_level, playback->bufsize,
+                  playback->sample_rate, playback->blockalign, 0,
+                  playback->zero_stall_buf, playback->zero_stall_buf_size)) {
+            logger_error(&g_logger,
+                         "PB: Failed to prime delay after underrun in keep-alive");
+            break;
+          }
         } else if (st == SND_PCM_STATE_SUSPENDED) {
           if (alsa_recover_suspended_pcm(playback->pcm, "PB") < 0) {
+            break;
+          }
+          if (!alsa_device_prime_delay(
+                  playback->pcm, playback->target_level, playback->bufsize,
+                  playback->sample_rate, playback->blockalign, 0,
+                  playback->zero_stall_buf, playback->zero_stall_buf_size)) {
+            logger_error(&g_logger,
+                         "PB: Failed to prime delay after suspend in keep-alive");
             break;
           }
         } else if (st == SND_PCM_STATE_PAUSED) {

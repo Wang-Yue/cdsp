@@ -599,4 +599,14 @@ bool processing_parameters_get_playback_signal_rms_since(
 uint64_t processing_parameters_get_chunk_generation(
     const processing_parameters_t *params, bool is_capture);
 
+/**
+ * @brief Transfers signal level telemetry (global peaks and history) from an old
+ * processing_parameters instance to a newly created one across session rebuilds.
+ *
+ * @param dst The destination processing parameters.
+ * @param src The source processing parameters.
+ */
+void processing_parameters_transfer_telemetry(processing_parameters_t *dst,
+                                              const processing_parameters_t *src);
+
 #endif // CLIB_AUDIO_PROCESSING_PARAMETERS_H

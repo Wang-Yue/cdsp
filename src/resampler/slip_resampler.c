@@ -173,7 +173,7 @@ static void *slip_resampler_create(const resampler_config_t *config,
                      "Slip resampler chunk_size must be at least 4");
     return NULL;
   }
-  return slip_resampler_create_impl(channels, chunk_size, FIXED_ASYNC_INPUT);
+  return slip_resampler_create_impl(channels, chunk_size, FIXED_ASYNC_OUTPUT);
 }
 
 static void place_correction(const double *input, double *output,
@@ -292,13 +292,13 @@ static void slip_resampler_set_relative_ratio(void *impl_ptr,
     slip_resampler_get_ratio_range(impl, &min_r, &max_r);
     double target = multiplier;
     if (isnan(target) || target < min_r) {
-      logger_warn(
+      logger_debug(
           &g_logger,
           "Slip resampler ratio %.6f out of range [%.6f, %.6f], clamping",
           target, min_r, max_r);
       target = min_r;
     } else if (target > max_r) {
-      logger_warn(
+      logger_debug(
           &g_logger,
           "Slip resampler ratio %.6f out of range [%.6f, %.6f], clamping",
           target, min_r, max_r);
@@ -314,7 +314,7 @@ static double slip_resampler_get_ratio(const void *impl_ptr) {
   return impl ? impl->resample_ratio : 1.0;
 }
 
-static size_t slip_resampler_get_max_output_frames(const void *impl_ptr) {
+static size_t slip_resampler_get_max_input_frames(const void *impl_ptr) {
   const slip_resampler_t *impl = (const slip_resampler_t *)impl_ptr;
   return impl ? (impl->chunk_size + impl->max_correction) : 0;
 }
@@ -360,7 +360,7 @@ const resampler_vtable_t g_slip_resampler_vtable = {
     .process = slip_resampler_process,
     .set_relative_ratio = slip_resampler_set_relative_ratio,
     .get_ratio = slip_resampler_get_ratio,
-    .get_max_output_frames = slip_resampler_get_max_output_frames,
+    .get_max_input_frames = slip_resampler_get_max_input_frames,
     .get_chunk_size = slip_resampler_get_chunk_size,
     .get_input_frames_next = slip_resampler_get_input_frames_next,
     .get_output_frames_next = slip_resampler_get_output_frames_next,

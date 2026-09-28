@@ -179,7 +179,7 @@ static void async_poly_resampler_set_relative_ratio(void *impl,
     return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
   if (multiplier < min_ratio || multiplier > resampler->max_relative_ratio) {
-    logger_warn(
+    logger_debug(
         &g_logger,
         "AsyncPoly resampler relative ratio %.6f out of range [%.6f, %.6f]",
         multiplier, min_ratio, resampler->max_relative_ratio);
@@ -199,10 +199,10 @@ static double async_poly_resampler_get_ratio(const void *impl) {
   return resampler ? resampler->resample_ratio : 1.0;
 }
 
-static size_t async_poly_resampler_get_max_output_frames(const void *impl) {
+static size_t async_poly_resampler_get_max_input_frames(const void *impl) {
   const async_poly_resampler_t *resampler =
       (const async_poly_resampler_t *)impl;
-  return resampler ? resampler->max_output_frames : 0;
+  return resampler ? resampler->max_input_frames : 0;
 }
 
 static size_t async_poly_resampler_get_chunk_size(const void *impl) {
@@ -404,8 +404,8 @@ async_poly_resampler_process(void *impl, const audio_chunk_t *input,
       resampler->needed_input_size > resampler->max_input_frames) {
     return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
   }
-  if (valid_frames > resampler->needed_input_size) {
-    valid_frames = resampler->needed_input_size;
+  if (valid_frames > audio_chunk_get_frames(input)) {
+    return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
   }
   if (audio_chunk_get_channels(input) != resampler->channels) {
     return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
@@ -414,8 +414,12 @@ async_poly_resampler_process(void *impl, const audio_chunk_t *input,
     return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
   }
   size_t output_frames = resampler->needed_output_size;
-  if (output_frames > resampler->max_output_frames) {
+  if (output_frames > resampler->max_output_frames ||
+      (output_frames > 0 && audio_chunk_get_frames(output) < output_frames)) {
     return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
+  }
+  if (valid_frames > resampler->needed_input_size) {
+    valid_frames = resampler->needed_input_size;
   }
 
   size_t n_len = resampler->interpolator_len;
@@ -449,10 +453,6 @@ async_poly_resampler_process(void *impl, const audio_chunk_t *input,
     async_poly_resampler_update_lengths(resampler);
     audio_chunk_set_valid_frames(output, 0);
     return RESAMPLER_OK;
-  }
-
-  if (audio_chunk_get_frames(output) < output_frames) {
-    return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
 
   double t_ratio_start = 1.0 / resampler->resample_ratio;
@@ -688,7 +688,7 @@ static void *async_poly_resampler_create(const resampler_config_t *config,
   if (!config || config->type != RESAMPLER_TYPE_ASYNC_POLY)
     return NULL;
 
-  fixed_async_t fixed_mode = FIXED_ASYNC_INPUT;
+  fixed_async_t fixed_mode = FIXED_ASYNC_OUTPUT;
   poly_interpolation_t interp = POLY_INTERPOLATION_CUBIC;
   if (config->has_interpolation) {
     interp = poly_interpolation_from_string(config->interpolation);
@@ -739,7 +739,7 @@ const resampler_vtable_t g_async_poly_resampler_vtable = {
     .process = async_poly_resampler_process,
     .set_relative_ratio = async_poly_resampler_set_relative_ratio,
     .get_ratio = async_poly_resampler_get_ratio,
-    .get_max_output_frames = async_poly_resampler_get_max_output_frames,
+    .get_max_input_frames = async_poly_resampler_get_max_input_frames,
     .get_chunk_size = async_poly_resampler_get_chunk_size,
     .get_input_frames_next = async_poly_resampler_get_input_frames_next,
     .get_output_frames_next = async_poly_resampler_get_output_frames_next,

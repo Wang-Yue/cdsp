@@ -2331,11 +2331,13 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
   clear_playback_driver_events();
   reset_playback_callback_seen();
 
+  size_t asio_buf_frames = (size_t)asio_buffer_size;
   size_t target_level = (playback->target_level > 0)
                             ? (size_t)playback->target_level
                             : (size_t)playback->chunk_size;
-
-  size_t asio_buf_frames = (size_t)asio_buffer_size;
+  if (target_level < asio_buf_frames) {
+    target_level = asio_buf_frames;
+  }
 
   playback->context =
       (asio_playback_context_t *)calloc(1, sizeof(asio_playback_context_t));

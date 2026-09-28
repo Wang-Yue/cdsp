@@ -80,6 +80,8 @@ struct pipeline_s {
 
   size_t last_error_needed;
   size_t last_error_got;
+
+  processing_parameters_t *proc_params;
 };
 
 // Cleanup helpers shared between builder and destruction

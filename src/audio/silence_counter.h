@@ -78,7 +78,7 @@ void silence_counter_init(silence_counter_t *counter, double threshold_db,
  * @return The desired processing state (RUNNING or PAUSED).
  */
 processing_state_t silence_counter_update(silence_counter_t *counter,
-                                          float value_range);
+                                          double value_range);
 
 /**
  * @brief Gets the limit of silent chunks before triggering a pause.

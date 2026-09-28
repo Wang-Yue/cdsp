@@ -286,6 +286,15 @@ static void lookahead_gain_free_common(void *instance) {
  * @param dest_ptr Pointer to destination lookahead gain instance.
  * @param src_ptr Pointer to source lookahead gain instance.
  */
+void lookahead_gain_pad_silence(void *gain_ptr) {
+  lookahead_gain_t *lg = (lookahead_gain_t *)gain_ptr;
+  if (!lg)
+    return;
+  for (int i = 0; i < lg->attack_samples; i++) {
+    history_push(lg, 0.0);
+  }
+}
+
 static void lookahead_gain_transfer_state_common(void *dest_ptr,
                                                  const void *src_ptr) {
   lookahead_gain_t *dest = (lookahead_gain_t *)dest_ptr;
@@ -301,7 +310,9 @@ static void lookahead_gain_transfer_state_common(void *dest_ptr,
     size_t src_cap = src->history_capacity;
     size_t copy_len = dest_cap < src_cap ? dest_cap : src_cap;
 
-    memset(dest->history, 0, dest_cap * sizeof(double));
+    if (dest_cap > copy_len) {
+      memset(dest->history, 0, (dest_cap - copy_len) * sizeof(double));
+    }
 
     size_t src_start_idx = src->history_write_idx;
     if (src_cap > copy_len) {
@@ -309,10 +320,16 @@ static void lookahead_gain_transfer_state_common(void *dest_ptr,
     }
     size_t dest_start_idx = dest_cap - copy_len;
 
-    for (size_t i = 0; i < copy_len; i++) {
-      size_t src_idx = (src_start_idx + i) % src_cap;
-      size_t dest_idx = dest_start_idx + i;
-      dest->history[dest_idx] = src->history[src_idx];
+    size_t part1 = src_cap - src_start_idx;
+    if (part1 > copy_len) {
+      part1 = copy_len;
+    }
+    memcpy(dest->history + dest_start_idx, src->history + src_start_idx,
+           part1 * sizeof(double));
+    if (copy_len > part1) {
+      size_t part2 = copy_len - part1;
+      memcpy(dest->history + dest_start_idx + part1, src->history,
+             part2 * sizeof(double));
     }
     dest->history_read_idx = 0;
     dest->history_write_idx = 0;
@@ -324,9 +341,7 @@ static void lookahead_gain_transfer_state_common(void *dest_ptr,
                            dest->limit != src->limit ||
                            dest->release_coeff != src->release_coeff);
     if (params_changed) {
-      for (int i = 0; i < dest->attack_samples; i++) {
-        history_push(dest, 0.0);
-      }
+      lookahead_gain_pad_silence(dest);
     }
   }
 }

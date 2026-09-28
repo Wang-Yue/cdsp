@@ -50,9 +50,6 @@ static void build_delay(double delay_samples, bool subsample,
     *out_integer_delay = 0;
     return;
   }
-  if (delay_samples > 100000000.0) {
-    delay_samples = 100000000.0;
-  }
   if (subsample) {
     // If the delay is very small, we can't design a stable Thiran filter.
     if (delay_samples < 0.1) {
@@ -179,6 +176,18 @@ static int delay_config_validate(const filter_config_t *config, int sample_rate,
                        "Delay cannot be negative");
     }
     return -1;
+  }
+  if (sample_rate > 0) {
+    double delay_samples =
+        compute_delay_samples(params->delay, params->delay_unit, sample_rate);
+    if (delay_samples > 100000000.0) {
+      if (err) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_FILTER,
+            "Delay exceeds maximum supported limit (100,000,000 samples)");
+      }
+      return -1;
+    }
   }
   return 0;
 }
@@ -343,17 +352,22 @@ static void delay_filter_transfer_state(void *dest_ptr, const void *src_ptr) {
   if (dest->queue_count != src->queue_count)
     return;
 
+  if (dest->has_coeffs != src->has_coeffs)
+    return;
+
   // Only transfer subsample biquad state if both instances have active biquads
   // and their filter coefficients match. A change in fractional delay changes
   // the allpass transfer function and its z-state cannot be carried over.
-  if (dest->has_coeffs && src->has_coeffs && dest->biquad && src->biquad) {
-    if (dest->bq_params.a1 == src->bq_params.a1 &&
-        dest->bq_params.a2 == src->bq_params.a2 &&
-        dest->bq_params.b0 == src->bq_params.b0 &&
-        dest->bq_params.b1 == src->bq_params.b1 &&
-        dest->bq_params.b2 == src->bq_params.b2) {
-      g_biquad_vtable.transfer_state(dest->biquad, src->biquad);
+  if (dest->has_coeffs) {
+    if (!dest->biquad || !src->biquad ||
+        dest->bq_params.a1 != src->bq_params.a1 ||
+        dest->bq_params.a2 != src->bq_params.a2 ||
+        dest->bq_params.b0 != src->bq_params.b0 ||
+        dest->bq_params.b1 != src->bq_params.b1 ||
+        dest->bq_params.b2 != src->bq_params.b2) {
+      return;
     }
+    g_biquad_vtable.transfer_state(dest->biquad, src->biquad);
   }
 
   if (dest->queue && src->queue && dest->queue_count > 0) {

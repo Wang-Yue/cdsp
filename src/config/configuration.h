@@ -64,6 +64,20 @@ int dsp_config_parse_json_with_dir(const char *json, const char *config_dir,
                                    config_error_t *err);
 
 /**
+ * @brief Sets the global default base directory for resolving relative paths in configs.
+ *
+ * @param dir Directory path or NULL to clear.
+ */
+void dsp_config_set_base_dir(const char *dir);
+
+/**
+ * @brief Gets the global default base directory for resolving relative paths in configs.
+ *
+ * @return Directory path or NULL if not set.
+ */
+const char *dsp_config_get_base_dir(void);
+
+/**
  * @brief Parses a DSP configuration from JSON with directory resolution and
  * overrides.
  */

@@ -1943,6 +1943,8 @@ int parse_biquad_config(const cJSON *obj, const char *ctx, biquad_config_t *out,
   switch (out->type) {
     case BIQUAD_TYPE_FREE:
       {
+        static const char *const allowed[] = {"a1", "a2", "b0", "b1", "b2", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_config", err) != 0) return -1;
         static const char *const req[] = {"a1", "a2", "b0", "b1", "b2", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_config", NULL, err) != 0) return -1;
         if (parse_json_double_strict(obj, "a1", ctx ? ctx : "biquad_config", &out->a1, &out->has_a1, err) != 0) return -1;
@@ -1954,11 +1956,21 @@ int parse_biquad_config(const cJSON *obj, const char *ctx, biquad_config_t *out,
       }
     case BIQUAD_TYPE_HIGHPASS_FO:
     case BIQUAD_TYPE_LOWPASS_FO:
-    case BIQUAD_TYPE_HIGHSHELF_FO:
-    case BIQUAD_TYPE_LOWSHELF_FO:
     case BIQUAD_TYPE_ALLPASS_FO:
       {
+        static const char *const allowed[] = {"freq", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_config", err) != 0) return -1;
         static const char *const req[] = {"freq", NULL};
+        if (require_json_fields(obj, req, ctx ? ctx : "biquad_config", NULL, err) != 0) return -1;
+        if (parse_json_double_strict(obj, "freq", ctx ? ctx : "biquad_config", &out->freq, &out->has_freq, err) != 0) return -1;
+        break;
+      }
+    case BIQUAD_TYPE_HIGHSHELF_FO:
+    case BIQUAD_TYPE_LOWSHELF_FO:
+      {
+        static const char *const allowed[] = {"freq", "gain", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_config", err) != 0) return -1;
+        static const char *const req[] = {"freq", "gain", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_config", NULL, err) != 0) return -1;
         if (parse_json_double_strict(obj, "freq", ctx ? ctx : "biquad_config", &out->freq, &out->has_freq, err) != 0) return -1;
         if (parse_json_double_strict(obj, "gain", ctx ? ctx : "biquad_config", &out->gain, &out->has_gain, err) != 0) return -1;
@@ -1967,6 +1979,8 @@ int parse_biquad_config(const cJSON *obj, const char *ctx, biquad_config_t *out,
     case BIQUAD_TYPE_HIGHPASS:
     case BIQUAD_TYPE_LOWPASS:
       {
+        static const char *const allowed[] = {"freq", "q", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_config", err) != 0) return -1;
         static const char *const req[] = {"freq", "q", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_config", NULL, err) != 0) return -1;
         out->steepness_type = STEEPNESS_TYPE_Q;
@@ -1976,6 +1990,8 @@ int parse_biquad_config(const cJSON *obj, const char *ctx, biquad_config_t *out,
       }
     case BIQUAD_TYPE_PEAKING:
       {
+        static const char *const allowed[] = {"freq", "gain", "q", "bandwidth", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_config", err) != 0) return -1;
         static const char *const req[] = {"freq", "gain", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_config", NULL, err) != 0) return -1;
         if (!cJSON_GetObjectItemCaseSensitive(obj, "q") && !cJSON_GetObjectItemCaseSensitive(obj, "bandwidth")) {
@@ -1998,6 +2014,8 @@ int parse_biquad_config(const cJSON *obj, const char *ctx, biquad_config_t *out,
     case BIQUAD_TYPE_BANDPASS:
     case BIQUAD_TYPE_ALLPASS:
       {
+        static const char *const allowed[] = {"freq", "q", "bandwidth", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_config", err) != 0) return -1;
         static const char *const req[] = {"freq", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_config", NULL, err) != 0) return -1;
         if (!cJSON_GetObjectItemCaseSensitive(obj, "q") && !cJSON_GetObjectItemCaseSensitive(obj, "bandwidth")) {
@@ -2018,20 +2036,21 @@ int parse_biquad_config(const cJSON *obj, const char *ctx, biquad_config_t *out,
     case BIQUAD_TYPE_HIGHSHELF:
     case BIQUAD_TYPE_LOWSHELF:
       {
+        static const char *const allowed[] = {"freq", "gain", "q", "slope", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_config", err) != 0) return -1;
         static const char *const req[] = {"freq", "gain", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_config", NULL, err) != 0) return -1;
+        if (!cJSON_GetObjectItemCaseSensitive(obj, "q") && !cJSON_GetObjectItemCaseSensitive(obj, "slope")) {
+          config_error_set(err, CONFIG_ERR_PARSE, "missing field 'q' or 'slope' in %s", ctx ? ctx : "biquad_config");
+          return -1;
+        }
         if (cJSON_GetObjectItemCaseSensitive(obj, "q")) {
           if (parse_json_double_strict(obj, "q", ctx ? ctx : "biquad_config", &out->q, &out->has_q, err) != 0) return -1;
           out->steepness_type = STEEPNESS_TYPE_Q;
         }
-        else if (cJSON_GetObjectItemCaseSensitive(obj, "slope")) {
+        else {
           if (parse_json_double_strict(obj, "slope", ctx ? ctx : "biquad_config", &out->slope, &out->has_slope, err) != 0) return -1;
           out->steepness_type = STEEPNESS_TYPE_SLOPE;
-        }
-        else {
-          out->q = 1.0 / sqrt(2.0);
-          out->has_q = true;
-          out->steepness_type = STEEPNESS_TYPE_Q;
         }
         if (parse_json_double_strict(obj, "freq", ctx ? ctx : "biquad_config", &out->freq, &out->has_freq, err) != 0) return -1;
         if (parse_json_double_strict(obj, "gain", ctx ? ctx : "biquad_config", &out->gain, &out->has_gain, err) != 0) return -1;
@@ -2039,6 +2058,8 @@ int parse_biquad_config(const cJSON *obj, const char *ctx, biquad_config_t *out,
       }
     case BIQUAD_TYPE_GENERAL_NOTCH:
       {
+        static const char *const allowed[] = {"freq_z", "freq_p", "q_p", "normalize_at_dc", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_config", err) != 0) return -1;
         static const char *const req[] = {"freq_z", "freq_p", "q_p", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_config", NULL, err) != 0) return -1;
         if (parse_json_double_strict(obj, "freq_z", ctx ? ctx : "biquad_config", &out->freq_z, &out->has_freq_z, err) != 0) return -1;
@@ -2049,6 +2070,8 @@ int parse_biquad_config(const cJSON *obj, const char *ctx, biquad_config_t *out,
       }
     case BIQUAD_TYPE_LINKWITZ_TRANSFORM:
       {
+        static const char *const allowed[] = {"freq_act", "q_act", "freq_target", "q_target", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_config", err) != 0) return -1;
         static const char *const req[] = {"freq_act", "q_act", "freq_target", "q_target", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_config", NULL, err) != 0) return -1;
         if (parse_json_double_strict(obj, "freq_act", ctx ? ctx : "biquad_config", &out->freq_act, &out->has_freq_act, err) != 0) return -1;
@@ -2197,6 +2220,8 @@ int parse_conv_config(const cJSON *obj, const char *ctx, conv_config_t *out, con
   switch (out->type) {
     case CONV_TYPE_WAV:
       {
+        static const char *const allowed[] = {"filename", "channel", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "conv_config", err) != 0) return -1;
         static const char *const req[] = {"filename", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "conv_config", NULL, err) != 0) return -1;
         if (parse_json_str_strict(obj, "filename", ctx ? ctx : "conv_config", out->filename, sizeof(out->filename), &out->has_filename, err) != 0) return -1;
@@ -2205,6 +2230,8 @@ int parse_conv_config(const cJSON *obj, const char *ctx, conv_config_t *out, con
       }
     case CONV_TYPE_RAW:
       {
+        static const char *const allowed[] = {"filename", "format", "skip_bytes_lines", "read_bytes_lines", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "conv_config", err) != 0) return -1;
         static const char *const req[] = {"filename", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "conv_config", NULL, err) != 0) return -1;
         strncpy(out->format, "TEXT", sizeof(out->format) - 1);
@@ -2217,6 +2244,8 @@ int parse_conv_config(const cJSON *obj, const char *ctx, conv_config_t *out, con
       }
     case CONV_TYPE_VALUES:
       {
+        static const char *const allowed[] = {"values", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "conv_config", err) != 0) return -1;
         static const char *const req[] = {"values", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "conv_config", NULL, err) != 0) return -1;
         cJSON *arr_values = cJSON_GetObjectItemCaseSensitive(obj, "values");
@@ -2228,6 +2257,8 @@ int parse_conv_config(const cJSON *obj, const char *ctx, conv_config_t *out, con
       }
     case CONV_TYPE_DUMMY:
       {
+        static const char *const allowed[] = {"length", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "conv_config", err) != 0) return -1;
         static const char *const req[] = {"length", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "conv_config", NULL, err) != 0) return -1;
         if (parse_json_int_strict(obj, "length", ctx ? ctx : "conv_config", &out->length, &out->has_length, err) != 0) return -1;
@@ -2452,6 +2483,8 @@ int parse_biquad_combo_config(const cJSON *obj, const char *ctx, biquad_combo_co
     case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS:
     case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
       {
+        static const char *const allowed[] = {"freq", "order", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_combo_config", err) != 0) return -1;
         static const char *const req[] = {"freq", "order", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_combo_config", NULL, err) != 0) return -1;
         if (parse_json_double_strict(obj, "freq", ctx ? ctx : "biquad_combo_config", &out->freq, &out->has_freq, err) != 0) return -1;
@@ -2460,6 +2493,8 @@ int parse_biquad_combo_config(const cJSON *obj, const char *ctx, biquad_combo_co
       }
     case BIQUAD_COMBO_TYPE_TILT:
       {
+        static const char *const allowed[] = {"gain", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_combo_config", err) != 0) return -1;
         static const char *const req[] = {"gain", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_combo_config", NULL, err) != 0) return -1;
         if (parse_json_double_strict(obj, "gain", ctx ? ctx : "biquad_combo_config", &out->gain, &out->has_gain, err) != 0) return -1;
@@ -2467,6 +2502,8 @@ int parse_biquad_combo_config(const cJSON *obj, const char *ctx, biquad_combo_co
       }
     case BIQUAD_COMBO_TYPE_N_POINT_PEQ:
       {
+        static const char *const allowed[] = {"bands", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_combo_config", err) != 0) return -1;
         static const char *const req[] = {"bands", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_combo_config", NULL, err) != 0) return -1;
         cJSON *arr_bands = cJSON_GetObjectItemCaseSensitive(obj, "bands");
@@ -2490,6 +2527,8 @@ int parse_biquad_combo_config(const cJSON *obj, const char *ctx, biquad_combo_co
       }
     case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER:
       {
+        static const char *const allowed[] = {"freq_min", "freq_max", "gains", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "biquad_combo_config", err) != 0) return -1;
         static const char *const req[] = {"gains", NULL};
         if (require_json_fields(obj, req, ctx ? ctx : "biquad_combo_config", NULL, err) != 0) return -1;
         if (parse_json_double_strict(obj, "freq_min", ctx ? ctx : "biquad_combo_config", &out->freq_min, &out->has_freq_min, err) != 0) return -1;
@@ -2658,7 +2697,6 @@ bool diff_eq_config_equal(const diff_eq_config_t *a, const diff_eq_config_t *b) 
 void dither_config_init(dither_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(dither_config_t));
-  out->type = DITHER_TYPE_NONE;
 }
 
 double dither_config_get_amplitude(const dither_config_t *in) {
@@ -2677,45 +2715,76 @@ int parse_dither_config(const cJSON *obj, const char *ctx, dither_config_t *out,
   }
   dither_config_init(out);
 
-  static const char *const allowed_keys[] = {"type", "bits", "amplitude", "type", "description", NULL};
-  if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "dither_config", err) != 0) return -1;
+  static const config_enum_variant_t dither_config_type_variants[] = {
+    {"None", DITHER_TYPE_NONE},
+    {"Flat", DITHER_TYPE_FLAT},
+    {"Highpass", DITHER_TYPE_HIGHPASS},
+    {"Fweighted441", DITHER_TYPE_FWEIGHTED_441},
+    {"FweightedLong441", DITHER_TYPE_FWEIGHTED_LONG_441},
+    {"FweightedShort441", DITHER_TYPE_FWEIGHTED_SHORT_441},
+    {"Gesemann441", DITHER_TYPE_GESEMANN_441},
+    {"Gesemann48", DITHER_TYPE_GESEMANN_48},
+    {"Lipshitz441", DITHER_TYPE_LIPSHITZ_441},
+    {"LipshitzLong441", DITHER_TYPE_LIPSHITZ_LONG_441},
+    {"Shibata441", DITHER_TYPE_SHIBATA_441},
+    {"ShibataHigh441", DITHER_TYPE_SHIBATA_HIGH_441},
+    {"ShibataLow441", DITHER_TYPE_SHIBATA_LOW_441},
+    {"Shibata48", DITHER_TYPE_SHIBATA_48},
+    {"ShibataHigh48", DITHER_TYPE_SHIBATA_HIGH_48},
+    {"ShibataLow48", DITHER_TYPE_SHIBATA_LOW_48},
+    {"Shibata882", DITHER_TYPE_SHIBATA_882},
+    {"ShibataLow882", DITHER_TYPE_SHIBATA_LOW_882},
+    {"Shibata96", DITHER_TYPE_SHIBATA_96},
+    {"ShibataLow96", DITHER_TYPE_SHIBATA_LOW_96},
+    {"Shibata192", DITHER_TYPE_SHIBATA_192},
+    {"ShibataLow192", DITHER_TYPE_SHIBATA_LOW_192},
+    {NULL, 0}
+  };
+  int tag_val = 0;
+  if (parse_enum_required(obj, "type", dither_config_type_variants, ctx ? ctx : "dither_config", &tag_val, err) != 0) return -1;
+  out->type = (dither_type_t)tag_val;
 
-  static const char *const req_keys[] = {"bits", NULL};
-  if (require_json_fields(obj, req_keys, ctx ? ctx : "dither_config", NULL, err) != 0) return -1;
-
-  {
-    static const config_enum_variant_t type_dither_type_variants[] = {
-      {"None", DITHER_TYPE_NONE},
-      {"Flat", DITHER_TYPE_FLAT},
-      {"Highpass", DITHER_TYPE_HIGHPASS},
-      {"Fweighted441", DITHER_TYPE_FWEIGHTED_441},
-      {"FweightedLong441", DITHER_TYPE_FWEIGHTED_LONG_441},
-      {"FweightedShort441", DITHER_TYPE_FWEIGHTED_SHORT_441},
-      {"Gesemann441", DITHER_TYPE_GESEMANN_441},
-      {"Gesemann48", DITHER_TYPE_GESEMANN_48},
-      {"Lipshitz441", DITHER_TYPE_LIPSHITZ_441},
-      {"LipshitzLong441", DITHER_TYPE_LIPSHITZ_LONG_441},
-      {"Shibata441", DITHER_TYPE_SHIBATA_441},
-      {"ShibataHigh441", DITHER_TYPE_SHIBATA_HIGH_441},
-      {"ShibataLow441", DITHER_TYPE_SHIBATA_LOW_441},
-      {"Shibata48", DITHER_TYPE_SHIBATA_48},
-      {"ShibataHigh48", DITHER_TYPE_SHIBATA_HIGH_48},
-      {"ShibataLow48", DITHER_TYPE_SHIBATA_LOW_48},
-      {"Shibata882", DITHER_TYPE_SHIBATA_882},
-      {"ShibataLow882", DITHER_TYPE_SHIBATA_LOW_882},
-      {"Shibata96", DITHER_TYPE_SHIBATA_96},
-      {"ShibataLow96", DITHER_TYPE_SHIBATA_LOW_96},
-      {"Shibata192", DITHER_TYPE_SHIBATA_192},
-      {"ShibataLow192", DITHER_TYPE_SHIBATA_LOW_192},
-      {NULL, 0}
-    };
-    int enum_tmp = 0;
-    bool has_enum = false;
-    if (parse_enum_optional(obj, "type", type_dither_type_variants, ctx ? ctx : "dither_config", &enum_tmp, &has_enum, err) != 0) return -1;
-    if (has_enum) out->type = (dither_type_t)enum_tmp;
+  switch (out->type) {
+    case DITHER_TYPE_FLAT:
+      {
+        static const char *const allowed[] = {"bits", "amplitude", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "dither_config", err) != 0) return -1;
+        static const char *const req[] = {"bits", "amplitude", NULL};
+        if (require_json_fields(obj, req, ctx ? ctx : "dither_config", NULL, err) != 0) return -1;
+        if (parse_json_int_strict(obj, "bits", ctx ? ctx : "dither_config", &out->bits, NULL, err) != 0) return -1;
+        if (parse_json_double_strict(obj, "amplitude", ctx ? ctx : "dither_config", &out->amplitude, &out->has_amplitude, err) != 0) return -1;
+        break;
+      }
+    case DITHER_TYPE_NONE:
+    case DITHER_TYPE_HIGHPASS:
+    case DITHER_TYPE_FWEIGHTED_441:
+    case DITHER_TYPE_FWEIGHTED_LONG_441:
+    case DITHER_TYPE_FWEIGHTED_SHORT_441:
+    case DITHER_TYPE_GESEMANN_441:
+    case DITHER_TYPE_GESEMANN_48:
+    case DITHER_TYPE_LIPSHITZ_441:
+    case DITHER_TYPE_LIPSHITZ_LONG_441:
+    case DITHER_TYPE_SHIBATA_441:
+    case DITHER_TYPE_SHIBATA_HIGH_441:
+    case DITHER_TYPE_SHIBATA_LOW_441:
+    case DITHER_TYPE_SHIBATA_48:
+    case DITHER_TYPE_SHIBATA_HIGH_48:
+    case DITHER_TYPE_SHIBATA_LOW_48:
+    case DITHER_TYPE_SHIBATA_882:
+    case DITHER_TYPE_SHIBATA_LOW_882:
+    case DITHER_TYPE_SHIBATA_96:
+    case DITHER_TYPE_SHIBATA_LOW_96:
+    case DITHER_TYPE_SHIBATA_192:
+    case DITHER_TYPE_SHIBATA_LOW_192:
+      {
+        static const char *const allowed[] = {"bits", "type", "description", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "dither_config", err) != 0) return -1;
+        static const char *const req[] = {"bits", NULL};
+        if (require_json_fields(obj, req, ctx ? ctx : "dither_config", NULL, err) != 0) return -1;
+        if (parse_json_int_strict(obj, "bits", ctx ? ctx : "dither_config", &out->bits, NULL, err) != 0) return -1;
+        break;
+      }
   }
-  if (parse_json_int_strict(obj, "bits", ctx ? ctx : "dither_config", &out->bits, NULL, err) != 0) return -1;
-  if (parse_json_double_strict(obj, "amplitude", ctx ? ctx : "dither_config", &out->amplitude, &out->has_amplitude, err) != 0) return -1;
   return 0;
 }
 
@@ -3225,25 +3294,39 @@ int parse_generator_signal(const cJSON *obj, const char *ctx, generator_signal_t
   }
   generator_signal_init(out);
 
-  static const char *const allowed_keys[] = {"type", "freq", "level", NULL};
-  if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "generator_signal", err) != 0) return -1;
+  static const config_enum_variant_t generator_signal_type_variants[] = {
+    {"Sine", SIGNAL_TYPE_SINE},
+    {"Square", SIGNAL_TYPE_SQUARE},
+    {"WhiteNoise", SIGNAL_TYPE_WHITE_NOISE},
+    {NULL, 0}
+  };
+  int tag_val = 0;
+  if (parse_enum_required(obj, "type", generator_signal_type_variants, ctx ? ctx : "generator_signal", &tag_val, err) != 0) return -1;
+  out->type = (signal_type_t)tag_val;
 
-  static const char *const req_keys[] = {"type", "level", NULL};
-  if (require_json_fields(obj, req_keys, ctx ? ctx : "generator_signal", NULL, err) != 0) return -1;
-
-  {
-    static const config_enum_variant_t type_signal_type_variants[] = {
-      {"Sine", SIGNAL_TYPE_SINE},
-      {"Square", SIGNAL_TYPE_SQUARE},
-      {"WhiteNoise", SIGNAL_TYPE_WHITE_NOISE},
-      {NULL, 0}
-    };
-    int enum_tmp = 0;
-    if (parse_enum_required(obj, "type", type_signal_type_variants, ctx ? ctx : "generator_signal", &enum_tmp, err) != 0) return -1;
-    out->type = (signal_type_t)enum_tmp;
+  switch (out->type) {
+    case SIGNAL_TYPE_SINE:
+    case SIGNAL_TYPE_SQUARE:
+      {
+        static const char *const allowed[] = {"type", "freq", "level", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "generator_signal", err) != 0) return -1;
+        static const char *const req[] = {"freq", "level", NULL};
+        if (require_json_fields(obj, req, ctx ? ctx : "generator_signal", NULL, err) != 0) return -1;
+        if (parse_json_double_strict(obj, "freq", ctx ? ctx : "generator_signal", &out->freq, &out->has_freq, err) != 0) return -1;
+        if (parse_json_double_strict(obj, "level", ctx ? ctx : "generator_signal", &out->level, NULL, err) != 0) return -1;
+        break;
+      }
+    case SIGNAL_TYPE_WHITE_NOISE:
+      {
+        static const char *const allowed[] = {"type", "level", NULL};
+        if (validate_unknown_fields(obj, allowed, ctx ? ctx : "generator_signal", err) != 0) return -1;
+        static const char *const req[] = {"level", NULL};
+        if (require_json_fields(obj, req, ctx ? ctx : "generator_signal", NULL, err) != 0) return -1;
+        if (parse_json_double_strict(obj, "level", ctx ? ctx : "generator_signal", &out->level, NULL, err) != 0) return -1;
+        break;
+      }
+    case SIGNAL_TYPE_INVALID: break;
   }
-  if (parse_json_double_strict(obj, "freq", ctx ? ctx : "generator_signal", &out->freq, &out->has_freq, err) != 0) return -1;
-  if (parse_json_double_strict(obj, "level", ctx ? ctx : "generator_signal", &out->level, NULL, err) != 0) return -1;
   return 0;
 }
 

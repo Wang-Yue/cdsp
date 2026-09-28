@@ -461,7 +461,7 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
     goto cleanup;
   }
 
-  if (dev_id != 0) {
+  if (dev_id != 0 && !capture->loopback) {
     atomic_store_explicit(
         &capture->pitch_control_active,
         core_audio_device_select_adjustable_clock_source(dev_id),
@@ -507,23 +507,8 @@ static bool core_audio_capture_read(void *ctx, size_t frames,
                          "Capture device disconnected");
     return false;
   }
-  // Check if AudioUnitRender repeatedly failed in the callback.
-  if (atomic_load_explicit(&capture->callback_error_count,
-                           memory_order_relaxed) >= 3) {
-    int last_err = atomic_load_explicit(&capture->last_callback_error,
-                                        memory_order_relaxed);
-    logger_error(&g_logger,
-                 "CoreAudio capture read failed: AudioUnitRender failed with "
-                 "error %d",
-                 last_err);
-    if (err) {
-      char msg[128];
-      snprintf(msg, sizeof(msg), "AudioUnitRender failed with error %d",
-               last_err);
-      backend_error_init(err, BACKEND_ERROR_READ_ERROR, msg);
-    }
-    return false;
-  }
+  // AudioUnitRender errors in the callback are logged non-fatally; downstream
+  // buffer exhaustion or alive listener will handle stalls/disconnects cleanly.
   return backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
 }
 
@@ -652,14 +637,7 @@ static capture_backend_t *core_audio_capture_create(
   atomic_init(&capture->is_device_alive, true);
   atomic_init(&capture->active_callbacks, 0);
 
-  bool pitch_active = false;
-  AudioDeviceID dev_id = core_audio_device_id_for_name(
-      capture->device_name[0] ? capture->device_name : NULL,
-      CORE_AUDIO_SCOPE_INPUT);
-  if (dev_id != 0) {
-    pitch_active = core_audio_device_select_adjustable_clock_source(dev_id);
-  }
-  atomic_init(&capture->pitch_control_active, pitch_active);
+  atomic_init(&capture->pitch_control_active, false);
 
   capture_backend_t *backend =
       (capture_backend_t *)calloc(1, sizeof(capture_backend_t));

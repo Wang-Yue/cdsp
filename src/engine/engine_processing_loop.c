@@ -1,23 +1,19 @@
 // Processing thread body. Drains the capture→processing SPSC queue,
-// runs each chunk through the (optional) resampler and the pipeline,
+// runs each chunk through the pipeline,
 // then enqueues the result on the processing→playback queue.
 //
 // State ownership
 // ---------------
-// The pre-allocated scratch chunks (`resamplerScratch`,
-// `pipelineScratch`) are owned by this loop and only mutated here.
-// The resampler's own internal state is also single-threaded: the
-// playback thread publishes a relative ratio via the shared atomic,
-// and the processing thread consumes it once per chunk through
-// `setRelativeRatio`. No cross-thread mutation of resampler state.
+// The pre-allocated scratch chunk (`pipelineScratch`) is owned by this loop
+// and only mutated here.
 //
 // Audio-thread invariants
 // -----------------------
 //   * No allocations in the steady state. Output chunks are obtained
-//     from a pre-allocated `RoundRobinChunkPool`, and the resampler
+//     from a pre-allocated `RoundRobinChunkPool`, and the pipeline
 //     scratch chunk is pre-allocated at init.
 //   * No locks. The shared SPSC queues + semaphores carry chunks
-//     and wakeups; the resampler ratio is an atomic Double.
+//     and wakeups.
 //   * The thread sets a real-time scheduling policy on entry so the
 //     OS prefers it over background work.
 #include "engine/engine_processing_loop.h"
@@ -33,8 +29,6 @@
 #include "config/configuration.h"
 #include "engine/engine_state_types.h"
 #include "pipeline/pipeline.h"
-#include "resampler/audio_resampler.h"
-#include "resampler/resampler_error.h"
 #include "utils/cdsp_time.h"
 #include "utils/double_helpers.h"
 
@@ -58,10 +52,8 @@ struct engine_processing_loop {
   engine_shared_state_t *shared;
   processing_parameters_t *processing_params;
   size_t pipeline_rate;
-  resampler_t *resampler;
   pipeline_t *active_pipeline;
   _Atomic(pipeline_t *) next_pipeline;
-  audio_chunk_t *resampler_scratch;
   audio_chunk_t *pipeline_scratch;
   _Atomic bool transfer_filter_state;
   round_robin_chunk_pool_t *scratch_pool;
@@ -74,7 +66,6 @@ struct engine_processing_loop {
   bool is_realtime;
   uint64_t processed_drop_counter;
   size_t overloaded_chunks;
-  size_t resampler_overloaded_chunks;
 };
 
 #include "engine/thread_priority.h"
@@ -94,9 +85,7 @@ engine_processing_loop_create(const engine_processing_loop_config_t *config) {
   loop->shared = config->shared;
   loop->processing_params = config->processing_params;
   loop->pipeline_rate = config->pipeline_rate;
-  loop->resampler = config->resampler;
   loop->active_pipeline = config->pipeline;
-  loop->resampler_scratch = config->resampler_scratch;
   loop->pipeline_scratch = config->pipeline_scratch;
   loop->scratch_pool = config->scratch_pool;
   loop->on_chunk_captured = config->on_chunk_captured;
@@ -135,58 +124,6 @@ void engine_processing_loop_set_pipeline(engine_processing_loop_t *loop,
       pipeline_free(old);
     }
   }
-}
-
-/**
- * @brief Resamples an audio chunk if resampling is configured.
- *
- * @param loop Pointer to the processing loop context.
- * @param chunk Input audio chunk.
- * @param out_res_start Output timestamp for start of resampling.
- * @param out_res_end Output timestamp for end of resampling.
- * @param out_err Set to true if resampling encountered a fatal error.
- * @return Resampled audio chunk (resampler_scratch) or original chunk if no
- * resampler set.
- */
-static audio_chunk_t *processing_loop_resample(engine_processing_loop_t *loop,
-                                               audio_chunk_t *chunk,
-                                               uint64_t *out_res_start,
-                                               uint64_t *out_res_end,
-                                               bool *out_err) {
-  *out_err = false;
-  if (!loop->resampler)
-    return chunk;
-
-  // Resample if configured. The desired ratio is published
-  // by the rate-adjust controller via `shared.resamplerRatio`;
-  // we sync the resampler to it once per chunk. The
-  // resampler's internal state is otherwise owned exclusively
-  // by this thread, so no lock is required.
-  double ratio = engine_shared_state_get_resampler_ratio(loop->shared);
-  resampler_set_relative_ratio(loop->resampler, ratio);
-
-  // Write into the pre-sized output scratch (sized to
-  // `resampler.maxOutputFrames`), then make that scratch
-  // our working chunk. We can't `swap` here — a non-1:1
-  // resampler has different input/output chunk sizes, so
-  // swapping would leave scratch holding a too-small array
-  // on the next iteration.
-  *out_res_start = cdsp_time_now_ns();
-  resampler_error_t rerr =
-      resampler_process(loop->resampler, chunk, loop->resampler_scratch);
-  *out_res_end = cdsp_time_now_ns();
-
-  if (rerr != RESAMPLER_OK) {
-    logger_error(&g_logger, "Processing error: resampler error %s",
-                 resampler_error_description(rerr));
-    processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
-    snprintf(reason.message, sizeof(reason.message), "Resampler error: %s",
-             resampler_error_description(rerr));
-    engine_shared_state_request_stop(loop->shared, reason);
-    *out_err = true;
-    return NULL;
-  }
-  return loop->resampler_scratch;
 }
 
 /**
@@ -229,22 +166,17 @@ processing_loop_check_pipeline_swap(engine_processing_loop_t *loop) {
 }
 
 /**
- * @brief Calculates DSP processing/resampler CPU load and counts clipped
- * samples.
+ * @brief Calculates DSP processing CPU load and counts clipped samples.
  *
  * @param loop Pointer to the processing loop context.
  * @param chunk Processed audio chunk.
  * @param pipe_start Start timestamp of DSP pipeline execution.
  * @param pipe_end End timestamp of DSP pipeline execution.
- * @param res_start Start timestamp of resampler execution.
- * @param res_end End timestamp of resampler execution.
  */
 static void processing_loop_record_metrics(engine_processing_loop_t *loop,
                                            const audio_chunk_t *chunk,
                                            uint64_t pipe_start,
-                                           uint64_t pipe_end,
-                                           uint64_t res_start,
-                                           uint64_t res_end) {
+                                           uint64_t pipe_end) {
   if (!loop->processing_params)
     return;
 
@@ -275,26 +207,6 @@ static void processing_loop_record_metrics(engine_processing_loop_t *loop,
         }
       } else {
         loop->overloaded_chunks = 0;
-      }
-
-      if (loop->resampler) {
-        double r_load =
-            ((double)(res_end - res_start) / (double)chunk_duration_ns) * 100.0;
-        processing_parameters_set_resampler_load(loop->processing_params,
-                                                 r_load);
-        if (r_load > 100.0) {
-          loop->resampler_overloaded_chunks++;
-          if (loop->resampler_overloaded_chunks == 10) {
-            logger_warn(&g_logger,
-                        "Resampler is overloaded (load > 100%% for 10 "
-                        "consecutive chunks)");
-          }
-        } else {
-          loop->resampler_overloaded_chunks = 0;
-        }
-      } else {
-        processing_parameters_set_resampler_load(loop->processing_params, 0.0);
-        loop->resampler_overloaded_chunks = 0;
       }
     }
   }
@@ -391,25 +303,14 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
       continue;
     }
 
-    uint64_t res_start = 0;
-    uint64_t res_end = 0;
-
-    // 1. Pre-processing tap for visualisation (Raw captured samples before
-    // resample).
+    // 1. Pre-processing tap for visualisation (Raw captured samples before pipeline).
     if (loop->on_chunk_captured) {
       loop->on_chunk_captured(loop->on_chunk_captured_ctx, chunk);
     }
 
-    // 2. Resample if configured
-    bool resamp_err = false;
-    chunk = processing_loop_resample(loop, chunk, &res_start, &res_end,
-                                     &resamp_err);
-    if (resamp_err)
-      break;
-
     // Ref: docs/engine_state_management.md - Section 3.2 & Section 1.7.2 (Rule
     // 5)
-    // 4. Retrieve a pre-allocated scratch chunk from the round-robin pool,
+    // 2. Retrieve a pre-allocated scratch chunk from the round-robin pool,
     // or reuse an un-enqueued scratch chunk if the previous enqueue was
     // dropped.
     audio_chunk_t *current_scratch = loop->pending_scratch;
@@ -417,7 +318,7 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
       current_scratch = round_robin_chunk_pool_next(loop->scratch_pool);
     }
 
-    // 5. Execute DSP filtering and mixing pipeline
+    // 3. Execute DSP filtering and mixing pipeline
     uint64_t pipe_start = cdsp_time_now_ns();
     pipeline_error_t perr =
         pipeline_process(loop->active_pipeline, chunk, current_scratch);
@@ -434,9 +335,8 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
     }
     chunk = current_scratch;
 
-    // 6. Metrics and clipping stats calculation
-    processing_loop_record_metrics(loop, chunk, pipe_start, pipe_end, res_start,
-                                   res_end);
+    // 4. Metrics and clipping stats calculation
+    processing_loop_record_metrics(loop, chunk, pipe_start, pipe_end);
 
     if (loop->on_chunk_processed) {
       loop->on_chunk_processed(loop->on_chunk_processed_ctx, chunk);
@@ -445,7 +345,7 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
     // Ref: docs/engine_state_management.md - Section 3.2 (Real-Time Bounded
     // Queue Drops), Section 1.7.2 (Rule 5), & Section 3.6 (Immediate Abort
     // Teardown)
-    // 7. Enqueue the processed chunk to the playback queue.
+    // 5. Enqueue the processed chunk to the playback queue.
     if (!processing_loop_enqueue_output(loop, chunk)) {
       break;
     }
@@ -460,7 +360,6 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
 
   if (loop->processing_params) {
     processing_parameters_set_processing_load(loop->processing_params, 0.0);
-    processing_parameters_set_resampler_load(loop->processing_params, 0.0);
   }
 
   if (rt_handle) {

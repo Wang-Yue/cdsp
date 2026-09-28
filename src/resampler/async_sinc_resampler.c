@@ -180,9 +180,9 @@ static void async_sinc_resampler_set_relative_ratio(void *impl,
     return;
   double min_ratio = 1.0 / resampler->max_relative_ratio;
   if (multiplier < min_ratio || multiplier > resampler->max_relative_ratio) {
-    logger_warn(&g_logger,
-                "Async sinc resampler ratio %.6f out of range [%.6f, %.6f]",
-                multiplier, min_ratio, resampler->max_relative_ratio);
+    logger_debug(&g_logger,
+                 "Async sinc resampler ratio %.6f out of range [%.6f, %.6f]",
+                 multiplier, min_ratio, resampler->max_relative_ratio);
     return;
   }
   double new_ratio = resampler->base_ratio * multiplier;
@@ -198,10 +198,10 @@ static double async_sinc_resampler_get_ratio(const void *impl) {
   return resampler ? resampler->resample_ratio : 1.0;
 }
 
-static size_t async_sinc_resampler_get_max_output_frames(const void *impl) {
+static size_t async_sinc_resampler_get_max_input_frames(const void *impl) {
   const async_sinc_resampler_t *resampler =
       (const async_sinc_resampler_t *)impl;
-  return resampler ? resampler->max_output_frames : 0;
+  return resampler ? resampler->max_input_frames : 0;
 }
 
 static size_t async_sinc_resampler_get_chunk_size(const void *impl) {
@@ -1030,7 +1030,7 @@ static void *async_sinc_resampler_create(const resampler_config_t *config,
   if (!config || config->type != RESAMPLER_TYPE_ASYNC_SINC)
     return NULL;
 
-  fixed_async_t fixed_mode = FIXED_ASYNC_INPUT;
+  fixed_async_t fixed_mode = FIXED_ASYNC_OUTPUT;
   if (config->has_sinc_len && config->has_oversampling_factor &&
       config->has_window && config->has_interpolation) {
     window_function_t wf = window_function_from_string(
@@ -1091,7 +1091,7 @@ const resampler_vtable_t g_async_sinc_resampler_vtable = {
     .process = async_sinc_resampler_process,
     .set_relative_ratio = async_sinc_resampler_set_relative_ratio,
     .get_ratio = async_sinc_resampler_get_ratio,
-    .get_max_output_frames = async_sinc_resampler_get_max_output_frames,
+    .get_max_input_frames = async_sinc_resampler_get_max_input_frames,
     .get_chunk_size = async_sinc_resampler_get_chunk_size,
     .get_input_frames_next = async_sinc_resampler_get_input_frames_next,
     .get_output_frames_next = async_sinc_resampler_get_output_frames_next,

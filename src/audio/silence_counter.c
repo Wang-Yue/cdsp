@@ -10,7 +10,7 @@
 
 struct silence_counter {
   size_t limit_chunks;
-  float threshold_linear;
+  double threshold_linear;
   size_t silent_chunks;
 };
 
@@ -48,7 +48,7 @@ void silence_counter_init(silence_counter_t *counter, double threshold_db,
                           size_t chunksize) {
   if (!counter)
     return;
-  counter->threshold_linear = (float)pow(10.0, threshold_db / 20.0);
+  counter->threshold_linear = pow(10.0, threshold_db / 20.0);
   counter->silent_chunks = 0;
   // Convert the timeout duration from seconds to the number of audio chunks.
   if (timeout_seconds > 0.0 && chunksize > 0 && isfinite(timeout_seconds) &&
@@ -71,17 +71,17 @@ void silence_counter_init(silence_counter_t *counter, double threshold_db,
 /// Feed the next chunk's value range (maxval - minval). Returns the
 /// engine state the capture loop should drive to.
 processing_state_t silence_counter_update(silence_counter_t *counter,
-                                          float value_range) {
+                                          double value_range) {
   if (!counter || counter->limit_chunks == 0) {
     return PROCESSING_STATE_RUNNING;
   }
   // Reset counter if signal level is above the silence threshold.
   if (value_range > counter->threshold_linear) {
     if (counter->silent_chunks > counter->limit_chunks) {
-      logger_info(&g_logger,
-                  "Audio signal restored above threshold (value_range=%.6f > "
-                  "threshold=%.6f), resuming",
-                  value_range, counter->threshold_linear);
+      logger_debug(&g_logger,
+                   "Audio signal restored above threshold (value_range=%.6f > "
+                   "threshold=%.6f), resuming",
+                   value_range, counter->threshold_linear);
     }
     counter->silent_chunks = 0;
     return PROCESSING_STATE_RUNNING;
@@ -89,10 +89,10 @@ processing_state_t silence_counter_update(silence_counter_t *counter,
   // Increment silent chunk count, bounding it to avoid overflow.
   processing_state_t state = PROCESSING_STATE_RUNNING;
   if (counter->silent_chunks == counter->limit_chunks) {
-    logger_info(&g_logger,
-                "Silence timeout reached (silent_chunks=%zu, "
-                "limit_chunks=%zu), requesting pause",
-                counter->silent_chunks, counter->limit_chunks);
+    logger_debug(&g_logger,
+                 "Silence timeout reached (silent_chunks=%zu, "
+                 "limit_chunks=%zu), requesting pause",
+                 counter->silent_chunks, counter->limit_chunks);
   }
   if (counter->silent_chunks >= counter->limit_chunks) {
     state = PROCESSING_STATE_PAUSED;

@@ -575,6 +575,7 @@ pipeline_t *pipeline_create(const dsp_config_t *config,
       (config->devices.has_worker_threads && config->devices.worker_threads > 0)
           ? (size_t)config->devices.worker_threads
           : 0;
+  pipeline->proc_params = proc_params;
 
   logger_info(&g_logger,
               "Initializing DSP pipeline (sample_rate=%d, chunk_size=%zu, "

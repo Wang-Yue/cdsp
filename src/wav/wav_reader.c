@@ -142,9 +142,9 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
         }
       }
     } else if (memcmp(chunk_id, "fmt ", 4) == 0) {
+      uint32_t pad = chunk_size & 1;
       if (found_fmt) {
         // Honor first fmt chunk, skip any subsequent fmt chunks
-        uint32_t pad = chunk_size & 1;
         if (cdsp_fseek64(f, (int64_t)chunk_size + pad, SEEK_CUR) != 0) {
           set_error(err_msg, err_msg_len,
                     "Failed to seek past duplicate fmt chunk");
@@ -152,13 +152,16 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
         }
         continue;
       }
-      found_fmt = true;
       if (chunk_size != 16 && chunk_size != 18 && chunk_size != 40) {
-        set_error(err_msg, err_msg_len,
-                  "Invalid fmt chunk size %u (must be 16, 18, or 40)",
-                  chunk_size);
-        return false;
+        // Upstream waveadapter header.rs:621-622 skips malformed fmt chunk and keeps scanning
+        if (cdsp_fseek64(f, (int64_t)chunk_size + pad, SEEK_CUR) != 0) {
+          set_error(err_msg, err_msg_len,
+                    "Failed to seek past malformed fmt chunk");
+          return false;
+        }
+        continue;
       }
+      found_fmt = true;
       uint8_t fmt_payload[40];
       size_t to_read = chunk_size < 40 ? chunk_size : 40;
       if (fread(fmt_payload, 1, to_read, f) != to_read) {
@@ -206,8 +209,7 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
           return false;
         }
         uint16_t v = fmt_payload[18] | (fmt_payload[19] << 8);
-        if (v > 0)
-          valid_bits = v;
+        valid_bits = v;
       }
 
       if (channels == 0) {
@@ -222,7 +224,7 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
       }
       container_bytes = block_align / channels;
       uint16_t bytes_per_sample = (uint16_t)container_bytes;
-      if (valid_bits == 0)
+      if (!is_extended && valid_bits == 0)
         valid_bits = bits_per_sample;
 
       if (is_extended && valid_bits != bits_per_sample &&

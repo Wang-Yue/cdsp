@@ -296,7 +296,7 @@ static void lookahead_limiter_processor_process(void *impl,
       (lookahead_limiter_processor_t *)impl;
   if (!processor || !chunk || !processor->scratch)
     return;
-  size_t count = audio_chunk_get_valid_frames(chunk);
+  size_t count = audio_chunk_get_frames(chunk);
   if (count > processor->scratch_capacity)
     count = processor->scratch_capacity;
   if (count == 0 || processor->monitor_channels_count == 0)
@@ -385,6 +385,17 @@ static void lookahead_limiter_processor_transfer_state(void *dest_ptr,
 
   if (dest->gain && src->gain) {
     g_lookahead_gain_vtable.transfer_state(dest->gain, src->gain);
+    bool proc_params_changed =
+        (dest->monitor_channels_count != src->monitor_channels_count ||
+         dest->process_channels_count != src->process_channels_count ||
+         dest->delay_processed_only != src->delay_processed_only ||
+         memcmp(dest->monitor_channels, src->monitor_channels,
+                dest->monitor_channels_count * sizeof(size_t)) != 0 ||
+         memcmp(dest->process_channels, src->process_channels,
+                dest->process_channels_count * sizeof(size_t)) != 0);
+    if (proc_params_changed) {
+      lookahead_gain_pad_silence(dest->gain);
+    }
   }
 
   // Transfer delay states

@@ -94,20 +94,13 @@ typedef struct synchronous_resampler synchronous_resampler_t;
 struct synchronous_resampler {
   /// Number of channels processed per call.
   size_t channels;
-  /// Input frames the resampler expects on every `process` call —
-  /// `K·L` for some integer `K ≥ 1`, where `L = Fᵢ / gcd(Fᵢ, Fₒ)`.
+  /// Fixed output frames produced per `process` call (requested chunk_size).
   size_t chunk_size;
-  /// Output frames produced per `process` call — `K·M`, where
-  /// `M = Fₒ / gcd(Fᵢ, Fₒ)`.
-  size_t output_chunk_size;
   double ratio;
   /// Length of the working FFT block on the input side (`sub_fft_in`).
   size_t sub_fft_in;
   /// Length of the working FFT block on the output side (`sub_fft_out`).
   size_t sub_fft_out;
-  /// Number of sub-chunks processed per call.
-  size_t num_subchunks;
-  double cutoff;
   /// Number of unique-bin frequencies common to the input and output
   /// spectra: `sub_fft_in + 1` for upsampling/equal, `sub_fft_out` for
   /// downsampling. Bins above this in the output spectrum are zeroed
@@ -124,6 +117,11 @@ struct synchronous_resampler {
   // Per-channel time-domain overlap-add carry. Each entry holds the
   // tail of the previous chunk's IFFT result, length `sub_fft_out`.
   double **carries;
+  // Per-channel output scratch staging buffer for fixed-output mode.
+  // Capacity: `chunk_size + sub_fft_out`.
+  double **output_scratch;
+  // Number of output frames currently buffered in output_scratch.
+  size_t saved_frames;
   // Hot-path scratch buffers reused across channels. Unified to minimize
   // cache footprint and avoid intermediate allocations.
   //   `workingTime`: holds the 2N zero-padded input block for forward FFT,
@@ -180,6 +178,13 @@ static void synchronous_resampler_free(void *impl) {
     }
     free(resampler->carries);
   }
+  if (resampler->output_scratch) {
+    for (size_t ch = 0; ch < resampler->channels; ch++) {
+      if (resampler->output_scratch[ch])
+        cdsp_aligned_free(resampler->output_scratch[ch]);
+    }
+    free(resampler->output_scratch);
+  }
   if (resampler->working_time)
     cdsp_aligned_free(resampler->working_time);
   if (resampler->working_spec)
@@ -203,10 +208,29 @@ static double synchronous_resampler_get_ratio(const void *impl) {
   return resampler ? resampler->ratio : 1.0;
 }
 
-static size_t synchronous_resampler_get_max_output_frames(const void *impl) {
+static inline size_t
+synchronous_resampler_subchunks_needed(const synchronous_resampler_t *resampler) {
+  if (!resampler || resampler->chunk_size <= resampler->saved_frames)
+    return 0;
+  return (resampler->chunk_size - resampler->saved_frames +
+          resampler->sub_fft_out - 1) /
+         resampler->sub_fft_out;
+}
+
+static inline size_t
+synchronous_resampler_max_subchunks(const synchronous_resampler_t *resampler) {
+  if (!resampler)
+    return 0;
+  size_t max_sub = (resampler->chunk_size + resampler->sub_fft_out - 1) /
+                   resampler->sub_fft_out;
+  return max_sub > 0 ? max_sub : 1;
+}
+
+static size_t synchronous_resampler_get_max_input_frames(const void *impl) {
   const synchronous_resampler_t *resampler =
       (const synchronous_resampler_t *)impl;
-  return resampler ? resampler->output_chunk_size : 0;
+  return synchronous_resampler_max_subchunks(resampler) *
+         (resampler ? resampler->sub_fft_in : 0);
 }
 
 static size_t synchronous_resampler_get_chunk_size(const void *impl) {
@@ -218,13 +242,14 @@ static size_t synchronous_resampler_get_chunk_size(const void *impl) {
 static size_t synchronous_resampler_get_input_frames_next(const void *impl) {
   const synchronous_resampler_t *resampler =
       (const synchronous_resampler_t *)impl;
-  return resampler ? resampler->chunk_size : 0;
+  return synchronous_resampler_subchunks_needed(resampler) *
+         (resampler ? resampler->sub_fft_in : 0);
 }
 
 static size_t synchronous_resampler_get_output_frames_next(const void *impl) {
   const synchronous_resampler_t *resampler =
       (const synchronous_resampler_t *)impl;
-  return resampler ? resampler->output_chunk_size : 0;
+  return resampler ? resampler->chunk_size : 0;
 }
 
 static size_t synchronous_resampler_get_channels(const void *impl) {
@@ -242,23 +267,24 @@ synchronous_resampler_process(void *impl, const audio_chunk_t *input,
   synchronous_resampler_t *resampler = (synchronous_resampler_t *)impl;
   if (!resampler || !input || !output)
     return RESAMPLER_ERR_INVALID_PARAMETER;
-  size_t valid_frames = audio_chunk_get_valid_frames(input);
-  if (valid_frames > resampler->chunk_size) {
-    valid_frames = resampler->chunk_size;
-  }
-  if (audio_chunk_get_channels(input) != resampler->channels) {
+  if (audio_chunk_get_channels(input) != resampler->channels ||
+      audio_chunk_get_channels(output) != resampler->channels) {
     return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
   }
-  if (audio_chunk_get_channels(output) != resampler->channels) {
-    return RESAMPLER_ERR_CHANNEL_COUNT_MISMATCH;
-  }
-  if (audio_chunk_get_frames(output) < resampler->output_chunk_size) {
+  if (audio_chunk_get_frames(output) < resampler->chunk_size) {
     return RESAMPLER_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
 
-  for (size_t s = 0; s < resampler->num_subchunks; s++) {
+  size_t subchunks_needed = synchronous_resampler_subchunks_needed(resampler);
+  size_t expected_in = subchunks_needed * resampler->sub_fft_in;
+  size_t valid_frames = audio_chunk_get_valid_frames(input);
+  if (valid_frames > expected_in) {
+    valid_frames = expected_in;
+  }
+
+  for (size_t s = 0; s < subchunks_needed; s++) {
     size_t in_offset = s * resampler->sub_fft_in;
-    size_t out_offset = s * resampler->sub_fft_out;
+    size_t out_offset = resampler->saved_frames + s * resampler->sub_fft_out;
     size_t sub_valid =
         (valid_frames > in_offset) ? (valid_frames - in_offset) : 0;
     if (sub_valid > resampler->sub_fft_in)
@@ -266,11 +292,11 @@ synchronous_resampler_process(void *impl, const audio_chunk_t *input,
 
     for (size_t ch = 0; ch < resampler->channels; ch++) {
       const double *src = audio_chunk_get_channel(input, ch);
-      double *out = audio_chunk_get_channel(output, ch);
-      if (!src || !out)
+      double *out_scratch = resampler->output_scratch[ch];
+      if (!src || !out_scratch)
         continue;
       const double *src_ptr = src + in_offset;
-      double *out_ptr = out + out_offset;
+      double *out_ptr = out_scratch + out_offset;
       double *carry_ptr = resampler->carries[ch];
 
       // Step 1. Place the input block at the start of a length-2N
@@ -320,9 +346,32 @@ synchronous_resampler_process(void *impl, const audio_chunk_t *input,
     }
   }
 
-  size_t valid_out =
-      (resampler->output_chunk_size * valid_frames) / resampler->chunk_size;
-  audio_chunk_set_valid_frames(output, valid_out);
+  size_t total_avail_out =
+      resampler->saved_frames + subchunks_needed * resampler->sub_fft_out;
+  size_t emit_frames = (expected_in > 0)
+                           ? ((resampler->chunk_size * valid_frames) / expected_in)
+                           : resampler->chunk_size;
+  if (emit_frames > total_avail_out) {
+    emit_frames = total_avail_out;
+  }
+
+  for (size_t ch = 0; ch < resampler->channels; ch++) {
+    double *out = audio_chunk_get_channel(output, ch);
+    double *out_scratch = resampler->output_scratch[ch];
+    if (out && out_scratch) {
+      memcpy(out, out_scratch, emit_frames * sizeof(double));
+      size_t new_saved =
+          (total_avail_out > emit_frames) ? (total_avail_out - emit_frames) : 0;
+      if (new_saved > 0) {
+        memmove(out_scratch, out_scratch + emit_frames,
+                new_saved * sizeof(double));
+      }
+    }
+  }
+  resampler->saved_frames =
+      (total_avail_out > emit_frames) ? (total_avail_out - emit_frames) : 0;
+
+  audio_chunk_set_valid_frames(output, emit_frames);
   return RESAMPLER_OK;
 }
 
@@ -362,40 +411,21 @@ static void *synchronous_resampler_create_impl(size_t channels,
   size_t min_chunk_in = input_rate / g;
   size_t min_chunk_out = output_rate / g;
 
-  double raw_fft_chunks =
-      ceil((double)requested_chunk_size / (double)min_chunk_in);
-  if (isnan(raw_fft_chunks) || isinf(raw_fft_chunks) ||
-      raw_fft_chunks > (double)(SIZE_MAX / min_chunk_in)) {
-    config_error_set(
-        err, CONFIG_ERR_VALIDATION,
-        "SynchronousResampler: requested_chunk_size is out of bounds");
-    synchronous_resampler_free(resampler);
-    return NULL;
-  }
-  size_t fft_chunks = (size_t)raw_fft_chunks;
+  size_t sub_chunks = requested_chunk_size / 256;
+  if (sub_chunks < 1)
+    sub_chunks = 1;
+  size_t wanted_subsize = requested_chunk_size / sub_chunks;
+  size_t fft_chunks = (wanted_subsize + min_chunk_out - 1) / min_chunk_out;
   if (fft_chunks < 1)
     fft_chunks = 1;
 
   size_t sub_fft_in = fft_chunks * min_chunk_in;
   size_t sub_fft_out = fft_chunks * min_chunk_out;
 
-  size_t num_subchunks = 1;
-
-  size_t input_block = num_subchunks * sub_fft_in;
-  size_t output_block = num_subchunks * sub_fft_out;
-
-  if (input_block > SIZE_MAX / 2 || output_block > SIZE_MAX / 2) {
-    config_error_set(err, CONFIG_ERR_VALIDATION,
-                     "SynchronousResampler: block size overflows SIZE_MAX / 2");
-    synchronous_resampler_free(resampler);
-    return NULL;
-  }
-
   resampler->sub_fft_in = sub_fft_in;
   resampler->sub_fft_out = sub_fft_out;
-  resampler->num_subchunks = num_subchunks;
-  resampler->chunk_size = input_block;
-  resampler->output_chunk_size = output_block;
+  resampler->chunk_size = requested_chunk_size;
+  resampler->saved_frames = 0;
   if (sub_fft_in < sub_fft_out) {
     resampler->shared_bins = sub_fft_in + 1;
   } else {
@@ -410,7 +440,6 @@ static void *synchronous_resampler_create_impl(size_t channels,
   } else {
     cutoff = calculate_cutoff(sub_fft_in, WINDOW_FUNCTION_BLACKMAN_HARRIS2);
   }
-  resampler->cutoff = cutoff;
   double *kernel =
       make_sinc_table(sub_fft_in, 1, WINDOW_FUNCTION_BLACKMAN_HARRIS2, cutoff);
   if (!kernel) {
@@ -480,6 +509,29 @@ static void *synchronous_resampler_create_impl(size_t channels,
       return NULL;
     }
     memset(resampler->carries[ch], 0, sub_fft_out * sizeof(double));
+  }
+
+  resampler->output_scratch = (double **)calloc(channels, sizeof(double *));
+  if (!resampler->output_scratch) {
+    config_error_set(
+        err, CONFIG_ERR_PARSE,
+        "SynchronousResampler: Failed to allocate output scratch array");
+    synchronous_resampler_free(resampler);
+    return NULL;
+  }
+  size_t scratch_out_len = requested_chunk_size + sub_fft_out;
+  for (size_t ch = 0; ch < channels; ch++) {
+    resampler->output_scratch[ch] =
+        (double *)cdsp_aligned_alloc(64, scratch_out_len * sizeof(double));
+    if (!resampler->output_scratch[ch]) {
+      config_error_set(err, CONFIG_ERR_PARSE,
+                       "SynchronousResampler: Failed to allocate output scratch "
+                       "for channel %zu",
+                       ch);
+      synchronous_resampler_free(resampler);
+      return NULL;
+    }
+    memset(resampler->output_scratch[ch], 0, scratch_out_len * sizeof(double));
   }
 
   size_t max_len = sub_fft_in > sub_fft_out ? sub_fft_in : sub_fft_out;
@@ -556,21 +608,6 @@ static size_t synchronous_resampler_get_output_delay(const void *impl) {
   return resampler ? (resampler->sub_fft_out / 2) : 0;
 }
 
-size_t synchronous_resampler_get_fft_size_in(
-    const synchronous_resampler_t *resampler) {
-  return resampler ? resampler->sub_fft_in : 0;
-}
-
-size_t synchronous_resampler_get_fft_size_out(
-    const synchronous_resampler_t *resampler) {
-  return resampler ? resampler->sub_fft_out : 0;
-}
-
-double
-synchronous_resampler_get_cutoff(const synchronous_resampler_t *resampler) {
-  return resampler ? resampler->cutoff : 0.0;
-}
-
 static void synchronous_resampler_reset(void *impl) {
   synchronous_resampler_t *resampler = (synchronous_resampler_t *)impl;
   if (!resampler)
@@ -583,6 +620,16 @@ static void synchronous_resampler_reset(void *impl) {
       }
     }
   }
+  if (resampler->output_scratch) {
+    size_t scratch_out_len = resampler->chunk_size + resampler->sub_fft_out;
+    for (size_t ch = 0; ch < resampler->channels; ch++) {
+      if (resampler->output_scratch[ch]) {
+        memset(resampler->output_scratch[ch], 0,
+               scratch_out_len * sizeof(double));
+      }
+    }
+  }
+  resampler->saved_frames = 0;
 }
 
 const resampler_vtable_t g_synchronous_resampler_vtable = {
@@ -591,7 +638,7 @@ const resampler_vtable_t g_synchronous_resampler_vtable = {
     .process = synchronous_resampler_process,
     .set_relative_ratio = synchronous_resampler_set_relative_ratio,
     .get_ratio = synchronous_resampler_get_ratio,
-    .get_max_output_frames = synchronous_resampler_get_max_output_frames,
+    .get_max_input_frames = synchronous_resampler_get_max_input_frames,
     .get_chunk_size = synchronous_resampler_get_chunk_size,
     .get_input_frames_next = synchronous_resampler_get_input_frames_next,
     .get_output_frames_next = synchronous_resampler_get_output_frames_next,

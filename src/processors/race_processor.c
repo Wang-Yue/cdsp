@@ -270,7 +270,7 @@ static void race_processor_process(void *impl, audio_chunk_t *chunk) {
   race_processor_t *processor = (race_processor_t *)impl;
   if (!processor || !chunk)
     return;
-  size_t count = audio_chunk_get_valid_frames(chunk);
+  size_t count = audio_chunk_get_frames(chunk);
   if (count == 0 || !processor->delay_a || !processor->delay_b ||
       !processor->gain)
     return;

@@ -76,7 +76,8 @@ struct alsa_capture {
 
 // Defined below; invoked from the capture RT thread whenever poll() reports
 // activity on a control descriptor.
-static void alsa_capture_process_events(alsa_capture_t *capture);
+static void alsa_capture_process_events(alsa_capture_t *capture,
+                                        bool is_rt_thread);
 
 // Maximum number of poll descriptors collected from the PCM and control
 // handles. ALSA devices realistically expose one or two each.
@@ -255,7 +256,7 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       // There were other ready file descriptors than PCM, must be controls
       // (src/alsa_backend/utils.rs:565-570).
       if (nbr_found < nbr_ready) {
-        alsa_capture_process_events(capture);
+        alsa_capture_process_events(capture, true);
       }
       if (pcm_ready) {
         break;
@@ -466,10 +467,19 @@ static void alsa_capture_sync_linked_controls(alsa_capture_t *capture) {
 
 // Process events from ALSA control interface matching process_events &
 // get_event_action in upstream (src/alsa_backend/utils.rs:574-721)
-static void alsa_capture_process_events(alsa_capture_t *capture) {
+static void alsa_capture_process_events(alsa_capture_t *capture,
+                                        bool is_rt_thread) {
   if (!capture->ctl && !capture->hctl)
     return;
-  pthread_mutex_lock(&capture->mixer_mutex);
+  if (is_rt_thread) {
+    if (pthread_mutex_trylock(&capture->mixer_mutex) != 0) {
+      // Contended by non-RT outer thread; skip event processing this cycle to
+      // avoid real-time priority inversion on the audio hot path.
+      return;
+    }
+  } else {
+    pthread_mutex_lock(&capture->mixer_mutex);
+  }
 
   snd_ctl_event_t *event;
   snd_ctl_event_alloca(&event);
@@ -684,7 +694,7 @@ static bool alsa_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
 
   // Process events from ALSA control interface first, then sync linked controls
   // (matches CamillaDSP device.rs:1090)
-  alsa_capture_process_events(capture);
+  alsa_capture_process_events(capture, false);
   alsa_capture_sync_linked_controls(capture);
 
   if (atomic_load_explicit(&capture->is_inactive, memory_order_acquire)) {
@@ -747,7 +757,7 @@ static bool alsa_capture_get_pending_rate_change(void *ctx, double *out_rate) {
   alsa_capture_t *capture = (alsa_capture_t *)ctx;
   if (!capture)
     return false;
-  alsa_capture_process_events(capture);
+  alsa_capture_process_events(capture, false);
   if (backend_buffer_has_pending_rate_change(capture->buffer)) {
     if (out_rate) {
       *out_rate =

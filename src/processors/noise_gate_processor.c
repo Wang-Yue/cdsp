@@ -261,7 +261,7 @@ static void noise_gate_processor_process(void *impl, audio_chunk_t *chunk) {
   noise_gate_processor_t *processor = (noise_gate_processor_t *)impl;
   if (!processor || !chunk || !processor->scratch)
     return;
-  size_t count = audio_chunk_get_valid_frames(chunk);
+  size_t count = audio_chunk_get_frames(chunk);
   if (count > processor->scratch_capacity)
     count = processor->scratch_capacity;
   if (count == 0 || processor->monitor_channels_count == 0)
