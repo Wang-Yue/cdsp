@@ -12,6 +12,9 @@
 #include "audio/sample_format.h"
 #include "audio/spectrum_analyzer.h"
 #include "backend/audio_backend_registry.h"
+#if defined(ENABLE_WEBAUDIO) && defined(__EMSCRIPTEN__)
+#include "backend/webaudio_backend.h"
+#endif
 #include "config/config_diff.h"
 #include "config/config_error.h"
 #include "config/configuration.h"
@@ -915,6 +918,10 @@ static void dsp_engine_poll_impl(void *ctx) {
 }
 
 dsp_engine_t *dsp_engine_create(void) {
+#if defined(ENABLE_WEBAUDIO) && defined(__EMSCRIPTEN__)
+  // The browser audio device behind the WebAudio backends (idempotent).
+  webaudio_device_start();
+#endif
   dsp_engine_impl_t *impl =
       (dsp_engine_impl_t *)calloc(1, sizeof(dsp_engine_impl_t));
   if (!impl)

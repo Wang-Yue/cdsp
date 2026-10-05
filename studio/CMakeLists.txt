@@ -187,15 +187,15 @@ target_link_libraries(cdsp-studio PRIVATE
 # ==============================================================================
 if(ENABLE_PCH)
     target_precompile_headers(cdsp-studio PRIVATE
-        <QtCore>
-        <QtGui>
-        <QtWidgets>
-        <vector>
-        <string>
-        <memory>
-        <functional>
-        <optional>
-        <algorithm>
+        "$<$<COMPILE_LANGUAGE:CXX>:<QtCore>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<QtGui>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<QtWidgets>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<vector>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<string>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<memory>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<functional>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<optional>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<algorithm>>"
     )
     if(APPLE)
         set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/utils/MacUtils.mm" PROPERTIES
@@ -246,6 +246,61 @@ elseif(WIN32)
     if(ENABLE_STATIC_WINDOWS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_link_options(cdsp-studio PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--gc-sections)
     endif()
+elseif(EMSCRIPTEN)
+    # Pre-spawned pthread workers: the engine's capture/processing/playback threads and the
+    # logger thread are created from the browser main thread, which cannot wait for a new Web
+    # Worker to start, plus headroom for Qt's own threads.
+    set_target_properties(cdsp-studio PROPERTIES
+        QT_WASM_EXPORT_NAME "cdsp_studio"
+        QT_WASM_PTHREAD_POOL_SIZE 8
+    )
+    target_compile_definitions(cdsp-studio PRIVATE ENABLE_WEBAUDIO=1)
+    # Emscripten disables C++ exception catching by default, which turns any throw (e.g. std::stod
+    # on a non-numeric preset field, caught by Studio's parsers) into abort(). Enable JS-based
+    # catching; the prebuilt Qt is built without wasm-exceptions, so -fwasm-exceptions is not an option.
+    # Qt6::Platform's interface link options force "-s DISABLE_EXCEPTION_CATCHING=1" after ours on
+    # the link line, which would silently win, so drop that entry.
+    get_target_property(_qt_platform_link_opts Qt6::Platform INTERFACE_LINK_OPTIONS)
+    list(REMOVE_ITEM _qt_platform_link_opts "SHELL:-s DISABLE_EXCEPTION_CATCHING=1")
+    set_target_properties(Qt6::Platform PROPERTIES INTERFACE_LINK_OPTIONS "${_qt_platform_link_opts}")
+    target_compile_options(cdsp-studio PRIVATE -pthread -mbulk-memory -matomics -sDISABLE_EXCEPTION_CATCHING=0)
+    target_link_options(cdsp-studio PRIVATE
+        --bind
+        -pthread
+        -mbulk-memory
+        -matomics
+        -sDISABLE_EXCEPTION_CATCHING=0
+        -sUSE_PTHREADS=1
+        # Wasm AudioWorklet for the WebAudio backend's device callback (webaudio_device_start, called from dsp_engine_create).
+        -sAUDIO_WORKLET=1
+        -sWASM_WORKERS=1
+        -sALLOW_MEMORY_GROWTH=1
+        -sINITIAL_MEMORY=134217728
+        -sMAXIMUM_MEMORY=1073741824
+        -sMODULARIZE=1
+        -sEXPORT_NAME=cdsp_studio
+        -sDYNAMIC_EXECUTION=0
+        "-sEXPORTED_RUNTIME_METHODS=['UTF16ToString','stringToUTF16','JSEvents','specialHTMLTargets','FS','callMain','UTF8ToString','stringToUTF8','ENV']"
+        "-sEXPORTED_FUNCTIONS=['_main','__embind_initialize_bindings']"
+    )
+
+    # Generate HTML shell and copy Qt WebAssembly loader assets (CSP compliant)
+    add_custom_command(TARGET cdsp-studio POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${QT6_INSTALL_PREFIX}/plugins/platforms/qtloader.js"
+            "$<TARGET_FILE_DIR:cdsp-studio>/qtloader.js"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${QT6_INSTALL_PREFIX}/plugins/platforms/qtlogo.svg"
+            "$<TARGET_FILE_DIR:cdsp-studio>/qtlogo.svg"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/cdsp-studio.html"
+            "$<TARGET_FILE_DIR:cdsp-studio>/cdsp-studio.html"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/studio-bootstrap.js"
+            "$<TARGET_FILE_DIR:cdsp-studio>/studio-bootstrap.js"
+        COMMENT "Copying CSP-compliant WebAssembly shell HTML, bootstrap JS, and Qt loader assets..."
+        VERBATIM
+    )
 endif()
 
 

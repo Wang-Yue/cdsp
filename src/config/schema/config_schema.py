@@ -260,6 +260,7 @@ ENUM_AUDIO_BACKEND_TYPE = EnumType(
         ("AUDIO_BACKEND_TYPE_FILE", "File", ["RawFile", "WavFile"]),
         ("AUDIO_BACKEND_TYPE_STDIN_OUT", "Stdin", ["Stdout"]),
         ("AUDIO_BACKEND_TYPE_GENERATOR", "SignalGenerator"),
+        ("AUDIO_BACKEND_TYPE_WEB_AUDIO", "WebAudio", [], "ENABLE_WEBAUDIO"),
     ],
     invalid_val="AUDIO_BACKEND_TYPE_INVALID",
     is_external=True
@@ -1187,6 +1188,26 @@ STRUCT_GENERATOR_CAPTURE = StructType(
     allowed_extra_keys=CAPTURE_EXTRA_KEYS
 )
 
+STRUCT_WEBAUDIO_CAPTURE = StructType(
+    name="webaudio_capture_config",
+    c_type="webaudio_capture_config_t",
+    fields=[
+        Field("channels", TYPE_SIZE_T, required=True),
+    ],
+    allowed_extra_keys=CAPTURE_EXTRA_KEYS,
+    guard="ENABLE_WEBAUDIO"
+)
+
+STRUCT_WEBAUDIO_PLAYBACK = StructType(
+    name="webaudio_playback_config",
+    c_type="webaudio_playback_config_t",
+    fields=[
+        Field("channels", TYPE_SIZE_T, required=True),
+    ],
+    allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
+    guard="ENABLE_WEBAUDIO"
+)
+
 UNION_CAPTURE = TaggedUnionType(
     name="capture_device_config",
     c_type="capture_device_config_t",
@@ -1208,6 +1229,7 @@ UNION_CAPTURE = TaggedUnionType(
         "AUDIO_BACKEND_TYPE_GENERATOR": ("generator", STRUCT_GENERATOR_CAPTURE),
         "AUDIO_BACKEND_TYPE_WASAPI": ("wasapi", STRUCT_WASAPI_CAPTURE),
         "AUDIO_BACKEND_TYPE_ASIO": ("asio", STRUCT_ASIO_CAPTURE),
+        "AUDIO_BACKEND_TYPE_WEB_AUDIO": ("webaudio", STRUCT_WEBAUDIO_CAPTURE),
     },
     extra_union_members=[("wav_file", STRUCT_WAV_FILE_CAPTURE)],
     is_flattened=True,
@@ -1237,6 +1259,7 @@ UNION_PLAYBACK = TaggedUnionType(
         "AUDIO_BACKEND_TYPE_STDIN_OUT": ("stdout_out", STRUCT_STDOUT_PLAYBACK),
         "AUDIO_BACKEND_TYPE_WASAPI": ("wasapi", STRUCT_WASAPI_PLAYBACK),
         "AUDIO_BACKEND_TYPE_ASIO": ("asio", STRUCT_ASIO_PLAYBACK),
+        "AUDIO_BACKEND_TYPE_WEB_AUDIO": ("webaudio", STRUCT_WEBAUDIO_PLAYBACK),
     },
     is_flattened=True,
     rejected_variants=["Stdin", "WavFile", "RawFile"],
@@ -1382,6 +1405,8 @@ ALL_SCHEMAS = [
     STRUCT_RAW_FILE_CAPTURE,
     STRUCT_RAW_FILE_PLAYBACK,
     STRUCT_GENERATOR_CAPTURE,
+    STRUCT_WEBAUDIO_CAPTURE,
+    STRUCT_WEBAUDIO_PLAYBACK,
 
     # Device & DSP Config
     UNION_CAPTURE,

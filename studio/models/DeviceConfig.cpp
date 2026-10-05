@@ -272,6 +272,11 @@ CaptureDeviceConfig DeviceConfig::toCaptureDeviceConfig() const {
     CaptureDeviceConfig cap;
     cap.backend = backend;
     switch (backend) {
+#if defined(ENABLE_WEBAUDIO)
+    case AudioBackendType::WebAudio:
+        cap.webAudio.channels = channels;
+        break;
+#endif
 #if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         cap.coreAudio.channels = channels;
@@ -356,6 +361,11 @@ PlaybackDeviceConfig DeviceConfig::toPlaybackDeviceConfig() const {
     PlaybackDeviceConfig pb;
     pb.backend = backend;
     switch (backend) {
+#if defined(ENABLE_WEBAUDIO)
+    case AudioBackendType::WebAudio:
+        pb.webAudio.channels = channels;
+        break;
+#endif
 #if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         pb.coreAudio.channels = channels;

@@ -36,6 +36,9 @@ void cdsp_get_supported_device_types(char ***out_playback_types,
 #if defined(ENABLE_ASIO)
   pb_count++;
 #endif
+#if defined(ENABLE_WEBAUDIO)
+  pb_count++;
+#endif
   pb_count += 2; // File, Stdout
 
   // Count capture types
@@ -53,6 +56,9 @@ void cdsp_get_supported_device_types(char ***out_playback_types,
   cap_count++;
 #endif
 #if defined(ENABLE_ASIO)
+  cap_count++;
+#endif
+#if defined(ENABLE_WEBAUDIO)
   cap_count++;
 #endif
   cap_count += 4; // RawFile, WavFile, Stdin, SignalGenerator
@@ -105,6 +111,9 @@ void cdsp_get_supported_device_types(char ***out_playback_types,
 #if defined(ENABLE_ASIO)
   SAFE_STRDUP(pb_arr, pb_idx, "Asio");
 #endif
+#if defined(ENABLE_WEBAUDIO)
+  SAFE_STRDUP(pb_arr, pb_idx, "WebAudio");
+#endif
 
   SAFE_STRDUP(cap_arr, cap_idx, "RawFile");
   SAFE_STRDUP(cap_arr, cap_idx, "WavFile");
@@ -124,6 +133,9 @@ void cdsp_get_supported_device_types(char ***out_playback_types,
 #endif
 #if defined(ENABLE_ASIO)
   SAFE_STRDUP(cap_arr, cap_idx, "Asio");
+#endif
+#if defined(ENABLE_WEBAUDIO)
+  SAFE_STRDUP(cap_arr, cap_idx, "WebAudio");
 #endif
 
 #undef SAFE_STRDUP

@@ -19,26 +19,29 @@
 
 **CDSP** is a modular, high-throughput audio digital signal processing suite engineered for ultra-low latency, lock-free real-time audio routing, parametric equalization, convolution filtering, and acoustic measurement.
 
-The repository is organized into three primary components:
+The repository is organized into four primary components:
 
 1. **[Core C DSP Engine (`libcdsp`) & CLI Daemon (`cdsp`)](docs/ENGINE.md)**:
    A lightweight, drop-in replacement for CamillaDSP with hardware SIMD acceleration (Apple Accelerate / NEON / AVX2 / FFTW3), wait-free SPSC queue concurrency, driverless macOS CoreAudio loopback, and native DSD/DoP decoding and encoding.
 2. **[CDSP Studio (`cdsp-studio`)](studio/README.md)**:
    A cross-platform Qt 6 / C++ desktop application providing real-time DSP signal chain visualization, interactive parametric EQ design, FIR impulse response filtering, acoustic room correction wizards, headphone AutoEQ / Oratory1990 preset databases, and floating mini-players.
-3. **[ALSA Rate Notify Plugin (`plugins/`)](plugins/README.md)**:
+3. **[Chrome Extension & WebAssembly Studio (`extension/`)](extension/README.md)**:
+   A Google Chrome extension embedding CDSP Studio compiled to multithreaded, SIMD-accelerated WebAssembly. It runs the same multithreaded engine as desktop, fed by a Wasm AudioWorklet, for real-time tab audio filtering, parametric EQ presets, VU meters, and spectrum analysis.
+4. **[ALSA Rate Notify Plugin (`plugins/`)](plugins/README.md)**:
    A native Linux ALSA `ioplug` module enabling automatic, bit-perfect sample rate and format switching over `snd-aloop` without audio drops.
 
 ---
 
 ## Downloads
 
-Standalone, pre-built packages of **CDSP Studio** are automatically published weekly:
+Standalone, pre-built packages of **CDSP Studio** and the **Chrome Extension** are automatically published weekly:
 
 | Platform | Format | Direct Download |
 | :--- | :--- | :--- |
 | 🍏 **macOS** (Apple Silicon) | Standalone `.app` bundle | [CDSPStudio-macOS-arm64.zip](https://github.com/Wang-Yue/cdsp/releases/download/weekly/CDSPStudio-macOS-arm64.zip) |
 | 🐧 **Linux** (x86_64) | Standalone AppImage | [CDSPStudio-Linux-x86_64.AppImage](https://github.com/Wang-Yue/cdsp/releases/download/weekly/CDSPStudio-Linux-x86_64.AppImage) |
 | 🪟 **Windows** (x86_64) | Standalone Executable | [CDSPStudio-Windows-x86_64.exe](https://github.com/Wang-Yue/cdsp/releases/download/weekly/CDSPStudio-Windows-x86_64.exe) |
+| 🌐 **Chrome Extension** (WebAssembly) | Standalone Zip Bundle | [cdsp_extension.zip](https://github.com/Wang-Yue/cdsp/releases/download/weekly/cdsp_extension.zip) |
 
 > All builds, tags, and checksums (`SHA256SUMS.txt`) are available on the **[Releases](https://github.com/Wang-Yue/cdsp/releases)** page. Downloads are 100% public and do not require a GitHub account.
 
@@ -76,6 +79,11 @@ cdsp/
 │   ├── resources/              # Icons (app.icns/app.png), QRC resource bundle
 │   ├── cmake/
 │   └── README.md
+├── extension/                  # Chrome Extension packaging the WebAssembly Studio
+│   ├── manifest.json           # Manifest V3 configuration
+│   ├── background/             # Service worker (service_worker.js)
+│   ├── ui/                     # Extension icons
+│   └── README.md
 ├── plugins/                    # ALSA rate and format notification plugin for Linux
 │   ├── CMakeLists.txt
 │   ├── pcm_rate_notify.c
@@ -96,6 +104,7 @@ cdsp/
 - ⚡ **High-Throughput Real-Time Audio**: Up to **1.8x faster** filter execution and **1.7x faster** resampling throughput with full multi-threaded dynamic scheduling (Apple GCD / OpenMP).
 - 🔒 **Zero-Lock & Zero-Allocation Audio Loops**: Verified by automated AST Call Graph Auditing to ensure steady-state audio threads never acquire mutexes or invoke dynamic memory allocators.
 - 🪟 **Rich Desktop Experience**: Full-featured Qt 6 GUI with interactive frequency response curves, vector scopes, waterfall spectrograms, VU meters, and AutoEQ database integration.
+- 🌐 **WebAssembly & Chrome Extension**: Run the full double-precision, multithreaded C DSP engine and CDSP Studio inside Chrome with SIMD acceleration, fed by a Wasm AudioWorklet — the same engine model as desktop.
 - 🎧 **Native DSD & DoP Support**: In-place decoding and encoding for DSD64–DSD512 and DoP carrier streams.
 - 🍏 **Driverless macOS Loopback**: Native process-level and hardware-level audio capture via `CATapDescription` without third-party virtual audio cables.
 - 🐧 **Bit-Perfect Linux Switching**: ALSA rate notify plugin intercepts player sample rate transitions and coordinates dynamic engine restarts.
@@ -191,13 +200,40 @@ cmake -B build -S . -DENABLE_STUDIO=OFF
 cmake --build build -j
 ```
 
-#### 3. Run Test Suite
+#### 3. WebAssembly & Chrome Extension Build (Emscripten & Qt for WebAssembly)
+
+Building the WebAssembly target compiles the **Qt 6 WebAssembly Studio** (`cdsp-studio.wasm` / `cdsp-studio.js`) — GUI plus the multithreaded engine, whose WebAudio backend is driven by a Wasm AudioWorklet — and the WASM test suite. Qt for WebAssembly is required to build the extension.
+
+##### A. Prerequisites
+- **Emscripten SDK (`emsdk`)**: exactly `3.1.50` (`./emsdk install 3.1.50 && ./emsdk activate 3.1.50`), the version Qt 6.7.3 was built with — embind is not ABI-compatible across emsdk versions.
+- **Qt 6.7.3 for WebAssembly** (`wasm_multithread`) plus the matching desktop host (`gcc_64`), installed via `aqtinstall`:
+  ```bash
+  pip install aqtinstall
+  python3 -m aqt install-qt linux desktop 6.7.3 linux_gcc_64 --outputdir ~/Qt
+  python3 -m aqt install-qt all_os wasm 6.7.3 wasm_multithread -m qtmultimedia --outputdir ~/Qt
+  ```
+- **Node.js**: for running the WASM unit tests.
+
+##### B. Build Commands
+[`tools/build_wasm.sh`](tools/build_wasm.sh) is the single source of truth for the WebAssembly build; CI runs the exact same script. It verifies the toolchain versions, configures, builds, runs `test_wasm.js`, and packages the extension.
+```bash
+source /path/to/emsdk/emsdk_env.sh
+QT_ROOT=~/Qt tools/build_wasm.sh build-wasm
+```
+
+This generates:
+- `build-wasm/bin/cdsp-studio.js` & `cdsp-studio.wasm` — The full Qt 6 Studio compiled directly to multi-threaded WebAssembly.
+- `build-wasm/extension_dist/` — Clean unpacked Chrome Extension directory containing the Qt Studio WebAssembly app (`ui/studio/cdsp-studio.html`).
+- `build-wasm/cdsp_extension.zip` — Compressed standalone extension package for distribution.
+
+#### 4. Run Test Suite
 
 ```bash
+# Native test suite (all backends, filters, pipelines, and processors)
 ctest --test-dir build -j --output-on-failure
 ```
 
-#### 4. Code Formatting & Static Analysis
+#### 5. Code Formatting & Static Analysis
 
 ```bash
 # Format all C/C++ source and header files
@@ -216,6 +252,7 @@ cmake --build build --target iwyu
 
 - 📖 **[Core DSP Engine Deep Dive](docs/ENGINE.md)** — In-depth concurrency design, benchmarks, and performance evaluation.
 - 🎨 **[CDSP Studio Guide](studio/README.md)** — GUI features, screenshots, and acoustic wizards.
+- 🌐 **[Chrome Extension & WebAssembly Guide](extension/README.md)** — Browser tab audio capture, the AudioWorklet-driven WebAudio backend, and WASM integration.
 - 🔄 **[Engine State Management Specification](docs/engine_state_management.md)** — Lock-free thread coordination and atomic state machine.
 - 🔌 **[Public C API Specification](docs/dsp_engine_public_api_alignment.md)** — Direct C library embedding and FFI dispatch contract.
 - 🔬 **[Static Call Graph Audit Report](docs/callgraph_audit_report.md)** — Formal verification of zero-lock and zero-allocation hot paths.

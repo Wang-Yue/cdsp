@@ -12,7 +12,11 @@
 
 __attribute__((unused)) static const logger_t g_logger = {"dsp.fft"};
 
+#if defined(__EMSCRIPTEN__)
+#define FFT_PLAN_FLAGS FFTW_ESTIMATE
+#else
 #define FFT_PLAN_FLAGS FFTW_MEASURE
+#endif
 
 // MARK: - Core RealFFT Context Structures
 

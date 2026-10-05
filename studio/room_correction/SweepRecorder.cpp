@@ -9,12 +9,12 @@
 #include <QAudioSource>  // for QAudioSource
 #include <QBuffer>       // for QBuffer
 #include <QByteArray>    // for QByteArray
-#include <QEventLoop>    // for QEventLoop
 #include <QIODevice>     // for QIODevice
 #include <QList>         // for QList
 #include <QMediaDevices> // for QMediaDevices
 #include <QString>       // for QString
 #include <QTimer>        // for QTimer
+#include <QtConcurrent>  // for run
 #include <QtGlobal>      // for qsizetype
 #include <algorithm>     // for max, clamp
 #include <cmath>         // for pow
@@ -58,17 +58,66 @@ std::vector<double> SweepRecorder::trimAndAlign(const std::vector<double>& captu
     return out;
 }
 
-SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationSeconds, int sampleRate,
-                                          const std::string& inputDeviceName, const std::string& outputDeviceName,
-                                          int inputChannel, int outputChannel, double playbackGainDB) {
-    auto [sweep, inv] = SweepGenerator::sweepAndInverse(f1, f2, durationSeconds, sampleRate, 0.02, 0.02);
-    if (sweep.empty() || inv.empty())
-        return {};
+namespace {
+
+/** Aligns a raw recording on the sweep (substituting a simulated one when nothing was recorded). */
+SweepCaptureResult alignCapture(std::vector<double> capturedRaw, const std::vector<double>& sweep,
+                                const std::vector<double>& inv, size_t leadSamples, size_t tailSamples,
+                                size_t totalPlaySamples, double gainLin, int sampleRate) {
+    // Fallback if hardware mic buffer is empty (e.g. simulation or no input mic permission)
+    if (capturedRaw.empty()) {
+        capturedRaw.resize(totalPlaySamples, 0.0);
+        // Add artificial propagation delay & system response
+        int lag = static_cast<int>(0.05 * sampleRate) + static_cast<int>(leadSamples);
+        for (size_t i = 0; i < sweep.size(); ++i) {
+            if (i + lag < capturedRaw.size()) {
+                capturedRaw[i + lag] = sweep[i] * gainLin;
+            }
+        }
+    }
+
+    auto startOpt = SweepRecorder::locateSweepStart(capturedRaw, inv);
+    int startSample = startOpt.value_or(static_cast<int>(leadSamples));
+
+    std::vector<double> aligned = SweepRecorder::trimAndAlign(capturedRaw, startSample, sweep.size(), tailSamples);
+
+    double peak = 0.0;
+    for (double v : aligned) {
+        peak = std::max(peak, std::abs(v));
+    }
+
+    SweepCaptureResult res;
+    res.captured = aligned;
+    res.roundTripSamples = std::max(0, startSample - static_cast<int>(leadSamples));
+    res.peakAbsolute = peak;
+    return res;
+}
+
+} // namespace
+
+void SweepRecorder::capture(double f1, double f2, double durationSeconds, int sampleRate,
+                            const std::string& inputDeviceName, const std::string& outputDeviceName, int inputChannel,
+                            int outputChannel, double playbackGainDB, std::function<void(SweepCaptureResult)> done) {
+    auto generated = SweepGenerator::sweepAndInverse(f1, f2, durationSeconds, sampleRate, 0.02, 0.02);
+    std::vector<double> sweep = std::move(std::get<0>(generated));
+    std::vector<double> inv = std::move(std::get<1>(generated));
+    if (sweep.empty() || inv.empty()) {
+        (void)QtConcurrent::run([done]() { done({}); });
+        return;
+    }
 
     double gainLin = std::pow(10.0, playbackGainDB / 20.0);
     size_t leadSamples = static_cast<size_t>(0.5 * sampleRate);
     size_t tailSamples = static_cast<size_t>(0.5 * sampleRate);
     size_t totalPlaySamples = leadSamples + sweep.size() + tailSamples;
+
+    // Alignment (a long convolution) runs off the GUI thread.
+    auto finish = [=](std::vector<double> capturedRaw) {
+        (void)QtConcurrent::run([=, raw = std::move(capturedRaw)]() mutable {
+            done(alignCapture(std::move(raw), sweep, inv, leadSamples, tailSamples, totalPlaySamples, gainLin,
+                              sampleRate));
+        });
+    };
 
     QAudioDevice targetInputDevice = QMediaDevices::defaultAudioInput();
     if (!inputDeviceName.empty()) {
@@ -109,77 +158,51 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
         }
     }
 
-    std::vector<double> capturedRaw;
+    if (targetInputDevice.isNull() || targetOutputDevice.isNull()) {
+        finish({});
+        return;
+    }
 
-    if (!targetInputDevice.isNull() && !targetOutputDevice.isNull()) {
-        QAudioFormat outFmt;
-        outFmt.setSampleRate(sampleRate);
-        outFmt.setChannelCount(routeOutChannels);
-        outFmt.setSampleFormat(QAudioFormat::Float);
+    QAudioFormat outFmt;
+    outFmt.setSampleRate(sampleRate);
+    outFmt.setChannelCount(routeOutChannels);
+    outFmt.setSampleFormat(QAudioFormat::Float);
 
-        QAudioFormat inFmt;
-        inFmt.setSampleRate(sampleRate);
-        inFmt.setChannelCount(inCh);
-        inFmt.setSampleFormat(QAudioFormat::Float);
+    QAudioFormat inFmt;
+    inFmt.setSampleRate(sampleRate);
+    inFmt.setChannelCount(inCh);
+    inFmt.setSampleFormat(QAudioFormat::Float);
 
-        QByteArray playBuf(reinterpret_cast<const char*>(playPcm.data()),
-                           static_cast<qsizetype>(playPcm.size() * sizeof(float)));
-        QBuffer playDevice(&playBuf);
-        playDevice.open(QIODevice::ReadOnly);
+    // Owned by the sink and released when the recording completes.
+    auto* sink = new QAudioSink(targetOutputDevice, outFmt);
+    auto* source = new QAudioSource(targetInputDevice, inFmt, sink);
+    auto* playDevice = new QBuffer(sink);
+    playDevice->setData(QByteArray(reinterpret_cast<const char*>(playPcm.data()),
+                                   static_cast<qsizetype>(playPcm.size() * sizeof(float))));
+    playDevice->open(QIODevice::ReadOnly);
+    auto* recordDevice = new QBuffer(sink);
+    recordDevice->open(QIODevice::WriteOnly);
 
-        QByteArray recordBuf;
-        QBuffer recordDevice(&recordBuf);
-        recordDevice.open(QIODevice::WriteOnly);
+    sink->start(playDevice);
+    source->start(recordDevice);
 
-        QAudioSink sink(targetOutputDevice, outFmt);
-        QAudioSource source(targetInputDevice, inFmt);
+    double totalSeconds = static_cast<double>(totalPlaySamples) / sampleRate;
+    int waitMs = static_cast<int>(totalSeconds * 1000.0) + 300;
 
-        sink.start(&playDevice);
-        source.start(&recordDevice);
+    QTimer::singleShot(waitMs, sink, [=]() {
+        sink->stop();
+        source->stop();
 
-        double totalSeconds = static_cast<double>(totalPlaySamples) / sampleRate;
-        int waitMs = static_cast<int>(totalSeconds * 1000.0) + 300;
-
-        QEventLoop loop;
-        QTimer::singleShot(waitMs, &loop, &QEventLoop::quit);
-        loop.exec();
-
-        sink.stop();
-        source.stop();
-
+        const QByteArray& recordBuf = recordDevice->data();
         const float* ptr = reinterpret_cast<const float*>(recordBuf.constData());
         size_t totalFloats = recordBuf.size() / sizeof(float);
         size_t totalFrames = totalFloats / inCh;
+        std::vector<double> capturedRaw;
+        capturedRaw.reserve(totalFrames);
         for (size_t i = 0; i < totalFrames; ++i) {
             capturedRaw.push_back(static_cast<double>(ptr[i * inCh + selInChannel]));
         }
-    }
-
-    // Fallback if hardware mic buffer is empty (e.g. simulation or no input mic permission)
-    if (capturedRaw.empty()) {
-        capturedRaw.resize(totalPlaySamples, 0.0);
-        // Add artificial propagation delay & system response
-        int lag = static_cast<int>(0.05 * sampleRate) + static_cast<int>(leadSamples);
-        for (size_t i = 0; i < sweep.size(); ++i) {
-            if (i + lag < capturedRaw.size()) {
-                capturedRaw[i + lag] = sweep[i] * gainLin;
-            }
-        }
-    }
-
-    auto startOpt = locateSweepStart(capturedRaw, inv);
-    int startSample = startOpt.value_or(static_cast<int>(leadSamples));
-
-    std::vector<double> aligned = trimAndAlign(capturedRaw, startSample, sweep.size(), tailSamples);
-
-    double peak = 0.0;
-    for (double v : aligned) {
-        peak = std::max(peak, std::abs(v));
-    }
-
-    SweepCaptureResult res;
-    res.captured = aligned;
-    res.roundTripSamples = std::max(0, startSample - static_cast<int>(leadSamples));
-    res.peakAbsolute = peak;
-    return res;
+        sink->deleteLater();
+        finish(std::move(capturedRaw));
+    });
 }

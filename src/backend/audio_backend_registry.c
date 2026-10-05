@@ -17,6 +17,9 @@
 #if defined(ENABLE_ASIO)
 #include "backend/asio_capabilities.h"
 #endif
+#if defined(ENABLE_WEBAUDIO)
+#include "backend/webaudio_backend.h"
+#endif
 
 int audio_backend_registry_get_available_devices(const char *backend,
                                                  bool input,
@@ -89,6 +92,12 @@ int audio_backend_registry_get_available_devices(const char *backend,
 #else
     return 0;
 #endif
+  } else if (strcasecmp(backend, "webaudio") == 0) {
+#if defined(ENABLE_WEBAUDIO)
+    return webaudio_get_available_devices(input, out_devices, max_devices);
+#else
+    return 0;
+#endif
   }
   return 0;
 }
@@ -137,6 +146,16 @@ audio_device_descriptor_t *audio_backend_registry_get_device_capabilities(
 #else
     if (err) {
       device_error_init(err, DEVICE_ERROR_OTHER, "ASIO backend not compiled");
+    }
+    return NULL;
+#endif
+  } else if (strcasecmp(backend, "webaudio") == 0) {
+#if defined(ENABLE_WEBAUDIO)
+    return webaudio_describe(device, is_capture, err);
+#else
+    if (err) {
+      device_error_init(err, DEVICE_ERROR_OTHER,
+                        "WebAudio backend not compiled");
     }
     return NULL;
 #endif

@@ -790,9 +790,10 @@ void PipelineOverviewWidget::rebuildOverview() {
                     auto senderWidget = qobject_cast<QWidget*>(sender());
                     if (!senderWidget)
                         return;
-                    QMenu menu(senderWidget);
+                    auto menu = new QMenu(this);
+                    menu->setAttribute(Qt::WA_DeleteOnClose);
 
-                    auto toggleAct = menu.addAction(tr("Toggle Enabled"));
+                    auto toggleAct = menu->addAction(tr("Toggle Enabled"));
                     connect(toggleAct, &QAction::triggered, [this, i]() {
                         if (m_dspController && m_dspController->pipelineStore()) {
                             m_dspController->pipelineStore()->stages[i].isEnabled =
@@ -802,7 +803,7 @@ void PipelineOverviewWidget::rebuildOverview() {
                         }
                     });
 
-                    auto moveLeftAct = menu.addAction(tr("Move Left"));
+                    auto moveLeftAct = menu->addAction(tr("Move Left"));
                     moveLeftAct->setEnabled(i > 0);
                     connect(moveLeftAct, &QAction::triggered, [this, i]() {
                         if (m_dspController && m_dspController->pipelineStore()) {
@@ -812,7 +813,7 @@ void PipelineOverviewWidget::rebuildOverview() {
                         }
                     });
 
-                    auto moveRightAct = menu.addAction(tr("Move Right"));
+                    auto moveRightAct = menu->addAction(tr("Move Right"));
                     moveRightAct->setEnabled(i + 1 < totalStages);
                     connect(moveRightAct, &QAction::triggered, [this, i]() {
                         if (m_dspController && m_dspController->pipelineStore()) {
@@ -822,7 +823,7 @@ void PipelineOverviewWidget::rebuildOverview() {
                         }
                     });
 
-                    auto dupAct = menu.addAction(tr("Duplicate Stage"));
+                    auto dupAct = menu->addAction(tr("Duplicate Stage"));
                     connect(dupAct, &QAction::triggered, [this, stageId]() {
                         if (m_dspController && m_dspController->pipelineStore()) {
                             m_dspController->pipelineStore()->duplicateStage(stageId);
@@ -831,9 +832,9 @@ void PipelineOverviewWidget::rebuildOverview() {
                         }
                     });
 
-                    menu.addSeparator();
+                    menu->addSeparator();
 
-                    auto deleteAct = menu.addAction(tr("Delete Stage"));
+                    auto deleteAct = menu->addAction(tr("Delete Stage"));
                     connect(deleteAct, &QAction::triggered, [this, stageId]() {
                         if (m_dspController && m_dspController->pipelineStore()) {
                             m_dspController->pipelineStore()->deleteStage(stageId);
@@ -842,7 +843,7 @@ void PipelineOverviewWidget::rebuildOverview() {
                         }
                     });
 
-                    menu.exec(senderWidget->mapToGlobal(pos));
+                    menu->popup(senderWidget->mapToGlobal(pos));
                 });
 
             m_canvasLayout->addWidget(stCard, 0, Qt::AlignVCenter);

@@ -549,11 +549,89 @@ jobs:
           if-no-files-found: error
 
   # ============================================================================
+  # WebAssembly & Chrome Extension (Emscripten & Qt for WebAssembly)
+  # ============================================================================
+  wasm-test-and-package:
+    name: WebAssembly Test & Extension Package
+    runs-on: ubuntu-latest
+    env:
+      # Must match the defaults in tools/build_wasm.sh (the single source of truth), plus the
+      # Node/CMake versions of the verified local build (the script prints all four).
+      QT_VERSION: 6.7.3
+      EMSDK_VERSION: 3.1.50
+      NODE_VERSION: 24.19.0
+      CMAKE_VERSION: 4.2.3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set Qt install root and Emscripten cache dir
+        run: |
+          echo "QT_ROOT=$RUNNER_TEMP/Qt" >> "$GITHUB_ENV"
+          echo "EM_CACHE=$RUNNER_TEMP/em-cache" >> "$GITHUB_ENV"
+
+      # Caches the emsdk toolchain download (emscripten + LLVM + binaryen).
+      - name: Set up Emscripten SDK
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      # Emscripten sysroot + system libraries (pthread libc/libc++, etc.) that emcc builds on
+      # first use. emcc reads EM_CACHE natively, so tools/build_wasm.sh needs no changes.
+      - name: Cache Emscripten system libraries
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.EM_CACHE }}
+          key: emcache-${{ env.EMSDK_VERSION }}-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            emcache-${{ env.EMSDK_VERSION }}-
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: ${{ env.CMAKE_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache Qt 6 for WebAssembly
+        id: cache-qt-wasm
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.QT_ROOT }}
+          key: qt-${{ env.QT_VERSION }}-wasm-multithread-multimedia-host-gcc64
+
+      - name: Install Qt 6 for WebAssembly via aqtinstall
+        if: steps.cache-qt-wasm.outputs.cache-hit != 'true'
+        run: |
+          pip install aqtinstall
+          python3 -m aqt install-qt linux desktop "$QT_VERSION" linux_gcc_64 --outputdir "$QT_ROOT"
+          python3 -m aqt install-qt all_os wasm "$QT_VERSION" wasm_multithread -m qtmultimedia --outputdir "$QT_ROOT"
+
+      - name: Build, Test & Package (tools/build_wasm.sh)
+        run: tools/build_wasm.sh build
+
+      - name: Upload Chrome Extension Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdsp_extension
+          path: build/cdsp_extension.zip
+          if-no-files-found: error
+
+  # ============================================================================
   # Release Publishing
   # ============================================================================
   release:
     name: Publish Release
-    needs: [macos-test, macos-studio, linux-test, linux-studio, windows-test, windows-studio, linux-sanitizers]
+    needs: [macos-test, macos-studio, linux-test, linux-studio, windows-test, windows-studio, linux-sanitizers, wasm-test-and-package]
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -571,7 +649,7 @@ jobs:
       - name: Compute SHA256 checksums
         run: |
           cd release-assets
-          sha256sum CDSPStudio* > SHA256SUMS.txt
+          sha256sum CDSPStudio* cdsp_extension.zip > SHA256SUMS.txt
           ls -la
 
       - name: Update weekly tag
@@ -594,6 +672,7 @@ jobs:
             - **macOS (Apple Silicon)**: [`CDSPStudio-macOS-arm64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-macOS-arm64.zip)
             - **Linux (x86_64)**: [`CDSPStudio-Linux-x86_64.AppImage`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-Linux-x86_64.AppImage)
             - **Windows (x86_64)**: [`CDSPStudio-Windows-x86_64.exe`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-Windows-x86_64.exe)
+            - **Chrome Extension (WebAssembly)**: [`cdsp_extension.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/cdsp_extension.zip)
 
             Verify integrity with `SHA256SUMS.txt`.
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}

@@ -112,7 +112,9 @@ AudioDeviceManager::~AudioDeviceManager() {
 }
 
 AudioBackendType AudioDeviceManager::defaultHardwareBackend() {
-#if defined(ENABLE_COREAUDIO)
+#if defined(__EMSCRIPTEN__) && defined(ENABLE_WEBAUDIO)
+    return AudioBackendType::WebAudio;
+#elif defined(ENABLE_COREAUDIO)
     return AudioBackendType::CoreAudio;
 #elif defined(ENABLE_WASAPI)
     return AudioBackendType::WASAPI;

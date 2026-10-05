@@ -235,11 +235,8 @@ void MeasurementSession::recordPosition(bool append, const std::string& inputDev
 
     QPointer<MeasurementSession> weakThis(this);
 
-    (void)QtConcurrent::run([weakThis, append, inputDeviceName, outputDeviceName, inputChannel, outputChannel, f1, f2,
-                             duration, rate, callback]() {
-        SweepCaptureResult cap = SweepRecorder::capture(f1, f2, duration, rate, inputDeviceName, outputDeviceName,
-                                                        inputChannel, outputChannel, -12.0);
-
+    SweepRecorder::capture(f1, f2, duration, rate, inputDeviceName, outputDeviceName, inputChannel, outputChannel,
+                           -12.0, [weakThis, append, f1, f2, duration, rate, callback](SweepCaptureResult cap) {
         if (!weakThis)
             return;
 

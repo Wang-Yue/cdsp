@@ -92,6 +92,9 @@ void MiniPlayerView::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
     MacUtils::setupAlwaysOnTopAboveFullScreen(this);
     QSettings settings;
+#if !defined(__EMSCRIPTEN__)
+    // In the browser the mini player is maximized inside the Chrome window, which owns its
+    // size and position.
     if (settings.contains("MiniPlayer/geometry")) {
         restoreGeometry(settings.value("MiniPlayer/geometry").toByteArray());
     } else {
@@ -102,6 +105,7 @@ void MiniPlayerView::showEvent(QShowEvent* event) {
             move(x, y);
         }
     }
+#endif
     int savedMode = 1;
     if (settings.contains("mini_player_mode")) {
         savedMode = settings.value("mini_player_mode", 1).toInt();
@@ -175,6 +179,12 @@ void MiniPlayerView::resizeEvent(QResizeEvent* event) {
 }
 
 void MiniPlayerView::mousePressEvent(QMouseEvent* event) {
+#if defined(__EMSCRIPTEN__)
+    // In the browser the Chrome window frame moves and resizes the mini player (it fills the
+    // page), so the frameless-window drag/resize handling below is not used.
+    QWidget::mousePressEvent(event);
+    return;
+#endif
     if (event->button() == Qt::LeftButton) {
         ResizeEdge edge = hitTestBorder(event->globalPosition().toPoint());
         if (edge != ResizeEdge::None) {
@@ -250,8 +260,10 @@ void MiniPlayerView::mouseMoveEvent(QMouseEvent* event) {
     }
 
     // Hover state: update cursor
+#if !defined(__EMSCRIPTEN__)
     ResizeEdge edge = hitTestBorder(globalPos);
     updateResizeCursor(edge);
+#endif
 
     QWidget::mouseMoveEvent(event);
 }

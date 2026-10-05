@@ -92,7 +92,7 @@ static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
   return dispatch_semaphore_wait(sem, timeout) == 0;
 }
 
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__EMSCRIPTEN__)
 #include <semaphore.h>
 #include <stdlib.h>
 #include <time.h>

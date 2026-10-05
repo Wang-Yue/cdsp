@@ -24,7 +24,15 @@ int main(int argc, char* argv[]) {
 
     MainWindow window;
     window.setWindowIcon(AppIcon::getAppIcon());
+#if defined(__EMSCRIPTEN__)
+    // In the browser the page (or the extension's popup window) is the app window: fill it
+    // without a Qt-drawn title bar. A maximized window tracks the page size in Qt's wasm
+    // platform. (Full-screen is not used: MainWindow::changeEvent reverts it by design.)
+    window.setWindowFlag(Qt::FramelessWindowHint);
+    window.showMaximized();
+#else
     window.show();
+#endif
 
     return app.exec();
 }

@@ -1,7 +1,9 @@
 #include "cdsp/signal_levels.h"
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
 #include "audio/sample_format.h"
 #include "cdsp/cdsp_pub_types.h"

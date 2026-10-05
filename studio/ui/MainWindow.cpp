@@ -77,6 +77,24 @@
 #include <string>            // for basic_string, string
 #include <vector>            // for vector
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/val.h> // for emscripten::val
+
+namespace {
+// In the browser the main window and the mini player each fill the page, so switching between
+// them asks the page (studio-bootstrap.js, cdspStudioWindow) to resize the Chrome popup window.
+// The mini size is only used the first time; after that the page restores the user's size.
+void setBrowserWindowMode(const char* mode) {
+    constexpr int kMiniPlayerWidth = 320;  // MiniPlayerView's default size
+    constexpr int kMiniPlayerHeight = 140;
+    emscripten::val studioWindow = emscripten::val::global("cdspStudioWindow");
+    if (!studioWindow.isUndefined()) {
+        studioWindow.call<void>("setMode", std::string(mode), kMiniPlayerWidth, kMiniPlayerHeight);
+    }
+}
+} // namespace
+#endif
+
 namespace {
 bool isInputWidgetFocused() {
     QWidget* focusW = QApplication::focusWidget();
@@ -332,32 +350,35 @@ void MainWindow::setupUi() {
                 }
             }
             if (idx >= 0) {
-                QMenu menu(this);
-                auto moveUp = menu.addAction("Move Up");
+                auto menu = new QMenu(this);
+                menu->setAttribute(Qt::WA_DeleteOnClose);
+                auto moveUp = menu->addAction("Move Up");
                 moveUp->setEnabled(idx > 0);
                 connect(moveUp, &QAction::triggered, [this, idx]() { m_pipeline->moveStage(idx, idx - 1); });
 
-                auto moveDown = menu.addAction("Move Down");
+                auto moveDown = menu->addAction("Move Down");
                 moveDown->setEnabled(idx < static_cast<int>(m_pipeline->stages.size()) - 1);
                 connect(moveDown, &QAction::triggered, [this, idx]() { m_pipeline->moveStage(idx, idx + 1); });
 
-                menu.addSeparator();
-                auto del = menu.addAction("Delete Stage");
+                menu->addSeparator();
+                auto del = menu->addAction("Delete Stage");
                 connect(del, &QAction::triggered, [this, stageId]() { m_pipeline->deleteStage(stageId); });
-                menu.exec(QCursor::pos());
+                menu->popup(QCursor::pos());
             }
         } else if (tag.startsWith("eq_")) {
             QUuid id = QUuid::fromString(tag.mid(3));
-            QMenu menu(this);
-            auto del = menu.addAction("Delete EQ Preset");
+            auto menu = new QMenu(this);
+            menu->setAttribute(Qt::WA_DeleteOnClose);
+            auto del = menu->addAction("Delete EQ Preset");
             connect(del, &QAction::triggered, [this, id]() { m_pipeline->deleteEQPreset(id); });
-            menu.exec(QCursor::pos());
+            menu->popup(QCursor::pos());
         } else if (tag.startsWith("conv_")) {
             QUuid id = QUuid::fromString(tag.mid(5));
-            QMenu menu(this);
-            auto del = menu.addAction("Delete Convolution Preset");
+            auto menu = new QMenu(this);
+            menu->setAttribute(Qt::WA_DeleteOnClose);
+            auto del = menu->addAction("Delete Convolution Preset");
             connect(del, &QAction::triggered, [this, id]() { m_pipeline->deleteConvPreset(id); });
-            menu.exec(QCursor::pos());
+            menu->popup(QCursor::pos());
         }
     });
 
@@ -439,15 +460,17 @@ void MainWindow::setupMenuBar() {
 
     m_actOratoryPreset = new QAction("Oratory Presets...", this);
     connect(m_actOratoryPreset, &QAction::triggered, [this]() {
-        OratoryPresetPickerDlg dlg(m_pipeline, m_dspController, this);
-        dlg.exec();
+        auto dlg = new OratoryPresetPickerDlg(m_pipeline, m_dspController, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->open();
     });
     fileMenu->addAction(m_actOratoryPreset);
 
     m_actAutoEqPreset = new QAction("AutoEQ Presets...", this);
     connect(m_actAutoEqPreset, &QAction::triggered, [this]() {
-        AutoEqPickerDlg dlg(m_pipeline, m_dspController, this);
-        dlg.exec();
+        auto dlg = new AutoEqPickerDlg(m_pipeline, m_dspController, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->open();
     });
     fileMenu->addAction(m_actAutoEqPreset);
 
@@ -456,15 +479,17 @@ void MainWindow::setupMenuBar() {
     m_actImportConv = new QAction("Import IR File(s)...", this);
     m_actImportConv->setShortcut(QKeySequence::Open);
     connect(m_actImportConv, &QAction::triggered, [this]() {
-        ConvolutionImportDlg dlg(m_pipeline, this);
-        dlg.exec();
+        auto dlg = new ConvolutionImportDlg(m_pipeline, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->open();
     });
     fileMenu->addAction(m_actImportConv);
 
     m_actRoomCorrection = new QAction("Room Correction...", this);
     connect(m_actRoomCorrection, &QAction::triggered, [this]() {
-        RoomCorrectionDlg dlg(m_pipeline, this);
-        dlg.exec();
+        auto dlg = new RoomCorrectionDlg(m_pipeline, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->open();
     });
     fileMenu->addAction(m_actRoomCorrection);
 
@@ -613,6 +638,9 @@ void MainWindow::setupMenuBar() {
     audioMenu->addAction(m_actMute);
 
     // 4. Window Menu
+#if !defined(__EMSCRIPTEN__)
+    // In the browser the Chrome window owns minimize/zoom; these actions would hide or
+    // un-maximize the frameless, page-filling Studio window with no way to restore it.
     auto windowMenu = bar->addMenu("&Window");
     auto minAct = new QAction("Minimize", this);
     minAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_M));
@@ -634,6 +662,7 @@ void MainWindow::setupMenuBar() {
     auto bringAllAct = new QAction("Bring All to Front", this);
     connect(bringAllAct, &QAction::triggered, this, &MainWindow::showAndActivate);
     windowMenu->addAction(bringAllAct);
+#endif
 
     // 5. Help Menu
     auto helpMenu = bar->addMenu("&Help");
@@ -922,7 +951,13 @@ void MainWindow::toggleMiniPlayer() {
         showAndActivate();
     } else {
         hide();
+#if defined(__EMSCRIPTEN__)
+        // The mini player fills the page; shrink the Chrome window around it.
+        m_miniPlayer->showMaximized();
+        setBrowserWindowMode("mini");
+#else
         m_miniPlayer->show();
+#endif
         m_miniPlayer->raise();
         m_miniPlayer->activateWindow();
     }
@@ -1155,10 +1190,11 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
         return;
 
     if (tag == "add_stage") {
-        QMenu menu(this);
+        auto menu = new QMenu(this);
+        menu->setAttribute(Qt::WA_DeleteOnClose);
         for (StageCategory cat :
              {StageCategory::Filters, StageCategory::Mixer, StageCategory::Processors, StageCategory::Others}) {
-            QMenu* catMenu = menu.addMenu(QString::fromStdString(stageCategoryToString(cat)));
+            QMenu* catMenu = menu->addMenu(QString::fromStdString(stageCategoryToString(cat)));
             for (StageType st : {StageType::Balance,
                                  StageType::Width,
                                  StageType::MSProc,
@@ -1193,7 +1229,7 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
                 }
             }
         }
-        menu.exec(QCursor::pos());
+        menu->popup(QCursor::pos());
     } else if (tag == "add_eq") {
         m_pipeline->addEQPreset();
         if (!m_pipeline->eqPresets.empty()) {
@@ -1201,21 +1237,33 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
             handleNavigationTag(m_lastActiveTag);
         }
     } else if (tag == "auto_eq") {
-        AutoEqPickerDlg dlg(m_pipeline, m_dspController, this);
-        dlg.exec();
-        handleNavigationTag(m_lastActiveTag);
+        auto dlg = new AutoEqPickerDlg(m_pipeline, m_dspController, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dlg, &QDialog::finished, this, [this]() {
+            handleNavigationTag(m_lastActiveTag);
+        });
+        dlg->open();
     } else if (tag == "oratory_eq") {
-        OratoryPresetPickerDlg dlg(m_pipeline, m_dspController, this);
-        dlg.exec();
-        handleNavigationTag(m_lastActiveTag);
+        auto dlg = new OratoryPresetPickerDlg(m_pipeline, m_dspController, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dlg, &QDialog::finished, this, [this]() {
+            handleNavigationTag(m_lastActiveTag);
+        });
+        dlg->open();
     } else if (tag == "import_conv") {
-        ConvolutionImportDlg dlg(m_pipeline, this);
-        dlg.exec();
-        handleNavigationTag(m_lastActiveTag);
+        auto dlg = new ConvolutionImportDlg(m_pipeline, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dlg, &QDialog::finished, this, [this]() {
+            handleNavigationTag(m_lastActiveTag);
+        });
+        dlg->open();
     } else if (tag == "room_correction") {
-        RoomCorrectionDlg dlg(m_pipeline, this);
-        dlg.exec();
-        handleNavigationTag(m_lastActiveTag);
+        auto dlg = new RoomCorrectionDlg(m_pipeline, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dlg, &QDialog::finished, this, [this]() {
+            handleNavigationTag(m_lastActiveTag);
+        });
+        dlg->open();
     } else {
         m_lastActiveTag = tag;
         handleNavigationTag(tag);
@@ -1389,7 +1437,13 @@ void MainWindow::onPipelineChanged() {
 
 void MainWindow::showAndActivate() {
     MacUtils::showDockIcon();
+#if defined(__EMSCRIPTEN__)
+    // The main window fills the page; restore the Chrome window to the main window's size.
+    showMaximized();
+    setBrowserWindowMode("main");
+#else
     showNormal();
+#endif
     raise();
     activateWindow();
 }

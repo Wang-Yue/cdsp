@@ -330,8 +330,9 @@ void ConsoleLogsView::setupUi() {
 
     connect(m_table, &QTableView::customContextMenuRequested, this, [this](const QPoint& pos) {
         Q_UNUSED(pos);
-        QMenu menu(this);
-        auto copySel = menu.addAction("Copy Selected");
+        auto menu = new QMenu(this);
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        auto copySel = menu->addAction("Copy Selected");
         connect(copySel, &QAction::triggered, this, [this]() {
             if (!m_model || !m_table->selectionModel())
                 return;
@@ -348,18 +349,18 @@ void ConsoleLogsView::setupUi() {
             QGuiApplication::clipboard()->setText(m_model->copySelectedFormatted(rows));
         });
 
-        auto copyAll = menu.addAction("Copy All Logs");
+        auto copyAll = menu->addAction("Copy All Logs");
         connect(copyAll, &QAction::triggered, this, &ConsoleLogsView::copyAllLogs);
 
-        menu.addSeparator();
-        auto clearAct = menu.addAction("Clear Logs");
+        menu->addSeparator();
+        auto clearAct = menu->addAction("Clear Logs");
         connect(clearAct, &QAction::triggered, this, []() {
             if (LogManager::instance()) {
                 LogManager::instance()->clear();
             }
         });
 
-        menu.exec(QCursor::pos());
+        menu->popup(QCursor::pos());
     });
 
     mainLayout->addWidget(m_table);

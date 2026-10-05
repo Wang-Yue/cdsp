@@ -140,7 +140,10 @@ DSPConfiguration DSPEngineController::buildConfiguration() const {
 
         if (m_devices->playbackConfig.backend == AudioBackendType::SignalGenerator) {
             PlaybackDeviceConfig pb;
-#if defined(ENABLE_COREAUDIO)
+#if defined(ENABLE_WEBAUDIO)
+            pb.backend = AudioBackendType::WebAudio;
+            pb.webAudio.channels = m_devices->playbackConfig.channels;
+#elif defined(ENABLE_COREAUDIO)
             pb.backend = AudioBackendType::CoreAudio;
             pb.coreAudio.channels = m_devices->playbackConfig.channels;
             pb.coreAudio.device = m_devices->playbackConfig.deviceName();
