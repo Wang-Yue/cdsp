@@ -8,6 +8,8 @@
 #include <fstream>   // for basic_ifstream, basic_istream, basic_ios, basic_ofstream, fpos, ios, ifstream, ofstream
 #include <stdint.h>  // for int32_t, int16_t, uint16_t, uint32_t, uint8_t
 
+#include "utils/ParseNumber.h" // for parse::toDouble
+
 std::optional<WavHeaderInfo> ConvCoefficientLoader::parseWavHeader(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open())
@@ -151,10 +153,10 @@ std::vector<double> ConvCoefficientLoader::loadRaw(const std::string& path, cons
 
             size_t p1 = line.find_first_not_of(" \t\r\n");
             if (p1 != std::string::npos) {
-                try {
-                    coeffs.push_back(std::stod(line.substr(p1)));
+                double coeff = 0.0;
+                if (parse::toDouble(line.substr(p1), coeff)) {
+                    coeffs.push_back(coeff);
                     readCount++;
-                } catch (...) {
                 }
             }
             currentLine++;

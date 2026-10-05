@@ -565,13 +565,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set Qt install root
-        run: echo "QT_ROOT=$RUNNER_TEMP/Qt" >> "$GITHUB_ENV"
+      - name: Set Qt install root and Emscripten cache dir
+        run: |
+          echo "QT_ROOT=$RUNNER_TEMP/Qt" >> "$GITHUB_ENV"
+          echo "EM_CACHE=$RUNNER_TEMP/em-cache" >> "$GITHUB_ENV"
 
+      # Caches the emsdk toolchain download (emscripten + LLVM + binaryen).
       - name: Set up Emscripten SDK
         uses: mymindstorm/setup-emsdk@v14
         with:
           version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      # Emscripten sysroot + system libraries (pthread libc/libc++, etc.) that emcc builds on
+      # first use. emcc reads EM_CACHE natively, so tools/build_wasm.sh needs no changes.
+      - name: Cache Emscripten system libraries
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.EM_CACHE }}
+          key: emcache-${{ env.EMSDK_VERSION }}-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            emcache-${{ env.EMSDK_VERSION }}-
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

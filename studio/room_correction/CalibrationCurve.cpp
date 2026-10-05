@@ -7,6 +7,8 @@
 #include <fstream>   // for basic_ofstream, basic_istream, basic_ifstream, operator<<, basic_ostream, stringstream
 #include <sstream>   // for basic_stringstream
 
+#include "utils/ParseNumber.h" // for parse::toDouble
+
 CalibrationCurve::CalibrationCurve(const std::vector<double>& freqs, const std::vector<double>& mags,
                                    const std::vector<double>& phases)
     : frequencies(freqs), magnitudesDB(mags), phasesDeg(phases) {
@@ -119,14 +121,19 @@ std::optional<CalibrationCurve> CalibrationCurve::parse(const std::string& text,
             return std::nullopt;
         }
 
-        double f = std::stod(fields[0]);
-        double m = std::stod(fields[1]);
+        // isNumericToken() accepts out-of-range values (e.g. 1e999) on which std::stod would throw,
+        // which aborts the WebAssembly build; parse without exceptions and reject those as malformed.
+        double f = 0.0;
+        double m = 0.0;
+        if (!parse::toDouble(fields[0], f) || !parse::toDouble(fields[1], m)) {
+            return std::nullopt;
+        }
 
         freqs.push_back(f);
         mags.push_back(m);
 
-        if (fields.size() >= 3 && isNumericToken(fields[2])) {
-            double p = std::stod(fields[2]);
+        double p = 0.0;
+        if (fields.size() >= 3 && isNumericToken(fields[2]) && parse::toDouble(fields[2], p)) {
             phases.push_back(p);
             sawPhaseColumn = true;
         } else if (sawPhaseColumn) {

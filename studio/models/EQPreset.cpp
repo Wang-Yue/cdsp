@@ -9,6 +9,8 @@
 #include <iomanip>    // for operator<<, setprecision
 #include <sstream>    // for basic_ostream, basic_stringstream, operator<<, basic_istream, fixed, stringstream, ope...
 
+#include "utils/ParseNumber.h" // for parse::toDouble, parse::toInt
+
 std::string eqBandTypeToString(EQBandType type) {
     switch (type) {
     case EQBandType::Peaking:
@@ -429,10 +431,7 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
                     dbPos = valStr.find("DB");
                 if (dbPos != std::string::npos)
                     valStr.erase(dbPos);
-                try {
-                    preamp = std::stod(valStr);
-                } catch (...) {
-                }
+                (void)parse::toDouble(valStr, preamp);
             }
             continue;
         }
@@ -465,12 +464,9 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
 
         if (!words.empty()) {
             size_t idx = 0;
-            try {
-                (void)std::stoi(words[0]);
-                if (words.size() > 1)
-                    idx = 1;
-            } catch (...) {
-            }
+            int filterIndex = 0;
+            if (parse::toInt(words[0], filterIndex) && words.size() > 1)
+                idx = 1;
 
             bool enabled = true;
             if (idx < words.size()) {
@@ -504,51 +500,51 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
                         std::string k = words[i];
                         std::transform(k.begin(), k.end(), k.begin(), ::tolower);
                         std::string v = words[i + 1];
-                        bool matchedKey = true;
+                        double num = 0.0;
+                        // A key only matches (consuming its value) when the value parses.
+                        bool matchedKey = parse::toDouble(v, num);
 
-                        try {
+                        if (matchedKey) {
                             if (k == "fc" || k == "fz") {
-                                band.freq = std::stod(v);
+                                band.freq = num;
                                 band.freqZ = band.freq;
                             } else if (k == "gain") {
-                                band.gain = std::stod(v);
+                                band.gain = num;
                             } else if (k == "q") {
-                                band.q = std::stod(v);
+                                band.q = num;
                             } else if (k == "s" || k == "slope") {
-                                band.slope = std::stod(v);
+                                band.slope = num;
                                 band.useSlope = true;
                             } else if (k == "bw" || k == "bandwidth") {
-                                band.bandwidth = std::stod(v);
+                                band.bandwidth = num;
                                 band.useBandwidth = true;
                             } else if (k == "fp") {
-                                band.freqP = std::stod(v);
+                                band.freqP = num;
                             } else if (k == "qp") {
-                                band.qP = std::stod(v);
+                                band.qP = num;
                             } else if (k == "norm") {
-                                band.normalizeAtDc = (std::stod(v) != 0.0);
+                                band.normalizeAtDc = (num != 0.0);
                             } else if (k == "fa") {
-                                band.freqAct = std::stod(v);
+                                band.freqAct = num;
                             } else if (k == "qa") {
-                                band.qAct = std::stod(v);
+                                band.qAct = num;
                             } else if (k == "ft") {
-                                band.freqTarget = std::stod(v);
+                                band.freqTarget = num;
                             } else if (k == "qt") {
-                                band.qTarget = std::stod(v);
+                                band.qTarget = num;
                             } else if (k == "b0") {
-                                band.b0 = std::stod(v);
+                                band.b0 = num;
                             } else if (k == "b1") {
-                                band.b1 = std::stod(v);
+                                band.b1 = num;
                             } else if (k == "b2") {
-                                band.b2 = std::stod(v);
+                                band.b2 = num;
                             } else if (k == "a1") {
-                                band.a1 = std::stod(v);
+                                band.a1 = num;
                             } else if (k == "a2") {
-                                band.a2 = std::stod(v);
+                                band.a2 = num;
                             } else {
                                 matchedKey = false;
                             }
-                        } catch (...) {
-                            matchedKey = false;
                         }
 
                         if (matchedKey) {
@@ -581,22 +577,12 @@ std::optional<EQPreset> EQPreset::fromCSV(const std::string& text, const std::st
                 double freq = 1000.0;
                 double gain = 0.0;
                 double q = 0.707;
-                try {
-                    freq = std::stod(parts[1]);
-                } catch (...) {
-                }
-                if (parts.size() > 2) {
-                    try {
-                        gain = std::stod(parts[2]);
-                    } catch (...) {
-                    }
-                }
-                if (parts.size() > 3) {
-                    try {
-                        q = std::stod(parts[3]);
-                    } catch (...) {
-                    }
-                }
+                // Each column keeps its default when it does not parse.
+                (void)parse::toDouble(parts[1], freq);
+                if (parts.size() > 2)
+                    (void)parse::toDouble(parts[2], gain);
+                if (parts.size() > 3)
+                    (void)parse::toDouble(parts[3], q);
                 parsedBands.push_back(EQBand(type, freq, gain, q));
             }
         }
