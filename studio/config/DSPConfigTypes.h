@@ -173,6 +173,9 @@ struct AudioDeviceDescriptor {
 };
 
 enum class AudioBackendType {
+#if defined(ENABLE_WEBAUDIO)
+    WebAudio,
+#endif
 #if defined(ENABLE_COREAUDIO)
     CoreAudio,
 #endif
@@ -195,6 +198,9 @@ enum class AudioBackendType {
 
 inline bool isHardwareBackend(AudioBackendType type) {
     switch (type) {
+#if defined(ENABLE_WEBAUDIO)
+    case AudioBackendType::WebAudio:
+#endif
 #if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
 #endif
@@ -330,6 +336,30 @@ struct GeneratorConfig {
     }
     bool operator!=(const GeneratorConfig& other) const { return !(*this == other); }
 };
+
+#if defined(ENABLE_WEBAUDIO)
+struct WebAudioCaptureConfig {
+    int channels = 2;
+    QJsonObject toJson() const;
+    static WebAudioCaptureConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const WebAudioCaptureConfig& o) const {
+        return channels == o.channels;
+    }
+    bool operator!=(const WebAudioCaptureConfig& o) const { return !(*this == o); }
+};
+
+struct WebAudioPlaybackConfig {
+    int channels = 2;
+    QJsonObject toJson() const;
+    static WebAudioPlaybackConfig fromJson(const QJsonObject& json);
+
+    bool operator==(const WebAudioPlaybackConfig& o) const {
+        return channels == o.channels;
+    }
+    bool operator!=(const WebAudioPlaybackConfig& o) const { return !(*this == o); }
+};
+#endif
 
 #if defined(ENABLE_COREAUDIO)
 struct CoreAudioCaptureConfig {
@@ -585,7 +615,9 @@ struct GeneratorCaptureConfig {
 
 struct CaptureDeviceConfig {
     AudioBackendType backend =
-#if defined(ENABLE_COREAUDIO)
+#if defined(ENABLE_WEBAUDIO)
+        AudioBackendType::WebAudio;
+#elif defined(ENABLE_COREAUDIO)
         AudioBackendType::CoreAudio;
 #elif defined(ENABLE_WASAPI)
         AudioBackendType::WASAPI;
@@ -595,6 +627,9 @@ struct CaptureDeviceConfig {
         AudioBackendType::RawFile;
 #endif
 
+#if defined(ENABLE_WEBAUDIO)
+    WebAudioCaptureConfig webAudio;
+#endif
 #if defined(ENABLE_COREAUDIO)
     CoreAudioCaptureConfig coreAudio;
 #endif
@@ -649,6 +684,9 @@ struct CaptureDeviceConfig {
 
     bool operator==(const CaptureDeviceConfig& o) const {
         return backend == o.backend &&
+#if defined(ENABLE_WEBAUDIO)
+               webAudio == o.webAudio &&
+#endif
 #if defined(ENABLE_COREAUDIO)
                coreAudio == o.coreAudio &&
 #endif
@@ -671,7 +709,9 @@ struct CaptureDeviceConfig {
 
 struct PlaybackDeviceConfig {
     AudioBackendType backend =
-#if defined(ENABLE_COREAUDIO)
+#if defined(ENABLE_WEBAUDIO)
+        AudioBackendType::WebAudio;
+#elif defined(ENABLE_COREAUDIO)
         AudioBackendType::CoreAudio;
 #elif defined(ENABLE_WASAPI)
         AudioBackendType::WASAPI;
@@ -681,6 +721,9 @@ struct PlaybackDeviceConfig {
         AudioBackendType::RawFile;
 #endif
 
+#if defined(ENABLE_WEBAUDIO)
+    WebAudioPlaybackConfig webAudio;
+#endif
 #if defined(ENABLE_COREAUDIO)
     CoreAudioPlaybackConfig coreAudio;
 #endif
@@ -732,6 +775,9 @@ struct PlaybackDeviceConfig {
 
     bool operator==(const PlaybackDeviceConfig& o) const {
         return backend == o.backend &&
+#if defined(ENABLE_WEBAUDIO)
+               webAudio == o.webAudio &&
+#endif
 #if defined(ENABLE_COREAUDIO)
                coreAudio == o.coreAudio &&
 #endif

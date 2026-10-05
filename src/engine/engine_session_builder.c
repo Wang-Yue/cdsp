@@ -408,7 +408,7 @@ static bool engine_session_spawn_worker_threads(dsp_session_t *core,
   // If thread creation fails mid-way, manually stop and join already-created
   // threads before returning false, ensuring no uninitialized handles are
   // joined.
-#if !defined(__EMSCRIPTEN__) || defined(__EMSCRIPTEN_PTHREADS__)
+#if !defined(__EMSCRIPTEN__)
   int ret;
   ret = pthread_create(&core->capture_thread, NULL, capture_thread_func,
                        core->capture_loop);

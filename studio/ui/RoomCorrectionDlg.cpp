@@ -34,7 +34,7 @@
 #include <string>           // for basic_string, operator+, string
 #include <vector>           // for vector
 
-#ifdef QT_MULTIMEDIA_LIB
+#if defined(QT_MULTIMEDIA_LIB) && !defined(ENABLE_WEBAUDIO)
 #include <QAudioDevice>  // for QAudioDevice
 #include <QMediaDevices> // for QMediaDevices
 #endif
@@ -529,7 +529,7 @@ void RoomCorrectionDlg::toggleSidebar() {
 }
 
 void RoomCorrectionDlg::populateAudioDevices() {
-#ifdef QT_MULTIMEDIA_LIB
+#if defined(QT_MULTIMEDIA_LIB) && !defined(ENABLE_WEBAUDIO)
     m_micDeviceCombo->clear();
     m_micDeviceCombo->addItem("System Default", "");
     for (const auto& dev : QMediaDevices::audioInputs()) {
@@ -549,7 +549,7 @@ void RoomCorrectionDlg::populateAudioDevices() {
 void RoomCorrectionDlg::updateMicChannels() {
     m_micChannelCombo->clear();
     int channels = 2; // Default fallback
-#ifdef QT_MULTIMEDIA_LIB
+#if defined(QT_MULTIMEDIA_LIB) && !defined(ENABLE_WEBAUDIO)
     QString selectedName = m_micDeviceCombo->currentData().toString();
     if (!selectedName.isEmpty()) {
         for (const auto& dev : QMediaDevices::audioInputs()) {
@@ -574,7 +574,7 @@ void RoomCorrectionDlg::updateOutputChannels() {
     m_outputChannelCombo->clear();
     m_outputChannelCombo->addItem("All channels", -1);
     int channels = 2; // Default fallback
-#ifdef QT_MULTIMEDIA_LIB
+#if defined(QT_MULTIMEDIA_LIB) && !defined(ENABLE_WEBAUDIO)
     QString selectedName = m_outputDeviceCombo->currentData().toString();
     if (!selectedName.isEmpty()) {
         for (const auto& dev : QMediaDevices::audioOutputs()) {
@@ -770,6 +770,7 @@ void RoomCorrectionDlg::onGenerateFIR() {
 }
 
 void RoomCorrectionDlg::onComputeSubwoofer() {
-    SubwooferAssistDlg dlg(&m_session, m_pipeline, this);
-    dlg.exec();
+    auto dlg = new SubwooferAssistDlg(&m_session, m_pipeline, this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->open();
 }

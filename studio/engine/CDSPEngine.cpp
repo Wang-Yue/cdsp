@@ -1,6 +1,10 @@
 #include "engine/CDSPEngine.h"
 
+#if defined(ENABLE_WEBAUDIO)
+#include "cdsp_wasm.h"
+#else
 #include "cdsp/cdsp.h"
+#endif
 
 #include <cstring>  // for memset
 #include <mutex>    // for mutex, lock_guard
@@ -9,6 +13,355 @@
 
 static CDSPEngine::LogCallback s_logCallback = nullptr;
 static std::mutex s_logMutex;
+
+#if defined(ENABLE_WEBAUDIO)
+#include "cdsp_wasm.h"
+
+#include <cmath>
+
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+
+EM_JS(int, js_cdsp_is_captured, (), {
+    if (typeof window !== 'undefined' && window.cdspBridge) {
+        return window.cdspBridge.isCaptured ? 1 : 0;
+    }
+    return 0;
+});
+
+EM_JS(void, js_cdsp_start_capture, (), {
+    if (typeof window !== 'undefined' && window.cdspBridge && typeof window.cdspBridge.startCapture === 'function') {
+        window.cdspBridge.startCapture();
+    }
+});
+
+EM_JS(void, js_cdsp_stop_capture, (), {
+    if (typeof window !== 'undefined' && window.cdspBridge && typeof window.cdspBridge.stopCapture === 'function') {
+        window.cdspBridge.stopCapture();
+    }
+});
+
+EM_JS(void, js_cdsp_set_config, (const char* jsonStr), {
+    if (typeof window !== 'undefined' && window.cdspBridge) {
+        var str = UTF8ToString(jsonStr);
+        window.cdspBridge.setConfig(str);
+    }
+});
+
+EM_JS(void, js_cdsp_set_fader_volume, (int fader, double db, int instant), {
+    if (typeof window !== 'undefined' && window.cdspBridge) {
+        window.cdspBridge.setFaderVolume(fader, db, !!instant);
+    }
+});
+
+EM_JS(void, js_cdsp_set_fader_mute, (int fader, int mute), {
+    if (typeof window !== 'undefined' && window.cdspBridge) {
+        window.cdspBridge.setFaderMute(fader, !!mute);
+    }
+});
+
+EM_JS(void, js_cdsp_get_vu_levels, (float* inPeak, float* inRms, float* outPeak, float* outRms), {
+    if (typeof window !== 'undefined' && window.cdspBridge && window.cdspBridge.telemetry) {
+        var t = window.cdspBridge.telemetry;
+        if (t.inPeak) {
+            HEAPF32[inPeak >> 2] = (t.inPeak[0] !== undefined && Number.isFinite(t.inPeak[0])) ? t.inPeak[0] : -120.0;
+            HEAPF32[(inPeak >> 2) + 1] = (t.inPeak[1] !== undefined && Number.isFinite(t.inPeak[1])) ? t.inPeak[1] : -120.0;
+        }
+        if (t.inRms) {
+            HEAPF32[inRms >> 2] = (t.inRms[0] !== undefined && Number.isFinite(t.inRms[0])) ? t.inRms[0] : -120.0;
+            HEAPF32[(inRms >> 2) + 1] = (t.inRms[1] !== undefined && Number.isFinite(t.inRms[1])) ? t.inRms[1] : -120.0;
+        }
+        if (t.outPeak) {
+            HEAPF32[outPeak >> 2] = (t.outPeak[0] !== undefined && Number.isFinite(t.outPeak[0])) ? t.outPeak[0] : -120.0;
+            HEAPF32[(outPeak >> 2) + 1] = (t.outPeak[1] !== undefined && Number.isFinite(t.outPeak[1])) ? t.outPeak[1] : -120.0;
+        }
+        if (t.outRms) {
+            HEAPF32[outRms >> 2] = (t.outRms[0] !== undefined && Number.isFinite(t.outRms[0])) ? t.outRms[0] : -120.0;
+            HEAPF32[(outRms >> 2) + 1] = (t.outRms[1] !== undefined && Number.isFinite(t.outRms[1])) ? t.outRms[1] : -120.0;
+        }
+    }
+});
+
+EM_JS(int, js_cdsp_get_spectrum, (int isCapture, float* outMag, int nBins), {
+    if (typeof window !== 'undefined' && window.cdspBridge && window.cdspBridge.telemetry) {
+        var t = window.cdspBridge.telemetry;
+        var spec = isCapture ? t.inSpectrum : t.outSpectrum;
+        if (spec && spec.length > 0) {
+            var srcLen = spec.length;
+            for (var i = 0; i < nBins; i++) {
+                var srcIdx = (nBins === 1) ? 0 : Math.min(srcLen - 1, Math.floor((i / (nBins - 1)) * (srcLen - 1)));
+                var val = spec[srcIdx];
+                HEAPF32[(outMag >> 2) + i] = (val !== null && val !== undefined && Number.isFinite(val)) ? val : -120.0;
+            }
+            return 1;
+        }
+    }
+    return 0;
+});
+
+EM_JS(int, js_cdsp_get_samples, (int isCapture, float* outLeft, float* outRight, int maxFrames), {
+    if (typeof window !== 'undefined' && window.cdspBridge && window.cdspBridge.telemetry) {
+        var t = window.cdspBridge.telemetry;
+        var sL = isCapture ? t.inSamplesL : t.outSamplesL;
+        var sR = isCapture ? t.inSamplesR : t.outSamplesR;
+        if (sL && sR && sL.length > 0 && sR.length > 0) {
+            var n = Math.min(maxFrames, Math.min(sL.length, sR.length));
+            for (var i = 0; i < n; i++) {
+                HEAPF32[(outLeft >> 2) + i] = Number.isFinite(sL[i]) ? sL[i] : 0.0;
+                HEAPF32[(outRight >> 2) + i] = Number.isFinite(sR[i]) ? sR[i] : 0.0;
+            }
+            return n;
+        }
+    }
+    return 0;
+});
+#endif
+
+CDSPEngine::CDSPEngine() {
+    m_engine = nullptr;
+    m_isRunning = false;
+}
+
+CDSPEngine::~CDSPEngine() {
+    if (m_engine) {
+        cdsp_wasm_destroy(m_engine);
+        m_engine = nullptr;
+    }
+}
+
+namespace {
+int faderToWasmIndex(Fader fader) {
+    switch (fader) {
+    case Fader::Main:
+        return 0;
+    case Fader::Aux1:
+        return 1;
+    case Fader::Aux2:
+        return 2;
+    case Fader::Aux3:
+        return 3;
+    case Fader::Aux4:
+        return 4;
+    }
+    return 0;
+}
+} // namespace
+
+bool CDSPEngine::start(const std::string& configJson, std::string& errorMessage) {
+    errorMessage.clear();
+    m_lastConfigJson = configJson;
+    if (m_engine) {
+        cdsp_wasm_destroy(m_engine);
+        m_engine = nullptr;
+    }
+    m_engine = cdsp_wasm_create(configJson.c_str(), 48000, 128);
+
+    m_isRunning = true;
+#if defined(__EMSCRIPTEN__)
+    js_cdsp_set_config(configJson.c_str());
+    if (!js_cdsp_is_captured()) {
+        js_cdsp_start_capture();
+    }
+#endif
+    return true;
+}
+
+bool CDSPEngine::setConfig(const std::string& configJson, std::string& errorMessage) {
+    return start(configJson, errorMessage);
+}
+
+void CDSPEngine::stop() {
+    m_isRunning = false;
+#if defined(__EMSCRIPTEN__)
+    js_cdsp_stop_capture();
+#endif
+}
+
+void CDSPEngine::poll() {
+    // Synchronous WASM engine operates on-demand without thread polling
+}
+
+void CDSPEngine::setFaderVolume(Fader fader, float db, bool instant) {
+    if (m_engine) {
+        cdsp_wasm_set_fader_volume(m_engine, faderToWasmIndex(fader), static_cast<double>(db), instant);
+    }
+#if defined(__EMSCRIPTEN__)
+    js_cdsp_set_fader_volume(faderToWasmIndex(fader), static_cast<double>(db), instant ? 1 : 0);
+#endif
+}
+
+void CDSPEngine::setFaderMute(Fader fader, bool mute) {
+    if (m_engine) {
+        cdsp_wasm_set_fader_mute(m_engine, faderToWasmIndex(fader), mute);
+    }
+#if defined(__EMSCRIPTEN__)
+    js_cdsp_set_fader_mute(faderToWasmIndex(fader), mute ? 1 : 0);
+#endif
+}
+
+float CDSPEngine::getFaderVolume(Fader fader) const {
+    if (m_engine) {
+        return static_cast<float>(cdsp_wasm_get_fader_volume(m_engine, faderToWasmIndex(fader)));
+    }
+    return 0.0f;
+}
+
+bool CDSPEngine::isFaderMuted(Fader fader) const {
+    if (m_engine) {
+        return cdsp_wasm_get_fader_mute(m_engine, faderToWasmIndex(fader));
+    }
+    return false;
+}
+
+StateUpdate CDSPEngine::getStatus() const {
+    StateUpdate res;
+#if defined(__EMSCRIPTEN__)
+    bool captured = js_cdsp_is_captured() != 0;
+    res.state = (m_isRunning || captured) ? ProcessingState::Running : ProcessingState::Inactive;
+#else
+    res.state = m_isRunning ? ProcessingState::Running : ProcessingState::Inactive;
+#endif
+    res.stopReason.type = StopReasonType::None;
+    return res;
+}
+
+VuLevels CDSPEngine::getVuLevels() const {
+    VuLevels res;
+    res.capture_peak.resize(2, -120.0f);
+    res.capture_rms.resize(2, -120.0f);
+    res.playback_peak.resize(2, -120.0f);
+    res.playback_rms.resize(2, -120.0f);
+
+#if defined(__EMSCRIPTEN__)
+    js_cdsp_get_vu_levels(res.capture_peak.data(), res.capture_rms.data(),
+                          res.playback_peak.data(), res.playback_rms.data());
+#elif defined(ENABLE_WEBAUDIO)
+    if (m_engine) {
+        cdsp_wasm_get_vu_levels(m_engine, res.capture_peak.data(), res.capture_rms.data(),
+                                res.playback_peak.data(), res.playback_rms.data());
+    }
+#endif
+    return res;
+}
+
+bool CDSPEngine::getSpectrum(bool isCapture, int channel, double minFreq, double maxFreq, size_t nBins,
+                             SpectrumData& outSpectrum) const {
+    (void)channel;
+    if (nBins == 0)
+        return false;
+
+    outSpectrum.frequencies.resize(nBins);
+    outSpectrum.magnitudes.resize(nBins);
+
+    // Compute logarithmic bin frequencies for visualizer
+    double logMin = (minFreq > 0.0) ? std::log10(minFreq) : std::log10(20.0);
+    double logMax = (maxFreq > minFreq) ? std::log10(maxFreq) : std::log10(20000.0);
+    double step = (nBins > 1) ? (logMax - logMin) / static_cast<double>(nBins - 1) : 0.0;
+    for (size_t i = 0; i < nBins; ++i) {
+        outSpectrum.frequencies[i] = static_cast<float>(std::pow(10.0, logMin + static_cast<double>(i) * step));
+    }
+
+#if defined(__EMSCRIPTEN__)
+    int ok = js_cdsp_get_spectrum(isCapture ? 1 : 0, outSpectrum.magnitudes.data(), static_cast<int>(nBins));
+    if (!ok) {
+        std::fill(outSpectrum.magnitudes.begin(), outSpectrum.magnitudes.end(), -120.0f);
+    }
+    return true;
+#else
+    if (!m_engine)
+        return false;
+    return cdsp_wasm_get_spectrum(m_engine, isCapture, channel >= 0 ? channel : 0, minFreq, maxFreq, nBins,
+                                  outSpectrum.magnitudes.data());
+#endif
+}
+
+bool CDSPEngine::getSamples(bool isCapture, size_t nFrames, AudioSamplesData& outSamples) const {
+    if (nFrames == 0) {
+        outSamples.channels.clear();
+        return false;
+    }
+    outSamples.channels.resize(2);
+    outSamples.channels[0].resize(nFrames);
+    outSamples.channels[1].resize(nFrames);
+
+#if defined(__EMSCRIPTEN__)
+    int n = js_cdsp_get_samples(isCapture ? 1 : 0, outSamples.channels[0].data(), outSamples.channels[1].data(), static_cast<int>(nFrames));
+    if (n <= 0) {
+        outSamples.channels.clear();
+        return false;
+    }
+    if (static_cast<size_t>(n) < nFrames) {
+        outSamples.channels[0].resize(n);
+        outSamples.channels[1].resize(n);
+    }
+    return true;
+#elif defined(ENABLE_WEBAUDIO)
+    if (!m_engine) {
+        outSamples.channels.clear();
+        return false;
+    }
+    size_t n = cdsp_wasm_get_samples(m_engine, isCapture, nFrames, outSamples.channels[0].data(), outSamples.channels[1].data());
+    if (n == 0) {
+        outSamples.channels.clear();
+        return false;
+    }
+    if (n < nFrames) {
+        outSamples.channels[0].resize(n);
+        outSamples.channels[1].resize(n);
+    }
+    return true;
+#else
+    (void)isCapture;
+    (void)nFrames;
+    outSamples.channels.clear();
+    return false;
+#endif
+}
+
+std::vector<AudioDevice> CDSPEngine::getAvailableDevices(const std::string& backend, bool input) const {
+    (void)backend;
+    std::vector<AudioDevice> result;
+    if (input) {
+        result.push_back(AudioDevice{"default", "WebAudio System Input"});
+        result.push_back(AudioDevice{"tab", "Active Tab Audio Stream"});
+    } else {
+        result.push_back(AudioDevice{"default", "WebAudio Default Output"});
+    }
+    return result;
+}
+
+std::optional<AudioDeviceDescriptor>
+CDSPEngine::getDeviceCapabilities(const std::string& backend, const std::string& device, bool isCapture) const {
+    (void)backend;
+    (void)device;
+    (void)isCapture;
+    AudioDeviceDescriptor desc;
+    desc.name = "WebAudio";
+    DeviceCapabilitySet capSet;
+    capSet.mode = "Standard";
+    ChannelCapability chCap;
+    chCap.channels = 2;
+    for (int rate : {44100, 48000, 88200, 96000}) {
+        SamplerateCapability srCap;
+        srCap.samplerate = rate;
+        srCap.formats.push_back("F32");
+        chCap.samplerates.push_back(srCap);
+    }
+    capSet.capabilities.push_back(chCap);
+    desc.capability_sets.push_back(capSet);
+    return desc;
+}
+
+void CDSPEngine::setLogLevel(const std::string& levelStr) {
+    (void)levelStr;
+}
+
+void CDSPEngine::setLogCallback(LogCallback callback) {
+    std::lock_guard<std::mutex> lock(s_logMutex);
+    s_logCallback = std::move(callback);
+}
+
+#else
 
 CDSPEngine::CDSPEngine() {
     m_engine = cdsp_engine_create();
@@ -364,3 +717,5 @@ void CDSPEngine::setLogCallback(LogCallback callback) {
         cdsp_set_log_callback(nullptr, nullptr);
     }
 }
+
+#endif

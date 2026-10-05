@@ -138,7 +138,7 @@ static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
 #ifdef CDSP_TEST
   timeout_ms = cdsp_sem_scale_timeout_ms(timeout_ms);
 #endif
-#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+#if defined(__EMSCRIPTEN__)
   (void)timeout_ms;
   return sem_trywait(sem) == 0;
 #else

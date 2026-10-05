@@ -68,6 +68,7 @@ CDSP Studio automatically leverages optimal platform audio APIs and hardware SIM
 
 ## Building
 
+### Native Desktop (macOS, Linux, Windows)
 CDSP Studio is built directly as part of the unified CDSP build tree. See the top-level [**README.md**](../README.md#building-from-source) for prerequisites and build instructions.
 
 ```bash
@@ -75,6 +76,16 @@ CDSP Studio is built directly as part of the unified CDSP build tree. See the to
 cmake -B build -S .
 cmake --build build -j
 ```
+
+### WebAssembly (Browser / Chrome Extension)
+CDSP Studio is built and embedded into the Chrome Extension using Qt 6.7.3 for WebAssembly (`wasm_multithread`) and emsdk 3.1.50, via [`tools/build_wasm.sh`](../tools/build_wasm.sh) — the same script CI runs:
+
+```bash
+source /path/to/emsdk/emsdk_env.sh
+QT_ROOT=~/Qt tools/build_wasm.sh build-wasm
+```
+
+The generated `cdsp-studio.wasm` and `cdsp-studio.js` are packaged directly into `build-wasm/extension_dist/ui/studio/` and `cdsp_extension.zip` with full Manifest V3 CSP compliance.
 
 ---
 

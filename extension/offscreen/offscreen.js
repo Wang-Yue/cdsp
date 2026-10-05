@@ -8,6 +8,7 @@
 
 // Map of active tab sessions: tabId -> { audioCtx, sourceNode, cdspNode, stream, telemetry }
 const sessions = new Map();
+let isTelemetryActive = true;
 
 /**
  * Loads persisted settings from chrome.storage.local.
@@ -29,15 +30,28 @@ async function getStoredSettings() {
 }
 
 /**
+ * True if a capture session exists for the tab and its audio track is still running.
+ */
+function isSessionLive(tabId) {
+  const session = sessions.get(tabId);
+  return !!session?.stream?.getAudioTracks().some((track) => track.readyState === 'live');
+}
+
+/**
  * Starts processing for a captured tab.
  */
 async function handleStartCapture(tabId, streamId) {
+  let step = 'init';
   try {
+    if (isSessionLive(tabId)) {
+      return { success: true };
+    }
     if (sessions.has(tabId)) {
       handleStopCapture(tabId);
     }
 
     // 1. Ingest tab audio via getUserMedia with chromeMediaSource
+    step = 'getUserMedia';
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         mandatory: {
@@ -49,6 +63,7 @@ async function handleStartCapture(tabId, streamId) {
     });
 
     // 2. Initialize AudioContext at standard 48kHz interactive rate
+    step = 'AudioContext';
     const audioCtx = new AudioContext({
       sampleRate: 48000,
       latencyHint: 'interactive'
@@ -60,6 +75,7 @@ async function handleStartCapture(tabId, streamId) {
     }
 
     // 3. Attempt to fetch WASM binary and load WASM helper module if available
+    step = 'fetch cdsp_wasm.wasm';
     let wasmBytes = null;
     try {
       const wasmRes = await fetch(chrome.runtime.getURL('wasm/cdsp_wasm.wasm'));
@@ -78,13 +94,16 @@ async function handleStartCapture(tabId, streamId) {
     }
 
     // 4. Load CDSP AudioWorkletProcessor module
+    step = 'addModule cdsp-processor.js';
     const workletUrl = chrome.runtime.getURL('worklet/cdsp-processor.js');
     await audioCtx.audioWorklet.addModule(workletUrl);
 
     // 5. Retrieve stored user settings for initial configuration
+    step = 'getStoredSettings';
     const stored = await getStoredSettings();
 
     // 6. Instantiate Worklet Node with initial persisted parameters
+    step = 'AudioWorkletNode';
     const cdspNode = new AudioWorkletNode(audioCtx, 'cdsp-processor', {
       numberOfInputs: 1,
       numberOfOutputs: 1,
@@ -93,7 +112,8 @@ async function handleStartCapture(tabId, streamId) {
         wasmBytes: wasmBytes,
         volumeDb: stored.volumeDb,
         muted: stored.isMuted,
-        initialConfig: stored.configJson
+        initialConfig: stored.configJson,
+        telemetryActive: isTelemetryActive
       }
     });
 
@@ -120,6 +140,7 @@ async function handleStartCapture(tabId, streamId) {
     };
 
     // 8. Connect audio graph: Tab -> DSP -> System Output
+    step = 'connect graph';
     const sourceNode = audioCtx.createMediaStreamSource(stream);
     session.sourceNode = sourceNode;
 
@@ -130,8 +151,9 @@ async function handleStartCapture(tabId, streamId) {
     console.log(`[CDSP Offscreen] Tab ${tabId} captured and processing started.`);
     return { success: true };
   } catch (err) {
-    console.error(`[CDSP Offscreen] Error starting capture for tab ${tabId}:`, err);
-    return { success: false, error: err.message };
+    const detail = `${step}: ${err?.name || 'Error'}: ${err?.message || String(err)}`;
+    console.error(`[CDSP Offscreen] Error starting capture for tab ${tabId} at ${detail}`);
+    return { success: false, error: detail };
   }
 }
 
@@ -164,6 +186,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === 'PING') {
+    sendResponse({ ready: true });
+    return false;
+  }
+
+  if (message.type === 'IS_TAB_CAPTURED') {
+    sendResponse({ captured: isSessionLive(message.tabId) });
+    return false;
+  }
+
   if (message.type === 'START_TAB_CAPTURE') {
     handleStartCapture(message.tabId, message.streamId).then(sendResponse);
     return true;
@@ -176,60 +208,104 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'SET_VOLUME') {
-    const session = sessions.get(message.tabId);
-    if (session?.cdspNode) {
-      session.cdspNode.port.postMessage({
+    if (chrome.storage && chrome.storage.local && typeof message.db === 'number') {
+      chrome.storage.local.set({ volumeDb: message.db });
+    }
+    if (message.tabId && sessions.has(message.tabId)) {
+      sessions.get(message.tabId).cdspNode?.port.postMessage({
         type: 'SET_VOLUME',
         fader: message.fader ?? 0,
         db: message.db ?? 0.0,
         instant: message.instant ?? false
       });
+    } else {
+      for (const session of sessions.values()) {
+        session.cdspNode?.port.postMessage({
+          type: 'SET_VOLUME',
+          fader: message.fader ?? 0,
+          db: message.db ?? 0.0,
+          instant: message.instant ?? false
+        });
+      }
     }
     sendResponse({ success: true });
     return false;
   }
 
   if (message.type === 'SET_MUTE') {
-    const session = sessions.get(message.tabId);
-    if (session?.cdspNode) {
-      session.cdspNode.port.postMessage({
+    if (chrome.storage && chrome.storage.local && typeof message.mute === 'boolean') {
+      chrome.storage.local.set({ isMuted: message.mute });
+    }
+    if (message.tabId && sessions.has(message.tabId)) {
+      sessions.get(message.tabId).cdspNode?.port.postMessage({
         type: 'SET_MUTE',
         fader: message.fader ?? 0,
         mute: message.mute ?? false
       });
+    } else {
+      for (const session of sessions.values()) {
+        session.cdspNode?.port.postMessage({
+          type: 'SET_MUTE',
+          fader: message.fader ?? 0,
+          mute: message.mute ?? false
+        });
+      }
     }
     sendResponse({ success: true });
     return false;
   }
 
   if (message.type === 'SET_CONFIG') {
-    const session = sessions.get(message.tabId);
-    if (session?.cdspNode) {
-      session.cdspNode.port.postMessage({
+    if (chrome.storage && chrome.storage.local && message.configJson) {
+      const configStr = typeof message.configJson === 'string'
+        ? message.configJson
+        : JSON.stringify(message.configJson);
+      chrome.storage.local.set({ lastConfigJson: configStr });
+    }
+    if (message.tabId && sessions.has(message.tabId)) {
+      sessions.get(message.tabId).cdspNode?.port.postMessage({
         type: 'SET_CONFIG',
         configJson: message.configJson
       });
+    } else {
+      for (const session of sessions.values()) {
+        session.cdspNode?.port.postMessage({
+          type: 'SET_CONFIG',
+          configJson: message.configJson
+        });
+      }
     }
     sendResponse({ success: true });
     return false;
   }
 
   if (message.type === 'SET_TELEMETRY_ACTIVE') {
-    const session = sessions.get(message.tabId);
-    if (session?.cdspNode) {
-      session.cdspNode.port.postMessage({
+    isTelemetryActive = !!message.active;
+    if (message.tabId && sessions.has(message.tabId)) {
+      sessions.get(message.tabId).cdspNode?.port.postMessage({
         type: 'SET_TELEMETRY_ACTIVE',
-        active: !!message.active
+        active: isTelemetryActive
       });
+    } else {
+      for (const session of sessions.values()) {
+        session.cdspNode?.port.postMessage({
+          type: 'SET_TELEMETRY_ACTIVE',
+          active: isTelemetryActive
+        });
+      }
     }
     sendResponse({ success: true });
     return false;
   }
 
   if (message.type === 'GET_TELEMETRY') {
-    const session = sessions.get(message.tabId);
+    let session = message.tabId ? sessions.get(message.tabId) : null;
+    if (!session && sessions.size > 0) {
+      session = sessions.values().next().value;
+    }
     sendResponse({
       active: !!session,
+      isCaptured: !!session,
       telemetry: session?.telemetry || null
     });
     return false;

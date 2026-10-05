@@ -8,7 +8,9 @@
 #include <QJsonObject>   // for QJsonObject, operator!=
 #include <QJsonValue>    // for QJsonValueRef
 #include <QList>         // for QList
+#if !defined(ENABLE_WEBAUDIO) && defined(QT_MULTIMEDIA_LIB)
 #include <QMediaDevices> // for QMediaDevices
+#endif
 #include <QSettings>     // for QSettings
 #include <QString>       // for QString, QAnyStringView::QAnyStringView
 #include <QStringList>   // for QStringList
@@ -112,7 +114,9 @@ AudioDeviceManager::~AudioDeviceManager() {
 }
 
 AudioBackendType AudioDeviceManager::defaultHardwareBackend() {
-#if defined(ENABLE_COREAUDIO)
+#if defined(ENABLE_WEBAUDIO)
+    return AudioBackendType::WebAudio;
+#elif defined(ENABLE_COREAUDIO)
     return AudioBackendType::CoreAudio;
 #elif defined(ENABLE_WASAPI)
     return AudioBackendType::WASAPI;
@@ -132,6 +136,7 @@ void AudioDeviceManager::refreshDevices() {
 void AudioDeviceManager::startDeviceChangeListener() {
     stopDeviceChangeListener();
 
+#if !defined(ENABLE_WEBAUDIO) && defined(QT_MULTIMEDIA_LIB)
     if (!m_deviceChangeDebounceTimer) {
         m_deviceChangeDebounceTimer = new QTimer(this);
         m_deviceChangeDebounceTimer->setSingleShot(true);
@@ -152,9 +157,11 @@ void AudioDeviceManager::startDeviceChangeListener() {
 
     m_inputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioInputsChanged, this, handleDeviceChange);
     m_outputsConnection = connect(&m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, handleDeviceChange);
+#endif
 }
 
 void AudioDeviceManager::stopDeviceChangeListener() {
+#if !defined(ENABLE_WEBAUDIO) && defined(QT_MULTIMEDIA_LIB)
     if (m_deviceChangeDebounceTimer) {
         m_deviceChangeDebounceTimer->stop();
     }
@@ -166,6 +173,7 @@ void AudioDeviceManager::stopDeviceChangeListener() {
         disconnect(m_outputsConnection);
         m_outputsConnection = {};
     }
+#endif
 }
 
 void AudioDeviceManager::loadSavedConfigs() {

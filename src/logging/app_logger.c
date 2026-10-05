@@ -332,6 +332,7 @@ static void format_log_message(char *out, size_t out_cap, const char *msg,
  * @param arg Pointer to the app_logger_t instance.
  * @return NULL.
  */
+#if !defined(__EMSCRIPTEN__)
 static void *worker_thread_func(void *arg) {
   app_logger_t *logger = (app_logger_t *)arg;
   while (true) {
@@ -445,6 +446,7 @@ static void *worker_thread_func(void *arg) {
   }
   return NULL;
 }
+#endif
 
 static void free_logger_internal(app_logger_t *logger) {
   if (!logger)
@@ -488,7 +490,7 @@ static void init_shared_logger(void) {
   g_shared_logger->semaphore = cdsp_sem_create();
   pthread_mutex_init(&g_shared_logger->worker_mutex, NULL);
   pthread_mutex_init(&g_shared_logger->callback_mutex, NULL);
-#if !defined(__EMSCRIPTEN__) || defined(__EMSCRIPTEN_PTHREADS__)
+#if !defined(__EMSCRIPTEN__)
   atomic_init(&g_shared_logger->is_started, true);
   pthread_create(&g_shared_logger->worker_thread, NULL, worker_thread_func,
                  g_shared_logger);
@@ -520,7 +522,7 @@ void app_logger_log(app_logger_t *logger, log_level_t level, const char *label,
                     log_argument_t arg4) {
   if (!logger || level > app_logger_get_level())
     return;
-#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+#if defined(__EMSCRIPTEN__)
   const char *lvl_str;
   switch (level) {
   case LOG_LEVEL_OFF:

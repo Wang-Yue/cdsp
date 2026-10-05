@@ -183,6 +183,20 @@ bool cdsp_wasm_get_spectrum(cdsp_wasm_t *ctx, bool is_capture, int channel,
                             double min_freq, double max_freq, size_t n_bins,
                             float *out_bins);
 
+/**
+ * @brief Retrieve latest raw audio samples for real-time oscilloscope / vectorscope.
+ *
+ * @param ctx The CDSP WASM context.
+ * @param is_capture true for input samples, false for output samples.
+ * @param n_frames Number of frames requested.
+ * @param[out] out_left Buffer for channel 0 (left) samples (length >= n_frames).
+ * @param[out] out_right Buffer for channel 1 (right) samples (length >= n_frames).
+ * @return Number of frames actually read into out_left and out_right.
+ */
+EMSCRIPTEN_KEEPALIVE
+size_t cdsp_wasm_get_samples(cdsp_wasm_t *ctx, bool is_capture, size_t n_frames,
+                             float *out_left, float *out_right);
+
 #ifdef __cplusplus
 }
 #endif

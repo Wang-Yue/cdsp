@@ -61,7 +61,10 @@ if(WIN32 AND ENABLE_STATIC_WINDOWS)
     endif()
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Concurrent)
+if(NOT EMSCRIPTEN)
+    find_package(Qt6 REQUIRED COMPONENTS Multimedia)
+endif()
 if(WIN32 AND ENABLE_STATIC_WINDOWS)
     if(TARGET harfbuzz::harfbuzz)
         find_library(STATIC_HARFBUZZ_LIB NAMES libharfbuzz.a HINTS /ucrt64/lib /mingw64/lib)
@@ -162,6 +165,8 @@ if(APPLE)
 elseif(WIN32)
     set(APP_ICON_WIN "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.rc")
     list(APPEND SOURCES ${APP_ICON_WIN})
+elseif(EMSCRIPTEN)
+    list(APPEND SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../extension/wasm/cdsp_wasm.c")
 endif()
 
 # ==============================================================================
@@ -176,7 +181,7 @@ target_link_libraries(cdsp-studio PRIVATE
     Qt6::Widgets
     Qt6::Network
     Qt6::Concurrent
-    Qt6::Multimedia
+    $<$<NOT:$<BOOL:${EMSCRIPTEN}>>:Qt6::Multimedia>
     Threads::Threads
     cdsp::dsp
     ${EXTRA_PLATFORM_LIBS}
@@ -187,18 +192,23 @@ target_link_libraries(cdsp-studio PRIVATE
 # ==============================================================================
 if(ENABLE_PCH)
     target_precompile_headers(cdsp-studio PRIVATE
-        <QtCore>
-        <QtGui>
-        <QtWidgets>
-        <vector>
-        <string>
-        <memory>
-        <functional>
-        <optional>
-        <algorithm>
+        "$<$<COMPILE_LANGUAGE:CXX>:<QtCore>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<QtGui>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<QtWidgets>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<vector>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<string>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<memory>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<functional>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<optional>>"
+        "$<$<COMPILE_LANGUAGE:CXX>:<algorithm>>"
     )
     if(APPLE)
         set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/utils/MacUtils.mm" PROPERTIES
+            SKIP_PRECOMPILE_HEADERS ON
+        )
+    endif()
+    if(EMSCRIPTEN)
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/../extension/wasm/cdsp_wasm.c" PROPERTIES
             SKIP_PRECOMPILE_HEADERS ON
         )
     endif()
@@ -246,6 +256,47 @@ elseif(WIN32)
     if(ENABLE_STATIC_WINDOWS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_link_options(cdsp-studio PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--gc-sections)
     endif()
+elseif(EMSCRIPTEN)
+    set_target_properties(cdsp-studio PROPERTIES
+        QT_WASM_EXPORT_NAME "cdsp_studio"
+    )
+    target_compile_definitions(cdsp-studio PRIVATE ENABLE_WEBAUDIO=1)
+    target_include_directories(cdsp-studio PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../extension/wasm")
+    target_compile_options(cdsp-studio PRIVATE -pthread -mbulk-memory -matomics)
+    target_link_options(cdsp-studio PRIVATE
+        --bind
+        -pthread
+        -mbulk-memory
+        -matomics
+        -sUSE_PTHREADS=1
+        -sPTHREAD_POOL_SIZE=4
+        -sALLOW_MEMORY_GROWTH=1
+        -sINITIAL_MEMORY=134217728
+        -sMAXIMUM_MEMORY=1073741824
+        -sMODULARIZE=1
+        -sEXPORT_NAME=cdsp_studio
+        -sDYNAMIC_EXECUTION=0
+        "-sEXPORTED_RUNTIME_METHODS=['UTF16ToString','stringToUTF16','JSEvents','specialHTMLTargets','FS','callMain','UTF8ToString','stringToUTF8','ENV']"
+        "-sEXPORTED_FUNCTIONS=['_main','__embind_initialize_bindings']"
+    )
+
+    # Generate HTML shell and copy Qt WebAssembly loader assets (CSP compliant)
+    add_custom_command(TARGET cdsp-studio POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${QT6_INSTALL_PREFIX}/plugins/platforms/qtloader.js"
+            "$<TARGET_FILE_DIR:cdsp-studio>/qtloader.js"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${QT6_INSTALL_PREFIX}/plugins/platforms/qtlogo.svg"
+            "$<TARGET_FILE_DIR:cdsp-studio>/qtlogo.svg"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/cdsp-studio.html"
+            "$<TARGET_FILE_DIR:cdsp-studio>/cdsp-studio.html"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/studio-bootstrap.js"
+            "$<TARGET_FILE_DIR:cdsp-studio>/studio-bootstrap.js"
+        COMMENT "Copying CSP-compliant WebAssembly shell HTML, bootstrap JS, and Qt loader assets..."
+        VERBATIM
+    )
 endif()
 
 

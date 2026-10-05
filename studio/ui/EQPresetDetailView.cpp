@@ -803,10 +803,11 @@ void EQPresetDetailView::updateBandChipsBar() {
         // Context Menu
         connect(chip, &QWidget::customContextMenuRequested, [this, bandIdx](const QPoint& pos) {
             auto sourceWidget = qobject_cast<QWidget*>(sender());
-            QMenu menu(this);
+            auto menu = new QMenu(this);
+            menu->setAttribute(Qt::WA_DeleteOnClose);
             auto& band = m_preset.bands[bandIdx];
 
-            auto toggleAction = menu.addAction(band.isEnabled ? "Disable Band" : "Enable Band");
+            auto toggleAction = menu->addAction(band.isEnabled ? "Disable Band" : "Enable Band");
             connect(toggleAction, &QAction::triggered, [this, bandIdx]() {
                 m_preset.bands[bandIdx].isEnabled = !m_preset.bands[bandIdx].isEnabled;
                 m_diagramWidget->setPreset(m_preset);
@@ -814,7 +815,7 @@ void EQPresetDetailView::updateBandChipsBar() {
                 refreshUi();
             });
 
-            auto typeMenu = menu.addMenu("Change Type");
+            auto typeMenu = menu->addMenu("Change Type");
             for (EQBandType t :
                  {EQBandType::Peaking, EQBandType::Lowshelf, EQBandType::Highshelf, EQBandType::Lowpass,
                   EQBandType::Highpass, EQBandType::LowpassFO, EQBandType::HighpassFO, EQBandType::LowshelfFO,
@@ -829,11 +830,11 @@ void EQPresetDetailView::updateBandChipsBar() {
                 });
             }
 
-            menu.addSeparator();
-            auto delAction = menu.addAction("Delete");
+            menu->addSeparator();
+            auto delAction = menu->addAction("Delete");
             connect(delAction, &QAction::triggered, [this, bandIdx]() { onDeleteBand(bandIdx); });
 
-            menu.exec(sourceWidget ? sourceWidget->mapToGlobal(pos) : QCursor::pos());
+            menu->popup(sourceWidget ? sourceWidget->mapToGlobal(pos) : QCursor::pos());
         });
 
         m_chipLayout->addWidget(chip);

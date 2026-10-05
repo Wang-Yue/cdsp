@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, height=device-height, user-scalable=0"/>
+    <title>CDSP Studio</title>
+    <style>
+      html, body { padding: 0; margin: 0; overflow: hidden; height: 100%; background-color: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      #screen { width: 100%; height: 100%; }
+      #qtspinner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        margin: 0;
+      }
+      #qtstatus {
+        margin-top: 12px;
+        color: #06b6d4;
+        font-family: monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <figure id="qtspinner">
+      <img src="qtlogo.svg" width="320" height="200" alt="Qt Logo" style="display:block">
+      <strong style="margin-top: 16px; font-size: 16px;">Qt for WebAssembly: CDSP Studio</strong>
+      <div id="qtstatus">Loading CDSP Studio...</div>
+      <noscript>JavaScript is disabled. Please enable JavaScript to use this application.</noscript>
+    </figure>
+    <div id="screen" style="display:none;"></div>
+
+    <script src="qtloader.js"></script>
+    <script src="cdsp-studio.js"></script>
+    <script src="studio-bootstrap.js"></script>
+  </body>
+</html>

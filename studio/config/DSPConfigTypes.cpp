@@ -155,6 +155,10 @@ LogLevel rawByteToLogLevel(uint8_t rawByte) {
 
 std::string audioBackendTypeToString(AudioBackendType type) {
     switch (type) {
+#if defined(ENABLE_WEBAUDIO)
+    case AudioBackendType::WebAudio:
+        return "WebAudio";
+#endif
 #if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         return "CoreAudio";
@@ -189,6 +193,10 @@ AudioBackendType stringToAudioBackendType(const std::string& str) {
     std::string lowerStr = str;
     std::transform(lowerStr.begin(), lowerStr.end(), lowerStr.begin(), ::tolower);
 
+#if defined(ENABLE_WEBAUDIO)
+    if (lowerStr == "webaudio")
+        return AudioBackendType::WebAudio;
+#endif
 #if defined(ENABLE_COREAUDIO)
     if (lowerStr == "coreaudio")
         return AudioBackendType::CoreAudio;
@@ -216,7 +224,9 @@ AudioBackendType stringToAudioBackendType(const std::string& str) {
     if (lowerStr == "signalgenerator")
         return AudioBackendType::SignalGenerator;
 
-#if defined(ENABLE_COREAUDIO)
+#if defined(ENABLE_WEBAUDIO)
+    return AudioBackendType::WebAudio;
+#elif defined(ENABLE_COREAUDIO)
     return AudioBackendType::CoreAudio;
 #elif defined(ENABLE_WASAPI)
     return AudioBackendType::WASAPI;
@@ -780,6 +790,36 @@ QJsonObject GeneratorConfig::toJson() const {
     return obj;
 }
 
+#if defined(ENABLE_WEBAUDIO)
+WebAudioCaptureConfig WebAudioCaptureConfig::fromJson(const QJsonObject& json) {
+    WebAudioCaptureConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    return cfg;
+}
+
+QJsonObject WebAudioCaptureConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "WebAudio";
+    obj["channels"] = channels;
+    return obj;
+}
+
+WebAudioPlaybackConfig WebAudioPlaybackConfig::fromJson(const QJsonObject& json) {
+    WebAudioPlaybackConfig cfg;
+    if (json.contains("channels"))
+        cfg.channels = json["channels"].toInt();
+    return cfg;
+}
+
+QJsonObject WebAudioPlaybackConfig::toJson() const {
+    QJsonObject obj;
+    obj["type"] = "WebAudio";
+    obj["channels"] = channels;
+    return obj;
+}
+#endif
+
 #if defined(ENABLE_COREAUDIO)
 CoreAudioCaptureConfig CoreAudioCaptureConfig::fromJson(const QJsonObject& json) {
     CoreAudioCaptureConfig cfg;
@@ -1340,6 +1380,11 @@ CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
     std::string typeStr = json["type"].toString().toStdString();
     cfg.backend = stringToAudioBackendType(typeStr);
     switch (cfg.backend) {
+#if defined(ENABLE_WEBAUDIO)
+    case AudioBackendType::WebAudio:
+        cfg.webAudio = WebAudioCaptureConfig::fromJson(json);
+        break;
+#endif
 #if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         cfg.coreAudio = CoreAudioCaptureConfig::fromJson(json);
@@ -1380,6 +1425,10 @@ CaptureDeviceConfig CaptureDeviceConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject CaptureDeviceConfig::toJson() const {
     switch (backend) {
+#if defined(ENABLE_WEBAUDIO)
+    case AudioBackendType::WebAudio:
+        return webAudio.toJson();
+#endif
 #if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         return coreAudio.toJson();
@@ -1415,6 +1464,11 @@ PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
     std::string typeStr = json["type"].toString().toStdString();
     cfg.backend = stringToAudioBackendType(typeStr);
     switch (cfg.backend) {
+#if defined(ENABLE_WEBAUDIO)
+    case AudioBackendType::WebAudio:
+        cfg.webAudio = WebAudioPlaybackConfig::fromJson(json);
+        break;
+#endif
 #if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         cfg.coreAudio = CoreAudioPlaybackConfig::fromJson(json);
@@ -1452,6 +1506,10 @@ PlaybackDeviceConfig PlaybackDeviceConfig::fromJson(const QJsonObject& json) {
 
 QJsonObject PlaybackDeviceConfig::toJson() const {
     switch (backend) {
+#if defined(ENABLE_WEBAUDIO)
+    case AudioBackendType::WebAudio:
+        return webAudio.toJson();
+#endif
 #if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
         return coreAudio.toJson();

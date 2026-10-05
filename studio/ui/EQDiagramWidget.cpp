@@ -583,7 +583,8 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
         }
     }
 
-    QMenu menu(this);
+    auto menu = new QMenu(this);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
     if (hitIndex >= 0) {
         auto& band = m_preset.bands[hitIndex];
         m_selectedIndex = hitIndex;
@@ -591,7 +592,7 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
             onBandSelected(hitIndex);
         update();
 
-        auto toggleAct = menu.addAction(band.isEnabled ? "Disable Band" : "Enable Band");
+        auto toggleAct = menu->addAction(band.isEnabled ? "Disable Band" : "Enable Band");
         connect(toggleAct, &QAction::triggered, [this, hitIndex]() {
             if (hitIndex >= 0 && hitIndex < static_cast<int>(m_preset.bands.size())) {
                 m_preset.bands[hitIndex].isEnabled = !m_preset.bands[hitIndex].isEnabled;
@@ -601,7 +602,7 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
             }
         });
 
-        auto typeMenu = menu.addMenu("Change Type");
+        auto typeMenu = menu->addMenu("Change Type");
         for (EQBandType t :
              {EQBandType::Peaking, EQBandType::Lowshelf, EQBandType::Highshelf, EQBandType::Lowpass,
               EQBandType::Highpass, EQBandType::LowpassFO, EQBandType::HighpassFO, EQBandType::LowshelfFO,
@@ -618,8 +619,8 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
             });
         }
 
-        menu.addSeparator();
-        auto deleteAct = menu.addAction("Delete Band");
+        menu->addSeparator();
+        auto deleteAct = menu->addAction("Delete Band");
         connect(deleteAct, &QAction::triggered, [this, hitIndex]() {
             if (hitIndex < static_cast<int>(m_preset.bands.size())) {
                 m_preset.bands.erase(m_preset.bands.begin() + hitIndex);
@@ -635,7 +636,7 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
         double f = std::max(20.0, std::min(20000.0, xToFreq(pos.x(), w)));
         double db = std::max(-20.0, std::min(20.0, std::round(yToDb(pos.y(), h) * 2.0) / 2.0));
 
-        auto addAct = menu.addAction(
+        auto addAct = menu->addAction(
             QString("Add Filter at %1 Hz (%2 dB)").arg(static_cast<int>(std::round(f))).arg(db, 0, 'f', 1));
         connect(addAct, &QAction::triggered, [this, f, db]() {
             EQBand newBand;
@@ -653,7 +654,7 @@ void EQDiagramWidget::contextMenuEvent(QContextMenuEvent* event) {
             update();
         });
     }
-    menu.exec(event->globalPos());
+    menu->popup(event->globalPos());
 }
 
 void EQDiagramWidget::mousePressEvent(QMouseEvent* event) {

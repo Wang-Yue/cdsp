@@ -203,25 +203,31 @@ cmake -B build -S . -DENABLE_STUDIO=OFF
 cmake --build build -j
 ```
 
-#### 3. Chrome Extension & WebAssembly Build (Emscripten)
+#### 3. WebAssembly & Chrome Extension Build (Emscripten & Qt for WebAssembly)
 
-Compile the CDSP C engine core to WebAssembly (`cdsp_wasm.wasm`) and package the Google Chrome Extension:
+Building the WebAssembly target compiles the entire CDSP suite: the low-latency AudioWorklet DSP core (`cdsp_wasm.wasm`), unit tests, and the **Qt 6 WebAssembly GUI Studio** (`cdsp-studio.wasm` / `cdsp-studio.js`). Qt for WebAssembly is required to build the extension so that the full interactive EQ/pipeline editor and DSP monitor are available in the browser.
 
+##### A. Prerequisites
+- **Emscripten SDK (`emsdk`)**: exactly `3.1.50` (`./emsdk install 3.1.50 && ./emsdk activate 3.1.50`), the version Qt 6.7.3 was built with — embind is not ABI-compatible across emsdk versions.
+- **Qt 6.7.3 for WebAssembly** (`wasm_multithread`) plus the matching desktop host (`gcc_64`), installed via `aqtinstall`:
+  ```bash
+  pip install aqtinstall
+  python3 -m aqt install-qt linux desktop 6.7.3 linux_gcc_64 --outputdir ~/Qt
+  python3 -m aqt install-qt all_os wasm 6.7.3 wasm_multithread --outputdir ~/Qt
+  ```
+- **Node.js**: for running the WASM unit tests.
+
+##### B. Build Commands
+[`tools/build_wasm.sh`](tools/build_wasm.sh) is the single source of truth for the WebAssembly build; CI runs the exact same script. It verifies the toolchain versions, configures, builds, runs `test_wasm.js`, and packages the extension.
 ```bash
-# Set up Emscripten SDK environment
 source /path/to/emsdk/emsdk_env.sh
-
-# Configure and build
-emcmake cmake -B build-wasm -S .
-cmake --build build-wasm -j
-
-# Run WebAssembly bit-correctness and lifecycle test suite
-node build-wasm/test_wasm.js
+QT_ROOT=~/Qt tools/build_wasm.sh build-wasm
 ```
 
 This generates:
-- `build-wasm/extension_dist/` — Clean unpacked directory for Chrome Developer Mode (`chrome://extensions` -> *Load unpacked*).
-- `build-wasm/cdsp_extension.zip` — Compressed standalone extension bundle for distribution.
+- `build-wasm/bin/cdsp-studio.js` & `cdsp-studio.wasm` — The full Qt 6 Studio compiled directly to multi-threaded WebAssembly.
+- `build-wasm/extension_dist/` — Clean unpacked Chrome Extension directory containing the AudioWorklet DSP processor and the embedded Qt Studio WebAssembly app (`ui/studio/cdsp-studio.html`).
+- `build-wasm/cdsp_extension.zip` — Compressed standalone extension package for distribution.
 
 #### 4. Run Test Suite
 

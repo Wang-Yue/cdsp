@@ -7,7 +7,9 @@
 #include "models/DeviceConfig.h"   // for DeviceConfig
 
 #include <QFutureWatcher> // for QFutureWatcher
+#if !defined(ENABLE_WEBAUDIO) && defined(QT_MULTIMEDIA_LIB)
 #include <QMediaDevices>  // for QMediaDevices
+#endif
 #include <QMetaObject>    // for QMetaObject
 #include <QObject>        // for QObject, Q_OBJECT, signals
 #include <QTimer>         // for QTimer
@@ -94,9 +96,11 @@ private:
     QFutureWatcher<void> m_devicesWatcher;
     QFutureWatcher<void> m_capabilitiesWatcher;
 
+#if !defined(ENABLE_WEBAUDIO) && defined(QT_MULTIMEDIA_LIB)
     QMediaDevices m_mediaDevices;
     QMetaObject::Connection m_inputsConnection;
     QMetaObject::Connection m_outputsConnection;
+#endif
     QTimer* m_deviceChangeDebounceTimer = nullptr;
     bool m_isFetchingDevices = false;
     qint64 m_lastFetchFinishedTime = 0;

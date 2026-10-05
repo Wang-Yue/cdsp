@@ -7,9 +7,15 @@ High-performance real-time parametric EQ, biquad filtering, volume control, and 
 ## 1. Prerequisites
 
 - **Google Chrome / Chromium**: Version 116+ (Manifest V3 with `chrome.offscreen` and `chrome.tabCapture` support).
-- **Emscripten SDK (`emsdk`)**: Version 3.1.40 or newer.
+- **Emscripten SDK (`emsdk`)**: exactly `3.1.50` (the version Qt 6.7.3 was built with; embind is not ABI-compatible across emsdk versions).
+- **Qt 6.7.3 for WebAssembly** (`wasm_multithread`) plus the desktop host (`gcc_64`), installed using `aqtinstall`:
+  ```bash
+  pip install aqtinstall
+  python3 -m aqt install-qt linux desktop 6.7.3 linux_gcc_64 --outputdir ~/Qt
+  python3 -m aqt install-qt all_os wasm 6.7.3 wasm_multithread --outputdir ~/Qt
+  ```
 - **CMake**: Version 3.20 or newer.
-- **Node.js**: (Optional, for running WebAssembly unit tests).
+- **Node.js**: for running WebAssembly unit tests.
 
 Make sure the Emscripten environment is activated in your terminal:
 ```bash
@@ -18,32 +24,31 @@ source /path/to/emsdk/emsdk_env.sh
 
 ---
 
-## 2. Building the WebAssembly Extension
+## 2. Building the WebAssembly Extension & Qt Studio GUI
 
-The top-level [`CMakeLists.txt`](../CMakeLists.txt) automatically detects the Emscripten toolchain, fetches and configures all required dependencies (`FFTW3` with pre-generated scalar codelets for single/double precision, `libyaml`, `cJSON`), and compiles both the WebAssembly DSP engine and the complete Chrome Extension bundle into the **build directory** (`<build-dir>/extension`), keeping the source tree completely clean and unpolluted.
+The WebAssembly build compiles both the AudioWorklet DSP core (`cdsp_wasm.wasm`) and the embedded **Qt 6 WebAssembly Studio GUI** (`cdsp-studio.wasm` / `cdsp-studio.js`). The Qt Studio monitor is required to configure, manage, and inspect the DSP pipeline inside the browser.
 
-### Build Commands
+Use [`tools/build_wasm.sh`](../tools/build_wasm.sh) — the same script CI runs. It checks toolchain versions, configures, builds, runs the WASM tests, and packages the extension:
+
 ```bash
-# 1. Activate the Emscripten SDK environment
 source /path/to/emsdk/emsdk_env.sh
-
-# 2. Configure and build using Emscripten CMake wrapper (parallel multi-core build)
-emcmake cmake -B build-wasm -DCMAKE_BUILD_TYPE=Release
-cmake --build build-wasm -j
+QT_ROOT=~/Qt tools/build_wasm.sh build-wasm
 ```
 
 > [!NOTE]
-> All build dependencies (`fftw3`, `fftw3f`, `libyaml`, `cJSON`) are automatically downloaded and compiled via CMake `FetchContent` during the Emscripten build.
+> All core dependencies (`fftw3`, `fftw3f`, `libyaml`, `cJSON`) are automatically downloaded and compiled via CMake `FetchContent` during the build.
 
 This builds and packages:
-- `build-wasm/extension/` (the complete self-contained unpacked Chrome Extension):
-  - `build-wasm/extension/manifest.json`
-  - `build-wasm/extension/wasm/cdsp_wasm.js` & `cdsp_wasm.wasm`
-  - `build-wasm/extension/worklet/cdsp-processor.js`
-  - `build-wasm/extension/offscreen/`
-  - `build-wasm/extension/background/`
-  - `build-wasm/extension/ui/`
-- `build-wasm/extension/test_wasm.js` & `test_wasm.wasm` (WASM unit test suite).
+- `build-wasm/extension_dist/` (unpacked Chrome Extension):
+  - `manifest.json`
+  - `wasm/cdsp_wasm.js` & `cdsp_wasm.wasm` (AudioWorklet DSP core)
+  - `worklet/cdsp-processor.js`
+  - `offscreen/` (Web Audio host)
+  - `background/` (Service Worker)
+  - `ui/` (Popup UI and spectrum visualizer)
+  - `ui/studio/` (Qt 6 WebAssembly Studio: `cdsp-studio.html`, `cdsp-studio.js`, `cdsp-studio.wasm`)
+- `build-wasm/cdsp_extension.zip` (standalone packed zip bundle for distribution)
+- `build-wasm/test_wasm.js` & `test_wasm.wasm` (WASM test suite).
 
 ---
 
@@ -55,9 +60,9 @@ This builds and packages:
    ```
 2. Enable **Developer mode** using the toggle switch in the top-right corner.
 3. Click the **Load unpacked** button in the top-left toolbar.
-4. In the file picker, select the generated **`build-wasm/extension/`** (or your custom build folder, e.g. `build/extension/`):
+4. In the file picker, select the generated **`build-wasm/extension_dist/`**:
    ```text
-   /path/to/cdsp/build-wasm/extension
+   /path/to/cdsp/build-wasm/extension_dist
    ```
 5. The **CDSP Audio Studio** extension card will appear in your installed extensions list.
 

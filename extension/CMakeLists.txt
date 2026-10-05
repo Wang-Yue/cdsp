@@ -38,7 +38,7 @@ if(EMSCRIPTEN)
         -sEXPORT_NAME="loadCdspWasm"
         -sENVIRONMENT="web,worker"
         -sFILESYSTEM=0
-        "-sEXPORTED_FUNCTIONS=['_malloc','_free','_cdsp_wasm_create','_cdsp_wasm_destroy','_cdsp_wasm_get_input_buffer_ptrs','_cdsp_wasm_get_output_buffer_ptrs','_cdsp_wasm_process','_cdsp_wasm_set_fader_volume','_cdsp_wasm_set_fader_mute','_cdsp_wasm_set_config_json','_cdsp_wasm_get_vu_levels','_cdsp_wasm_get_spectrum']"
+        "-sEXPORTED_FUNCTIONS=['_malloc','_free','_cdsp_wasm_create','_cdsp_wasm_destroy','_cdsp_wasm_get_input_buffer_ptrs','_cdsp_wasm_get_output_buffer_ptrs','_cdsp_wasm_process','_cdsp_wasm_set_fader_volume','_cdsp_wasm_set_fader_mute','_cdsp_wasm_set_config_json','_cdsp_wasm_get_vu_levels','_cdsp_wasm_get_spectrum','_cdsp_wasm_get_samples']"
         "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','UTF8ToString','getValue','setValue','allocateUTF8']"
         "--pre-js" "${CMAKE_CURRENT_SOURCE_DIR}/wasm/pre.js"
         "--extern-post-js" "${CMAKE_CURRENT_SOURCE_DIR}/wasm/post.js"
@@ -49,15 +49,15 @@ if(EMSCRIPTEN)
     # -------------------------------------------------------------------------
     if(BUILD_TESTING)
         add_executable(test_wasm
-            ${CMAKE_SOURCE_DIR}/tests/test_wasm.c
+            ${CMAKE_CURRENT_SOURCE_DIR}/../tests/test_wasm.c
             wasm/cdsp_wasm.c
         )
         target_include_directories(test_wasm PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/wasm
-            ${CMAKE_SOURCE_DIR}/include
-            ${CMAKE_SOURCE_DIR}/src
-            ${CMAKE_SOURCE_DIR}/src/config
-            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/config
+            ${CMAKE_CURRENT_SOURCE_DIR}/../tests
         )
         target_link_libraries(test_wasm PRIVATE dsp)
         set_target_properties(test_wasm PROPERTIES
@@ -80,16 +80,35 @@ if(EMSCRIPTEN)
     # -------------------------------------------------------------------------
     # 3. Chrome Extension Package Target (Built purely in build directory)
     # -------------------------------------------------------------------------
+    set(STUDIO_PKG_COMMANDS "")
+    set(STUDIO_PKG_DEPENDS cdsp_wasm)
+    if(TARGET cdsp-studio)
+        list(APPEND STUDIO_PKG_DEPENDS cdsp-studio)
+        set(STUDIO_PKG_COMMANDS
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CHROME_EXT_DIR}/ui/studio"
+            # Hand-written shell files are copied from source (not the cdsp-studio output dir) so
+            # edits reach the package even when cdsp-studio is not relinked.
+            COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/studio/resources/cdsp-studio.html" "${CHROME_EXT_DIR}/ui/studio/cdsp-studio.html"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE_DIR:cdsp-studio>/cdsp-studio.js" "${CHROME_EXT_DIR}/ui/studio/cdsp-studio.js"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE_DIR:cdsp-studio>/cdsp-studio.wasm" "${CHROME_EXT_DIR}/ui/studio/cdsp-studio.wasm"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE_DIR:cdsp-studio>/cdsp-studio.worker.js" "${CHROME_EXT_DIR}/ui/studio/cdsp-studio.worker.js"
+            COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/studio/resources/studio-bootstrap.js" "${CHROME_EXT_DIR}/ui/studio/studio-bootstrap.js"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE_DIR:cdsp-studio>/qtloader.js" "${CHROME_EXT_DIR}/ui/studio/qtloader.js"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE_DIR:cdsp-studio>/qtlogo.svg" "${CHROME_EXT_DIR}/ui/studio/qtlogo.svg"
+        )
+    endif()
+
     add_custom_target(chrome_extension ALL
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CHROME_EXT_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/background" "${CHROME_EXT_DIR}/background"
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/offscreen" "${CHROME_EXT_DIR}/offscreen"
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/worklet" "${CHROME_EXT_DIR}/worklet"
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/ui" "${CHROME_EXT_DIR}/ui"
+        ${STUDIO_PKG_COMMANDS}
         COMMAND ${CMAKE_COMMAND} -E copy "${EXT_MANIFEST}" "${CHROME_EXT_DIR}/manifest.json"
         COMMAND ${CMAKE_COMMAND} -E tar "cfv" "${CMAKE_BINARY_DIR}/cdsp_extension.zip" "--format=zip" "."
         WORKING_DIRECTORY "${CHROME_EXT_DIR}"
-        DEPENDS cdsp_wasm
+        DEPENDS ${STUDIO_PKG_DEPENDS}
         COMMENT "Packaging Chrome Extension into ${CHROME_EXT_DIR} and ${CMAKE_BINARY_DIR}/cdsp_extension.zip..."
         VERBATIM
     )

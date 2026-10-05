@@ -11,7 +11,9 @@
 #include <vector>
 
 struct DeviceConfig {
-#if defined(ENABLE_COREAUDIO)
+#if defined(ENABLE_WEBAUDIO)
+    AudioBackendType backend = AudioBackendType::WebAudio;
+#elif defined(ENABLE_COREAUDIO)
     AudioBackendType backend = AudioBackendType::CoreAudio;
 #elif defined(ENABLE_WASAPI)
     AudioBackendType backend = AudioBackendType::WASAPI;

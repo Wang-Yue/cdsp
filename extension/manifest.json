@@ -9,6 +9,10 @@
     "storage",
     "activeTab"
   ],
+  "host_permissions": [
+    "https://api.github.com/*",
+    "https://raw.githubusercontent.com/*"
+  ],
   "icons": {
     "16": "ui/icons/icon16.png",
     "32": "ui/icons/icon32.png",
@@ -16,7 +20,6 @@
     "128": "ui/icons/icon128.png"
   },
   "action": {
-    "default_popup": "ui/popup.html",
     "default_title": "CDSP Audio Studio",
     "default_icon": {
       "16": "ui/icons/icon16.png",
@@ -30,6 +33,12 @@
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "cross_origin_embedder_policy": {
+    "value": "require-corp"
+  },
+  "cross_origin_opener_policy": {
+    "value": "same-origin"
   },
   "web_accessible_resources": [
     {

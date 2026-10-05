@@ -52,8 +52,8 @@ class CdspProcessor extends AudioWorkletProcessor {
     this.wasmSpecInPtr = null;
     this.wasmSpecOutPtr = null;
 
-    // Telemetry generation is disabled by default to minimize CPU when popup is closed
-    this.telemetryActive = false;
+    // Telemetry generation enabled when requested by UI
+    this.telemetryActive = !!procOpts.telemetryActive;
 
     // Listen for control commands from offscreen/popup
     this.port.onmessage = (e) => this.handleMessage(e.data);
@@ -130,6 +130,13 @@ class CdspProcessor extends AudioWorkletProcessor {
       };
       this.wasmSpecInPtr = module._malloc(this.nSpectrumBins * 4);
       this.wasmSpecOutPtr = module._malloc(this.nSpectrumBins * 4);
+      this.nSamples = 512;
+      this.wasmSamplesLPtr = module._malloc(this.nSamples * 4);
+      this.wasmSamplesRPtr = module._malloc(this.nSamples * 4);
+      this.inSamplesL = new Float32Array(this.nSamples);
+      this.inSamplesR = new Float32Array(this.nSamples);
+      this.outSamplesL = new Float32Array(this.nSamples);
+      this.outSamplesR = new Float32Array(this.nSamples);
 
       console.log('[CDSP Worklet] CDSP WebAssembly engine initialized successfully.');
     }
@@ -266,6 +273,29 @@ class CdspProcessor extends AudioWorkletProcessor {
           } else {
             this.outSpectrum.fill(-120.0);
           }
+
+          // 6. Query raw audio samples for vector scope / oscilloscope (~25 Hz)
+          if (this.wasmSamplesLPtr && this.wasmSamplesRPtr && this.wasmInstance._cdsp_wasm_get_samples) {
+            const nSamp = this.nSamples;
+            const lOff = this.wasmSamplesLPtr >> 2;
+            const rOff = this.wasmSamplesRPtr >> 2;
+
+            const nIn = this.wasmInstance._cdsp_wasm_get_samples(
+              this.wasmCtx, 1 /* is_capture */, nSamp, this.wasmSamplesLPtr, this.wasmSamplesRPtr
+            );
+            if (nIn > 0) {
+              this.inSamplesL.set(heapF32.subarray(lOff, lOff + nIn));
+              this.inSamplesR.set(heapF32.subarray(rOff, rOff + nIn));
+            }
+
+            const nOut = this.wasmInstance._cdsp_wasm_get_samples(
+              this.wasmCtx, 0 /* is_playback */, nSamp, this.wasmSamplesLPtr, this.wasmSamplesRPtr
+            );
+            if (nOut > 0) {
+              this.outSamplesL.set(heapF32.subarray(lOff, lOff + nOut));
+              this.outSamplesR.set(heapF32.subarray(rOff, rOff + nOut));
+            }
+          }
         }
 
         // Telemetry dispatch throttled to ~25 Hz (every 15 quantums of 128 frames = ~40 ms)
@@ -279,7 +309,11 @@ class CdspProcessor extends AudioWorkletProcessor {
               outPeak: [...this.outPeak],
               outRms: [...this.outRms],
               inSpectrum: Array.from(this.inSpectrum),
-              outSpectrum: Array.from(this.outSpectrum)
+              outSpectrum: Array.from(this.outSpectrum),
+              inSamplesL: Array.from(this.inSamplesL),
+              inSamplesR: Array.from(this.inSamplesR),
+              outSamplesL: Array.from(this.outSamplesL),
+              outSamplesR: Array.from(this.outSamplesR)
             }
           });
         }

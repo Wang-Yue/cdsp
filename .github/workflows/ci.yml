@@ -549,38 +549,61 @@ jobs:
           if-no-files-found: error
 
   # ============================================================================
-  # WebAssembly & Chrome Extension (Emscripten)
+  # WebAssembly & Chrome Extension (Emscripten & Qt for WebAssembly)
   # ============================================================================
   wasm-test-and-package:
     name: WebAssembly Test & Extension Package
     runs-on: ubuntu-latest
+    env:
+      # Must match the defaults in tools/build_wasm.sh (the single source of truth), plus the
+      # Node/CMake versions of the verified local build (the script prints all four).
+      QT_VERSION: 6.7.3
+      EMSDK_VERSION: 3.1.50
+      NODE_VERSION: 24.19.0
+      CMAKE_VERSION: 4.2.3
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set Qt install root
+        run: echo "QT_ROOT=$RUNNER_TEMP/Qt" >> "$GITHUB_ENV"
+
       - name: Set up Emscripten SDK
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 3.1.64
+          version: ${{ env.EMSDK_VERSION }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
 
-      - name: Configure CMake with Emscripten
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: ${{ env.CMAKE_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache Qt 6 for WebAssembly
+        id: cache-qt-wasm
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.QT_ROOT }}
+          key: qt-${{ env.QT_VERSION }}-wasm-multithread-host-gcc64
+
+      - name: Install Qt 6 for WebAssembly via aqtinstall
+        if: steps.cache-qt-wasm.outputs.cache-hit != 'true'
         run: |
-          emcmake cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTING=ON \
-            -DENABLE_WEBAUDIO=ON \
-            -DENABLE_NATIVE_ARCH=OFF
+          pip install aqtinstall
+          python3 -m aqt install-qt linux desktop "$QT_VERSION" linux_gcc_64 --outputdir "$QT_ROOT"
+          python3 -m aqt install-qt all_os wasm "$QT_VERSION" wasm_multithread --outputdir "$QT_ROOT"
 
-      - name: Build WebAssembly Core, Tests & Extension Package
-        run: cmake --build build -j$(nproc)
-
-      - name: Run WebAssembly Tests
-        run: node build/test_wasm.js
+      - name: Build, Test & Package (tools/build_wasm.sh)
+        run: tools/build_wasm.sh build
 
       - name: Upload Chrome Extension Artifact
         uses: actions/upload-artifact@v4

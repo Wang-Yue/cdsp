@@ -9,7 +9,11 @@
 #include <string>     // for string
 #include <vector>     // for vector
 
+#if defined(ENABLE_WEBAUDIO)
+typedef struct cdsp_wasm cdsp_wasm_t;
+#else
 typedef struct dsp_engine dsp_engine_t;
+#endif
 
 class CDSPEngine {
 public:
@@ -48,7 +52,13 @@ public:
     static void setLogCallback(LogCallback callback);
 
 private:
+#if defined(ENABLE_WEBAUDIO)
+    cdsp_wasm_t* m_engine = nullptr;
+    std::string m_lastConfigJson;
+    bool m_isRunning = false;
+#else
     dsp_engine_t* m_engine = nullptr;
+#endif
 };
 
 #endif // CDSP_ENGINE_H

@@ -332,32 +332,35 @@ void MainWindow::setupUi() {
                 }
             }
             if (idx >= 0) {
-                QMenu menu(this);
-                auto moveUp = menu.addAction("Move Up");
+                auto menu = new QMenu(this);
+                menu->setAttribute(Qt::WA_DeleteOnClose);
+                auto moveUp = menu->addAction("Move Up");
                 moveUp->setEnabled(idx > 0);
                 connect(moveUp, &QAction::triggered, [this, idx]() { m_pipeline->moveStage(idx, idx - 1); });
 
-                auto moveDown = menu.addAction("Move Down");
+                auto moveDown = menu->addAction("Move Down");
                 moveDown->setEnabled(idx < static_cast<int>(m_pipeline->stages.size()) - 1);
                 connect(moveDown, &QAction::triggered, [this, idx]() { m_pipeline->moveStage(idx, idx + 1); });
 
-                menu.addSeparator();
-                auto del = menu.addAction("Delete Stage");
+                menu->addSeparator();
+                auto del = menu->addAction("Delete Stage");
                 connect(del, &QAction::triggered, [this, stageId]() { m_pipeline->deleteStage(stageId); });
-                menu.exec(QCursor::pos());
+                menu->popup(QCursor::pos());
             }
         } else if (tag.startsWith("eq_")) {
             QUuid id = QUuid::fromString(tag.mid(3));
-            QMenu menu(this);
-            auto del = menu.addAction("Delete EQ Preset");
+            auto menu = new QMenu(this);
+            menu->setAttribute(Qt::WA_DeleteOnClose);
+            auto del = menu->addAction("Delete EQ Preset");
             connect(del, &QAction::triggered, [this, id]() { m_pipeline->deleteEQPreset(id); });
-            menu.exec(QCursor::pos());
+            menu->popup(QCursor::pos());
         } else if (tag.startsWith("conv_")) {
             QUuid id = QUuid::fromString(tag.mid(5));
-            QMenu menu(this);
-            auto del = menu.addAction("Delete Convolution Preset");
+            auto menu = new QMenu(this);
+            menu->setAttribute(Qt::WA_DeleteOnClose);
+            auto del = menu->addAction("Delete Convolution Preset");
             connect(del, &QAction::triggered, [this, id]() { m_pipeline->deleteConvPreset(id); });
-            menu.exec(QCursor::pos());
+            menu->popup(QCursor::pos());
         }
     });
 
@@ -439,15 +442,17 @@ void MainWindow::setupMenuBar() {
 
     m_actOratoryPreset = new QAction("Oratory Presets...", this);
     connect(m_actOratoryPreset, &QAction::triggered, [this]() {
-        OratoryPresetPickerDlg dlg(m_pipeline, m_dspController, this);
-        dlg.exec();
+        auto dlg = new OratoryPresetPickerDlg(m_pipeline, m_dspController, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->open();
     });
     fileMenu->addAction(m_actOratoryPreset);
 
     m_actAutoEqPreset = new QAction("AutoEQ Presets...", this);
     connect(m_actAutoEqPreset, &QAction::triggered, [this]() {
-        AutoEqPickerDlg dlg(m_pipeline, m_dspController, this);
-        dlg.exec();
+        auto dlg = new AutoEqPickerDlg(m_pipeline, m_dspController, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->open();
     });
     fileMenu->addAction(m_actAutoEqPreset);
 
@@ -456,15 +461,17 @@ void MainWindow::setupMenuBar() {
     m_actImportConv = new QAction("Import IR File(s)...", this);
     m_actImportConv->setShortcut(QKeySequence::Open);
     connect(m_actImportConv, &QAction::triggered, [this]() {
-        ConvolutionImportDlg dlg(m_pipeline, this);
-        dlg.exec();
+        auto dlg = new ConvolutionImportDlg(m_pipeline, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->open();
     });
     fileMenu->addAction(m_actImportConv);
 
     m_actRoomCorrection = new QAction("Room Correction...", this);
     connect(m_actRoomCorrection, &QAction::triggered, [this]() {
-        RoomCorrectionDlg dlg(m_pipeline, this);
-        dlg.exec();
+        auto dlg = new RoomCorrectionDlg(m_pipeline, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->open();
     });
     fileMenu->addAction(m_actRoomCorrection);
 
@@ -1155,10 +1162,11 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
         return;
 
     if (tag == "add_stage") {
-        QMenu menu(this);
+        auto menu = new QMenu(this);
+        menu->setAttribute(Qt::WA_DeleteOnClose);
         for (StageCategory cat :
              {StageCategory::Filters, StageCategory::Mixer, StageCategory::Processors, StageCategory::Others}) {
-            QMenu* catMenu = menu.addMenu(QString::fromStdString(stageCategoryToString(cat)));
+            QMenu* catMenu = menu->addMenu(QString::fromStdString(stageCategoryToString(cat)));
             for (StageType st : {StageType::Balance,
                                  StageType::Width,
                                  StageType::MSProc,
@@ -1193,7 +1201,7 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
                 }
             }
         }
-        menu.exec(QCursor::pos());
+        menu->popup(QCursor::pos());
     } else if (tag == "add_eq") {
         m_pipeline->addEQPreset();
         if (!m_pipeline->eqPresets.empty()) {
@@ -1201,21 +1209,33 @@ void MainWindow::onSidebarItemClicked(QTreeWidgetItem* item, int column) {
             handleNavigationTag(m_lastActiveTag);
         }
     } else if (tag == "auto_eq") {
-        AutoEqPickerDlg dlg(m_pipeline, m_dspController, this);
-        dlg.exec();
-        handleNavigationTag(m_lastActiveTag);
+        auto dlg = new AutoEqPickerDlg(m_pipeline, m_dspController, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dlg, &QDialog::finished, this, [this]() {
+            handleNavigationTag(m_lastActiveTag);
+        });
+        dlg->open();
     } else if (tag == "oratory_eq") {
-        OratoryPresetPickerDlg dlg(m_pipeline, m_dspController, this);
-        dlg.exec();
-        handleNavigationTag(m_lastActiveTag);
+        auto dlg = new OratoryPresetPickerDlg(m_pipeline, m_dspController, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dlg, &QDialog::finished, this, [this]() {
+            handleNavigationTag(m_lastActiveTag);
+        });
+        dlg->open();
     } else if (tag == "import_conv") {
-        ConvolutionImportDlg dlg(m_pipeline, this);
-        dlg.exec();
-        handleNavigationTag(m_lastActiveTag);
+        auto dlg = new ConvolutionImportDlg(m_pipeline, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dlg, &QDialog::finished, this, [this]() {
+            handleNavigationTag(m_lastActiveTag);
+        });
+        dlg->open();
     } else if (tag == "room_correction") {
-        RoomCorrectionDlg dlg(m_pipeline, this);
-        dlg.exec();
-        handleNavigationTag(m_lastActiveTag);
+        auto dlg = new RoomCorrectionDlg(m_pipeline, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dlg, &QDialog::finished, this, [this]() {
+            handleNavigationTag(m_lastActiveTag);
+        });
+        dlg->open();
     } else {
         m_lastActiveTag = tag;
         handleNavigationTag(tag);

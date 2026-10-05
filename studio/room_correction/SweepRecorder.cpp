@@ -3,16 +3,18 @@
 #include "room_correction/SweepDeconvolver.h" // for SweepDeconvolver
 #include "room_correction/SweepGenerator.h"   // for SweepGenerator
 
+#if defined(QT_MULTIMEDIA_LIB) && !defined(ENABLE_WEBAUDIO)
 #include <QAudioDevice>  // for QAudioDevice
 #include <QAudioFormat>  // for QAudioFormat
 #include <QAudioSink>    // for QAudioSink
 #include <QAudioSource>  // for QAudioSource
+#include <QMediaDevices> // for QMediaDevices
+#endif
 #include <QBuffer>       // for QBuffer
 #include <QByteArray>    // for QByteArray
 #include <QEventLoop>    // for QEventLoop
 #include <QIODevice>     // for QIODevice
 #include <QList>         // for QList
-#include <QMediaDevices> // for QMediaDevices
 #include <QString>       // for QString
 #include <QTimer>        // for QTimer
 #include <QtGlobal>      // for qsizetype
@@ -70,6 +72,9 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
     size_t tailSamples = static_cast<size_t>(0.5 * sampleRate);
     size_t totalPlaySamples = leadSamples + sweep.size() + tailSamples;
 
+    std::vector<double> capturedRaw;
+
+#if defined(QT_MULTIMEDIA_LIB) && !defined(ENABLE_WEBAUDIO)
     QAudioDevice targetInputDevice = QMediaDevices::defaultAudioInput();
     if (!inputDeviceName.empty()) {
         for (const auto& dev : QMediaDevices::audioInputs()) {
@@ -108,8 +113,6 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
             playPcm[frameIdx * routeOutChannels + targetC] = val;
         }
     }
-
-    std::vector<double> capturedRaw;
 
     if (!targetInputDevice.isNull() && !targetOutputDevice.isNull()) {
         QAudioFormat outFmt;
@@ -154,6 +157,7 @@ SweepCaptureResult SweepRecorder::capture(double f1, double f2, double durationS
             capturedRaw.push_back(static_cast<double>(ptr[i * inCh + selInChannel]));
         }
     }
+#endif
 
     // Fallback if hardware mic buffer is empty (e.g. simulation or no input mic permission)
     if (capturedRaw.empty()) {

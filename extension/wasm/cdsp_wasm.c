@@ -396,4 +396,24 @@ bool cdsp_wasm_get_spectrum(cdsp_wasm_t *ctx, bool is_capture, int channel,
   return ok && spec.count > 0;
 }
 
+size_t cdsp_wasm_get_samples(cdsp_wasm_t *ctx, bool is_capture, size_t n_frames,
+                             float *out_left, float *out_right) {
+  if (!ctx || !ctx->engine || n_frames == 0)
+    return 0;
+
+  float *chan_ptrs[2] = {out_left, out_right};
+  cdsp_audio_samples_t samples = {
+      .channels = chan_ptrs,
+      .channels_count = 2,
+      .frames = 0,
+  };
+  cdsp_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+
+  if (!cdsp_get_samples(ctx->engine, is_capture, n_frames, &samples, &err)) {
+    return 0;
+  }
+  return samples.frames;
+}
+
 

@@ -123,6 +123,9 @@ void DevicePickerView::setupUi() {
     m_capBackendForm = new QFormLayout();
     m_capBackendForm->setContentsMargins(0, 0, 0, 0);
     m_capBackendCombo = new QComboBox(capGroup);
+#if defined(ENABLE_WEBAUDIO)
+    m_capBackendCombo->addItem("WebAudio", static_cast<int>(AudioBackendType::WebAudio));
+#endif
 #if defined(ENABLE_COREAUDIO)
     m_capBackendCombo->addItem("CoreAudio", static_cast<int>(AudioBackendType::CoreAudio));
 #endif
@@ -138,12 +141,17 @@ void DevicePickerView::setupUi() {
 #if defined(ENABLE_PIPEWIRE)
     m_capBackendCombo->addItem("PipeWire", static_cast<int>(AudioBackendType::PipeWire));
 #endif
+#if !defined(ENABLE_WEBAUDIO)
     m_capBackendCombo->addItem("RawFile", static_cast<int>(AudioBackendType::RawFile));
     m_capBackendCombo->addItem("WavFile", static_cast<int>(AudioBackendType::WavFile));
     m_capBackendCombo->addItem("SignalGenerator", static_cast<int>(AudioBackendType::SignalGenerator));
+#endif
 
     auto getCapStackIndex = [](AudioBackendType backend) {
         switch (backend) {
+#if defined(ENABLE_WEBAUDIO)
+        case AudioBackendType::WebAudio:
+#endif
 #if defined(ENABLE_COREAUDIO)
         case AudioBackendType::CoreAudio:
 #endif
@@ -202,6 +210,9 @@ void DevicePickerView::setupUi() {
     m_pbBackendForm = new QFormLayout();
     m_pbBackendForm->setContentsMargins(0, 0, 0, 0);
     m_pbBackendCombo = new QComboBox(pbGroup);
+#if defined(ENABLE_WEBAUDIO)
+    m_pbBackendCombo->addItem("WebAudio", static_cast<int>(AudioBackendType::WebAudio));
+#endif
 #if defined(ENABLE_COREAUDIO)
     m_pbBackendCombo->addItem("CoreAudio", static_cast<int>(AudioBackendType::CoreAudio));
 #endif
@@ -217,11 +228,16 @@ void DevicePickerView::setupUi() {
 #if defined(ENABLE_PIPEWIRE)
     m_pbBackendCombo->addItem("PipeWire", static_cast<int>(AudioBackendType::PipeWire));
 #endif
+#if !defined(ENABLE_WEBAUDIO)
     m_pbBackendCombo->addItem("RawFile", static_cast<int>(AudioBackendType::RawFile));
     m_pbBackendCombo->addItem("WavFile", static_cast<int>(AudioBackendType::WavFile));
+#endif
 
     auto getPbStackIndex = [](AudioBackendType backend) {
         switch (backend) {
+#if defined(ENABLE_WEBAUDIO)
+        case AudioBackendType::WebAudio:
+#endif
 #if defined(ENABLE_COREAUDIO)
         case AudioBackendType::CoreAudio:
 #endif
@@ -1171,6 +1187,9 @@ QWidget* DevicePickerView::createPbFileView(bool isWav) {
 
 static int getCapStackIndex(AudioBackendType backend) {
     switch (backend) {
+#if defined(ENABLE_WEBAUDIO)
+    case AudioBackendType::WebAudio:
+#endif
 #if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
 #endif
@@ -1199,6 +1218,9 @@ static int getCapStackIndex(AudioBackendType backend) {
 
 static int getPbStackIndex(AudioBackendType backend) {
     switch (backend) {
+#if defined(ENABLE_WEBAUDIO)
+    case AudioBackendType::WebAudio:
+#endif
 #if defined(ENABLE_COREAUDIO)
     case AudioBackendType::CoreAudio:
 #endif
@@ -1236,6 +1258,10 @@ void DevicePickerView::refreshUi() {
 #if defined(ENABLE_PIPEWIRE)
     isCapPw = m_devices->captureConfig.backend == AudioBackendType::PipeWire;
 #endif
+    bool isCapWebAudio = false;
+#if defined(ENABLE_WEBAUDIO)
+    isCapWebAudio = m_devices->captureConfig.backend == AudioBackendType::WebAudio;
+#endif
     bool isCapWasapi = false;
 #if defined(ENABLE_WASAPI)
     isCapWasapi = m_devices->captureConfig.backend == AudioBackendType::WASAPI;
@@ -1248,13 +1274,17 @@ void DevicePickerView::refreshUi() {
 #if defined(ENABLE_PIPEWIRE)
     isPbPw = m_devices->playbackConfig.backend == AudioBackendType::PipeWire;
 #endif
+    bool isPbWebAudio = false;
+#if defined(ENABLE_WEBAUDIO)
+    isPbWebAudio = m_devices->playbackConfig.backend == AudioBackendType::WebAudio;
+#endif
     bool isPbWasapi = false;
 #if defined(ENABLE_WASAPI)
     isPbWasapi = m_devices->playbackConfig.backend == AudioBackendType::WASAPI;
 #endif
 
     // 1. Refresh Capture Devices List & CoreAudio controls
-    if (!isCapPw) {
+    if (!isCapPw && !isCapWebAudio) {
         bool isLoopback =
             (isCapWasapi && m_devices->captureConfig.loopback) || (isCapCoreAudio && m_devices->captureConfig.loopback);
         const auto& capDevs = isLoopback ? m_devices->playbackDevices : m_devices->captureDevices;
@@ -1264,7 +1294,7 @@ void DevicePickerView::refreshUi() {
         m_capDeviceList->hide();
     }
     if (m_capCoreAudioForm && m_capDeviceContainer) {
-        m_capCoreAudioForm->setRowVisible(m_capDeviceContainer, !isCapPw);
+        m_capCoreAudioForm->setRowVisible(m_capDeviceContainer, !isCapPw && !isCapWebAudio);
     }
 
     int capBackendIdx = m_capBackendCombo->findData(static_cast<int>(m_devices->captureConfig.backend));
@@ -1277,10 +1307,10 @@ void DevicePickerView::refreshUi() {
 
     // Capture Channels
     if (m_capCoreAudioForm && m_capDevChannelsRow) {
-        m_capCoreAudioForm->setRowVisible(m_capDevChannelsRow, !isCapPw);
+        m_capCoreAudioForm->setRowVisible(m_capDevChannelsRow, !isCapPw && !isCapWebAudio);
     }
     auto capSuppCh = m_devices->captureConfig.supportedChannels();
-    if (!capSuppCh.empty() && !isCapPw) {
+    if (!capSuppCh.empty() && !isCapPw && !isCapWebAudio) {
         m_capDevChannelsCombo->show();
         m_capDevChannelsSpin->hide();
         m_capDevChannelsCombo->blockSignals(true);
@@ -1294,11 +1324,11 @@ void DevicePickerView::refreshUi() {
         m_capDevChannelsCombo->blockSignals(false);
     } else {
         m_capDevChannelsCombo->hide();
-        m_capDevChannelsSpin->setVisible(!isCapPw);
+        m_capDevChannelsSpin->setVisible(!isCapPw && !isCapWebAudio);
         m_capDevChannelsSpin->setValue(m_devices->captureConfig.deviceChannels);
     }
 
-    if (isCapPw) {
+    if (isCapPw || isCapWebAudio) {
         m_capStreamChannelsSpin->setRange(1, 32);
     } else {
         int capDevCh = m_devices->captureConfig.deviceChannels;
@@ -1329,9 +1359,9 @@ void DevicePickerView::refreshUi() {
 
     // Capture Sample Format
     if (m_capCoreAudioForm && m_capFormatRow) {
-        m_capCoreAudioForm->setRowVisible(m_capFormatRow, !isCapPw);
+        m_capCoreAudioForm->setRowVisible(m_capFormatRow, !isCapPw && !isCapWebAudio);
     }
-    if (isCapPw) {
+    if (isCapPw || isCapWebAudio) {
         m_capFormatCombo->hide();
         m_capFormatLabel->hide();
     } else {
@@ -1371,7 +1401,7 @@ void DevicePickerView::refreshUi() {
 #if defined(ENABLE_RUST_BACKEND)
     bool capDopVisible = false;
 #else
-    bool capDopVisible = !isCapPw && isHardwareBackend(m_devices->captureConfig.backend);
+    bool capDopVisible = !isCapPw && !isCapWebAudio && isHardwareBackend(m_devices->captureConfig.backend);
 #endif
     if (m_capCoreAudioForm) {
         m_capCoreAudioForm->setRowVisible(m_bypassDoPCheck, capDopVisible);
@@ -1494,7 +1524,7 @@ void DevicePickerView::refreshUi() {
     m_genFreqSlider->setEnabled(!isNoise);
 
     // 3. Refresh Playback Devices List & CoreAudio controls
-    if (!isPbPw) {
+    if (!isPbPw && !isPbWebAudio) {
         populateDeviceList(m_pbDeviceList, m_pbWarningLabel, m_devices->playbackDevices,
                            m_devices->playbackConfig.deviceName());
     } else {
@@ -1502,7 +1532,7 @@ void DevicePickerView::refreshUi() {
         m_pbDeviceList->hide();
     }
     if (m_pbCoreAudioForm && m_pbDeviceContainer) {
-        m_pbCoreAudioForm->setRowVisible(m_pbDeviceContainer, !isPbPw);
+        m_pbCoreAudioForm->setRowVisible(m_pbDeviceContainer, !isPbPw && !isPbWebAudio);
     }
 
     int pbBackendIdx = m_pbBackendCombo->findData(static_cast<int>(m_devices->playbackConfig.backend));
@@ -1515,10 +1545,10 @@ void DevicePickerView::refreshUi() {
 
     // Playback Channels
     if (m_pbCoreAudioForm && m_pbDevChannelsRow) {
-        m_pbCoreAudioForm->setRowVisible(m_pbDevChannelsRow, !isPbPw);
+        m_pbCoreAudioForm->setRowVisible(m_pbDevChannelsRow, !isPbPw && !isPbWebAudio);
     }
     auto pbSuppCh = m_devices->playbackConfig.supportedChannels();
-    if (!pbSuppCh.empty() && !isPbPw) {
+    if (!pbSuppCh.empty() && !isPbPw && !isPbWebAudio) {
         m_pbDevChannelsCombo->show();
         m_pbDevChannelsSpin->hide();
         m_pbDevChannelsCombo->blockSignals(true);
@@ -1532,11 +1562,11 @@ void DevicePickerView::refreshUi() {
         m_pbDevChannelsCombo->blockSignals(false);
     } else {
         m_pbDevChannelsCombo->hide();
-        m_pbDevChannelsSpin->setVisible(!isPbPw);
+        m_pbDevChannelsSpin->setVisible(!isPbPw && !isPbWebAudio);
         m_pbDevChannelsSpin->setValue(m_devices->playbackConfig.deviceChannels);
     }
 
-    if (isPbPw) {
+    if (isPbPw || isPbWebAudio) {
         m_pbStreamChannelsSpin->setRange(1, 32);
     } else {
         int pbDevCh = m_devices->playbackConfig.deviceChannels;
@@ -1559,9 +1589,9 @@ void DevicePickerView::refreshUi() {
 
     // Playback Sample Format
     if (m_pbCoreAudioForm && m_pbFormatRow) {
-        m_pbCoreAudioForm->setRowVisible(m_pbFormatRow, !isPbPw);
+        m_pbCoreAudioForm->setRowVisible(m_pbFormatRow, !isPbPw && !isPbWebAudio);
     }
-    if (isPbPw) {
+    if (isPbPw || isPbWebAudio) {
         m_pbFormatCombo->hide();
         m_pbFormatLabel->hide();
     } else {
@@ -1605,7 +1635,7 @@ void DevicePickerView::refreshUi() {
 #if defined(ENABLE_RUST_BACKEND)
     bool pbDopVisible = false;
 #else
-    bool pbDopVisible = !isPbPw && isHardwareBackend(m_devices->playbackConfig.backend);
+    bool pbDopVisible = !isPbPw && !isPbWebAudio && isHardwareBackend(m_devices->playbackConfig.backend);
 #endif
     m_outputDoPCheck->setChecked(m_devices->playbackConfig.outputDoP);
 
