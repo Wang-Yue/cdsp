@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CDSP Studio</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-mark">C</div>
+        <div class="brand-text">
+          <h1>CDSP Studio</h1>
+          <span class="version">WebAssembly v5.0</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Tab Capture Card -->
+    <section class="card capture-card">
+      <div class="tab-info">
+        <span class="status-indicator" id="statusDot"></span>
+        <span class="tab-title" id="tabTitle">Active Tab Audio</span>
+      </div>
+      <button id="btnToggleCapture" class="toggle-btn">
+        <span class="toggle-icon">⚡</span>
+        <span id="btnToggleText">Enable DSP for this Tab</span>
+      </button>
+    </section>
+
+    <!-- Master Fader & Mute -->
+    <section class="card controls-card">
+      <div class="section-title">
+        <span>Master Volume</span>
+        <span id="volumeValue" class="value-badge">0.0 dB</span>
+      </div>
+      <div class="slider-row">
+        <input type="range" id="volumeSlider" min="-60" max="6" step="0.5" value="0">
+        <button id="btnMute" class="mute-btn" title="Toggle Mute">
+          <span id="muteIcon">🔊</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- View Mode Selector (Capture / Playback / Both) -->
+    <div class="mode-selector-bar">
+      <button class="mode-tab" id="modeCapture" data-mode="capture">Capture (In)</button>
+      <button class="mode-tab" id="modePlayback" data-mode="playback">Playback (Out)</button>
+      <button class="mode-tab active" id="modeBoth" data-mode="both">Both (Dual)</button>
+    </div>
+
+    <!-- Real-time Spectrum Analyzer -->
+    <section class="card spectrum-card">
+      <div class="section-title">
+        <span id="spectrumTitle">Spectrum Analyzer</span>
+        <div class="spectrum-legend" id="spectrumLegend">
+          <span class="legend-item legend-in" id="legendIn"><span class="legend-dot in-dot"></span> In</span>
+          <span class="legend-item legend-out" id="legendOut"><span class="legend-dot out-dot"></span> Out</span>
+        </div>
+      </div>
+      <div class="canvas-wrapper">
+        <canvas id="spectrumCanvas" width="316" height="110"></canvas>
+      </div>
+      <div class="spectrum-axis">
+        <span>20Hz</span>
+        <span>100Hz</span>
+        <span>1kHz</span>
+        <span>5kHz</span>
+        <span>10kHz</span>
+        <span>20kHz</span>
+      </div>
+    </section>
+
+    <!-- Live Stereo VU Meters (Input & Output) -->
+    <section class="card meter-card">
+      <!-- Input Meters -->
+      <div class="meter-group" id="inputMeterGroup">
+        <div class="section-title">
+          <span>Capture / Input Levels</span>
+          <span id="clipIndicatorIn" class="clip-badge">CLEAN</span>
+        </div>
+        <div class="meter-channel">
+          <span class="channel-label">L</span>
+          <div class="meter-bar-track">
+            <div class="meter-bar-fill in-fill" id="meterInFillL"></div>
+          </div>
+          <span class="meter-val-text" id="valInL">-∞</span>
+        </div>
+        <div class="meter-channel">
+          <span class="channel-label">R</span>
+          <div class="meter-bar-track">
+            <div class="meter-bar-fill in-fill" id="meterInFillR"></div>
+          </div>
+          <span class="meter-val-text" id="valInR">-∞</span>
+        </div>
+      </div>
+
+      <div class="meter-divider" id="meterDivider"></div>
+
+      <!-- Output Meters -->
+      <div class="meter-group" id="outputMeterGroup">
+        <div class="section-title">
+          <span>Playback / Output Levels</span>
+          <span id="clipIndicatorOut" class="clip-badge">CLEAN</span>
+        </div>
+        <div class="meter-channel">
+          <span class="channel-label">L</span>
+          <div class="meter-bar-track">
+            <div class="meter-bar-fill out-fill" id="meterOutFillL"></div>
+          </div>
+          <span class="meter-val-text" id="valOutL">-∞</span>
+        </div>
+        <div class="meter-channel">
+          <span class="channel-label">R</span>
+          <div class="meter-bar-track">
+            <div class="meter-bar-fill out-fill" id="meterOutFillR"></div>
+          </div>
+          <span class="meter-val-text" id="valOutR">-∞</span>
+        </div>
+      </div>
+
+      <div class="meter-scale">
+        <span>-60</span>
+        <span>-30</span>
+        <span>-18</span>
+        <span>-12</span>
+        <span>-6</span>
+        <span>0</span>
+      </div>
+    </section>
+
+    <!-- DSP Presets & JSON Configuration -->
+    <section class="card config-card">
+      <div class="section-title">
+        <span>DSP Configuration</span>
+        <span class="config-status-badge" id="configStatusBadge">Ready</span>
+      </div>
+      <div class="preset-controls-row">
+        <select id="presetSelect" class="preset-dropdown">
+          <option value="flat">Flat / Direct Bypass</option>
+          <option value="bass_boost">Bass Shelf (+4.5 dB)</option>
+          <option value="harman_target">Harman Target (AutoEQ)</option>
+          <option value="vocal_clarity">Vocal & Dialogue Clarity</option>
+          <option value="limiter_safe">Late Night Safety Limiter</option>
+          <option value="custom">Custom JSON...</option>
+        </select>
+        <button id="btnFormatJson" class="icon-text-btn" title="Format JSON">Format</button>
+      </div>
+      <textarea id="configJsonText" class="config-textarea" placeholder="Paste CDSP JSON configuration here (devices section is optional)..." rows="6" spellcheck="false"></textarea>
+      <div class="config-actions">
+        <button id="btnApplyConfig" class="apply-btn">Apply Configuration</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -485,12 +485,16 @@ static void init_shared_logger(void) {
   atomic_init(&g_shared_logger->write_index, 0);
   atomic_init(&g_shared_logger->read_index, 0);
   atomic_init(&g_shared_logger->should_exit, false);
-  atomic_init(&g_shared_logger->is_started, true);
   g_shared_logger->semaphore = cdsp_sem_create();
   pthread_mutex_init(&g_shared_logger->worker_mutex, NULL);
   pthread_mutex_init(&g_shared_logger->callback_mutex, NULL);
+#if !defined(__EMSCRIPTEN__) || defined(__EMSCRIPTEN_PTHREADS__)
+  atomic_init(&g_shared_logger->is_started, true);
   pthread_create(&g_shared_logger->worker_thread, NULL, worker_thread_func,
                  g_shared_logger);
+#else
+  atomic_init(&g_shared_logger->is_started, false);
+#endif
 }
 
 void app_logger_init(void) { (void)app_logger_get_shared(); }
@@ -516,6 +520,43 @@ void app_logger_log(app_logger_t *logger, log_level_t level, const char *label,
                     log_argument_t arg4) {
   if (!logger || level > app_logger_get_level())
     return;
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+  const char *lvl_str;
+  switch (level) {
+  case LOG_LEVEL_OFF:
+    lvl_str = "OFF";
+    break;
+  case LOG_LEVEL_ERROR:
+    lvl_str = "ERROR";
+    break;
+  case LOG_LEVEL_WARN:
+    lvl_str = "WARN";
+    break;
+  case LOG_LEVEL_INFO:
+    lvl_str = "INFO";
+    break;
+  case LOG_LEVEL_DEBUG:
+    lvl_str = "DEBUG";
+    break;
+  case LOG_LEVEL_TRACE:
+    lvl_str = "TRACE";
+    break;
+  }
+  char formatted_msg[4096];
+  log_argument_t args[4] = {arg1, arg2, arg3, arg4};
+  format_log_message(formatted_msg, sizeof(formatted_msg), message, args);
+
+  cdsp_log_callback_t cb = logger->callback;
+  void *cb_ctx = logger->callback_user_data;
+  if (cb) {
+    cb(level, label ? label : "", formatted_msg, cb_ctx);
+  } else {
+    FILE *out = g_log_file ? g_log_file : (level <= LOG_LEVEL_WARN ? stderr : stdout);
+    fprintf(out, "%-5s [%s] %s\n", lvl_str, label ? label : "", formatted_msg);
+    fflush(out);
+  }
+  return;
+#else
   // Lazily start the background worker thread when the first log occurs.
   // Use compare-and-swap to ensure only one thread starts the worker.
   bool expected = false;
@@ -569,6 +610,7 @@ void app_logger_log(app_logger_t *logger, log_level_t level, const char *label,
   // Publish the written slot to the worker thread.
   atomic_store_explicit(&logger->sequences[slot], w + 1, memory_order_release);
   cdsp_sem_signal(logger->semaphore);
+#endif
 }
 
 void app_logger_flush_and_stop(app_logger_t *logger) {
@@ -650,7 +692,7 @@ void app_logger_log_raw_str(const logger_t *logger, log_level_t level,
         g_log_current_size >= g_log_max_size) {
       rotate_log_file_locked();
     }
-    FILE *out = g_log_file ? g_log_file : stderr;
+    FILE *out = g_log_file ? g_log_file : (level <= LOG_LEVEL_WARN ? stderr : stdout);
     int written = fprintf(out, "[%s] %s: %s\n", lvl_str, label, out_str);
     if (written > 0 && g_log_file) {
       g_log_current_size += (size_t)written;

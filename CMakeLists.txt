@@ -28,7 +28,22 @@ endif()
 # -----------------------------------------------------------------------------
 # Options & Platform Defaults
 # -----------------------------------------------------------------------------
-if(APPLE)
+if(EMSCRIPTEN)
+    set(DEFAULT_ENABLE_COREAUDIO   OFF)
+    set(DEFAULT_ENABLE_ACCELERATE  OFF)
+    set(DEFAULT_ENABLE_LIBDISPATCH OFF)
+    set(DEFAULT_ENABLE_ALSA        OFF)
+    set(DEFAULT_ENABLE_PIPEWIRE    OFF)
+    set(DEFAULT_ENABLE_WASAPI      OFF)
+    set(DEFAULT_ENABLE_ASIO        OFF)
+    set(DEFAULT_ENABLE_OPENMP      OFF)
+    set(DEFAULT_ENABLE_DBUS        OFF)
+    set(DEFAULT_ENABLE_WEBSOCKET   OFF)
+    set(DEFAULT_ENABLE_STUDIO      OFF)
+    set(DEFAULT_BUILD_BENCHMARKS   OFF)
+    set(DEFAULT_BUILD_RUST_HARNESS OFF)
+    set(DEFAULT_ENABLE_WEBAUDIO    ON)
+elseif(APPLE)
     set(DEFAULT_ENABLE_COREAUDIO   ON)
     set(DEFAULT_ENABLE_ACCELERATE  ON)
     set(DEFAULT_ENABLE_LIBDISPATCH ON)
@@ -38,6 +53,11 @@ if(APPLE)
     set(DEFAULT_ENABLE_ASIO        OFF)
     set(DEFAULT_ENABLE_OPENMP      OFF)
     set(DEFAULT_ENABLE_DBUS        OFF)
+    set(DEFAULT_ENABLE_WEBSOCKET   ON)
+    set(DEFAULT_ENABLE_STUDIO      ON)
+    set(DEFAULT_BUILD_BENCHMARKS   ON)
+    set(DEFAULT_BUILD_RUST_HARNESS ON)
+    set(DEFAULT_ENABLE_WEBAUDIO    OFF)
 elseif(WIN32)
     set(DEFAULT_ENABLE_COREAUDIO   OFF)
     set(DEFAULT_ENABLE_ACCELERATE  OFF)
@@ -48,6 +68,11 @@ elseif(WIN32)
     set(DEFAULT_ENABLE_ASIO        ON)
     set(DEFAULT_ENABLE_OPENMP      ON)
     set(DEFAULT_ENABLE_DBUS        OFF)
+    set(DEFAULT_ENABLE_WEBSOCKET   ON)
+    set(DEFAULT_ENABLE_STUDIO      ON)
+    set(DEFAULT_BUILD_BENCHMARKS   ON)
+    set(DEFAULT_BUILD_RUST_HARNESS ON)
+    set(DEFAULT_ENABLE_WEBAUDIO    OFF)
 else()
     # Linux (Default)
     set(DEFAULT_ENABLE_COREAUDIO   OFF)
@@ -59,6 +84,11 @@ else()
     set(DEFAULT_ENABLE_ASIO        OFF)
     set(DEFAULT_ENABLE_OPENMP      ON)
     set(DEFAULT_ENABLE_DBUS        ON)
+    set(DEFAULT_ENABLE_WEBSOCKET   ON)
+    set(DEFAULT_ENABLE_STUDIO      ON)
+    set(DEFAULT_BUILD_BENCHMARKS   ON)
+    set(DEFAULT_BUILD_RUST_HARNESS ON)
+    set(DEFAULT_ENABLE_WEBAUDIO    OFF)
 endif()
 
 option(ENABLE_COREAUDIO   "Enable macOS CoreAudio backend"      ${DEFAULT_ENABLE_COREAUDIO})
@@ -68,16 +98,20 @@ option(ENABLE_PIPEWIRE    "Enable Linux PipeWire backend"       ${DEFAULT_ENABLE
 option(ENABLE_WASAPI      "Enable Windows WASAPI audio backend" ${DEFAULT_ENABLE_WASAPI})
 option(ENABLE_ASIO        "Enable Windows ASIO audio backend"   ${DEFAULT_ENABLE_ASIO})
 option(ENABLE_OPENMP      "Enable OpenMP parallelization"       ${DEFAULT_ENABLE_OPENMP})
-option(ENABLE_WEBSOCKET   "Enable WebSocket control server"     ON)
+option(ENABLE_WEBSOCKET   "Enable WebSocket control server"     ${DEFAULT_ENABLE_WEBSOCKET})
 option(ENABLE_DBUS        "Enable Linux DBus device monitoring" ${DEFAULT_ENABLE_DBUS})
 option(ENABLE_LIBDISPATCH "Enable Apple libdispatch (GCD)"      ${DEFAULT_ENABLE_LIBDISPATCH})
 
 option(ENABLE_LTO         "Enable Link Time Optimization"       ON)
 option(ENABLE_NATIVE_ARCH "Enable native CPU optimization"      ON)
 option(BUILD_TESTING      "Build test runner and unit tests"    ON)
-option(BUILD_RUST_HARNESS "Build Rust test harness binaries"    ON)
-option(BUILD_BENCHMARKS   "Build benchmark targets"             ON)
-option(ENABLE_STUDIO       "Build CDSP Studio GUI application"   ON)
+option(BUILD_RUST_HARNESS "Build Rust test harness binaries"    ${DEFAULT_BUILD_RUST_HARNESS})
+option(BUILD_BENCHMARKS   "Build benchmark targets"             ${DEFAULT_BUILD_BENCHMARKS})
+option(ENABLE_STUDIO       "Build CDSP Studio GUI application"   ${DEFAULT_ENABLE_STUDIO})
+option(ENABLE_WEBAUDIO        "Enable WebAudio backend"             ${DEFAULT_ENABLE_WEBAUDIO})
+if(EMSCRIPTEN)
+    set(ENABLE_WEBAUDIO ON CACHE BOOL "Enable WebAudio backend" FORCE)
+endif()
 option(ENABLE_STATIC_WINDOWS "Build static standalone binaries on Windows (MinGW)" ON)
 
 set(ENABLE_SANITIZER "none" CACHE STRING "Sanitizer to enable (none, address, thread, undefined, memory, leak, intsan, cfi)")
@@ -260,6 +294,8 @@ if(WIN32)
     target_link_libraries(dsp PUBLIC ws2_32 winmm ole32 uuid ksuser ksguid avrt synchronization)
 elseif(APPLE)
     target_link_libraries(dsp PUBLIC "-framework CoreFoundation" m)
+elseif(EMSCRIPTEN)
+    target_link_libraries(dsp PUBLIC m)
 else()
     target_compile_definitions(dsp PUBLIC _GNU_SOURCE)
     target_link_libraries(dsp PUBLIC m rt)
@@ -284,6 +320,10 @@ endif()
 
 if(ENABLE_ASIO)
     target_compile_definitions(dsp PUBLIC ENABLE_ASIO)
+endif()
+
+if(ENABLE_WEBAUDIO)
+    target_compile_definitions(dsp PUBLIC ENABLE_WEBAUDIO)
 endif()
 
 if(ENABLE_ALSA)
@@ -380,32 +420,60 @@ endif()
 # Math, FFT & Acceleration Libraries (FFTW3 Required)
 # -----------------------------------------------------------------------------
 set(FFTW_FOUND_FLAG FALSE)
-# 1. Search for headers and full absolute library paths first (prevents MSYS2 FFTW3Config.cmake relative path bugs)
-find_path(FFTW3_INCLUDE_DIR NAMES fftw3.h PATHS /opt/homebrew/include /usr/local/include /usr/include)
-find_library(FFTW3_LIB NAMES fftw3 libfftw3-3 libfftw3 PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
-find_library(FFTW3F_LIB NAMES fftw3f libfftw3f-3 libfftw3f PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
 
-if(FFTW3_INCLUDE_DIR AND FFTW3_LIB AND FFTW3F_LIB)
-    target_include_directories(dsp PUBLIC ${FFTW3_INCLUDE_DIR})
-    target_link_libraries(dsp PUBLIC ${FFTW3_LIB} ${FFTW3F_LIB})
+if(EMSCRIPTEN)
+    include(FetchContent)
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+    FetchContent_Declare(
+        fftw_tarball
+        URL https://www.fftw.org/fftw-3.3.10.tar.gz
+    )
+    FetchContent_GetProperties(fftw_tarball)
+    if(NOT fftw_tarball_POPULATED)
+        FetchContent_Populate(fftw_tarball)
+        set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+        set(ENABLE_THREADS OFF CACHE BOOL "" FORCE)
+        set(ENABLE_OPENMP OFF CACHE BOOL "" FORCE)
+
+        set(ENABLE_FLOAT OFF CACHE BOOL "" FORCE)
+        add_subdirectory(${fftw_tarball_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/fftw3_double EXCLUDE_FROM_ALL)
+
+        set(ENABLE_FLOAT ON CACHE BOOL "" FORCE)
+        add_subdirectory(${fftw_tarball_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/fftw3_float EXCLUDE_FROM_ALL)
+    endif()
+    target_include_directories(dsp PUBLIC ${fftw_tarball_SOURCE_DIR}/api)
+    target_link_libraries(dsp PUBLIC fftw3 fftw3f)
     target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
     set(FFTW_FOUND_FLAG TRUE)
-elseif(PKG_CONFIG_FOUND)
-    pkg_check_modules(FFTW3 QUIET IMPORTED_TARGET fftw3 fftw3f)
-    if(TARGET PkgConfig::FFTW3)
-        target_link_libraries(dsp PUBLIC PkgConfig::FFTW3)
-        target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
-        set(FFTW_FOUND_FLAG TRUE)
-    endif()
-endif()
+else()
+    # 1. Search for headers and full absolute library paths first (prevents MSYS2 FFTW3Config.cmake relative path bugs)
+    find_path(FFTW3_INCLUDE_DIR NAMES fftw3.h PATHS /opt/homebrew/include /usr/local/include /usr/include)
+    find_library(FFTW3_LIB NAMES fftw3 libfftw3-3 libfftw3 PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
+    find_library(FFTW3F_LIB NAMES fftw3f libfftw3f-3 libfftw3f PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
 
-if(NOT FFTW_FOUND_FLAG)
-    find_package(FFTW3 CONFIG QUIET)
-    find_package(FFTW3f CONFIG QUIET)
-    if(TARGET FFTW3::fftw3 AND TARGET FFTW3::fftw3f)
-        target_link_libraries(dsp PUBLIC FFTW3::fftw3 FFTW3::fftw3f)
+    if(FFTW3_INCLUDE_DIR AND FFTW3_LIB AND FFTW3F_LIB)
+        target_include_directories(dsp PUBLIC ${FFTW3_INCLUDE_DIR})
+        target_link_libraries(dsp PUBLIC ${FFTW3_LIB} ${FFTW3F_LIB})
         target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
         set(FFTW_FOUND_FLAG TRUE)
+    elseif(PKG_CONFIG_FOUND)
+        pkg_check_modules(FFTW3 QUIET IMPORTED_TARGET fftw3 fftw3f)
+        if(TARGET PkgConfig::FFTW3)
+            target_link_libraries(dsp PUBLIC PkgConfig::FFTW3)
+            target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
+            set(FFTW_FOUND_FLAG TRUE)
+        endif()
+    endif()
+
+    if(NOT FFTW_FOUND_FLAG)
+        find_package(FFTW3 CONFIG QUIET)
+        find_package(FFTW3f CONFIG QUIET)
+        if(TARGET FFTW3::fftw3 AND TARGET FFTW3::fftw3f)
+            target_link_libraries(dsp PUBLIC FFTW3::fftw3 FFTW3::fftw3f)
+            target_compile_definitions(dsp PUBLIC ENABLE_FFTW)
+            set(FFTW_FOUND_FLAG TRUE)
+        endif()
     endif()
 endif()
 
@@ -418,7 +486,7 @@ endif()
 # -----------------------------------------------------------------------------
 set(YAML_FOUND_FLAG FALSE)
 
-if(ENABLE_SANITIZER STREQUAL "memory")
+if(ENABLE_SANITIZER STREQUAL "memory" OR EMSCRIPTEN)
     include(FetchContent)
     set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
     FetchContent_Declare(
@@ -436,6 +504,7 @@ if(ENABLE_SANITIZER STREQUAL "memory")
         set(BUILD_TESTING ${SAVED_BUILD_TESTING} CACHE BOOL "Build test runner and unit tests" FORCE)
     endif()
     if(TARGET yaml)
+        target_include_directories(dsp PUBLIC ${yaml_src_SOURCE_DIR}/include)
         target_link_libraries(dsp PUBLIC yaml)
         set(YAML_FOUND_FLAG TRUE)
     endif()
@@ -473,8 +542,9 @@ endif()
 # -----------------------------------------------------------------------------
 set(CJSON_FOUND_FLAG FALSE)
 
-if(ENABLE_SANITIZER STREQUAL "memory")
+if(ENABLE_SANITIZER STREQUAL "memory" OR EMSCRIPTEN)
     include(FetchContent)
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
     FetchContent_Declare(
         cjson_src
         GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
@@ -486,6 +556,9 @@ if(ENABLE_SANITIZER STREQUAL "memory")
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static" FORCE)
     FetchContent_MakeAvailable(cjson_src)
     if(TARGET cjson)
+        file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cjson_include/cjson)
+        file(COPY ${cjson_src_SOURCE_DIR}/cJSON.h ${cjson_src_SOURCE_DIR}/cJSON_Utils.h DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/cjson_include/cjson)
+        target_include_directories(dsp PUBLIC ${cjson_src_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/cjson_include)
         target_link_libraries(dsp PUBLIC cjson)
         set(CJSON_FOUND_FLAG TRUE)
     endif()
@@ -632,17 +705,19 @@ endif()
 # -----------------------------------------------------------------------------
 # CLI Executable: cdsp
 # -----------------------------------------------------------------------------
-add_executable(cdsp app/main.c ${SERVER_SRCS})
-target_link_libraries(cdsp PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,dsp>")
-target_include_directories(cdsp PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/app
-    ${CMAKE_CURRENT_SOURCE_DIR}/app/server
-)
+if(NOT EMSCRIPTEN)
+    add_executable(cdsp app/main.c ${SERVER_SRCS})
+    target_link_libraries(cdsp PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,dsp>")
+    target_include_directories(cdsp PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/app
+        ${CMAKE_CURRENT_SOURCE_DIR}/app/server
+    )
+endif()
 
 # -----------------------------------------------------------------------------
 # Testing: libdsp_test & CTest Test Infrastructure
 # -----------------------------------------------------------------------------
-if(BUILD_TESTING)
+if(BUILD_TESTING AND NOT EMSCRIPTEN)
     include(CTest)
 
     # Optional Rust Harness Build (if cargo is installed and BUILD_RUST_HARNESS is ON)
@@ -674,9 +749,14 @@ if(BUILD_TESTING)
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_resampler_matrix\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_simd_benchmark\\.c$")
     list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_convolution_backends_benchmark\\.c$")
+    list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_wasm\\.c$")
 
     if(NOT ENABLE_WEBSOCKET)
         list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_websocket_server\\.c$")
+    endif()
+
+    if(NOT ENABLE_WEBAUDIO)
+        list(FILTER TEST_SRCS EXCLUDE REGEX ".*/test_webaudio_backend\\.c$")
     endif()
 
     add_executable(test_runner
@@ -878,12 +958,21 @@ endif()
 # -----------------------------------------------------------------------------
 include(GNUInstallDirs)
 
-install(TARGETS cdsp dsp
-    EXPORT cdspTargets
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
+if(TARGET cdsp)
+    install(TARGETS cdsp dsp
+        EXPORT cdspTargets
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+else()
+    install(TARGETS dsp
+        EXPORT cdspTargets
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+endif()
 
 install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
@@ -917,6 +1006,13 @@ endif()
 # -----------------------------------------------------------------------------
 if(ENABLE_STUDIO)
     add_subdirectory(studio)
+endif()
+
+# -----------------------------------------------------------------------------
+# WebAssembly & Chrome Extension
+# -----------------------------------------------------------------------------
+if(EMSCRIPTEN)
+    add_subdirectory(extension)
 endif()
 
 # -----------------------------------------------------------------------------

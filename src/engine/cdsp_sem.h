@@ -92,7 +92,8 @@ static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
   return dispatch_semaphore_wait(sem, timeout) == 0;
 }
 
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__EMSCRIPTEN__) || defined(__unix__)
+#include <errno.h>
 #include <semaphore.h>
 #include <stdlib.h>
 #include <time.h>
@@ -117,8 +118,6 @@ static inline void cdsp_sem_destroy(cdsp_sem_t sem) {
   }
 }
 
-#include <errno.h>
-
 static inline void cdsp_sem_signal(cdsp_sem_t sem) {
   if (sem)
     sem_post(sem);
@@ -139,6 +138,10 @@ static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
 #ifdef CDSP_TEST
   timeout_ms = cdsp_sem_scale_timeout_ms(timeout_ms);
 #endif
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+  (void)timeout_ms;
+  return sem_trywait(sem) == 0;
+#else
   struct timespec ts = {0};
   if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
     return false;
@@ -150,6 +153,7 @@ static inline bool cdsp_sem_timedwait(cdsp_sem_t sem, uint32_t timeout_ms) {
     res = sem_timedwait(sem, &ts);
   } while (res == -1 && errno == EINTR);
   return res == 0;
+#endif
 }
 
 #elif defined(_WIN32)

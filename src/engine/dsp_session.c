@@ -106,7 +106,7 @@ bool dsp_session_is_stop_requested(const dsp_session_t *core,
   // we transition the state to STALLED. Checking this on the main thread
   // (during poll) prevents lockups when the capture backend read call blocks
   // infinitely in kernel space.
-  if (!req &&
+  if (!req && core->threads_created &&
       engine_shared_state_get_stop_reason(core->shared).type ==
           STOP_REASON_NONE &&
       engine_shared_state_get_state(core->shared) == PROCESSING_STATE_RUNNING) {

@@ -42,6 +42,7 @@ Per project design principles, a deviation from upstream is admitted **only when
 | 9 | **Buffer Level** | `Arc<Mutex<DeviceBufferEstimator>>` sampled with `try_lock()`, reporting `0` on contention | Lock-free atomic estimator plus live SPSC ring sampling (§3.1) | No spurious zero-level readings into the rate controller; exact ring term |
 | 10 | **Zero-Copy Backends** | Staging scratch buffers (`scratch_buf`, `decode_buf`, `encode_buf`, `interleaved_buf`) and intermediate `memcpy` steps | Direct circular slice decoding/encoding to SPSC ring buffers (§3.2) | Zero staging buffers, reduced CPU cache pollution & minimum latency |
 | 11 | **Driver Layout & Buffers** | Serializes planar drivers (ASIO) into byte streams; unaligned default micro-buffers on CoreAudio | Native planar streaming for ASIO; matched hardware buffer size & interleaved pass-through for CoreAudio (§3.3) | Eliminates 2D sample interleaving on ASIO; bypasses AUHAL `AudioConverter` and drops callback CPU on CoreAudio |
+| 12 | **WebAudio / WebAssembly** | No browser or Web Audio support | Synchronous 128-frame AudioWorklet C DSP engine via SIMD WASM with bit-exact parity (§5.4) | Full double-precision DSP suite inside Chrome browser tabs |
 
 ---
 
@@ -159,6 +160,17 @@ Per project design principles, a deviation from upstream is admitted **only when
   5. **Anti-Feedback Loop & Auto-Mute**: Automatically excludes `cdsp`'s own process from the tap while setting `CATapMuted` on the tapped stream to prevent un-DSP'd raw audio leakage to the DAC.
 
 > **Loopback capture of the device you also play to.** This is the intended "process all system audio" setup, and it makes capture and playback one piece of hardware with a **single** nominal sample rate. Both sides share the exact same hardware clock, so resampling or rate adjusting between them is not supported — configuring a resampler or `enable_rate_adjust: true` in this setup is rejected at validation time.
+
+### 5.4 WebAudio & WebAssembly Subsystem (`cdsp_wasm`)
+* **Scope**: Applies to the Google Chrome extension (`extension/`) and WebAssembly compilation target.
+* **Architecture**:
+  1. **Synchronous 128-Frame Quantum Processing**: Web Audio's `AudioWorkletProcessor` processes audio in fixed 128-frame quantums. In [`extension/wasm/cdsp_wasm.c`](extension/wasm/cdsp_wasm.c), `cdsp_wasm_process` directly decodes planar float32 pointers into double audio chunks, processes the full double-precision C DSP pipeline (biquad filters, gains, delays, mixers, compressors), and encodes the output back to planar float32 pointers in a single pass.
+  2. **Non-WASM Path Immutability**: All WebAudio/WASM specific adaptations must strictly reside in [`extension/wasm/cdsp_wasm.c`](extension/wasm/cdsp_wasm.c) and [`src/backend/webaudio_backend.c`](src/backend/webaudio_backend.c). Core multi-threaded runtime files (such as `src/engine/dsp_session.c`, `src/engine/engine_processing_loop.c`, etc.) must never be altered to accommodate WebAssembly single-threaded constraints.
+  3. **JSON IPC Telemetry Boundary & Non-Finite Sanitization**:
+     - The internal DSP engine computes pure mathematical $-\infty$ (`-INFINITY`) for silence and zero-amplitude bins.
+     - When transmitting metering/spectrum data across Chrome message passing boundaries (`chrome.runtime.sendMessage` / `postMessage`), RFC 8259 JSON serialization converts non-finite tokens (`-Infinity`, `+Infinity`, `NaN`) to `null`.
+     - In [`extension/ui/popup.js`](extension/ui/popup.js) and [`extension/worklet/cdsp-processor.js`](extension/worklet/cdsp-processor.js), telemetry unpackers sanitize `null` and non-finite values into $-120.0\text{ dBFS}$ / $-\infty$ to ensure `null` is never coerced by JavaScript typed arrays into `0.0` (0 dBFS).
+  4. **Build & Package Isolation**: The Chrome extension is packaged directly into CMake build artifacts (`build/extension_dist/` and `build/cdsp_extension.zip`) without polluting the repository source tree.
 
 ---
 

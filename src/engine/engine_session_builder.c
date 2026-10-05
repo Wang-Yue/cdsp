@@ -408,6 +408,7 @@ static bool engine_session_spawn_worker_threads(dsp_session_t *core,
   // If thread creation fails mid-way, manually stop and join already-created
   // threads before returning false, ensuring no uninitialized handles are
   // joined.
+#if !defined(__EMSCRIPTEN__) || defined(__EMSCRIPTEN_PTHREADS__)
   int ret;
   ret = pthread_create(&core->capture_thread, NULL, capture_thread_func,
                        core->capture_loop);
@@ -434,6 +435,20 @@ static bool engine_session_spawn_worker_threads(dsp_session_t *core,
   }
 
   core->threads_created = true;
+#else
+  core->threads_created = false;
+  backend_error_t berr;
+  memset(&berr, 0, sizeof(berr));
+  if (core->capture) {
+    capture_backend_open(core->capture, &berr);
+  }
+  if (core->playback) {
+    playback_backend_open(core->playback, &berr);
+  }
+  if (core->shared) {
+    engine_shared_state_set_state(core->shared, PROCESSING_STATE_RUNNING);
+  }
+#endif
   pthread_mutex_lock(&core->config_mutex);
   core->current_config = config;
   pthread_mutex_unlock(&core->config_mutex);

@@ -309,6 +309,12 @@ typedef struct wav_file_capture_config_t wav_file_capture_config_t;
 typedef struct raw_file_capture_config_t raw_file_capture_config_t;
 typedef struct raw_file_playback_config_t raw_file_playback_config_t;
 typedef struct generator_capture_config_t generator_capture_config_t;
+#if defined(ENABLE_WEBAUDIO)
+typedef struct webaudio_capture_config_t webaudio_capture_config_t;
+#endif /* ENABLE_WEBAUDIO */
+#if defined(ENABLE_WEBAUDIO)
+typedef struct webaudio_playback_config_t webaudio_playback_config_t;
+#endif /* ENABLE_WEBAUDIO */
 typedef struct capture_device_config_t capture_device_config_t;
 typedef struct playback_device_config_t playback_device_config_t;
 typedef struct devices_config_t devices_config_t;
@@ -861,6 +867,20 @@ struct generator_capture_config_t {
   generator_signal_t signal;
 };
 
+#if defined(ENABLE_WEBAUDIO)
+/** Struct: webaudio_capture_config */
+struct webaudio_capture_config_t {
+  size_t channels;
+};
+#endif /* ENABLE_WEBAUDIO */
+
+#if defined(ENABLE_WEBAUDIO)
+/** Struct: webaudio_playback_config */
+struct webaudio_playback_config_t {
+  size_t channels;
+};
+#endif /* ENABLE_WEBAUDIO */
+
 /** Tagged Union: capture_device_config */
 struct capture_device_config_t {
   audio_backend_type_t type;
@@ -892,6 +912,9 @@ struct capture_device_config_t {
     #if defined(ENABLE_ASIO)
     asio_capture_config_t asio;
     #endif /* ENABLE_ASIO */
+    #if defined(ENABLE_WEBAUDIO)
+    webaudio_capture_config_t webaudio;
+    #endif /* ENABLE_WEBAUDIO */
     wav_file_capture_config_t wav_file;
   } cfg;
 };
@@ -923,6 +946,9 @@ struct playback_device_config_t {
     #if defined(ENABLE_ASIO)
     asio_playback_config_t asio;
     #endif /* ENABLE_ASIO */
+    #if defined(ENABLE_WEBAUDIO)
+    webaudio_playback_config_t webaudio;
+    #endif /* ENABLE_WEBAUDIO */
   } cfg;
 };
 
@@ -1266,6 +1292,22 @@ bool generator_capture_config_equal(const generator_capture_config_t *a, const g
 int parse_generator_capture_config(const cJSON *obj, const char *ctx, generator_capture_config_t *out, config_error_t *err);
 cJSON *serialize_generator_capture_config(const generator_capture_config_t *in);
 void free_generator_capture_config_contents(generator_capture_config_t *in);
+
+#if defined(ENABLE_WEBAUDIO)
+void webaudio_capture_config_init(webaudio_capture_config_t *out);
+bool webaudio_capture_config_equal(const webaudio_capture_config_t *a, const webaudio_capture_config_t *b);
+int parse_webaudio_capture_config(const cJSON *obj, const char *ctx, webaudio_capture_config_t *out, config_error_t *err);
+cJSON *serialize_webaudio_capture_config(const webaudio_capture_config_t *in);
+void free_webaudio_capture_config_contents(webaudio_capture_config_t *in);
+#endif /* ENABLE_WEBAUDIO */
+
+#if defined(ENABLE_WEBAUDIO)
+void webaudio_playback_config_init(webaudio_playback_config_t *out);
+bool webaudio_playback_config_equal(const webaudio_playback_config_t *a, const webaudio_playback_config_t *b);
+int parse_webaudio_playback_config(const cJSON *obj, const char *ctx, webaudio_playback_config_t *out, config_error_t *err);
+cJSON *serialize_webaudio_playback_config(const webaudio_playback_config_t *in);
+void free_webaudio_playback_config_contents(webaudio_playback_config_t *in);
+#endif /* ENABLE_WEBAUDIO */
 
 void capture_device_config_init(capture_device_config_t *out);
 bool capture_device_config_equal(const capture_device_config_t *a, const capture_device_config_t *b);

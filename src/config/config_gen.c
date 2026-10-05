@@ -439,6 +439,9 @@ const char *audio_backend_type_to_string(audio_backend_type_t val) {
     case AUDIO_BACKEND_TYPE_FILE: return "File";
     case AUDIO_BACKEND_TYPE_STDIN_OUT: return "Stdin";
     case AUDIO_BACKEND_TYPE_GENERATOR: return "SignalGenerator";
+    #if defined(ENABLE_WEBAUDIO)
+    case AUDIO_BACKEND_TYPE_WEB_AUDIO: return "WebAudio";
+    #endif
     case AUDIO_BACKEND_TYPE_INVALID: return "Invalid";
   }
   CDSP_UNREACHABLE();
@@ -468,6 +471,9 @@ audio_backend_type_t audio_backend_type_from_string(const char *str) {
   if (strcmp(str, "Stdin") == 0) return AUDIO_BACKEND_TYPE_STDIN_OUT;
   if (strcmp(str, "Stdout") == 0) return AUDIO_BACKEND_TYPE_STDIN_OUT;
   if (strcmp(str, "SignalGenerator") == 0) return AUDIO_BACKEND_TYPE_GENERATOR;
+  #if defined(ENABLE_WEBAUDIO)
+  if (strcmp(str, "WebAudio") == 0) return AUDIO_BACKEND_TYPE_WEB_AUDIO;
+  #endif
   return AUDIO_BACKEND_TYPE_INVALID;
 }
 
@@ -4610,6 +4616,94 @@ bool generator_capture_config_equal(const generator_capture_config_t *a, const g
 }
 
 
+#if defined(ENABLE_WEBAUDIO)
+void webaudio_capture_config_init(webaudio_capture_config_t *out) {
+  if (!out) return;
+  memset(out, 0, sizeof(webaudio_capture_config_t));
+}
+
+void free_webaudio_capture_config_contents(webaudio_capture_config_t *in) {
+  if (!in) return;
+}
+
+int parse_webaudio_capture_config(const cJSON *obj, const char *ctx, webaudio_capture_config_t *out, config_error_t *err) {
+  if (!cJSON_IsObject(obj)) {
+    config_error_set(err, CONFIG_ERR_PARSE, "%s must be an object", ctx ? ctx : "webaudio_capture_config");
+    return -1;
+  }
+  webaudio_capture_config_init(out);
+
+  static const char *const allowed_keys[] = {"channels", "type", "labels", "bypass_dop", "dop_cutoff_hz", "description", NULL};
+  if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "webaudio_capture_config", err) != 0) return -1;
+
+  static const char *const req_keys[] = {"channels", NULL};
+  if (require_json_fields(obj, req_keys, ctx ? ctx : "webaudio_capture_config", NULL, err) != 0) return -1;
+
+  if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "webaudio_capture_config", &out->channels, NULL, err) != 0) return -1;
+  return 0;
+}
+
+cJSON *serialize_webaudio_capture_config(const webaudio_capture_config_t *in) {
+  if (!in) return NULL;
+  cJSON *obj = cJSON_CreateObject();
+  if (!obj) return NULL;
+  if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
+  return obj;
+}
+
+bool webaudio_capture_config_equal(const webaudio_capture_config_t *a, const webaudio_capture_config_t *b) {
+  if (a == b) return true;
+  if (!a || !b) return false;
+  if (a->channels != b->channels) return false;
+  return true;
+}
+
+#endif /* ENABLE_WEBAUDIO */
+
+#if defined(ENABLE_WEBAUDIO)
+void webaudio_playback_config_init(webaudio_playback_config_t *out) {
+  if (!out) return;
+  memset(out, 0, sizeof(webaudio_playback_config_t));
+}
+
+void free_webaudio_playback_config_contents(webaudio_playback_config_t *in) {
+  if (!in) return;
+}
+
+int parse_webaudio_playback_config(const cJSON *obj, const char *ctx, webaudio_playback_config_t *out, config_error_t *err) {
+  if (!cJSON_IsObject(obj)) {
+    config_error_set(err, CONFIG_ERR_PARSE, "%s must be an object", ctx ? ctx : "webaudio_playback_config");
+    return -1;
+  }
+  webaudio_playback_config_init(out);
+
+  static const char *const allowed_keys[] = {"channels", "type", "output_dop", "dsd_encoder_filter", "description", NULL};
+  if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : "webaudio_playback_config", err) != 0) return -1;
+
+  static const char *const req_keys[] = {"channels", NULL};
+  if (require_json_fields(obj, req_keys, ctx ? ctx : "webaudio_playback_config", NULL, err) != 0) return -1;
+
+  if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "webaudio_playback_config", &out->channels, NULL, err) != 0) return -1;
+  return 0;
+}
+
+cJSON *serialize_webaudio_playback_config(const webaudio_playback_config_t *in) {
+  if (!in) return NULL;
+  cJSON *obj = cJSON_CreateObject();
+  if (!obj) return NULL;
+  if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
+  return obj;
+}
+
+bool webaudio_playback_config_equal(const webaudio_playback_config_t *a, const webaudio_playback_config_t *b) {
+  if (a == b) return true;
+  if (!a || !b) return false;
+  if (a->channels != b->channels) return false;
+  return true;
+}
+
+#endif /* ENABLE_WEBAUDIO */
+
 void capture_device_config_init(capture_device_config_t *out) {
   if (!out) return;
   memset(out, 0, sizeof(capture_device_config_t));
@@ -4644,6 +4738,9 @@ void free_capture_device_config_contents(capture_device_config_t *in) {
     #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO: free_asio_capture_config_contents(&in->cfg.asio); break;
     #endif
+    #if defined(ENABLE_WEBAUDIO)
+    case AUDIO_BACKEND_TYPE_WEB_AUDIO: free_webaudio_capture_config_contents(&in->cfg.webaudio); break;
+    #endif
     free_wav_file_capture_config_contents(&in->cfg.wav_file);
     case AUDIO_BACKEND_TYPE_INVALID: break;
   }
@@ -4663,7 +4760,7 @@ int parse_capture_device_config(const cJSON *obj, const char *ctx, capture_devic
   }
   const char *type_str = item->valuestring;
   if (strcmp(type_str, "File") == 0 || strcmp(type_str, "Stdout") == 0) {
-    config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'Stdin', 'SignalGenerator', 'Wasapi', 'Asio', 'RawFile', 'WavFile'", type_str);
+    config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'Stdin', 'SignalGenerator', 'Wasapi', 'Asio', 'WebAudio', 'RawFile', 'WavFile'", type_str);
     return -1;
   }
   cJSON *arr_labels = cJSON_GetObjectItemCaseSensitive(obj, "labels");
@@ -4716,6 +4813,12 @@ int parse_capture_device_config(const cJSON *obj, const char *ctx, capture_devic
     return parse_asio_capture_config(obj, "Asio capture_device_config", &out->cfg.asio, err);
   }
   #endif
+  #if defined(ENABLE_WEBAUDIO)
+  if (strcmp(type_str, "WebAudio") == 0) {
+    out->type = AUDIO_BACKEND_TYPE_WEB_AUDIO;
+    return parse_webaudio_capture_config(obj, "WebAudio capture_device_config", &out->cfg.webaudio, err);
+  }
+  #endif
   if (strcmp(type_str, "RawFile") == 0) {
     out->type = AUDIO_BACKEND_TYPE_FILE;
     out->is_wav = false;
@@ -4728,7 +4831,7 @@ int parse_capture_device_config(const cJSON *obj, const char *ctx, capture_devic
     out->has_is_wav = true;
     return parse_wav_file_capture_config(obj, "WavFile capture_device_config", &out->cfg.wav_file, err);
   }
-  config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'Stdin', 'SignalGenerator', 'Wasapi', 'Asio', 'RawFile', 'WavFile'", type_str);
+  config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'Stdin', 'SignalGenerator', 'Wasapi', 'Asio', 'WebAudio', 'RawFile', 'WavFile'", type_str);
   return -1;
 }
 
@@ -4781,6 +4884,12 @@ cJSON *serialize_capture_device_config(const capture_device_config_t *in) {
     case AUDIO_BACKEND_TYPE_ASIO:
       obj = serialize_asio_capture_config(&in->cfg.asio);
       if (obj) cJSON_AddStringToObject(obj, "type", "Asio");
+      break;
+    #endif
+    #if defined(ENABLE_WEBAUDIO)
+    case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+      obj = serialize_webaudio_capture_config(&in->cfg.webaudio);
+      if (obj) cJSON_AddStringToObject(obj, "type", "WebAudio");
       break;
     #endif
     case AUDIO_BACKEND_TYPE_INVALID: break;
@@ -4854,6 +4963,10 @@ bool capture_device_config_equal(const capture_device_config_t *a, const capture
     case AUDIO_BACKEND_TYPE_ASIO:
       return asio_capture_config_equal(&a->cfg.asio, &b->cfg.asio);
     #endif
+    #if defined(ENABLE_WEBAUDIO)
+    case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+      return webaudio_capture_config_equal(&a->cfg.webaudio, &b->cfg.webaudio);
+    #endif
     case AUDIO_BACKEND_TYPE_INVALID: return false;
   }
   CDSP_UNREACHABLE();
@@ -4888,6 +5001,9 @@ void free_playback_device_config_contents(playback_device_config_t *in) {
     #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO: free_asio_playback_config_contents(&in->cfg.asio); break;
     #endif
+    #if defined(ENABLE_WEBAUDIO)
+    case AUDIO_BACKEND_TYPE_WEB_AUDIO: free_webaudio_playback_config_contents(&in->cfg.webaudio); break;
+    #endif
     case AUDIO_BACKEND_TYPE_GENERATOR: break;
     case AUDIO_BACKEND_TYPE_INVALID: break;
   }
@@ -4907,7 +5023,7 @@ int parse_playback_device_config(const cJSON *obj, const char *ctx, playback_dev
   }
   const char *type_str = item->valuestring;
   if (strcmp(type_str, "Stdin") == 0 || strcmp(type_str, "WavFile") == 0 || strcmp(type_str, "RawFile") == 0) {
-    config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'File', 'Wasapi', 'Asio'", type_str);
+    config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'File', 'Wasapi', 'Asio', 'WebAudio'", type_str);
     return -1;
   }
   if (parse_json_bool_strict(obj, "is_wav", ctx ? ctx : "playback_device_config", &out->is_wav, &out->has_is_wav, err) != 0) return -1;
@@ -4968,11 +5084,17 @@ int parse_playback_device_config(const cJSON *obj, const char *ctx, playback_dev
     return parse_asio_playback_config(obj, "Asio playback_device_config", &out->cfg.asio, err);
   }
   #endif
+  #if defined(ENABLE_WEBAUDIO)
+  if (strcmp(type_str, "WebAudio") == 0) {
+    out->type = AUDIO_BACKEND_TYPE_WEB_AUDIO;
+    return parse_webaudio_playback_config(obj, "WebAudio playback_device_config", &out->cfg.webaudio, err);
+  }
+  #endif
   if (strcmp(type_str, "File") == 0) {
     out->type = AUDIO_BACKEND_TYPE_FILE;
     return parse_raw_file_playback_config(obj, "File playback_device_config", &out->cfg.raw_file, err);
   }
-  config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'File', 'Wasapi', 'Asio'", type_str);
+  config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'File', 'Wasapi', 'Asio', 'WebAudio'", type_str);
   return -1;
 }
 
@@ -5016,6 +5138,12 @@ cJSON *serialize_playback_device_config(const playback_device_config_t *in) {
     case AUDIO_BACKEND_TYPE_ASIO:
       obj = serialize_asio_playback_config(&in->cfg.asio);
       if (obj) cJSON_AddStringToObject(obj, "type", "Asio");
+      break;
+    #endif
+    #if defined(ENABLE_WEBAUDIO)
+    case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+      obj = serialize_webaudio_playback_config(&in->cfg.webaudio);
+      if (obj) cJSON_AddStringToObject(obj, "type", "WebAudio");
       break;
     #endif
     case AUDIO_BACKEND_TYPE_GENERATOR: break;
@@ -5067,6 +5195,10 @@ bool playback_device_config_equal(const playback_device_config_t *a, const playb
     #if defined(ENABLE_ASIO)
     case AUDIO_BACKEND_TYPE_ASIO:
       return asio_playback_config_equal(&a->cfg.asio, &b->cfg.asio);
+    #endif
+    #if defined(ENABLE_WEBAUDIO)
+    case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+      return webaudio_playback_config_equal(&a->cfg.webaudio, &b->cfg.webaudio);
     #endif
     case AUDIO_BACKEND_TYPE_GENERATOR: return false;
     case AUDIO_BACKEND_TYPE_INVALID: return false;

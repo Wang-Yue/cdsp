@@ -33,6 +33,9 @@
 #include "backend/wasapi_capture.h"
 #include "backend/wasapi_playback.h"
 #endif
+#if defined(ENABLE_WEBAUDIO)
+#include "backend/webaudio_backend.h"
+#endif
 
 #include "audio/audio_chunk.h"
 #include "audio/sample_format.h"
@@ -357,6 +360,10 @@ capture_device_config_get_channels(const capture_device_config_t *config) {
     return config->cfg.stdin_in.channels;
   case AUDIO_BACKEND_TYPE_GENERATOR:
     return config->cfg.generator.channels;
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+    return config->cfg.webaudio.channels;
+#endif
 #if defined(ENABLE_WASAPI)
   case AUDIO_BACKEND_TYPE_WASAPI:
     return config->cfg.wasapi.channels;
@@ -405,6 +412,11 @@ void capture_device_config_set_channels(capture_device_config_t *config,
   case AUDIO_BACKEND_TYPE_GENERATOR:
     config->cfg.generator.channels = channels;
     break;
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+    config->cfg.webaudio.channels = channels;
+    break;
+#endif
 #if defined(ENABLE_WASAPI)
   case AUDIO_BACKEND_TYPE_WASAPI:
     config->cfg.wasapi.channels = channels;
@@ -443,6 +455,10 @@ playback_device_config_get_channels(const playback_device_config_t *config) {
     return config->cfg.stdout_out.channels;
   case AUDIO_BACKEND_TYPE_GENERATOR:
     return 0;
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+    return config->cfg.webaudio.channels;
+#endif
 #if defined(ENABLE_WASAPI)
   case AUDIO_BACKEND_TYPE_WASAPI:
     return config->cfg.wasapi.channels;
@@ -488,6 +504,10 @@ capture_device_config_get_device(const capture_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_GENERATOR:
   case AUDIO_BACKEND_TYPE_INVALID:
     return "";
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+    return "WebAudio Tab Capture";
+#endif
   }
   CDSP_UNREACHABLE();
   return "";
@@ -523,6 +543,10 @@ playback_device_config_get_device(const playback_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_GENERATOR:
   case AUDIO_BACKEND_TYPE_INVALID:
     return "";
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+    return "WebAudio Destination";
+#endif
   }
   CDSP_UNREACHABLE();
   return "";
@@ -570,6 +594,10 @@ capture_device_config_get_binary_format(const capture_device_config_t *config) {
     return config->cfg.raw_file.format;
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return config->cfg.stdin_in.format;
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+    return BINARY_SAMPLE_FORMAT_F32_LE;
+#endif
   case AUDIO_BACKEND_TYPE_GENERATOR:
   case AUDIO_BACKEND_TYPE_INVALID:
     return BINARY_SAMPLE_FORMAT_INVALID;
@@ -617,6 +645,10 @@ binary_sample_format_t playback_device_config_get_binary_format(
     return config->cfg.raw_file.format;
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return config->cfg.stdout_out.format;
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+    return BINARY_SAMPLE_FORMAT_F32_LE;
+#endif
   case AUDIO_BACKEND_TYPE_GENERATOR:
   case AUDIO_BACKEND_TYPE_INVALID:
     return BINARY_SAMPLE_FORMAT_INVALID;
@@ -648,6 +680,9 @@ capture_device_config_get_format(const capture_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_FILE:
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
   case AUDIO_BACKEND_TYPE_GENERATOR:
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+#endif
     return COREAUDIO_SAMPLE_FORMAT_INVALID;
   }
   CDSP_UNREACHABLE();
@@ -676,6 +711,9 @@ playback_device_config_get_format(const playback_device_config_t *config) {
   case AUDIO_BACKEND_TYPE_FILE:
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
   case AUDIO_BACKEND_TYPE_GENERATOR:
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+#endif
     return COREAUDIO_SAMPLE_FORMAT_INVALID;
   }
   CDSP_UNREACHABLE();
@@ -773,6 +811,9 @@ bool playback_device_config_get_exclusive(
   case AUDIO_BACKEND_TYPE_FILE:
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
   case AUDIO_BACKEND_TYPE_GENERATOR:
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+#endif
     return false;
   }
   CDSP_UNREACHABLE();
@@ -816,6 +857,10 @@ get_capture_vtable(audio_backend_type_t type) {
   case AUDIO_BACKEND_TYPE_FILE:
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return &g_file_capture_vtable;
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+    return &g_webaudio_capture_vtable;
+#endif
   case AUDIO_BACKEND_TYPE_INVALID:
     return NULL;
   }
@@ -849,6 +894,10 @@ get_playback_vtable(audio_backend_type_t type) {
   case AUDIO_BACKEND_TYPE_FILE:
   case AUDIO_BACKEND_TYPE_STDIN_OUT:
     return &g_file_playback_vtable;
+#if defined(ENABLE_WEBAUDIO)
+  case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+    return &g_webaudio_playback_vtable;
+#endif
   case AUDIO_BACKEND_TYPE_GENERATOR:
   case AUDIO_BACKEND_TYPE_INVALID:
     return NULL;
@@ -1202,6 +1251,24 @@ int audio_backend_validate_devices(const devices_config_t *devices,
   }
 #endif
 
+#if defined(ENABLE_WEBAUDIO)
+  if (devices->capture.type == AUDIO_BACKEND_TYPE_WEB_AUDIO) {
+    if (devices->capture.cfg.webaudio.channels == 0) {
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "WebAudio capture channels must be greater than 0");
+      return -1;
+    }
+  }
+
+  if (devices->playback.type == AUDIO_BACKEND_TYPE_WEB_AUDIO) {
+    if (devices->playback.cfg.webaudio.channels == 0) {
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "WebAudio playback channels must be greater than 0");
+      return -1;
+    }
+  }
+#endif
+
   return 0;
 }
 
@@ -1332,6 +1399,11 @@ int audio_backend_apply_device_overrides(
     case AUDIO_BACKEND_TYPE_GENERATOR:
       devices->capture.cfg.generator.channels = overrides.channels;
       break;
+#if defined(ENABLE_WEBAUDIO)
+    case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+      devices->capture.cfg.webaudio.channels = overrides.channels;
+      break;
+#endif
 #if defined(ENABLE_ALSA)
     case AUDIO_BACKEND_TYPE_ALSA:
       devices->capture.cfg.alsa.channels = overrides.channels;
@@ -1377,6 +1449,13 @@ int audio_backend_apply_device_overrides(
       logger_debug(&g_logger, "Apply override for capture sample format: %s",
                    file_sample_format_to_string(overrides.sample_format));
       break;
+#if defined(ENABLE_WEBAUDIO)
+    case AUDIO_BACKEND_TYPE_WEB_AUDIO:
+      logger_error(
+          &g_logger,
+          "Not possible to override capture format for WebAudio, ignoring");
+      break;
+#endif
 #if defined(ENABLE_ALSA)
     case AUDIO_BACKEND_TYPE_ALSA: {
       alsa_sample_format_t alsa_fmt =

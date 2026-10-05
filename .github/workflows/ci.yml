@@ -549,11 +549,52 @@ jobs:
           if-no-files-found: error
 
   # ============================================================================
+  # WebAssembly & Chrome Extension (Emscripten)
+  # ============================================================================
+  wasm-test-and-package:
+    name: WebAssembly Test & Extension Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Emscripten SDK
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.64
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configure CMake with Emscripten
+        run: |
+          emcmake cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            -DENABLE_WEBAUDIO=ON \
+            -DENABLE_NATIVE_ARCH=OFF
+
+      - name: Build WebAssembly Core, Tests & Extension Package
+        run: cmake --build build -j$(nproc)
+
+      - name: Run WebAssembly Tests
+        run: node build/test_wasm.js
+
+      - name: Upload Chrome Extension Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdsp_extension
+          path: build/cdsp_extension.zip
+          if-no-files-found: error
+
+  # ============================================================================
   # Release Publishing
   # ============================================================================
   release:
     name: Publish Release
-    needs: [macos-test, macos-studio, linux-test, linux-studio, windows-test, windows-studio, linux-sanitizers]
+    needs: [macos-test, macos-studio, linux-test, linux-studio, windows-test, windows-studio, linux-sanitizers, wasm-test-and-package]
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -571,7 +612,7 @@ jobs:
       - name: Compute SHA256 checksums
         run: |
           cd release-assets
-          sha256sum CDSPStudio* > SHA256SUMS.txt
+          sha256sum CDSPStudio* cdsp_extension.zip > SHA256SUMS.txt
           ls -la
 
       - name: Update weekly tag
@@ -594,6 +635,7 @@ jobs:
             - **macOS (Apple Silicon)**: [`CDSPStudio-macOS-arm64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-macOS-arm64.zip)
             - **Linux (x86_64)**: [`CDSPStudio-Linux-x86_64.AppImage`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-Linux-x86_64.AppImage)
             - **Windows (x86_64)**: [`CDSPStudio-Windows-x86_64.exe`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-Windows-x86_64.exe)
+            - **Chrome Extension (WebAssembly)**: [`cdsp_extension.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/cdsp_extension.zip)
 
             Verify integrity with `SHA256SUMS.txt`.
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
