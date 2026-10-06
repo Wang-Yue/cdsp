@@ -166,14 +166,16 @@ window.cdspBridge = {
     return globalThis.cdspAudio || null;
   },
 
+  /** Resumes the capture and playback contexts (each has its own clock). */
   resumeAudio: function() {
-    const audio = this.audio();
-    if (audio && audio.context.state === 'suspended') {
-      audio.context.resume().catch(() => {});
-    }
+    [this.audio(), globalThis.cdspPlaybackAudio].forEach((audio) => {
+      if (audio && audio.context.state === 'suspended') {
+        audio.context.resume().catch(() => {});
+      }
+    });
   },
 
-  /** The device (re)started: at startup, or recreated at a new sample rate. */
+  /** A device context (re)started: at startup, or recreated in a new format. */
   onAudioReady: function() {
     this.resumeAudio();
     if (this.stream) {
@@ -256,9 +258,25 @@ window.cdspBridge = {
     this.sendToBackground({ type: 'CAPTURE_STATE', tabId: target.tabId, active: true }).catch(() => {});
     console.info('[CDSP] Capturing tab', target.tabId);
     this.showCloseTip().catch(() => {});
+    // Report the captured stream's rate and channel count to the WebAudio device, which runs its
+    // capture context at that rate and reports a format change if either differs from the running
+    // one. They can change mid-stream, so keep checking.
+    this.reportInputFormat();
+    clearInterval(this.channelPoll);
+    this.channelPoll = setInterval(() => this.reportInputFormat(), 2000);
+  },
+
+  reportInputFormat: function() {
+    const track = this.stream && this.stream.getAudioTracks()[0];
+    const device = globalThis.cdspAudioDevice;
+    if (!track || !device) return;
+    const settings = track.getSettings();
+    device.setInputFormat(settings.sampleRate || 0, settings.channelCount || 2);
   },
 
   stopCapture: function() {
+    clearInterval(this.channelPoll);
+    this.channelPoll = null;
     if (this.source) {
       this.source.disconnect();
       this.source = null;

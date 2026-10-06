@@ -274,9 +274,10 @@ TEST(wasm_webaudio_device_listing) {
   memset(&derr, 0, sizeof(derr));
   ASSERT_TRUE(cdsp_get_device_capabilities("WebAudio", "default", false, &desc, &derr));
   ASSERT_EQ(desc->capability_sets_count, 1);
-  // No browser device under Node: playback offers the stereo default, 1..2.
-  ASSERT_EQ(desc->capability_sets[0].capabilities_count, 2);
-  ASSERT_EQ(desc->capability_sets[0].capabilities[1].channels, 2);
+  // No browser device under Node: playback reports only the default format.
+  ASSERT_EQ(desc->capability_sets[0].capabilities_count, 1);
+  ASSERT_EQ(desc->capability_sets[0].capabilities[0].channels, 2);
+  ASSERT_EQ(desc->capability_sets[0].capabilities[0].samplerates_count, 1);
   cdsp_free_device_capabilities(desc);
 }
 

@@ -70,65 +70,48 @@ void webaudio_device_process(const float *const *inputs, size_t input_channels,
  * webaudio_device_process().
  *
  * Called by dsp_engine_create(). Idempotent; a no-op off the browser main
- * thread or where Web Audio is unavailable (e.g. Node). The device starts at
- * 48 kHz stereo and follows the configured format: when a backend opens at
- * another rate or playback channel count, the AudioContext is recreated with
- * it (an AudioContext's rate and a worklet node's output count are fixed for
- * their lifetime); the capture channel count only changes how the node mixes
- * its input. Each time the device is ready,
- * `globalThis.cdspAudio = {context, node}` is set and a `cdsp-audio-ready`
- * event is dispatched; the page connects its sources to `node`. The
- * executable must be linked with -sAUDIO_WORKLET=1 -sWASM_WORKERS=1.
+ * thread or where Web Audio is unavailable (e.g. Node). The device runs in its
+ * native format only, with separate AudioContexts (and clocks) per direction:
+ * playback at the browser's default rate (the output hardware's, so the
+ * browser does not resample) rendering the hardware's channel count, and
+ * capture, rendering to no output device, at the captured stream's rate and
+ * channel count. When the output device or the captured stream changes format,
+ * the device follows it and reports a format change
+ * (webaudio_device_set_capture_format() / _playback_format()). Each time the
+ * capture side is ready, `globalThis.cdspAudio = {context, node}` is set to the
+ * capture context and node and a `cdsp-audio-ready` event is dispatched; the
+ * page connects its sources to `node` and reports the captured stream's format
+ * with `globalThis.cdspAudioDevice.setInputFormat(rate, channels)`. The executable must be
+ * linked with -sAUDIO_WORKLET=1 -sWASM_WORKERS=1.
  */
 void webaudio_device_start(void);
 #endif
 
-/** Lowest and highest AudioContext rates Chrome accepts. */
-#define WEBAUDIO_MIN_SAMPLE_RATE 3000
-#define WEBAUDIO_MAX_SAMPLE_RATE 768000
+/** Format reported while the device's (or captured stream's) is unknown. */
+#define WEBAUDIO_DEFAULT_SAMPLE_RATE 48000
+#define WEBAUDIO_DEFAULT_CHANNELS 2
 
 /**
- * @brief Publishes the device sample rate (the AudioContext rate).
+ * @brief Publishes the capture device's native format: the captured stream's
+ * rate (its AudioContext's) and channel count (0 = unknown).
  *
- * Backends at any other rate stay silent (their ring buffers are neither fed
- * nor drained), and the rate is reported by webaudio_describe(). 0 (the
- * default) means unknown: backends at any rate are served.
- *
- * @param sample_rate Device sample rate in Hz, or 0.
+ * Capture and playback run on separate AudioContexts with independent clocks,
+ * so each direction has its own format, and the engine's resampler and rate
+ * adjust can bridge them like any two devices. webaudio_describe() reports
+ * exactly this format, and capture backends in any other format are refused.
+ * When a known value changes, the attached backends get a pending format
+ * change, so the engine stops with a CAPTURE/PLAYBACK FORMAT_CHANGE reason
+ * (carrying the new rate) and the host restarts it in the new format, as with
+ * the other backends. Backends left in an old rate are not served meanwhile.
  */
-void webaudio_device_set_sample_rate(int sample_rate);
+void webaudio_device_set_capture_format(int sample_rate, size_t channels);
 
 /**
- * @brief Publishes the device's output channel count and the most output
- * channels the hardware accepts (AudioDestinationNode.maxChannelCount).
- *
- * A playback backend is only served while the device renders exactly its
- * channel count; webaudio_describe() reports @p max_channels, and playback
- * backends with more channels than that are refused. 0 means unknown.
- *
- * @param channels Current device output channel count, or 0.
- * @param max_channels Most output channels the hardware accepts, or 0.
+ * @brief Publishes the playback device's native format: the output
+ * AudioContext's rate and channel count (0 = unknown). As
+ * webaudio_device_set_capture_format(), for playback backends.
  */
-void webaudio_device_set_output_channels(size_t channels, size_t max_channels);
-
-/**
- * @brief Callback invoked (on the engine thread, from a backend's open()) to
- * ask the device for a format: @p sample_rate, plus the capture backend's
- * channel count (@p input_channels, from capture) or the playback backend's
- * (@p output_channels, from playback). A channel count of 0 leaves that side
- * unchanged. Must not block.
- */
-typedef void (*webaudio_format_request_hook_t)(int sample_rate,
-                                               size_t input_channels,
-                                               size_t output_channels);
-
-/**
- * @brief Installs the format-request hook (NULL to remove). Without one, the
- * device is fixed: backends refuse to open at a rate or (playback) channel
- * count other than the published one. With one, they request the format and
- * open, staying silent until the device runs at their rate and channel count.
- */
-void webaudio_device_set_format_request_hook(webaudio_format_request_hook_t hook);
+void webaudio_device_set_playback_format(int sample_rate, size_t channels);
 
 /**
  * @brief Callback invoked (on the engine thread) when a capture backend
@@ -156,9 +139,10 @@ int webaudio_get_available_devices(bool input, audio_device_t *out_devices,
 /**
  * @brief Describes the capabilities of the WebAudio device.
  *
- * Lists one capability per supported channel count: capture 1 to
- * WEBAUDIO_MAX_CHANNELS, playback 1 to the hardware maximum (only the current
- * count when the device cannot switch).
+ * Reports only the active stream's format: one capability with the device's
+ * native rate and the captured stream's (capture) or output's (playback)
+ * channel count; WEBAUDIO_DEFAULT_SAMPLE_RATE / WEBAUDIO_DEFAULT_CHANNELS
+ * while unknown.
  *
  * @param device Device name: "default", or NULL/empty for it.
  * @param is_capture True for the capture side.

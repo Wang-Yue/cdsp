@@ -1198,29 +1198,6 @@ int audio_backend_validate_devices(const devices_config_t *devices,
   }
 #endif
 
-#if defined(ENABLE_WEBAUDIO)
-  if (devices->capture.type == AUDIO_BACKEND_TYPE_WEB_AUDIO &&
-      devices->playback.type == AUDIO_BACKEND_TYPE_WEB_AUDIO) {
-    // Both run on the single WebAudio device (one AudioContext), so they share
-    // its clock and sample rate. The browser already resamples tab capture and
-    // the output to that rate.
-    if (devices->has_resampler) {
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "Resampling is not supported with WebAudio capture and "
-                       "playback. Both share the same device clock and sample "
-                       "rate");
-      return -1;
-    }
-    if (devices->enable_rate_adjust) {
-      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "Rate adjust is not supported with WebAudio capture and "
-                       "playback. Both share the same device clock and sample "
-                       "rate");
-      return -1;
-    }
-  }
-#endif
-
   // Target level limit validation with backend-specific buffer calculation
   if (devices->has_target_level) {
     if (devices->target_level < 0) {

@@ -92,7 +92,8 @@ TEST(WebAudioPlaybackBackend_Streaming) {
 TEST(WebAudioBackend_RejectsRateOtherThanDevice) {
   backend_error_t err;
   backend_error_init(&err, BACKEND_ERROR_NONE, "");
-  webaudio_device_set_sample_rate(44100);
+  webaudio_device_set_capture_format(44100, 0);
+  webaudio_device_set_playback_format(44100, 2);
 
   playback_device_config_t play_cfg = {0};
   play_cfg.type = AUDIO_BACKEND_TYPE_WEB_AUDIO;
@@ -103,134 +104,74 @@ TEST(WebAudioBackend_RejectsRateOtherThanDevice) {
   ASSERT_FALSE(playback_backend_open(play, &err));
   playback_backend_free(play);
 
-  webaudio_device_set_sample_rate(0);
+  webaudio_device_set_capture_format(0, 0);
+  webaudio_device_set_playback_format(0, 0);
 }
 
-static int g_requested_rate;
-static size_t g_requested_input_channels;
-static size_t g_requested_output_channels;
-static void record_format_request(int sample_rate, size_t input_channels,
-                                  size_t output_channels) {
-  g_requested_rate = sample_rate;
-  g_requested_input_channels = input_channels;
-  g_requested_output_channels = output_channels;
-}
-
-TEST(WebAudioBackend_RequestsRateSwitchAndWaitsForIt) {
-  backend_error_t err;
-  backend_error_init(&err, BACKEND_ERROR_NONE, "");
-  webaudio_device_set_sample_rate(48000);
-  webaudio_device_set_format_request_hook(record_format_request);
-  g_requested_rate = 0;
-
-  // A switchable device publishes every standard rate; a fixed one only its own.
+TEST(WebAudioBackend_DescribesOnlyNativeFormat) {
   device_error_t derr;
-  audio_device_descriptor_t *desc = webaudio_describe("default", false, &derr);
+  // Unknown format: the defaults.
+  webaudio_device_set_capture_format(0, 0);
+  webaudio_device_set_playback_format(0, 0);
+  audio_device_descriptor_t *desc = webaudio_describe("", true, &derr);
   ASSERT_TRUE(desc != NULL);
+  ASSERT_STR_EQ(desc->name, "default");
+  ASSERT_EQ(desc->capability_sets[0].capabilities_count, 1);
   channel_capability_t *caps = &desc->capability_sets[0].capabilities[0];
-  ASSERT_EQ(caps->samplerates_count, 15);
-  ASSERT_EQ(caps->samplerates[5].samplerate, 44100);
-  ASSERT_EQ(caps->samplerates[8].samplerate, 96000);
+  ASSERT_EQ(caps->channels, WEBAUDIO_DEFAULT_CHANNELS);
+  ASSERT_EQ(caps->samplerates_count, 1);
+  ASSERT_EQ(caps->samplerates[0].samplerate, WEBAUDIO_DEFAULT_SAMPLE_RATE);
   free_audio_device_descriptor(desc);
-  webaudio_device_set_format_request_hook(NULL);
+  ASSERT_TRUE(webaudio_describe("other", true, &derr) == NULL);
+
+  webaudio_device_set_capture_format(44100, 1);
+  webaudio_device_set_playback_format(44100, 6);
   desc = webaudio_describe("default", false, &derr);
   ASSERT_TRUE(desc != NULL);
+  ASSERT_EQ(desc->capability_sets[0].capabilities_count, 1);
   caps = &desc->capability_sets[0].capabilities[0];
+  ASSERT_EQ(caps->channels, 6);
   ASSERT_EQ(caps->samplerates_count, 1);
-  ASSERT_EQ(caps->samplerates[0].samplerate, 48000);
+  ASSERT_EQ(caps->samplerates[0].samplerate, 44100);
   free_audio_device_descriptor(desc);
-  webaudio_device_set_format_request_hook(record_format_request);
+  desc = webaudio_describe("default", true, &derr);
+  ASSERT_TRUE(desc != NULL);
+  ASSERT_EQ(desc->capability_sets[0].capabilities[0].channels, 1);
+  free_audio_device_descriptor(desc);
+
+  webaudio_device_set_capture_format(0, 0);
+  webaudio_device_set_playback_format(0, 0);
+}
+
+TEST(WebAudioBackend_RefusesOtherChannelCounts) {
+  backend_error_t err;
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+  webaudio_device_set_capture_format(48000, 2);
+  webaudio_device_set_playback_format(48000, 6);
 
   playback_device_config_t play_cfg = {0};
   play_cfg.type = AUDIO_BACKEND_TYPE_WEB_AUDIO;
   play_cfg.cfg.webaudio.channels = 2;
   playback_backend_t *play =
-      create_playback_backend(&play_cfg, 44100, 128, false, NULL, &err);
+      create_playback_backend(&play_cfg, 48000, 128, false, NULL, &err);
   ASSERT_TRUE(play != NULL);
-  ASSERT_TRUE(playback_backend_open(play, &err));
-  ASSERT_EQ(g_requested_rate, 44100);
+  ASSERT_FALSE(playback_backend_open(play, &err));
+  playback_backend_free(play);
 
-  audio_chunk_t *chunk = audio_chunk_create(128, 2);
-  ASSERT_TRUE(chunk != NULL);
-  for (int i = 0; i < 128; i++) {
-    audio_chunk_get_channel(chunk, 0)[i] = 0.25;
-    audio_chunk_get_channel(chunk, 1)[i] = 0.25;
-  }
-  audio_chunk_set_valid_frames(chunk, 128);
-  ASSERT_TRUE(playback_backend_write(play, chunk, &err));
-
-  // Device still at 48 kHz: the backend is not drained, output is silent.
-  float out0[128], out1[128];
-  float *outs[2] = {out0, out1};
-  out0[0] = 1.0f;
-  webaudio_device_process(NULL, 0, outs, 2, 128);
-  ASSERT_NEAR(out0[0], 0.0f, 0.0f);
-
-  // Device switched: the queued audio plays.
-  webaudio_device_set_sample_rate(44100);
-  webaudio_device_process(NULL, 0, outs, 2, 128);
-  ASSERT_NEAR(out0[0], 0.25f, 1e-6f);
-
-  // Capture must share the playback rate, and out-of-range rates are refused.
   capture_device_config_t cap_cfg = {0};
   cap_cfg.type = AUDIO_BACKEND_TYPE_WEB_AUDIO;
-  cap_cfg.cfg.webaudio.channels = 2;
+  cap_cfg.cfg.webaudio.channels = 4;
   capture_backend_t *cap =
-      create_capture_backend(&cap_cfg, 96000, 128, false, NULL, &err);
+      create_capture_backend(&cap_cfg, 48000, 128, false, NULL, &err);
   ASSERT_TRUE(cap != NULL);
   ASSERT_FALSE(capture_backend_open(cap, &err));
   capture_backend_free(cap);
 
-  playback_backend_close(play);
-  playback_backend_free(play);
-  playback_backend_t *too_fast =
-      create_playback_backend(&play_cfg, 1000000, 128, false, NULL, &err);
-  ASSERT_TRUE(too_fast != NULL);
-  ASSERT_FALSE(playback_backend_open(too_fast, &err));
-  playback_backend_free(too_fast);
-
-  audio_chunk_free(chunk);
-  webaudio_device_set_format_request_hook(NULL);
-  webaudio_device_set_sample_rate(0);
-}
-
-TEST(WebAudioBackend_FollowsPlaybackAndCaptureChannels) {
-  backend_error_t err;
-  backend_error_init(&err, BACKEND_ERROR_NONE, "");
-  webaudio_device_set_sample_rate(48000);
-  webaudio_device_set_output_channels(2, 8);
-  webaudio_device_set_format_request_hook(record_format_request);
-
-  // Playback offers 1..8 channels (the hardware maximum), capture 1..32.
-  device_error_t derr;
-  audio_device_descriptor_t *desc = webaudio_describe("default", false, &derr);
-  ASSERT_TRUE(desc != NULL);
-  ASSERT_EQ(desc->capability_sets[0].capabilities_count, 8);
-  ASSERT_EQ(desc->capability_sets[0].capabilities[0].channels, 1);
-  ASSERT_EQ(desc->capability_sets[0].capabilities[7].channels, 8);
-  ASSERT_EQ(desc->capability_sets[0].capabilities[7].samplerates_count, 15);
-  free_audio_device_descriptor(desc);
-  // No device name selects the one "default" device.
-  desc = webaudio_describe("", true, &derr);
-  ASSERT_TRUE(desc != NULL);
-  ASSERT_STR_EQ(desc->name, "default");
-  ASSERT_EQ(desc->capability_sets[0].capabilities_count,
-            WEBAUDIO_MAX_CHANNELS);
-  free_audio_device_descriptor(desc);
-  ASSERT_TRUE(webaudio_describe("other", true, &derr) == NULL);
-
-  // 6-channel playback asks for 6 outputs and waits until the device has them.
-  playback_device_config_t play_cfg = {0};
-  play_cfg.type = AUDIO_BACKEND_TYPE_WEB_AUDIO;
+  // 6-channel playback in the native format renders all six outputs.
   play_cfg.cfg.webaudio.channels = 6;
-  playback_backend_t *play =
-      create_playback_backend(&play_cfg, 48000, 128, false, NULL, &err);
+  play = create_playback_backend(&play_cfg, 48000, 128, false, NULL, &err);
   ASSERT_TRUE(play != NULL);
   ASSERT_TRUE(playback_backend_open(play, &err));
-  ASSERT_EQ(g_requested_rate, 48000);
-  ASSERT_EQ(g_requested_input_channels, 0);
-  ASSERT_EQ(g_requested_output_channels, 6);
-
   audio_chunk_t *chunk = audio_chunk_create(128, 6);
   ASSERT_TRUE(chunk != NULL);
   for (size_t c = 0; c < 6; c++) {
@@ -239,16 +180,10 @@ TEST(WebAudioBackend_FollowsPlaybackAndCaptureChannels) {
   }
   audio_chunk_set_valid_frames(chunk, 128);
   ASSERT_TRUE(playback_backend_write(play, chunk, &err));
-
   float out[6][128];
   float *outs[6];
-  for (size_t c = 0; c < 6; c++) {
+  for (size_t c = 0; c < 6; c++)
     outs[c] = out[c];
-    out[c][0] = 1.0f;
-  }
-  webaudio_device_process(NULL, 0, outs, 2, 128);
-  ASSERT_NEAR(out[0][0], 0.0f, 0.0f);
-  ASSERT_NEAR(out[1][0], 0.0f, 0.0f);
   webaudio_device_process(NULL, 0, outs, 6, 128);
   for (size_t c = 0; c < 6; c++)
     ASSERT_NEAR(out[c][0], 0.1f * (float)(c + 1), 1e-6f);
@@ -256,41 +191,60 @@ TEST(WebAudioBackend_FollowsPlaybackAndCaptureChannels) {
   playback_backend_free(play);
   audio_chunk_free(chunk);
 
-  // More channels than the hardware has are refused.
-  play_cfg.cfg.webaudio.channels = 10;
-  play = create_playback_backend(&play_cfg, 48000, 128, false, NULL, &err);
-  ASSERT_TRUE(play != NULL);
-  ASSERT_FALSE(playback_backend_open(play, &err));
-  playback_backend_free(play);
+  webaudio_device_set_capture_format(0, 0);
+  webaudio_device_set_playback_format(0, 0);
+}
 
-  // Capture asks for its channel count; missing inputs read as silence.
+TEST(WebAudioBackend_FormatChangeStopsBothSides) {
+  backend_error_t err;
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+  webaudio_device_set_capture_format(48000, 0);
+  webaudio_device_set_playback_format(48000, 2);
+
   capture_device_config_t cap_cfg = {0};
   cap_cfg.type = AUDIO_BACKEND_TYPE_WEB_AUDIO;
-  cap_cfg.cfg.webaudio.channels = 4;
+  cap_cfg.cfg.webaudio.channels = 2;
   capture_backend_t *cap =
       create_capture_backend(&cap_cfg, 48000, 128, false, NULL, &err);
   ASSERT_TRUE(cap != NULL);
   ASSERT_TRUE(capture_backend_open(cap, &err));
-  ASSERT_EQ(g_requested_input_channels, 4);
-  ASSERT_EQ(g_requested_output_channels, 0);
+  playback_device_config_t play_cfg = {0};
+  play_cfg.type = AUDIO_BACKEND_TYPE_WEB_AUDIO;
+  play_cfg.cfg.webaudio.channels = 2;
+  playback_backend_t *play =
+      create_playback_backend(&play_cfg, 48000, 128, false, NULL, &err);
+  ASSERT_TRUE(play != NULL);
+  ASSERT_TRUE(playback_backend_open(play, &err));
+
+  double rate = 0.0;
+  // Learning the captured stream's count (unknown -> 2) is not a change.
+  webaudio_device_set_capture_format(48000, 2);
+  webaudio_device_set_playback_format(48000, 2);
+  ASSERT_FALSE(capture_backend_get_pending_rate_change(cap, &rate));
+  ASSERT_FALSE(playback_backend_get_pending_rate_change(play, &rate));
+
+  // A different captured channel count flags both sides.
+  webaudio_device_set_capture_format(48000, 1);
+  webaudio_device_set_playback_format(48000, 2);
+  ASSERT_TRUE(capture_backend_get_pending_rate_change(cap, &rate));
+  ASSERT_NEAR(rate, 48000.0, 0.0);
+  ASSERT_TRUE(playback_backend_get_pending_rate_change(play, &rate));
+  ASSERT_FALSE(playback_backend_get_pending_rate_change(play, &rate));
+
+  // A new output rate reports the device's new rate.
+  webaudio_device_set_capture_format(44100, 1);
+  webaudio_device_set_playback_format(44100, 2);
+  ASSERT_TRUE(capture_backend_get_pending_rate_change(cap, &rate));
+  ASSERT_NEAR(rate, 44100.0, 0.0);
+  ASSERT_TRUE(playback_backend_get_pending_rate_change(play, &rate));
+  ASSERT_NEAR(rate, 44100.0, 0.0);
+
   capture_backend_close(cap);
   capture_backend_free(cap);
-
-  // A fixed device only takes the channel count it renders.
-  webaudio_device_set_format_request_hook(NULL);
-  desc = webaudio_describe("default", false, &derr);
-  ASSERT_TRUE(desc != NULL);
-  ASSERT_EQ(desc->capability_sets[0].capabilities_count, 1);
-  ASSERT_EQ(desc->capability_sets[0].capabilities[0].channels, 2);
-  free_audio_device_descriptor(desc);
-  play_cfg.cfg.webaudio.channels = 6;
-  play = create_playback_backend(&play_cfg, 48000, 128, false, NULL, &err);
-  ASSERT_TRUE(play != NULL);
-  ASSERT_FALSE(playback_backend_open(play, &err));
+  playback_backend_close(play);
   playback_backend_free(play);
-
-  webaudio_device_set_output_channels(0, 0);
-  webaudio_device_set_sample_rate(0);
+  webaudio_device_set_capture_format(0, 0);
+  webaudio_device_set_playback_format(0, 0);
 }
 
 /** Parses a WebAudio-to-WebAudio config with extra "devices" members. */
@@ -308,20 +262,75 @@ static int parse_webaudio_config(const char *extra, config_error_t *err) {
   return res;
 }
 
-TEST(WebAudioConfig_SharedDeviceRejectsResamplerAndRateAdjust) {
+TEST(WebAudioConfig_AllowsResamplerAndRateAdjust) {
+  // Capture and playback run on separate contexts with independent clocks.
   config_error_t err;
   ASSERT_EQ(0, parse_webaudio_config("", &err));
+  ASSERT_EQ(0, parse_webaudio_config(
+                   "\"resampler\": {\"type\": \"AsyncSinc\", "
+                   "\"profile\": \"Balanced\"}, "
+                   "\"capture_samplerate\": 44100, "
+                   "\"enable_rate_adjust\": true, ",
+                   &err));
+}
 
-  ASSERT_TRUE(parse_webaudio_config(
-                  "\"resampler\": {\"type\": \"Synchronous\"}, "
-                  "\"capture_samplerate\": 44100, ",
-                  &err) != 0);
-  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
-  ASSERT_TRUE(strstr(err.message, "Resampling is not supported") != NULL);
+TEST(WebAudioBackend_DirectionsHaveIndependentRates) {
+  backend_error_t err;
+  backend_error_init(&err, BACKEND_ERROR_NONE, "");
+  webaudio_device_set_capture_format(44100, 2);
+  webaudio_device_set_playback_format(48000, 2);
 
-  ASSERT_TRUE(parse_webaudio_config("\"enable_rate_adjust\": true, ", &err) != 0);
-  ASSERT_EQ(CONFIG_ERR_INVALID_DEVICE, err.type);
-  ASSERT_TRUE(strstr(err.message, "Rate adjust is not supported") != NULL);
+  capture_device_config_t cap_cfg = {0};
+  cap_cfg.type = AUDIO_BACKEND_TYPE_WEB_AUDIO;
+  cap_cfg.cfg.webaudio.channels = 2;
+  capture_backend_t *cap =
+      create_capture_backend(&cap_cfg, 44100, 128, false, NULL, &err);
+  ASSERT_TRUE(cap != NULL);
+  ASSERT_TRUE(capture_backend_open(cap, &err));
+  playback_device_config_t play_cfg = {0};
+  play_cfg.type = AUDIO_BACKEND_TYPE_WEB_AUDIO;
+  play_cfg.cfg.webaudio.channels = 2;
+  playback_backend_t *play =
+      create_playback_backend(&play_cfg, 48000, 128, false, NULL, &err);
+  ASSERT_TRUE(play != NULL);
+  ASSERT_TRUE(playback_backend_open(play, &err));
+
+  // A capture-only render call does not touch playback, and vice versa.
+  float in0[128], in1[128];
+  for (int i = 0; i < 128; i++) {
+    in0[i] = 0.5f;
+    in1[i] = -0.5f;
+  }
+  const float *ins[2] = {in0, in1};
+  webaudio_device_process(ins, 2, NULL, 0, 128);
+  audio_chunk_t *chunk = audio_chunk_create(128, 2);
+  ASSERT_TRUE(chunk != NULL);
+  ASSERT_TRUE(capture_backend_read(cap, 128, chunk, &err));
+  ASSERT_NEAR(audio_chunk_get_channel(chunk, 0)[0], 0.5, 1e-6);
+  ASSERT_TRUE(playback_backend_write(play, chunk, &err));
+  float out0[128], out1[128];
+  float *outs[2] = {out0, out1};
+  webaudio_device_process(NULL, 0, outs, 2, 128);
+  ASSERT_NEAR(out1[0], -0.5f, 1e-6f);
+
+  // A new playback rate reports it on playback, capture keeps its own.
+  double rate = 0.0;
+  webaudio_device_set_playback_format(44100, 2);
+  ASSERT_TRUE(playback_backend_get_pending_rate_change(play, &rate));
+  ASSERT_NEAR(rate, 44100.0, 0.0);
+  ASSERT_TRUE(capture_backend_get_pending_rate_change(cap, &rate));
+  ASSERT_NEAR(rate, 44100.0, 0.0);
+  webaudio_device_set_capture_format(96000, 2);
+  ASSERT_TRUE(capture_backend_get_pending_rate_change(cap, &rate));
+  ASSERT_NEAR(rate, 96000.0, 0.0);
+
+  capture_backend_close(cap);
+  capture_backend_free(cap);
+  playback_backend_close(play);
+  playback_backend_free(play);
+  audio_chunk_free(chunk);
+  webaudio_device_set_capture_format(0, 0);
+  webaudio_device_set_playback_format(0, 0);
 }
 
 TEST_MAIN()
