@@ -100,8 +100,10 @@ jobs:
           ditto -c -k --keepParent "build/bin/CDSP Studio.app" build/bin/CDSPStudio-macOS-arm64.zip
 
       - name: Upload macOS Studio Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
+          # Upload the file as-is (no extra zip wrapper around the artifact).
+          archive: false
           name: CDSPStudio-macOS-arm64
           path: build/bin/CDSPStudio-macOS-arm64.zip
           if-no-files-found: error
@@ -338,8 +340,10 @@ jobs:
           mv CDSP_Studio*.AppImage build/dist/CDSPStudio-Linux-x86_64.AppImage
 
       - name: Upload Linux Studio Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
+          # Upload the file as-is (no extra zip wrapper around the artifact).
+          archive: false
           name: CDSPStudio-Linux-x86_64
           path: build/dist/CDSPStudio-Linux-x86_64.AppImage
           if-no-files-found: error
@@ -542,8 +546,10 @@ jobs:
         run: cp build/bin/CDSPStudio.exe build/bin/CDSPStudio-Windows-x86_64.exe
 
       - name: Upload Windows Studio Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
+          # Upload the file as-is (no extra zip wrapper around the artifact).
+          archive: false
           name: CDSPStudio-Windows-x86_64
           path: build/bin/CDSPStudio-Windows-x86_64.exe
           if-no-files-found: error
@@ -619,11 +625,16 @@ jobs:
       - name: Build, Test & Package (tools/build_wasm.sh)
         run: tools/build_wasm.sh build
 
+      - name: Package Chrome Extension
+        run: cp build/cdsp_extension.zip build/CDSPStudio-Chrome-wasm32.zip
+
       - name: Upload Chrome Extension Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: cdsp_extension
-          path: build/cdsp_extension.zip
+          # Upload the file as-is (no extra zip wrapper around the artifact).
+          archive: false
+          name: CDSPStudio-Chrome-wasm32
+          path: build/CDSPStudio-Chrome-wasm32.zip
           if-no-files-found: error
 
   # ============================================================================
@@ -641,7 +652,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true
@@ -649,7 +660,7 @@ jobs:
       - name: Compute SHA256 checksums
         run: |
           cd release-assets
-          sha256sum CDSPStudio* cdsp_extension.zip > SHA256SUMS.txt
+          sha256sum CDSPStudio* > SHA256SUMS.txt
           ls -la
 
       - name: Update weekly tag
@@ -672,7 +683,7 @@ jobs:
             - **macOS (Apple Silicon)**: [`CDSPStudio-macOS-arm64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-macOS-arm64.zip)
             - **Linux (x86_64)**: [`CDSPStudio-Linux-x86_64.AppImage`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-Linux-x86_64.AppImage)
             - **Windows (x86_64)**: [`CDSPStudio-Windows-x86_64.exe`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-Windows-x86_64.exe)
-            - **Chrome Extension (WebAssembly)**: [`cdsp_extension.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/cdsp_extension.zip)
+            - **Chrome Extension (WebAssembly)**: [`CDSPStudio-Chrome-wasm32.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'weekly' }}/CDSPStudio-Chrome-wasm32.zip)
 
             Verify integrity with `SHA256SUMS.txt`.
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}

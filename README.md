@@ -41,7 +41,7 @@ Standalone, pre-built packages of **CDSP Studio** and the **Chrome Extension** a
 | 🍏 **macOS** (Apple Silicon) | Standalone `.app` bundle | [CDSPStudio-macOS-arm64.zip](https://github.com/Wang-Yue/cdsp/releases/download/weekly/CDSPStudio-macOS-arm64.zip) |
 | 🐧 **Linux** (x86_64) | Standalone AppImage | [CDSPStudio-Linux-x86_64.AppImage](https://github.com/Wang-Yue/cdsp/releases/download/weekly/CDSPStudio-Linux-x86_64.AppImage) |
 | 🪟 **Windows** (x86_64) | Standalone Executable | [CDSPStudio-Windows-x86_64.exe](https://github.com/Wang-Yue/cdsp/releases/download/weekly/CDSPStudio-Windows-x86_64.exe) |
-| 🌐 **Chrome Extension** (WebAssembly) | Standalone Zip Bundle | [cdsp_extension.zip](https://github.com/Wang-Yue/cdsp/releases/download/weekly/cdsp_extension.zip) |
+| 🌐 **Chrome Extension** (WebAssembly) | Standalone Zip Bundle | [CDSPStudio-Chrome-wasm32.zip](https://github.com/Wang-Yue/cdsp/releases/download/weekly/CDSPStudio-Chrome-wasm32.zip) |
 
 > All builds, tags, and checksums (`SHA256SUMS.txt`) are available on the **[Releases](https://github.com/Wang-Yue/cdsp/releases)** page. Downloads are 100% public and do not require a GitHub account.
 
