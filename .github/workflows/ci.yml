@@ -20,7 +20,7 @@ jobs:
   # ============================================================================
   macos-test:
     name: macOS Test
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,8 +29,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/Homebrew
-          key: macos-test-brew-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: macos-test-brew-
+          key: macos-15-test-brew-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: macos-15-test-brew-
 
       - name: Install dependencies via Homebrew
         env:
@@ -58,7 +58,7 @@ jobs:
 
   macos-studio:
     name: macOS Studio Build
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -67,8 +67,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/Homebrew
-          key: macos-studio-brew-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: macos-studio-brew-
+          key: macos-15-studio-brew-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: macos-15-studio-brew-
 
       - name: Install dependencies via Homebrew
         env:
