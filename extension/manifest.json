@@ -5,6 +5,7 @@
   "description": "High-performance real-time parametric EQ and audio DSP for browser tabs powered by CamillaDSP & WebAssembly",
   "permissions": [
     "tabCapture",
+    "notifications",
     "storage",
     "activeTab"
   ],

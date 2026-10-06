@@ -31,12 +31,13 @@ function setCaptureState(tabId, studioTabId, active) {
   updateBadge(tabId, active);
 }
 
-// A closed Studio tab takes its capture with it.
+// A closed Studio tab takes its capture (and its background notice) with it.
 chrome.tabs.onRemoved.addListener((tabId) => {
   capturedTabs.delete(tabId);
   for (const [capturedTabId, studioTabId] of Array.from(capturedTabs)) {
     if (studioTabId === tabId) {
       setCaptureState(capturedTabId, studioTabId, false);
+      chrome.notifications.clear(BACKGROUND_NOTICE_ID).catch(() => {});
     }
   }
 });
@@ -46,14 +47,20 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // and position are remembered across launches.
 const STUDIO_DEFAULT_BOUNDS = { width: 1280, height: 820 };
 
-chrome.action.onClicked.addListener(async (tab) => {
+async function showStudio() {
+  chrome.notifications.clear(BACKGROUND_NOTICE_ID).catch(() => {});
   const studioUrl = chrome.runtime.getURL('ui/studio/cdsp-studio.html');
-  const existingTabs = await chrome.tabs.query({ url: studioUrl });
-  if (existingTabs.length > 0) {
-    await chrome.tabs.update(existingTabs[0].id, { active: true });
-    if (existingTabs[0].windowId) {
-      await chrome.windows.update(existingTabs[0].windowId, { focused: true });
-    }
+  // chrome.tabs.query({ url }) cannot match URLs without the "tabs" permission, so it never
+  // finds Studio; runtime.getContexts() lists the extension's own pages without it.
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ['TAB'], documentUrls: [studioUrl] });
+  const existing = contexts.find((c) => c.tabId >= 0 && c.windowId >= 0);
+  if (existing) {
+    await chrome.tabs.update(existing.tabId, { active: true });
+    // Studio may have been minimized on close to keep the DSP running; bring it back.
+    const win = await chrome.windows.get(existing.windowId);
+    const update = { focused: true };
+    if (win.state === 'minimized') update.state = 'normal';
+    await chrome.windows.update(existing.windowId, update);
   } else {
     const { studioBounds } = await chrome.storage.local.get('studioBounds');
     const createStudio = (bounds) =>
@@ -67,6 +74,30 @@ chrome.action.onClicked.addListener(async (tab) => {
     }
     await chrome.storage.session.set({ studioWindowId: win.id, studioMode: 'main' });
   }
+}
+
+chrome.action.onClicked.addListener(() => showStudio());
+
+// Shown when Studio was minimized on close (the user chose "Cancel" in the "Leave site?"
+// prompt): confirms the DSP keeps running. On ChromeOS it sits in the system tray.
+const BACKGROUND_NOTICE_ID = 'cdsp-background';
+
+function showBackgroundNotice() {
+  chrome.notifications.create(BACKGROUND_NOTICE_ID, {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('ui/icons/icon128.png'),
+    title: 'CDSP is running in the background',
+    message: 'Studio was minimized and audio processing continues. Click here or the CDSP icon to reopen Studio.',
+    buttons: [{ title: 'Show Studio' }],
+    priority: 0
+  }).catch((e) => console.warn('[CDSP] Background notification failed:', e));
+}
+
+chrome.notifications.onClicked.addListener((id) => {
+  if (id === BACKGROUND_NOTICE_ID) showStudio();
+});
+chrome.notifications.onButtonClicked.addListener((id) => {
+  if (id === BACKGROUND_NOTICE_ID) showStudio();
 });
 
 // Remember where the user puts the Studio window, separately for the main window and the mini
@@ -140,6 +171,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'CAPTURE_STATE') {
     setCaptureState(message.tabId, sender.tab?.id, !!message.active);
+    sendResponse({ success: true });
+    return false;
+  }
+
+  if (message.type === 'BACKGROUND_NOTICE') {
+    if (message.show) {
+      showBackgroundNotice();
+    } else {
+      chrome.notifications.clear(BACKGROUND_NOTICE_ID).catch(() => {});
+    }
     sendResponse({ success: true });
     return false;
   }

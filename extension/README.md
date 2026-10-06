@@ -70,7 +70,12 @@ This builds and packages:
 1. **Pin Extension**: Click the puzzle piece icon (Extensions menu) in the Chrome toolbar and pin **CDSP Audio Studio**.
 2. **Open Audio Source**: Navigate to any tab playing audio (e.g. YouTube, Spotify Web, SoundCloud, Twitch, Apple Music).
 3. **Open CDSP Studio**: Click the **CDSP** toolbar icon. The Studio opens in its own app-style window (no tabs or address bar); its size and position are remembered. Clicking the icon again focuses it.
-4. **Start the DSP engine** in Studio. When the engine opens its WebAudio capture backend, Studio captures the audible (or most recently active) tab; its audio runs through the CDSP pipeline and out to your speakers/headphones. Closing the Studio window stops processing and releases the capture.
+4. **Start the DSP engine** in Studio. When the engine opens its WebAudio capture backend, Studio captures the audible (or most recently active) tab; its audio runs through the CDSP pipeline and out to your speakers/headphones.
+5. **Closing Studio while the DSP runs** shows Chrome's *Leave site?* prompt (its text cannot be customized):
+   - **Leave**: the window closes and processing stops (the capture is released).
+   - **Cancel**: the window is minimized and processing keeps running in the background. A notification ("CDSP is running in the background"; in the ChromeOS system tray) confirms it; click it or the toolbar icon to bring Studio back.
+
+   Since Chrome's prompt wording is fixed, Studio explains these buttons in a one-time tip the first time the DSP runs.
 
 > [!NOTE]
 > Chrome keeps an AudioContext suspended until the page receives a user gesture; click anywhere in Studio once if audio does not start.

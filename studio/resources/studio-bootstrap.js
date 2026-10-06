@@ -96,6 +96,70 @@ window.cdspBridge = {
     const resume = () => this.resumeAudio();
     document.addEventListener('pointerdown', resume, true);
     document.addEventListener('keydown', resume, true);
+    window.addEventListener('beforeunload', (event) => this.onBeforeUnload(event));
+    // Restored (from the shelf/taskbar or the CDSP icon): the background notice is stale.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && typeof chrome !== 'undefined' && chrome.runtime) {
+        this.sendToBackground({ type: 'BACKGROUND_NOTICE', show: false }).catch(() => {});
+      }
+    });
+  },
+
+  /**
+   * Closing the window while the DSP runs. A page cannot show its own dialog here, only Chrome's
+   * fixed "Leave site?" prompt:
+   *   - Leave:  the window closes and the DSP stops with it.
+   *   - Cancel: the page stays, and the timer below (which only fires if the page survived)
+   *             minimizes the window, so the DSP keeps running in the background.
+   */
+  onBeforeUnload: function(event) {
+    if (!this.captureWanted && !this.stream) return; // DSP not running: just close.
+    event.preventDefault();
+    event.returnValue = '';
+    setTimeout(() => this.minimizeWindow(), 0);
+  },
+
+  minimizeWindow: async function() {
+    if (typeof chrome === 'undefined' || !chrome.windows) return;
+    try {
+      const win = await chrome.windows.getCurrent();
+      await chrome.windows.update(win.id, { state: 'minimized' });
+      this.sendToBackground({ type: 'BACKGROUND_NOTICE', show: true }).catch(() => {});
+    } catch (e) {
+      console.warn('[CDSP] Minimizing the Studio window failed:', e.message || e);
+    }
+  },
+
+  /**
+   * One-time tip, shown the first time the DSP runs: Chrome's close prompt has fixed wording
+   * ("Leave site? Changes you made may not be saved"), so explain what its buttons do here.
+   */
+  showCloseTip: async function() {
+    if (typeof chrome === 'undefined' || !chrome.storage) return;
+    const { closeTipShown } = await chrome.storage.local.get('closeTipShown');
+    if (closeTipShown || document.getElementById('cdsp-close-tip')) return;
+    const tip = document.createElement('div');
+    tip.id = 'cdsp-close-tip';
+    tip.style.cssText =
+      'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:10000;max-width:560px;' +
+      'padding:12px 16px;border-radius:8px;background:#1e293b;color:#f8fafc;font-size:13px;' +
+      'line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.45);display:flex;gap:12px;align-items:center;';
+    const text = document.createElement('div');
+    text.innerHTML =
+      '<b>Keep the DSP running after closing Studio</b><br>' +
+      'When you close this window, Chrome asks <i>“Leave site?”</i>. Choose <b>Cancel</b> to ' +
+      'minimize Studio and keep processing in the background, or <b>Leave</b> to stop the DSP.';
+    const ok = document.createElement('button');
+    ok.textContent = 'Got it';
+    ok.style.cssText =
+      'flex:none;padding:6px 14px;border:0;border-radius:6px;background:#06b6d4;color:#0f172a;' +
+      'font-weight:600;cursor:pointer;';
+    ok.addEventListener('click', () => {
+      tip.remove();
+      chrome.storage.local.set({ closeTipShown: true }).catch(() => {});
+    });
+    tip.append(text, ok);
+    document.body.appendChild(tip);
   },
 
   audio: function() {
@@ -191,6 +255,7 @@ window.cdspBridge = {
     this.resumeAudio();
     this.sendToBackground({ type: 'CAPTURE_STATE', tabId: target.tabId, active: true }).catch(() => {});
     console.info('[CDSP] Capturing tab', target.tabId);
+    this.showCloseTip().catch(() => {});
   },
 
   stopCapture: function() {
