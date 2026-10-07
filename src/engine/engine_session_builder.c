@@ -3,6 +3,8 @@
 #ifdef _WIN32
 #include <mmsystem.h>
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
 
 #include <pthread.h>
@@ -32,6 +34,23 @@
 #include "utils/lock_free_ring_buffer.h"
 
 static const logger_t g_logger = {"dsp.session.builder"};
+
+/**
+ * @brief Number of online hardware threads (equivalent of upstream
+ * std::thread::available_parallelism()), or 0 if unknown.
+ */
+static long engine_session_hw_threads(void) {
+#ifdef _WIN32
+  SYSTEM_INFO info;
+  GetSystemInfo(&info);
+  return (long)info.dwNumberOfProcessors;
+#elif defined(_SC_NPROCESSORS_ONLN)
+  long n = sysconf(_SC_NPROCESSORS_ONLN);
+  return n > 0 ? n : 0;
+#else
+  return 0;
+#endif
+}
 
 /**
  * @brief Thread entry point wrapper for the audio capture loop.
@@ -88,10 +107,29 @@ static bool engine_session_build_shared_state_and_dop(dsp_session_t *core,
   bool multithreaded =
       config->devices.has_multithreaded ? config->devices.multithreaded : false;
   if (multithreaded) {
+    int nbr_threads =
+        config->devices.has_worker_threads ? config->devices.worker_threads : 0;
     logger_info(&g_logger, "Multithreading enabled with %d worker threads",
-                config->devices.has_worker_threads
-                    ? config->devices.worker_threads
-                    : 0);
+                nbr_threads);
+    // Same sanity warnings as upstream processing.rs.
+    long hw_threads = engine_session_hw_threads();
+    if (hw_threads > 0 && nbr_threads > hw_threads) {
+      logger_warn(&g_logger,
+                  "Requested %d worker threads. For optimal performance, this "
+                  "number should not exceed the available CPU cores, which is "
+                  "%ld.",
+                  nbr_threads, hw_threads);
+    }
+    if (hw_threads == 1) {
+      logger_warn(&g_logger, "This system only has one CPU core, "
+                             "multithreaded processing is not recommended.");
+    }
+    if (nbr_threads == 1) {
+      logger_warn(&g_logger,
+                  "Requested multithreaded processing with one worker thread. "
+                  "Performance can improve by adding more threads or disabling "
+                  "multithreading.");
+    }
   }
 
   double capture_rate = (double)((config->devices.has_resampler &&
@@ -214,6 +252,11 @@ static bool engine_session_build_backends(
       full_duplex, core->processing_params, err);
   if (!core->capture)
     return false;
+
+  // Backends that depend on the pipeline rate (File capture: extra_samples /
+  // resampling_ratio, upstream filedevice.rs) take it through an optional
+  // vtable hook; a no-op for every other capture backend.
+  capture_backend_set_pipeline_sample_rate(core->capture, (int)pipeline_rate);
 
   core->playback = audio_backend_factory_create_playback(
       &config->devices.playback, pipeline_rate, playback_chunk_size,
@@ -443,7 +486,9 @@ static bool engine_session_spawn_worker_threads(dsp_session_t *core,
 dsp_session_t *engine_session_build_and_start(
     dsp_config_t *config, chunk_callback_t on_captured, void *captured_ctx,
     chunk_callback_t on_processed, void *processed_ctx,
-    const engine_state_manager_t *state_mgr, audio_backend_error_t *err) {
+    const engine_state_manager_t *state_mgr,
+    const processing_parameters_t *seed_telemetry, uint64_t seed_clipped,
+    audio_backend_error_t *err) {
   if (!config)
     return NULL;
 
@@ -487,6 +532,18 @@ dsp_session_t *engine_session_build_and_start(
   if (state_mgr) {
     engine_state_manager_sync_to_processing_parameters(state_mgr,
                                                        core->processing_params);
+  }
+
+  // Carry the previous session's telemetry (level history, rates, clip
+  // count) over before any worker thread starts, so nothing the new threads
+  // publish is overwritten or dropped by a late copy.
+  if (seed_telemetry && core->processing_params) {
+    processing_parameters_transfer_telemetry(core->processing_params,
+                                             seed_telemetry);
+  }
+  if (seed_clipped > 0 && core->processing_params) {
+    processing_parameters_add_clipped_samples(core->processing_params,
+                                              seed_clipped);
   }
 
   size_t pipeline_rate = config->devices.samplerate;

@@ -470,4 +470,109 @@ TEST(YamlConverter_EngineSetConfigYamlAndJsonFiles) {
   cdsp_engine_free(engine);
 }
 
+// Audit 07-§5.2: explicit file-load overrides must take precedence over the
+// persistent CLI overrides; they were previously re-applied afterwards and
+// silently replaced the explicit values.
+TEST(Audit_ConfigFileExplicitOverridesBeatCliOverrides) {
+  char json_path[256];
+  snprintf(json_path, sizeof(json_path), "/tmp/test_audit_ovr_%d.json",
+           getpid());
+  const char *json_config =
+      "{\"devices\": {\"samplerate\": 48000, \"chunksize\": 1024,"
+      " \"capture\": {\"type\": \"RawFile\", \"channels\": 2, \"filename\":"
+      " \"/dev/null\", \"format\": \"S16_LE\"},"
+      " \"playback\": {\"type\": \"File\", \"channels\": 2, \"filename\":"
+      " \"/dev/null\", \"format\": \"S16_LE\"}}}";
+  FILE *f = fopen(json_path, "w");
+  ASSERT_TRUE(f != NULL);
+  fputs(json_config, f);
+  fclose(f);
+
+  cdsp_set_cli_overrides(44100, -1, NULL, -1);
+  char *result_str = NULL;
+  cdsp_config_error_type_t err_type = CDSP_CONFIG_ERR_PARSE;
+  bool valid = cdsp_validate_config_file_with_overrides(
+      json_path, 96000, -1, NULL, -1, &result_str, &err_type);
+  cdsp_set_cli_overrides(-1, -1, NULL, -1);
+  remove(json_path);
+  ASSERT_TRUE(valid);
+  ASSERT_TRUE(result_str != NULL);
+  cJSON *root = cJSON_Parse(result_str);
+  free(result_str);
+  ASSERT_TRUE(root != NULL);
+  cJSON *dev = cJSON_GetObjectItemCaseSensitive(root, "devices");
+  ASSERT_EQ(96000,
+            cJSON_GetObjectItemCaseSensitive(dev, "samplerate")->valueint);
+  ASSERT_EQ(2048, cJSON_GetObjectItemCaseSensitive(dev, "chunksize")->valueint);
+  cJSON_Delete(root);
+}
+
+// Audit 07-§5.2: a CLI override that cannot be applied must fail validation
+// (as cdsp_set_config_json does) instead of validating the un-overridden
+// config.
+TEST(Audit_ValidateConfigJsonRejectsUnapplicableCliOverride) {
+  const char *json_config =
+      "{\"devices\": {\"samplerate\": 48000, \"chunksize\": 1024,"
+      " \"capture\": {\"type\": \"CoreAudio\", \"channels\": 2,"
+      " \"format\": \"F32\"},"
+      " \"playback\": {\"type\": \"File\", \"channels\": 2, \"filename\":"
+      " \"/dev/null\", \"format\": \"S16_LE\"}}}";
+  cdsp_set_cli_overrides(-1, -1, "F64_LE", -1);
+  char *result_str = NULL;
+  cdsp_config_error_type_t err_type = CDSP_CONFIG_ERR_NONE;
+  bool valid = cdsp_validate_config_json(json_config, &result_str, &err_type);
+  cdsp_set_cli_overrides(-1, -1, NULL, -1);
+  ASSERT_FALSE(valid);
+  ASSERT_EQ(CDSP_CONFIG_ERR_PARSE, err_type);
+  ASSERT_TRUE(result_str != NULL);
+  ASSERT_TRUE(strstr(result_str, "CoreAudio") != NULL);
+  free(result_str);
+}
+
 TEST_MAIN()
+
+// Report 06 §6.1: plain scalars in string-typed fields stay strings verbatim
+// (upstream yaml_serde accepts any plain scalar for a String field); other
+// fields still infer numbers/booleans, and nulls stay null.
+TEST(YamlConverter_StringFieldsKeepPlainScalarText) {
+  const char *yaml_raw = "title: 12345\n"
+                         "description: 1.50\n"
+                         "pipeline:\n"
+                         "  - type: Filter\n"
+                         "    channels: [0]\n"
+                         "    names: [1, 007, true]\n"
+                         "    description: ~\n"
+                         "filters:\n"
+                         "  1:\n"
+                         "    type: Gain\n"
+                         "    parameters:\n"
+                         "      gain: 3\n";
+  char *err = NULL;
+  cJSON *json = cdsp_yaml_to_json(yaml_raw, &err);
+  ASSERT_TRUE(json != NULL);
+  cJSON *title = cJSON_GetObjectItemCaseSensitive(json, "title");
+  ASSERT_TRUE(cJSON_IsString(title));
+  ASSERT_STR_EQ("12345", title->valuestring);
+  cJSON *desc = cJSON_GetObjectItemCaseSensitive(json, "description");
+  ASSERT_TRUE(cJSON_IsString(desc));
+  ASSERT_STR_EQ("1.50", desc->valuestring);
+  cJSON *step =
+      cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(json, "pipeline"), 0);
+  cJSON *names = cJSON_GetObjectItemCaseSensitive(step, "names");
+  ASSERT_STR_EQ("1", cJSON_GetArrayItem(names, 0)->valuestring);
+  ASSERT_STR_EQ("007", cJSON_GetArrayItem(names, 1)->valuestring);
+  ASSERT_STR_EQ("true", cJSON_GetArrayItem(names, 2)->valuestring);
+  ASSERT_TRUE(
+      cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(step, "description")));
+  cJSON *channels = cJSON_GetObjectItemCaseSensitive(step, "channels");
+  ASSERT_TRUE(cJSON_IsNumber(cJSON_GetArrayItem(channels, 0)));
+  cJSON *gain = cJSON_GetObjectItemCaseSensitive(
+      cJSON_GetObjectItemCaseSensitive(
+          cJSON_GetObjectItemCaseSensitive(
+              cJSON_GetObjectItemCaseSensitive(json, "filters"), "1"),
+          "parameters"),
+      "gain");
+  ASSERT_TRUE(cJSON_IsNumber(gain));
+  cJSON_Delete(json);
+  free(err);
+}

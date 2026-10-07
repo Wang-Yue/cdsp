@@ -4,7 +4,7 @@
 // --------------------
 // The render callback runs on a high-priority audio thread driven by
 // CoreAudio. It is absolutely forbidden to take locks, allocate, or
-// otherwise call into the Swift runtime in a way that could block. To
+// otherwise call into ObjC/CoreFoundation in a way that could block. To
 // honour that:
 //   - sample rings are SPSC instances —
 //     producer and consumer are wait-free, no lock.
@@ -61,11 +61,21 @@ struct core_audio_capture {
   int prealloc_bytes_buffer;
   _Atomic int callback_error_count;
   _Atomic int last_callback_error;
+  /** @brief Reader-side latch so persistent render errors are logged once. */
+  bool callback_error_reported;
 
   AudioDeviceID opened_device_id;
   rate_change_watcher_t *rate_watcher;
   _Atomic bool pitch_control_active;
+  /** @brief ID of the "Internal Adjustable" clock source, when available. */
+  uint32_t adjustable_clock_id;
+  /** @brief True once the adjustable clock source has been selected. */
+  bool clock_source_selected;
   _Atomic bool is_device_alive;
+  /** @brief Liveness of the tapped physical device (loopback only). */
+  _Atomic bool is_tapped_device_alive;
+  /** @brief Device the tapped-device alive watcher is registered on. */
+  AudioDeviceID tapped_watch_dev_id;
 
   _Atomic int active_callbacks;
 };
@@ -205,7 +215,10 @@ static void core_audio_capture_close(void *ctx) {
   if (!capture)
     return;
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-  if (!capture->audio_unit && capture->opened_device_id == 0) {
+  if (!capture->audio_unit && capture->opened_device_id == 0 &&
+      capture->tap.aggregate_dev_id == kAudioObjectUnknown &&
+      capture->tap.tap_id == kAudioObjectUnknown &&
+      capture->tapped_watch_dev_id == 0) {
     if (capture->buffer) {
       backend_buffer_free(capture->buffer);
       capture->buffer = NULL;
@@ -220,6 +233,11 @@ static void core_audio_capture_close(void *ctx) {
   if (capture->opened_device_id != 0) {
     core_audio_device_remove_alive_watcher(capture->opened_device_id,
                                            &capture->is_device_alive);
+  }
+  if (capture->tapped_watch_dev_id != 0) {
+    core_audio_device_remove_alive_watcher(capture->tapped_watch_dev_id,
+                                           &capture->is_tapped_device_alive);
+    capture->tapped_watch_dev_id = 0;
   }
   if (capture->audio_unit) {
     AudioOutputUnitStop(capture->audio_unit);
@@ -259,31 +277,14 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
     return false;
   core_audio_capture_close(capture);
 
-  const size_t callback_frames = 512;
-  size_t ring_frames = 2 * capture->chunk_size + 2 * callback_frames;
-  capture->buffer = backend_buffer_create(
-      ring_frames, BINARY_SAMPLE_FORMAT_F32_LE, capture->channels,
-      capture->sample_rate, false, capture->params);
-  if (!capture->buffer) {
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Out of memory");
-    return false;
-  }
-
   atomic_store_explicit(&capture->callback_error_count, 0,
                         memory_order_relaxed);
   atomic_store_explicit(&capture->last_callback_error, 0, memory_order_relaxed);
+  capture->callback_error_reported = false;
 
-  // In CoreAudio Loopback (Device Tap) mode, create the tap and wrapping
-  // aggregate.
-  if (capture->loopback) {
-    if (!cdsp_tap_open(capture->device_name, &capture->tap, err)) {
-      return false;
-    }
-  }
-
-  // Set up component query for HAL Output Audio Unit.
+  // Set up component query for HAL Output Audio Unit before opening any device
+  // tap so the process is registered as a HAL client with coreaudiod before
+  // cdsp_tap_create resolves getpid()'s AudioProcess object for self-exclusion.
   AudioComponentDescription desc = {
       .componentType = kAudioUnitType_Output,
       .componentSubType = kAudioUnitSubType_HALOutput,
@@ -333,6 +334,43 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
     goto cleanup;
   }
 
+  // In CoreAudio Loopback (Device Tap) mode, create the tap and wrapping
+  // aggregate.
+  if (capture->loopback) {
+    if (!cdsp_tap_open(capture->device_name, &capture->tap, err)) {
+      goto cleanup;
+    }
+    // The private aggregate can stay alive after its clock sub-device (the
+    // tapped physical output) disappears, so watch that device directly.
+    atomic_store_explicit(&capture->is_tapped_device_alive, true,
+                          memory_order_release);
+    if (capture->tap.target_dev_id != kAudioObjectUnknown) {
+      if (core_audio_device_add_alive_watcher(
+              capture->tap.target_dev_id, &capture->is_tapped_device_alive)) {
+        capture->tapped_watch_dev_id = capture->tap.target_dev_id;
+      } else {
+        logger_warn(&g_logger,
+                    "Unable to register tapped device alive listener.");
+      }
+      double tapped_rate = 0.0;
+      if (core_audio_device_get_nominal_sample_rate(capture->tap.target_dev_id,
+                                                    &tapped_rate) &&
+          tapped_rate > 0.0 &&
+          fabs(tapped_rate - capture->sample_rate) >= 0.5) {
+        logger_warn(&g_logger,
+                    "Loopback capture configured for %.0f Hz, but tapped "
+                    "output device runs at %.0f Hz.",
+                    capture->sample_rate, tapped_rate);
+      }
+      if (capture->has_sample_format) {
+        logger_warn(&g_logger,
+                    "Loopback capture ignores explicit sample_format (%s) and "
+                    "uses the tap's native stream format.",
+                    capture->sample_format);
+      }
+    }
+  }
+
   AudioDeviceID dev_id =
       capture->loopback
           ? capture->tap.aggregate_dev_id
@@ -361,37 +399,46 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
                            "Failed to set capture device on AudioUnit");
       goto cleanup;
     }
-    bool physical_format_set = false;
-    if (capture->has_sample_format) {
-      if (core_audio_device_set_matching_physical_format(
-              dev_id, CORE_AUDIO_SCOPE_INPUT, capture->sample_rate,
-              capture->sample_format, (int)capture->channels)) {
-        physical_format_set = true;
-        logger_debug(&g_logger, "Set phys capture stream format.");
-      } else {
-        if (err)
-          backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                             "Failed to find matching physical capture format");
-        goto cleanup;
+    if (!capture->loopback) {
+      bool physical_format_set = false;
+      if (capture->has_sample_format) {
+        if (core_audio_device_set_matching_physical_format(
+                dev_id, CORE_AUDIO_SCOPE_INPUT, capture->sample_rate,
+                capture->sample_format, (int)capture->channels)) {
+          physical_format_set = true;
+          logger_debug(&g_logger, "Set phys capture stream format.");
+        } else {
+          if (err)
+            backend_error_init(
+                err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                "Failed to find matching physical capture format");
+          goto cleanup;
+        }
       }
-    }
-    if (!physical_format_set) {
-      if (!core_audio_device_set_nominal_sample_rate(dev_id,
-                                                     capture->sample_rate)) {
-        logger_error(&g_logger,
-                     "Failed to set capture device sample rate: %.1f",
-                     capture->sample_rate);
-        if (err)
-          backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                             "Failed to set capture device sample rate");
-        goto cleanup;
+      if (!physical_format_set) {
+        if (!core_audio_device_set_nominal_sample_rate(dev_id,
+                                                       capture->sample_rate)) {
+          logger_error(&g_logger,
+                       "Failed to set capture device sample rate: %.1f",
+                       capture->sample_rate);
+          if (err)
+            backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                               "Failed to set capture device sample rate");
+          goto cleanup;
+        }
       }
     }
 
-    core_audio_device_add_alive_watcher(dev_id, &capture->is_device_alive);
+    if (!core_audio_device_add_alive_watcher(dev_id,
+                                             &capture->is_device_alive)) {
+      logger_warn(&g_logger,
+                  "Unable to register capture device alive listener.");
+    }
 
-    core_audio_device_set_buffer_frame_size(dev_id, CORE_AUDIO_SCOPE_INPUT,
-                                            (uint32_t)capture->chunk_size);
+    if (!capture->loopback) {
+      core_audio_device_set_buffer_frame_size(dev_id, CORE_AUDIO_SCOPE_INPUT,
+                                              (uint32_t)capture->chunk_size);
+    }
   }
 
   // Configure the client stream format on the output scope of the input bus
@@ -431,6 +478,18 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
       capture->audio_unit, kAudioUnitProperty_MaximumFramesPerSlice,
       kAudioUnitScope_Global, 0, &max_frames, sizeof(max_frames));
 
+  size_t callback_frames = (max_frames > 512) ? (size_t)max_frames : 512;
+  size_t ring_frames = 2 * capture->chunk_size + 2 * callback_frames;
+  capture->buffer = backend_buffer_create(
+      ring_frames, BINARY_SAMPLE_FORMAT_F32_LE, capture->channels,
+      capture->sample_rate, false, capture->params);
+  if (!capture->buffer) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Out of memory");
+    goto cleanup;
+  }
+
   // Preallocate render buffers.
   if (!allocate_render_buffers(capture)) {
     if (err)
@@ -461,11 +520,37 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
     goto cleanup;
   }
 
+  // Pitch control: only *probe* for the adjustable clock source here. The
+  // clock source belongs to the device and outlives this process, so it is
+  // switched lazily on the first set_pitch() call, i.e. only when rate adjust
+  // is actually going to write the pitch (upstream device.rs:952-955).
+  capture->clock_source_selected = false;
   if (dev_id != 0 && !capture->loopback) {
-    atomic_store_explicit(
-        &capture->pitch_control_active,
-        core_audio_device_select_adjustable_clock_source(dev_id),
-        memory_order_release);
+    atomic_store_explicit(&capture->pitch_control_active,
+                          core_audio_device_find_adjustable_clock_source(
+                              dev_id, &capture->adjustable_clock_id),
+                          memory_order_release);
+  } else {
+    atomic_store_explicit(&capture->pitch_control_active, false,
+                          memory_order_release);
+  }
+
+  // Install the rate watcher before starting IO (upstream registers its
+  // RateListener before audio_unit.start(), device.rs:936-991). The watcher
+  // is seeded with the current nominal rate, so a mismatch is reported.
+  // In loopback tap mode, watch the tapped physical output device directly.
+  AudioDeviceID rate_watch_dev_id =
+      (capture->loopback && capture->tap.target_dev_id != kAudioObjectUnknown)
+          ? capture->tap.target_dev_id
+          : dev_id;
+  if (rate_watch_dev_id != 0 &&
+      core_audio_device_has_nominal_sample_rate_property(rate_watch_dev_id)) {
+    capture->rate_watcher =
+        rate_change_watcher_create(rate_watch_dev_id, capture->sample_rate);
+    if (!capture->rate_watcher) {
+      logger_warn(&g_logger, "Unable to register capture rate listener, "
+                             "falling back to polling the nominal rate.");
+    }
   }
 
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
@@ -475,12 +560,6 @@ static bool core_audio_capture_open(void *ctx, backend_error_t *err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to start AudioUnit");
     goto cleanup;
-  }
-
-  if (dev_id != 0 &&
-      core_audio_device_has_nominal_sample_rate_property(dev_id)) {
-    capture->rate_watcher =
-        rate_change_watcher_create(dev_id, capture->sample_rate);
   }
 
   logger_debug(&g_logger, "Opened CoreAudio capture device \"%s\".",
@@ -499,7 +578,10 @@ static bool core_audio_capture_read(void *ctx, size_t frames,
   if (!capture)
     return false;
   // Verify that the hardware device is still alive using atomic access.
-  if (!atomic_load_explicit(&capture->is_device_alive, memory_order_acquire)) {
+  if (!atomic_load_explicit(&capture->is_device_alive, memory_order_acquire) ||
+      (capture->loopback &&
+       !atomic_load_explicit(&capture->is_tapped_device_alive,
+                             memory_order_acquire))) {
     logger_warn(&g_logger,
                 "CoreAudio capture read failed: device is disconnected");
     if (err)
@@ -507,8 +589,23 @@ static bool core_audio_capture_read(void *ctx, size_t frames,
                          "Capture device disconnected");
     return false;
   }
-  // AudioUnitRender errors in the callback are logged non-fatally; downstream
-  // buffer exhaustion or alive listener will handle stalls/disconnects cleanly.
+  // AudioUnitRender errors in the callback are counted there (no logging on
+  // the real-time thread) and surfaced here, non-fatally: downstream buffer
+  // exhaustion or the alive listener handle stalls/disconnects (as upstream).
+  int consecutive_errors = atomic_load_explicit(&capture->callback_error_count,
+                                                memory_order_relaxed);
+  if (consecutive_errors >= 50 && !capture->callback_error_reported) {
+    capture->callback_error_reported = true;
+    logger_warn(&g_logger,
+                "CoreAudio capture callback failing repeatedly (%d consecutive "
+                "callbacks, last status=%d).",
+                consecutive_errors,
+                atomic_load_explicit(&capture->last_callback_error,
+                                     memory_order_relaxed));
+  } else if (consecutive_errors == 0 && capture->callback_error_reported) {
+    capture->callback_error_reported = false;
+    logger_info(&g_logger, "CoreAudio capture callback recovered.");
+  }
   return backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
 }
 
@@ -518,9 +615,12 @@ static bool core_audio_capture_get_pending_rate_change(void *ctx,
   core_audio_capture_t *capture = (core_audio_capture_t *)ctx;
   if (!capture)
     return false;
-  return core_audio_device_check_rate_change(capture->opened_device_id,
-                                             capture->rate_watcher,
-                                             capture->sample_rate, out_rate);
+  AudioDeviceID rate_watch_dev_id =
+      (capture->loopback && capture->tap.target_dev_id != kAudioObjectUnknown)
+          ? capture->tap.target_dev_id
+          : capture->opened_device_id;
+  return core_audio_device_check_rate_change(
+      rate_watch_dev_id, capture->rate_watcher, capture->sample_rate, out_rate);
 }
 
 /// Check if clock-pitch control is supported on the capture device.
@@ -539,6 +639,17 @@ static void core_audio_capture_set_pitch(void *ctx, double multiplier) {
                             memory_order_acquire) ||
       capture->opened_device_id == 0)
     return;
+  if (!capture->clock_source_selected) {
+    // First pitch write: rate adjust is active, so now it is legitimate to
+    // switch the device to its adjustable clock source.
+    if (!core_audio_device_set_clock_source_id(capture->opened_device_id,
+                                               capture->adjustable_clock_id)) {
+      atomic_store_explicit(&capture->pitch_control_active, false,
+                            memory_order_release);
+      return;
+    }
+    capture->clock_source_selected = true;
+  }
   core_audio_device_set_pitch(capture->opened_device_id, multiplier);
 }
 
@@ -597,7 +708,6 @@ static capture_backend_t *core_audio_capture_create(
     const capture_device_config_t *config, int sample_rate, int chunk_size,
     bool full_duplex, processing_parameters_t *params, backend_error_t *err) {
   (void)full_duplex;
-  (void)params;
   if (!config) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
@@ -635,9 +745,26 @@ static capture_backend_t *core_audio_capture_create(
 
   capture->params = params;
   atomic_init(&capture->is_device_alive, true);
+  atomic_init(&capture->is_tapped_device_alive, true);
   atomic_init(&capture->active_callbacks, 0);
 
   atomic_init(&capture->pitch_control_active, false);
+  // The engine queries pitch support when it builds its loops, before the
+  // capture thread opens the device (engine_capture_loop.c /
+  // engine_session_builder.c). Probe the configured device here (read-only, no
+  // clock-source switch) so the answer is meaningful at that point; open()
+  // re-probes the device it actually binds to.
+  if (!capture->loopback) {
+    AudioDeviceID probe_id = core_audio_device_id_for_name(
+        capture->device_name[0] ? capture->device_name : NULL,
+        CORE_AUDIO_SCOPE_INPUT);
+    if (probe_id != kAudioObjectUnknown) {
+      atomic_store_explicit(&capture->pitch_control_active,
+                            core_audio_device_find_adjustable_clock_source(
+                                probe_id, &capture->adjustable_clock_id),
+                            memory_order_relaxed);
+    }
+  }
 
   capture_backend_t *backend =
       (capture_backend_t *)calloc(1, sizeof(capture_backend_t));

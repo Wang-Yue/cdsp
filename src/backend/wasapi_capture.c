@@ -62,88 +62,151 @@ struct wasapi_capture {
 
   pthread_t inner_thread;
   bool inner_thread_created;
-  double pending_rate;
-  _Atomic bool has_pending_rate_change;
   backend_buffer_t *buffer;
   processing_parameters_t *params;
+  /** First fatal error of the inner thread, reported by read(). */
+  wasapi_stream_error_t error;
 };
 
-static void wasapi_capture_on_format_change(void *parent, double new_rate) {
-  wasapi_capture_t *capture = (wasapi_capture_t *)parent;
-  if (!capture)
-    return;
-  capture->pending_rate = new_rate;
-  atomic_store_explicit(&capture->has_pending_rate_change, true,
-                        memory_order_release);
-  if (capture->buffer) {
-    backend_buffer_set_pending_rate_change(capture->buffer, true);
-  }
-}
-
 /**
- * @brief get_next_packet_size matching wasapi-rs api.rs.
+ * @brief Polls the session listener from the inner device thread.
+ *
+ * A FormatChanged disconnect sets the backend "pending rate change" flag (so
+ * the engine stops reading obsolete-format data) and stops the inner loop. Any
+ * other disconnect reason is a device error (upstream device.rs:606-613 ->
+ * CaptureError): the error is recorded, the loop stops and the stream state
+ * becomes STOPPED, which the engine reads as a capture error. The backend
+ * buffer is only touched from this thread, never from the COM notification
+ * thread.
+ *
+ * @return true if the inner loop must stop.
  */
-static inline bool
-wasapi_capture_get_next_packet_size(IAudioCaptureClient *capture_client,
-                                    bool exclusive, UINT32 *out_frames) {
-  if (exclusive) {
-    return false;
-  }
-  UINT32 frames = 0;
-  HRESULT hr = IAudioCaptureClient_GetNextPacketSize(capture_client, &frames);
-  if (SUCCEEDED(hr)) {
-    *out_frames = frames;
+static bool wasapi_capture_check_session(wasapi_capture_t *capture) {
+  if (wasapi_session_events_format_changed(capture->session_events_listener)) {
+    logger_debug(&g_wasapi_logger,
+                 "Stopping inner capture loop due to session format change.");
+    backend_buffer_set_pending_rate_change(capture->buffer, true);
     return true;
   }
-  *out_frames = 0;
+  int reason = 0;
+  if (wasapi_session_events_device_error(capture->session_events_listener,
+                                         &reason)) {
+    wasapi_stream_error_set(&capture->error,
+                            "Capture failed with error: session disconnected "
+                            "(%s, reason %d)",
+                            wasapi_disconnect_reason_name(reason), reason);
+    return true;
+  }
   return false;
 }
 
 /**
- * @brief read_from_device matching wasapi-rs api.rs.
+ * @brief On WASAPI call error, checks if a format change notification is in
+ * flight. Mirrors upstream CamillaDSP send_error_or_captureformatchange
+ * (device.rs:1072-1088).
  */
-static inline bool wasapi_capture_read_from_device(
-    IAudioCaptureClient *capture_client, uint8_t *data, size_t max_bytes,
-    size_t bytes_per_frame, UINT32 *out_frames_read, DWORD *out_flags) {
-  size_t data_len_in_frames = max_bytes / bytes_per_frame;
-  if (data_len_in_frames == 0) {
-    *out_frames_read = 0;
-    *out_flags = 0;
-    return true;
+static bool wasapi_capture_check_session_on_error(wasapi_capture_t *capture) {
+  int reason = 0;
+  for (int retry = 0; retry < 10; retry++) {
+    if (wasapi_session_events_format_changed(
+            capture->session_events_listener)) {
+      break;
+    }
+    if (wasapi_session_events_device_error(capture->session_events_listener,
+                                           &reason)) {
+      break;
+    }
+    cdsp_sleep_ms(5);
   }
+  return wasapi_capture_check_session(capture);
+}
 
+/**
+ * @brief get_next_packet_size matching wasapi-rs api.rs (shared mode only).
+ */
+static inline HRESULT
+wasapi_capture_get_next_packet_size(IAudioCaptureClient *capture_client,
+                                    UINT32 *out_frames) {
+  UINT32 frames = 0;
+  HRESULT hr = IAudioCaptureClient_GetNextPacketSize(capture_client, &frames);
+  *out_frames = SUCCEEDED(hr) ? frames : 0;
+  return hr;
+}
+
+/**
+ * Read-only zero block used to push AUDCLNT_BUFFERFLAGS_SILENT packets into
+ * the ring without a staging buffer. All negotiated WASAPI formats (S16, S24,
+ * S32, F32) encode silence as zero bytes.
+ */
+static const uint8_t k_wasapi_capture_silence[16384];
+
+/**
+ * @brief Pushes @p frames frames of silence into the capture ring (whole
+ * frames, drop-on-full like backend_buffer_push).
+ */
+static void wasapi_capture_push_silence(backend_buffer_t *buffer, size_t frames,
+                                        size_t blockalign) {
+  if (blockalign == 0)
+    return;
+  size_t per_push = sizeof(k_wasapi_capture_silence) / blockalign;
+  if (per_push == 0)
+    return;
+  while (frames > 0) {
+    size_t n = frames < per_push ? frames : per_push;
+    size_t pushed = backend_buffer_push(buffer, k_wasapi_capture_silence, n);
+    frames -= n;
+    if (pushed < n)
+      break; // Ring full: drop the rest (drop-on-full policy).
+  }
+}
+
+/**
+ * @brief read_from_device matching wasapi-rs api.rs, but zero-copy.
+ *
+ * Upstream (device.rs:728, api.rs:1940-1975) copies each packet into a
+ * heap-allocated staging Vec and then pushes that into the ring. Per AGENTS.md
+ * §3.4, cdsp pushes the device packet straight into the SPSC ring between
+ * GetBuffer and ReleaseBuffer: no staging buffer, one copy, and no upper
+ * bound on the packet size (upstream returns DataLengthTooShort when a
+ * packet does not fit its staging buffer; here the ring applies its normal
+ * drop-on-full policy instead).
+ *
+ * @return The HRESULT of GetBuffer (on failure) or ReleaseBuffer.
+ */
+static inline HRESULT wasapi_capture_read_from_device(
+    IAudioCaptureClient *capture_client, backend_buffer_t *buffer,
+    size_t bytes_per_frame, UINT32 *out_frames_read, DWORD *out_flags) {
   BYTE *buffer_ptr = NULL;
   UINT32 nbr_frames_returned = 0;
   DWORD flags = 0;
   UINT64 index = 0;
   UINT64 timestamp = 0;
 
+  *out_frames_read = 0;
+  *out_flags = 0;
   HRESULT hr = IAudioCaptureClient_GetBuffer(capture_client, &buffer_ptr,
                                              &nbr_frames_returned, &flags,
                                              &index, &timestamp);
   if (FAILED(hr)) {
-    return false;
+    return hr;
   }
 
   *out_frames_read = nbr_frames_returned;
   *out_flags = flags;
 
   if (nbr_frames_returned == 0) {
-    return true;
+    return hr;
   }
 
-  size_t len_in_bytes = (size_t)nbr_frames_returned * bytes_per_frame;
-  if (len_in_bytes > max_bytes) {
-    IAudioCaptureClient_ReleaseBuffer(capture_client, nbr_frames_returned);
-    return false;
+  if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) || !buffer_ptr) {
+    logger_debug(&g_wasapi_logger, "Captured a buffer marked as silent.");
+    wasapi_capture_push_silence(buffer, (size_t)nbr_frames_returned,
+                                bytes_per_frame);
+  } else {
+    backend_buffer_push(buffer, buffer_ptr, (size_t)nbr_frames_returned);
   }
 
-  if (buffer_ptr) {
-    memcpy(data, buffer_ptr, len_in_bytes);
-  }
-
-  hr = IAudioCaptureClient_ReleaseBuffer(capture_client, nbr_frames_returned);
-  return SUCCEEDED(hr);
+  return IAudioCaptureClient_ReleaseBuffer(capture_client, nbr_frames_returned);
 }
 
 /**
@@ -157,21 +220,9 @@ static void *wasapi_capture_loop(void *arg) {
   size_t blockalign = capture->blockalign;
   bool inactive = false;
 
-  size_t data_buf_size = 8 * blockalign * 1024;
-  uint8_t *data = (uint8_t *)malloc(data_buf_size);
-  if (!data) {
-    logger_error(&g_wasapi_logger,
-                 "Capture failed to allocate %zu byte transfer buffer",
-                 data_buf_size);
-    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-    if (com_ok) {
-      CoUninitialize();
-    }
-    return NULL;
-  }
-
-  REFERENCE_TIME def_time = 0, min_time = 0;
-  IAudioClient_GetDevicePeriod(capture->client, &def_time, &min_time);
+  // Device period as queried (and checked) by wasapi_initialize_stream in
+  // open(); it is fixed for the lifetime of the initialized client.
+  REFERENCE_TIME def_time = capture->def_period;
   uint64_t poll_delay_us = (uint64_t)(def_time / 10);
   if (poll_delay_us == 0)
     poll_delay_us = 1000;
@@ -184,34 +235,34 @@ static void *wasapi_capture_loop(void *arg) {
 
   int no_frames_counter = 0;
 
-#ifdef _WIN32
   DWORD task_index = 0;
   HANDLE mmcss_handle = AvSetMmThreadCharacteristicsA("Pro Audio", &task_index);
   if (!mmcss_handle) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
   }
-#endif
 
+  bool fatal = false;
   logger_trace(&g_wasapi_logger, "Starting capture stream.");
   HRESULT hr = IAudioClient_Start(capture->client);
   if (FAILED(hr)) {
-    logger_error(&g_wasapi_logger, "Capture start stream failed: hr=0x%08lX",
-                 (unsigned long)hr);
-    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-    free(data);
-    if (com_ok) {
-      CoUninitialize();
-    }
-    return NULL;
+    wasapi_stream_error_set(&capture->error,
+                            "Capture failed with error: start stream failed "
+                            "(hr=0x%08lX)",
+                            (unsigned long)hr);
+    fatal = true;
+  } else {
+    logger_trace(&g_wasapi_logger, "Started capture stream.");
   }
-  logger_trace(&g_wasapi_logger, "Started capture stream.");
 
-  while (backend_buffer_get_state(capture->buffer) != BACKEND_STREAM_STOPPED) {
+  // Every WASAPI call below is fatal on failure, matching the `?` operators
+  // in upstream capture_loop (device.rs:673, 705-718, 727-728, 748): the
+  // error is recorded, the loop ends and the stream state becomes STOPPED, so
+  // read() reports BACKEND_ERROR_READ_ERROR with the HRESULT (upstream:
+  // DeviceState::Error -> CaptureError, device.rs:1219-1223, 1294-1298).
+  while (!fatal &&
+         backend_buffer_get_state(capture->buffer) != BACKEND_STREAM_STOPPED) {
     logger_trace(&g_wasapi_logger, "Capturing.");
-    if (atomic_load_explicit(&capture->has_pending_rate_change,
-                             memory_order_acquire)) {
-      logger_debug(&g_wasapi_logger,
-                   "Stopping inner capture loop due to pending rate change.");
+    if (wasapi_capture_check_session(capture)) {
       break;
     }
 
@@ -240,9 +291,20 @@ static void *wasapi_capture_loop(void *arg) {
       }
       UINT32 frames_ready = 0;
       hr = IAudioClient_GetCurrentPadding(capture->client, &frames_ready);
+      if (FAILED(hr)) {
+        if (wasapi_capture_check_session_on_error(capture)) {
+          break;
+        }
+        wasapi_stream_error_set(&capture->error,
+                                "Capture failed with error: GetCurrentPadding "
+                                "failed (hr=0x%08lX)",
+                                (unsigned long)hr);
+        fatal = true;
+        break;
+      }
       logger_trace(&g_wasapi_logger,
                    "Capture, nbr frames ready after sleep: %u.", frames_ready);
-      if (SUCCEEDED(hr) && frames_ready > 0) {
+      if (frames_ready > 0) {
         no_frames_counter = 0;
       } else {
         no_frames_counter++;
@@ -268,88 +330,98 @@ static void *wasapi_capture_loop(void *arg) {
     }
 
     UINT32 available_frames = 0;
-    UINT32 next_packet_size = 0;
-    if (wasapi_capture_get_next_packet_size(
-            capture->capture_client, capture->exclusive, &next_packet_size)) {
-      available_frames = next_packet_size;
+    const char *failed_call = NULL;
+    if (!capture->exclusive) {
+      hr = wasapi_capture_get_next_packet_size(capture->capture_client,
+                                               &available_frames);
+      failed_call = "GetNextPacketSize";
+    } else if (capture->event_handle) {
+      available_frames = capture->buffer_frame_count;
+      hr = S_OK;
     } else {
-      if (capture->event_handle) {
-        available_frames = capture->buffer_frame_count;
-      } else {
-        UINT32 padding = 0;
-        IAudioClient_GetCurrentPadding(capture->client, &padding);
-        available_frames = padding;
+      hr = IAudioClient_GetCurrentPadding(capture->client, &available_frames);
+      failed_call = "GetCurrentPadding";
+    }
+    if (FAILED(hr)) {
+      if (wasapi_capture_check_session_on_error(capture)) {
+        break;
       }
+      wasapi_stream_error_set(&capture->error,
+                              "Capture failed with error: %s failed "
+                              "(hr=0x%08lX)",
+                              failed_call, (unsigned long)hr);
+      fatal = true;
+      break;
     }
 
     logger_trace(&g_wasapi_logger, "Capture, available frames from dev: %u.",
                  available_frames);
 
-    if (available_frames > 0) {
-      while (true) {
-        UINT32 nbr_frames_read = 0;
-        DWORD flags = 0;
-        if (!wasapi_capture_read_from_device(capture->capture_client, data,
-                                             data_buf_size, blockalign,
-                                             &nbr_frames_read, &flags)) {
-          if (atomic_load_explicit(&capture->has_pending_rate_change,
-                                   memory_order_acquire)) {
-            break;
-          }
+    while (available_frames > 0 &&
+           backend_buffer_get_state(capture->buffer) !=
+               BACKEND_STREAM_STOPPED) {
+      UINT32 nbr_frames_read = 0;
+      DWORD flags = 0;
+      hr = wasapi_capture_read_from_device(capture->capture_client,
+                                           capture->buffer, blockalign,
+                                           &nbr_frames_read, &flags);
+      if (FAILED(hr)) {
+        if (wasapi_capture_check_session_on_error(capture)) {
           break;
         }
-
-        if (nbr_frames_read < available_frames) {
-          logger_debug(&g_wasapi_logger, "Expected %u frames, got %u.",
-                       available_frames, nbr_frames_read);
-        }
-        size_t nbr_bytes_loop = (size_t)nbr_frames_read * blockalign;
-        if (flags & AUDCLNT_BUFFERFLAGS_SILENT) {
-          logger_debug(&g_wasapi_logger, "Captured a buffer marked as silent.");
-          memset(data, 0, nbr_bytes_loop);
-        }
-
-        backend_buffer_push(capture->buffer, data, (size_t)nbr_frames_read);
-
-        if (capture->exclusive && capture->event_handle) {
-          break;
-        }
-
-        if (!capture->exclusive) {
-          UINT32 next_frames = 0;
-          if (wasapi_capture_get_next_packet_size(capture->capture_client,
-                                                  false, &next_frames)) {
-            if (next_frames == 0)
-              break;
-            logger_trace(&g_wasapi_logger,
-                         "Capture, additional packet available with %u frames.",
-                         next_frames);
-            available_frames = next_frames;
-          } else {
-            break;
-          }
-        } else {
-          UINT32 padding = 0;
-          if (SUCCEEDED(
-                  IAudioClient_GetCurrentPadding(capture->client, &padding))) {
-            if (padding == 0)
-              break;
-            logger_trace(
-                &g_wasapi_logger,
-                "Capture, more frames available, current padding is %u frames.",
-                padding);
-            available_frames = padding;
-          } else {
-            break;
-          }
-        }
+        wasapi_stream_error_set(&capture->error,
+                                "Capture failed with error: reading from "
+                                "device failed (hr=0x%08lX)",
+                                (unsigned long)hr);
+        fatal = true;
+        break;
       }
+
+      if (nbr_frames_read < available_frames) {
+        logger_debug(&g_wasapi_logger, "Expected %u frames, got %u.",
+                     available_frames, nbr_frames_read);
+      }
+      if (nbr_frames_read == 0) {
+        break;
+      }
+
+      if (capture->exclusive && capture->event_handle) {
+        break;
+      }
+
+      UINT32 more_frames = 0;
+      if (!capture->exclusive) {
+        hr = wasapi_capture_get_next_packet_size(capture->capture_client,
+                                                 &more_frames);
+        failed_call = "GetNextPacketSize";
+      } else {
+        hr = IAudioClient_GetCurrentPadding(capture->client, &more_frames);
+        failed_call = "GetCurrentPadding";
+      }
+      if (FAILED(hr)) {
+        if (wasapi_capture_check_session_on_error(capture)) {
+          break;
+        }
+        wasapi_stream_error_set(&capture->error,
+                                "Capture failed with error: %s failed "
+                                "(hr=0x%08lX)",
+                                failed_call, (unsigned long)hr);
+        fatal = true;
+        break;
+      }
+      if (more_frames > 0) {
+        logger_trace(&g_wasapi_logger,
+                     "Capture, more frames available: %u frames.", more_frames);
+      }
+      available_frames = more_frames;
     }
   }
 
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   IAudioClient_Stop(capture->client);
-  free(data);
+  if (mmcss_handle) {
+    AvRevertMmThreadCharacteristics(mmcss_handle);
+  }
   if (com_ok) {
     CoUninitialize();
   }
@@ -366,7 +438,6 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
 
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   capture->com_initialized = SUCCEEDED(init_hr);
-  atomic_init(&capture->has_pending_rate_change, false);
 
   if (!wasapi_create_device_and_client(
           capture->device, true, capture->loopback, &capture->enumerator,
@@ -417,9 +488,11 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
 
-  wasapi_register_session_events(
-      capture->client, capture, wasapi_capture_on_format_change,
-      &capture->session_control, &capture->session_events_listener);
+  if (!wasapi_register_session_events(capture->client,
+                                      &capture->session_control,
+                                      &capture->session_events_listener, err)) {
+    goto error_cleanup;
+  }
 
   logger_debug(&g_wasapi_logger, "Opened Wasapi capture device \"%s\".",
                capture->device[0] != '\0' ? capture->device : "default");
@@ -439,6 +512,7 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
+  wasapi_stream_error_reset(&capture->error);
 
   if (pthread_create(&capture->inner_thread, NULL, wasapi_capture_loop,
                      capture) != 0) {
@@ -453,13 +527,13 @@ static bool wasapi_capture_open(void *ctx, backend_error_t *err) {
   return true;
 
 error_cleanup:
-  backend_buffer_free(capture->buffer);
-  capture->buffer = NULL;
   wasapi_cleanup_device_resources(
       &capture->client, (IUnknown **)&capture->capture_client,
       &capture->session_control, &capture->session_events_listener,
       &capture->event_handle, &capture->mm_device, &capture->enumerator,
       &capture->com_initialized);
+  backend_buffer_free(capture->buffer);
+  capture->buffer = NULL;
   return false;
 }
 
@@ -470,7 +544,15 @@ static bool wasapi_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   wasapi_capture_t *capture = (wasapi_capture_t *)ctx;
   if (!capture)
     return false;
-  return backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
+  bool ok = backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
+  if (!ok && err && err->type == BACKEND_ERROR_READ_ERROR) {
+    // Replace the generic "stream stopped" text with the HRESULT / disconnect
+    // reason recorded by the inner thread (upstream CaptureError(msg)).
+    const char *msg = wasapi_stream_error_get(&capture->error);
+    if (msg)
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR, msg);
+  }
+  return ok;
 }
 
 static void wasapi_capture_close(void *ctx) {
@@ -486,13 +568,16 @@ static void wasapi_capture_close(void *ctx) {
     capture->inner_thread_created = false;
   }
 
-  backend_buffer_free(capture->buffer);
-  capture->buffer = NULL;
+  // Unregister the session listener and release the device before freeing
+  // the buffer. The inner thread (the only user of the buffer besides the
+  // engine) has been joined above.
   wasapi_cleanup_device_resources(
       &capture->client, (IUnknown **)&capture->capture_client,
       &capture->session_control, &capture->session_events_listener,
       &capture->event_handle, &capture->mm_device, &capture->enumerator,
       &capture->com_initialized);
+  backend_buffer_free(capture->buffer);
+  capture->buffer = NULL;
 }
 
 static bool wasapi_capture_get_pending_rate_change(void *ctx,
@@ -501,8 +586,8 @@ static bool wasapi_capture_get_pending_rate_change(void *ctx,
   if (!capture)
     return false;
   return wasapi_check_and_resolve_pending_rate(
-      capture->device, !capture->loopback, capture->pending_rate,
-      &capture->has_pending_rate_change, out_rate);
+      capture->device, !capture->loopback, capture->exclusive,
+      (double)capture->sample_rate, capture->session_events_listener, out_rate);
 }
 
 static bool wasapi_capture_pitch_control_supported(void *ctx) {

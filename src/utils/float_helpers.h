@@ -119,16 +119,16 @@ ALWAYS_INLINE void dsp_ops_min_max(const double *buffer, size_t count,
 }
 
 /**
- * @brief Compute root-mean-square over the first `count` samples of the buffer.
+ * @brief Compute the mean of the squared samples over the first `count`
+ * samples of the buffer, accumulated in double precision.
  *
- * Uses vectorization pragmas to achieve fast single-pass float accumulation
- * without intermediate buffer allocation.
+ * Single pass, no intermediate buffer.
  *
  * @param buffer Input vector.
  * @param count Number of elements to process.
- * @return The RMS value as float, or 0.0f if count is 0.
+ * @return The mean square as float, or 0.0f if count is 0.
  */
-ALWAYS_INLINE float dsp_ops_rms(const double *buffer, size_t count) {
+ALWAYS_INLINE float dsp_ops_mean_square(const double *buffer, size_t count) {
   if (count == 0)
     return 0.0f;
   float sum = 0.0f;
@@ -137,7 +137,25 @@ ALWAYS_INLINE float dsp_ops_rms(const double *buffer, size_t count) {
     float f = (float)buffer[i];
     sum += f * f;
   }
-  return sqrtf(sum / (float)count);
+  return sum / (float)count;
+}
+
+/**
+ * @brief Compute root-mean-square over the first `count` samples of the buffer.
+ *
+ * The squares are accumulated, averaged and square-rooted in double precision
+ * and converted to float once at the end (upstream `rms_and_peak`), so neither
+ * underflow of tiny samples nor mantissa absorption over long chunks occurs at
+ * single precision.
+ *
+ * @param buffer Input vector.
+ * @param count Number of elements to process.
+ * @return The RMS value as float, or 0.0f if count is 0.
+ */
+ALWAYS_INLINE float dsp_ops_rms(const double *buffer, size_t count) {
+  if (count == 0)
+    return 0.0f;
+  return sqrtf(dsp_ops_mean_square(buffer, count));
 }
 
 /**
@@ -274,26 +292,6 @@ static inline void dsp_ops_float_hann_window(float *buffer, size_t count) {
 }
 
 /**
- * @brief Find the maximum value in a float vector.
- */
-static inline float dsp_ops_float_max(const float *buffer, size_t count) {
-  if (count == 0)
-    return -FLT_MAX;
-#if defined(ENABLE_ACCELERATE)
-  float res = 0.0f;
-  vDSP_maxv(buffer, 1, &res, count);
-  return res;
-#else
-  float res = buffer[0];
-  PRAGMA_VECTORIZE_LOOP
-  for (size_t i = 1; i < count; i++) {
-    res = fmaxf(buffer[i], res);
-  }
-  return res;
-#endif
-}
-
-/**
  * @brief Compute the absolute magnitude of separate real and imaginary arrays.
  */
 static inline void dsp_ops_float_zvabs(const float *real, const float *imag,
@@ -324,8 +322,41 @@ static inline void dsp_ops_float_complex_abs(const float complex *spec,
   }
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC pop_options
+#elif defined(__clang__)
+#pragma float_control(pop)
+#endif
+
+/**
+ * @brief Find the maximum value in a float vector.
+ *
+ * Note: Must be compiled outside `finite-math-only` / `float_control(precise,
+ * off)` because spectrum magnitude buffers intentionally contain `-INFINITY`
+ * for zero-amplitude bins (see AGENTS.md §4.3).
+ */
+static inline float dsp_ops_float_max(const float *buffer, size_t count) {
+  if (count == 0)
+    return -FLT_MAX;
+#if defined(ENABLE_ACCELERATE)
+  float res = 0.0f;
+  vDSP_maxv(buffer, 1, &res, count);
+  return res;
+#else
+  float res = buffer[0];
+  for (size_t i = 1; i < count; i++) {
+    res = fmaxf(buffer[i], res);
+  }
+  return res;
+#endif
+}
+
 /**
  * @brief Convert linear amplitude values to decibels (dBFS).
+ *
+ * Note: Must be compiled outside `finite-math-only` / `float_control(precise,
+ * off)` because zero-amplitude inputs intentionally produce `-INFINITY` (see
+ * AGENTS.md §4.3).
  */
 static inline void dsp_ops_float_vdbcon(const float *vector, float reference,
                                         float *result, size_t count) {
@@ -339,11 +370,5 @@ static inline void dsp_ops_float_vdbcon(const float *vector, float reference,
   }
 #endif
 }
-
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC pop_options
-#elif defined(__clang__)
-#pragma float_control(pop)
-#endif
 
 #endif // CLIB_UTILS_FLOAT_HELPERS_H

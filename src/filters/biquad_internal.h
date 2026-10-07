@@ -17,7 +17,7 @@ typedef struct {
 } biquad_coefficients_t;
 
 struct biquad_filter {
-  char name[64];
+  char name[128];
   biquad_type_t type;
   biquad_coefficients_t coeffs;
   double z1, z2;

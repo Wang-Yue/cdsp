@@ -4,7 +4,7 @@
 // --------------------
 // The render callback runs on a high-priority audio thread driven by
 // CoreAudio. It is absolutely forbidden to take locks, allocate, or
-// otherwise call into the Swift runtime in a way that could block. To
+// otherwise call into ObjC/CoreFoundation in a way that could block. To
 // honour that:
 //   - sample rings are SPSC instances —
 //     producer and consumer are wait-free, no lock.
@@ -17,6 +17,7 @@
 #if defined(ENABLE_COREAUDIO)
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
+#include <math.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -74,14 +75,21 @@ static OSStatus playback_callback(void *inRefCon,
 
   atomic_fetch_add_explicit(&playback->active_callbacks, 1,
                             memory_order_relaxed);
-  if (!ioData || ioData->mNumberBuffers == 0 ||
-      backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_STOPPED) {
+  if (!ioData || ioData->mNumberBuffers == 0) {
     atomic_fetch_sub_explicit(&playback->active_callbacks, 1,
-                              memory_order_relaxed);
+                              memory_order_release);
     return noErr;
   }
 
-  if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED) {
+  // Speaker safety: AUHAL does not hand us a zeroed ioData. Whenever we are not
+  // going to render real audio (stopped, paused, or an unexpected buffer
+  // layout), the output buffers must be explicitly silenced, otherwise the
+  // previous cycle's content or uninitialised memory reaches the DAC.
+  backend_stream_state_t state = backend_buffer_get_state(playback->buffer);
+  size_t needed_bytes = (size_t)inNumberFrames * playback->channels * 4u;
+  if (state == BACKEND_STREAM_STOPPED || state == BACKEND_STREAM_PAUSED ||
+      ioData->mNumberBuffers != 1 || !ioData->mBuffers[0].mData ||
+      (size_t)ioData->mBuffers[0].mDataByteSize < needed_bytes) {
     for (UInt32 b = 0; b < ioData->mNumberBuffers; b++) {
       if (ioData->mBuffers[b].mData) {
         memset(ioData->mBuffers[b].mData, 0, ioData->mBuffers[b].mDataByteSize);
@@ -322,7 +330,11 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
     logger_trace(&g_logger, "Set playback device sample rate.");
   }
 
-  core_audio_device_add_alive_watcher(dev_id, &playback->is_device_alive);
+  if (!core_audio_device_add_alive_watcher(dev_id,
+                                           &playback->is_device_alive)) {
+    logger_warn(&g_logger,
+                "Unable to register playback device alive listener.");
+  }
 
   core_audio_device_set_buffer_frame_size(dev_id, CORE_AUDIO_SCOPE_OUTPUT,
                                           (uint32_t)playback->chunk_size);
@@ -379,6 +391,18 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
     goto cleanup;
   }
 
+  // Install the rate watcher before starting IO (upstream registers its
+  // RateListener before audio_unit.start(), device.rs:653-674). The watcher
+  // is seeded with the current nominal rate, so a mismatch is reported.
+  if (core_audio_device_has_nominal_sample_rate_property(dev_id)) {
+    playback->rate_watcher =
+        rate_change_watcher_create(dev_id, playback->sample_rate);
+    if (!playback->rate_watcher) {
+      logger_warn(&g_logger, "Unable to register playback rate listener, "
+                             "falling back to polling the nominal rate.");
+    }
+  }
+
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
   status = AudioOutputUnitStart(playback->audio_unit);
   if (status != noErr) {
@@ -388,11 +412,6 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to start output");
     goto cleanup;
-  }
-
-  if (core_audio_device_has_nominal_sample_rate_property(dev_id)) {
-    playback->rate_watcher =
-        rate_change_watcher_create(dev_id, playback->sample_rate);
   }
 
   logger_debug(&g_logger, "Opened CoreAudio playback device \"%s\".",
@@ -415,14 +434,12 @@ static bool core_audio_playback_write(void *ctx, const audio_chunk_t *chunk,
                          "Playback device disconnected");
     return false;
   }
-  size_t sleep_duration_us =
-      (size_t)(1000000ULL * (unsigned long long)playback->chunk_size /
-               (unsigned long long)playback->sample_rate / 2ULL);
-  uint32_t sleep_ms = (uint32_t)(sleep_duration_us / 1000);
-  if (sleep_ms == 0)
+  uint32_t sleep_ms = (uint32_t)lround((double)playback->chunk_size * 1000.0 /
+                                       playback->sample_rate / 2.0);
+  if (sleep_ms < 1)
     sleep_ms = 1;
 
-  return backend_buffer_write_chunk(playback->buffer, chunk, sleep_ms, 8, err);
+  return backend_buffer_write_chunk(playback->buffer, chunk, sleep_ms, 16, err);
 }
 
 /// Get the current buffer level in frames.
@@ -509,7 +526,6 @@ static playback_backend_t *core_audio_playback_create(
     const playback_device_config_t *config, int sample_rate, int chunk_size,
     bool full_duplex, processing_parameters_t *params, backend_error_t *err) {
   (void)full_duplex;
-  (void)params;
   if (!config) {
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,

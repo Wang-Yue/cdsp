@@ -1,17 +1,24 @@
-// Audio backend protocols.
+// Audio backend protocols: device-config accessors, config validation and
+// overrides, and the capture/playback vtable dispatch wrappers.
 //
-// `ProcessingState` and `ProcessingStopReason` — used by both the
-// engine internals and the public actor — live in `Engine/DSPEngine.swift`.
+// `processing_state_t` and `processing_stop_reason_t` live in
+// `engine/engine_state_types.h`.
 
 #include "backend/audio_backend.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <math.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "wav/wav_reader.h"
 
@@ -43,6 +50,7 @@
 #include "backend/generator_capture.h"
 #include "config/config_gen.h"
 #include "logging/app_logger.h"
+#include "utils/cdsp_path.h"
 #include "utils/cdsp_time.h"
 
 const uint32_t STANDARD_RATES[STANDARD_RATES_COUNT] = {
@@ -54,6 +62,11 @@ void audio_backend_error_description(const audio_backend_error_t *err,
                                      char *out_buf, size_t buf_len) {
   if (!err || !out_buf || buf_len == 0)
     return;
+  // Fallback for an out-of-range type (ABI mismatch / corruption) so out_buf
+  // is never left unwritten. Kept outside the switch so -Wswitch still
+  // flags a newly added enumerator that is not handled below.
+  snprintf(out_buf, buf_len, "Unknown backend error (%d): %s", (int)err->type,
+           err->message);
   switch (err->type) {
   case AUDIO_BACKEND_ERR_CONFIG_PARSE:
     snprintf(out_buf, buf_len, "Config parse error: %s", err->message);
@@ -660,6 +673,8 @@ binary_sample_format_t playback_device_config_get_binary_format(
 #if defined(ENABLE_COREAUDIO)
 coreaudio_sample_format_t
 capture_device_config_get_format(const capture_device_config_t *config) {
+  if (!config)
+    return COREAUDIO_SAMPLE_FORMAT_INVALID;
   switch (config->type) {
   case AUDIO_BACKEND_TYPE_CORE_AUDIO:
     return config->cfg.coreaudio.has_format ? config->cfg.coreaudio.format
@@ -691,6 +706,8 @@ capture_device_config_get_format(const capture_device_config_t *config) {
 
 coreaudio_sample_format_t
 playback_device_config_get_format(const playback_device_config_t *config) {
+  if (!config)
+    return COREAUDIO_SAMPLE_FORMAT_INVALID;
   switch (config->type) {
   case AUDIO_BACKEND_TYPE_CORE_AUDIO:
     return config->cfg.coreaudio.has_format ? config->cfg.coreaudio.format
@@ -999,6 +1016,14 @@ void capture_backend_set_pitch(capture_backend_t *backend, double multiplier) {
   backend->vtable->set_pitch(backend->ctx, multiplier);
 }
 
+void capture_backend_set_pipeline_sample_rate(capture_backend_t *backend,
+                                              int pipeline_sample_rate) {
+  if (!backend || !backend->vtable ||
+      !backend->vtable->set_pipeline_sample_rate)
+    return;
+  backend->vtable->set_pipeline_sample_rate(backend->ctx, pipeline_sample_rate);
+}
+
 /// Wait for new samples to become available, up to the given timeout.
 bool capture_backend_wait(capture_backend_t *backend, uint32_t timeout_ms) {
   if (!backend || !backend->vtable || !backend->vtable->wait_for_data)
@@ -1121,34 +1146,270 @@ void playback_backend_free(playback_backend_t *backend) {
   free(backend);
 }
 
+static FILE *open_capture_file_nonblock(const char *fname,
+                                        bool *out_is_regular) {
+  if (out_is_regular)
+    *out_is_regular = false;
+  if (!fname || fname[0] == '\0') {
+    errno = ENOENT;
+    return NULL;
+  }
+  char expanded[1024];
+  cdsp_expand_path(fname, expanded, sizeof(expanded));
+#if !defined(_WIN32)
+  int fd = open(expanded, O_RDONLY | O_NONBLOCK);
+  if (fd < 0)
+    return NULL;
+  struct stat st;
+  bool is_reg = (fstat(fd, &st) == 0 && S_ISREG(st.st_mode));
+  if (is_reg) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags >= 0 && (flags & O_NONBLOCK)) {
+      (void)fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
+    }
+  }
+  FILE *fp = fdopen(fd, "rb");
+  if (!fp) {
+    int saved_errno = errno;
+    close(fd);
+    errno = saved_errno;
+    return NULL;
+  }
+  if (out_is_regular)
+    *out_is_regular = is_reg;
+  return fp;
+#else
+  FILE *fp = fopen(expanded, "rb");
+  if (fp && out_is_regular)
+    *out_is_regular = true;
+  return fp;
+#endif
+}
+
+static int check_non_empty_device_field(const char *side, const char *field,
+                                        bool present, const char *value,
+                                        config_error_t *err) {
+  if (present && (!value || value[0] == '\0')) {
+    config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                     "devices.%s.%s: Must not be empty", side, field);
+    return -1;
+  }
+  return 0;
+}
+
+static int validate_capture_device_names(const capture_device_config_t *cap,
+                                         config_error_t *err) {
+  switch (cap->type) {
+#if defined(ENABLE_ALSA)
+  case AUDIO_BACKEND_TYPE_ALSA:
+    if (check_non_empty_device_field("capture", "device", true,
+                                     cap->cfg.alsa.device, err) != 0 ||
+        check_non_empty_device_field("capture", "link_volume_control",
+                                     cap->cfg.alsa.has_link_volume_control,
+                                     cap->cfg.alsa.link_volume_control,
+                                     err) != 0 ||
+        check_non_empty_device_field("capture", "link_mute_control",
+                                     cap->cfg.alsa.has_link_mute_control,
+                                     cap->cfg.alsa.link_mute_control,
+                                     err) != 0) {
+      return -1;
+    }
+    break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  case AUDIO_BACKEND_TYPE_PIPEWIRE:
+    if (check_non_empty_device_field("capture", "node_name",
+                                     cap->cfg.pipewire.has_node_name,
+                                     cap->cfg.pipewire.node_name, err) != 0 ||
+        check_non_empty_device_field("capture", "node_description",
+                                     cap->cfg.pipewire.has_node_description,
+                                     cap->cfg.pipewire.node_description,
+                                     err) != 0 ||
+        check_non_empty_device_field("capture", "node_group_name",
+                                     cap->cfg.pipewire.has_node_group_name,
+                                     cap->cfg.pipewire.node_group_name,
+                                     err) != 0) {
+      return -1;
+    }
+    break;
+#endif
+  case AUDIO_BACKEND_TYPE_FILE: {
+    const char *fname =
+        cap->is_wav ? cap->cfg.wav_file.filename : cap->cfg.raw_file.filename;
+    if (check_non_empty_device_field("capture", "filename", true, fname, err) !=
+        0) {
+      return -1;
+    }
+    break;
+  }
+#if defined(ENABLE_COREAUDIO)
+  case AUDIO_BACKEND_TYPE_CORE_AUDIO:
+    if (check_non_empty_device_field("capture", "device",
+                                     cap->cfg.coreaudio.has_device,
+                                     cap->cfg.coreaudio.device, err) != 0) {
+      return -1;
+    }
+    break;
+#endif
+#if defined(ENABLE_WASAPI)
+  case AUDIO_BACKEND_TYPE_WASAPI:
+    if (check_non_empty_device_field("capture", "device",
+                                     cap->cfg.wasapi.has_device,
+                                     cap->cfg.wasapi.device, err) != 0) {
+      return -1;
+    }
+    break;
+#endif
+#if defined(ENABLE_ASIO)
+  case AUDIO_BACKEND_TYPE_ASIO:
+    if (check_non_empty_device_field("capture", "device", true,
+                                     cap->cfg.asio.device, err) != 0) {
+      return -1;
+    }
+    break;
+#endif
+  default:
+    break;
+  }
+  return 0;
+}
+
+static int validate_playback_device_names(const playback_device_config_t *pb,
+                                          config_error_t *err) {
+  switch (pb->type) {
+#if defined(ENABLE_ALSA)
+  case AUDIO_BACKEND_TYPE_ALSA:
+    if (check_non_empty_device_field("playback", "device", true,
+                                     pb->cfg.alsa.device, err) != 0) {
+      return -1;
+    }
+    break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+  case AUDIO_BACKEND_TYPE_PIPEWIRE:
+    if (check_non_empty_device_field("playback", "node_name",
+                                     pb->cfg.pipewire.has_node_name,
+                                     pb->cfg.pipewire.node_name, err) != 0 ||
+        check_non_empty_device_field("playback", "node_description",
+                                     pb->cfg.pipewire.has_node_description,
+                                     pb->cfg.pipewire.node_description,
+                                     err) != 0 ||
+        check_non_empty_device_field("playback", "node_group_name",
+                                     pb->cfg.pipewire.has_node_group_name,
+                                     pb->cfg.pipewire.node_group_name,
+                                     err) != 0) {
+      return -1;
+    }
+    break;
+#endif
+  case AUDIO_BACKEND_TYPE_FILE:
+    if (check_non_empty_device_field("playback", "filename", true,
+                                     pb->cfg.raw_file.filename, err) != 0) {
+      return -1;
+    }
+    break;
+#if defined(ENABLE_COREAUDIO)
+  case AUDIO_BACKEND_TYPE_CORE_AUDIO:
+    if (check_non_empty_device_field("playback", "device",
+                                     pb->cfg.coreaudio.has_device,
+                                     pb->cfg.coreaudio.device, err) != 0) {
+      return -1;
+    }
+    break;
+#endif
+#if defined(ENABLE_WASAPI)
+  case AUDIO_BACKEND_TYPE_WASAPI:
+    if (check_non_empty_device_field("playback", "device",
+                                     pb->cfg.wasapi.has_device,
+                                     pb->cfg.wasapi.device, err) != 0) {
+      return -1;
+    }
+    break;
+#endif
+#if defined(ENABLE_ASIO)
+  case AUDIO_BACKEND_TYPE_ASIO:
+    if (check_non_empty_device_field("playback", "device", true,
+                                     pb->cfg.asio.device, err) != 0) {
+      return -1;
+    }
+    break;
+#endif
+  default:
+    break;
+  }
+  return 0;
+}
+
 int audio_backend_validate_devices(const devices_config_t *devices,
                                    config_error_t *err) {
   if (!devices)
     return 0;
 
   // 1. File Backend validation
-  if (devices->playback.type == AUDIO_BACKEND_TYPE_FILE) {
-    if (devices->playback.cfg.raw_file.wav_header &&
-        devices->playback.cfg.raw_file.format ==
-            BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
-      config_error_set(
-          err, CONFIG_ERR_INVALID_DEVICE,
-          "Wav files do not support the S24_4_RJ_LE sample format");
-      return -1;
+  if (devices->playback.type == AUDIO_BACKEND_TYPE_FILE ||
+      devices->playback.type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
+    bool wav_header = (devices->playback.type == AUDIO_BACKEND_TYPE_STDIN_OUT)
+                          ? devices->playback.cfg.stdout_out.wav_header
+                          : devices->playback.cfg.raw_file.wav_header;
+    binary_sample_format_t fmt =
+        (devices->playback.type == AUDIO_BACKEND_TYPE_STDIN_OUT)
+            ? devices->playback.cfg.stdout_out.format
+            : devices->playback.cfg.raw_file.format;
+    if (wav_header) {
+      if (fmt == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE) {
+        config_error_set(
+            err, CONFIG_ERR_INVALID_DEVICE,
+            "Wav files do not support the S24_4_RJ_LE sample format");
+        return -1;
+      }
+      if (sample_format_is_dsd(fmt)) {
+        config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                         "Wav files do not support DSD sample formats");
+        return -1;
+      }
     }
+  }
+
+  if (validate_capture_device_names(&devices->capture, err) != 0) {
+    return -1;
   }
 
   if (devices->capture.type == AUDIO_BACKEND_TYPE_FILE) {
     const char *fname = devices->capture.is_wav
                             ? devices->capture.cfg.wav_file.filename
                             : devices->capture.cfg.raw_file.filename;
-    FILE *fp = (fname && fname[0] != '\0') ? fopen(fname, "rb") : NULL;
+    errno = 0;
+    bool is_regular = false;
+    FILE *fp = open_capture_file_nonblock(fname, &is_regular);
     if (!fp) {
+      // Upstream: "Could not open input file '{fname}'. Reason: {err}".
+      int open_errno = errno != 0 ? errno : ENOENT;
       config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "Could not open input file '%s'", fname ? fname : "");
+                       "Could not open input file '%s'. Reason: %s",
+                       fname ? fname : "", strerror(open_errno));
       return -1;
     }
+    if (devices->capture.is_wav && is_regular) {
+      wav_info_t wav_info;
+      char wav_err[256] = {0};
+      if (!wav_read_header(fp, &wav_info, wav_err, sizeof(wav_err)) ||
+          wav_info.format == BINARY_SAMPLE_FORMAT_INVALID) {
+        if (wav_info.format == BINARY_SAMPLE_FORMAT_INVALID &&
+            wav_err[0] == '\0') {
+          snprintf(wav_err, sizeof(wav_err), "Unsupported wav format");
+        }
+        fclose(fp);
+        config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                         "Error reading wav file '%s'. Reason: %s", fname,
+                         wav_err);
+        return -1;
+      }
+    }
     fclose(fp);
+  }
+
+  if (validate_playback_device_names(&devices->playback, err) != 0) {
+    return -1;
   }
 
 #if defined(ENABLE_WASAPI)
@@ -1156,14 +1417,14 @@ int audio_backend_validate_devices(const devices_config_t *devices,
     const wasapi_capture_config_t *wcap = &devices->capture.cfg.wasapi;
     if (!wcap->exclusive && wcap->has_format &&
         wcap->format != WASAPI_SAMPLE_FORMAT_F32) {
-      config_error_set(
-          err, CONFIG_ERR_INVALID_DEVICE,
-          "Wasapi capture in shared mode only supports the F32 format");
+      config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
+                       "Wasapi shared mode capture must use F32 sample format");
       return -1;
     }
     if (wcap->loopback && wcap->exclusive) {
       config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                       "Wasapi loopback capture only supported in shared mode");
+                       "Wasapi loopback capture is only supported in shared "
+                       "mode");
       return -1;
     }
   }
@@ -1173,7 +1434,7 @@ int audio_backend_validate_devices(const devices_config_t *devices,
         wplay->format != WASAPI_SAMPLE_FORMAT_F32) {
       config_error_set(
           err, CONFIG_ERR_INVALID_DEVICE,
-          "Wasapi playback in shared mode only supports the F32 format");
+          "Wasapi shared mode playback must use F32 sample format");
       return -1;
     }
   }
@@ -1242,7 +1503,8 @@ int audio_backend_validate_devices(const devices_config_t *devices,
       if (devices->enable_rate_adjust) {
         config_error_set(
             err, CONFIG_ERR_INVALID_DEVICE,
-            "Rate adjust is not supported when CoreAudio loopback captures from "
+            "Rate adjust is not supported when CoreAudio loopback captures "
+            "from "
             "the playback device. Both capture and playback share the same "
             "hardware clock and sample rate");
         return -1;
@@ -1291,25 +1553,42 @@ int audio_backend_apply_device_overrides(
 
   // 1. If capture device is WavFile, read WAV info to populate base overrides
   if (devices->capture.type == AUDIO_BACKEND_TYPE_FILE &&
-      devices->capture.is_wav && devices->capture.cfg.wav_file.filename[0] != '\0') {
+      devices->capture.is_wav &&
+      devices->capture.cfg.wav_file.filename[0] != '\0') {
     const char *fname = devices->capture.cfg.wav_file.filename;
-    wav_info_t wav_info;
-    char wav_err[256];
-    if (wav_read_info_from_file(fname, &wav_info, wav_err, sizeof(wav_err))) {
-      logger_info(
-          &g_logger,
-          "Updating overrides with values from wav input file, rate %u, "
-          "format: %s, channels: %u",
-          wav_info.sample_rate, file_sample_format_to_string(wav_info.format),
-          (unsigned int)wav_info.channels);
-      devices->capture.cfg.wav_file.channels = wav_info.channels;
-      overrides.channels = (int)wav_info.channels;
-      overrides.sample_format = wav_info.format;
-      overrides.has_sample_format = true;
-      overrides.samplerate = (int)wav_info.sample_rate;
+    bool is_regular = false;
+    errno = 0;
+    FILE *fp = open_capture_file_nonblock(fname, &is_regular);
+    if (fp) {
+      if (is_regular) {
+        wav_info_t wav_info;
+        char wav_err[256] = {0};
+        if (wav_read_header(fp, &wav_info, wav_err, sizeof(wav_err)) &&
+            wav_info.format != BINARY_SAMPLE_FORMAT_INVALID) {
+          logger_info(&g_logger,
+                      "Updating overrides with values from wav input file, "
+                      "rate %u, format: %s, channels: %u",
+                      wav_info.sample_rate,
+                      file_sample_format_to_string(wav_info.format),
+                      (unsigned int)wav_info.channels);
+          devices->capture.cfg.wav_file.channels = wav_info.channels;
+          overrides.channels = (int)wav_info.channels;
+          overrides.sample_format = wav_info.format;
+          overrides.has_sample_format = true;
+          overrides.samplerate = (int)wav_info.sample_rate;
+        } else {
+          if (wav_info.format == BINARY_SAMPLE_FORMAT_INVALID &&
+              wav_err[0] == '\0') {
+            snprintf(wav_err, sizeof(wav_err), "Unsupported wav format");
+          }
+          logger_warn(&g_logger, "Failed to read wav header from %s: %s", fname,
+                      wav_err);
+        }
+      }
+      fclose(fp);
     } else {
       logger_warn(&g_logger, "Failed to read wav header from %s: %s", fname,
-                  wav_err);
+                  strerror(errno != 0 ? errno : ENOENT));
     }
   }
 
@@ -1345,8 +1624,12 @@ int audio_backend_apply_device_overrides(
         devices->chunksize = scaled_chunksize;
 
         if (devices->capture.type == AUDIO_BACKEND_TYPE_FILE) {
-          if (!devices->capture.is_wav &&
-              devices->capture.cfg.raw_file.has_extra_samples) {
+          if (devices->capture.is_wav) {
+            if (devices->capture.cfg.wav_file.has_extra_samples) {
+              devices->capture.cfg.wav_file.extra_samples =
+                  devices->capture.cfg.wav_file.extra_samples * rate / cfg_rate;
+            }
+          } else if (devices->capture.cfg.raw_file.has_extra_samples) {
             devices->capture.cfg.raw_file.extra_samples =
                 devices->capture.cfg.raw_file.extra_samples * rate / cfg_rate;
           }
@@ -1373,7 +1656,10 @@ int audio_backend_apply_device_overrides(
     logger_debug(&g_logger, "Apply override for extra_samples: %d",
                  overrides.extra_samples);
     if (devices->capture.type == AUDIO_BACKEND_TYPE_FILE) {
-      if (!devices->capture.is_wav) {
+      if (devices->capture.is_wav) {
+        devices->capture.cfg.wav_file.extra_samples = overrides.extra_samples;
+        devices->capture.cfg.wav_file.has_extra_samples = true;
+      } else {
         devices->capture.cfg.raw_file.extra_samples = overrides.extra_samples;
         devices->capture.cfg.raw_file.has_extra_samples = true;
       }
@@ -1465,6 +1751,14 @@ int audio_backend_apply_device_overrides(
         devices->capture.cfg.alsa.has_format = true;
         logger_debug(&g_logger, "Apply override for capture sample format: %s",
                      alsa_sample_format_to_string(alsa_fmt));
+      } else {
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+                 "Alsa does not have a sample format corresponding to %s",
+                 file_sample_format_to_string(overrides.sample_format));
+        config_error_set(err, CONFIG_ERR_PARSE, "%s", msg);
+        logger_error(&g_logger, "%s", msg);
+        return -1;
       }
       break;
     }
@@ -1541,6 +1835,56 @@ int audio_backend_apply_device_overrides(
 #endif
     case AUDIO_BACKEND_TYPE_GENERATOR:
     case AUDIO_BACKEND_TYPE_INVALID:
+      break;
+    }
+  }
+
+  // 6. Propagate devices.target_level to the playback device. Upstream hands
+  // `conf.devices.target_level()` to every playback backend, which uses it for
+  // its startup/underrun silence padding. The callback backends here read a
+  // per-device `target_level` (defaulting to chunksize), so without this copy
+  // a configured devices.target_level only reached the rate controller and the
+  // engine prefill, while underrun recovery padded to chunksize instead. An
+  // explicitly set per-device target_level still takes precedence.
+  if (devices->has_target_level && devices->target_level > 0) {
+    switch (devices->playback.type) {
+#if defined(ENABLE_COREAUDIO)
+    case AUDIO_BACKEND_TYPE_CORE_AUDIO:
+      if (!devices->playback.cfg.coreaudio.has_target_level) {
+        devices->playback.cfg.coreaudio.target_level = devices->target_level;
+        devices->playback.cfg.coreaudio.has_target_level = true;
+      }
+      break;
+#endif
+#if defined(ENABLE_ALSA)
+    case AUDIO_BACKEND_TYPE_ALSA:
+      if (!devices->playback.cfg.alsa.has_target_level) {
+        devices->playback.cfg.alsa.target_level = devices->target_level;
+        devices->playback.cfg.alsa.has_target_level = true;
+      }
+      break;
+#endif
+#if defined(ENABLE_PIPEWIRE)
+    case AUDIO_BACKEND_TYPE_PIPEWIRE:
+      if (!devices->playback.cfg.pipewire.has_target_level) {
+        devices->playback.cfg.pipewire.target_level = devices->target_level;
+        devices->playback.cfg.pipewire.has_target_level = true;
+      }
+      break;
+#endif
+#if defined(ENABLE_WASAPI)
+    case AUDIO_BACKEND_TYPE_WASAPI:
+      if (!devices->playback.cfg.wasapi.has_target_level) {
+        devices->playback.cfg.wasapi.target_level = devices->target_level;
+        devices->playback.cfg.wasapi.has_target_level = true;
+      }
+      break;
+#endif
+    default:
+      // ASIO adopts the engine prefill size as its target level. WebAudio
+      // has no per-device target_level; it sizes its ring from the engine's
+      // prefill (devices.target_level) in prefill_silence(). File and stdout
+      // backends have no device-side silence padding target.
       break;
     }
   }

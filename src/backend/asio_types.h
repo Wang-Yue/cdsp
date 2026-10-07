@@ -12,12 +12,24 @@
 
 #include "backend/audio_backend.h"
 
-// COM Release helper
+// AS-16: every IASIO method below is declared STDMETHODCALLTYPE. That is
+// only correct on x64 (single calling convention). On 32-bit x86, MSVC-built
+// drivers implement the non-IUnknown methods as __thiscall C++ virtuals, so
+// calling them through these stdcall pointers would corrupt the stack.
+// Refuse to build rather than ship a backend that crashes at runtime.
+#if defined(_M_IX86) || defined(__i386__)
+#error                                                                         \
+    "The ASIO backend supports 64-bit Windows only (x86 needs thiscall thunks)"
+#endif
+
+// COM Release helper (do/while so it is safe in unbraced if/else, AS-19)
 #define SAFE_RELEASE(punk)                                                     \
-  if ((punk) != NULL) {                                                        \
-    (punk)->lpVtbl->Release(punk);                                             \
-    (punk) = NULL;                                                             \
-  }
+  do {                                                                         \
+    if ((punk) != NULL) {                                                      \
+      (punk)->lpVtbl->Release(punk);                                           \
+      (punk) = NULL;                                                           \
+    }                                                                          \
+  } while (0)
 
 // ASIO basic types matching azo-sys
 typedef int32_t ASIOBool;
@@ -25,6 +37,12 @@ typedef int32_t ASIOBool;
 #define ASIOTrue 1
 
 typedef double ASIOSampleRate;
+
+/// SDK ASIOSamples / ASIOTimeStamp layout: two 32-bit halves, high first.
+typedef struct {
+  uint32_t hi;
+  uint32_t lo;
+} ASIO64Bit;
 typedef long ASIOError;
 
 // ASIO sample types matching azo-sys / utils.rs
@@ -138,8 +156,9 @@ typedef struct IASIOVtbl {
   ASIOError(STDMETHODCALLTYPE *getClockSources)(IASIO *This, void *clocks,
                                                 long *numSources);
   ASIOError(STDMETHODCALLTYPE *setClockSource)(IASIO *This, long reference);
-  ASIOError(STDMETHODCALLTYPE *getSamplePosition)(IASIO *This, int64_t *sPos,
-                                                  int64_t *tStamp);
+  // SDK ASIOSamples / ASIOTimeStamp are {hi, lo} pairs, not int64 (AS-19).
+  ASIOError(STDMETHODCALLTYPE *getSamplePosition)(IASIO *This, ASIO64Bit *sPos,
+                                                  ASIO64Bit *tStamp);
   ASIOError(STDMETHODCALLTYPE *getChannelInfo)(IASIO *This,
                                                ASIOChannelInfo *info);
   ASIOError(STDMETHODCALLTYPE *createBuffers)(IASIO *This,

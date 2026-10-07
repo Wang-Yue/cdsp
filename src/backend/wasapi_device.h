@@ -37,45 +37,53 @@ extern const logger_t g_wasapi_logger;
     (punk) = NULL;                                                             \
   }
 
-typedef void (*wasapi_format_change_callback_t)(void *parent, double new_rate);
-
 /**
  * @struct CDSPAudioSessionEvents
  * @brief Custom COM implementation of IAudioSessionEvents for session
  * notifications.
+ *
+ * The listener owns the notification state itself (atomics), instead of
+ * holding a raw pointer back into the backend. The COM notification thread
+ * therefore never touches backend memory (no use-after-free window during
+ * teardown), and the state stays valid for as long as anyone (Windows or the
+ * backend) holds a reference to the listener.
+ *
+ * Mirrors upstream CamillaDSP device.rs:454-461 / 606-613, which maps
+ * `DisconnectReasonFormatChanged` to a format change and every other
+ * disconnect reason to an error.
  */
 typedef struct {
   IAudioSessionEventsVtbl *lpVtbl;
   LONG ref_count;
-  void *parent;
-  wasapi_format_change_callback_t callback;
+  _Atomic bool format_changed;   /**< DisconnectReasonFormatChanged seen. */
+  _Atomic bool device_error;     /**< Any other disconnect reason seen. */
+  _Atomic int disconnect_reason; /**< Last non-format disconnect reason. */
 } CDSPAudioSessionEvents;
 
 /**
- * @brief Creates a new IAudioSessionEvents listener instance.
+ * @brief Creates a new IAudioSessionEvents listener instance (refcount 1).
  *
- * @param parent Pointer to the capture/playback backend context.
- * @param callback Callback function triggered on format change event.
- * @return Pointer to IAudioSessionEvents interface.
+ * @return Pointer to IAudioSessionEvents interface, or NULL on OOM.
  */
-IAudioSessionEvents *
-wasapi_session_events_create(void *parent,
-                             wasapi_format_change_callback_t callback);
+IAudioSessionEvents *wasapi_session_events_create(void);
 
 /**
- * @brief Subscribes to IAudioSessionControl format change notifications.
+ * @brief Subscribes to IAudioSessionControl disconnect notifications.
+ *
+ * Matches upstream, where a failure to get the session control or register
+ * the notification fails the stream open (`?` in device.rs:463-464, 615-616).
  *
  * @param client Active IAudioClient.
- * @param parent Pointer to backend context.
- * @param callback Callback triggered when the session format changes.
  * @param out_control Pointer to receive the IAudioSessionControl interface.
  * @param out_listener Pointer to receive the created IAudioSessionEvents
  * listener.
+ * @param err Optional error descriptor filled on failure.
+ * @return True on success, false on failure (outputs are NULL on failure).
  */
-void wasapi_register_session_events(IAudioClient *client, void *parent,
-                                    wasapi_format_change_callback_t callback,
+bool wasapi_register_session_events(IAudioClient *client,
                                     IAudioSessionControl **out_control,
-                                    IAudioSessionEvents **out_listener);
+                                    IAudioSessionEvents **out_listener,
+                                    backend_error_t *err);
 
 /**
  * @brief Unregisters and releases audio session event listeners.
@@ -87,20 +95,70 @@ void wasapi_unregister_session_events(IAudioSessionControl **control,
                                       IAudioSessionEvents **listener);
 
 /**
- * @brief Checks if a pending sample rate change occurred and resolves the new
- * rate.
+ * @brief Non-consuming check whether a FormatChanged disconnect was reported.
+ */
+bool wasapi_session_events_format_changed(IAudioSessionEvents *listener);
+
+/**
+ * @brief Non-consuming check whether a non-format disconnect (device removal,
+ * server shutdown, exclusive mode override, session logoff, ...) was reported.
+ *
+ * @param listener Session listener (may be NULL).
+ * @param out_reason Optional, receives the AudioSessionDisconnectReason.
+ */
+bool wasapi_session_events_device_error(IAudioSessionEvents *listener,
+                                        int *out_reason);
+
+/**
+ * @brief Checks whether the session reported a format change and resolves the
+ * rate to report to the engine. Never sleeps or retries.
+ *
+ * Upstream reports `CaptureFormatChange(0)` / `PlaybackFormatChange(0)`
+ * (device.rs:1096, 1111): a format change always restarts, the rate is
+ * unknown. cdsp additionally makes a single, non-retrying attempt to read the
+ * new shared-mode mix rate. That rate is reported only if it differs from the
+ * configured rate; otherwise (exclusive mode, query failed, or same rate with
+ * a different bit depth / channel layout) 0 is reported, which never equals
+ * the configured rate and therefore always triggers a restart.
+ *
+ * Non-format disconnects are NOT reported here; they are surfaced as stream
+ * errors by the inner device thread.
  *
  * @param device Device name or ID.
- * @param is_capture True if capture stream, false if playback stream.
- * @param pending_rate The pending rate reported by the session callback.
- * @param has_pending_rate_change Pointer to atomic flag indicating pending rate
- * change.
- * @param out_rate Pointer to receive the resolved sample rate.
- * @return True if rate change was resolved, false otherwise.
+ * @param is_capture True for a capture endpoint, false for a render endpoint.
+ * @param exclusive True if the stream is in exclusive mode.
+ * @param configured_rate The sample rate the stream was opened with.
+ * @param listener Session listener holding the notification state.
+ * @param out_rate Receives the resolved rate (0 = unknown).
+ * @return True if a format change was pending (and is now consumed).
  */
-bool wasapi_check_and_resolve_pending_rate(
-    const char *device, bool is_capture, double pending_rate,
-    _Atomic bool *has_pending_rate_change, double *out_rate);
+bool wasapi_check_and_resolve_pending_rate(const char *device, bool is_capture,
+                                           bool exclusive,
+                                           double configured_rate,
+                                           IAudioSessionEvents *listener,
+                                           double *out_rate);
+
+/**
+ * @struct wasapi_stream_error_t
+ * @brief First fatal error recorded by an inner device thread, published to
+ * the engine thread with release/acquire ordering.
+ */
+typedef struct {
+  _Atomic bool has_error;
+  char message[256];
+} wasapi_stream_error_t;
+
+/** @brief Clears the error state (only while no inner thread runs). */
+void wasapi_stream_error_reset(wasapi_stream_error_t *e);
+
+/** @brief Records the first error (later calls are ignored). Inner thread. */
+void wasapi_stream_error_set(wasapi_stream_error_t *e, const char *fmt, ...);
+
+/** @brief Returns the recorded message, or NULL if none. */
+const char *wasapi_stream_error_get(const wasapi_stream_error_t *e);
+
+/** @brief Human-readable AudioSessionDisconnectReason (static string). */
+const char *wasapi_disconnect_reason_name(int reason);
 
 /**
  * @brief Generates a simple bitmask for the given channel count.

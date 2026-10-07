@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "audio/audio_chunk.h"
 #include "backend/audio_backend.h"
@@ -20,26 +21,51 @@ static const logger_t g_logger = {"dsp.backend.generator"};
 #ifdef CDSP_TEST
 #include <stdatomic.h>
 _Atomic bool g_generator_mock_hang = false;
+/// Test hook: when true, newly created generators are silence-gated like a
+/// real input, so engine tests can use a quiet generator to drive auto-pause.
+_Atomic bool g_generator_mock_silence_gated = false;
 #endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-#if defined(_WIN32)
 /**
- * @brief Simple thread-safe random number generator helper for Windows.
- *
- * Replaces POSIX rand_r.
- *
- * @param seed Pointer to the seed.
- * @return Pseudo-random integer.
+ * @brief splitmix64 step, used only to expand the seed into xoshiro state.
  */
-static inline int rand_r(unsigned int *seed) {
-  *seed = *seed * 1103515245 + 12345;
-  return (unsigned int)(*seed / 65536) % 32768;
+static uint64_t generator_splitmix64(uint64_t *x) {
+  uint64_t z = (*x += 0x9E3779B97F4A7C15ULL);
+  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+  return z ^ (z >> 31);
 }
-#endif
+
+static inline uint64_t generator_rotl(uint64_t x, int k) {
+  return (x << k) | (x >> (64 - k));
+}
+
+/**
+ * @brief xoshiro256++ next value (same family as upstream's SmallRng).
+ */
+static inline uint64_t generator_rng_next(uint64_t s[4]) {
+  uint64_t result = generator_rotl(s[0] + s[3], 23) + s[0];
+  uint64_t t = s[1] << 17;
+  s[2] ^= s[0];
+  s[3] ^= s[1];
+  s[1] ^= s[2];
+  s[0] ^= s[3];
+  s[2] ^= t;
+  s[3] = generator_rotl(s[3], 45);
+  return result;
+}
+
+/**
+ * @brief Uniform double in [-1, 1) with full 53-bit resolution.
+ */
+static inline double generator_rng_uniform_pm1(uint64_t s[4]) {
+  double u = (double)(generator_rng_next(s) >> 11) * 0x1.0p-53; // [0, 1)
+  return 2.0 * u - 1.0;
+}
 
 struct generator_capture {
   signal_type_t signal_type;
@@ -49,8 +75,7 @@ struct generator_capture {
   size_t channels;
   int chunk_size;
   double phase;
-  unsigned int rand_seed;
-  uint64_t last_read_time_ns;
+  uint64_t rng[4]; ///< xoshiro256++ state for white noise.
 };
 
 /**
@@ -72,7 +97,6 @@ static bool generator_capture_open(void *ctx, backend_error_t *err) {
   if (!capture)
     return false;
   (void)err;
-  capture->last_read_time_ns = get_time_ns();
   capture->phase = 0.0;
 
   logger_info(&g_logger,
@@ -114,24 +138,29 @@ static bool generator_capture_read(void *ctx, size_t frames,
     return false;
   }
 
+  if (frames > audio_chunk_get_frames(chunk)) {
+    frames = audio_chunk_get_frames(chunk);
+  }
+
   double freq_delta = capture->frequency / (double)capture->sample_rate;
   freq_delta = fmod(freq_delta, 1.0);
   if (freq_delta < 0.0)
     freq_delta += 1.0;
 
-  double *dst_channels[capture->channels];
-  for (size_t c = 0; c < capture->channels; c++) {
-    dst_channels[c] = audio_chunk_get_channel(chunk, c);
+  // Periodic signals are rendered once into channel 0 and copied, keeping all
+  // channels in phase (upstream generatordevice.rs:150-174). No VLA: the
+  // channel count is user-controlled.
+  double *first = audio_chunk_get_channel(chunk, 0);
+  if (!first) {
+    audio_chunk_set_valid_frames(chunk, 0);
+    return false;
   }
 
   switch (capture->signal_type) {
   case SIGNAL_TYPE_SINE: {
     double phase = capture->phase;
     for (size_t f = 0; f < frames; f++) {
-      double val = sin(phase * 2.0 * M_PI) * capture->amplitude;
-      for (size_t c = 0; c < capture->channels; c++) {
-        dst_channels[c][f] = val;
-      }
+      first[f] = sin(phase * 2.0 * M_PI) * capture->amplitude;
       phase += freq_delta;
       if (phase >= 1.0) {
         phase -= 1.0;
@@ -144,11 +173,10 @@ static bool generator_capture_read(void *ctx, size_t frames,
   case SIGNAL_TYPE_SQUARE: {
     double phase = capture->phase;
     for (size_t f = 0; f < frames; f++) {
-      double s = sin(phase * 2.0 * M_PI);
-      double val = copysign(1.0, s) * capture->amplitude;
-      for (size_t c = 0; c < capture->channels; c++) {
-        dst_channels[c][f] = val;
-      }
+      // Exact 50 % duty cycle. sign(sin(2*pi*phase)) gives +1 at phase 0.5
+      // because sin(pi) rounds to +1.2e-16 (upstream inherits this, so
+      // fs/2 renders as DC and fs/4 as a 75 % duty cycle).
+      first[f] = (phase < 0.5 ? 1.0 : -1.0) * capture->amplitude;
       phase += freq_delta;
       if (phase >= 1.0) {
         phase -= 1.0;
@@ -158,28 +186,31 @@ static bool generator_capture_read(void *ctx, size_t frames,
     break;
   }
 
-  case SIGNAL_TYPE_WHITE_NOISE: {
-    for (size_t f = 0; f < frames; f++) {
-      for (size_t c = 0; c < capture->channels; c++) {
-        double noise_val =
-            (((double)rand_r(&capture->rand_seed) / (double)RAND_MAX) * 2.0 -
-             1.0) *
-            capture->amplitude;
-        dst_channels[c][f] = noise_val;
+  case SIGNAL_TYPE_WHITE_NOISE:
+    // Independent per channel so the channels are uncorrelated.
+    for (size_t c = 0; c < capture->channels; c++) {
+      double *dst = audio_chunk_get_channel(chunk, c);
+      if (!dst)
+        continue;
+      for (size_t f = 0; f < frames; f++) {
+        dst[f] = generator_rng_uniform_pm1(capture->rng) * capture->amplitude;
       }
     }
+    break;
+
+  case SIGNAL_TYPE_INVALID:
+    assert(0 && "Invalid signal_type_t");
+    memset(first, 0, frames * sizeof(double));
     break;
   }
 
-  case SIGNAL_TYPE_INVALID: {
-    assert(0 && "Invalid signal_type_t");
-    for (size_t f = 0; f < frames; f++) {
-      for (size_t c = 0; c < capture->channels; c++) {
-        dst_channels[c][f] = 0.0;
+  if (capture->signal_type != SIGNAL_TYPE_WHITE_NOISE) {
+    for (size_t c = 1; c < capture->channels; c++) {
+      double *dst = audio_chunk_get_channel(chunk, c);
+      if (dst) {
+        memcpy(dst, first, frames * sizeof(double));
       }
     }
-    break;
-  }
   }
 
   audio_chunk_set_valid_frames(chunk, frames);
@@ -280,7 +311,6 @@ static capture_backend_t *generator_capture_create(
   (void)chunk_size;
   (void)full_duplex;
   (void)params;
-  (void)err;
 
   if (sample_rate <= 0) {
     if (err) {
@@ -289,11 +319,28 @@ static capture_backend_t *generator_capture_create(
     }
     return NULL;
   }
+  const generator_signal_t *sig = &config->cfg.generator.signal;
+  bool periodic =
+      sig->type == SIGNAL_TYPE_SINE || sig->type == SIGNAL_TYPE_SQUARE;
+  if (config->cfg.generator.channels == 0 || !isfinite(sig->level) ||
+      (periodic && !isfinite(sig->freq))) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Invalid generator configuration (channels must be "
+                         "positive, level and freq finite)");
+    }
+    return NULL;
+  }
 
   generator_capture_t *capture =
       (generator_capture_t *)calloc(1, sizeof(generator_capture_t));
-  if (!capture)
+  if (!capture) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Memory allocation failure");
+    }
     return NULL;
+  }
 
   capture->signal_type = config->cfg.generator.signal.type;
   capture->frequency = config->cfg.generator.signal.freq;
@@ -301,30 +348,47 @@ static capture_backend_t *generator_capture_create(
 
   capture->sample_rate = sample_rate;
   capture->channels = config->cfg.generator.channels;
-  unsigned int seed = (unsigned int)(get_time_ns() & 0xFFFFFFFF);
+  uint64_t seed = get_time_ns() ^ (uint64_t)(uintptr_t)capture;
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
-  seed = (unsigned int)arc4random();
+  seed = ((uint64_t)arc4random() << 32) | (uint64_t)arc4random();
 #elif !defined(_WIN32)
   FILE *urandom = fopen("/dev/urandom", "rb");
   if (urandom) {
-    if (fread(&seed, sizeof(seed), 1, urandom) != 1) {
-      // Keep get_time_ns fallback
+    uint64_t os_seed = 0;
+    if (fread(&os_seed, sizeof(os_seed), 1, urandom) == 1) {
+      seed = os_seed;
     }
     fclose(urandom);
   }
 #endif
-  capture->rand_seed = seed;
+  for (int i = 0; i < 4; i++) {
+    capture->rng[i] = generator_splitmix64(&seed);
+  }
 
   capture_backend_t *backend =
       (capture_backend_t *)calloc(1, sizeof(capture_backend_t));
   if (!backend) {
     free(capture);
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Memory allocation failure");
+    }
     return NULL;
   }
 
   backend->ctx = capture;
   backend->vtable = &g_generator_capture_vtable;
   backend->is_realtime = false;
+  // Upstream's signal generator has no silence counter and never auto-pauses
+  // (generatordevice.rs), so its chunks are not silence-gated (06 F-07).
+  backend->skip_silence_detection = true;
+  // Unpaced synthetic source: its measured rate is meaningless (06 F-08).
+  backend->skip_rate_watcher = true;
+#ifdef CDSP_TEST
+  if (atomic_load_explicit(&g_generator_mock_silence_gated,
+                           memory_order_relaxed))
+    backend->skip_silence_detection = false;
+#endif
   return backend;
 }
 

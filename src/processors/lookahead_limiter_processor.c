@@ -19,7 +19,7 @@
 static const logger_t g_logger = {"lookahead_limiter_processor"};
 
 struct lookahead_limiter_processor {
-  char name[64];
+  char name[128];
   size_t channels;
   size_t *monitor_channels;
   size_t monitor_channels_count;
@@ -91,7 +91,25 @@ static int lookahead_limiter_config_validate(const processor_config_t *config,
                      "LookaheadLimiter: channels must be > 0, got 0");
     return -1;
   }
-  if (p->attack < 0.0) {
+  // Upstream stores limit/attack/release as `FiniteF64`, so non-finite values
+  // can never reach the processor there. C callers bypass the JSON parser, so
+  // enforce the same invariant here: a NaN release would otherwise turn the
+  // release coefficient (and hence the whole output) into NaN.
+  if (!isfinite(p->limit)) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "LookaheadLimiter: limit must be finite, got %g",
+                     p->limit);
+    return -1;
+  }
+  if (p->attack_unit < TIME_UNIT_US ||
+      p->attack_unit > TIME_UNIT_SAMPLES ||
+      p->release_unit < TIME_UNIT_US ||
+      p->release_unit > TIME_UNIT_SAMPLES) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "LookaheadLimiter: invalid attack/release time unit");
+    return -1;
+  }
+  if (p->attack < 0.0 || !isfinite(p->attack)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "LookaheadLimiter: attack must be >= 0, got %g",
                      p->attack);
@@ -108,13 +126,19 @@ static int lookahead_limiter_config_validate(const processor_config_t *config,
       return -1;
     }
   }
-  if (p->release < 0.0) {
+  if (p->release < 0.0 || !isfinite(p->release)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "LookaheadLimiter: release must be >= 0, got %g",
                      p->release);
     return -1;
   }
 
+  if (p->monitor_channels_count > 0 && !p->monitor_channels) {
+    config_error_set(
+        err, CONFIG_ERR_INVALID_PROCESSOR,
+        "LookaheadLimiter: monitor_channels is NULL with non-zero count");
+    return -1;
+  }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {
     if (p->monitor_channels[i] >= p->channels) {
       config_error_set(
@@ -123,6 +147,12 @@ static int lookahead_limiter_config_validate(const processor_config_t *config,
           p->monitor_channels[i], p->channels - 1);
       return -1;
     }
+  }
+  if (p->process_channels_count > 0 && !p->process_channels) {
+    config_error_set(
+        err, CONFIG_ERR_INVALID_PROCESSOR,
+        "LookaheadLimiter: process_channels is NULL with non-zero count");
+    return -1;
   }
   for (size_t i = 0; i < p->process_channels_count; i++) {
     if (p->process_channels[i] >= p->channels) {
@@ -254,7 +284,7 @@ static void *lookahead_limiter_processor_create(
                                        .release_unit = params->release_unit}};
 
   processor->gain = g_lookahead_gain_vtable.create(NULL, &gain_cfg, sample_rate,
-                                                   chunk_size, NULL, NULL);
+                                                   chunk_size, NULL, err);
   if (!processor->gain) {
     lookahead_limiter_processor_free(processor);
     return NULL;
@@ -383,10 +413,20 @@ static void lookahead_limiter_processor_transfer_state(void *dest_ptr,
   if (!dest || !src || dest == src)
     return;
 
+  // Upstream (`processors/lookahead_limiter.rs` update_parameters) rebuilds
+  // all lookahead delays from scratch when `channels` changes, so do not carry
+  // delay contents across a channel-count change.
+  bool channels_changed = dest->channels != src->channels;
+
   if (dest->gain && src->gain) {
+    // The gain transfer pads the lookahead window itself when the limiter
+    // parameters changed. A second pad below (when processor parameters also
+    // changed) only overwrites history slots older than the attack window,
+    // which are never read, so it is harmless.
     g_lookahead_gain_vtable.transfer_state(dest->gain, src->gain);
     bool proc_params_changed =
-        (dest->monitor_channels_count != src->monitor_channels_count ||
+        (channels_changed ||
+         dest->monitor_channels_count != src->monitor_channels_count ||
          dest->process_channels_count != src->process_channels_count ||
          dest->delay_processed_only != src->delay_processed_only ||
          memcmp(dest->monitor_channels, src->monitor_channels,
@@ -396,6 +436,10 @@ static void lookahead_limiter_processor_transfer_state(void *dest_ptr,
     if (proc_params_changed) {
       lookahead_gain_pad_silence(dest->gain);
     }
+  }
+
+  if (channels_changed) {
+    return;
   }
 
   // Transfer delay states

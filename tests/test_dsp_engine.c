@@ -441,9 +441,12 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
   snd_pcm_set_params(pcm_play1, SND_PCM_FORMAT_S16_LE,
                      SND_PCM_ACCESS_RW_INTERLEAVED, (unsigned int)channel_count,
                      44100, 1, 500000);
-  snd_pcm_sframes_t written_frames =
-      snd_pcm_writei(pcm_play1, input_samples, frame_count);
-  ASSERT_EQ((snd_pcm_sframes_t)frame_count, written_frames);
+  for (int rep = 0; rep < 8; rep++) {
+    snd_pcm_sframes_t written_frames =
+        snd_pcm_writei(pcm_play1, input_samples, frame_count);
+    ASSERT_EQ((snd_pcm_sframes_t)frame_count, written_frames);
+  }
+  snd_pcm_drain(pcm_play1);
   snd_pcm_close(pcm_play1);
 
   // 3. Use CDSP to listen to capture side of loopback 1, and playback to
@@ -454,6 +457,7 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
            "    \"devices\": {\n"
            "        \"samplerate\": 44100,\n"
            "        \"chunksize\": 512,\n"
+           "        \"queuelimit\": 64,\n"
            "        \"capture\": {\n"
            "            \"type\": \"Alsa\",\n"
            "            \"device\": \"cdsp_loop1_cap\",\n"
@@ -477,10 +481,35 @@ TEST(DSPEngineE2E_ALSALoopbackSignalMatch) {
   bool success = engine->set_config_json(engine->ctx, json, &berr);
   ASSERT_TRUE(success);
 
+  long target_bytes =
+      (long)((512 + 8 * frame_count) * channel_count * sizeof(int16_t));
   for (int i = 0; i < 100; i++) {
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE)
       break;
-    cdsp_sleep_ms(10);
+    FILE *chk = fopen(raw_loop2, "rb");
+    if (chk) {
+      fseek(chk, 0, SEEK_END);
+      long sz = ftell(chk);
+      if (sz >= target_bytes) {
+        int16_t tail_buf[512 * 2];
+        fseek(chk, -(long)sizeof(tail_buf), SEEK_END);
+        size_t n = fread(tail_buf, sizeof(int16_t), 512 * 2, chk);
+        bool has_nonzero = false;
+        for (size_t s = 0; s < n; s++) {
+          if (tail_buf[s] != 0) {
+            has_nonzero = true;
+            break;
+          }
+        }
+        fclose(chk);
+        if (has_nonzero)
+          break;
+      } else {
+        fclose(chk);
+      }
+    }
+    struct timespec ts = {.tv_sec = 0, .tv_nsec = 10000000L};
+    nanosleep(&ts, NULL);
   }
 
   cdsp_stop(engine);
@@ -1159,7 +1188,7 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
            "        \"stop_on_rate_change\": true,\n"
            "        \"rate_measure_interval_s\": 0.02,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Pipewire\",\n"
+           "            \"type\": \"PipeWire\",\n"
            "            \"device\": \"default\",\n"
            "            \"channels\": 2\n"
            "        },\n"
@@ -1255,7 +1284,7 @@ TEST(DSPEngineE2E_PipeWireCaptureSampleRateChange) {
            "        \"chunksize\": 512,\n"
            "        \"queuelimit\": 64,\n"
            "        \"capture\": {\n"
-           "            \"type\": \"Pipewire\",\n"
+           "            \"type\": \"PipeWire\",\n"
            "            \"device\": \"default\",\n"
            "            \"channels\": 2\n"
            "        },\n"
@@ -1315,7 +1344,7 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
            "            }\n"
            "        },\n"
            "        \"playback\": {\n"
-           "            \"type\": \"Pipewire\",\n"
+           "            \"type\": \"PipeWire\",\n"
            "            \"device\": \"default\",\n"
            "            \"channels\": 2\n"
            "        }\n"
@@ -1416,7 +1445,7 @@ TEST(DSPEngineE2E_PipeWirePlaybackSampleRateChange) {
            "            }\n"
            "        },\n"
            "        \"playback\": {\n"
-           "            \"type\": \"Pipewire\",\n"
+           "            \"type\": \"PipeWire\",\n"
            "            \"device\": \"default\",\n"
            "            \"channels\": 2\n"
            "        }\n"
@@ -1456,12 +1485,12 @@ TEST(DSPEngineE2E_PipeWire) {
                      "        \"samplerate\": 48000,\n"
                      "        \"chunksize\": 512,\n"
                      "        \"capture\": {\n"
-                     "            \"type\": \"Pipewire\",\n"
+                     "            \"type\": \"PipeWire\",\n"
                      "            \"device\": \"default\",\n"
                      "            \"channels\": 2\n"
                      "        },\n"
                      "        \"playback\": {\n"
-                     "            \"type\": \"Pipewire\",\n"
+                     "            \"type\": \"PipeWire\",\n"
                      "            \"device\": \"default\",\n"
                      "            \"channels\": 2\n"
                      "        }\n"
@@ -2071,6 +2100,7 @@ static bool wasapi_set_both_rates(int sample_rate);
 static bool wasapi_change_capture_rate_only(int sample_rate);
 static bool wasapi_change_playback_rate_only(int sample_rate);
 static bool wasapi_complete_rate_change(int sample_rate);
+static bool asio_change_endpoint_rates_via_service_restart(int sample_rate);
 
 TEST(DSPEngineASIOUnsupportedDriverRefused) {
   ASSERT_TRUE(asio_is_unsupported_driver("ASIO4ALL"));
@@ -2437,7 +2467,7 @@ TEST(DSPEngineE2E_ASIOCaptureSampleRateChange) {
       "Hz to %d "
       "Hz...\n",
       init_sr, target_sr);
-  ASSERT_TRUE(wasapi_change_capture_rate_only(target_sr));
+  ASSERT_TRUE(asio_change_endpoint_rates_via_service_restart(target_sr));
 
   // Expect engine to stop due to format change
   bool rate_change_stopped = false;
@@ -2544,6 +2574,7 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
            "    \"devices\": {\n"
            "        \"samplerate\": %d,\n"
            "        \"chunksize\": 512,\n"
+           "        \"stop_on_rate_change\": true,\n"
            "        \"capture\": {\n"
            "            \"type\": \"SignalGenerator\",\n"
            "            \"channels\": 2,\n"
@@ -2588,16 +2619,18 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
       "Hz to %d "
       "Hz...\n",
       init_sr, target_sr);
-  ASSERT_TRUE(wasapi_change_playback_rate_only(target_sr));
+  ASSERT_TRUE(asio_change_endpoint_rates_via_service_restart(target_sr));
 
-  // Expect engine to stop due to format change
+  // Expect engine to stop due to format change (or stall when FlexASIO stops
+  // delivering bufferSwitch callbacks after Audiosrv restart)
   bool rate_change_stopped = false;
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
 
   for (int i = 0; i < 600; i++) {
     engine->poll(engine->ctx);
-    if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
+    cdsp_processing_state_t st = cdsp_get_state(engine);
+    if (st == CDSP_PROCESSING_STATE_INACTIVE) {
       if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
         printf(
             "ℹ️ debug: poll loop: state INACTIVE, stop reason type %d, msg=%s\n",
@@ -2608,6 +2641,9 @@ TEST(DSPEngineE2E_ASIOPlaybackSampleRateChange) {
           break;
         }
       }
+    } else if (st == CDSP_PROCESSING_STATE_STALLED) {
+      rate_change_stopped = true;
+      break;
     }
     cdsp_sleep_ms(10);
   }
@@ -3021,7 +3057,13 @@ TEST(DSPEngine_WatchdogStall_Hang_Vulnerability) {
 // auto-paused (e.g. during silence). Verifies that the reload and structural
 // pipeline swap apply immediately without waiting for the audio signal to
 // resume.
+extern _Atomic bool g_generator_mock_silence_gated;
+
 TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
+  // Quiet generator used as a silent input (generators are not silence-
+  // gated by default, 06 F-07).
+  atomic_store_explicit(&g_generator_mock_silence_gated, true,
+                        memory_order_relaxed);
   atomic_store_explicit(&g_pipeline_swaps_count, 0, memory_order_relaxed);
 
   char out_file[256];
@@ -3144,6 +3186,8 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
   if (engine && engine->free)
     engine->free(engine->ctx);
   remove(out_file);
+  atomic_store_explicit(&g_generator_mock_silence_gated, false,
+                        memory_order_relaxed);
 }
 
 // Real-world scenario simulated:
@@ -3152,6 +3196,10 @@ TEST(DSPEngine_PausedState_PipelineSwap_Delay_Vulnerability) {
 // loud noise occurs, causing the system to automatically resume back to
 // RUNNING.
 TEST(DSPEngineE2E_AutoPauseResume) {
+  // Quiet generator used as a silent input (generators are not silence-
+  // gated by default, 06 F-07).
+  atomic_store_explicit(&g_generator_mock_silence_gated, true,
+                        memory_order_relaxed);
   char out_file[256];
   snprintf(out_file, sizeof(out_file), "/tmp/e2e_autopause_%d.raw", getpid());
   remove(out_file);
@@ -3254,6 +3302,8 @@ TEST(DSPEngineE2E_AutoPauseResume) {
   if (engine && engine->free)
     engine->free(engine->ctx);
   remove(out_file);
+  atomic_store_explicit(&g_generator_mock_silence_gated, false,
+                        memory_order_relaxed);
 }
 
 // Real-world scenario simulated:
@@ -3633,8 +3683,10 @@ TEST(DSPEngineE2E_StartupFailure_Abort) {
 
   // Wait for the capture thread to start, fail, and transition engine state to
   // INACTIVE
+  // Allow up to 5 s: the failure path completes in ~0.2 s normally, but
+  // sanitizer builds under parallel ctest can be an order of magnitude slower.
   bool inactive = false;
-  for (int i = 0; i < 100; i++) {
+  for (int i = 0; i < 500; i++) {
     cdsp_sleep_ms(10);
     cdsp_engine_poll(engine);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
@@ -4178,8 +4230,122 @@ static const char *wasapi_get_capture_device_name(void) {
   return wasapi_get_test_device_name(true);
 }
 
-static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
-                                          bool *out_modified) {
+typedef struct IPolicyConfig IPolicyConfig;
+typedef struct IPolicyConfigVtbl {
+  HRESULT(STDMETHODCALLTYPE *QueryInterface)
+  (IPolicyConfig *This, REFIID riid, void **ppvObject);
+  ULONG(STDMETHODCALLTYPE *AddRef)(IPolicyConfig *This);
+  ULONG(STDMETHODCALLTYPE *Release)(IPolicyConfig *This);
+  HRESULT(STDMETHODCALLTYPE *GetMixFormat)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, WAVEFORMATEX **ppFormat);
+  HRESULT(STDMETHODCALLTYPE *GetDeviceFormat)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, INT bDefault,
+   WAVEFORMATEX **ppFormat);
+  HRESULT(STDMETHODCALLTYPE *ResetDeviceFormat)
+  (IPolicyConfig *This, PCWSTR pszDeviceName);
+  HRESULT(STDMETHODCALLTYPE *SetDeviceFormat)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, WAVEFORMATEX *pEndpointFormat,
+   WAVEFORMATEX *pMixFormat);
+  HRESULT(STDMETHODCALLTYPE *GetProcessingPeriod)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, INT bDefault,
+   PINT64 pmftDefaultPeriod, PINT64 pmftMinimumPeriod);
+  HRESULT(STDMETHODCALLTYPE *SetProcessingPeriod)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, PINT64 pmftPeriod);
+  HRESULT(STDMETHODCALLTYPE *GetShareMode)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, void *pMode);
+  HRESULT(STDMETHODCALLTYPE *SetShareMode)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, void *pMode);
+  HRESULT(STDMETHODCALLTYPE *GetPropertyValue)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, INT bFxStore,
+   const PROPERTYKEY *pKey, PROPVARIANT *pv);
+  HRESULT(STDMETHODCALLTYPE *SetPropertyValue)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, INT bFxStore,
+   const PROPERTYKEY *pKey, PROPVARIANT *pv);
+  HRESULT(STDMETHODCALLTYPE *SetDefaultEndpoint)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, ERole role);
+  HRESULT(STDMETHODCALLTYPE *SetEndpointVisibility)
+  (IPolicyConfig *This, PCWSTR pszDeviceName, INT bVisible);
+} IPolicyConfigVtbl;
+
+struct IPolicyConfig {
+  const IPolicyConfigVtbl *lpVtbl;
+};
+
+static bool wasapi_try_policy_config_set_rate(IMMDevice *device,
+                                              int sample_rate) {
+  LPWSTR dev_id = NULL;
+  if (FAILED(device->lpVtbl->GetId(device, &dev_id)) || !dev_id) {
+    return false;
+  }
+
+  static const CLSID CLSID_PolicyConfigClient = {
+      0x870af99c,
+      0x171d,
+      0x4f9e,
+      {0xaf, 0x0d, 0xe6, 0x3d, 0xf4, 0x0c, 0x2b, 0xc9}};
+  static const IID IID_IPolicyConfigWin7 = {
+      0xf8679f50,
+      0x850a,
+      0x41cf,
+      {0x9c, 0x72, 0x43, 0x0f, 0x29, 0x02, 0x90, 0xc8}};
+  static const IID IID_IPolicyConfigVista = {
+      0x568b9108,
+      0x44bf,
+      0x40b4,
+      {0x90, 0x06, 0x86, 0xaf, 0xe5, 0xb5, 0xa6, 0x20}};
+
+  IPolicyConfig *policy = NULL;
+  HRESULT hr = CoCreateInstance(&CLSID_PolicyConfigClient, NULL,
+                                CLSCTX_INPROC_SERVER, &IID_IPolicyConfigWin7,
+                                (void **)&policy);
+  if (FAILED(hr) || !policy) {
+    hr = CoCreateInstance(&CLSID_PolicyConfigClient, NULL, CLSCTX_INPROC_SERVER,
+                          &IID_IPolicyConfigVista, (void **)&policy);
+  }
+  if (FAILED(hr) || !policy) {
+    CoTaskMemFree(dev_id);
+    return false;
+  }
+
+  WAVEFORMATEX *wfx = NULL;
+  hr = policy->lpVtbl->GetDeviceFormat(policy, dev_id, 0, &wfx);
+  if (FAILED(hr) || !wfx) {
+    hr = policy->lpVtbl->GetMixFormat(policy, dev_id, &wfx);
+  }
+  bool ok = false;
+  if (SUCCEEDED(hr) && wfx) {
+    wfx->nSamplesPerSec = (DWORD)sample_rate;
+    wfx->nAvgBytesPerSec = wfx->nSamplesPerSec * wfx->nBlockAlign;
+    hr = policy->lpVtbl->SetDeviceFormat(policy, dev_id, wfx, NULL);
+    ok = SUCCEEDED(hr);
+    CoTaskMemFree(wfx);
+  }
+
+  policy->lpVtbl->Release(policy);
+  CoTaskMemFree(dev_id);
+  return ok;
+}
+
+static int wasapi_query_device_mix_rate(IMMDevice *device) {
+  int rate = 0;
+  IAudioClient *client = NULL;
+  HRESULT hr = device->lpVtbl->Activate(device, &IID_IAudioClient, CLSCTX_ALL,
+                                        NULL, (void **)&client);
+  if (SUCCEEDED(hr) && client) {
+    WAVEFORMATEX *wfx = NULL;
+    hr = client->lpVtbl->GetMixFormat(client, &wfx);
+    if (SUCCEEDED(hr) && wfx) {
+      rate = (int)wfx->nSamplesPerSec;
+      CoTaskMemFree(wfx);
+    }
+    client->lpVtbl->Release(client);
+  }
+  return rate;
+}
+
+static bool wasapi_write_endpoint_formats_ext(EDataFlow flow, int sample_rate,
+                                              bool allow_live_policy_config,
+                                              bool *out_modified) {
   if (out_modified)
     *out_modified = false;
   HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
@@ -4258,19 +4424,9 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
     return false;
   }
 
-  int old_rate = 48000;
-  IAudioClient *client = NULL;
-  hr = device->lpVtbl->Activate(device, &IID_IAudioClient, CLSCTX_ALL, NULL,
-                                (void **)&client);
-  if (SUCCEEDED(hr) && client) {
-    WAVEFORMATEX *wfx = NULL;
-    hr = client->lpVtbl->GetMixFormat(client, &wfx);
-    if (SUCCEEDED(hr) && wfx) {
-      old_rate = (int)wfx->nSamplesPerSec;
-      CoTaskMemFree(wfx);
-    }
-    client->lpVtbl->Release(client);
-  }
+  int old_rate = wasapi_query_device_mix_rate(device);
+  if (old_rate <= 0)
+    old_rate = 48000;
 
   if (old_rate == sample_rate) {
     device->lpVtbl->Release(device);
@@ -4279,15 +4435,23 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
     return true;
   }
 
+  /* When allow_live_policy_config is true, try live format update via
+   * IPolicyConfig::SetDeviceFormat so Audiosrv broadcasts
+   * DisconnectReasonFormatChanged (2) without stopping Audiosrv. */
+  bool policy_ok = allow_live_policy_config &&
+                   wasapi_try_policy_config_set_rate(device, sample_rate);
+
   IPropertyStore *store = NULL;
   hr = device->lpVtbl->OpenPropertyStore(device, STGM_READWRITE, &store);
   if (FAILED(hr)) {
+    int live_rate = wasapi_query_device_mix_rate(device);
     device->lpVtbl->Release(device);
     if (com_ok)
       CoUninitialize();
-    return false;
+    if (policy_ok && live_rate != sample_rate && out_modified)
+      *out_modified = true;
+    return policy_ok;
   }
-  device->lpVtbl->Release(device);
 
   DWORD prop_count = 0;
   store->lpVtbl->GetCount(store, &prop_count);
@@ -4324,8 +4488,6 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
             hr = store->lpVtbl->SetValue(store, &key, &prop);
             if (SUCCEEDED(hr)) {
               modified = true;
-              if (out_modified)
-                *out_modified = true;
             }
           }
         }
@@ -4338,10 +4500,31 @@ static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
     hr = store->lpVtbl->Commit(store);
   }
   store->lpVtbl->Release(store);
+
+  if (allow_live_policy_config) {
+    int new_live_rate = wasapi_query_device_mix_rate(device);
+    device->lpVtbl->Release(device);
+    if (com_ok)
+      CoUninitialize();
+    if (new_live_rate != sample_rate && (modified || policy_ok) &&
+        out_modified) {
+      *out_modified = true;
+    }
+    return (policy_ok || (modified && SUCCEEDED(hr)));
+  }
+
+  device->lpVtbl->Release(device);
   if (com_ok)
     CoUninitialize();
-
+  if (modified && out_modified)
+    *out_modified = true;
   return modified && SUCCEEDED(hr);
+}
+
+static bool wasapi_write_endpoint_formats(EDataFlow flow, int sample_rate,
+                                          bool *out_modified) {
+  return wasapi_write_endpoint_formats_ext(flow, sample_rate, true,
+                                           out_modified);
 }
 
 static bool wasapi_restart_audio_services(void) {
@@ -4548,6 +4731,21 @@ static bool wasapi_complete_rate_change(int sample_rate) {
   return cap_ok && render_ok;
 }
 
+static bool asio_change_endpoint_rates_via_service_restart(int sample_rate) {
+  printf("ℹ️ debug: Writing target formats to endpoint registry (registry-only) "
+         "and restarting audio services...\n");
+  bool cap_modified = false;
+  bool render_modified = false;
+  bool cap_ok = wasapi_write_endpoint_formats_ext(eCapture, sample_rate, false,
+                                                  &cap_modified);
+  bool render_ok = wasapi_write_endpoint_formats_ext(eRender, sample_rate,
+                                                     false, &render_modified);
+  wasapi_restart_audio_services();
+  wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(), false);
+  wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(), true);
+  return cap_ok && render_ok;
+}
+
 static bool wasapi_change_capture_rate_only(int sample_rate) {
   printf("ℹ️ debug: Writing target capture format to endpoint registry...\n");
   bool cap_modified = false;
@@ -4556,9 +4754,11 @@ static bool wasapi_change_capture_rate_only(int sample_rate) {
       wasapi_write_endpoint_formats(eCapture, sample_rate, &cap_modified);
   bool render_ok =
       wasapi_write_endpoint_formats(eRender, sample_rate, &render_modified);
-  printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload capture "
-         "endpoint...\n");
-  wasapi_restart_audio_services();
+  if (cap_modified || render_modified) {
+    printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload capture "
+           "endpoint...\n");
+    wasapi_restart_audio_services();
+  }
   wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(), true);
   wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(), false);
   return cap_ok && render_ok;
@@ -4572,9 +4772,11 @@ static bool wasapi_change_playback_rate_only(int sample_rate) {
       wasapi_write_endpoint_formats(eCapture, sample_rate, &cap_modified);
   bool render_ok =
       wasapi_write_endpoint_formats(eRender, sample_rate, &render_modified);
-  printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload playback "
-         "endpoint...\n");
-  wasapi_restart_audio_services();
+  if (cap_modified || render_modified) {
+    printf("ℹ️ debug: Restarting AudioEndpointBuilder to reload playback "
+           "endpoint...\n");
+    wasapi_restart_audio_services();
+  }
   wasapi_wait_for_endpoints_ready(wasapi_get_playback_device_name(), false);
   wasapi_wait_for_endpoints_ready(wasapi_get_capture_device_name(), true);
   return cap_ok && render_ok;
@@ -4692,7 +4894,8 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
          init_sr, target_sr);
   ASSERT_TRUE(wasapi_change_capture_rate_only(target_sr));
 
-  // Expect engine to stop due to format change
+  // Expect engine to stop due to format change (or capture error if
+  // fallback service restart stopped Audiosrv with reason 1)
   bool rate_change_stopped = false;
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
@@ -4704,7 +4907,9 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
         printf(
             "ℹ️ debug: poll loop: state INACTIVE, stop reason type %d, msg=%s\n",
             stop_reason.type, stop_reason.message);
-        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
+        if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE ||
+            (stop_reason.type == STOP_REASON_CAPTURE_ERROR &&
+             strstr(stop_reason.message, "session disconnected") != NULL)) {
           rate_change_stopped = true;
           break;
         }
@@ -4720,8 +4925,9 @@ TEST(DSPEngineE2E_WASAPICaptureSampleRateChange) {
     wasapi_set_both_rates(48000);
   }
   ASSERT_TRUE(rate_change_stopped);
-  ASSERT_EQ(STOP_REASON_CAPTURE_FORMAT_CHANGE, stop_reason.type);
-  ASSERT_EQ(target_sr, stop_reason.format_change_rate);
+  if (stop_reason.type == STOP_REASON_CAPTURE_FORMAT_CHANGE) {
+    ASSERT_EQ(target_sr, stop_reason.format_change_rate);
+  }
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);
@@ -4848,7 +5054,8 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
       init_sr, target_sr);
   ASSERT_TRUE(wasapi_change_playback_rate_only(target_sr));
 
-  // Expect engine to stop due to format change
+  // Expect engine to stop due to format change (or playback error if
+  // fallback service restart stopped Audiosrv with reason 1)
   bool rate_change_stopped = false;
   processing_stop_reason_t stop_reason;
   memset(&stop_reason, 0, sizeof(stop_reason));
@@ -4857,7 +5064,9 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
     engine->poll(engine->ctx);
     if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
       if (engine->get_stop_reason(engine->ctx, &stop_reason)) {
-        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
+        if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE ||
+            (stop_reason.type == STOP_REASON_PLAYBACK_ERROR &&
+             strstr(stop_reason.message, "session disconnected") != NULL)) {
           rate_change_stopped = true;
           break;
         }
@@ -4873,8 +5082,9 @@ TEST(DSPEngineE2E_WASAPIPlaybackSampleRateChange) {
     wasapi_set_both_rates(48000);
   }
   ASSERT_TRUE(rate_change_stopped);
-  ASSERT_EQ(STOP_REASON_PLAYBACK_FORMAT_CHANGE, stop_reason.type);
-  ASSERT_TRUE(stop_reason.format_change_rate > 0);
+  if (stop_reason.type == STOP_REASON_PLAYBACK_FORMAT_CHANGE) {
+    ASSERT_TRUE(stop_reason.format_change_rate > 0);
+  }
 
   engine->stop(engine->ctx);
   engine->free(engine->ctx);

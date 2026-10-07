@@ -80,7 +80,8 @@ size_t audio_history_buffer_get_channels(const audio_history_buffer_t *history);
  * @brief Append audio chunk to the history buffer.
  *
  * **Producer-only.** Forward each channel's waveform into the matching
- * lock-free ring.
+ * lock-free ring. Never allocates: if the chunk's channel count does not match
+ * the layout set by @ref audio_history_buffer_reset, the chunk is dropped.
  *
  * @param history Pointer to the history buffer.
  * @param chunk Pointer to the audio chunk to append.

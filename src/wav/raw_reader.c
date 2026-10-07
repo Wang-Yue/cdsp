@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <locale.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +54,42 @@ char *raw_read_dynamic_line(FILE *f) {
   return buf;
 }
 
+/**
+ * @brief Parses one TEXT coefficient with '.' as the decimal separator,
+ * whatever the process LC_NUMERIC locale is.
+ *
+ * strtod() honours LC_NUMERIC, so a host application that sets e.g. a German
+ * locale would make "0.5" fail to parse (and accept "0,5"). Upstream parses
+ * with Rust's locale-independent str::parse::<f64>(). The token is rewritten
+ * to the current locale's separator before calling strtod, and tokens that
+ * contain the locale separator itself are rejected.
+ */
+static bool raw_parse_double_c_locale(const char *p, double *out) {
+  const struct lconv *lc = localeconv();
+  char dp = (lc && lc->decimal_point && lc->decimal_point[0])
+                ? lc->decimal_point[0]
+                : '.';
+  char *endptr = NULL;
+  if (dp == '.') {
+    *out = strtod(p, &endptr);
+    return endptr != p && *endptr == '\0';
+  }
+  if (strchr(p, dp) != NULL)
+    return false;
+  size_t len = strlen(p);
+  char stack_buf[128];
+  char *buf = len < sizeof(stack_buf) ? stack_buf : (char *)malloc(len + 1);
+  if (!buf)
+    return false;
+  for (size_t i = 0; i <= len; i++)
+    buf[i] = (p[i] == '.') ? dp : p[i];
+  *out = strtod(buf, &endptr);
+  bool ok = endptr != buf && *endptr == '\0';
+  if (buf != stack_buf)
+    free(buf);
+  return ok;
+}
+
 double *raw_read_text_samples(const char *path, size_t skip_lines,
                               size_t read_lines, size_t *out_count,
                               char *err_buf, size_t err_len) {
@@ -71,6 +108,11 @@ double *raw_read_text_samples(const char *path, size_t skip_lines,
   for (size_t i = 0; i < skip_lines; i++) {
     char *line = raw_read_dynamic_line(f);
     if (!line) {
+      if (!feof(f)) {
+        set_error(err_buf, err_len, "Out of memory reading text coefficients");
+        fclose(f);
+        return NULL;
+      }
       break;
     }
     free(line);
@@ -79,6 +121,7 @@ double *raw_read_text_samples(const char *path, size_t skip_lines,
   size_t cap = 1024;
   double *result = (double *)calloc(cap, sizeof(double));
   if (!result) {
+    set_error(err_buf, err_len, "Out of memory reading text coefficients");
     fclose(f);
     return NULL;
   }
@@ -87,8 +130,15 @@ double *raw_read_text_samples(const char *path, size_t skip_lines,
   size_t lines_read = 0;
   while (read_lines == 0 || lines_read < read_lines) {
     char *line = raw_read_dynamic_line(f);
-    if (!line)
+    if (!line) {
+      if (!feof(f)) {
+        set_error(err_buf, err_len, "Out of memory reading text coefficients");
+        free(result);
+        fclose(f);
+        return NULL;
+      }
       break;
+    }
     lines_read++;
     size_t line_nbr = skip_lines + lines_read;
 
@@ -125,9 +175,8 @@ double *raw_read_text_samples(const char *path, size_t skip_lines,
       return NULL;
     }
 
-    char *endptr = NULL;
-    double val = strtod(p, &endptr);
-    if (endptr == p || *endptr != '\0') {
+    double val = 0.0;
+    if (!raw_parse_double_c_locale(p, &val)) {
       set_error(err_buf, err_len,
                 "Can't parse value on line %zu of file '%s'. Reason: "
                 "invalid float '%s'",
@@ -143,6 +192,7 @@ double *raw_read_text_samples(const char *path, size_t skip_lines,
       cap *= 2;
       double *new_res = (double *)realloc(result, cap * sizeof(double));
       if (!new_res) {
+        set_error(err_buf, err_len, "Out of memory reading text coefficients");
         free(result);
         fclose(f);
         return NULL;
@@ -173,10 +223,25 @@ double raw_decode_sample(const uint8_t *src, binary_sample_format_t format,
     return pcm_sample_decode_s24_4_lj_bytes(src);
   case BINARY_SAMPLE_FORMAT_S32_LE:
     return pcm_sample_decode_s32_bytes(src);
-  case BINARY_SAMPLE_FORMAT_F32_LE:
-    return pcm_sample_decode_f32_bytes(src);
-  case BINARY_SAMPLE_FORMAT_F64_LE:
-    return pcm_sample_decode_f64_bytes(src);
+  case BINARY_SAMPLE_FORMAT_F32_LE: {
+    // Coefficient files only: decode verbatim, deliberately NOT through
+    // pcm_sample_decode_f32_bytes. That helper maps NaN/Inf to 0.0, which is
+    // right for the live audio stream (AGENTS.md §4.4) but would hide a corrupt
+    // impulse response from convolution_config_validate's isfinite() check
+    // (upstream rejects such files via check_all_finite).
+    uint32_t u32 = ((uint32_t)src[0]) | ((uint32_t)src[1] << 8) |
+                   ((uint32_t)src[2] << 16) | ((uint32_t)src[3] << 24);
+    return (double)pcm_sample_f32_from_u32(u32);
+  }
+  case BINARY_SAMPLE_FORMAT_F64_LE: {
+    uint64_t u64 = 0;
+    for (int i = 0; i < 8; i++) {
+      u64 |= ((uint64_t)src[i]) << (i * 8);
+    }
+    double dval;
+    memcpy(&dval, &u64, sizeof(double));
+    return dval;
+  }
   case BINARY_SAMPLE_FORMAT_DSD_U8:
     return pcm_sample_decode_dsd_u8(src[0]);
   case BINARY_SAMPLE_FORMAT_DSD_U16_LE:
@@ -197,11 +262,71 @@ double raw_decode_sample(const uint8_t *src, binary_sample_format_t format,
   return 0.0;
 }
 
+/**
+ * @brief ITU-T G.711 A-law to linear int16 (reference alaw2linear).
+ */
+static int16_t raw_decode_alaw(uint8_t a) {
+  a ^= 0x55;
+  int t = (a & 0x0F) << 4;
+  int seg = (a & 0x70) >> 4;
+  switch (seg) {
+  case 0:
+    t += 8;
+    break;
+  case 1:
+    t += 0x108;
+    break;
+  default:
+    t += 0x108;
+    t <<= seg - 1;
+    break;
+  }
+  return (int16_t)((a & 0x80) ? t : -t);
+}
+
+/**
+ * @brief ITU-T G.711 mu-law to linear int16 (reference ulaw2linear).
+ */
+static int16_t raw_decode_mulaw(uint8_t u) {
+  u = (uint8_t)~u;
+  int t = ((u & 0x0F) << 3) + 0x84;
+  t <<= (u & 0x70) >> 4;
+  return (int16_t)((u & 0x80) ? (0x84 - t) : (t - 0x84));
+}
+
+static double raw_decode_sample_codec(const uint8_t *src,
+                                      binary_sample_format_t format,
+                                      raw_codec_t codec) {
+  switch (codec) {
+  case RAW_CODEC_U8:
+    return raw_decode_sample(src, format, true);
+  case RAW_CODEC_ALAW:
+    return (double)raw_decode_alaw(src[0]) / 32768.0;
+  case RAW_CODEC_MULAW:
+    return (double)raw_decode_mulaw(src[0]) / 32768.0;
+  case RAW_CODEC_NONE:
+    break;
+  }
+  return raw_decode_sample(src, format, false);
+}
+
 double *raw_read_channel_stream(FILE *f, int channel, size_t channels,
                                 size_t container_bytes,
                                 binary_sample_format_t format, bool is_u8,
                                 size_t num_frames, size_t *out_count,
                                 char *err_buf, size_t err_len) {
+  return raw_read_channel_stream_codec(f, channel, channels, container_bytes,
+                                       format,
+                                       is_u8 ? RAW_CODEC_U8 : RAW_CODEC_NONE,
+                                       num_frames, out_count, err_buf, err_len);
+}
+
+double *raw_read_channel_stream_codec(FILE *f, int channel, size_t channels,
+                                      size_t container_bytes,
+                                      binary_sample_format_t format,
+                                      raw_codec_t codec, size_t num_frames,
+                                      size_t *out_count, char *err_buf,
+                                      size_t err_len) {
   if (out_count)
     *out_count = 0;
   if (err_buf && err_len > 0)
@@ -209,6 +334,10 @@ double *raw_read_channel_stream(FILE *f, int channel, size_t channels,
   if (!f || channels == 0 || container_bytes == 0 || channel < 0 ||
       (size_t)channel >= channels) {
     set_error(err_buf, err_len, "Invalid stream parameters for audio reading");
+    return NULL;
+  }
+  if (codec == RAW_CODEC_NONE && format == BINARY_SAMPLE_FORMAT_INVALID) {
+    set_error(err_buf, err_len, "Invalid sample format for audio reading");
     return NULL;
   }
   if (num_frames == 0) {
@@ -237,7 +366,7 @@ double *raw_read_channel_stream(FILE *f, int channel, size_t channels,
       break;
     }
     result[read_frames++] =
-        raw_decode_sample(frame_buf + channel_offset, format, is_u8);
+        raw_decode_sample_codec(frame_buf + channel_offset, format, codec);
   }
 
   free(frame_buf);

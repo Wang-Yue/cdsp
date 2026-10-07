@@ -12,9 +12,6 @@
 #include "audio/sample_format.h"
 #include "audio/spectrum_analyzer.h"
 #include "backend/audio_backend_registry.h"
-#if defined(ENABLE_WEBAUDIO) && defined(__EMSCRIPTEN__)
-#include "backend/webaudio_backend.h"
-#endif
 #include "config/config_diff.h"
 #include "config/config_error.h"
 #include "config/configuration.h"
@@ -147,6 +144,11 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
         impl->session.active,
         (processing_stop_reason_t){.type = STOP_REASON_NONE});
     impl->session.active = NULL;
+    if (impl->config.active_json) {
+      free(impl->config.previous_json);
+      impl->config.previous_json = impl->config.active_json;
+      impl->config.active_json = NULL;
+    }
   }
 
   audio_history_buffer_reset(
@@ -163,26 +165,13 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
   dsp_session_t *session = dsp_session_create_and_start(
       config, engine_on_chunk_captured_callback, impl->buffers.capture,
       engine_on_chunk_processed_callback, impl->buffers.playback,
-      impl->state_mgr, err);
-  if (!session) {
-    if (saved_telemetry) {
-      processing_parameters_free(saved_telemetry);
-    }
-    return false;
-  }
-
-  processing_parameters_t *new_p = dsp_session_get_processing_params(session);
-  if (new_p) {
-    if (saved_telemetry) {
-      processing_parameters_transfer_telemetry(new_p, saved_telemetry);
-    }
-    if (impl->session.clipped_samples_accum > 0) {
-      processing_parameters_add_clipped_samples(
-          new_p, impl->session.clipped_samples_accum);
-    }
-  }
+      impl->state_mgr, saved_telemetry, impl->session.clipped_samples_accum,
+      err);
   if (saved_telemetry) {
     processing_parameters_free(saved_telemetry);
+  }
+  if (!session) {
+    return false;
   }
 
   impl->session.active = session;
@@ -220,10 +209,12 @@ static bool dsp_engine_set_config_locked(dsp_engine_impl_t *impl,
   }
   bool success = dsp_engine_set_config_struct_locked(impl, parsed, err);
   if (success) {
-    if (impl->config.previous_json) {
+    // Only rotate when there was an active config; after a stop the
+    // just-stopped config already sits in previous_json and must be kept.
+    if (impl->config.active_json) {
       free(impl->config.previous_json);
+      impl->config.previous_json = impl->config.active_json;
     }
-    impl->config.previous_json = impl->config.active_json;
     impl->config.active_json = strdup(json);
   } else {
     // Ref: docs/engine_state_management.md - Section 1.7.1: Cleanup on Builder
@@ -274,6 +265,15 @@ static void dsp_engine_stop(void *ctx) {
         dsp_session_stop_and_free(impl->session.active, reason);
     impl->session.last_stop_reason = final_reason;
     impl->session.active = NULL;
+
+    // Matching upstream engine.rs (ControllerMessage::Stop, PlaybackDone and
+    // fail_and_restart): when a session ends, the active config becomes the
+    // previous config and there is no active config any more.
+    if (impl->config.active_json) {
+      free(impl->config.previous_json);
+      impl->config.previous_json = impl->config.active_json;
+      impl->config.active_json = NULL;
+    }
   }
   pthread_mutex_unlock(&impl->state_mutex);
 }
@@ -579,27 +579,28 @@ static bool dsp_engine_get_signal_levels_since(void *ctx, bool is_capture,
                          : processing_parameters_get_playback_channels(p);
   if (out_channels)
     *out_channels = ch;
+  bool has_data = true;
   if (out_levels && ch > 0) {
     if (is_capture) {
       if (is_rms) {
-        processing_parameters_get_capture_signal_rms_since(p, since_ms,
-                                                           out_levels, ch);
+        has_data = processing_parameters_get_capture_signal_rms_since(
+            p, since_ms, out_levels, ch);
       } else {
-        processing_parameters_get_capture_signal_peak_since(p, since_ms,
-                                                            out_levels, ch);
+        has_data = processing_parameters_get_capture_signal_peak_since(
+            p, since_ms, out_levels, ch);
       }
     } else {
       if (is_rms) {
-        processing_parameters_get_playback_signal_rms_since(p, since_ms,
-                                                            out_levels, ch);
+        has_data = processing_parameters_get_playback_signal_rms_since(
+            p, since_ms, out_levels, ch);
       } else {
-        processing_parameters_get_playback_signal_peak_since(p, since_ms,
-                                                             out_levels, ch);
+        has_data = processing_parameters_get_playback_signal_peak_since(
+            p, since_ms, out_levels, ch);
       }
     }
   }
   pthread_mutex_unlock(&impl->state_mutex);
-  return true;
+  return has_data;
 }
 
 static bool dsp_engine_get_global_peaks(void *ctx, bool is_capture,
@@ -684,9 +685,7 @@ static bool dsp_engine_get_spectrum(void *ctx, bool is_capture,
   }
   audio_history_buffer_t *buf =
       is_capture ? impl->buffers.capture : impl->buffers.playback;
-  size_t samplerate = (is_capture && core_cfg->devices.has_capture_samplerate)
-                          ? core_cfg->devices.capture_samplerate
-                          : core_cfg->devices.samplerate;
+  size_t samplerate = core_cfg->devices.samplerate;
   size_t buf_channels = audio_history_buffer_get_channels(buf);
 
   if (buf_channels == 0) {
@@ -814,11 +813,15 @@ static bool dsp_engine_get_available_devices(void *ctx, const char *backend,
   (void)ctx;
   if (!out_devices || !out_count)
     return false;
-  audio_device_t *devs = (audio_device_t *)calloc(32, sizeof(audio_device_t));
+  // Same capacity as the public cdsp_get_available_devices() so the two
+  // entry points never disagree (previously this silently truncated at 32).
+  enum { DSP_ENGINE_MAX_DEVICES = 1024 };
+  audio_device_t *devs =
+      (audio_device_t *)calloc(DSP_ENGINE_MAX_DEVICES, sizeof(audio_device_t));
   if (!devs)
     return false;
-  int n =
-      audio_backend_registry_get_available_devices(backend, is_input, devs, 32);
+  int n = audio_backend_registry_get_available_devices(backend, is_input, devs,
+                                                       DSP_ENGINE_MAX_DEVICES);
   if (n < 0) {
     free(devs);
     *out_devices = NULL;
@@ -918,10 +921,9 @@ static void dsp_engine_poll_impl(void *ctx) {
 }
 
 dsp_engine_t *dsp_engine_create(void) {
-#if defined(ENABLE_WEBAUDIO) && defined(__EMSCRIPTEN__)
-  // The browser audio device behind the WebAudio backends (idempotent).
-  webaudio_device_start();
-#endif
+  // Process-wide audio devices (e.g. the browser WebAudio device, which must
+  // be started on the main thread). Idempotent; a no-op on most platforms.
+  audio_backend_registry_init();
   dsp_engine_impl_t *impl =
       (dsp_engine_impl_t *)calloc(1, sizeof(dsp_engine_impl_t));
   if (!impl)

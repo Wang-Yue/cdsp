@@ -345,7 +345,10 @@ ALWAYS_INLINE void dsp_ops_complex_multiply(const double *a_re,
  * `out[i] = a[i] * b[i]` for count complex elements (2 * count doubles).
  * Supports in-place multiplication (out may alias a or b).
  */
-#if defined(__aarch64__) || defined(__ARM_NEON)
+// float64x2_t and the v*q_f64 intrinsics exist only on AArch64. 32-bit ARMv7
+// NEON (__ARM_NEON without __aarch64__) has no double-precision vectors and
+// must take the scalar path (upstream: #[cfg(target_arch = "aarch64")]).
+#if defined(__aarch64__)
 #include <arm_neon.h>
 
 ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(const double complex *a,
@@ -460,7 +463,9 @@ ALWAYS_INLINE void dsp_ops_complex_fma_interleaved(
     vst1q_f64(r_ptr + off, vaddq_f64(acc0, prod0));
   }
 }
-#elif (defined(__x86_64__) || defined(_M_X64)) && defined(__AVX2__) &&         \
+// Only AVX (256-bit pd loads/permutes, fmaddsub) and FMA are used below, the
+// same feature set upstream's fftconv_avx kernel requires; AVX2 is not needed.
+#elif (defined(__x86_64__) || defined(_M_X64)) && defined(__AVX__) &&          \
     defined(__FMA__)
 #include <immintrin.h>
 

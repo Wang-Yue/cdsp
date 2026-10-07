@@ -7,8 +7,8 @@
  *
  * This module defines a polymorphic C interface (`dsp_processor_t`) that
  * mirrors the Swift `Processor` protocol for all multi-channel audio processors
- * (Compressor, Noise Gate, RACE). It provides uniform dispatch for real-time
- * in-place processing and dynamic parameter updates.
+ * (Compressor, Noise Gate, RACE, LookaheadLimiter). It provides uniform
+ * dispatch for real-time in-place processing and dynamic parameter updates.
  */
 
 #include <stdbool.h>

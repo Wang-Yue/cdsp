@@ -42,12 +42,17 @@ int wasapi_capabilities_available_device_names(bool is_capture,
   }
 
   UINT count = 0;
-  IMMDeviceCollection_GetCount(collection, &count);
+  hr = IMMDeviceCollection_GetCount(collection, &count);
+  if (FAILED(hr)) {
+    goto error_cleanup;
+  }
   int matched = 0;
 
   for (UINT i = 0; i < count && matched < max_names; i++) {
     IMMDevice *dev = NULL;
-    IMMDeviceCollection_Item(collection, i, &dev);
+    if (FAILED(IMMDeviceCollection_Item(collection, i, &dev))) {
+      dev = NULL;
+    }
     if (dev) {
       IPropertyStore *properties = NULL;
       char name_buf[256] = {0};
@@ -170,25 +175,47 @@ static const char *wasapi_format_to_str(wasapi_sample_format_t fmt) {
   return "F32";
 }
 
+/**
+ * @brief Advances @p offset by an snprintf return value, clamped so that
+ * `buf_len - offset` can never wrap (output is truncated instead).
+ */
+static inline size_t snprintf_advance(size_t offset, int written,
+                                      size_t buf_len) {
+  if (written < 0 || buf_len == 0)
+    return offset;
+  size_t next = offset + (size_t)written;
+  return next < buf_len ? next : buf_len - 1;
+}
+
 static void format_labels_to_str(const wasapi_sample_format_t *formats,
                                  size_t count, char *buf, size_t buf_len) {
+  if (!buf || buf_len == 0)
+    return;
   size_t offset = 0;
-  offset += snprintf(buf + offset, buf_len - offset, "[");
+  offset = snprintf_advance(
+      offset, snprintf(buf + offset, buf_len - offset, "["), buf_len);
   for (size_t i = 0; i < count; i++) {
-    offset += snprintf(buf + offset, buf_len - offset,
-                       (i > 0 ? ", \"%s\"" : "\"%s\""),
-                       wasapi_format_to_str(formats[i]));
+    offset = snprintf_advance(offset,
+                              snprintf(buf + offset, buf_len - offset,
+                                       (i > 0 ? ", \"%s\"" : "\"%s\""),
+                                       wasapi_format_to_str(formats[i])),
+                              buf_len);
   }
   snprintf(buf + offset, buf_len - offset, "]");
 }
 
 static void int_list_to_str(const int *values, size_t count, char *buf,
                             size_t buf_len) {
+  if (!buf || buf_len == 0)
+    return;
   size_t offset = 0;
-  offset += snprintf(buf + offset, buf_len - offset, "[");
+  offset = snprintf_advance(
+      offset, snprintf(buf + offset, buf_len - offset, "["), buf_len);
   for (size_t i = 0; i < count; i++) {
-    offset += snprintf(buf + offset, buf_len - offset, (i > 0 ? ", %d" : "%d"),
-                       values[i]);
+    offset = snprintf_advance(offset,
+                              snprintf(buf + offset, buf_len - offset,
+                                       (i > 0 ? ", %d" : "%d"), values[i]),
+                              buf_len);
   }
   snprintf(buf + offset, buf_len - offset, "]");
 }
@@ -265,7 +292,10 @@ static void capabilities_map_insert(temp_capabilities_map_t *map, int channels,
       }
     }
     if (!exists && rate_entry->formats_count < MAX_CAP_FORMATS) {
-      rate_entry->formats[rate_entry->formats_count++] = strdup(str);
+      char *dup = strdup(str);
+      if (dup) { // On OOM the format is skipped instead of storing NULL.
+        rate_entry->formats[rate_entry->formats_count++] = dup;
+      }
     }
   }
 }
@@ -498,6 +528,10 @@ audio_device_descriptor_t *wasapi_capabilities_describe(const char *device_name,
   desc =
       (audio_device_descriptor_t *)calloc(1, sizeof(audio_device_descriptor_t));
   if (!desc) {
+    if (err) {
+      device_error_init(err, DEVICE_ERROR_OTHER,
+                        "Out of memory allocating device descriptor");
+    }
     goto error_cleanup;
   }
 
@@ -765,7 +799,6 @@ audio_device_descriptor_t *wasapi_capabilities_describe(const char *device_name,
     desc->capability_sets_count = 0;
     desc->capability_sets = NULL;
   } else {
-    desc->capability_sets_count = total_sets;
     desc->capability_sets = (device_capability_set_t *)calloc(
         total_sets, sizeof(device_capability_set_t));
     if (!desc->capability_sets) {
@@ -773,75 +806,116 @@ audio_device_descriptor_t *wasapi_capabilities_describe(const char *device_name,
         CoTaskMemFree(mix_wfx);
       free_audio_device_descriptor(desc);
       desc = NULL;
+      if (err) {
+        device_error_init(err, DEVICE_ERROR_OTHER,
+                          "Out of memory building device capabilities");
+      }
       goto error_cleanup;
     }
+    desc->capability_sets_count = total_sets;
 
+    // Every count below is set only after its array was allocated, so a
+    // consumer iterating by count never meets a NULL array. Any allocation
+    // failure discards the whole descriptor (no half-built result).
+    bool oom = false;
     size_t current_set = 0;
     if (has_shared) {
       device_capability_set_t *shared_set =
           &desc->capability_sets[current_set++];
       snprintf(shared_set->mode, sizeof(shared_set->mode), "Shared");
-      shared_set->capabilities_count = 1;
       shared_set->capabilities =
           (channel_capability_t *)calloc(1, sizeof(channel_capability_t));
       if (shared_set->capabilities) {
-        shared_set->capabilities[0].channels = (int)mix_wfx->nChannels;
-        shared_set->capabilities[0].samplerates_count = 1;
-        shared_set->capabilities[0].samplerates =
-            (samplerate_capability_t *)calloc(1,
-                                              sizeof(samplerate_capability_t));
-        if (shared_set->capabilities[0].samplerates) {
-          shared_set->capabilities[0].samplerates[0].samplerate =
-              (int)mix_wfx->nSamplesPerSec;
-          shared_set->capabilities[0].samplerates[0].formats_count = 1;
-          shared_set->capabilities[0].samplerates[0].formats =
-              (char **)calloc(1, sizeof(char *));
-          if (shared_set->capabilities[0].samplerates[0].formats) {
-            shared_set->capabilities[0].samplerates[0].formats[0] =
-                strdup("F32");
+        shared_set->capabilities_count = 1;
+        channel_capability_t *s_chan = &shared_set->capabilities[0];
+        s_chan->channels = (int)mix_wfx->nChannels;
+        s_chan->samplerates = (samplerate_capability_t *)calloc(
+            1, sizeof(samplerate_capability_t));
+        if (s_chan->samplerates) {
+          s_chan->samplerates_count = 1;
+          s_chan->samplerates[0].samplerate = (int)mix_wfx->nSamplesPerSec;
+          s_chan->samplerates[0].formats = (char **)calloc(1, sizeof(char *));
+          if (s_chan->samplerates[0].formats) {
+            s_chan->samplerates[0].formats[0] = strdup("F32");
+            if (s_chan->samplerates[0].formats[0]) {
+              s_chan->samplerates[0].formats_count = 1;
+            } else {
+              oom = true;
+            }
+          } else {
+            oom = true;
           }
+        } else {
+          oom = true;
         }
+      } else {
+        oom = true;
       }
       CoTaskMemFree(mix_wfx);
       mix_wfx = NULL;
     }
 
-    if (exclusive_map.channels_count > 0) {
+    if (!oom && exclusive_map.channels_count > 0) {
       device_capability_set_t *excl_set = &desc->capability_sets[current_set++];
       snprintf(excl_set->mode, sizeof(excl_set->mode), "Exclusive");
-      excl_set->capabilities_count = exclusive_map.channels_count;
       excl_set->capabilities = (channel_capability_t *)calloc(
           exclusive_map.channels_count, sizeof(channel_capability_t));
       if (excl_set->capabilities) {
-        for (size_t c = 0; c < exclusive_map.channels_count; c++) {
+        excl_set->capabilities_count = exclusive_map.channels_count;
+        for (size_t c = 0; c < exclusive_map.channels_count && !oom; c++) {
           temp_channel_cap_t *t_chan = &exclusive_map.channels[c];
           channel_capability_t *d_chan = &excl_set->capabilities[c];
           d_chan->channels = t_chan->channels;
-          d_chan->samplerates_count = t_chan->samplerates_count;
+          if (t_chan->samplerates_count == 0)
+            continue;
           d_chan->samplerates = (samplerate_capability_t *)calloc(
               t_chan->samplerates_count, sizeof(samplerate_capability_t));
-          if (d_chan->samplerates) {
-            for (size_t r = 0; r < t_chan->samplerates_count; r++) {
-              temp_samplerate_cap_t *t_rate = &t_chan->samplerates[r];
-              samplerate_capability_t *d_rate = &d_chan->samplerates[r];
-              d_rate->samplerate = t_rate->samplerate;
-              d_rate->formats_count = t_rate->formats_count;
-              d_rate->formats =
-                  (char **)calloc(t_rate->formats_count, sizeof(char *));
-              if (d_rate->formats) {
-                for (size_t f = 0; f < t_rate->formats_count; f++) {
-                  d_rate->formats[f] = t_rate->formats[f];
-                  t_rate->formats[f] = NULL;
-                }
-              }
+          if (!d_chan->samplerates) {
+            oom = true;
+            break;
+          }
+          d_chan->samplerates_count = t_chan->samplerates_count;
+          for (size_t r = 0; r < t_chan->samplerates_count; r++) {
+            temp_samplerate_cap_t *t_rate = &t_chan->samplerates[r];
+            samplerate_capability_t *d_rate = &d_chan->samplerates[r];
+            d_rate->samplerate = t_rate->samplerate;
+            if (t_rate->formats_count == 0)
+              continue;
+            d_rate->formats =
+                (char **)calloc(t_rate->formats_count, sizeof(char *));
+            if (!d_rate->formats) {
+              oom = true;
+              break;
             }
+            // Ownership of the strings moves from the temp map.
+            for (size_t f = 0; f < t_rate->formats_count; f++) {
+              d_rate->formats[f] = t_rate->formats[f];
+              t_rate->formats[f] = NULL;
+            }
+            d_rate->formats_count = t_rate->formats_count;
+          }
+          if (!oom) {
             qsort(d_chan->samplerates, d_chan->samplerates_count,
                   sizeof(samplerate_capability_t), compare_samplerates);
           }
         }
-        qsort(excl_set->capabilities, excl_set->capabilities_count,
-              sizeof(channel_capability_t), compare_channels);
+        if (!oom) {
+          qsort(excl_set->capabilities, excl_set->capabilities_count,
+                sizeof(channel_capability_t), compare_channels);
+        }
+      } else {
+        oom = true;
       }
+    }
+
+    if (oom) {
+      free_audio_device_descriptor(desc);
+      desc = NULL;
+      if (err) {
+        device_error_init(err, DEVICE_ERROR_OTHER,
+                          "Out of memory building device capabilities");
+      }
+      goto error_cleanup;
     }
   }
 

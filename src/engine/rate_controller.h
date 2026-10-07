@@ -57,11 +57,11 @@
  * positive error and yields `speed > 1`, asking the capture path to
  * run a touch faster. A buffer that is too full does the opposite.
  *
- * **Saturation.** The output is hard-limited to `1 ± maxAdjustment`
- * so a single tick is always inaudible. The integrator state is
- * clamped to the same band — this is the standard
- * conditional-integration form of anti-windup, which prevents the
- * integrator from accumulating during sustained saturation.
+ * **Saturation.** The output is hard-limited to `1 ± 0.005` so a
+ * single tick is always inaudible. Matching upstream CamillaDSP
+ * (`PIRateController::next`), only the combined P+I output is clamped;
+ * the integrator state (`accumulated`) is *not* clamped, so there is no
+ * explicit anti-windup.
  */
 typedef struct pi_rate_controller pi_rate_controller_t;
 

@@ -28,6 +28,13 @@ class CodegenEngine:
             return var[2]
         return None
 
+    def _present_cond(self, f: Field, var: str) -> str:
+        """C condition for 'field present'. For optional fields an explicit JSON
+        null means None (upstream Option<T>), so it is treated as absent."""
+        if f.required:
+            return var
+        return f"{var} && !cJSON_IsNull({var})"
+
     def _field_value_decl_str(self, f: Field, name: str) -> str:
         if isinstance(f.type, PrimitiveType):
             return f"{f.type.c_type} {name};"
@@ -522,17 +529,19 @@ class CodegenEngine:
                     g = self._get_guard(struct_type)
                     if g:
                         w.line(f"#if defined({g})")
-                    w.line(f"case {tag_variant}: free_{struct_type.name}_contents(&in->{s.union_field}.{field_name}); break;")
+                    has_is_wav_alias = any(ak in ("WavFile", "RawFile") for ak in s.variant_type_aliases.keys()) and tag_variant == "AUDIO_BACKEND_TYPE_FILE"
+                    if has_is_wav_alias and s.extra_union_members:
+                        wav_field, wav_struct = s.extra_union_members[0]
+                        w.line(f"case {tag_variant}:")
+                        w.indent()
+                        w.line(f"if (in->is_wav) free_{wav_struct.name}_contents(&in->{s.union_field}.{wav_field});")
+                        w.line(f"else free_{struct_type.name}_contents(&in->{s.union_field}.{field_name});")
+                        w.line("break;")
+                        w.dedent()
+                    else:
+                        w.line(f"case {tag_variant}: free_{struct_type.name}_contents(&in->{s.union_field}.{field_name}); break;")
                     if g:
                         w.line(f"#endif")
-                if s.extra_union_members:
-                    for field_name, struct_type in s.extra_union_members:
-                        g = self._get_guard(struct_type)
-                        if g:
-                            w.line(f"#if defined({g})")
-                        w.line(f"free_{struct_type.name}_contents(&in->{s.union_field}.{field_name});")
-                        if g:
-                            w.line(f"#endif")
                 for var in s.tag_enum.variants:
                     if var[0] not in handled_tags:
                         vg = self._get_var_guard(var)
@@ -577,6 +586,21 @@ class CodegenEngine:
             w.line(f"if ({parse_func}({json_var}, \"{f.json_key}\", {ctx_expr}, &{target_var}->{f.name}, {flag_ptr}, err) != 0) return -1;")
             for alias in f.aliases:
                 w.line(f"if ({parse_func}({json_var}, \"{alias}\", {ctx_expr}, &{target_var}->{f.name}, {flag_ptr}, err) != 0) return -1;")
+            if getattr(f, "min_value", None) is not None:
+                assert f.has_flag or f.required, f"min_value on {f.name} needs has_flag or required"
+                present = f"{target_var}->has_{f.name} && " if f.has_flag else ""
+                if f.min_value == 0:
+                    msg = "field '%s' in %s must be a non-negative integer"
+                elif f.min_value == 1:
+                    msg = "field '%s' in %s must be a positive integer"
+                else:
+                    msg = f"field '%s' in %s must be an integer >= {f.min_value}"
+                w.line(f"if ({present}{target_var}->{f.name} < {f.min_value}) {{")
+                w.indent()
+                w.line(f"config_error_set(err, CONFIG_ERR_PARSE, \"{msg}\", \"{f.json_key}\", {ctx_expr});")
+                w.line("return -1;")
+                w.dedent()
+                w.line("}")
         elif isinstance(f.type, StringType):
             w.line(f"if (parse_json_str_strict({json_var}, \"{f.json_key}\", {ctx_expr}, {target_var}->{f.name}, sizeof({target_var}->{f.name}), {flag_ptr}, err) != 0) return -1;")
             for alias in f.aliases:
@@ -612,7 +636,7 @@ class CodegenEngine:
         elif isinstance(f.type, ArrayType):
             if isinstance(f.type.item_type, PrimitiveType) and f.type.item_type == TYPE_DOUBLE:
                 w.line(f"cJSON *arr_{f.name} = cJSON_GetObjectItemCaseSensitive({json_var}, \"{f.json_key}\");")
-                w.line(f"if (arr_{f.name}) {{")
+                w.line(f"if ({self._present_cond(f, 'arr_' + f.name)}) {{")
                 w.indent()
                 if f.has_flag:
                     w.line(f"{target_var}->has_{f.name} = true;")
@@ -621,7 +645,7 @@ class CodegenEngine:
                 w.line("}")
             elif isinstance(f.type.item_type, PrimitiveType) and f.type.item_type == TYPE_SIZE_T:
                 w.line(f"cJSON *arr_{f.name} = cJSON_GetObjectItemCaseSensitive({json_var}, \"{f.json_key}\");")
-                w.line(f"if (arr_{f.name}) {{")
+                w.line(f"if ({self._present_cond(f, 'arr_' + f.name)}) {{")
                 w.indent()
                 if f.has_flag:
                     w.line(f"{target_var}->has_{f.name} = true;")
@@ -633,7 +657,7 @@ class CodegenEngine:
                 if f.aliases:
                     for a in f.aliases:
                         w.line(f"if (!arr_{f.name}) arr_{f.name} = cJSON_GetObjectItemCaseSensitive({json_var}, \"{a}\");")
-                w.line(f"if (arr_{f.name}) {{")
+                w.line(f"if ({self._present_cond(f, 'arr_' + f.name)}) {{")
                 w.indent()
                 if f.allow_null_items:
                     flag_arg = f"&{target_var}->has_{f.name}" if f.has_flag else "NULL"
@@ -656,7 +680,7 @@ class CodegenEngine:
                 w.line("}")
             elif isinstance(f.type.item_type, StructType):
                 w.line(f"cJSON *arr_{f.name} = cJSON_GetObjectItemCaseSensitive({json_var}, \"{f.json_key}\");")
-                w.line(f"if (arr_{f.name}) {{")
+                w.line(f"if ({self._present_cond(f, 'arr_' + f.name)}) {{")
                 w.indent()
                 w.line("if (!cJSON_IsArray(arr_" + f.name + ")) {")
                 w.indent()
@@ -684,7 +708,7 @@ class CodegenEngine:
                 w.line("}")
         elif isinstance(f.type, StructType):
             w.line(f"cJSON *obj_{f.name} = cJSON_GetObjectItemCaseSensitive({json_var}, \"{f.json_key}\");")
-            w.line(f"if (obj_{f.name}) {{")
+            w.line(f"if ({self._present_cond(f, 'obj_' + f.name)}) {{")
             w.indent()
             if f.has_flag:
                 w.line(f"{target_var}->has_{f.name} = true;")
@@ -693,7 +717,7 @@ class CodegenEngine:
             w.line("}")
         elif isinstance(f.type, TaggedUnionType):
             w.line(f"cJSON *obj_{f.name} = cJSON_GetObjectItemCaseSensitive({json_var}, \"{f.json_key}\");")
-            w.line(f"if (obj_{f.name}) {{")
+            w.line(f"if ({self._present_cond(f, 'obj_' + f.name)}) {{")
             w.indent()
             if f.has_flag:
                 w.line(f"{target_var}->has_{f.name} = true;")
@@ -728,7 +752,7 @@ class CodegenEngine:
             w.dedent()
             w.line("}")
             if mt.has_description:
-                w.line("parse_json_str_strict(child, \"description\", child->string, item->description, sizeof(item->description), NULL, NULL);")
+                w.line("if (parse_json_str_strict(child, \"description\", child->string, item->description, sizeof(item->description), NULL, err) != 0) return -1;")
             w.line(f"if (parse_{mt.value_type.name}(child, child->string ? child->string : \"{mt.name} item\", &item->{mt.value_field}, err) != 0) return -1;")
             w.dedent()
             w.line("}")
@@ -796,7 +820,7 @@ class CodegenEngine:
                 if rule.profile_field and rule.profile_enum:
                     prof_var = f"{rule.profile_enum.name}_variants"
                     w.line(f"const cJSON *prof_item = cJSON_GetObjectItemCaseSensitive(obj, \"{rule.profile_field}\");")
-                    w.line("if (prof_item) {")
+                    w.line("if (prof_item && !cJSON_IsNull(prof_item)) {")
                     w.indent()
                     w.line(f"static const config_enum_variant_t {prof_var}[] = {{")
                     for var in rule.profile_enum.variants:
@@ -807,6 +831,18 @@ class CodegenEngine:
                     w.line(f"if (parse_enum_required(obj, \"{rule.profile_field}\", {prof_var}, ctx ? ctx : \"{s.name}\", &pval, err) != 0) return -1;")
                     w.line(f"snprintf(out->{rule.profile_field}, sizeof(out->{rule.profile_field}), \"%s\", {rule.profile_enum.name}_to_string(({rule.profile_enum.c_type})pval));")
                     w.line(f"out->has_{rule.profile_field} = true;")
+                    # Upstream `#[serde(untagged)]` Profile { profile } vs Free { ... }
+                    # with deny_unknown_fields: mixing the two fails to deserialize.
+                    free_keys = [k for k in rule.fields if k != rule.profile_field]
+                    if free_keys:
+                        free_cond = " || ".join([f'json_field_present(obj, "{k}")' for k in free_keys])
+                        free_labels = ", ".join([f"'{k}'" for k in free_keys])
+                        w.line(f"if ({free_cond}) {{")
+                        w.indent()
+                        w.line(f"config_error_set(err, CONFIG_ERR_PARSE, \"'{rule.profile_field}' cannot be combined with {free_labels} in %s\", ctx ? ctx : \"{s.name}\");")
+                        w.line("return -1;")
+                        w.dedent()
+                        w.line("}")
                     w.dedent()
                     w.line("} else {")
                     w.indent()
@@ -818,7 +854,7 @@ class CodegenEngine:
                     w.line("}")
                 if rule.one_of:
                     for group in rule.one_of:
-                        cond_expr = " && ".join([f'!cJSON_GetObjectItemCaseSensitive(obj, "{k}")' for k in group])
+                        cond_expr = " && ".join([f'!json_field_present(obj, "{k}")' for k in group])
                         or_labels = " or ".join([f"'{k}'" for k in group])
                         w.line(f"if ({cond_expr}) {{")
                         w.indent()
@@ -826,8 +862,17 @@ class CodegenEngine:
                         w.line("return -1;")
                         w.dedent()
                         w.line("}")
+                        if len(group) == 2:
+                            both_expr = " && ".join([f'json_field_present(obj, "{k}")' for k in group])
+                            and_labels = " and ".join([f"'{k}'" for k in group])
+                            w.line(f"if ({both_expr}) {{")
+                            w.indent()
+                            w.line(f"config_error_set(err, CONFIG_ERR_PARSE, \"cannot specify both {and_labels} in %s\", ctx ? ctx : \"{s.name}\");")
+                            w.line("return -1;")
+                            w.dedent()
+                            w.line("}")
                         for idx, k in enumerate(group):
-                            check = f"if (cJSON_GetObjectItemCaseSensitive(obj, \"{k}\"))" if idx < len(group) - 1 else "else"
+                            check = (f"if (json_field_present(obj, \"{k}\"))" if idx == 0 else f"else if (json_field_present(obj, \"{k}\"))") if idx < len(group) - 1 else "else"
                             w.line(f"{check} {{")
                             w.indent()
                             kf = field_map.get(k)
@@ -840,7 +885,7 @@ class CodegenEngine:
                             w.line("}")
                 if rule.any_of_optional:
                     for idx, (k, (target_f, val_c)) in enumerate(rule.any_of_optional):
-                        w.line(f"{'if' if idx == 0 else 'else if'} (cJSON_GetObjectItemCaseSensitive(obj, \"{k}\")) {{")
+                        w.line(f"{'if' if idx == 0 else 'else if'} (json_field_present(obj, \"{k}\")) {{")
                         w.indent()
                         kf = field_map.get(k)
                         if kf:
@@ -895,25 +940,25 @@ class CodegenEngine:
 
         # Branch 2: Struct with nested objects (e.g. mixer with channels: { in, out })
         if s.nested_objects:
-            top_level_allowed = [f.json_key for f in s.fields if not f.json_object] + list(s.nested_objects.keys()) + s.allowed_extra_keys
+            top_level_allowed = [f.json_key for f in s.fields if not f.json_object and not f.internal] + list(s.nested_objects.keys()) + s.allowed_extra_keys
             for f in s.fields:
-                if not f.json_object:
+                if not f.json_object and not f.internal:
                     top_level_allowed.extend(f.aliases)
             keys_array_str = ", ".join([f'"{k}"' for k in top_level_allowed] + ["NULL"])
             w.line(f"static const char *const allowed_keys[] = {{{keys_array_str}}};")
             w.line(f"if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : \"{s.name}\", err) != 0) return -1;")
             w.line()
             # Required fields check
-            req_keys = [f.json_key for f in s.fields if f.required and not f.json_object and not f.aliases]
+            req_keys = [f.json_key for f in s.fields if f.required and not f.json_object and not f.aliases and not f.internal]
             if req_keys:
                 req_array_str = ", ".join([f'"{k}"' for k in req_keys] + ["NULL"])
                 w.line(f"static const char *const req_keys[] = {{{req_array_str}}};")
                 w.line(f"if (require_json_fields(obj, req_keys, ctx ? ctx : \"{s.name}\", NULL, err) != 0) return -1;")
                 w.line()
             for f in s.fields:
-                if f.required and not f.json_object and f.aliases:
+                if f.required and not f.json_object and f.aliases and not f.internal:
                     all_opts = [f.json_key] + f.aliases
-                    check_expr = " && ".join([f'!cJSON_GetObjectItemCaseSensitive(obj, "{k}")' for k in all_opts])
+                    check_expr = " && ".join([f'!json_field_present(obj, "{k}")' for k in all_opts])
                     w.line(f"if ({check_expr}) {{")
                     w.indent()
                     w.line(f"config_error_set(err, CONFIG_ERR_PARSE, \"missing field '{f.json_key}' in %s\", ctx ? ctx : \"{s.name}\");")
@@ -922,7 +967,7 @@ class CodegenEngine:
                     w.line("}")
             # Top level fields
             for f in s.fields:
-                if not f.json_object:
+                if not f.json_object and not f.internal:
                     self._generate_field_parse_statement(f, s.name, "out", "obj", "ctx ? ctx : \"" + s.name + "\"", w)
             # Nested objects
             for nested_name, nested_keys in s.nested_objects.items():
@@ -953,23 +998,23 @@ class CodegenEngine:
             return
 
         # Branch 3: Standard struct
-        allowed_keys = [f.json_key for f in s.fields] + [a for f in s.fields for a in f.aliases] + s.allowed_extra_keys
+        allowed_keys = [f.json_key for f in s.fields if not f.internal] + [a for f in s.fields if not f.internal for a in f.aliases] + s.allowed_extra_keys
         keys_array_str = ", ".join([f'"{k}"' for k in allowed_keys] + ["NULL"])
         w.line(f"static const char *const allowed_keys[] = {{{keys_array_str}}};")
         w.line("if (validate_unknown_fields(obj, allowed_keys, ctx ? ctx : \"" + s.name + "\", err) != 0) return -1;")
         w.line()
 
         # Required fields check
-        req_keys = [f.json_key for f in s.fields if f.required and not f.aliases]
+        req_keys = [f.json_key for f in s.fields if f.required and not f.aliases and not f.internal]
         if req_keys:
             req_array_str = ", ".join([f'"{k}"' for k in req_keys] + ["NULL"])
             w.line(f"static const char *const req_keys[] = {{{req_array_str}}};")
             w.line("if (require_json_fields(obj, req_keys, ctx ? ctx : \"" + s.name + "\", NULL, err) != 0) return -1;")
             w.line()
         for f in s.fields:
-            if f.required and f.aliases:
+            if f.required and f.aliases and not f.internal:
                 all_opts = [f.json_key] + f.aliases
-                check_expr = " && ".join([f'!cJSON_GetObjectItemCaseSensitive(obj, "{k}")' for k in all_opts])
+                check_expr = " && ".join([f'!json_field_present(obj, "{k}")' for k in all_opts])
                 w.line(f"if ({check_expr}) {{")
                 w.indent()
                 w.line(f"config_error_set(err, CONFIG_ERR_PARSE, \"missing field '{f.json_key}' in %s\", ctx ? ctx : \"{s.name}\");")
@@ -978,12 +1023,79 @@ class CodegenEngine:
                 w.line("}")
 
         for f in s.fields:
-            self._generate_field_parse_statement(f, s.name, "out", "obj", "ctx ? ctx : \"" + s.name + "\"", w)
+            if not f.internal:
+                self._generate_field_parse_statement(f, s.name, "out", "obj", "ctx ? ctx : \"" + s.name + "\"", w)
 
         w.line("return 0;")
         w.dedent()
         w.line("}")
         w.line()
+
+    def _generate_field_serialize_statement(self, f: Field, w: CWriter, force_required: bool = False):
+        if f.json_object or f.internal:
+            return
+        has_check = f"if (in->has_{f.name})" if f.has_flag else "if (1)"
+        if isinstance(f.type, PrimitiveType):
+            if f.type == TYPE_BOOL:
+                w.line(f"{has_check} cJSON_AddBoolToObject(obj, \"{f.json_key}\", in->{f.name});")
+            elif f.type in (TYPE_INT, TYPE_INT64, TYPE_UINT32, TYPE_SIZE_T, TYPE_DOUBLE):
+                w.line(f"{has_check} cJSON_AddNumberToObject(obj, \"{f.json_key}\", (double)in->{f.name});")
+        elif isinstance(f.type, StringType):
+            w.line(f"{has_check} if (in->{f.name}[0]) cJSON_AddStringToObject(obj, \"{f.json_key}\", in->{f.name});")
+        elif isinstance(f.type, EnumType):
+            w.line(f"{has_check} cJSON_AddStringToObject(obj, \"{f.json_key}\", {f.type.name}_to_string(in->{f.name}));")
+        elif isinstance(f.type, ArrayType):
+            if f.required or force_required:
+                # Required array: always emit [] even when count == 0.
+                w.line("{")
+            elif f.has_flag:
+                # Optional array: Some([]) must round-trip as [] (e.g. a
+                # pipeline step with `channels: []` applies to no channel,
+                # while omitting `channels` means all channels).
+                w.line(f"if (in->has_{f.name}) {{")
+            else:
+                w.line(f"if (in->{f.name} && in->{f.name}_count > 0) {{")
+            w.indent()
+            w.line(f"cJSON *arr = cJSON_CreateArray();")
+            w.line(f"for (size_t i = 0; i < in->{f.name}_count; i++) {{")
+            w.indent()
+            if isinstance(f.type.item_type, PrimitiveType):
+                w.line(f"cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)in->{f.name}[i]));")
+            elif isinstance(f.type.item_type, StringType):
+                if f.allow_null_items:
+                    w.line(f"if (in->{f.name}[i]) cJSON_AddItemToArray(arr, cJSON_CreateString(in->{f.name}[i]));")
+                    w.line("else cJSON_AddItemToArray(arr, cJSON_CreateNull());")
+                else:
+                    w.line(f"cJSON_AddItemToArray(arr, in->{f.name}[i] ? cJSON_CreateString(in->{f.name}[i]) : cJSON_CreateNull());")
+            elif isinstance(f.type.item_type, StructType):
+                w.line(f"cJSON_AddItemToArray(arr, serialize_{f.type.item_type.name}(&in->{f.name}[i]));")
+            w.dedent()
+            w.line("}")
+            w.line(f"cJSON_AddItemToObject(obj, \"{f.json_key}\", arr);")
+            w.dedent()
+            w.line("}")
+        elif isinstance(f.type, StructType):
+            opt_prefix = f"{has_check} " if f.has_flag else ""
+            w.line(f"{opt_prefix}cJSON_AddItemToObject(obj, \"{f.json_key}\", serialize_{f.type.name}(&in->{f.name}));")
+        elif isinstance(f.type, TaggedUnionType):
+            opt_prefix = f"{has_check} " if f.has_flag else ""
+            w.line(f"{opt_prefix}cJSON_AddItemToObject(obj, \"{f.json_key}\", serialize_{f.type.name}(&in->{f.name}));")
+        elif isinstance(f.type, NamedMapType):
+            mt = f.type
+            w.line(f"if (in->{f.name} && in->{f.name}_count > 0) {{")
+            w.indent()
+            w.line("cJSON *map_obj = cJSON_CreateObject();")
+            w.line(f"for (size_t i = 0; i < in->{f.name}_count; i++) {{")
+            w.indent()
+            w.line(f"cJSON *item_obj = serialize_{mt.value_type.name}(&in->{f.name}[i].{mt.value_field});")
+            if mt.has_description:
+                w.line(f"if (in->{f.name}[i].description[0]) {{ cJSON_AddStringToObject(item_obj, \"description\", in->{f.name}[i].description); }}")
+            w.line(f"cJSON_AddItemToObject(map_obj, in->{f.name}[i].name, item_obj);")
+            w.dedent()
+            w.line("}")
+            w.line(f"cJSON_AddItemToObject(obj, \"{f.json_key}\", map_obj);")
+            w.dedent()
+            w.line("}")
 
     def _generate_struct_serializer(self, s: StructType, w: CWriter):
         w.line(f"cJSON *serialize_{s.name}(const {s.c_type} *in) {{")
@@ -992,61 +1104,65 @@ class CodegenEngine:
         w.line("cJSON *obj = cJSON_CreateObject();")
         w.line("if (!obj) return NULL;")
 
+        if s.variant_tag_field and s.variant_rules:
+            field_map = {f.name: f for f in s.fields}
+            tag_f = field_map.get(s.variant_tag_field)
+            if tag_f:
+                self._generate_field_serialize_statement(tag_f, w)
+            enum_type = tag_f.type
+            w.block_start(f"switch (in->{s.variant_tag_field})")
+            handled_tags = set()
+            for rule in s.variant_rules:
+                for tv in rule.tag_values:
+                    w.line(f"case {tv}:")
+                    handled_tags.add(tv)
+                w.indent()
+                w.line("{")
+                w.indent()
+                seen_fields = set()
+                if rule.profile_field:
+                    pf = field_map.get(rule.profile_field)
+                    if pf:
+                        self._generate_field_serialize_statement(pf, w)
+                        seen_fields.add(rule.profile_field)
+                if rule.one_of:
+                    for group in rule.one_of:
+                        for k in group:
+                            if k not in seen_fields:
+                                kf = field_map.get(k)
+                                if kf:
+                                    self._generate_field_serialize_statement(kf, w)
+                                    seen_fields.add(k)
+                for fn in rule.fields:
+                    if fn not in seen_fields:
+                        ff = field_map.get(fn)
+                        if ff:
+                            self._generate_field_serialize_statement(ff, w, force_required=(fn in rule.required_keys))
+                            seen_fields.add(fn)
+                w.line("break;")
+                w.dedent()
+                w.line("}")
+                w.dedent()
+            for var in enum_type.variants:
+                if var[0] not in handled_tags:
+                    vg = self._get_var_guard(var)
+                    if vg:
+                        w.line(f"#if defined({vg})")
+                    w.line(f"case {var[0]}: break;")
+                    if vg:
+                        w.line("#endif")
+            if enum_type.invalid_val and enum_type.invalid_val not in handled_tags:
+                w.line(f"case {enum_type.invalid_val}: break;")
+            w.block_end()
+            w.line("return obj;")
+            w.dedent()
+            w.line("}")
+            w.line()
+            return
+
         # Top level fields
         for f in s.fields:
-            if f.json_object:
-                continue
-            has_check = f"if (in->has_{f.name})" if f.has_flag else "if (1)"
-            if isinstance(f.type, PrimitiveType):
-                if f.type == TYPE_BOOL:
-                    w.line(f"{has_check} cJSON_AddBoolToObject(obj, \"{f.json_key}\", in->{f.name});")
-                elif f.type in (TYPE_INT, TYPE_INT64, TYPE_UINT32, TYPE_SIZE_T, TYPE_DOUBLE):
-                    w.line(f"{has_check} cJSON_AddNumberToObject(obj, \"{f.json_key}\", (double)in->{f.name});")
-            elif isinstance(f.type, StringType):
-                w.line(f"{has_check} if (in->{f.name}[0]) cJSON_AddStringToObject(obj, \"{f.json_key}\", in->{f.name});")
-            elif isinstance(f.type, EnumType):
-                w.line(f"{has_check} cJSON_AddStringToObject(obj, \"{f.json_key}\", {f.type.name}_to_string(in->{f.name}));")
-            elif isinstance(f.type, ArrayType):
-                w.line(f"if (in->{f.name} && in->{f.name}_count > 0) {{")
-                w.indent()
-                w.line(f"cJSON *arr = cJSON_CreateArray();")
-                w.line(f"for (size_t i = 0; i < in->{f.name}_count; i++) {{")
-                w.indent()
-                if isinstance(f.type.item_type, PrimitiveType):
-                    w.line(f"cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)in->{f.name}[i]));")
-                elif isinstance(f.type.item_type, StringType):
-                    if f.allow_null_items:
-                        w.line(f"if (in->{f.name}[i]) cJSON_AddItemToArray(arr, cJSON_CreateString(in->{f.name}[i]));")
-                        w.line("else cJSON_AddItemToArray(arr, cJSON_CreateNull());")
-                    else:
-                        w.line(f"cJSON_AddItemToArray(arr, in->{f.name}[i] ? cJSON_CreateString(in->{f.name}[i]) : cJSON_CreateNull());")
-                elif isinstance(f.type.item_type, StructType):
-                    w.line(f"cJSON_AddItemToArray(arr, serialize_{f.type.item_type.name}(&in->{f.name}[i]));")
-                w.dedent()
-                w.line("}")
-                w.line(f"cJSON_AddItemToObject(obj, \"{f.json_key}\", arr);")
-                w.dedent()
-                w.line("}")
-            elif isinstance(f.type, StructType):
-                w.line(f"cJSON_AddItemToObject(obj, \"{f.json_key}\", serialize_{f.type.name}(&in->{f.name}));")
-            elif isinstance(f.type, TaggedUnionType):
-                w.line(f"cJSON_AddItemToObject(obj, \"{f.json_key}\", serialize_{f.type.name}(&in->{f.name}));")
-            elif isinstance(f.type, NamedMapType):
-                mt = f.type
-                w.line(f"if (in->{f.name} && in->{f.name}_count > 0) {{")
-                w.indent()
-                w.line("cJSON *map_obj = cJSON_CreateObject();")
-                w.line(f"for (size_t i = 0; i < in->{f.name}_count; i++) {{")
-                w.indent()
-                w.line(f"cJSON *item_obj = serialize_{mt.value_type.name}(&in->{f.name}[i].{mt.value_field});")
-                if mt.has_description:
-                    w.line(f"if (in->{f.name}[i].description[0]) {{ cJSON_AddStringToObject(item_obj, \"description\", in->{f.name}[i].description); }}")
-                w.line(f"cJSON_AddItemToObject(map_obj, in->{f.name}[i].name, item_obj);")
-                w.dedent()
-                w.line("}")
-                w.line(f"cJSON_AddItemToObject(obj, \"{f.json_key}\", map_obj);")
-                w.dedent()
-                w.line("}")
+            self._generate_field_serialize_statement(f, w)
 
         # Nested objects serialization
         if s.nested_objects:
@@ -1090,12 +1206,28 @@ class CodegenEngine:
             w.line("}")
             w.line("const char *type_str = item->valuestring;")
 
+            # Accepted JSON names for each payload variant. A variant whose primary
+            # enum name is rejected for this union (e.g. "Stdin" for playback) is
+            # still reachable through its non-rejected enum aliases ("Stdout").
+            def _accepted_names(tag_variant):
+                names = []
+                for var in s.tag_enum.variants:
+                    if var[0] != tag_variant:
+                        continue
+                    if var[1] not in s.rejected_variants:
+                        names.append(var[1])
+                    if len(var) > 2 and isinstance(var[2], list):
+                        for a in var[2]:
+                            if a not in s.rejected_variants and a not in s.variant_type_aliases and a not in names:
+                                names.append(a)
+                return names
+
             # Calculate expected variants string
             expected_variants = []
             for tag_variant, (field_name, struct_type) in s.variants.items():
-                for var in s.tag_enum.variants:
-                    if var[0] == tag_variant and var[1] not in s.rejected_variants:
-                        expected_variants.append(var[1])
+                for n in _accepted_names(tag_variant):
+                    if n not in expected_variants:
+                        expected_variants.append(n)
             for alias_key in s.variant_type_aliases.keys():
                 if alias_key not in expected_variants:
                     expected_variants.append(alias_key)
@@ -1119,17 +1251,12 @@ class CodegenEngine:
                         w.line(f"if (!out->has_{f.name}) {{ out->{f.name} = {val_str}; }}")
 
             # Match type_str to payload parsers
+            emitted_names = set()
             for tag_variant, (field_name, struct_type) in s.variants.items():
-                var_names = []
-                for var in s.tag_enum.variants:
-                    if var[0] == tag_variant and var[1] not in s.rejected_variants:
-                        var_names.append(var[1])
-                        if len(var) > 2:
-                            for a in var[2]:
-                                if a not in s.rejected_variants and a not in s.variant_type_aliases:
-                                    var_names.append(a)
+                var_names = _accepted_names(tag_variant)
                 if not var_names:
                     continue
+                emitted_names.update(var_names)
                 g = self._get_guard(struct_type)
                 if g:
                     w.line(f"#if defined({g})")
@@ -1144,6 +1271,9 @@ class CodegenEngine:
                     w.line("#endif")
 
             for alias_key, (tag_val, member_name, assigns) in s.variant_type_aliases.items():
+                if alias_key in emitted_names and not assigns:
+                    # Already handled by the primary variant branch above.
+                    continue
                 # find target struct type from extra_union_members or variants
                 payload_type_name = None
                 st_obj = None
@@ -1302,6 +1432,13 @@ class CodegenEngine:
                     for var in s.tag_enum.variants:
                         if var[0] == tag_variant:
                             tag_str = var[1]
+                            if tag_str in s.rejected_variants and len(var) > 2 and isinstance(var[2], list):
+                                # Primary name is not valid for this union (e.g.
+                                # "Stdin" for playback); emit the accepted alias.
+                                for a in var[2]:
+                                    if a not in s.rejected_variants:
+                                        tag_str = a
+                                        break
                             break
                     w.line(f"obj = serialize_{struct_type.name}(&in->{s.union_field}.{field_name});")
                     w.line(f"if (obj) cJSON_AddStringToObject(obj, \"type\", \"{tag_str}\");")

@@ -472,16 +472,22 @@ static bool apply_cjson_overrides(cJSON *root, int samplerate_override,
   return true;
 }
 
-bool cdsp_set_config_json(dsp_engine_t *engine, const char *json_str,
-                          cdsp_backend_error_t *out_err) {
+// apply_cli: when false, the caller has already resolved and applied the
+// persistent CLI overrides (e.g. cdsp_engine_set_config_file merges explicit
+// arguments with g_cli_overrides), so they must not be re-applied here; doing
+// so would let g_cli_overrides silently replace the caller's explicit values.
+static bool set_config_json_impl(dsp_engine_t *engine, const char *json_str,
+                                 bool apply_cli,
+                                 cdsp_backend_error_t *out_err) {
   if (!engine || !engine->set_config_json)
     return false;
 
   const char *json_to_set = json_str;
   char *overridden_json = NULL;
 
-  if (g_cli_overrides.samplerate > 0 || g_cli_overrides.channels > 0 ||
-      g_cli_overrides.has_format || g_cli_overrides.extra_samples >= 0) {
+  if (apply_cli &&
+      (g_cli_overrides.samplerate > 0 || g_cli_overrides.channels > 0 ||
+       g_cli_overrides.has_format || g_cli_overrides.extra_samples >= 0)) {
     cJSON *root = cJSON_Parse(json_str);
     if (root) {
       char err_msg[256] = {0};
@@ -516,6 +522,11 @@ bool cdsp_set_config_json(dsp_engine_t *engine, const char *json_str,
     out_err->message[sizeof(out_err->message) - 1] = '\0';
   }
   return ok;
+}
+
+bool cdsp_set_config_json(dsp_engine_t *engine, const char *json_str,
+                          cdsp_backend_error_t *out_err) {
+  return set_config_json_impl(engine, json_str, true, out_err);
 }
 
 bool cdsp_set_config_yaml(dsp_engine_t *engine, const char *yaml_str,
@@ -641,7 +652,9 @@ bool cdsp_engine_set_config_file(dsp_engine_t *engine, const char *path,
     return false;
   }
 
-  bool ok = cdsp_set_config_json(engine, updated_json, out_err);
+  // Overrides (explicit, falling back to g_cli_overrides) were already applied
+  // by read_config_file_as_json_with_overrides.
+  bool ok = set_config_json_impl(engine, updated_json, false, out_err);
   free(updated_json);
   if (ok) {
     cdsp_set_config_file_path(engine, path);
@@ -679,6 +692,8 @@ char *cdsp_get_config_description(const dsp_engine_t *engine) {
   return res;
 }
 
+static void config_fill_defaults(cJSON *root);
+
 char *cdsp_get_config_value(const dsp_engine_t *engine, const char *json_ptr) {
   char *json = NULL;
   if (!cdsp_get_active_config_json(engine, &json) || !json) {
@@ -688,6 +703,8 @@ char *cdsp_get_config_value(const dsp_engine_t *engine, const char *json_ptr) {
   free(json);
   if (!root)
     return NULL;
+
+  config_fill_defaults(root);
 
   cJSON *node = locate_pointer(root, json_ptr, NULL, NULL, NULL, NULL, 0);
   if (!node) {
@@ -713,14 +730,14 @@ bool cdsp_set_config_value(dsp_engine_t *engine, const char *json_ptr,
   if (!root)
     return false;
 
+  config_fill_defaults(root);
+
   cJSON *parent = NULL;
   const char *key = NULL;
   int idx = -1;
-  char new_key[128] = "";
-  cJSON *target = locate_pointer(root, json_ptr, &parent, &key, &idx, new_key,
-                                 sizeof(new_key));
-  (void)target;
-  if (!parent) {
+  cJSON *target =
+      locate_pointer(root, json_ptr, &parent, &key, &idx, NULL, 0);
+  if (!target || !parent) {
     cJSON_Delete(root);
     return false;
   }
@@ -734,9 +751,6 @@ bool cdsp_set_config_value(dsp_engine_t *engine, const char *json_ptr,
   bool ok_mod = false;
   if (key && cJSON_IsObject(parent)) {
     ok_mod = cJSON_ReplaceItemInObject(parent, key, new_node);
-  } else if (new_key[0] != '\0' && cJSON_IsObject(parent)) {
-    cJSON_AddItemToObject(parent, new_key, new_node);
-    ok_mod = true;
   } else if (idx >= 0 && cJSON_IsArray(parent)) {
     ok_mod = cJSON_ReplaceItemInArray(parent, idx, new_node);
   }
@@ -1073,7 +1087,7 @@ static void config_fill_defaults(cJSON *root) {
 }
 
 static void get_dir_from_path(const char *path, char *out_dir,
-                               size_t out_size) {
+                              size_t out_size) {
   if (!path || !out_dir || out_size == 0) {
     if (out_dir && out_size > 0)
       out_dir[0] = '\0';
@@ -1098,8 +1112,7 @@ static void get_dir_from_path(const char *path, char *out_dir,
 }
 
 static bool read_config_json_with_dir(const char *json_str,
-                                      const char *config_dir,
-                                      char **out_result,
+                                      const char *config_dir, char **out_result,
                                       cdsp_config_error_type_t *out_err_type) {
   if (!json_str || !out_result || !out_err_type)
     return false;
@@ -1134,28 +1147,39 @@ bool cdsp_read_config_json(const char *json_str, char **out_result,
   return read_config_json_with_dir(json_str, NULL, out_result, out_err_type);
 }
 
-static bool validate_config_json_with_dir(
-    const char *json_str, const char *config_dir, char **out_result,
-    cdsp_config_error_type_t *out_err_type) {
+// apply_cli: see set_config_json_impl. File-based validation has already
+// applied the resolved overrides and passes false.
+static bool
+validate_config_json_with_dir(const char *json_str, const char *config_dir,
+                              bool apply_cli, char **out_result,
+                              cdsp_config_error_type_t *out_err_type) {
   if (!json_str || !out_result || !out_err_type)
     return false;
 
   const char *json_to_use = json_str;
   char *overridden_json = NULL;
 
-  if (g_cli_overrides.samplerate > 0 || g_cli_overrides.channels > 0 ||
-      g_cli_overrides.has_format || g_cli_overrides.extra_samples >= 0) {
+  if (apply_cli &&
+      (g_cli_overrides.samplerate > 0 || g_cli_overrides.channels > 0 ||
+       g_cli_overrides.has_format || g_cli_overrides.extra_samples >= 0)) {
     cJSON *temp_root = cJSON_Parse(json_str);
     if (temp_root) {
       char err_msg[256] = {0};
-      if (apply_cjson_overrides(
+      if (!apply_cjson_overrides(
               temp_root, g_cli_overrides.samplerate, g_cli_overrides.channels,
               g_cli_overrides.has_format ? g_cli_overrides.format : NULL,
               g_cli_overrides.extra_samples, err_msg, sizeof(err_msg))) {
-        overridden_json = cJSON_PrintUnformatted(temp_root);
-        if (overridden_json)
-          json_to_use = overridden_json;
+        // Same outcome as cdsp_set_config_json: an override that cannot be
+        // applied makes the config unusable, so validation must not pass.
+        cJSON_Delete(temp_root);
+        *out_result =
+            strdup(err_msg[0] ? err_msg : "Failed to apply CLI overrides");
+        *out_err_type = CDSP_CONFIG_ERR_PARSE;
+        return false;
       }
+      overridden_json = cJSON_PrintUnformatted(temp_root);
+      if (overridden_json)
+        json_to_use = overridden_json;
       cJSON_Delete(temp_root);
     }
   }
@@ -1205,7 +1229,7 @@ static bool validate_config_json_with_dir(
 
 bool cdsp_validate_config_json(const char *json_str, char **out_result,
                                cdsp_config_error_type_t *out_err_type) {
-  return validate_config_json_with_dir(json_str, NULL, out_result,
+  return validate_config_json_with_dir(json_str, NULL, true, out_result,
                                        out_err_type);
 }
 
@@ -1336,8 +1360,8 @@ bool cdsp_validate_config_file_with_overrides(
     return false;
   }
 
-  bool ok = validate_config_json_with_dir(updated_json, config_dir, out_result,
-                                          out_err_type);
+  bool ok = validate_config_json_with_dir(updated_json, config_dir, false,
+                                          out_result, out_err_type);
   free(updated_json);
 
   if (ok && !is_json && out_result && *out_result &&

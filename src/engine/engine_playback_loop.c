@@ -54,13 +54,28 @@ struct engine_playback_loop {
   size_t chunk_size;
   bool capture_pitch_supported;
   bool playback_pitch_supported;
-  bool pitch_supported;
   bool rate_adjust_enabled;
+  /// True once a rate_adjust value has been published (see
+  /// playback_loop_update_rate_adjust).
+  bool rate_adjust_published;
   double adjust_period;
   int target_level;
   bool has_last_observed_playback_pending_rate;
   double last_observed_playback_pending_rate;
 };
+
+/**
+ * @brief Current capture clock-pitch support. Read live (lock-free acquire)
+ * from the shared state, which the capture loop refreshes after opening the
+ * device, so a capability only discovered at open time (CoreAudio clock
+ * source, 03 CA-01) is honoured instead of the creation-time snapshot.
+ */
+static bool
+playback_loop_capture_pitch_supported(const engine_playback_loop_t *loop) {
+  return loop->shared
+             ? engine_shared_state_get_capture_pitch_supported(loop->shared)
+             : loop->capture_pitch_supported;
+}
 
 /**
  * @brief Applies the calculated speed adjustment to the audio device or
@@ -82,14 +97,15 @@ static void apply_speed(engine_playback_loop_t *loop, double speed,
   bool changed = fabs(speed - *last_speed) > 0.000001;
   if (changed) {
     *last_speed = speed;
-    if (loop->capture_pitch_supported && loop->shared) {
+    bool capture_pitch = playback_loop_capture_pitch_supported(loop);
+    if (capture_pitch && loop->shared) {
       engine_shared_state_set_capture_pitch(loop->shared, speed);
     } else if (loop->playback_pitch_supported && loop->playback) {
       playback_backend_set_pitch(loop->playback, 1.0 / speed);
     } else if (loop->shared) {
       engine_shared_state_set_resampler_ratio(loop->shared, speed);
     }
-    const char *method_str = loop->capture_pitch_supported    ? "capture pitch"
+    const char *method_str = capture_pitch                    ? "capture pitch"
                              : loop->playback_pitch_supported ? "playback pitch"
                                                               : "resampler";
     logger_debug(&g_logger, "Rate adjust: buffer=%f target=%d speed=%f via %s",
@@ -108,9 +124,9 @@ static void apply_speed(engine_playback_loop_t *loop, double speed,
 static void log_rate_adjust_mode(engine_playback_loop_t *loop) {
   if (loop->rate_adjust_enabled) {
     const char *method_str =
-        loop->capture_pitch_supported    ? "capture clock pitch"
-        : loop->playback_pitch_supported ? "playback clock pitch"
-                                         : "resampler ratio";
+        playback_loop_capture_pitch_supported(loop) ? "capture clock pitch"
+        : loop->playback_pitch_supported            ? "playback clock pitch"
+                                                    : "resampler ratio";
     logger_info(
         &g_logger,
         "Rate adjustment enabled (period=%fs, target_level=%d, method=%s)",
@@ -141,8 +157,6 @@ engine_playback_loop_create(const engine_playback_loop_config_t *config) {
   loop->playback_pitch_supported =
       config->playback &&
       playback_backend_pitch_control_supported(config->playback);
-  loop->pitch_supported =
-      loop->capture_pitch_supported || loop->playback_pitch_supported;
   loop->rate_adjust_enabled = config->rate_adjust_enabled;
   loop->adjust_period = config->adjust_period;
   loop->target_level = config->target_level;
@@ -205,9 +219,10 @@ static void playback_loop_update_rate_adjust(
   size_t processed_queued =
       engine_shared_state_get_processed_queued_frames(loop->shared);
   double total_buffer_fill = (double)(ring_fill + processed_queued);
-  processing_parameters_set_buffer_level(loop->processing_params,
-                                         total_buffer_fill);
 
+  // Matching upstream RateAdjustReporter::update: the published buffer_level
+  // is the *average* level over the adjust period, updated once per period,
+  // and only when rate adjust is enabled (otherwise it stays 0).
   if (loop->rate_adjust_enabled && rate_controller) {
     averager_add(averager, total_buffer_fill);
 
@@ -219,9 +234,26 @@ static void playback_loop_update_rate_adjust(
         double speed = pi_rate_controller_next(rate_controller, avg);
         stopwatch_restart(stopwatch);
         averager_restart(averager);
+        processing_parameters_set_buffer_level(loop->processing_params, avg);
         apply_speed(loop, speed, last_speed, avg);
-        processing_parameters_set_rate_adjust(loop->processing_params, speed);
+        // Publish the speed that is actually in effect. apply_speed() skips
+        // sub-ppm changes, so publishing `speed` directly could report a
+        // value that was never applied to the resampler / clock pitch.
+        processing_parameters_set_rate_adjust(loop->processing_params,
+                                              *last_speed);
+        loop->rate_adjust_published = true;
       }
+    } else if (loop->rate_adjust_published &&
+               processing_parameters_get_rate_adjust(loop->processing_params) ==
+                   0.0 &&
+               engine_shared_state_get_state(loop->shared) ==
+                   PROCESSING_STATE_RUNNING) {
+      // The stall watchdog zeroes rate_adjust (as upstream). Upstream's
+      // capture loop republishes its last value on every status update once
+      // running again; without this cdsp would show 0 until the next adjust
+      // period (up to adjust_period seconds later).
+      processing_parameters_set_rate_adjust(loop->processing_params,
+                                            *last_speed);
     }
   }
 }
@@ -315,6 +347,11 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
     engine_shared_state_request_stop(loop->shared, reason);
     return;
   }
+
+  // Like capture, playback pitch support can depend on what open found;
+  // refresh the creation-time value now that the device is open (03 CA-01).
+  loop->playback_pitch_supported =
+      playback_backend_pitch_control_supported(loop->playback);
 
   realtime_thread_handle_t *rt_handle = promote_current_thread_to_realtime(
       "Playback", loop->chunk_size, loop->pipeline_rate);

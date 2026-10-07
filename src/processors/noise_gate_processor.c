@@ -29,7 +29,7 @@
 static const logger_t g_logger = {"noise_gate_processor"};
 
 struct noise_gate_processor {
-  char name[64];            ///< Unique name of the noise gate instance.
+  char name[128];           ///< Unique name of the noise gate instance.
   size_t *monitor_channels; ///< Array of channel indices monitored for level
                             ///< detection.
   size_t monitor_channels_count; ///< Number of monitored channels.
@@ -84,14 +84,40 @@ static int noise_gate_config_validate(const processor_config_t *config,
                      "NoiseGate: channels must be > 0, got 0");
     return -1;
   }
-  if (p->attack <= 0.0) {
+  if (p->attack_unit < TIME_UNIT_US ||
+      p->attack_unit > TIME_UNIT_SAMPLES ||
+      p->release_unit < TIME_UNIT_US ||
+      p->release_unit > TIME_UNIT_SAMPLES) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "NoiseGate: invalid attack/release time unit");
+    return -1;
+  }
+  // Upstream's `FiniteF64` fields make NaN/Inf unrepresentable; C callers
+  // bypass the JSON parser, so check finiteness explicitly.
+  if (p->attack <= 0.0 || !isfinite(p->attack)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "NoiseGate: attack must be > 0, got %g", p->attack);
     return -1;
   }
-  if (p->release <= 0.0) {
+  if (p->release <= 0.0 || !isfinite(p->release)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "NoiseGate: release must be > 0, got %g", p->release);
+    return -1;
+  }
+  if (!isfinite(p->threshold) || !isfinite(p->attenuation)) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "NoiseGate: threshold and attenuation must be finite");
+    return -1;
+  }
+  if (p->attenuation < 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "NoiseGate: attenuation value cannot be negative, got %g",
+                     p->attenuation);
+    return -1;
+  }
+  if (p->monitor_channels_count > 0 && !p->monitor_channels) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "NoiseGate: monitor_channels is NULL with non-zero count");
     return -1;
   }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {
@@ -101,6 +127,11 @@ static int noise_gate_config_validate(const processor_config_t *config,
                        p->monitor_channels[i], p->channels - 1);
       return -1;
     }
+  }
+  if (p->process_channels_count > 0 && !p->process_channels) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "NoiseGate: process_channels is NULL with non-zero count");
+    return -1;
   }
   for (size_t i = 0; i < p->process_channels_count; i++) {
     if (p->process_channels[i] >= p->channels) {

@@ -271,7 +271,7 @@ elseif(EMSCRIPTEN)
         -matomics
         -sDISABLE_EXCEPTION_CATCHING=0
         -sUSE_PTHREADS=1
-        # Wasm AudioWorklet for the WebAudio backend's device callback (webaudio_device_start, called from dsp_engine_create).
+        # Wasm AudioWorklet for the WebAudio backend's device callback (webaudio_device_start, called from dsp_engine_create via audio_backend_registry_init).
         -sAUDIO_WORKLET=1
         -sWASM_WORKERS=1
         -sALLOW_MEMORY_GROWTH=1

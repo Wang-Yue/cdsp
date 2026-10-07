@@ -109,7 +109,14 @@ TEST(ALSACapture_StopOnInactive_SourceStatus) {
     snd_pcm_close(play_pcm);
     hw_sleep_ms(20);
 
-    bool read_inactive = capture_backend_read(capture, 128, chunk, &err);
+    // The inactive event is handled by the capture inner thread (M6); reads
+    // may still return queued frames until it has been seen. Allow ~200 ms.
+    bool read_inactive = true;
+    for (int retry = 0; retry < 20 && read_inactive; retry++) {
+      read_inactive = capture_backend_read(capture, 128, chunk, &err);
+      if (read_inactive)
+        hw_sleep_ms(10);
+    }
     ASSERT_FALSE(read_inactive);
     ASSERT_STR_EQ("Capture source inactive", err.message);
   }
@@ -185,9 +192,16 @@ TEST(ALSACapture_DynamicRateChange_HCtlMonitoring) {
     hw_sleep_ms(10);
   }
 
+  // Control events are handled by the capture inner thread (M6), so the
+  // change shows up asynchronously; allow up to ~200 ms.
   double pending_rate = 0.0;
-  bool has_change =
-      capture_backend_get_pending_rate_change(capture, &pending_rate);
+  bool has_change = false;
+  for (int retry = 0; retry < 20 && !has_change; retry++) {
+    has_change =
+        capture_backend_get_pending_rate_change(capture, &pending_rate);
+    if (!has_change)
+      hw_sleep_ms(10);
+  }
 
   // Assert that dynamic rate change to 96000 was detected from the HCtl element
   // event

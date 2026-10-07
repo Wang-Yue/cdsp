@@ -20,6 +20,7 @@
 #include "config/config_gen.h"
 #include "logging/app_logger.h"
 #include "resampler/audio_resampler.h"
+#include "resampler/resampler_channel_mask.h"
 #include "resampler/resampler_error.h"
 #include "utils/double_helpers.h"
 
@@ -84,7 +85,8 @@ struct async_sinc_resampler {
   double *idx_scratch;
   double *frac_scratch;
   // Pre-allocated buffer for combined sinc blending across multi-channel path.
-  // Sized at sinc_len + 1.
+  // Sized at sinc_len + 4 (headroom for the up-to-4-point sub-index
+  // blends of the Cubic/Quadratic paths).
   double *combined_scratch;
   // Maximum output frames the resampler can ever produce in one call. The
   // caller uses this to size the output AudioChunk once at startup.
@@ -94,6 +96,9 @@ struct async_sinc_resampler {
   size_t needed_output_size;
   size_t current_buffer_fill;
   size_t max_input_frames;
+  // Used-channel mask of the chunk being processed (NULL = all active).
+  // Borrowed from the input chunk for the duration of one process() call.
+  const bool *active_mask;
 };
 
 #include <math.h>
@@ -273,7 +278,7 @@ static void run_nearest(async_sinc_resampler_t *resampler, size_t output_frames,
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     const double *buf = audio_buffers_get_channel(resampler->input_buffer, ch);
     double *out = audio_chunk_get_channel(output, ch);
-    if (!buf || !out)
+    if (!buf || !out || !resampler_channel_active(resampler->active_mask, ch))
       continue;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double idx = idx_buf[frame];
@@ -300,8 +305,8 @@ static void run_nearest(async_sinc_resampler_t *resampler, size_t output_frames,
  * @brief Resamples the input using cubic interpolation across four adjacent
  * sinc filter phases.
  *
- * Employs multi-channel combined sinc blending when channels >= 2 to evaluate
- * 1 dot product per channel.
+ * Employs multi-channel combined sinc blending when active channels >= 2 to
+ * evaluate 1 dot product per channel.
  *
  * @param resampler Pointer to the resampler instance.
  * @param output_frames Number of output frames to generate.
@@ -311,8 +316,11 @@ static inline size_t
 get_active_channel_count(const async_sinc_resampler_t *resampler,
                          const audio_chunk_t *output) {
   size_t active = 0;
+  // Upstream rubato `asynchro_sinc.rs` counts only mask-active channels when
+  // choosing between the combined-sinc and per-channel paths.
   for (size_t ch = 0; ch < resampler->channels; ch++) {
-    if (audio_buffers_get_channel(resampler->input_buffer, ch) &&
+    if (resampler_channel_active(resampler->active_mask, ch) &&
+        audio_buffers_get_channel(resampler->input_buffer, ch) &&
         audio_chunk_get_channel(output, ch)) {
       active++;
     }
@@ -378,7 +386,8 @@ static void run_cubic(async_sinc_resampler_t *resampler, size_t output_frames,
         const double *buf =
             audio_buffers_get_channel(resampler->input_buffer, ch);
         double *out = audio_chunk_get_channel(output, ch);
-        if (!buf || !out)
+        if (!buf || !out ||
+            !resampler_channel_active(resampler->active_mask, ch))
           continue;
         double dot = sinc_dot_product(buf + base_offset, combined, s_len);
         for (int s = 0; s < max_shift; s++) {
@@ -393,7 +402,7 @@ static void run_cubic(async_sinc_resampler_t *resampler, size_t output_frames,
       const double *buf =
           audio_buffers_get_channel(resampler->input_buffer, ch);
       double *out = audio_chunk_get_channel(output, ch);
-      if (!buf || !out)
+      if (!buf || !out || !resampler_channel_active(resampler->active_mask, ch))
         continue;
       for (size_t frame = 0; frame < output_frames; frame++) {
         double idx = idx_buf[frame];
@@ -434,7 +443,7 @@ static void run_cubic(async_sinc_resampler_t *resampler, size_t output_frames,
  * @brief Resamples the input using quadratic interpolation across three
  * adjacent sinc filter phases.
  *
- * Employs multi-channel combined sinc blending when channels > 2.
+ * Employs multi-channel combined sinc blending when active channels > 2.
  *
  * @param resampler Pointer to the resampler instance.
  * @param output_frames Number of output frames to generate.
@@ -493,7 +502,8 @@ static void run_quadratic(async_sinc_resampler_t *resampler,
         const double *buf =
             audio_buffers_get_channel(resampler->input_buffer, ch);
         double *out = audio_chunk_get_channel(output, ch);
-        if (!buf || !out)
+        if (!buf || !out ||
+            !resampler_channel_active(resampler->active_mask, ch))
           continue;
         double dot = sinc_dot_product(buf + base_offset, combined, s_len);
         for (int s = 0; s < max_shift; s++) {
@@ -508,7 +518,7 @@ static void run_quadratic(async_sinc_resampler_t *resampler,
       const double *buf =
           audio_buffers_get_channel(resampler->input_buffer, ch);
       double *out = audio_chunk_get_channel(output, ch);
-      if (!buf || !out)
+      if (!buf || !out || !resampler_channel_active(resampler->active_mask, ch))
         continue;
       for (size_t frame = 0; frame < output_frames; frame++) {
         double idx = idx_buf[frame];
@@ -545,7 +555,7 @@ static void run_quadratic(async_sinc_resampler_t *resampler,
  * @brief Resamples the input using linear interpolation between two adjacent
  * sinc filter phases.
  *
- * Employs multi-channel combined sinc blending when channels > 2.
+ * Employs multi-channel combined sinc blending when active channels > 2.
  *
  * @param resampler Pointer to the resampler instance.
  * @param output_frames Number of output frames to generate.
@@ -599,7 +609,8 @@ static void run_linear(async_sinc_resampler_t *resampler, size_t output_frames,
         const double *buf =
             audio_buffers_get_channel(resampler->input_buffer, ch);
         double *out = audio_chunk_get_channel(output, ch);
-        if (!buf || !out)
+        if (!buf || !out ||
+            !resampler_channel_active(resampler->active_mask, ch))
           continue;
         double dot = sinc_dot_product(buf + base_offset, combined, s_len);
         for (int s = 0; s < max_shift; s++) {
@@ -614,7 +625,7 @@ static void run_linear(async_sinc_resampler_t *resampler, size_t output_frames,
       const double *buf =
           audio_buffers_get_channel(resampler->input_buffer, ch);
       double *out = audio_chunk_get_channel(output, ch);
-      if (!buf || !out)
+      if (!buf || !out || !resampler_channel_active(resampler->active_mask, ch))
         continue;
       for (size_t frame = 0; frame < output_frames; frame++) {
         double idx = idx_buf[frame];
@@ -668,10 +679,20 @@ async_sinc_resampler_process(void *impl, const audio_chunk_t *input,
   size_t s_len = resampler->sinc_len;
   size_t two_s_len = 2 * s_len;
 
+  const bool *mask = audio_chunk_get_used_channels(input);
+  resampler->active_mask = mask;
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     double *base = audio_buffers_get_channel(resampler->input_buffer, ch);
     if (!base)
       continue;
+    if (!resampler_channel_active(mask, ch)) {
+      // Inactive channel (upstream active_channels_mask): skip the shift and
+      // copy. Zero the span the next call will shift in as history so a
+      // re-activated channel starts from silence rather than stale samples.
+      memset(base + resampler->needed_input_size, 0,
+             two_s_len * sizeof(double));
+      continue;
+    }
     memmove(base, base + resampler->current_buffer_fill,
             two_s_len * sizeof(double));
   }
@@ -679,7 +700,7 @@ async_sinc_resampler_process(void *impl, const audio_chunk_t *input,
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     const double *src_ptr = audio_chunk_get_channel(input, ch);
     double *dst_ptr = audio_buffers_get_channel(resampler->input_buffer, ch);
-    if (!src_ptr || !dst_ptr)
+    if (!src_ptr || !dst_ptr || !resampler_channel_active(mask, ch))
       continue;
     memcpy(dst_ptr + two_s_len, src_ptr, valid_frames * sizeof(double));
     if (valid_frames < resampler->needed_input_size) {
@@ -694,6 +715,8 @@ async_sinc_resampler_process(void *impl, const audio_chunk_t *input,
     resampler->last_index -= (double)resampler->needed_input_size;
     resampler->resample_ratio = resampler->target_ratio;
     async_sinc_resampler_update_lengths(resampler);
+    resampler_finish_masked_output(mask, output, resampler->channels, 0);
+    resampler->active_mask = NULL;
     audio_chunk_set_valid_frames(output, 0);
     return RESAMPLER_OK;
   }
@@ -745,6 +768,9 @@ async_sinc_resampler_process(void *impl, const audio_chunk_t *input,
       prev_needed_input_size > 0
           ? (output_frames * valid_frames) / prev_needed_input_size
           : output_frames;
+  resampler_finish_masked_output(mask, output, resampler->channels,
+                                 output_frames);
+  resampler->active_mask = NULL;
   audio_chunk_set_valid_frames(output, valid_out);
   return RESAMPLER_OK;
 }
@@ -788,7 +814,7 @@ static void *async_sinc_resampler_create_impl(
         "AsyncSincResampler: oversampling_factor must be positive");
     return NULL;
   }
-  if (sinc_len == 0) {
+  if (sinc_len == 0 || sinc_len > SIZE_MAX - 7) {
     config_error_set(err, CONFIG_ERR_VALIDATION,
                      "AsyncSincResampler: sinc_len must be positive");
     return NULL;
@@ -820,12 +846,13 @@ static void *async_sinc_resampler_create_impl(
   resampler->max_relative_ratio = max_relative_ratio;
   resampler->last_index = -((double)sinc_len - 1.0);
 
-  float base_cutoff =
-      has_f_cutoff ? (float)f_cutoff : calculate_cutoff_f32(sinc_len, window);
-  float fc_f32 = resampler->base_ratio >= 1.0
-                     ? base_cutoff
-                     : base_cutoff * (float)resampler->base_ratio;
-  double fc = (double)fc_f32;
+  // AGENTS.md §4.1: cutoff is computed in double (upstream rubato
+  // `asynchro_sinc.rs` uses `f32`), avoiding f32 quantization of `fc`.
+  double base_cutoff =
+      has_f_cutoff ? f_cutoff : calculate_cutoff(sinc_len, window);
+  double fc = resampler->base_ratio >= 1.0
+                  ? base_cutoff
+                  : base_cutoff * resampler->base_ratio;
 
   resampler->cutoff = fc;
   resampler->sinc_table =
@@ -963,13 +990,14 @@ async_sinc_resampler_config_validate(const resampler_config_t *config,
                        config->oversampling_factor);
       return -1;
     }
-    if (config->sinc_len == 0) {
+    if (config->sinc_len <= 0) {
       config_error_set(err, CONFIG_ERR_VALIDATION,
                        "AsyncSinc: sinc_len must be positive");
       return -1;
     }
     if (config->has_f_cutoff &&
-        (config->f_cutoff <= 0.0 || config->f_cutoff > 1.0)) {
+        (!isfinite(config->f_cutoff) || config->f_cutoff <= 0.0 ||
+         config->f_cutoff > 1.0)) {
       config_error_set(err, CONFIG_ERR_VALIDATION,
                        "AsyncSinc: f_cutoff must be in (0, 1]");
       return -1;

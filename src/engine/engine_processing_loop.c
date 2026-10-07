@@ -353,7 +353,9 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
   }
 
   if (loop->processing_params) {
+    // Upstream processing.rs resets both loads when the thread exits.
     processing_parameters_set_processing_load(loop->processing_params, 0.0);
+    processing_parameters_set_resampler_load(loop->processing_params, 0.0);
   }
 
   if (rt_handle) {

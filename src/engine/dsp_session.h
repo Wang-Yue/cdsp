@@ -64,13 +64,19 @@ typedef struct dsp_session dsp_session_t;
  * @param processed_ctx Context pointer passed to on_processed.
  * @param state_mgr Optional engine state manager to initialize volume and mute
  * state.
+ * @param seed_telemetry Optional telemetry of the previous session, copied
+ * into the new processing parameters before the worker threads start.
+ * @param seed_clipped Clipped-sample count carried over from earlier sessions.
  * @param err Optional pointer to receive error details on failure.
  * @return Pointer to the running session, or NULL on failure.
  */
-dsp_session_t *dsp_session_create_and_start(
-    dsp_config_t *config, chunk_callback_t on_captured, void *captured_ctx,
-    chunk_callback_t on_processed, void *processed_ctx,
-    const engine_state_manager_t *state_mgr, audio_backend_error_t *err);
+dsp_session_t *
+dsp_session_create_and_start(dsp_config_t *config, chunk_callback_t on_captured,
+                             void *captured_ctx, chunk_callback_t on_processed,
+                             void *processed_ctx,
+                             const engine_state_manager_t *state_mgr,
+                             const processing_parameters_t *seed_telemetry,
+                             uint64_t seed_clipped, audio_backend_error_t *err);
 
 /**
  * @brief Get the current configuration of the DSP session.

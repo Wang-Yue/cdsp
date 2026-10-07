@@ -172,6 +172,7 @@ stateDiagram-v2
     RUNNING --> PAUSED : silence_timeout
     PAUSED --> RUNNING : signal_detected
     RUNNING --> STALLED : watchdog_timeout (>0.5s)
+    PAUSED --> STALLED : watchdog_timeout (>0.5s)
     STALLED --> RUNNING : read_success
     RUNNING --> INACTIVE : abort / error / stop
     PAUSED --> INACTIVE : abort / error / stop
@@ -329,6 +330,7 @@ sequenceDiagram
    - The capture thread updates the state to `PROCESSING_STATE_PAUSED`.
    - The playback thread observes `PROCESSING_STATE_PAUSED` on its next iteration (or upon receiving 0-frame control ticks) and pauses its own playback backend via `playback_backend_set_is_paused(loop->playback, true)`.
    - (Note: playback backends suspend DAC rendering or file output; the capture backend continues reading frames so the capture loop can continuously evaluate peak levels for auto-resume).
+   - **Watchdog stays armed while paused**: the capture loop refreshes `last_capture_time_ns` only when the device actually delivered data. It does not refresh it just because the engine is `PAUSED`, so a capture device that stops delivering during silence is still reported as `STALLED` (as upstream). See §3.4.
    - **Pause Counter Increment**: When entering `PROCESSING_STATE_PAUSED` or when audio flow is interrupted, the capture thread calls `processing_parameters_bump_pause_count()`. Volume filters (`VolumeFilter`) compare this atomic counter against their `last_pause_count`. Any volume or mute changes made while paused are applied directly on resume without ramping (avoiding stale volume level fade-ins), while changes made while audio is actively flowing continue to ramp smoothly.
    - The capture thread stops pushing active audio chunks to `captured_queue`.
    - **Periodic 0-Frame Ticks & Buffer Retention**: To prevent configuration hot-reloads (pipeline swaps) or parameter updates (volume/mute) from being delayed indefinitely during silence, the capture thread periodically enqueues empty chunks (`valid_frames == 0`) downstream every 200ms. While in `PAUSED` state, read chunks are retained in `loop->pending_chunk` rather than repeatedly requesting fresh chunks from `round_robin_chunk_pool_next()`. This guarantees that the pre-allocated round-robin chunk pool does not advance and wrap around, protecting in-flight queued buffers from concurrent data race overwrites.
@@ -370,10 +372,11 @@ sequenceDiagram
 1. **Stall Detection**:
    - During normal reads, the capture thread updates the shared timestamp `last_capture_time_ns` in shared state every time a chunk is read.
    - **Unified Main-Thread Watchdog**: Stall detection is centralized on the main controller thread in `dsp_session_is_stop_requested()` (invoked via `cdsp_engine_poll()`). By running outside the audio thread, the watchdog reliably detects hardware stalls regardless of whether the driver returns empty reads or blocks infinitely inside a kernel read syscall. *(Note: Stall detection requires the host application or server event loop to periodically invoke `cdsp_engine_poll()`)*.
-   - The main thread checks if `state_raw == RUNNING`, `!should_stop()`, and `engine_shared_state_get_stop_reason(state).type == STOP_REASON_NONE` (safely queried under `stop_reason_mutex`). Checking `stop_reason.type == STOP_REASON_NONE` explicitly prevents false stall warnings during `PAUSED` mode or graceful EOF teardown (`STOP_REASON_DONE`). If the elapsed time since `last_capture_time_ns` exceeds the watchdog timeout (calculated dynamically as $\max(0.5\text{s}, 2 \times \text{chunk\_duration})$), the main thread transitions `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning.
+   - The main thread checks if `state_raw` is `RUNNING` or `PAUSED`, `!should_stop()`, and `engine_shared_state_get_stop_reason(state).type == STOP_REASON_NONE` (safely queried under `stop_reason_mutex`). Checking `stop_reason.type == STOP_REASON_NONE` explicitly prevents false stall warnings during graceful EOF teardown (`STOP_REASON_DONE`). The watchdog also runs in `PAUSED`: the capture backend keeps reading during silence, so `last_capture_time_ns` keeps advancing as long as the device is alive, and a device that stops delivering while paused is reported as `STALLED`, as upstream does. If the elapsed time since `last_capture_time_ns` exceeds the watchdog timeout (calculated dynamically as $\max(0.5\text{s}, 2 \times \text{chunk\_duration})$), the main thread transitions `state_raw` to `PROCESSING_STATE_STALLED` and logs a warning.
 2. **Stall Recovery**:
    - The capture thread keeps waiting/reading. If the device/driver recovers and successfully delivers a new chunk, the capture thread updates `last_capture_time_ns` in shared state.
-   - The capture thread checks if the shared state is currently `PROCESSING_STATE_STALLED`. If so, it transitions it back to `PROCESSING_STATE_RUNNING` and logs a recovery message.
+   - The capture thread checks if the shared state is currently `PROCESSING_STATE_STALLED`. If so, it transitions it back to `PROCESSING_STATE_RUNNING`, resets the sample-rate watcher (so the stall gap is not measured), and logs a recovery message. If the input is still silent, the silence counter returns the engine to `PAUSED`.
+   - **Telemetry on stall**: the watchdog zeroes the measured capture rate, signal range and `rate_adjust`. Once `RUNNING` again, the playback loop republishes the last applied `rate_adjust` straight away (as upstream does) instead of waiting for the next adjust period.
 
 ---
 

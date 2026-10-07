@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "filters/filter.h"
+#include "filters/loudness.h"
 #include "filters/volume.h"
 #include "logging/app_logger.h"
 #include "pipeline/pipeline.h"
@@ -48,10 +49,16 @@ static inline filter_t *step_get_filter(const pipeline_exec_step_t *step,
   return NULL;
 }
 
+/// Find the filter in @p step that corresponds to a destination filter on
+/// @p channel. Named filters are matched by name, type and occurrence: the
+/// n-th filter called "x" on a channel pairs with the n-th "x" on the same
+/// channel of the source, so cascaded copies of one filter (e.g.
+/// `names: [hp, hp]`) each keep their own state instead of all receiving the
+/// first copy's. Unnamed filters fall back to their position.
 static filter_t *step_find_filter(const pipeline_exec_step_t *step,
                                   size_t channel, const char *name,
                                   filter_instance_type_t type,
-                                  size_t fallback_idx) {
+                                  size_t occurrence, size_t fallback_idx) {
   if (!step)
     return NULL;
   size_t ch_count = step_channel_count(step);
@@ -61,10 +68,14 @@ static filter_t *step_find_filter(const pipeline_exec_step_t *step,
     if (ch != channel)
       continue;
     if (name && name[0] != '\0') {
+      size_t seen = 0;
       for (size_t f = 0; f < f_count; f++) {
         filter_t *filt = step_get_filter(step, c, f);
-        if (filt && filt->type == type && strcmp(filt->name, name) == 0)
-          return filt;
+        if (filt && filt->type == type && strcmp(filt->name, name) == 0) {
+          if (seen == occurrence)
+            return filt;
+          seen++;
+        }
       }
     } else if (fallback_idx < f_count) {
       filter_t *filt = step_get_filter(step, c, fallback_idx);
@@ -101,9 +112,36 @@ static void transfer_step_state(pipeline_exec_step_t *d_step,
       filter_t *df = step_get_filter(d_step, c, f);
       if (!df)
         continue;
-      filter_t *sf = step_find_filter(s_step, ch, df->name, df->type, f);
+      size_t occurrence = 0;
+      for (size_t k = 0; k < f; k++) {
+        filter_t *prev = step_get_filter(d_step, c, k);
+        if (prev && prev->type == df->type && strcmp(prev->name, df->name) == 0)
+          occurrence++;
+      }
+      filter_t *sf =
+          step_find_filter(s_step, ch, df->name, df->type, occurrence, f);
       if (sf) {
         filter_transfer_state(df, sf);
+      }
+    }
+  }
+}
+
+/// Re-read the fader levels into every Loudness filter of @p pipeline (after
+/// the fader bank was re-seeded).
+static void refresh_loudness_filters(pipeline_t *pipeline) {
+  for (size_t s = 0; s < pipeline->steps_count; s++) {
+    const pipeline_exec_step_t *step = &pipeline->steps[s];
+    if (step->type != EXEC_STEP_PARALLEL_FILTERS || !step->chains)
+      continue;
+    for (size_t c = 0; c < step->chains_count; c++) {
+      const parallel_filter_chain_t *chain = &step->chains[c];
+      for (size_t f = 0; f < chain->filters_count; f++) {
+        filter_t *filt = chain->filters[f];
+        if (filt && filt->instance && filt->type == FILTER_INSTANCE_LOUDNESS) {
+          loudness_filter_bind_fader_levels((loudness_filter_t *)filt->instance,
+                                            &pipeline->faders.levels);
+        }
       }
     }
   }
@@ -116,13 +154,14 @@ void pipeline_transfer_state(pipeline_t *dest, const pipeline_t *src,
 
   logger_info(&g_logger, "Starting pipeline state transfer");
 
-  // 1. Transfer Master Volume state (when transfer_filters is requested)
-  // or sync processing_parameters to target levels (when rebuilding pipeline)
+  // 1. Carry the fader ramps over (when transfer_filters is requested, like
+  // upstream Faders::update_parameters) or sync processing_parameters to the
+  // target levels and start the faders settled there (when rebuilding the
+  // pipeline). This must precede step 2: Loudness filters read the faders.
   if (transfer_filters) {
-    if (dest->master_volume && src->master_volume) {
-      g_volume_vtable.transfer_state(dest->master_volume, src->master_volume);
-      logger_info(&g_logger, "Transferred master volume filter state");
-    }
+    pipeline_faders_transfer(&dest->faders, &src->faders);
+    refresh_loudness_filters(dest);
+    logger_info(&g_logger, "Transferred fader ramp state");
   } else {
     // Structural Pipeline or Mixer rebuild: match upstream
     // processing_params.sync_volumes_to_target(): snap all current volumes
@@ -131,10 +170,15 @@ void pipeline_transfer_state(pipeline_t *dest, const pipeline_t *src,
       for (int i = 0; i < FADER_COUNT; i++) {
         double target = processing_parameters_get_target_volume_for_fader(
             dest->proc_params, (fader_t)i);
-        processing_parameters_set_current_volume_for_fader(
-            dest->proc_params, target, (fader_t)i);
+        processing_parameters_set_current_volume_for_fader(dest->proc_params,
+                                                           target, (fader_t)i);
       }
     }
+    // dest's faders were seeded when it was built, on the control thread;
+    // seed them again from the synced levels, as upstream's Faders::new runs
+    // after sync_volumes_to_target(), and let its Loudness filters follow.
+    pipeline_faders_reseed(&dest->faders);
+    refresh_loudness_filters(dest);
     logger_info(&g_logger,
                 "Synced all faders to target volume on pipeline rebuild");
   }

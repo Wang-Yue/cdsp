@@ -26,6 +26,19 @@ struct round_robin_chunk_pool {
   _Atomic size_t current_index;
 };
 
+/**
+ * @brief Whether `ch` must be decoded into `chunk`.
+ *
+ * Mirrors upstream `buffer_to_chunk_with_adapter`, which skips decoding input
+ * channels that the pipeline does not use. Unused channels are zeroed instead
+ * of decoded (cheaper than a strided sample conversion) so that a channel that
+ * becomes used again after a config reload never carries stale audio.
+ */
+static inline bool audio_chunk_channel_needs_decode(const audio_chunk_t *chunk,
+                                                    size_t ch) {
+  return !chunk->used_channels || chunk->used_channels[ch];
+}
+
 size_t audio_chunk_get_frames(const audio_chunk_t *chunk) {
   return chunk ? audio_buffers_get_capacity(chunk->buffers) : 0;
 }
@@ -591,7 +604,8 @@ bool audio_chunk_decode_interleaved_offset(const void *src,
     return false;
 
   bool ok = false;
-  if (channels == 2) {
+  if (channels == 2 && audio_chunk_channel_needs_decode(chunk, 0) &&
+      audio_chunk_channel_needs_decode(chunk, 1)) {
     double *ch0 = audio_chunk_get_channel(chunk, 0);
     double *ch1 = audio_chunk_get_channel(chunk, 1);
     if (!ch0 || !ch1)
@@ -609,6 +623,10 @@ bool audio_chunk_decode_interleaved_offset(const void *src,
     ok = true;
     for (size_t c = 0; c < channels; c++) {
       double *dst = audio_chunk_get_channel(chunk, c);
+      if (dst && !audio_chunk_channel_needs_decode(chunk, c)) {
+        memset(dst + start_frame, 0, frames * sizeof(double));
+        continue;
+      }
       if (!dst || !audio_channel_decode(ptr + c * bytes_per_sample, fmt, frames,
                                         byte_stride, dst + start_frame)) {
         ok = false;
@@ -696,6 +714,11 @@ bool audio_chunk_decode_channel(const void *src, binary_sample_format_t fmt,
   double *dst = audio_chunk_get_channel(chunk, channel);
   if (!dst)
     return false;
+
+  if (!audio_chunk_channel_needs_decode(chunk, channel)) {
+    memset(dst + start_frame, 0, frames * sizeof(double));
+    return true;
+  }
 
   return audio_channel_decode((const uint8_t *)src, fmt, frames,
                               bytes_per_sample, dst + start_frame);

@@ -12,6 +12,7 @@
 #include <ks.h>
 #include <ksmedia.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -167,10 +168,15 @@ static HRESULT STDMETHODCALLTYPE session_OnSessionDisconnected(
   CDSPAudioSessionEvents *self = (CDSPAudioSessionEvents *)This;
   logger_debug(&g_wasapi_logger, "Disconnected, reason: %d.",
                (int)DisconnectReason);
-  if (self->callback) {
-    self->callback(self->parent,
-                   (DisconnectReason == DisconnectReasonFormatChanged) ? 0.0
-                                                                       : -1.0);
+  // Upstream device.rs:454-461: FormatChanged -> format change, every other
+  // reason -> error. Only atomics owned by the listener are touched here; the
+  // COM notification thread never dereferences backend memory.
+  if (DisconnectReason == DisconnectReasonFormatChanged) {
+    atomic_store_explicit(&self->format_changed, true, memory_order_release);
+  } else {
+    atomic_store_explicit(&self->disconnect_reason, (int)DisconnectReason,
+                          memory_order_relaxed);
+    atomic_store_explicit(&self->device_error, true, memory_order_release);
   }
   return S_OK;
 }
@@ -187,38 +193,64 @@ static IAudioSessionEventsVtbl g_session_events_vtbl = {
     session_OnStateChanged,
     session_OnSessionDisconnected};
 
-IAudioSessionEvents *
-wasapi_session_events_create(void *parent,
-                             wasapi_format_change_callback_t callback) {
+IAudioSessionEvents *wasapi_session_events_create(void) {
   CDSPAudioSessionEvents *events =
       (CDSPAudioSessionEvents *)calloc(1, sizeof(CDSPAudioSessionEvents));
   if (!events)
     return NULL;
   events->lpVtbl = &g_session_events_vtbl;
   events->ref_count = 1;
-  events->parent = parent;
-  events->callback = callback;
+  atomic_init(&events->format_changed, false);
+  atomic_init(&events->device_error, false);
+  atomic_init(&events->disconnect_reason, 0);
   return (IAudioSessionEvents *)events;
 }
 
-void wasapi_register_session_events(IAudioClient *client, void *parent,
-                                    wasapi_format_change_callback_t callback,
+bool wasapi_register_session_events(IAudioClient *client,
                                     IAudioSessionControl **out_control,
-                                    IAudioSessionEvents **out_listener) {
+                                    IAudioSessionEvents **out_listener,
+                                    backend_error_t *err) {
   if (!client || !out_control || !out_listener)
-    return;
+    return false;
   *out_control = NULL;
   *out_listener = NULL;
 
-  IAudioClient_GetService(client, &IID_IAudioSessionControl,
-                          (void **)out_control);
-  if (*out_control) {
-    *out_listener = wasapi_session_events_create(parent, callback);
-    if (*out_listener) {
-      IAudioSessionControl_RegisterAudioSessionNotification(*out_control,
-                                                            *out_listener);
+  HRESULT hr = IAudioClient_GetService(client, &IID_IAudioSessionControl,
+                                       (void **)out_control);
+  if (FAILED(hr) || !*out_control) {
+    *out_control = NULL;
+    if (err) {
+      char msg[128];
+      snprintf(msg, sizeof(msg),
+               "Failed to get IAudioSessionControl: hr=0x%08lX",
+               (unsigned long)hr);
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
     }
+    return false;
   }
+  *out_listener = wasapi_session_events_create();
+  if (!*out_listener) {
+    SAFE_RELEASE(*out_control);
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to allocate session event listener");
+    return false;
+  }
+  hr = IAudioSessionControl_RegisterAudioSessionNotification(*out_control,
+                                                             *out_listener);
+  if (FAILED(hr)) {
+    SAFE_RELEASE(*out_listener);
+    SAFE_RELEASE(*out_control);
+    if (err) {
+      char msg[128];
+      snprintf(msg, sizeof(msg),
+               "Failed to register session notifications: hr=0x%08lX",
+               (unsigned long)hr);
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+    }
+    return false;
+  }
+  return true;
 }
 
 void wasapi_unregister_session_events(IAudioSessionControl **control,
@@ -235,41 +267,99 @@ void wasapi_unregister_session_events(IAudioSessionControl **control,
   }
 }
 
-bool wasapi_check_and_resolve_pending_rate(
-    const char *device, bool is_capture, double pending_rate,
-    _Atomic bool *has_pending_rate_change, double *out_rate) {
-  if (!has_pending_rate_change)
+bool wasapi_session_events_format_changed(IAudioSessionEvents *listener) {
+  if (!listener)
     return false;
-  if (atomic_load_explicit(has_pending_rate_change, memory_order_acquire)) {
-    logger_debug(&g_wasapi_logger,
-                 "get_pending_rate_change detected flag: pending_rate=%f",
-                 pending_rate);
-    double rate = pending_rate;
-    if (rate <= 0.0) {
-      for (int i = 0; i < 100; i++) {
-        rate = wasapi_device_get_current_mix_rate(device, is_capture);
-        if (rate > 0.0)
-          break;
-        cdsp_sleep_ms(50);
-      }
+  CDSPAudioSessionEvents *self = (CDSPAudioSessionEvents *)listener;
+  return atomic_load_explicit(&self->format_changed, memory_order_acquire);
+}
+
+bool wasapi_session_events_device_error(IAudioSessionEvents *listener,
+                                        int *out_reason) {
+  if (!listener)
+    return false;
+  CDSPAudioSessionEvents *self = (CDSPAudioSessionEvents *)listener;
+  if (!atomic_load_explicit(&self->device_error, memory_order_acquire))
+    return false;
+  if (out_reason)
+    *out_reason =
+        atomic_load_explicit(&self->disconnect_reason, memory_order_relaxed);
+  return true;
+}
+
+bool wasapi_check_and_resolve_pending_rate(const char *device, bool is_capture,
+                                           bool exclusive,
+                                           double configured_rate,
+                                           IAudioSessionEvents *listener,
+                                           double *out_rate) {
+  if (!listener)
+    return false;
+  CDSPAudioSessionEvents *self = (CDSPAudioSessionEvents *)listener;
+  if (!atomic_load_explicit(&self->format_changed, memory_order_acquire))
+    return false;
+  if (!atomic_exchange_explicit(&self->format_changed, false,
+                                memory_order_acq_rel))
+    return false;
+
+  // Single, non-retrying query; never sleeps on the calling (engine) thread.
+  // The shared-mode mix rate says nothing about an exclusive-mode stream.
+  double rate = 0.0;
+  if (!exclusive) {
+    double mix_rate = wasapi_device_get_current_mix_rate(device, is_capture);
+    if (mix_rate > 0.0 && fabs(mix_rate - configured_rate) >= 0.5) {
+      rate = mix_rate;
     }
-    atomic_store_explicit(has_pending_rate_change, false, memory_order_release);
-    logger_debug(&g_wasapi_logger,
-                 "get_pending_rate_change evaluated final rate=%f", rate);
-    if (rate > 0.0) {
-      if (out_rate) {
-        *out_rate = rate;
-      }
-      logger_debug(&g_wasapi_logger,
-                   "get_pending_rate_change returning true with rate=%f", rate);
-      return true;
-    }
-    logger_debug(
-        &g_wasapi_logger,
-        "get_pending_rate_change evaluated non-positive rate=%f, ignoring",
-        rate);
   }
-  return false;
+  logger_debug(&g_wasapi_logger,
+               "Session format change resolved, reporting rate=%f (0 = "
+               "unknown/unchanged, forces restart).",
+               rate);
+  if (out_rate)
+    *out_rate = rate;
+  return true;
+}
+
+const char *wasapi_disconnect_reason_name(int reason) {
+  switch (reason) {
+  case DisconnectReasonDeviceRemoval:
+    return "device removed";
+  case DisconnectReasonServerShutdown:
+    return "audio service shut down";
+  case DisconnectReasonFormatChanged:
+    return "format changed";
+  case DisconnectReasonSessionLogoff:
+    return "session logoff";
+  case DisconnectReasonSessionDisconnected:
+    return "session disconnected";
+  case DisconnectReasonExclusiveModeOverride:
+    return "exclusive mode override";
+  default:
+    return "unknown reason";
+  }
+}
+
+void wasapi_stream_error_reset(wasapi_stream_error_t *e) {
+  if (!e)
+    return;
+  e->message[0] = '\0';
+  atomic_store_explicit(&e->has_error, false, memory_order_release);
+}
+
+void wasapi_stream_error_set(wasapi_stream_error_t *e, const char *fmt, ...) {
+  if (!e || atomic_load_explicit(&e->has_error, memory_order_relaxed))
+    return;
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(e->message, sizeof(e->message), fmt, ap);
+  va_end(ap);
+  logger_error(&g_wasapi_logger, "%s", e->message);
+  atomic_store_explicit(&e->has_error, true, memory_order_release);
+}
+
+const char *wasapi_stream_error_get(const wasapi_stream_error_t *e) {
+  if (!e || !atomic_load_explicit(&e->has_error, memory_order_acquire))
+    return NULL;
+  return e->message;
 }
 
 uint32_t wasapi_make_simple_channelmask(size_t channels) {
@@ -553,6 +643,38 @@ bool wasapi_get_supported_wave_format_with_channel_mask(
   }
 }
 
+/**
+ * @brief Builds the shared-mode "unsupported format" message, including the
+ * closest match proposed by the audio engine (upstream device.rs:178-188).
+ * In shared mode this is the main hint that samplerate/channels must match
+ * the mix format.
+ */
+static void wasapi_describe_shared_mismatch(IAudioClient *client,
+                                            int samplerate, int channels,
+                                            const char *direction_name,
+                                            char *msg, size_t msg_len) {
+  WAVEFORMATEXTENSIBLE wfx;
+  wasapi_build_wave_format(BINARY_SAMPLE_FORMAT_F32_LE, samplerate, channels, 0,
+                           false, &wfx);
+  WAVEFORMATEX *closest = NULL;
+  HRESULT hr = IAudioClient_IsFormatSupported(
+      client, AUDCLNT_SHAREMODE_SHARED, (const WAVEFORMATEX *)&wfx, &closest);
+  if (closest) {
+    snprintf(msg, msg_len,
+             "Device doesn't support format for %s: F32, %d channels, %d Hz "
+             "(shared mode). Closest match is: %u channels, %lu Hz, %u bits",
+             direction_name, channels, samplerate, (unsigned)closest->nChannels,
+             (unsigned long)closest->nSamplesPerSec,
+             (unsigned)closest->wBitsPerSample);
+    CoTaskMemFree(closest);
+  } else {
+    snprintf(msg, msg_len,
+             "Device doesn't support format for %s: F32, %d channels, %d Hz "
+             "(shared mode). Error: hr=0x%08lX",
+             direction_name, channels, samplerate, (unsigned long)hr);
+  }
+}
+
 bool wasapi_get_device_format(
     IAudioClient *client, int samplerate, int channels,
     wasapi_sample_format_t requested_format, bool has_requested_format,
@@ -575,10 +697,15 @@ bool wasapi_get_device_format(
     }
     if (err) {
       char msg[256];
-      snprintf(msg, sizeof(msg),
-               "Device doesn't support requested format for %s with %d "
-               "channels at %d Hz",
-               direction_name, channels, samplerate);
+      if (!exclusive) {
+        wasapi_describe_shared_mismatch(client, samplerate, channels,
+                                        direction_name, msg, sizeof(msg));
+      } else {
+        snprintf(msg, sizeof(msg),
+                 "Device doesn't support requested format for %s with %d "
+                 "channels at %d Hz",
+                 direction_name, channels, samplerate);
+      }
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
     }
     return false;
@@ -630,7 +757,20 @@ bool wasapi_initialize_stream(IAudioClient *client,
   }
 
   REFERENCE_TIME def_time = 0, min_time = 0;
-  IAudioClient_GetDevicePeriod(client, &def_time, &min_time);
+  HRESULT hr_period =
+      IAudioClient_GetDevicePeriod(client, &def_time, &min_time);
+  if (FAILED(hr_period)) {
+    // Upstream `get_device_period()?` (device.rs:304, 378). Continuing with
+    // def_time = 0 would request a zero-length shared-mode buffer.
+    if (err) {
+      char msg[256];
+      snprintf(msg, sizeof(msg), "Failed to get device period (%s): hr=0x%08lX",
+               direction_name ? direction_name : "Audio",
+               (unsigned long)hr_period);
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+    }
+    return false;
+  }
   if (out_def_period) {
     *out_def_period = def_time;
   }
@@ -714,10 +854,70 @@ bool wasapi_initialize_stream(IAudioClient *client,
   }
 
   if (out_buffer_frame_count) {
-    IAudioClient_GetBufferSize(client, out_buffer_frame_count);
+    hr = IAudioClient_GetBufferSize(client, out_buffer_frame_count);
+    if (FAILED(hr)) {
+      if (out_event_handle && *out_event_handle) {
+        CloseHandle(*out_event_handle);
+        *out_event_handle = NULL;
+      }
+      if (err) {
+        char msg[256];
+        snprintf(msg, sizeof(msg), "Failed to get buffer size (%s): hr=0x%08lX",
+                 direction_name ? direction_name : "Audio", (unsigned long)hr);
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+      }
+      return false;
+    }
   }
 
   return true;
+}
+
+/**
+ * @brief Returns true if @p device is an endpoint with data flow @p flow.
+ *
+ * Endpoint IDs passed to IMMDeviceEnumerator_GetDevice can name a render or a
+ * capture endpoint. Upstream only matches friendly names inside the
+ * direction's collection (device.rs:194-221), so the ID path must apply the
+ * same direction filter.
+ */
+static bool wasapi_device_has_flow(IMMDevice *device, EDataFlow flow) {
+  IMMEndpoint *endpoint = NULL;
+  if (FAILED(IMMDevice_QueryInterface(device, &IID_IMMEndpoint,
+                                      (void **)&endpoint)) ||
+      !endpoint) {
+    return false;
+  }
+  EDataFlow actual = eAll;
+  HRESULT hr = IMMEndpoint_GetDataFlow(endpoint, &actual);
+  IMMEndpoint_Release(endpoint);
+  return SUCCEEDED(hr) && actual == flow;
+}
+
+/**
+ * @brief Looks up an endpoint by ID and keeps it only if its data flow
+ * matches the requested direction.
+ */
+static IMMDevice *wasapi_get_device_by_id(IMMDeviceEnumerator *enumerator,
+                                          const char *devname, EDataFlow flow) {
+  wchar_t w_id[512] = {0};
+  if (MultiByteToWideChar(CP_UTF8, 0, devname, -1, w_id,
+                          (int)(sizeof(w_id) / sizeof(w_id[0]))) == 0) {
+    return NULL;
+  }
+  IMMDevice *device = NULL;
+  HRESULT hr = IMMDeviceEnumerator_GetDevice(enumerator, w_id, &device);
+  if (FAILED(hr) || !device) {
+    return NULL;
+  }
+  if (!wasapi_device_has_flow(device, flow)) {
+    logger_warn(&g_wasapi_logger,
+                "Endpoint \"%s\" exists but is not a %s endpoint; ignoring it.",
+                devname, flow == eRender ? "render" : "capture");
+    IMMDevice_Release(device);
+    return NULL;
+  }
+  return device;
 }
 
 IMMDevice *wasapi_find_device(IMMDeviceEnumerator *enumerator,
@@ -735,12 +935,8 @@ IMMDevice *wasapi_find_device(IMMDeviceEnumerator *enumerator,
   }
 
   if (devname[0] == '{') {
-    wchar_t w_id[256] = {0};
-    MultiByteToWideChar(CP_UTF8, 0, devname, -1, w_id, 256);
-    w_id[255] = L'\0';
-    IMMDevice *device = NULL;
-    HRESULT hr = IMMDeviceEnumerator_GetDevice(enumerator, w_id, &device);
-    if (SUCCEEDED(hr) && device) {
+    IMMDevice *device = wasapi_get_device_by_id(enumerator, devname, flow);
+    if (device) {
       return device;
     }
   }
@@ -752,12 +948,13 @@ IMMDevice *wasapi_find_device(IMMDeviceEnumerator *enumerator,
     return NULL;
 
   UINT count = 0;
-  IMMDeviceCollection_GetCount(collection, &count);
+  if (FAILED(IMMDeviceCollection_GetCount(collection, &count))) {
+    count = 0;
+  }
   IMMDevice *found = NULL;
   for (UINT i = 0; i < count; i++) {
     IMMDevice *dev = NULL;
-    IMMDeviceCollection_Item(collection, i, &dev);
-    if (!dev)
+    if (FAILED(IMMDeviceCollection_Item(collection, i, &dev)) || !dev)
       continue;
 
     IPropertyStore *properties = NULL;
@@ -768,7 +965,9 @@ IMMDevice *wasapi_find_device(IMMDeviceEnumerator *enumerator,
       hr_prop =
           IPropertyStore_GetValue(properties, &PKEY_Device_FriendlyName, &var);
       if (SUCCEEDED(hr_prop) && var.vt == VT_LPWSTR && var.pwszVal) {
-        char friendly_name[256] = {0};
+        // Large enough for any friendly name (a truncated conversion
+        // returns 0 and would never match).
+        char friendly_name[1024] = {0};
         WideCharToMultiByte(CP_UTF8, 0, var.pwszVal, -1, friendly_name,
                             (int)sizeof(friendly_name), NULL, NULL);
         friendly_name[sizeof(friendly_name) - 1] = '\0';
@@ -787,13 +986,7 @@ IMMDevice *wasapi_find_device(IMMDeviceEnumerator *enumerator,
   IMMDeviceCollection_Release(collection);
 
   if (!found && devname[0] != '{') {
-    wchar_t w_id[256] = {0};
-    MultiByteToWideChar(CP_UTF8, 0, devname, -1, w_id, 256);
-    w_id[255] = L'\0';
-    hr = IMMDeviceEnumerator_GetDevice(enumerator, w_id, &found);
-    if (SUCCEEDED(hr) && found) {
-      return found;
-    }
+    found = wasapi_get_device_by_id(enumerator, devname, flow);
   }
 
   return found;
@@ -852,6 +1045,10 @@ void wasapi_cleanup_device_resources(
     IAudioSessionEvents **session_events_listener, HANDLE *event_handle,
     IMMDevice **mm_device, IMMDeviceEnumerator **enumerator,
     bool *com_initialized) {
+  // Unregister session notifications first, matching upstream where the
+  // EventRegistration local is dropped before the AudioClient
+  // (device.rs:463-464, 615-616).
+  wasapi_unregister_session_events(session_control, session_events_listener);
   if (client && *client) {
     IAudioClient_Stop(*client);
   }
@@ -861,7 +1058,6 @@ void wasapi_cleanup_device_resources(
   if (client && *client) {
     SAFE_RELEASE(*client);
   }
-  wasapi_unregister_session_events(session_control, session_events_listener);
   if (event_handle && *event_handle) {
     CloseHandle(*event_handle);
     *event_handle = NULL;
@@ -892,8 +1088,13 @@ void wasapi_extract_device_name(bool has_device, const char *config_device,
 
 double wasapi_device_get_current_mix_rate(const char *device_name,
                                           bool is_capture) {
+  // Single attempt, no retries or sleeps: this runs on engine threads (via
+  // get_pending_rate_change). RPC_E_CHANGED_MODE means COM is already
+  // initialized in another apartment on this thread and must NOT be paired
+  // with CoUninitialize.
   HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-  bool com_ok = SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
+  bool com_ok = SUCCEEDED(hr);
+  const char *name = device_name ? device_name : "";
 
   IMMDeviceEnumerator *enumerator = NULL;
   hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
@@ -907,40 +1108,34 @@ double wasapi_device_get_current_mix_rate(const char *device_name,
   logger_trace(
       &g_wasapi_logger,
       "wasapi_device_get_current_mix_rate entered, device=%s, is_capture=%d",
-      device_name[0] != '\0' ? device_name : "default", (int)is_capture);
+      name[0] != '\0' ? name : "default", (int)is_capture);
 
   double rate = 0.0;
-  for (int i = 0; i < 40; i++) {
-    IMMDevice *mm_device =
-        wasapi_find_device(enumerator, device_name, is_capture, false);
-    if (mm_device) {
-      IAudioClient *client = NULL;
-      hr = IMMDevice_Activate(mm_device, &IID_IAudioClient, CLSCTX_ALL, NULL,
-                              (void **)&client);
-      if (SUCCEEDED(hr) && client) {
-        WAVEFORMATEX *wfx = NULL;
-        hr = IAudioClient_GetMixFormat(client, &wfx);
-        if (SUCCEEDED(hr) && wfx) {
-          rate = (double)wfx->nSamplesPerSec;
-          logger_trace(&g_wasapi_logger, "GetMixFormat succeeded, rate=%f",
-                       rate);
-          CoTaskMemFree(wfx);
-          SAFE_RELEASE(client);
-          SAFE_RELEASE(mm_device);
-          break;
-        }
+  IMMDevice *mm_device =
+      wasapi_find_device(enumerator, name, is_capture, false);
+  if (mm_device) {
+    IAudioClient *client = NULL;
+    hr = IMMDevice_Activate(mm_device, &IID_IAudioClient, CLSCTX_ALL, NULL,
+                            (void **)&client);
+    if (SUCCEEDED(hr) && client) {
+      WAVEFORMATEX *wfx = NULL;
+      hr = IAudioClient_GetMixFormat(client, &wfx);
+      if (SUCCEEDED(hr) && wfx) {
+        rate = (double)wfx->nSamplesPerSec;
+        logger_trace(&g_wasapi_logger, "GetMixFormat succeeded, rate=%f", rate);
+        CoTaskMemFree(wfx);
+      } else {
         logger_trace(&g_wasapi_logger, "GetMixFormat failed: hr=0x%08lX",
                      (unsigned long)hr);
-        SAFE_RELEASE(client);
-      } else {
-        logger_trace(&g_wasapi_logger, "Activate failed: hr=0x%08lX",
-                     (unsigned long)hr);
       }
-      SAFE_RELEASE(mm_device);
+      SAFE_RELEASE(client);
     } else {
-      logger_trace(&g_wasapi_logger, "wasapi_find_device failed");
+      logger_trace(&g_wasapi_logger, "Activate failed: hr=0x%08lX",
+                   (unsigned long)hr);
     }
-    cdsp_sleep_ms(100);
+    SAFE_RELEASE(mm_device);
+  } else {
+    logger_trace(&g_wasapi_logger, "wasapi_find_device failed");
   }
 
   SAFE_RELEASE(enumerator);

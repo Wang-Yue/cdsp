@@ -200,17 +200,20 @@ TEST(Mixer4to2Downmix) {
 TEST(MixerWithInvertedSource) {
   mixer_source_t srcs[2] = {
       {.channel = 0, .gain = 0.0, .has_gain = true},
-      {.channel = 0, .gain = 0.0, .has_gain = true, .inverted = true}};
+      {.channel = 1, .gain = 0.0, .has_gain = true, .inverted = true}};
   mixer_mapping_t map = {.dest = 0, .sources_count = 2, .sources = srcs};
   mixer_config_t config = {
-      .channels_in = 1, .channels_out = 1, .mapping_count = 1, .mapping = &map};
+      .channels_in = 2, .channels_out = 1, .mapping_count = 1, .mapping = &map};
   mixer_t *mixer = mixer_create("mixer", &config, 2048, NULL);
 
-  audio_chunk_t *input = audio_chunk_create(4, 1);
+  audio_chunk_t *input = audio_chunk_create(4, 2);
   double samples[] = {1.0, -0.5, 0.25, 0.8};
   mutable_waveform_t b0 = audio_chunk_get_channel(input, 0);
-  for (int i = 0; i < 4; i++)
+  mutable_waveform_t b1 = audio_chunk_get_channel(input, 1);
+  for (int i = 0; i < 4; i++) {
     b0[i] = samples[i];
+    b1[i] = samples[i];
+  }
 
   audio_chunk_t *output = mixer_process_chunk(mixer, input);
   assert_silence_ch(output, 0);
@@ -220,13 +223,7 @@ TEST(MixerWithInvertedSource) {
   mixer_free(mixer);
 }
 
-// Listing the same input channel twice in one mapping is accepted by real
-// CamillaDSP (its duplicate check is dead code, and `from_config` pushes both
-// sources), and the contributions are summed. Note that MixerWithInvertedSource
-// above is also a duplicate-source config: while the port rejected these, that
-// test was vacuous because `mixer_create` returned NULL.
-TEST(MixerDuplicateSourceChannelsAreSummed) {
-  // Two entries for input 0, at 0 dB and -6.02 dB: 1.0 + 0.5 = 1.5x.
+TEST(MixerDuplicateSourceChannelsAreRejected) {
   mixer_source_t srcs[2] = {
       {.channel = 0, .gain = 0.0, .has_gain = true},
       {.channel = 0, .gain = -6.020600, .has_gain = true}};
@@ -237,26 +234,8 @@ TEST(MixerDuplicateSourceChannelsAreSummed) {
   config_error_t err;
   config_error_init(&err);
   mixer_t *mixer = mixer_create("mixer", &config, 2048, &err);
-  ASSERT_TRUE(mixer != NULL);
-  ASSERT_EQ(CONFIG_ERR_NONE, err.type);
-
-  audio_chunk_t *input = audio_chunk_create(4, 1);
-  double samples[] = {1.0, -0.5, 0.25, 0.8};
-  mutable_waveform_t b0 = audio_chunk_get_channel(input, 0);
-  for (int i = 0; i < 4; i++)
-    b0[i] = samples[i];
-  audio_chunk_set_valid_frames(input, 4);
-
-  audio_chunk_t *output = mixer_process_chunk(mixer, input);
-  ASSERT_TRUE(output != NULL);
-  waveform_t out = audio_chunk_get_channel(output, 0);
-  for (int i = 0; i < 4; i++) {
-    ASSERT_NEAR(samples[i] * 1.5, out[i], 1e-6);
-  }
-
-  audio_chunk_free(input);
-  audio_chunk_free(output);
-  mixer_free(mixer);
+  ASSERT_TRUE(mixer == NULL);
+  ASSERT_EQ(CONFIG_ERR_INVALID_MIXER, err.type);
 }
 
 TEST(MixerIdentity) {
@@ -355,7 +334,7 @@ TEST(MixerWithLinearScale) {
   mixer_source_t src0_0 = {
       .channel = 0, .gain = 0.5, .has_gain = true, .scale = GAIN_SCALE_LINEAR};
   mixer_source_t src0_1 = {
-      .channel = 0, .gain = 2.0, .has_gain = true, .scale = GAIN_SCALE_LINEAR};
+      .channel = 1, .gain = 2.0, .has_gain = true, .scale = GAIN_SCALE_LINEAR};
   mixer_source_t srcs2[2] = {
       {.channel = 0, .gain = 0.5, .has_gain = true, .scale = GAIN_SCALE_LINEAR},
       {.channel = 1,

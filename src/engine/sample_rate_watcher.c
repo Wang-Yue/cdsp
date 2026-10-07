@@ -43,6 +43,7 @@ void sample_rate_watcher_reset(sample_rate_watcher_t *watcher) {
   watcher->captured_frames = 0;
   watcher->last_reset_ns = cdsp_time_now_ns();
   watcher->deviation_count = 0;
+  watcher->last_measured_rate = 0.0;
 }
 
 bool sample_rate_watcher_tick(sample_rate_watcher_t *watcher, size_t frames,

@@ -11,18 +11,20 @@
  * (-lin_gain).
  * - Real-time processing (`audio_mixer_process`):
  *   1. Validates that input frames do not exceed `chunk_size` and destination
- * buffer matches `channels_out`.
+ * buffer matches `channels_out`. Like upstream, the full buffer length
+ * (`frames`) is mixed and `valid_frames` is copied from the input.
  *   2. For each destination channel, clears the output waveform buffer to 0.0.
  *   3. Iterates over contributing prepared sources:
  *      - If gain == 1.0, uses `dsp_ops_add` (vectorized addition).
- *      - If gain != 0.0 and != 1.0, uses `dsp_ops_multiply_add` (vectorized
- * multiply-accumulate).
+ *      - Otherwise (including gain == 0.0, as upstream does), uses
+ * `dsp_ops_multiply_add` (vectorized multiply-accumulate).
  *   4. Zero-allocation guarantee is strictly maintained on the audio processing
  * path.
  */
 #include "mixer/mixer.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -170,7 +172,7 @@ mixer_t *mixer_create(const char *name, const mixer_config_t *config,
 }
 
 /// Zero-allocation API. The caller pre-allocates `output` with
-/// `output.channels == channelsOut` and `output.frames >= input.validFrames`.
+/// `output.channels == channelsOut` and `output.frames >= input.frames`.
 /// The mixer writes the mixed samples directly and sets `output.validFrames`.
 ///
 /// `input` and `output` must reference distinct buffers — the mixer
@@ -208,8 +210,6 @@ mixer_error_t mixer_process(mixer_t *mixer, const audio_chunk_t *input,
                 mixer->name, frames, audio_chunk_get_frames(output));
     return MIXER_ERR_OUTPUT_BUFFER_TOO_SMALL;
   }
-
-  audio_chunk_set_valid_frames(output, frames);
 
   // Process each output destination channel in a single pass to maximize L1
   // cache locality
@@ -331,15 +331,6 @@ int mixer_config_validate(const mixer_config_t *mixer, config_error_t *err) {
       return -1;
     }
 
-    // Upstream's equivalent check is dead code: `validate_mixer` declares and
-    // clears `input_channels` and tests `contains()`, but never pushes to it
-    // (mixer.rs:135/153/163 — the error string even carries a typo, "listed
-    // mote than once", so the branch has never run). `Mixer::from_config`
-    // meanwhile handles duplicates correctly, pushing both sources so
-    // `process_chunk` sums them. Rejecting here would refuse configs that real
-    // CamillaDSP loads and plays, so this is only a warning. The port's own
-    // `populate_mapping` accumulates a flat source list per destination and
-    // sums duplicates the same way.
     bool *seen_sources = (bool *)calloc(
         mixer->channels_in > 0 ? mixer->channels_in : 1, sizeof(bool));
     if (!seen_sources) {
@@ -348,6 +339,16 @@ int mixer_config_validate(const mixer_config_t *mixer, config_error_t *err) {
     }
     for (size_t j = 0; j < mixer->mapping[i].sources_count; j++) {
       size_t src_ch = mixer->mapping[i].sources[j].channel;
+      // Upstream's `FiniteF64` makes a non-finite gain unrepresentable; C
+      // callers bypass the JSON parser, so reject it here.
+      if (mixer->mapping[i].sources[j].has_gain &&
+          !isfinite(mixer->mapping[i].sources[j].gain)) {
+        config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                         "mixer source gain for dest %zu must be finite", dest);
+        free(seen_sources);
+        free(seen_dests);
+        return -1;
+      }
       if (src_ch >= mixer->channels_in) {
         config_error_set(err, CONFIG_ERR_INVALID_MIXER,
                          "mixer source channel %zu >= channels_in %zu", src_ch,
@@ -357,10 +358,13 @@ int mixer_config_validate(const mixer_config_t *mixer, config_error_t *err) {
         return -1;
       }
       if (seen_sources[src_ch]) {
-        logger_warn(&g_logger,
-                    "mixer source channel %zu is listed more than once for "
-                    "dest %zu; the entries will be summed",
-                    src_ch, dest);
+        config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                         "mixer source channel %zu listed more than once for "
+                         "dest %zu",
+                         src_ch, dest);
+        free(seen_sources);
+        free(seen_dests);
+        return -1;
       }
       seen_sources[src_ch] = true;
     }

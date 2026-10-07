@@ -25,6 +25,8 @@ static void set_test_channels(dsp_config_t *config, int cap_chs, int play_chs) {
            sizeof(config->devices.capture.cfg.raw_file.filename), "/dev/null");
   config->devices.capture.cfg.raw_file.channels = cap_chs;
   config->devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  snprintf(config->devices.playback.cfg.raw_file.filename,
+           sizeof(config->devices.playback.cfg.raw_file.filename), "/dev/null");
   config->devices.playback.cfg.raw_file.channels = play_chs;
 }
 
@@ -574,11 +576,7 @@ TEST(MixerValidatorSourceOutOfRange) {
               NULL);
 }
 
-// Upstream's duplicate-source check in validate_mixer is dead code (it never
-// pushes to `input_channels`), while `Mixer::from_config` pushes both sources
-// and sums them. A config that lists an input channel twice therefore loads
-// and plays in real CamillaDSP, so the port must accept it too.
-TEST(MixerValidatorDuplicateSourceAccepted) {
+TEST(MixerValidatorDuplicateSourceRejected) {
   mixer_source_t srcs[2];
   memset(srcs, 0, sizeof(srcs));
   srcs[0].channel = 0;
@@ -599,8 +597,8 @@ TEST(MixerValidatorDuplicateSourceAccepted) {
 
   config_error_t err;
   config_error_init(&err);
-  ASSERT_EQ(0, mixer_config_validate(&mixer, &err));
-  ASSERT_EQ(CONFIG_ERR_NONE, err.type);
+  ASSERT_NE(0, mixer_config_validate(&mixer, &err));
+  ASSERT_EQ(CONFIG_ERR_INVALID_MIXER, err.type);
 }
 
 TEST(ValidateInvalidFilterConfig) {
@@ -1966,13 +1964,9 @@ TEST(Biquad_WidthFieldPrecedence_QOverSlope) {
   config_error_t err;
   config_error_init(&err);
   int res = dsp_config_parse_json(json, &config, &err);
-  ASSERT_EQ(0, res);
-  ASSERT_TRUE(config != NULL);
-  ASSERT_EQ(1, config->filters_count);
-  ASSERT_EQ(STEEPNESS_TYPE_Q,
-            config->filters[0].filter.parameters.biquad.steepness_type);
-  ASSERT_NEAR(0.707, config->filters[0].filter.parameters.biquad.q, 1e-4);
-  dsp_config_free(config);
+  ASSERT_NE(0, res);
+  ASSERT_TRUE(strstr(err.message, "cannot specify both 'q' and 'slope'") !=
+              NULL);
 }
 
 TEST(Pipeline_EmptyNamesList_AcceptedAsNoOp) {

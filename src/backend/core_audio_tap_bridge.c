@@ -34,6 +34,11 @@ bool cdsp_tap_is_supported(void) { return cdsp_tap_desc_is_supported(); }
 static AudioObjectID *get_all_coreaudio_process_objects(UInt32 *out_count) {
   if (out_count)
     *out_count = 0;
+#if !(defined(__MAC_14_2) && (__MAC_OS_X_VERSION_MAX_ALLOWED >= __MAC_14_2))
+  // Process objects (and taps) need the macOS 14.2+ SDK; the tap path is
+  // rejected by cdsp_tap_is_supported() before this is reached.
+  return NULL;
+#else
   UInt32 size = 0;
   AudioObjectPropertyAddress addr = {kAudioHardwarePropertyProcessObjectList,
                                      kAudioObjectPropertyScopeGlobal,
@@ -52,9 +57,11 @@ static AudioObjectID *get_all_coreaudio_process_objects(UInt32 *out_count) {
     free(procs);
     return NULL;
   }
+  count = size / sizeof(AudioObjectID);
   if (out_count)
     *out_count = count;
   return procs;
+#endif
 }
 
 /**
@@ -65,6 +72,19 @@ static AudioObjectID *get_all_coreaudio_process_objects(UInt32 *out_count) {
  * registered.
  */
 static AudioObjectID get_process_object_id_for_pid(pid_t pid) {
+#if defined(__MAC_14_2) && (__MAC_OS_X_VERSION_MAX_ALLOWED >= __MAC_14_2)
+  AudioObjectID translated = kAudioObjectUnknown;
+  UInt32 translatedSize = sizeof(translated);
+  AudioObjectPropertyAddress transAddr = {
+      kAudioHardwarePropertyTranslatePIDToProcessObject,
+      kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &transAddr,
+                                 sizeof(pid), &pid, &translatedSize,
+                                 &translated) == noErr &&
+      translated != kAudioObjectUnknown) {
+    return translated;
+  }
+
   UInt32 count = 0;
   AudioObjectID *procs = get_all_coreaudio_process_objects(&count);
   if (!procs || count == 0) {
@@ -89,6 +109,10 @@ static AudioObjectID get_process_object_id_for_pid(pid_t pid) {
   }
   free(procs);
   return found;
+#else
+  (void)pid;
+  return kAudioObjectUnknown;
+#endif
 }
 
 /**
@@ -108,15 +132,21 @@ static UInt32 device_input_channel_count(AudioDeviceID dev) {
                                      kAudioObjectPropertyElementMain};
   UInt32 size = 0;
   if (AudioObjectGetPropertyDataSize(dev, &addr, 0, NULL, &size) != noErr ||
-      size == 0) {
+      size < offsetof(AudioBufferList, mBuffers)) {
     return 0;
   }
   AudioBufferList *abl = (AudioBufferList *)malloc(size);
   if (!abl)
     return 0;
   UInt32 channels = 0;
-  if (AudioObjectGetPropertyData(dev, &addr, 0, NULL, &size, abl) == noErr) {
-    for (UInt32 i = 0; i < abl->mNumberBuffers; i++) {
+  if (AudioObjectGetPropertyData(dev, &addr, 0, NULL, &size, abl) == noErr &&
+      size >= offsetof(AudioBufferList, mBuffers)) {
+    UInt32 max_buffers =
+        (size - (UInt32)offsetof(AudioBufferList, mBuffers)) /
+        (UInt32)sizeof(AudioBuffer);
+    UInt32 n_buffers =
+        abl->mNumberBuffers < max_buffers ? abl->mNumberBuffers : max_buffers;
+    for (UInt32 i = 0; i < n_buffers; i++) {
       channels += abl->mBuffers[i].mNumberChannels;
     }
   }
@@ -158,35 +188,45 @@ static CFStringRef copy_device_uid_for_id(AudioDeviceID dev) {
  */
 static CFDictionaryRef create_tap_aggregate_dict(CFStringRef clockUID,
                                                  CFStringRef tapUIDStr) {
+  CFDictionaryRef subDevDict = NULL, tapDict = NULL, aggDesc = NULL;
+  CFArrayRef subDevList = NULL, tapList = NULL;
+  CFStringRef aggUID = NULL;
+  CFNumberRef numOne = NULL, numZero = NULL;
   // Sub-device entry: { "uid": clockUID }
   CFStringRef subDevKeys[] = {CFSTR(kAudioSubDeviceUIDKey)};
   CFTypeRef subDevValues[] = {clockUID};
-  CFDictionaryRef subDevDict = CFDictionaryCreate(
+  subDevDict = CFDictionaryCreate(
       kCFAllocatorDefault, (const void **)subDevKeys,
       (const void **)subDevValues, 1, &kCFTypeDictionaryKeyCallBacks,
       &kCFTypeDictionaryValueCallBacks);
 
+  if (!subDevDict)
+    goto done;
   CFTypeRef subDevArrayValues[] = {subDevDict};
-  CFArrayRef subDevList = CFArrayCreate(kCFAllocatorDefault, subDevArrayValues,
-                                        1, &kCFTypeArrayCallBacks);
-  CFRelease(subDevDict);
+  subDevList = CFArrayCreate(kCFAllocatorDefault, subDevArrayValues, 1,
+                             &kCFTypeArrayCallBacks);
+  if (!subDevList)
+    goto done;
 
   // Tap entry: { "uid": tapUIDStr, "drift": kCFBooleanTrue }
   CFStringRef tapKeys[] = {CFSTR(kAudioSubTapUIDKey),
                            CFSTR(kAudioSubTapDriftCompensationKey)};
   CFTypeRef tapValues[] = {tapUIDStr, kCFBooleanTrue};
-  CFDictionaryRef tapDict = CFDictionaryCreate(
+  tapDict = CFDictionaryCreate(
       kCFAllocatorDefault, (const void **)tapKeys, (const void **)tapValues, 2,
       &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 
+  if (!tapDict)
+    goto done;
   CFTypeRef tapArrayValues[] = {tapDict};
-  CFArrayRef tapList = CFArrayCreate(kCFAllocatorDefault, tapArrayValues, 1,
-                                     &kCFTypeArrayCallBacks);
-  CFRelease(tapDict);
+  tapList = CFArrayCreate(kCFAllocatorDefault, tapArrayValues, 1,
+                          &kCFTypeArrayCallBacks);
+  if (!tapList)
+    goto done;
 
   // Aggregate UID: "cdsp.tap.aggregate.<tapUIDStr>"
-  CFStringRef aggUID = CFStringCreateWithFormat(
-      kCFAllocatorDefault, NULL, CFSTR("cdsp.tap.aggregate.%@"), tapUIDStr);
+  aggUID = CFStringCreateWithFormat(kCFAllocatorDefault, NULL,
+                                    CFSTR("cdsp.tap.aggregate.%@"), tapUIDStr);
 
   CFStringRef aggKeys[] = {CFSTR(kAudioAggregateDeviceNameKey),
                            CFSTR(kAudioAggregateDeviceUIDKey),
@@ -199,10 +239,10 @@ static CFDictionaryRef create_tap_aggregate_dict(CFStringRef clockUID,
 
   int one = 1;
   int zero = 0;
-  CFNumberRef numOne =
-      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &one);
-  CFNumberRef numZero =
-      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &zero);
+  numOne = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &one);
+  numZero = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &zero);
+  if (!aggUID || !numOne || !numZero)
+    goto done;
 
   CFTypeRef aggValues[] = {CFSTR("cdsp_tap_aggregate"),
                            aggUID,
@@ -213,16 +253,25 @@ static CFDictionaryRef create_tap_aggregate_dict(CFStringRef clockUID,
                            subDevList,
                            tapList};
 
-  CFDictionaryRef aggDesc = CFDictionaryCreate(
+  aggDesc = CFDictionaryCreate(
       kCFAllocatorDefault, (const void **)aggKeys, (const void **)aggValues, 8,
       &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 
-  CFRelease(aggUID);
-  CFRelease(subDevList);
-  CFRelease(tapList);
-  CFRelease(numOne);
-  CFRelease(numZero);
-
+done:
+  if (subDevDict)
+    CFRelease(subDevDict);
+  if (tapDict)
+    CFRelease(tapDict);
+  if (aggUID)
+    CFRelease(aggUID);
+  if (subDevList)
+    CFRelease(subDevList);
+  if (tapList)
+    CFRelease(tapList);
+  if (numOne)
+    CFRelease(numOne);
+  if (numZero)
+    CFRelease(numZero);
   return aggDesc;
 }
 
@@ -248,9 +297,19 @@ OSStatus cdsp_tap_create(const char *device_name,
     return kAudioHardwareBadDeviceError;
   }
 
-  AudioObjectID myProcObj = get_process_object_id_for_pid(getpid());
+  pid_t self_pid = getpid();
+  AudioObjectID myProcObj = get_process_object_id_for_pid(self_pid);
+  for (int attempt = 0; myProcObj == kAudioObjectUnknown && attempt < 10;
+       attempt++) {
+    cdsp_sleep_us(5000);
+    myProcObj = get_process_object_id_for_pid(self_pid);
+  }
   CFMutableArrayRef excludeProcs =
       CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
+  if (!excludeProcs) {
+    logger_error(&g_tap_logger, "Out of memory creating tap exclusion list.");
+    return kAudioHardwareUnspecifiedError;
+  }
   if (myProcObj != kAudioObjectUnknown) {
     uint32_t objVal = (uint32_t)myProcObj;
     CFNumberRef num =
@@ -305,6 +364,12 @@ OSStatus cdsp_tap_create(const char *device_name,
   CFDictionaryRef aggDesc = create_tap_aggregate_dict(clockUID, tapUIDStr);
   CFRelease(clockUID);
   CFRelease(tapUIDStr);
+  if (!aggDesc) {
+    cdsp_tap_desc_destroy(tapID);
+    out_handle->tap_id = kAudioObjectUnknown;
+    logger_error(&g_tap_logger, "Out of memory building tap aggregate.");
+    return kAudioHardwareUnspecifiedError;
+  }
 
   AudioDeviceID aggDeviceID = kAudioObjectUnknown;
   status = AudioHardwareCreateAggregateDevice(aggDesc, &aggDeviceID);
@@ -318,6 +383,7 @@ OSStatus cdsp_tap_create(const char *device_name,
     return (status != noErr) ? status : kAudioHardwareUnspecifiedError;
   }
   out_handle->aggregate_dev_id = aggDeviceID;
+  out_handle->target_dev_id = target_dev_id;
 
   // The HAL composes the aggregate asynchronously. Binding an AudioUnit
   // before the tap has been attached yields a device that delivers
@@ -335,11 +401,28 @@ OSStatus cdsp_tap_create(const char *device_name,
 
   if (agg_channels > sub_channels) {
     out_handle->tap_channel_offset = sub_channels;
+    out_handle->aggregate_channels = agg_channels;
+  } else if (sub_channels > 0) {
+    // The tap's channels never materialised, and the clock sub-device has
+    // input channels of its own (duplex interface, headset, ...). Falling back
+    // to offset 0 would silently capture that device's own input (e.g. a
+    // microphone) instead of the tapped output: fail instead.
+    logger_error(&g_tap_logger,
+                 "Tap channels did not appear on aggregate device "
+                 "(sub-device channels=%u, aggregate channels=%u); refusing "
+                 "to capture the sub-device's own input instead.",
+                 (unsigned)sub_channels, (unsigned)agg_channels);
+    AudioHardwareDestroyAggregateDevice(aggDeviceID);
+    cdsp_tap_desc_destroy(tapID);
+    out_handle->aggregate_dev_id = kAudioObjectUnknown;
+    out_handle->tap_id = kAudioObjectUnknown;
+    out_handle->target_dev_id = kAudioObjectUnknown;
+    return kAudioHardwareUnspecifiedError;
   } else {
-    // The tap's channels never materialised alongside the sub-device's.
-    // Warn and fall back to offset 0: capture may end up reading the
-    // sub-device's own input instead of the tap.
+    // The tap's channels have not materialised yet, but the sub-device has
+    // no inputs of its own, so offset 0 can only ever address the tap.
     out_handle->tap_channel_offset = 0;
+    out_handle->aggregate_channels = agg_channels;
     logger_warn(&g_tap_logger,
                 "Tap channels did not appear on aggregate device "
                 "(sub-device channels=%u, aggregate channels=%u).",
@@ -444,10 +527,34 @@ bool cdsp_tap_apply_channel_map(AudioUnit audio_unit,
     }
     return false;
   }
+  if (!tap || channels == 0) {
+    return true;
+  }
+  // The tap carries only the tapped output stream's channels. Requesting more
+  // would map nonexistent aggregate channels (AUHAL error or garbage).
+  if (tap->aggregate_channels > 0 &&
+      (tap->tap_channel_offset >= tap->aggregate_channels ||
+       channels >
+           (size_t)(tap->aggregate_channels - tap->tap_channel_offset))) {
+    logger_error(
+        &g_tap_logger,
+        "Loopback capture requests %zu channels but the tap provides "
+        "only %u.",
+        channels,
+        (unsigned)(tap->aggregate_channels > tap->tap_channel_offset
+                       ? tap->aggregate_channels - tap->tap_channel_offset
+                       : 0));
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Loopback capture channel count exceeds the tapped "
+                         "device's output channels");
+    }
+    return false;
+  }
   // If the tapped device exposes its own input channels (e.g. duplex devices or
   // audio interfaces), those appear first in the aggregate's flat channel list.
   // Install an AUHAL channel map to route from the tap's offset (Apple TN2091).
-  if (!tap || tap->tap_channel_offset == 0 || channels == 0) {
+  if (tap->tap_channel_offset == 0) {
     return true;
   }
 

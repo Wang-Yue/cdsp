@@ -11,9 +11,12 @@
 #include "utils/double_helpers.h"
 
 struct biquad_combo_filter {
-  char name[64];
+  char name[128];
   biquad_filter_t **sections;
   size_t num_sections;
+  biquad_combo_type_t type; /**< Combo subtype the sections were built for. */
+  size_t layout_count;      /**< Order (BW/LR), band count (GEQ/NPointPeq), or 2
+                               (Tilt): what a section's index/name refers to. */
 };
 
 typedef struct biquad_combo_filter biquad_combo_filter_t;
@@ -25,8 +28,6 @@ typedef struct biquad_combo_filter biquad_combo_filter_t;
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-
-#define BIQUAD_COMBO_MAX_ORDER 128
 
 // MARK: - Butterworth & Linkwitz-Riley helper calculations
 /**
@@ -98,35 +99,207 @@ size_t biquad_combo_linkwitz_riley_q(int order, double *out_q, size_t max_q) {
 }
 
 /**
- * @brief Helper function to create a single biquad filter section.
+ * @brief GraphicEqualizer band edges, shared by validate and create.
  *
- * @param type The type of biquad filter (e.g., LOWPASS, HIGHPASS, PEAKING).
- * @param freq Center or cutoff frequency in Hz.
- * @param q Quality factor.
- * @param gain Gain in dB (for peaking/shelf filters).
- * @param slope Slope (for shelf filters, if steepness_type is SLOPE).
- * @param bandwidth Bandwidth in octaves (for peaking/notch, if steepness_type
- * is BANDWIDTH).
- * @param steepness_type How the filter steepness is defined (Q, Bandwidth, or
- * Slope).
- * @param sample_rate Audio sample rate in Hz.
- * @return Pointer to the created biquad_filter_t, or NULL on failure.
+ * Matches upstream `GraphicEqualizerParameters::freq_min()/freq_max()`
+ * (`map_or(20.0 / 20000.0)`): the configured value when present, else the
+ * default. Validate and create must agree, so both use these.
  */
-static biquad_filter_t *create_section(const char *sec_name, biquad_type_t type,
-                                       double freq, double q, double gain,
-                                       double slope, double bandwidth,
-                                       steepness_type_t steepness_type,
-                                       int sample_rate, config_error_t *err) {
+static inline double graphic_eq_freq_min(const biquad_combo_config_t *params) {
+  return params->has_freq_min ? params->freq_min : 20.0;
+}
+
+static inline double graphic_eq_freq_max(const biquad_combo_config_t *params) {
+  return params->has_freq_max ? params->freq_max : 20000.0;
+}
+
+/**
+ * @brief Callback receiving one expanded section of a combo.
+ *
+ * @return 0 to continue, -1 to abort the expansion.
+ */
+typedef int (*combo_section_fn)(void *ctx, const char *sec_name,
+                                const filter_config_t *section_cfg,
+                                int sample_rate, config_error_t *err);
+
+static filter_config_t make_section_cfg(biquad_type_t type, double freq,
+                                        double q, double gain, double bandwidth,
+                                        steepness_type_t steepness_type) {
   biquad_config_t bp = {.type = type,
                         .freq = freq,
                         .q = q,
                         .gain = gain,
-                        .slope = slope,
+                        .slope = 0.0,
                         .bandwidth = bandwidth,
                         .steepness_type = steepness_type};
   filter_config_t cfg = {.type = FILTER_TYPE_BIQUAD, .parameters.biquad = bp};
-  return (biquad_filter_t *)g_biquad_vtable.create(sec_name, &cfg, sample_rate,
-                                                   0, NULL, err);
+  return cfg;
+}
+
+/**
+ * @brief Expands a combo into its biquad sections, in cascade order.
+ *
+ * Single source of truth for the section list, used both by validation (each
+ * section is run through the biquad validator, so validate rejects exactly
+ * what create would fail on) and by creation. Config-time only.
+ *
+ * @return 0 on success, -1 if allocation failed or `fn` aborted.
+ */
+static int combo_for_each_section(const biquad_combo_config_t *params,
+                                  int sample_rate, combo_section_fn fn,
+                                  void *ctx, config_error_t *err) {
+  char name_buf[32];
+  switch (params->type) {
+  case BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS:
+  case BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS:
+  case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
+  case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS: {
+    bool bw = (params->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS ||
+               params->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS);
+    bool hp = (params->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS ||
+               params->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS);
+    if (params->order <= 0)
+      return -1;
+    size_t q_capacity = (size_t)params->order + 2;
+    double *q_vals = (double *)malloc(q_capacity * sizeof(double));
+    if (!q_vals) {
+      config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate memory");
+      return -1;
+    }
+    size_t nq =
+        bw ? biquad_combo_butterworth_q(params->order, q_vals, q_capacity)
+           : biquad_combo_linkwitz_riley_q(params->order, q_vals, q_capacity);
+    int rc = 0;
+    for (size_t i = 0; i < nq && rc == 0; i++) {
+      biquad_type_t t;
+      double q = q_vals[i];
+      if (q < 0.0) {
+        // Butterworth odd order: the real pole is a first-order section.
+        t = hp ? BIQUAD_TYPE_HIGHPASS_FO : BIQUAD_TYPE_LOWPASS_FO;
+        q = 0.707;
+      } else {
+        t = hp ? BIQUAD_TYPE_HIGHPASS : BIQUAD_TYPE_LOWPASS;
+      }
+      snprintf(name_buf, sizeof(name_buf), "sec_%zu", i);
+      filter_config_t cfg =
+          make_section_cfg(t, params->freq, q, 0.0, 0.0, STEEPNESS_TYPE_Q);
+      rc = fn(ctx, name_buf, &cfg, sample_rate, err);
+    }
+    free(q_vals);
+    return rc;
+  }
+  // MARK: - Tilt EQ
+  case BIQUAD_COMBO_TYPE_TILT: {
+    // Upstream builds both shelves unconditionally, even when a shelf
+    // frequency is at or above nyquist (sample rates <= 7000 Hz), which gives
+    // a meaningless aliased section. cdsp leaves out a shelf that does not fit
+    // below nyquist instead.
+    double gain = params->has_gain ? params->gain : 0.0;
+    double nyquist = (double)sample_rate / 2.0;
+    if (110.0 < nyquist) {
+      filter_config_t cfg =
+          make_section_cfg(BIQUAD_TYPE_LOWSHELF, 110.0, 0.35, -gain / 2.0, 0.0,
+                           STEEPNESS_TYPE_Q);
+      if (fn(ctx, "low_shelf", &cfg, sample_rate, err) != 0)
+        return -1;
+    }
+    if (3500.0 < nyquist) {
+      filter_config_t cfg =
+          make_section_cfg(BIQUAD_TYPE_HIGHSHELF, 3500.0, 0.35, gain / 2.0, 0.0,
+                           STEEPNESS_TYPE_Q);
+      if (fn(ctx, "high_shelf", &cfg, sample_rate, err) != 0)
+        return -1;
+    }
+    return 0;
+  }
+  // MARK: - Graphic EQ
+  case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER: {
+    size_t nb = params->gains_count;
+    if (nb == 0 || !params->gains)
+      return 0;
+    double log_min = log2(graphic_eq_freq_min(params));
+    double log_max = log2(graphic_eq_freq_max(params));
+    double bw = (log_max - log_min) / (double)nb;
+    for (size_t i = 0; i < nb; i++) {
+      double g = params->gains[i];
+      if (fabs(g) <= 0.001)
+        continue;
+      double log_freq = log_min + ((double)i + 0.5) * bw;
+      double f = pow(2.0, log_freq);
+      snprintf(name_buf, sizeof(name_buf), "band_%zu", i);
+      filter_config_t cfg = make_section_cfg(BIQUAD_TYPE_PEAKING, f, 0.0, g, bw,
+                                             STEEPNESS_TYPE_BANDWIDTH);
+      if (fn(ctx, name_buf, &cfg, sample_rate, err) != 0)
+        return -1;
+    }
+    return 0;
+  }
+  // MARK: - N-Point PEQ
+  case BIQUAD_COMBO_TYPE_N_POINT_PEQ: {
+    if (!params->bands)
+      return 0;
+    size_t last = params->bands_count > 0 ? params->bands_count - 1 : 0;
+    for (size_t i = 0; i < params->bands_count; i++) {
+      const peq_band_t *band = &params->bands[i];
+      if (fabs(band->gain) <= 0.001)
+        continue;
+      biquad_type_t btype;
+      if (i == 0) {
+        btype = BIQUAD_TYPE_LOWSHELF;
+      } else if (i == last) {
+        btype = BIQUAD_TYPE_HIGHSHELF;
+      } else {
+        btype = BIQUAD_TYPE_PEAKING;
+      }
+      snprintf(name_buf, sizeof(name_buf), "peq_%zu", i);
+      filter_config_t cfg = make_section_cfg(btype, band->freq, band->q,
+                                             band->gain, 0.0, STEEPNESS_TYPE_Q);
+      if (fn(ctx, name_buf, &cfg, sample_rate, err) != 0)
+        return -1;
+    }
+    return 0;
+  }
+  }
+  return 0;
+}
+
+static int section_validate_cb(void *ctx, const char *sec_name,
+                               const filter_config_t *section_cfg,
+                               int sample_rate, config_error_t *err) {
+  (void)ctx;
+  (void)sec_name;
+  return g_biquad_vtable.validate(section_cfg, sample_rate, err);
+}
+
+static int section_count_cb(void *ctx, const char *sec_name,
+                            const filter_config_t *section_cfg, int sample_rate,
+                            config_error_t *err) {
+  (void)sec_name;
+  (void)section_cfg;
+  (void)sample_rate;
+  (void)err;
+  (*(size_t *)ctx)++;
+  return 0;
+}
+
+typedef struct {
+  biquad_filter_t **sections;
+  size_t capacity;
+  size_t count;
+} section_sink_t;
+
+static int section_create_cb(void *ctx, const char *sec_name,
+                             const filter_config_t *section_cfg,
+                             int sample_rate, config_error_t *err) {
+  section_sink_t *sink = (section_sink_t *)ctx;
+  if (sink->count >= sink->capacity)
+    return -1;
+  biquad_filter_t *sec = (biquad_filter_t *)g_biquad_vtable.create(
+      sec_name, section_cfg, sample_rate, 0, NULL, err);
+  if (!sec)
+    return -1;
+  sink->sections[sink->count++] = sec;
+  return 0;
 }
 
 /**
@@ -236,8 +409,8 @@ static int biquad_combo_config_validate(const filter_config_t *config,
     break;
   }
   case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER: {
-    double f_min = params->has_freq_min ? params->freq_min : 20.0;
-    double f_max = params->has_freq_max ? params->freq_max : 20000.0;
+    double f_min = graphic_eq_freq_min(params);
+    double f_max = graphic_eq_freq_max(params);
     if (f_min <= 0.0 || f_max <= 0.0) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "Min and max requencies must be > 0");
@@ -264,6 +437,13 @@ static int biquad_combo_config_validate(const filter_config_t *config,
     break;
   }
   }
+  // Expand into the biquad sections create will build and validate each one
+  // (frequency vs nyquist, stability, finiteness), so validation rejects
+  // exactly what creation would fail on. Upstream only does this for
+  // NPointPeq because its stages() is infallible and never checks stability.
+  if (combo_for_each_section(params, sample_rate, section_validate_cb, NULL,
+                             err) != 0)
+    return -1;
   return 0;
 }
 
@@ -285,6 +465,30 @@ static void biquad_combo_filter_free(void *instance) {
     free(filter->sections);
   }
   free(filter);
+}
+
+/**
+ * @brief What a section name refers to within a combo subtype.
+ *
+ * Section names encode the stage index (`sec_N`) or band index (`band_N`,
+ * `peq_N`). They only identify the same stage/band of the same filter while
+ * the order or band count is unchanged.
+ */
+static size_t combo_layout_count(const biquad_combo_config_t *params) {
+  switch (params->type) {
+  case BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS:
+  case BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS:
+  case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
+  case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS:
+    return params->order > 0 ? (size_t)params->order : 0;
+  case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER:
+    return params->gains_count;
+  case BIQUAD_COMBO_TYPE_N_POINT_PEQ:
+    return params->bands_count;
+  case BIQUAD_COMBO_TYPE_TILT:
+    return 2;
+  }
+  return 0;
 }
 
 /**
@@ -325,167 +529,30 @@ static void *biquad_combo_filter_create(const char *name,
     strcpy(filter->name, "biquad_combo");
   }
 
-  size_t max_secs = 8;
-  if (params->type == BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER) {
-    max_secs = params->gains_count > 0 ? params->gains_count : 1;
-  } else if (params->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS ||
-             params->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS ||
-             params->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS ||
-             params->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS) {
-    if (params->order > 0) {
-      size_t ord = (size_t)params->order;
-      max_secs = (ord + 1) / 2 + 1;
-    } else {
-      max_secs = 1;
-    }
-  } else if (params->type == BIQUAD_COMBO_TYPE_N_POINT_PEQ) {
-    max_secs = params->bands_count > 0 ? params->bands_count : 1;
-  } else if (params->type == BIQUAD_COMBO_TYPE_TILT) {
-    max_secs = 2;
+  size_t total = 0;
+  if (combo_for_each_section(params, sample_rate, section_count_cb, &total,
+                             err) != 0) {
+    biquad_combo_filter_free(filter);
+    return NULL;
   }
-
-  filter->sections =
-      (biquad_filter_t **)calloc(max_secs, sizeof(biquad_filter_t *));
+  filter->sections = (biquad_filter_t **)calloc(total > 0 ? total : 1,
+                                                sizeof(biquad_filter_t *));
   if (!filter->sections) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate memory");
     biquad_combo_filter_free(filter);
     return NULL;
   }
-
-  switch (params->type) {
-  case BIQUAD_COMBO_TYPE_BUTTERWORTH_LOWPASS:
-  case BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS: {
-    bool hp = (params->type == BIQUAD_COMBO_TYPE_BUTTERWORTH_HIGHPASS);
-    if (params->order <= 0) {
-      biquad_combo_filter_free(filter);
-      return NULL;
-    }
-    size_t ord = (size_t)params->order;
-    size_t q_capacity = ord + 2;
-    double *q_vals = (double *)malloc(q_capacity * sizeof(double));
-    if (!q_vals) {
-      config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate memory");
-      biquad_combo_filter_free(filter);
-      return NULL;
-    }
-    size_t nq = biquad_combo_butterworth_q(params->order, q_vals, q_capacity);
-    for (size_t i = 0; i < nq; i++) {
-      biquad_type_t t;
-      if (q_vals[i] < 0.0) {
-        t = hp ? BIQUAD_TYPE_HIGHPASS_FO : BIQUAD_TYPE_LOWPASS_FO;
-      } else {
-        t = hp ? BIQUAD_TYPE_HIGHPASS : BIQUAD_TYPE_LOWPASS;
-      }
-      char name_buf[32];
-      snprintf(name_buf, sizeof(name_buf), "sec_%zu", i);
-      filter->sections[filter->num_sections++] = create_section(
-          name_buf, t, params->freq, q_vals[i] > 0 ? q_vals[i] : 0.707, 0.0,
-          0.0, 0.0, STEEPNESS_TYPE_Q, sample_rate, err);
-    }
-    free(q_vals);
-    break;
+  section_sink_t sink = {
+      .sections = filter->sections, .capacity = total, .count = 0};
+  int rc = combo_for_each_section(params, sample_rate, section_create_cb, &sink,
+                                  err);
+  filter->num_sections = sink.count;
+  if (rc != 0) {
+    biquad_combo_filter_free(filter);
+    return NULL;
   }
-  case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_LOWPASS:
-  case BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS: {
-    bool hp = (params->type == BIQUAD_COMBO_TYPE_LINKWITZ_RILEY_HIGHPASS);
-    if (params->order <= 0) {
-      biquad_combo_filter_free(filter);
-      return NULL;
-    }
-    size_t ord = (size_t)params->order;
-    size_t q_capacity = ord + 2;
-    double *q_vals = (double *)malloc(q_capacity * sizeof(double));
-    if (!q_vals) {
-      config_error_set(err, CONFIG_ERR_PARSE, "Failed to allocate memory");
-      biquad_combo_filter_free(filter);
-      return NULL;
-    }
-    size_t nq =
-        biquad_combo_linkwitz_riley_q(params->order, q_vals, q_capacity);
-    for (size_t i = 0; i < nq; i++) {
-      biquad_type_t t = hp ? BIQUAD_TYPE_HIGHPASS : BIQUAD_TYPE_LOWPASS;
-      char name_buf[32];
-      snprintf(name_buf, sizeof(name_buf), "sec_%zu", i);
-      filter->sections[filter->num_sections++] =
-          create_section(name_buf, t, params->freq, q_vals[i], 0.0, 0.0, 0.0,
-                         STEEPNESS_TYPE_Q, sample_rate, err);
-    }
-    free(q_vals);
-    break;
-  }
-  // MARK: - Tilt EQ
-  case BIQUAD_COMBO_TYPE_TILT: {
-    double gain = params->has_gain ? params->gain : 0.0;
-    double nyquist = (double)sample_rate / 2.0;
-    if (110.0 < nyquist) {
-      filter->sections[filter->num_sections++] = create_section(
-          "low_shelf", BIQUAD_TYPE_LOWSHELF, 110.0, 0.35, -gain / 2.0, 0.0, 0.0,
-          STEEPNESS_TYPE_Q, sample_rate, err);
-    }
-    if (3500.0 < nyquist) {
-      filter->sections[filter->num_sections++] = create_section(
-          "high_shelf", BIQUAD_TYPE_HIGHSHELF, 3500.0, 0.35, gain / 2.0, 0.0,
-          0.0, STEEPNESS_TYPE_Q, sample_rate, err);
-    }
-    break;
-  }
-  // MARK: - Graphic EQ
-  case BIQUAD_COMBO_TYPE_GRAPHIC_EQUALIZER: {
-    if (params->gains_count == 0) {
-      break;
-    }
-    size_t nb = params->gains_count;
-    double fmin = params->freq_min > 0 ? params->freq_min : 20.0;
-    double fmax = params->freq_max > 0 ? params->freq_max : 20000.0;
-    double log_min = log2(fmin);
-    double log_max = log2(fmax);
-    double bw = (log_max - log_min) / (double)nb;
-    for (size_t i = 0; i < nb; i++) {
-      double g = params->gains[i];
-      if (fabs(g) <= 0.001)
-        continue;
-      double log_freq = log_min + ((double)i + 0.5) * bw;
-      double f = pow(2.0, log_freq);
-      char name_buf[32];
-      snprintf(name_buf, sizeof(name_buf), "band_%zu", i);
-      filter->sections[filter->num_sections++] =
-          create_section(name_buf, BIQUAD_TYPE_PEAKING, f, 0.0, g, 0.0, bw,
-                         STEEPNESS_TYPE_BANDWIDTH, sample_rate, err);
-    }
-    break;
-  }
-  // MARK: - N-Point PEQ
-  case BIQUAD_COMBO_TYPE_N_POINT_PEQ: {
-    size_t last = params->bands_count > 0 ? params->bands_count - 1 : 0;
-    for (size_t i = 0; i < params->bands_count; i++) {
-      const peq_band_t *band = &params->bands[i];
-      if (fabs(band->gain) <= 0.001)
-        continue;
-      biquad_type_t btype;
-      if (i == 0) {
-        btype = BIQUAD_TYPE_LOWSHELF;
-      } else if (i == last) {
-        btype = BIQUAD_TYPE_HIGHSHELF;
-      } else {
-        btype = BIQUAD_TYPE_PEAKING;
-      }
-      char name_buf[32];
-      snprintf(name_buf, sizeof(name_buf), "peq_%zu", i);
-      filter->sections[filter->num_sections++] =
-          create_section(name_buf, btype, band->freq, band->q, band->gain, 0.0,
-                         0.0, STEEPNESS_TYPE_Q, sample_rate, err);
-    }
-    break;
-  }
-  }
-
-  // Validate that all sections were successfully created
-  for (size_t i = 0; i < filter->num_sections; i++) {
-    if (!filter->sections[i]) {
-      biquad_combo_filter_free(filter);
-      return NULL;
-    }
-  }
+  filter->type = params->type;
+  filter->layout_count = combo_layout_count(params);
 
   return filter;
 }
@@ -510,14 +577,24 @@ static void biquad_combo_filter_process(void *instance,
 /**
  * @brief Transfers history state of nested biquad sections from src to dest.
  *
- * Resize invariant: the sections form one cascade, so section `i` only refers
- * to the same stage of the same filter while the cascade has the same length.
- * A changed section count means the combo was reconfigured into a different
- * filter (a different order, or a different combo type altogether), and the
+ * Resize invariant: a section's name (`sec_N`, `band_N`, `peq_N`, `low_shelf`,
+ * `high_shelf`) only refers to the same stage or band of the same filter while
+ * the combo keeps its subtype and its order / band count. A changed subtype or
+ * layout means the combo was reconfigured into a different filter, and the
  * per-section histories no longer describe any part of it — so nothing is
- * carried. Within a cascade of equal length, each section's history is
- * transferred and scaled by `biquad_filter_transfer_state` based on the ratio
- * of ring estimates between the source and destination coefficients.
+ * carried.
+ *
+ * Within an unchanged layout, state is carried between sections of the same
+ * name, each transferred and scaled by `biquad_filter_transfer_state` based on
+ * the ratio of ring estimates between the source and destination coefficients.
+ * Matching by name rather than by position matters because flat
+ * GraphicEqualizer / NPointPeq bands (|gain| <= 0.001 dB) are left out of the
+ * cascade: flattening one band while boosting another keeps the section count
+ * but shifts positions, and positional matching would pour one band's history
+ * into an unrelated band. A section with no same-named source starts from
+ * zero state, as upstream does for every reconfigured combo.
+ *
+ * Allocation-free.
  *
  * @param dest The destination combo filter instance.
  * @param src The source combo filter instance.
@@ -526,14 +603,24 @@ static void biquad_combo_filter_transfer_state(void *dest_ptr,
                                                const void *src_ptr) {
   biquad_combo_filter_t *dest = (biquad_combo_filter_t *)dest_ptr;
   const biquad_combo_filter_t *src = (const biquad_combo_filter_t *)src_ptr;
-  if (!dest || !src || dest == src)
+  if (!dest || !src || dest == src || !g_biquad_vtable.transfer_state)
     return;
-  if (dest->num_sections != src->num_sections)
+  if (dest->type != src->type || dest->layout_count != src->layout_count)
     return;
+  // Sections are emitted in ascending index order in both, so a single forward
+  // scan over src finds every match (O(n) overall).
+  size_t j = 0;
   for (size_t i = 0; i < dest->num_sections; i++) {
-    if (dest->sections[i] && src->sections[i] &&
-        g_biquad_vtable.transfer_state) {
-      g_biquad_vtable.transfer_state(dest->sections[i], src->sections[i]);
+    const char *dname = biquad_filter_get_name(dest->sections[i]);
+    if (!dname)
+      continue;
+    for (size_t k = j; k < src->num_sections; k++) {
+      const char *sname = biquad_filter_get_name(src->sections[k]);
+      if (sname && strcmp(dname, sname) == 0) {
+        g_biquad_vtable.transfer_state(dest->sections[i], src->sections[k]);
+        j = k + 1;
+        break;
+      }
     }
   }
 }
@@ -581,6 +668,13 @@ size_t biquad_combo_stages(const biquad_combo_config_t *params, int sample_rate,
   if (!f)
     return 0;
   size_t count = f->num_sections;
+  if (count == 0) {
+    // Zero stages (e.g. every GraphicEqualizer/NPointPeq band flat): return
+    // NULL rather than an allocation a count-0 caller would never free.
+    free(f->sections);
+    free(f);
+    return 0;
+  }
   *out_stages = f->sections;
   free(f);
   return count;

@@ -8,7 +8,7 @@
 #include "utils/double_helpers.h"
 
 struct delay_filter {
-  char name[64];
+  char name[128];
   double *queue;
   size_t queue_count;
   size_t read_index;
@@ -177,7 +177,17 @@ static int delay_config_validate(const filter_config_t *config, int sample_rate,
     }
     return -1;
   }
-  if (sample_rate > 0) {
+  if (params->delay_unit < DELAY_UNIT_MS ||
+      params->delay_unit > DELAY_UNIT_MM) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Invalid delay unit");
+    }
+    return -1;
+  }
+  // The sample count is rate-independent for DELAY_UNIT_SAMPLES, so the cap
+  // must apply even for rate-independent validation (sample_rate <= 0);
+  // otherwise a huge Samples delay overflows `(int)round(...)` in create.
+  if (sample_rate > 0 || params->delay_unit == DELAY_UNIT_SAMPLES) {
     double delay_samples =
         compute_delay_samples(params->delay, params->delay_unit, sample_rate);
     if (delay_samples > 100000000.0) {
@@ -217,6 +227,11 @@ static void *delay_filter_create(const char *name,
   const delay_config_t *params = &config->parameters.delay;
   if (delay_config_validate(config, sample_rate, err) != 0)
     return NULL;
+  if (sample_rate <= 0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Delay filter requires a positive sample rate");
+    return NULL;
+  }
   delay_filter_t *filter = (delay_filter_t *)calloc(1, sizeof(delay_filter_t));
   if (!filter) {
     config_error_set(err, CONFIG_ERR_PARSE,

@@ -19,7 +19,7 @@ struct noise_shaper {
 };
 
 struct dither_filter {
-  char name[64];
+  char name[128];
   dither_type_t type;
   double scalefact;
   double amplitude;
@@ -454,10 +454,28 @@ static int dither_config_validate(const filter_config_t *config,
     return -1;
   const dither_config_t *params = &config->parameters.dither;
 
+  if ((int)params->type < (int)DITHER_TYPE_NONE ||
+      (int)params->type > (int)DITHER_TYPE_SHIBATA_LOW_192) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Invalid dither type");
+    }
+    return -1;
+  }
+
   if (params->bits <= 1) {
     if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "Dither bit depth must be at least 2");
+    }
+    return -1;
+  }
+
+  // scalefact = 2^(bits-1) overflows to +inf above 1024 bits, which turns
+  // every output sample into NaN (inf / inf).
+  if (params->bits > 1024) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Dither bit depth must be at most 1024");
     }
     return -1;
   }
@@ -467,6 +485,13 @@ static int dither_config_validate(const filter_config_t *config,
       if (err) {
         config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                          "Dither amplitude is required for Flat dither");
+      }
+      return -1;
+    }
+    if (!isfinite(params->amplitude)) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Dither amplitude must be a finite number");
       }
       return -1;
     }

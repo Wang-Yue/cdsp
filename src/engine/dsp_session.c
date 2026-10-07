@@ -105,11 +105,16 @@ bool dsp_session_is_stop_requested(const dsp_session_t *core,
   // successfully enqueued/read any audio chunk for more than the stall timeout,
   // we transition the state to STALLED. Checking this on the main thread
   // (during poll) prevents lockups when the capture backend read call blocks
-  // infinitely in kernel space.
+  // infinitely in kernel space. As in upstream (coreaudio/file backends), a
+  // capture device that stops delivering while silence-PAUSED is also
+  // reported as STALLED; capture keeps reading while paused, so
+  // last_capture_time keeps advancing as long as the device is alive.
+  processing_state_t wd_state = engine_shared_state_get_state(core->shared);
   if (!req &&
       engine_shared_state_get_stop_reason(core->shared).type ==
           STOP_REASON_NONE &&
-      engine_shared_state_get_state(core->shared) == PROCESSING_STATE_RUNNING) {
+      (wd_state == PROCESSING_STATE_RUNNING ||
+       wd_state == PROCESSING_STATE_PAUSED)) {
     uint64_t last_capture_time =
         engine_shared_state_get_last_capture_time(core->shared);
     if (last_capture_time > 0) {
@@ -118,9 +123,7 @@ bool dsp_session_is_stop_requested(const dsp_session_t *core,
       double timeout_sec = 0.5;
       pthread_mutex_lock((pthread_mutex_t *)&core->config_mutex);
       if (core->current_config) {
-        size_t sr = core->current_config->devices.has_capture_samplerate
-                        ? core->current_config->devices.capture_samplerate
-                        : core->current_config->devices.samplerate;
+        size_t sr = core->current_config->devices.samplerate;
         size_t chunk_size = core->current_config->devices.chunksize;
         if (sr > 0 && chunk_size > 0) {
           double chunk_duration = (double)chunk_size / (double)sr;
@@ -157,10 +160,12 @@ bool dsp_session_is_stop_requested(const dsp_session_t *core,
 dsp_session_t *dsp_session_create_and_start(
     dsp_config_t *config, chunk_callback_t on_captured, void *captured_ctx,
     chunk_callback_t on_processed, void *processed_ctx,
-    const engine_state_manager_t *state_mgr, audio_backend_error_t *err) {
+    const engine_state_manager_t *state_mgr,
+    const processing_parameters_t *seed_telemetry, uint64_t seed_clipped,
+    audio_backend_error_t *err) {
   return engine_session_build_and_start(config, on_captured, captured_ctx,
                                         on_processed, processed_ctx, state_mgr,
-                                        err);
+                                        seed_telemetry, seed_clipped, err);
 }
 
 processing_state_t dsp_session_get_state(const dsp_session_t *core) {
@@ -327,6 +332,14 @@ bool dsp_session_reload_config(dsp_session_t *core, dsp_config_t *new_config,
     core->current_config = new_config;
     pthread_mutex_unlock(&core->config_mutex);
     return true;
+  }
+
+  // Upstream engine.rs resets both loads whenever a config change arrives
+  // (before diffing); the audio threads republish fresh values on the next
+  // chunk.
+  if (core->processing_params) {
+    processing_parameters_set_processing_load(core->processing_params, 0.0);
+    processing_parameters_set_resampler_load(core->processing_params, 0.0);
   }
 
   // 1. Perform configuration diffing.

@@ -42,6 +42,10 @@ double *raw_read_text_samples(const char *path, size_t skip_lines,
  * @brief Decode a single binary audio sample into a normalized double in
  * [-1.0, 1.0].
  *
+ * Intended for coefficient files: F32_LE / F64_LE are decoded verbatim, so
+ * NaN/Inf are preserved for the caller to reject (the live audio stream path
+ * uses the sanitizing pcm_sample_decode_* helpers instead).
+ *
  * @param src Pointer to sample bytes.
  * @param format Binary sample format.
  * @param is_u8 True if 8-bit unsigned PCM.
@@ -75,6 +79,31 @@ double *raw_read_channel_stream(FILE *f, int channel, size_t channels,
                                 binary_sample_format_t format, bool is_u8,
                                 size_t num_frames, size_t *out_count,
                                 char *err_buf, size_t err_len);
+
+/**
+ * @brief 8-bit WAV encodings that have no binary_sample_format_t equivalent.
+ *
+ * They are only meaningful for FIR coefficient files (upstream reads them via
+ * waveadapter's U8 / ALAW / MULAW sample types); the audio stream path never
+ * uses them.
+ */
+typedef enum {
+  RAW_CODEC_NONE = 0, ///< Decode according to binary_sample_format_t.
+  RAW_CODEC_U8,       ///< 8-bit unsigned PCM, (x - 128) / 128.
+  RAW_CODEC_ALAW,     ///< ITU-T G.711 A-law, decoded to int16 / 32768.
+  RAW_CODEC_MULAW     ///< ITU-T G.711 mu-law, decoded to int16 / 32768.
+} raw_codec_t;
+
+/**
+ * @brief Same as raw_read_channel_stream, but selects the 8-bit codec
+ * explicitly. With RAW_CODEC_NONE @p format is used.
+ */
+double *raw_read_channel_stream_codec(FILE *f, int channel, size_t channels,
+                                      size_t container_bytes,
+                                      binary_sample_format_t format,
+                                      raw_codec_t codec, size_t num_frames,
+                                      size_t *out_count, char *err_buf,
+                                      size_t err_len);
 
 /**
  * @brief Load raw binary PCM/float audio samples from a file.

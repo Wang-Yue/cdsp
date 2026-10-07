@@ -114,7 +114,8 @@ static bool parse_bool_scalar(const char *val, bool *out) {
 
 /**
  * @brief Parse a YAML floating point scalar, rejecting trailing garbage.
- * Supports YAML .inf, -.inf, .nan representations.
+ * Non-finite values (YAML .inf, -.inf, .nan, or overflow) are rejected, as
+ * upstream only stores finite volumes.
  *
  * @param val   The scalar text, already stripped of surrounding whitespace.
  * @param out   Receives the parsed value on success.
@@ -143,7 +144,8 @@ static int hex_val(char c) {
 /**
  * @brief Unescape a YAML quoted or plain scalar string.
  * Supports '' -> ' for single quotes, and standard YAML escape sequences
- * for double quotes (\0, \a, \b, \t, \n, \v, \f, \r, \e, \", \\, \/, \xNN, \uNNNN).
+ * for double quotes (\0, \a, \b, \t, \n, \v, \f, \r, \e, \", \\, \/, \xNN,
+ * \uNNNN).
  */
 static char *unescape_yaml_scalar(const char *val) {
   if (!val)
@@ -272,6 +274,59 @@ static char *unescape_yaml_scalar(const char *val) {
  */
 static bool is_sequence_item(const char *trimmed) {
   return trimmed[0] == '-' && (trimmed[1] == ' ' || trimmed[1] == '\t');
+}
+
+/**
+ * @brief Parse a YAML flow sequence holding exactly five scalars, in place.
+ *
+ * Reentrant (no strtok). Rejects a missing ']', any text after ']', empty
+ * items such as "a,,b", and items the scalar parser rejects. A single
+ * trailing comma before ']' is accepted, as YAML allows it.
+ *
+ * @param val          Text starting at '['. Modified in place.
+ * @param out_bools    Receives booleans, or NULL to parse numbers.
+ * @param out_doubles  Receives numbers when @p out_bools is NULL.
+ * @return true if exactly five valid scalars were parsed.
+ */
+static bool parse_flow_sequence5(char *val, bool *out_bools,
+                                 double *out_doubles) {
+  if (!val || *val != '[')
+    return false;
+  val++;
+  char *close = strchr(val, ']');
+  if (!close)
+    return false;
+  for (const char *p = close + 1; *p != '\0'; p++) {
+    if (!isspace((unsigned char)*p))
+      return false;
+  }
+  *close = '\0';
+
+  size_t idx = 0;
+  char *item = val;
+  for (;;) {
+    char *comma = strchr(item, ',');
+    if (comma)
+      *comma = '\0';
+    while (*item == ' ' || *item == '\t')
+      item++;
+    trim_trailing(item);
+    if (item[0] == '\0' && !comma && idx > 0) {
+      // Trailing comma: "[a, b, c, d, e,]".
+      break;
+    }
+    if (idx >= 5)
+      return false;
+    bool ok = out_bools ? parse_bool_scalar(item, &out_bools[idx])
+                        : parse_double_scalar(item, &out_doubles[idx]);
+    if (!ok)
+      return false;
+    idx++;
+    if (!comma)
+      break;
+    item = comma + 1;
+  }
+  return idx == 5;
 }
 
 /**
@@ -413,35 +468,20 @@ bool dsp_state_load(const char *filename, dsp_state_t *out_state) {
         val++;
       if (*val == '[') {
         // Flow sequence style: mute: [false, false, false, false, false]
-        val++; // skip '['
-        char *close_bracket = strrchr(val, ']');
-        if (!close_bracket) {
+        if (!parse_flow_sequence5(val, out_state->mute, NULL)) {
           valid = false;
           break;
         }
-        *close_bracket = '\0';
-        mute_idx = 0;
-        char *token = strtok(val, ",");
-        while (token) {
-          while (*token == ' ' || *token == '\t')
-            token++;
-          trim_trailing(token);
-          bool parsed = false;
-          if (mute_idx >= 5 || !parse_bool_scalar(token, &parsed)) {
-            valid = false;
-            break;
-          }
-          out_state->mute[mute_idx++] = parsed;
-          token = strtok(NULL, ",");
-        }
-        if (!valid || mute_idx != 5) {
-          valid = false;
-          break;
-        }
+        mute_idx = 5;
         mode = 0;
-      } else {
+      } else if (*val == '\0') {
+        // Block sequence follows on the next lines.
         mode = 1;
         mute_idx = 0;
+      } else {
+        // Any other scalar (e.g. "mute: garbage") is not a sequence.
+        valid = false;
+        break;
       }
     } else if (strncmp(trimmed, "volume:", 7) == 0) {
       if (seen_volume) {
@@ -454,35 +494,18 @@ bool dsp_state_load(const char *filename, dsp_state_t *out_state) {
         val++;
       if (*val == '[') {
         // Flow sequence style: volume: [0.0, 0.0, 0.0, 0.0, 0.0]
-        val++; // skip '['
-        char *close_bracket = strrchr(val, ']');
-        if (!close_bracket) {
+        if (!parse_flow_sequence5(val, NULL, out_state->volume)) {
           valid = false;
           break;
         }
-        *close_bracket = '\0';
-        vol_idx = 0;
-        char *token = strtok(val, ",");
-        while (token) {
-          while (*token == ' ' || *token == '\t')
-            token++;
-          trim_trailing(token);
-          double parsed = 0.0;
-          if (vol_idx >= 5 || !parse_double_scalar(token, &parsed)) {
-            valid = false;
-            break;
-          }
-          out_state->volume[vol_idx++] = parsed;
-          token = strtok(NULL, ",");
-        }
-        if (!valid || vol_idx != 5) {
-          valid = false;
-          break;
-        }
+        vol_idx = 5;
         mode = 0;
-      } else {
+      } else if (*val == '\0') {
         mode = 2;
         vol_idx = 0;
+      } else {
+        valid = false;
+        break;
       }
     } else {
       // Upstream deserializes with `deny_unknown_fields`, so an unrecognised
@@ -499,8 +522,7 @@ bool dsp_state_load(const char *filename, dsp_state_t *out_state) {
   // caller then uses nothing from the file. Partially parsed state must not be
   // reported as success: doing so used to adopt `config_path` while resetting
   // every fader to 0 dB and unmuted.
-  if (!valid || !seen_mute || !seen_volume ||
-      mute_idx != 5 || vol_idx != 5) {
+  if (!valid || !seen_mute || !seen_volume || mute_idx != 5 || vol_idx != 5) {
     logger_warn(&g_logger, "Invalid statefile, ignoring: %s", filename);
     free(out_state->config_path);
     memset(out_state, 0, sizeof(dsp_state_t));
@@ -516,8 +538,10 @@ bool dsp_state_save(const char *filename, const dsp_state_t *state) {
 
   for (int i = 0; i < 5; i++) {
     if (!isfinite(state->volume[i])) {
-      logger_error(&g_logger, "Not saving state to '%s', error: volume[%d] is not finite (%f)",
-                   filename, i, state->volume[i]);
+      logger_error(
+          &g_logger,
+          "Not saving state to '%s', error: volume[%d] is not finite (%f)",
+          filename, i, state->volume[i]);
       return false;
     }
   }
@@ -546,10 +570,33 @@ bool dsp_state_save(const char *filename, const dsp_state_t *state) {
   if (state->has_config_path) {
     fprintf(fp, "config_path: \"");
     for (const char *p = state->config_path; *p != '\0'; p++) {
-      if (*p == '\\' || *p == '"') {
-        fputc('\\', fp);
+      unsigned char c = (unsigned char)*p;
+      // Every escape written here is understood by unescape_yaml_scalar().
+      // Raw control characters would break the line-oriented reader.
+      switch (c) {
+      case '\\':
+        fputs("\\\\", fp);
+        break;
+      case '"':
+        fputs("\\\"", fp);
+        break;
+      case '\n':
+        fputs("\\n", fp);
+        break;
+      case '\r':
+        fputs("\\r", fp);
+        break;
+      case '\t':
+        fputs("\\t", fp);
+        break;
+      default:
+        if (c < 0x20 || c == 0x7F) {
+          fprintf(fp, "\\x%02X", (unsigned)c);
+        } else {
+          fputc((int)c, fp);
+        }
+        break;
       }
-      fputc(*p, fp);
     }
     fprintf(fp, "\"\n");
   } else {
@@ -564,16 +611,10 @@ bool dsp_state_save(const char *filename, const dsp_state_t *state) {
     fprintf(fp, "- %s\n", state->mute[i] ? "true" : "false");
   }
 
+  // Every volume is finite here: non-finite values were rejected above.
   fprintf(fp, "volume:\n");
   for (int i = 0; i < 5; i++) {
-    double v = state->volume[i];
-    if (isnan(v)) {
-      fprintf(fp, "- .nan\n");
-    } else if (isinf(v)) {
-      fprintf(fp, "- %s\n", v < 0 ? "-.inf" : ".inf");
-    } else {
-      fprintf(fp, "- %.9g\n", v);
-    }
+    fprintf(fp, "- %.9g\n", state->volume[i]);
   }
 
   bool write_ok = true;

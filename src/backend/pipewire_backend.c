@@ -3,7 +3,6 @@
 #if defined(ENABLE_PIPEWIRE)
 
 #include <math.h>
-#include <pipewire/context.h>
 #include <pipewire/core.h>
 #include <pipewire/keys.h>
 #include <pipewire/pipewire.h>
@@ -13,6 +12,7 @@
 #include <pipewire/thread-loop.h>
 #include <pthread.h>
 #include <spa/buffer/buffer.h>
+#include <spa/node/io.h>
 #include <spa/param/audio/format-utils.h>
 #include <spa/param/audio/format.h>
 #include <spa/param/audio/raw-utils.h>
@@ -32,11 +32,15 @@
 #include "backend/audio_backend.h"
 #include "backend/backend_buffer.h"
 #include "backend/backend_error.h"
+#include "backend/pipewire_internal.h"
 #include "config/config_gen.h"
 #include "logging/app_logger.h"
 #include "utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend.pipewire"};
+
+/** Playback write retries, as upstream ringbuffer.rs PUSH_RETRIES. */
+#define PIPEWIRE_PLAYBACK_PUSH_RETRIES 16u
 
 static pthread_once_t g_pw_init_once = PTHREAD_ONCE_INIT;
 
@@ -61,14 +65,21 @@ struct pipewire_capture {
   bool loopback;
 
   struct pw_thread_loop *loop;
-  struct pw_context *context;
   struct pw_stream *stream;
 
   backend_buffer_t *buffer;
   size_t blockalign;
 
-  double pending_rate;
-  bool has_pending_rate;
+  /* Pending graph/format rate in Hz, 0 when none. Written by param_changed on
+   * the PipeWire loop thread, consumed lock-free by the engine worker thread
+   * (AGENTS §1.2: no mutex on audio threads). */
+  _Atomic uint32_t pending_rate_hz;
+  /* Graph position IO (SPA_IO_Position), set by io_changed. Its
+   * clock.rate.denom is the actual graph rate; the negotiated Format stays at
+   * the requested rate because the adapter resamples (audit 05 F-04). */
+  struct spa_io_position *_Atomic position;
+  /* Last graph rate observed by the RT process callback (RT thread only). */
+  uint32_t graph_rate_seen;
   processing_parameters_t *params;
 };
 
@@ -89,17 +100,71 @@ struct pipewire_playback {
   bool has_autoconnect_to;
 
   struct pw_thread_loop *loop;
-  struct pw_context *context;
   struct pw_stream *stream;
 
   backend_buffer_t *buffer;
 
-  double pending_rate;
-  bool has_pending_rate;
+  /* Pending graph/format rate in Hz, 0 when none. Written by param_changed on
+   * the PipeWire loop thread, consumed lock-free by the engine worker thread
+   * (AGENTS §1.2: no mutex on audio threads). */
+  _Atomic uint32_t pending_rate_hz;
+  /* Graph position IO (SPA_IO_Position), set by io_changed. Its
+   * clock.rate.denom is the actual graph rate; the negotiated Format stays at
+   * the requested rate because the adapter resamples (audit 05 F-04). */
+  struct spa_io_position *_Atomic position;
+  /* Last graph rate observed by the RT process callback (RT thread only). */
+  uint32_t graph_rate_seen;
+  /* True while the stream is in PW_STREAM_STATE_STREAMING (process callbacks
+   * are running and draining the ring). Set on the PipeWire loop thread. */
+  _Atomic bool streaming;
   processing_parameters_t *params;
 };
 
 // MARK: - PipeWire Callbacks
+
+/**
+ * @brief Report graph clock-rate changes observed in the RT process callback.
+ *
+ * Reads the graph rate from the position IO area (lock-free, wait-free) and
+ * publishes a pending rate when it changes during the session. The first
+ * observation only records the baseline so that a graph already running at a
+ * different rate at startup keeps working through PipeWire's adapter
+ * resampling, as before; the engine compares any reported rate with the
+ * configured one.
+ */
+static inline void pw_check_graph_rate(struct spa_io_position *_Atomic *pos_ptr,
+                                       uint32_t *seen,
+                                       _Atomic uint32_t *pending,
+                                       backend_buffer_t *buffer) {
+  struct spa_io_position *pos =
+      atomic_load_explicit(pos_ptr, memory_order_acquire);
+  if (!pos)
+    return;
+  uint32_t rate = pipewire_graph_rate_update(pos->clock.rate.denom, seen);
+  if (rate != 0) {
+    atomic_store_explicit(pending, rate, memory_order_release);
+    backend_buffer_set_pending_rate_change(buffer, true);
+    backend_buffer_signal(buffer);
+  }
+}
+
+static void on_capture_io_changed(void *data, uint32_t id, void *area,
+                                  uint32_t size) {
+  (void)size;
+  pipewire_capture_t *c = (pipewire_capture_t *)data;
+  if (c && id == SPA_IO_Position)
+    atomic_store_explicit(&c->position, (struct spa_io_position *)area,
+                          memory_order_release);
+}
+
+static void on_playback_io_changed(void *data, uint32_t id, void *area,
+                                   uint32_t size) {
+  (void)size;
+  pipewire_playback_t *p = (pipewire_playback_t *)data;
+  if (p && id == SPA_IO_Position)
+    atomic_store_explicit(&p->position, (struct spa_io_position *)area,
+                          memory_order_release);
+}
 
 /**
  * @brief PipeWire stream process callback for capture.
@@ -114,18 +179,23 @@ struct pipewire_playback {
  */
 static void on_capture_process(void *data) {
   pipewire_capture_t *c = (pipewire_capture_t *)data;
+  pw_check_graph_rate(&c->position, &c->graph_rate_seen, &c->pending_rate_hz,
+                      c->buffer);
   struct pw_buffer *b = pw_stream_dequeue_buffer(c->stream);
   if (!b)
     return;
 
   struct spa_buffer *buf = b->buffer;
   if (buf && buf->n_datas > 0 && buf->datas[0].data && buf->datas[0].chunk) {
-    size_t size = buf->datas[0].chunk->size;
-    if (size > 0 && c->blockalign > 0) {
+    // Never trust chunk offset/size from the graph: clamp them to the mapped
+    // region so a misbehaving peer cannot make the RT thread read out of
+    // bounds (upstream device.rs:871-872 would panic on the slice instead).
+    size_t offset = 0;
+    size_t frames = pipewire_capture_chunk_frames(
+        buf->datas[0].chunk->offset, buf->datas[0].chunk->size,
+        buf->datas[0].maxsize, c->blockalign, &offset);
+    if (frames > 0) {
       const uint8_t *src = (const uint8_t *)buf->datas[0].data;
-      size_t offset = buf->datas[0].chunk->offset;
-      size_t frames = size / c->blockalign;
-
       backend_buffer_push(c->buffer, src + offset, frames);
     }
   }
@@ -142,6 +212,13 @@ static void on_capture_stream_state_changed(void *data,
                "Capture stream state changed from %s to %s (error: %s)",
                pw_stream_state_as_string(old), pw_stream_state_as_string(state),
                error ? error : "none");
+  if (state == PW_STREAM_STATE_ERROR) {
+    // Upstream only logs at debug (device.rs:392-394 / 825-827). Surface
+    // stream errors at error level; propagating them to the engine is
+    // deferred (audit 05 F-14) to keep upstream's keep-running behaviour.
+    logger_error(&g_logger, "PipeWire capture stream error: %s",
+                 error ? error : "unknown");
+  }
 }
 
 static void on_capture_param_changed(void *data, uint32_t id,
@@ -156,8 +233,9 @@ static void on_capture_param_changed(void *data, uint32_t id,
         info.media_subtype == SPA_MEDIA_SUBTYPE_raw) {
       uint32_t rate = info.info.raw.rate;
       if (rate > 0 && (int)rate != c->sample_rate) {
-        c->pending_rate = (double)rate;
-        c->has_pending_rate = true;
+        atomic_store_explicit(&c->pending_rate_hz, rate, memory_order_release);
+        backend_buffer_set_pending_rate_change(c->buffer, true);
+        backend_buffer_signal(c->buffer);
       }
     }
   }
@@ -167,6 +245,7 @@ static const struct pw_stream_events capture_stream_events = {
     PW_VERSION_STREAM_EVENTS,
     .state_changed = on_capture_stream_state_changed,
     .param_changed = on_capture_param_changed,
+    .io_changed = on_capture_io_changed,
     .process = on_capture_process,
 };
 
@@ -183,6 +262,8 @@ static const struct pw_stream_events capture_stream_events = {
  */
 static void on_playback_process(void *data) {
   pipewire_playback_t *p = (pipewire_playback_t *)data;
+  pw_check_graph_rate(&p->position, &p->graph_rate_seen, &p->pending_rate_hz,
+                      p->buffer);
   struct pw_buffer *b = pw_stream_dequeue_buffer(p->stream);
   if (!b)
     return;
@@ -194,20 +275,19 @@ static void on_playback_process(void *data) {
   }
 
   uint8_t *dst = (uint8_t *)buf->datas[0].data;
+  struct spa_chunk *chunk = buf->datas[0].chunk;
 
-  if (dst) {
+  if (dst && chunk) {
     size_t stride = sizeof(float) * p->channels;
-    size_t max_bytes = buf->datas[0].maxsize;
-    size_t requested_bytes = buf->datas[0].chunk->size;
+    size_t callback_bytes = pipewire_playback_callback_bytes(
+        chunk->size, buf->datas[0].maxsize, stride, (size_t)p->chunk_size);
 
-    size_t fallback_bytes = p->chunk_size * stride;
-    size_t callback_bytes =
-        (requested_bytes == 0 || requested_bytes > max_bytes)
-            ? (fallback_bytes < max_bytes ? fallback_bytes : max_bytes)
-            : requested_bytes;
-    callback_bytes -= (callback_bytes % stride);
-
-    backend_buffer_render(p->buffer, dst, callback_bytes / stride, 0x00);
+    if (p->buffer) {
+      backend_buffer_render(p->buffer, dst, callback_bytes / stride, 0x00);
+    } else {
+      // Defence in depth: never hand PipeWire a buffer we did not write.
+      memset(dst, 0, callback_bytes);
+    }
 
     buf->datas[0].chunk->offset = 0;
     buf->datas[0].chunk->size = (uint32_t)callback_bytes;
@@ -221,11 +301,22 @@ static void on_playback_stream_state_changed(void *data,
                                              enum pw_stream_state old,
                                              enum pw_stream_state state,
                                              const char *error) {
-  (void)data;
+  pipewire_playback_t *p = (pipewire_playback_t *)data;
+  if (p) {
+    atomic_store_explicit(&p->streaming, state == PW_STREAM_STATE_STREAMING,
+                          memory_order_release);
+  }
   logger_debug(&g_logger,
                "Playback stream state changed from %s to %s (error: %s)",
                pw_stream_state_as_string(old), pw_stream_state_as_string(state),
                error ? error : "none");
+  if (state == PW_STREAM_STATE_ERROR) {
+    // Upstream only logs at debug (device.rs:392-394 / 825-827). Surface
+    // stream errors at error level; propagating them to the engine is
+    // deferred (audit 05 F-14) to keep upstream's keep-running behaviour.
+    logger_error(&g_logger, "PipeWire playback stream error: %s",
+                 error ? error : "unknown");
+  }
 }
 
 static void on_playback_param_changed(void *data, uint32_t id,
@@ -240,8 +331,9 @@ static void on_playback_param_changed(void *data, uint32_t id,
         info.media_subtype == SPA_MEDIA_SUBTYPE_raw) {
       uint32_t rate = info.info.raw.rate;
       if (rate > 0 && (int)rate != p->sample_rate) {
-        p->pending_rate = (double)rate;
-        p->has_pending_rate = true;
+        atomic_store_explicit(&p->pending_rate_hz, rate, memory_order_release);
+        backend_buffer_set_pending_rate_change(p->buffer, true);
+        backend_buffer_signal(p->buffer);
       }
     }
   }
@@ -251,6 +343,7 @@ static const struct pw_stream_events playback_stream_events = {
     PW_VERSION_STREAM_EVENTS,
     .state_changed = on_playback_stream_state_changed,
     .param_changed = on_playback_param_changed,
+    .io_changed = on_playback_io_changed,
     .process = on_playback_process,
 };
 
@@ -270,10 +363,6 @@ static void pipewire_capture_close(void *ctx) {
     if (capture->stream) {
       pw_stream_destroy(capture->stream);
       capture->stream = NULL;
-    }
-    if (capture->context) {
-      pw_context_destroy(capture->context);
-      capture->context = NULL;
     }
     pw_thread_loop_unlock(capture->loop);
 
@@ -301,8 +390,29 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
     return false;
   ensure_pw_init();
 
+  // The ring buffer must exist before the stream is connected: with
+  // PW_STREAM_FLAG_RT_PROCESS the process callback runs on the PipeWire data
+  // thread as soon as negotiation completes, independently of this thread and
+  // of the thread-loop lock. Upstream likewise builds its ring before
+  // registering the listener and connecting (device.rs:804-809).
+  capture->blockalign = (size_t)capture->channels * sizeof(float);
+  size_t cap_min_frames = (size_t)ceil((double)capture->sample_rate * 0.025);
+  size_t cap_frames_needed = (size_t)(4 * capture->chunk_size);
+  if (cap_frames_needed < cap_min_frames)
+    cap_frames_needed = cap_min_frames;
+  capture->buffer = backend_buffer_create(
+      cap_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE, capture->channels,
+      capture->sample_rate, false, capture->params);
+  if (!capture->buffer) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to allocate capture buffer");
+    return false;
+  }
+
   capture->loop = pw_thread_loop_new("CDSP-Capture-Loop", NULL);
   if (!capture->loop) {
+    pipewire_capture_close(capture);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to create PipeWire thread loop");
@@ -312,6 +422,7 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
   if (pw_thread_loop_start(capture->loop) < 0) {
     pw_thread_loop_destroy(capture->loop);
     capture->loop = NULL;
+    pipewire_capture_close(capture);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to start PipeWire thread loop");
@@ -319,19 +430,6 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
   }
 
   pw_thread_loop_lock(capture->loop);
-
-  capture->context =
-      pw_context_new(pw_thread_loop_get_loop(capture->loop), NULL, 0);
-  if (!capture->context) {
-    pw_thread_loop_unlock(capture->loop);
-    pw_thread_loop_stop(capture->loop);
-    pw_thread_loop_destroy(capture->loop);
-    capture->loop = NULL;
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to create PipeWire context");
-    return false;
-  }
 
   const char *node_name =
       capture->has_node_name ? capture->node_name : "cdsp-capture";
@@ -355,7 +453,10 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
     char rate_str[64];
     snprintf(rate_str, sizeof(rate_str), "1/%d", capture->sample_rate);
     pw_properties_set(props, PW_KEY_NODE_RATE, rate_str);
-    if (capture->device[0] != '\0' && strcmp(capture->device, "default") != 0) {
+    // `device` ("default" is already mapped to "" in create) is a cdsp
+    // extension: target.object with normal fallback. It takes precedence over
+    // `autoconnect_to` (upstream semantics: dont-fallback + linger).
+    if (capture->device[0] != '\0') {
       pw_properties_set(props, "target.object", capture->device);
     } else if (capture->has_autoconnect_to &&
                capture->autoconnect_to[0] != '\0') {
@@ -373,11 +474,8 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
                                          &capture_stream_events, capture);
 
   if (!capture->stream) {
-    pw_context_destroy(capture->context);
     pw_thread_loop_unlock(capture->loop);
-    pw_thread_loop_stop(capture->loop);
-    pw_thread_loop_destroy(capture->loop);
-    capture->loop = NULL;
+    pipewire_capture_close(capture);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to create PipeWire stream");
@@ -403,38 +501,17 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
   pw_thread_loop_unlock(capture->loop);
 
   if (rc < 0) {
-    pw_thread_loop_lock(capture->loop);
-    pw_stream_destroy(capture->stream);
-    pw_context_destroy(capture->context);
-    pw_thread_loop_unlock(capture->loop);
-    pw_thread_loop_stop(capture->loop);
-    pw_thread_loop_destroy(capture->loop);
-    capture->loop = NULL;
+    // close() destroys the stream under the loop lock, stops and destroys the
+    // loop and frees the buffer, leaving no dangling pointers behind.
+    pipewire_capture_close(capture);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to connect PipeWire stream");
     return false;
   }
 
-  capture->blockalign = (size_t)capture->channels * sizeof(float);
-  size_t cap_min_frames = (size_t)ceil((double)capture->sample_rate * 0.025);
-  size_t cap_frames_needed = (size_t)(4 * capture->chunk_size);
-  if (cap_frames_needed < cap_min_frames)
-    cap_frames_needed = cap_min_frames;
-  capture->buffer = backend_buffer_create(
-      cap_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE, capture->channels,
-      capture->sample_rate, false, capture->params);
-
-  if (!capture->buffer) {
-    pipewire_capture_close(capture);
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to allocate capture buffer");
-    return false;
-  }
-
   logger_info(&g_logger,
-              "Opened PipeWire capture: device=%s, rate=%d, channels=%d",
+              "Opened PipeWire capture: device=%s, rate=%d, channels=%zu",
               capture->device[0] != '\0' ? capture->device : "default",
               capture->sample_rate, capture->channels);
 
@@ -470,17 +547,16 @@ static bool pipewire_capture_get_pending_rate_change(void *ctx,
   pipewire_capture_t *capture = (pipewire_capture_t *)ctx;
   if (!capture)
     return false;
-  if (capture->loop)
-    pw_thread_loop_lock(capture->loop);
-  bool pending = capture->has_pending_rate;
-  if (pending) {
-    if (out_rate)
-      *out_rate = capture->pending_rate;
-    capture->has_pending_rate = false;
-  }
-  if (capture->loop)
-    pw_thread_loop_unlock(capture->loop);
-  return pending;
+  // Lock-free consume: called from the engine audio thread on every
+  // iteration, so it must not take pw_thread_loop_lock().
+  uint32_t rate = atomic_exchange_explicit(&capture->pending_rate_hz, 0u,
+                                           memory_order_acq_rel);
+  if (rate == 0)
+    return false;
+  backend_buffer_set_pending_rate_change(capture->buffer, false);
+  if (out_rate)
+    *out_rate = (double)rate;
+  return true;
 }
 
 /**
@@ -503,9 +579,6 @@ static bool pipewire_capture_pitch_control_supported(void *ctx) {
 static void pipewire_capture_set_pitch(void *ctx, double multiplier) {
   (void)ctx;
   (void)multiplier;
-  logger_warn(
-      &g_logger,
-      "Requested rate adjust of synchronous resampler. Ignoring request.");
 }
 
 /**
@@ -571,7 +644,6 @@ pipewire_capture_create(const capture_device_config_t *config, int sample_rate,
                         int chunk_size, bool full_duplex,
                         processing_parameters_t *params, backend_error_t *err) {
   (void)full_duplex;
-  (void)params;
   (void)err;
   pipewire_capture_t *capture =
       (pipewire_capture_t *)calloc(1, sizeof(pipewire_capture_t));
@@ -611,6 +683,14 @@ pipewire_capture_create(const capture_device_config_t *config, int sample_rate,
     capture->has_autoconnect_to = true;
   }
   capture->loopback = config->cfg.pipewire.loopback;
+  if (capture->device[0] != '\0' && capture->has_autoconnect_to &&
+      capture->autoconnect_to[0] != '\0') {
+    logger_warn(
+        &g_logger,
+        "PipeWire capture: both device '%s' and autoconnect_to '%s' set; "
+        "using device (autoconnect_to ignored)",
+        capture->device, capture->autoconnect_to);
+  }
   capture->params = params;
 
   capture_backend_t *backend =
@@ -649,11 +729,15 @@ static void pipewire_playback_close(void *ctx) {
   if (!playback)
     return;
   if (playback->loop) {
-    // Wait for the ring buffer to drain before closing the stream,
-    // ensuring all remaining audio is played back.
+    // Wait for the ring buffer to drain before closing the stream, ensuring
+    // all remaining audio is played back (cdsp addition; upstream discards the
+    // ring on EndOfStream). Only wait while something can actually drain it:
+    // a paused buffer renders silence without consuming, and a stream that is
+    // not STREAMING (e.g. unlinked with node.dont-fallback) has no callbacks.
     int retries = 200; // wait up to 200ms
-    while (backend_buffer_get_state(playback->buffer) !=
-               BACKEND_STREAM_STOPPED &&
+    while (backend_buffer_get_state(playback->buffer) ==
+               BACKEND_STREAM_RUNNING &&
+           atomic_load_explicit(&playback->streaming, memory_order_acquire) &&
            backend_buffer_get_available_read_frames(playback->buffer) > 0 &&
            retries-- > 0) {
       cdsp_sleep_ms(1);
@@ -665,10 +749,6 @@ static void pipewire_playback_close(void *ctx) {
     if (playback->stream) {
       pw_stream_destroy(playback->stream);
       playback->stream = NULL;
-    }
-    if (playback->context) {
-      pw_context_destroy(playback->context);
-      playback->context = NULL;
     }
     pw_thread_loop_unlock(playback->loop);
 
@@ -694,8 +774,40 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
     return false;
   ensure_pw_init();
 
+  // Create and configure the ring buffer before the stream exists: with
+  // PW_STREAM_FLAG_RT_PROCESS the process callback runs on the PipeWire data
+  // thread as soon as negotiation completes, independently of this thread and
+  // of the thread-loop lock. Rendering from a missing buffer would publish a
+  // PipeWire buffer that was never written. Upstream likewise builds its ring
+  // before registering the listener and connecting (device.rs:374-383).
+  size_t pb_min_frames = (size_t)ceil((double)playback->sample_rate * 0.025);
+  size_t target_level = playback->target_level > 0
+                            ? playback->target_level
+                            : (size_t)playback->chunk_size;
+  size_t pb_prefill_frames = target_level > (size_t)(3 * playback->chunk_size)
+                                 ? target_level
+                                 : (size_t)(3 * playback->chunk_size);
+  size_t pb_frames_needed =
+      pb_prefill_frames + (size_t)(4 * playback->chunk_size);
+  if (pb_frames_needed < pb_min_frames)
+    pb_frames_needed = pb_min_frames;
+
+  playback->buffer = backend_buffer_create(
+      pb_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE, playback->channels,
+      playback->sample_rate, false, playback->params);
+
+  if (!playback->buffer) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to allocate playback buffer");
+    return false;
+  }
+  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
+  backend_buffer_set_target_level(playback->buffer, target_level);
+
   playback->loop = pw_thread_loop_new("CDSP-Playback-Loop", NULL);
   if (!playback->loop) {
+    pipewire_playback_close(playback);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to create PipeWire thread loop");
@@ -705,6 +817,7 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
   if (pw_thread_loop_start(playback->loop) < 0) {
     pw_thread_loop_destroy(playback->loop);
     playback->loop = NULL;
+    pipewire_playback_close(playback);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to start PipeWire thread loop");
@@ -712,19 +825,6 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
   }
 
   pw_thread_loop_lock(playback->loop);
-
-  playback->context =
-      pw_context_new(pw_thread_loop_get_loop(playback->loop), NULL, 0);
-  if (!playback->context) {
-    pw_thread_loop_unlock(playback->loop);
-    pw_thread_loop_stop(playback->loop);
-    pw_thread_loop_destroy(playback->loop);
-    playback->loop = NULL;
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to create PipeWire context");
-    return false;
-  }
 
   const char *node_name =
       playback->has_node_name ? playback->node_name : "cdsp-playback";
@@ -748,8 +848,10 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
     char rate_str[64];
     snprintf(rate_str, sizeof(rate_str), "1/%d", playback->sample_rate);
     pw_properties_set(props, PW_KEY_NODE_RATE, rate_str);
-    if (playback->device[0] != '\0' &&
-        strcmp(playback->device, "default") != 0) {
+    // `device` ("default" is already mapped to "" in create) is a cdsp
+    // extension: target.object with normal fallback. It takes precedence over
+    // `autoconnect_to` (upstream semantics: dont-fallback + linger).
+    if (playback->device[0] != '\0') {
       pw_properties_set(props, "target.object", playback->device);
     } else if (playback->has_autoconnect_to &&
                playback->autoconnect_to[0] != '\0') {
@@ -764,11 +866,8 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
       &playback_stream_events, playback);
 
   if (!playback->stream) {
-    pw_context_destroy(playback->context);
     pw_thread_loop_unlock(playback->loop);
-    pw_thread_loop_stop(playback->loop);
-    pw_thread_loop_destroy(playback->loop);
-    playback->loop = NULL;
+    pipewire_playback_close(playback);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to create PipeWire stream");
@@ -794,47 +893,17 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
   pw_thread_loop_unlock(playback->loop);
 
   if (rc < 0) {
-    pw_thread_loop_lock(playback->loop);
-    pw_stream_destroy(playback->stream);
-    pw_context_destroy(playback->context);
-    pw_thread_loop_unlock(playback->loop);
-    pw_thread_loop_stop(playback->loop);
-    pw_thread_loop_destroy(playback->loop);
-    playback->loop = NULL;
+    // close() destroys the stream under the loop lock, stops and destroys the
+    // loop and frees the buffer, leaving no dangling pointers behind.
+    pipewire_playback_close(playback);
     if (err)
       backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
                          "Failed to connect PipeWire stream");
     return false;
   }
 
-  size_t pb_min_frames = (size_t)ceil((double)playback->sample_rate * 0.025);
-  size_t target_level = playback->target_level > 0
-                            ? playback->target_level
-                            : (size_t)playback->chunk_size;
-  size_t pb_prefill_frames = target_level > (size_t)(3 * playback->chunk_size)
-                                 ? target_level
-                                 : (size_t)(3 * playback->chunk_size);
-  size_t pb_frames_needed =
-      pb_prefill_frames + (size_t)(4 * playback->chunk_size);
-  if (pb_frames_needed < pb_min_frames)
-    pb_frames_needed = pb_min_frames;
-
-  playback->buffer = backend_buffer_create(
-      pb_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE, playback->channels,
-      playback->sample_rate, false, playback->params);
-
-  if (!playback->buffer) {
-    pipewire_playback_close(playback);
-    if (err)
-      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
-                         "Failed to allocate playback buffer");
-    return false;
-  }
-  backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
-  backend_buffer_set_target_level(playback->buffer, target_level);
-
   logger_info(&g_logger,
-              "Opened PipeWire playback: device=%s, rate=%d, channels=%d",
+              "Opened PipeWire playback: device=%s, rate=%d, channels=%zu",
               playback->device[0] != '\0' ? playback->device : "default",
               playback->sample_rate, playback->channels);
 
@@ -854,11 +923,16 @@ static bool pipewire_playback_write(void *ctx, const audio_chunk_t *chunk,
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
   if (!playback)
     return false;
-  uint32_t sleep_ms = (uint32_t)((double)playback->chunk_size * 1000.0 /
-                                 (double)playback->sample_rate / 2.0);
+  // Match upstream RingBufferFeeder (ringbuffer.rs:22, 37-68): up to
+  // PUSH_RETRIES = 16 waits of chunksize / samplerate / 2 before dropping the
+  // chunk. The wait is a semaphore timed wait that the RT callback signals on
+  // every consume, so whole-millisecond rounding only bounds the worst case.
+  uint32_t sleep_ms = (uint32_t)lround((double)playback->chunk_size * 1000.0 /
+                                       (double)playback->sample_rate / 2.0);
   if (sleep_ms < 1)
     sleep_ms = 1;
-  return backend_buffer_write_chunk(playback->buffer, chunk, sleep_ms, 8, err);
+  return backend_buffer_write_chunk(playback->buffer, chunk, sleep_ms,
+                                    PIPEWIRE_PLAYBACK_PUSH_RETRIES, err);
 }
 
 /**
@@ -886,17 +960,16 @@ static bool pipewire_playback_get_pending_rate_change(void *ctx,
   pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
   if (!playback)
     return false;
-  if (playback->loop)
-    pw_thread_loop_lock(playback->loop);
-  bool pending = playback->has_pending_rate;
-  if (pending) {
-    if (out_rate)
-      *out_rate = playback->pending_rate;
-    playback->has_pending_rate = false;
-  }
-  if (playback->loop)
-    pw_thread_loop_unlock(playback->loop);
-  return pending;
+  // Lock-free consume: called from the engine audio thread on every
+  // iteration, so it must not take pw_thread_loop_lock().
+  uint32_t rate = atomic_exchange_explicit(&playback->pending_rate_hz, 0u,
+                                           memory_order_acq_rel);
+  if (rate == 0)
+    return false;
+  backend_buffer_set_pending_rate_change(playback->buffer, false);
+  if (out_rate)
+    *out_rate = (double)rate;
+  return true;
 }
 
 /**
@@ -993,7 +1066,6 @@ static playback_backend_t *pipewire_playback_create(
     const playback_device_config_t *config, int sample_rate, int chunk_size,
     bool full_duplex, processing_parameters_t *params, backend_error_t *err) {
   (void)full_duplex;
-  (void)params;
   (void)err;
   pipewire_playback_t *playback =
       (pipewire_playback_t *)calloc(1, sizeof(pipewire_playback_t));
@@ -1034,6 +1106,14 @@ static playback_backend_t *pipewire_playback_create(
     snprintf(playback->autoconnect_to, sizeof(playback->autoconnect_to), "%s",
              config->cfg.pipewire.autoconnect_to);
     playback->has_autoconnect_to = true;
+  }
+  if (playback->device[0] != '\0' && playback->has_autoconnect_to &&
+      playback->autoconnect_to[0] != '\0') {
+    logger_warn(
+        &g_logger,
+        "PipeWire playback: both device '%s' and autoconnect_to '%s' set; "
+        "using device (autoconnect_to ignored)",
+        playback->device, playback->autoconnect_to);
   }
   playback->params = params;
 

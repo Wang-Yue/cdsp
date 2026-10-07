@@ -17,6 +17,7 @@
 #include "logging/app_logger.h"
 #include "mixer/mixer.h"
 #include "pipeline/pipeline.h"
+#include "pipeline/pipeline_faders.h"
 #include "processors/processor.h"
 
 /// A filter chain applied to a single channel in parallel.
@@ -67,6 +68,9 @@ struct pipeline_s {
   bool multithreaded;
   size_t worker_threads;
   volume_filter_t *master_volume;
+  /// Ramp state of all five faders, advanced once per chunk before any step
+  /// runs. Volume (incl. master_volume) and Loudness filters read its levels.
+  pipeline_faders_t faders;
   audio_chunk_t *input_scratch;
   audio_chunk_t **scratches_for_mixers;
   size_t scratches_for_mixers_count;

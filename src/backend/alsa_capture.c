@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
@@ -57,6 +58,10 @@ struct alsa_capture {
   bool pitch_is_loopback;
   _Atomic double pending_rate;
   _Atomic bool is_inactive;
+  // Pitch requested by set_pitch() on the engine thread, written to the
+  // control by the inner thread (M6).
+  _Atomic double pending_pitch;
+  _Atomic bool pitch_pending;
 
   double linked_volume_value;
   bool has_linked_volume_value;
@@ -72,12 +77,41 @@ struct alsa_capture {
   pthread_t inner_thread;
   bool inner_thread_created;
   bool device_stalled;
+  // readi() target, chunk_size frames; allocated by open(), not on the RT
+  // thread (L4).
+  uint8_t *local_buf;
+  size_t local_buf_bytes;
+
+  // Set (release) by the inner thread when it exits because of a device
+  // error, after fatal_msg has been written; read() reports it as
+  // BACKEND_ERROR_READ_ERROR once the ring has been drained.
+  _Atomic bool fatal_error;
+  char fatal_msg[256];
 };
 
+static void alsa_capture_record_fatal(alsa_capture_t *capture, const char *what,
+                                      int alsa_rc) {
+  if (alsa_rc != 0) {
+    snprintf(capture->fatal_msg, sizeof(capture->fatal_msg), "%s: %s", what,
+             snd_strerror(alsa_rc));
+  } else {
+    snprintf(capture->fatal_msg, sizeof(capture->fatal_msg), "%s", what);
+  }
+  logger_error(&g_logger, "Capture: %s", capture->fatal_msg);
+}
+
 // Defined below; invoked from the capture RT thread whenever poll() reports
-// activity on a control descriptor.
-static void alsa_capture_process_events(alsa_capture_t *capture,
-                                        bool is_rt_thread);
+// activity on a control descriptor, and once per pass. The inner thread is
+// the only user of ctl/hctl while it runs (M6).
+static bool alsa_capture_process_events(alsa_capture_t *capture);
+static void alsa_capture_sync_linked_controls(alsa_capture_t *capture);
+static void alsa_capture_apply_pending_pitch(alsa_capture_t *capture);
+
+static uint64_t alsa_capture_monotonic_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
 
 // Maximum number of poll descriptors collected from the PCM and control
 // handles. ALSA devices realistically expose one or two each.
@@ -139,18 +173,11 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     logger_debug(&g_logger, "Capture inner thread has real-time priority.");
   }
 
-  size_t sample_bytes = alsa_format_sample_size(capture->format);
-  size_t bytes_per_frame = (size_t)capture->channels * sample_bytes;
-  size_t chunk_bytes = (size_t)capture->chunk_size * bytes_per_frame;
-  uint8_t *local_buf = (uint8_t *)malloc(chunk_bytes);
-  if (!local_buf) {
-    logger_error(&g_logger, "Failed to allocate ALSA capture read buffer");
-    backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-    if (rt_handle) {
-      demote_current_thread_from_realtime(rt_handle);
-    }
-    return NULL;
-  }
+  // Preallocated by open() (chunk_size frames); no heap use on this RT
+  // thread (L4). Audio is normally read straight into the ring (see below);
+  // local_buf only takes a frame that straddles the ring wrap, or a chunk
+  // that must be read and dropped because the ring is full.
+  uint8_t *local_buf = capture->local_buf;
   double millis_per_chunk = 1000.0 * (double)capture->chunk_size /
                             (double)capture->capture_sample_rate;
   uint32_t timeout_millis = (uint32_t)(8.0 * millis_per_chunk);
@@ -167,8 +194,9 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     // Upstream builds FileDescriptors unconditionally and propagates the
     // error if the descriptors cannot be obtained
     // (src/alsa_backend/threaded_device.rs:1442-1482).
-    logger_error(&g_logger, "Failed to get ALSA capture poll descriptors");
-    free(local_buf);
+    alsa_capture_record_fatal(capture,
+                              "Failed to get ALSA capture poll descriptors", 0);
+    atomic_store_explicit(&capture->fatal_error, true, memory_order_release);
     backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     if (rt_handle) {
       demote_current_thread_from_realtime(rt_handle);
@@ -176,41 +204,76 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     return NULL;
   }
 
+  // Set by every exit path caused by a device error, as opposed to a
+  // requested stop.
+  bool fatal = false;
+
   while (backend_buffer_get_state(capture->buffer) != BACKEND_STREAM_STOPPED) {
     snd_pcm_state_t capture_state = snd_pcm_state(capture->pcm);
     if ((int)capture_state < 0) {
-      logger_error(&g_logger, "Capture device error state: %s",
-                   snd_strerror((int)capture_state));
+      alsa_capture_record_fatal(capture, "Capture device error state",
+                                (int)capture_state);
+      fatal = true;
       break;
     }
     if (capture_state == SND_PCM_STATE_XRUN) {
       logger_warn(&g_logger, "Prepare capture device");
-      if (snd_pcm_prepare(capture->pcm) < 0) {
-        logger_error(&g_logger, "Failed to restart capture device after XRUN");
+      int prc = snd_pcm_prepare(capture->pcm);
+      if (prc < 0) {
+        alsa_capture_record_fatal(
+            capture, "Failed to restart capture device after XRUN", prc);
+        fatal = true;
+        break;
+      }
+      // A PREPARED capture stream never becomes readable, so polling it
+      // would burn the whole stall timeout and log a false "stalled". Start
+      // it now instead of on the next pass (upstream has the same gap,
+      // threaded_device.rs:755-757).
+      int strc = snd_pcm_start(capture->pcm);
+      if (strc < 0) {
+        alsa_capture_record_fatal(
+            capture, "Failed to start capture device after XRUN", strc);
+        fatal = true;
         break;
       }
     } else if (capture_state == SND_PCM_STATE_SUSPENDED) {
-      if (alsa_recover_suspended_pcm(capture->pcm, "Capture") < 0) {
-        logger_error(&g_logger,
-                     "Failed to restart capture device after suspension");
+      int src = alsa_recover_suspended_pcm(capture->pcm, "Capture");
+      if (src < 0) {
+        alsa_capture_record_fatal(
+            capture, "Failed to restart capture device after suspension", src);
+        fatal = true;
         break;
       }
       // A successful resume leaves the device RUNNING; starting it again
       // would fail with -EBADFD.
-      if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING &&
-          snd_pcm_start(capture->pcm) < 0) {
-        logger_error(&g_logger,
-                     "Failed to restart capture device after suspension");
-        break;
+      if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
+        int strc = snd_pcm_start(capture->pcm);
+        if (strc < 0) {
+          alsa_capture_record_fatal(
+              capture, "Failed to restart capture device after suspension",
+              strc);
+          fatal = true;
+          break;
+        }
       }
     } else if (capture_state != SND_PCM_STATE_RUNNING) {
       logger_debug(&g_logger, "Starting capture from state: %s",
                    alsa_state_desc((int)capture_state));
-      if (snd_pcm_start(capture->pcm) < 0) {
-        logger_error(&g_logger, "Failed to start capture device");
+      int strc = snd_pcm_start(capture->pcm);
+      if (strc < 0) {
+        alsa_capture_record_fatal(capture, "Failed to start capture device",
+                                  strc);
+        fatal = true;
         break;
       }
     }
+
+    // Apply a requested pitch and push the engine volume/mute to the linked
+    // controls. Upstream does both on the inner thread once per chunk
+    // (threaded_device.rs:1552-1559, 1647-1652); here they run once per
+    // pass, which is about once per chunk.
+    alsa_capture_apply_pending_pitch(capture);
+    alsa_capture_sync_linked_controls(capture);
 
     // Wait for the device, servicing control events as they arrive.
     // The wait is sliced so a stop request is observed within 20 ms even when
@@ -219,11 +282,20 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     bool pcm_ready = false;
     bool wait_timed_out = false;
     bool wait_fatal = false;
-    uint32_t remaining_millis = timeout_millis;
+    bool ctl_terminal = false;
+    // The stall timeout is charged with the time that actually elapsed, not
+    // a nominal 20 ms per slice: a burst of control events wakes poll() early
+    // and used to make the timeout fire too soon (M6).
+    uint64_t wait_start_ms = alsa_capture_monotonic_ms();
     for (;;) {
       if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED) {
         break;
       }
+      uint64_t elapsed_ms = alsa_capture_monotonic_ms() - wait_start_ms;
+      uint32_t remaining_millis =
+          elapsed_ms >= timeout_millis
+              ? 0
+              : (uint32_t)(timeout_millis - (uint32_t)elapsed_ms);
       int poll_slice = remaining_millis < 20 ? (int)remaining_millis : 20;
       for (int i = 0; i < total_fds; i++) {
         pfds[i].revents = 0;
@@ -232,8 +304,10 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       if (nbr_ready < 0) {
         if (errno == EINTR)
           continue;
-        logger_error(&g_logger, "Capture poll fatal error: %s",
-                     strerror(errno));
+        int poll_errno = errno;
+        snprintf(capture->fatal_msg, sizeof(capture->fatal_msg),
+                 "Capture poll fatal error: %s", strerror(poll_errno));
+        logger_error(&g_logger, "%s", capture->fatal_msg);
         wait_fatal = true;
         break;
       }
@@ -242,7 +316,6 @@ static void *alsa_capture_inner_thread_func(void *arg) {
           wait_timed_out = true;
           break;
         }
-        remaining_millis -= (uint32_t)poll_slice;
         continue;
       }
 
@@ -256,17 +329,21 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       // There were other ready file descriptors than PCM, must be controls
       // (src/alsa_backend/utils.rs:565-570).
       if (nbr_found < nbr_ready) {
-        alsa_capture_process_events(capture, true);
+        if (alsa_capture_process_events(capture)) {
+          ctl_terminal = true;
+          break;
+        }
       }
       if (pcm_ready) {
         break;
       }
-      remaining_millis = remaining_millis > (uint32_t)poll_slice
-                             ? remaining_millis - (uint32_t)poll_slice
-                             : 0;
     }
 
     if (wait_fatal) {
+      fatal = true;
+      break;
+    }
+    if (ctl_terminal) {
       break;
     }
     if (wait_timed_out) {
@@ -282,27 +359,71 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       continue;
     }
 
-    snd_pcm_sframes_t frames_read = snd_pcm_readi(
-        capture->pcm, local_buf, (snd_pcm_uframes_t)capture->chunk_size);
+    // Zero-copy (AGENTS.md §3.4, L4): snd_pcm_readi() writes straight into
+    // the ring's first free contiguous slice, published with
+    // backend_buffer_commit_write(). A frame that would straddle the ring
+    // wrap (non-power-of-two blockalign, e.g. S24_3) goes through the
+    // one-frame push path, which re-aligns the slices. With a full ring the
+    // device is still read so it does not overrun, and the chunk is dropped
+    // and reported once per overflow episode (upstream ring_full latch,
+    // threaded_device.rs:1589-1603; L5).
+    enum { CAPTURE_TO_SLICE, CAPTURE_STRADDLE, CAPTURE_DROP } read_mode;
+    void *w1 = NULL, *w2 = NULL;
+    size_t n1 = 0, n2 = 0;
+    uint8_t *read_dst = local_buf;
+    size_t read_frames = (size_t)capture->chunk_size;
+    if (backend_buffer_get_write_slices(capture->buffer, read_frames, &w1, &n1,
+                                        &w2, &n2) > 0) {
+      read_mode = CAPTURE_TO_SLICE;
+      read_dst = (uint8_t *)w1;
+      read_frames = n1;
+    } else if (backend_buffer_get_available_write_frames(capture->buffer) > 0) {
+      read_mode = CAPTURE_STRADDLE;
+      read_frames = 1;
+    } else {
+      read_mode = CAPTURE_DROP;
+    }
+    snd_pcm_sframes_t frames_read =
+        snd_pcm_readi(capture->pcm, read_dst, (snd_pcm_uframes_t)read_frames);
     if (frames_read > 0) {
       if (capture->device_stalled) {
         capture->device_stalled = false;
       }
-      backend_buffer_push(capture->buffer, local_buf, (size_t)frames_read);
+      switch (read_mode) {
+      case CAPTURE_TO_SLICE:
+        backend_buffer_commit_write(capture->buffer, (size_t)frames_read, 0);
+        break;
+      case CAPTURE_STRADDLE:
+        backend_buffer_push(capture->buffer, local_buf, (size_t)frames_read);
+        break;
+      case CAPTURE_DROP:
+        backend_buffer_commit_write(capture->buffer, 0, (size_t)frames_read);
+        break;
+      }
     } else if (frames_read == -EPIPE) {
       logger_warn(&g_logger, "Capture: read overrun, trying to recover");
-      if (snd_pcm_prepare(capture->pcm) < 0) {
+      int prc = snd_pcm_prepare(capture->pcm);
+      if (prc < 0) {
+        alsa_capture_record_fatal(capture, "prepare after overrun", prc);
+        fatal = true;
         break;
       }
     } else if (frames_read == -ESTRPIPE) {
       logger_warn(&g_logger,
                   "Capture: read interrupted by suspend, trying to recover");
-      if (alsa_recover_suspended_pcm(capture->pcm, "Capture") < 0) {
+      int src = alsa_recover_suspended_pcm(capture->pcm, "Capture");
+      if (src < 0) {
+        alsa_capture_record_fatal(capture, "suspend recovery failed", src);
+        fatal = true;
         break;
       }
-      if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING &&
-          snd_pcm_start(capture->pcm) < 0) {
-        break;
+      if (snd_pcm_state(capture->pcm) != SND_PCM_STATE_RUNNING) {
+        int strc = snd_pcm_start(capture->pcm);
+        if (strc < 0) {
+          alsa_capture_record_fatal(capture, "restart after suspend", strc);
+          fatal = true;
+          break;
+        }
       }
     } else if (frames_read == 0) {
       if (!capture->device_stalled) {
@@ -314,15 +435,19 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       // Upstream's capture_buffer reports -EAGAIN/-EINTR as
       // ordinary transient conditions. Keep polling.
     } else {
-      logger_error(&g_logger, "Capture read fatal error: %s",
-                   snd_strerror((int)frames_read));
+      alsa_capture_record_fatal(capture, "Capture read fatal error",
+                                (int)frames_read);
+      fatal = true;
       break;
     }
   }
 
+  // Errors caused by an engine-requested stop are not reported.
+  if (fatal &&
+      backend_buffer_get_state(capture->buffer) != BACKEND_STREAM_STOPPED) {
+    atomic_store_explicit(&capture->fatal_error, true, memory_order_release);
+  }
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-  if (local_buf)
-    free(local_buf);
   if (rt_handle) {
     demote_current_thread_from_realtime(rt_handle);
   }
@@ -434,11 +559,12 @@ static void alsa_capture_init_controls(alsa_capture_t *capture) {
 }
 
 // Sync linked controls to ALSA hardware matching sync_linked_controls in
-// upstream (src/alsa_backend/utils.rs:782-808)
+// upstream (src/alsa_backend/utils.rs:782-808). Runs on the capture inner
+// thread only, which exclusively owns ctl/hctl while it runs, so no lock is
+// taken (M6).
 static void alsa_capture_sync_linked_controls(alsa_capture_t *capture) {
   if (!capture->params)
     return;
-  pthread_mutex_lock(&capture->mixer_mutex);
 
   if (capture->ctl && capture->hctl_volume_elem &&
       capture->has_linked_volume_value) {
@@ -447,9 +573,10 @@ static void alsa_capture_sync_linked_controls(alsa_capture_t *capture) {
     if (fabs(capture->linked_volume_value - target_vol) > 0.1) {
       logger_debug(&g_logger, "Updating linked volume control to %.2f dB",
                    target_vol);
+      alsa_elem_write_volume_in_db(capture->ctl, capture->hctl_volume_elem,
+                                   target_vol);
+      capture->linked_volume_value = target_vol;
     }
-    alsa_elem_write_volume_in_db(capture->ctl, capture->hctl_volume_elem,
-                                 target_vol);
   }
 
   if (capture->hctl_mute_elem && capture->has_linked_mute_value) {
@@ -461,31 +588,44 @@ static void alsa_capture_sync_linked_controls(alsa_capture_t *capture) {
       capture->linked_mute_value = target_mute;
     }
   }
+}
 
-  pthread_mutex_unlock(&capture->mixer_mutex);
+// Writes a pitch requested by set_pitch() (M6). Inner thread only.
+static void alsa_capture_apply_pending_pitch(alsa_capture_t *capture) {
+  if (!atomic_exchange_explicit(&capture->pitch_pending, false,
+                                memory_order_acq_rel)) {
+    return;
+  }
+  double multiplier =
+      atomic_load_explicit(&capture->pending_pitch, memory_order_relaxed);
+  if (!capture->hctl_pitch_elem)
+    return;
+  long value = 0;
+  if (capture->pitch_is_loopback) {
+    value = (long)trunc(100000.0 / multiplier);
+  } else {
+    value = (long)trunc(multiplier * 1000000.0);
+  }
+  alsa_elem_write_as_int(capture->hctl_pitch_elem, value);
 }
 
 // Process events from ALSA control interface matching process_events &
-// get_event_action in upstream (src/alsa_backend/utils.rs:574-721)
-static void alsa_capture_process_events(alsa_capture_t *capture,
-                                        bool is_rt_thread) {
+// get_event_action in upstream (src/alsa_backend/utils.rs:574-721).
+// Inner thread only, without a lock (M6). Like upstream (utils.rs:590-607),
+// stops at the first terminal event (source inactive or rate change) (L9).
+static bool alsa_capture_process_events(alsa_capture_t *capture) {
   if (!capture->ctl && !capture->hctl)
-    return;
-  if (is_rt_thread) {
-    if (pthread_mutex_trylock(&capture->mixer_mutex) != 0) {
-      // Contended by non-RT outer thread; skip event processing this cycle to
-      // avoid real-time priority inversion on the audio hot path.
-      return;
-    }
-  } else {
-    pthread_mutex_lock(&capture->mixer_mutex);
-  }
+    return false;
 
   snd_ctl_event_t *event;
   snd_ctl_event_alloca(&event);
 
+  bool terminal = false;
   while (capture->ctl && snd_ctl_read(capture->ctl, event) > 0) {
-    if (snd_ctl_event_get_type(event) != SND_CTL_EVENT_ELEM) {
+    // After a terminal event the rest of the queue is read and discarded:
+    // left queued, it would keep the ctl descriptor readable and make the
+    // poll() loop spin.
+    if (terminal || snd_ctl_event_get_type(event) != SND_CTL_EVENT_ELEM) {
       continue;
     }
     unsigned int numid = snd_ctl_event_elem_get_numid(event);
@@ -497,22 +637,21 @@ static void alsa_capture_process_events(alsa_capture_t *capture,
       bool active = false;
       if (alsa_elem_read_as_bool(capture->hctl_loopback_active_elem, &active)) {
         logger_debug(&g_logger, "Loopback active: %d", active);
-        if (!active) {
-          if (capture->stop_on_inactive) {
-            logger_debug(&g_logger, "Stopping, capture device is inactive and "
-                                    "stop_on_inactive is set to true");
-            atomic_store_explicit(&capture->is_inactive, true,
-                                  memory_order_release);
-          }
-        } else {
-          atomic_store_explicit(&capture->is_inactive, false,
+        // is_inactive is latched: a later "active" event must not undo a
+        // stop that read() has not observed yet (L9). close() clears it.
+        if (!active && capture->stop_on_inactive) {
+          logger_debug(&g_logger, "Stopping, capture device is inactive and "
+                                  "stop_on_inactive is set to true");
+          atomic_store_explicit(&capture->is_inactive, true,
                                 memory_order_release);
+          terminal = true;
         }
       }
     }
 
     // Gadget rate event
-    if (capture->hctl_rate_elem && numid == capture->gadget_rate_numid) {
+    if (!terminal && capture->hctl_rate_elem &&
+        numid == capture->gadget_rate_numid) {
       long rate = 0;
       if (alsa_elem_read_as_int(capture->hctl_rate_elem, &rate)) {
         logger_debug(&g_logger, "Gadget rate: %ld", rate);
@@ -522,6 +661,7 @@ static void alsa_capture_process_events(alsa_capture_t *capture,
                                     "stop_on_inactive is set to true");
             atomic_store_explicit(&capture->is_inactive, true,
                                   memory_order_release);
+            terminal = true;
           }
         } else if (rate > 0 && rate != capture->capture_sample_rate) {
           logger_debug(&g_logger,
@@ -529,8 +669,7 @@ static void alsa_capture_process_events(alsa_capture_t *capture,
           atomic_store_explicit(&capture->pending_rate, (double)rate,
                                 memory_order_release);
           backend_buffer_set_pending_rate_change(capture->buffer, true);
-          atomic_store_explicit(&capture->is_inactive, false,
-                                memory_order_release);
+          terminal = true;
         } else {
           logger_debug(&g_logger,
                        "Capture device resumed with unchanged sample rate");
@@ -539,7 +678,8 @@ static void alsa_capture_process_events(alsa_capture_t *capture,
     }
 
     // Volume control event
-    if (capture->hctl_volume_elem && numid == capture->volume_numid) {
+    if (!terminal && capture->hctl_volume_elem &&
+        numid == capture->volume_numid) {
       double vol_db = 0.0;
       if (alsa_elem_read_volume_in_db(capture->ctl, capture->hctl_volume_elem,
                                       &vol_db)) {
@@ -555,7 +695,7 @@ static void alsa_capture_process_events(alsa_capture_t *capture,
     }
 
     // Mute control event
-    if (capture->hctl_mute_elem && numid == capture->mute_numid) {
+    if (!terminal && capture->hctl_mute_elem && numid == capture->mute_numid) {
       bool active = false;
       if (alsa_elem_read_as_bool(capture->hctl_mute_elem, &active)) {
         logger_debug(&g_logger, "Alsa mute change event, set mute state to %d",
@@ -569,11 +709,35 @@ static void alsa_capture_process_events(alsa_capture_t *capture,
     }
   }
 
+  // Always drain the hctl queue so its descriptor stops polling readable.
   if (capture->hctl) {
     snd_hctl_handle_events(capture->hctl);
   }
+  if (terminal) {
+    backend_buffer_signal(capture->buffer);
+  }
+  return terminal;
+}
 
-  pthread_mutex_unlock(&capture->mixer_mutex);
+// Closes the control handles opened by alsa_capture_init_controls() and
+// forgets the element pointers and cached linked values. Caller holds
+// mixer_mutex.
+static void alsa_capture_close_controls_locked(alsa_capture_t *capture) {
+  if (capture->ctl) {
+    snd_ctl_close(capture->ctl);
+    capture->ctl = NULL;
+  }
+  if (capture->hctl) {
+    snd_hctl_close(capture->hctl);
+    capture->hctl = NULL;
+  }
+  capture->hctl_pitch_elem = NULL;
+  capture->hctl_rate_elem = NULL;
+  capture->hctl_loopback_active_elem = NULL;
+  capture->hctl_volume_elem = NULL;
+  capture->hctl_mute_elem = NULL;
+  capture->has_linked_volume_value = false;
+  capture->has_linked_mute_value = false;
 }
 
 // Open the ALSA capture device matching open_pcm in upstream
@@ -650,6 +814,20 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
     }
     goto error_cleanup;
   }
+  // Allocated here rather than on the real-time inner thread (L4).
+  capture->local_buf_bytes = (size_t)capture->chunk_size * capture->channels *
+                             alsa_format_sample_size(capture->format);
+  capture->local_buf = (uint8_t *)malloc(capture->local_buf_bytes);
+  if (!capture->local_buf) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Failed to allocate ALSA capture read buffer");
+    }
+    goto error_cleanup;
+  }
+  atomic_store_explicit(&capture->fatal_error, false, memory_order_relaxed);
+  atomic_store_explicit(&capture->pitch_pending, false, memory_order_relaxed);
+  capture->fatal_msg[0] = '\0';
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
   if (pthread_create(&capture->inner_thread, NULL,
                      alsa_capture_inner_thread_func, capture) != 0) {
@@ -668,10 +846,18 @@ static bool alsa_capture_open(void *ctx, backend_error_t *err) {
 error_cleanup:
   backend_buffer_free(capture->buffer);
   capture->buffer = NULL;
+  free(capture->local_buf);
+  capture->local_buf = NULL;
+  capture->local_buf_bytes = 0;
   if (capture->pcm) {
     snd_pcm_close(capture->pcm);
     capture->pcm = NULL;
   }
+  // ctl/hctl from alsa_capture_init_controls() would otherwise leak, and be
+  // overwritten without being closed by the next open() (L3).
+  pthread_mutex_lock(&capture->mixer_mutex);
+  alsa_capture_close_controls_locked(capture);
+  pthread_mutex_unlock(&capture->mixer_mutex);
   pthread_mutex_unlock(&g_alsa_mutex);
   return false;
 }
@@ -685,17 +871,17 @@ static bool alsa_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   if (!capture || !capture->pcm)
     return false;
 
-  if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED) {
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_NONE, "Capture stopped");
-    }
-    return false;
-  }
+  // No early return on STOPPED: backend_buffer_read_chunk() first drains the
+  // frames still queued in the ring (L7) and only then reports
+  // BACKEND_ERROR_READ_ERROR "Capture stream stopped". Returning
+  // BACKEND_ERROR_NONE here made the engine capture loop busy-spin, because
+  // backend_buffer_wait() returns at once for a stopped stream (H3).
 
-  // Process events from ALSA control interface first, then sync linked controls
-  // (matches CamillaDSP device.rs:1090)
-  alsa_capture_process_events(capture, false);
-  alsa_capture_sync_linked_controls(capture);
+  // Control events and linked-control sync are handled on the inner thread
+  // only, as upstream does (threaded_device.rs:808-823, 1647-1652). The
+  // results arrive through is_inactive, pending_rate and the atomic
+  // processing parameters, so this engine thread takes no lock and makes no
+  // control ioctls (M6).
 
   if (atomic_load_explicit(&capture->is_inactive, memory_order_acquire)) {
     logger_info(&g_logger,
@@ -708,7 +894,14 @@ static bool alsa_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
     return false;
   }
 
-  return backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
+  bool ok = backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
+  if (!ok && err && err->type == BACKEND_ERROR_READ_ERROR &&
+      atomic_load_explicit(&capture->fatal_error, memory_order_acquire)) {
+    // Report the device error that stopped the inner thread (upstream sends
+    // StatusMessage::CaptureError, threaded_device.rs:1634-1643).
+    backend_error_init(err, BACKEND_ERROR_READ_ERROR, capture->fatal_msg);
+  }
+  return ok;
 }
 
 // Close the ALSA capture device
@@ -725,6 +918,9 @@ static void alsa_capture_close(void *ctx) {
   }
   backend_buffer_free(capture->buffer);
   capture->buffer = NULL;
+  free(capture->local_buf);
+  capture->local_buf = NULL;
+  capture->local_buf_bytes = 0;
 
   pthread_mutex_lock(&g_alsa_mutex);
   if (capture->pcm) {
@@ -734,30 +930,18 @@ static void alsa_capture_close(void *ctx) {
   }
   pthread_mutex_unlock(&g_alsa_mutex);
   pthread_mutex_lock(&capture->mixer_mutex);
-  if (capture->ctl) {
-    snd_ctl_close(capture->ctl);
-    capture->ctl = NULL;
-  }
-  if (capture->hctl) {
-    snd_hctl_close(capture->hctl);
-    capture->hctl = NULL;
-  }
-  capture->hctl_pitch_elem = NULL;
-  capture->hctl_rate_elem = NULL;
-  capture->hctl_loopback_active_elem = NULL;
-  capture->hctl_volume_elem = NULL;
-  capture->hctl_mute_elem = NULL;
+  alsa_capture_close_controls_locked(capture);
   atomic_store_explicit(&capture->is_inactive, false, memory_order_release);
   pthread_mutex_unlock(&capture->mixer_mutex);
 }
 
 // Check for pending rate change matching
-// capture_backend_get_pending_rate_change
+// capture_backend_get_pending_rate_change. Control events are handled only on
+// the inner thread (M6), which publishes the result through these atomics.
 static bool alsa_capture_get_pending_rate_change(void *ctx, double *out_rate) {
   alsa_capture_t *capture = (alsa_capture_t *)ctx;
-  if (!capture)
+  if (!capture || !capture->buffer)
     return false;
-  alsa_capture_process_events(capture, false);
   if (backend_buffer_has_pending_rate_change(capture->buffer)) {
     if (out_rate) {
       *out_rate =
@@ -772,28 +956,26 @@ static bool alsa_capture_pitch_control_supported(void *ctx) {
   alsa_capture_t *capture = (alsa_capture_t *)ctx;
   if (!capture)
     return false;
+  // hctl_pitch_elem is only written by open()/close(), never while the inner
+  // thread runs.
   pthread_mutex_lock(&capture->mixer_mutex);
   bool res = (capture->hctl_pitch_elem != NULL);
   pthread_mutex_unlock(&capture->mixer_mutex);
   return res;
 }
 
-// Set capture pitch matching upstream (src/alsa_backend/device.rs:920-926)
+// Set capture pitch matching upstream (src/alsa_backend/device.rs:920-926).
+// Upstream sends SetSpeed to the inner thread, which writes the element
+// (threaded_device.rs:1552-1559). Likewise, only the request is stored here
+// and the inner thread writes it, so the control handles are used from one
+// thread only and no lock is needed (M6).
 static void alsa_capture_set_pitch(void *ctx, double multiplier) {
   alsa_capture_t *capture = (alsa_capture_t *)ctx;
-  if (!capture || multiplier <= 0.0)
+  if (!capture || !(multiplier > 0.0) || !isfinite(multiplier))
     return;
-  pthread_mutex_lock(&capture->mixer_mutex);
-  if (capture->hctl_pitch_elem) {
-    long value = 0;
-    if (capture->pitch_is_loopback) {
-      value = (long)trunc(100000.0 / multiplier);
-    } else {
-      value = (long)trunc(multiplier * 1000000.0);
-    }
-    alsa_elem_write_as_int(capture->hctl_pitch_elem, value);
-  }
-  pthread_mutex_unlock(&capture->mixer_mutex);
+  atomic_store_explicit(&capture->pending_pitch, multiplier,
+                        memory_order_relaxed);
+  atomic_store_explicit(&capture->pitch_pending, true, memory_order_release);
 }
 
 static bool alsa_capture_wait(void *ctx, uint32_t timeout_ms) {
@@ -803,16 +985,15 @@ static bool alsa_capture_wait(void *ctx, uint32_t timeout_ms) {
   return backend_buffer_wait(capture->buffer, timeout_ms);
 }
 
+// Only signals the inner thread (it polls in <=20 ms slices and exits on
+// STOPPED). close() drops the PCM after the join (M4). Dropping here, while the
+// inner thread may be in poll()/snd_pcm_readi(), made readi fail with -EBADFD
+// and logged a spurious "Capture read fatal error" at every shutdown.
 static void alsa_capture_stop(void *ctx) {
   alsa_capture_t *capture = (alsa_capture_t *)ctx;
   if (!capture)
     return;
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
-  pthread_mutex_lock(&g_alsa_mutex);
-  if (capture->pcm) {
-    snd_pcm_drop(capture->pcm);
-  }
-  pthread_mutex_unlock(&g_alsa_mutex);
 }
 
 static void alsa_capture_destroy(void *ctx) {
@@ -855,6 +1036,8 @@ alsa_capture_create(const capture_device_config_t *config, int sample_rate,
            config->cfg.alsa.link_mute_control);
   atomic_init(&capture->pending_rate, 0.0);
   atomic_init(&capture->is_inactive, false);
+  atomic_init(&capture->pending_pitch, 1.0);
+  atomic_init(&capture->pitch_pending, false);
   pthread_mutex_init(&capture->mixer_mutex, NULL);
 
   capture_backend_t *backend =

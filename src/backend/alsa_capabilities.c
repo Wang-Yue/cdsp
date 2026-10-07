@@ -288,9 +288,14 @@ audio_device_descriptor_t *alsa_capabilities_describe(const char *device_name,
   snd_pcm_stream_t stream =
       is_capture ? SND_PCM_STREAM_CAPTURE : SND_PCM_STREAM_PLAYBACK;
   snd_pcm_t *pcm = NULL;
-  int open_res = snd_pcm_open(&pcm, target_dev, stream, 0);
+  // SND_PCM_NONBLOCK: a blocking open of a hw: device that is already in use
+  // sleeps in the kernel until the device is released. Doing that while
+  // holding g_alsa_mutex deadlocks against our own close(), which needs the
+  // mutex to release the device. Probing hw params does not need blocking
+  // mode, and a busy device now reports -EBUSY (DEVICE_ERROR_BUSY below).
+  int open_res = snd_pcm_open(&pcm, target_dev, stream, SND_PCM_NONBLOCK);
   if (open_res < 0 && strcmp(clean_dev, target_dev) != 0) {
-    open_res = snd_pcm_open(&pcm, clean_dev, stream, 0);
+    open_res = snd_pcm_open(&pcm, clean_dev, stream, SND_PCM_NONBLOCK);
   }
   if (open_res < 0) {
     if (err) {
@@ -328,7 +333,7 @@ audio_device_descriptor_t *alsa_capabilities_describe(const char *device_name,
   int n_channels =
       supported_channel_values(pcm, hwp, CAPABILITY_PROBE_CHANNEL_LIMIT,
                                channel_values, CAPABILITY_PROBE_CHANNEL_LIMIT);
-  if (n_channels <= 0) {
+  if (n_channels < 0) {
     if (err) {
       device_error_init(err, DEVICE_ERROR_OTHER,
                         "Failed to query ALSA channel limits");
@@ -337,6 +342,9 @@ audio_device_descriptor_t *alsa_capabilities_describe(const char *device_name,
     pthread_mutex_unlock(&g_alsa_mutex);
     return NULL;
   }
+  // n_channels == 0 (min_channels above the probe limit) is not an error:
+  // upstream returns an empty capability list (src/alsa_backend/utils.rs:
+  // 342-359), and so does the loop below.
 
   audio_device_descriptor_t *desc =
       (audio_device_descriptor_t *)calloc(1, sizeof(audio_device_descriptor_t));
@@ -359,8 +367,9 @@ audio_device_descriptor_t *alsa_capabilities_describe(const char *device_name,
   device_capability_set_t *set = &desc->capability_sets[0];
   snprintf(set->mode, sizeof(set->mode), "Unified");
 
+  // calloc(0, ...) may legitimately return NULL; allocate at least one slot.
   set->capabilities = (channel_capability_t *)calloc(
-      (size_t)n_channels, sizeof(channel_capability_t));
+      n_channels > 0 ? (size_t)n_channels : 1, sizeof(channel_capability_t));
   if (!set->capabilities)
     goto error_cleanup;
 
@@ -405,6 +414,10 @@ audio_device_descriptor_t *alsa_capabilities_describe(const char *device_name,
         rates_count + 1, sizeof(samplerate_capability_t));
     if (!cap->samplerates)
       goto error_cleanup;
+    // Counts are kept current while filling, so that error_cleanup ->
+    // free_audio_device_descriptor() releases everything allocated so far.
+    cap->samplerates_count = 0;
+    set->capabilities_count = cap_idx + 1;
 
     size_t rate_idx = 0;
 
@@ -442,11 +455,15 @@ audio_device_descriptor_t *alsa_capabilities_describe(const char *device_name,
       rate_cap->formats = (char **)calloc(n_formats, sizeof(char *));
       if (!rate_cap->formats)
         goto error_cleanup;
+      rate_cap->formats_count = 0;
+      cap->samplerates_count = rate_idx + 1;
 
       for (size_t f = 0; f < n_formats; f++) {
         rate_cap->formats[f] = strdup(supported_formats[f]);
+        if (!rate_cap->formats[f])
+          goto error_cleanup;
+        rate_cap->formats_count = f + 1;
       }
-      rate_cap->formats_count = n_formats;
       rate_idx++;
     }
 
@@ -458,6 +475,7 @@ audio_device_descriptor_t *alsa_capabilities_describe(const char *device_name,
       cap->samplerates = NULL;
       cap->samplerates_count = 0;
     }
+    set->capabilities_count = cap_idx;
   }
 
   set->capabilities_count = cap_idx;

@@ -35,16 +35,6 @@ extern const capture_backend_vtable_t g_file_capture_vtable;
 extern const playback_backend_vtable_t g_file_playback_vtable;
 
 /**
- * @brief Set the pipeline (playback) sample rate for file capture backend.
- *
- * Plumbs the downstream pipeline sample rate so that resampling_ratio and
- * extra_samples scaling match CamillaDSP upstream when capture rate != pipeline
- * rate.
- */
-void file_capture_set_pipeline_sample_rate(capture_backend_t *backend,
-                                           int pipeline_sample_rate);
-
-/**
  * @brief Explicitly set the resampling ratio for file capture backend.
  */
 void file_capture_set_resampling_ratio(capture_backend_t *backend,

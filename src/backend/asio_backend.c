@@ -15,6 +15,7 @@
 #include <ctype.h>
 #include <initguid.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -31,6 +32,32 @@
 #include "utils/cdsp_time.h"
 
 static const logger_t g_logger = {"dsp.backend.asio"};
+
+/**
+ * @brief Log a message that embeds transient strings (stack buffers, device
+ * names owned by short-lived structs).
+ *
+ * The shared logger stores `%s` arguments by pointer and formats them later on
+ * its worker thread, so a stack buffer passed to logger_debug() may be gone by
+ * the time it is printed. This helper formats eagerly and hands the finished
+ * text to app_logger_log_raw_str(), which copies it synchronously.
+ *
+ * NOT real-time safe (formats, may allocate and take the log-file lock): use
+ * only on setup/teardown threads, never in ASIO driver callbacks.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((format(printf, 2, 3)))
+#endif
+static void asio_log_sync(log_level_t level, const char *fmt, ...) {
+  if (level > app_logger_get_level())
+    return;
+  char buf[1536];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  app_logger_log_raw_str(&g_logger, level, buf, "");
+}
 
 // MARK: - Driver Registry matching CamillaDSP src/asio_backend/driver.rs
 
@@ -174,15 +201,6 @@ bool asio_is_unsupported_driver(const char *devname) {
                         UNSUPPORTED_DRIVERS_COUNT);
 }
 
-/**
- * @brief Whether only one instance of this driver may be created per process.
- * Matches CamillaDSP driver.rs:is_single_instance_driver.
- * @deprecated Use asio_is_unsupported_driver instead.
- */
-bool asio_is_single_instance_driver(const char *devname) {
-  return asio_is_unsupported_driver(devname);
-}
-
 static asio_driver_entry_t *asio_driver_get_entry(const char *devname) {
   if (!devname)
     return NULL;
@@ -231,54 +249,6 @@ static void asio_driver_entry_release(asio_driver_entry_t *entry) {
 }
 
 /**
- * @brief Lock the per-driver mutex for devname and increment active reference
- * count. Matches upstream driver handle Mutex locking.
- */
-bool asio_driver_lock(const char *devname) {
-  if (!devname)
-    return false;
-  asio_driver_entry_t *entry = asio_driver_get_entry(devname);
-  if (!entry)
-    return false;
-  EnterCriticalSection(&entry->lock);
-  return true;
-}
-
-/**
- * @brief Unlock the per-driver mutex for devname and decrement active reference
- * count.
- */
-void asio_driver_unlock(const char *devname) {
-  if (!devname)
-    return;
-  AcquireSRWLockShared(&g_driver_registry.lock);
-  asio_driver_entry_t *curr = g_driver_registry.head;
-  asio_driver_entry_t *target = NULL;
-  while (curr) {
-    if (strcmp(curr->devname, devname) == 0) {
-      target = curr;
-      break;
-    }
-    curr = curr->next;
-  }
-  if (!target) {
-    curr = g_driver_registry.unlinked_head;
-    while (curr) {
-      if (strcmp(curr->devname, devname) == 0) {
-        target = curr;
-        break;
-      }
-      curr = curr->next;
-    }
-  }
-  ReleaseSRWLockShared(&g_driver_registry.lock);
-  if (target) {
-    LeaveCriticalSection(&target->lock);
-    asio_driver_entry_release(target);
-  }
-}
-
-/**
  * @brief Run action with the driver loaded for devname, holding the per-driver
  * mutex. Matches CamillaDSP driver.rs:with_driver.
  */
@@ -311,31 +281,17 @@ bool asio_with_driver(const char *devname, asio_driver_action_fn action,
 }
 
 /**
- * @brief Look up a loaded driver by device name in the registry.
- */
-IASIO *asio_driver_lookup(const char *devname) {
-  if (!devname)
-    return NULL;
-  AcquireSRWLockShared(&g_driver_registry.lock);
-  asio_driver_entry_t *curr = g_driver_registry.head;
-  IASIO *result = NULL;
-  while (curr) {
-    if (strcmp(curr->devname, devname) == 0) {
-      result = curr->iasio;
-      break;
-    }
-    curr = curr->next;
-  }
-  ReleaseSRWLockShared(&g_driver_registry.lock);
-  return result;
-}
-
-/**
  * @brief Whether a driver is currently loaded for `devname`.
- * Matches driver.rs:driver_is_loaded.
+ * Matches driver.rs:driver_is_loaded. Only answers the question; it never
+ * hands out the IASIO pointer, which could be released by a concurrent
+ * teardown (use asio_with_driver() for calls into the driver).
  */
 bool asio_driver_is_loaded(const char *devname) {
-  return asio_driver_lookup(devname) != NULL;
+  asio_driver_entry_t *entry = asio_driver_get_entry(devname);
+  if (!entry)
+    return false;
+  asio_driver_entry_release(entry);
+  return true;
 }
 
 static bool asio_reg_query_string_utf8(HKEY key, const wchar_t *val_name,
@@ -458,9 +414,11 @@ static HRESULT create_asio_com_instance(const CLSID *clsid, IASIO **out_iasio) {
     return E_POINTER;
   *out_iasio = NULL;
 
+  // AS-18: ASIO drivers are always in-process (InprocServer32) and have no
+  // proxy/stub, so only allow in-proc activation, as the SDK and azo do.
   IUnknown *unk = NULL;
-  HRESULT hr = CoCreateInstance(clsid, NULL, CLSCTX_SERVER, &IID_IUnknown,
-                                (void **)&unk);
+  HRESULT hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER,
+                                &IID_IUnknown, (void **)&unk);
   if (FAILED(hr) || !unk) {
     return hr;
   }
@@ -538,13 +496,13 @@ void asio_driver_teardown(const char *devname) {
   ReleaseSRWLockExclusive(&g_driver_registry.lock);
 
   if (entry) {
-    logger_trace(&g_logger,
-                 "asio_driver_teardown: releasing the instance for '%s'",
-                 devname);
+    asio_log_sync(LOG_LEVEL_TRACE,
+                  "asio_driver_teardown: releasing the instance for '%s'",
+                  devname);
     asio_driver_entry_release(entry);
   } else {
-    logger_trace(
-        &g_logger,
+    asio_log_sync(
+        LOG_LEVEL_TRACE,
         "asio_driver_teardown: no driver loaded for '%s', nothing to do",
         devname);
   }
@@ -553,10 +511,21 @@ void asio_driver_teardown(const char *devname) {
 /**
  * @brief Load an ASIO driver by name and initialise it.
  * Matches driver.rs:load_driver_by_name.
+ *
+ * Any instance previously loaded for the same name is released first. Drivers
+ * loaded for other device names are left alone.
  */
 bool asio_driver_load_by_name(const char *name, IASIO **out_iasio,
                               backend_error_t *err) {
-  logger_trace(&g_logger, "asio_driver_load_by_name: loading '%s'", name);
+  if (!name) {
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "No ASIO device specified");
+    }
+    return false;
+  }
+  asio_log_sync(LOG_LEVEL_TRACE, "asio_driver_load_by_name: loading '%s'",
+                name);
   if (asio_is_unsupported_driver(name)) {
     if (err) {
       char msg[256];
@@ -616,8 +585,8 @@ bool asio_driver_load_by_name(const char *name, IASIO **out_iasio,
   iasio->lpVtbl->getDriverName(iasio, driver_name);
   driver_name[32] = '\0';
   long driver_version = iasio->lpVtbl->getDriverVersion(iasio);
-  logger_debug(&g_logger, "Loaded ASIO driver '%s', version %ld.",
-               driver_name[0] ? driver_name : name, driver_version);
+  asio_log_sync(LOG_LEVEL_DEBUG, "Loaded ASIO driver '%s', version %ld.",
+                driver_name[0] ? driver_name : name, driver_version);
 
   // Store in registry
   asio_driver_entry_t *entry =
@@ -636,13 +605,34 @@ bool asio_driver_load_by_name(const char *name, IASIO **out_iasio,
   InitializeCriticalSection(&entry->lock);
   entry->refcount = 1;
 
+  asio_driver_entry_t *replaced = NULL;
   AcquireSRWLockExclusive(&g_driver_registry.lock);
+  asio_driver_entry_t **curr = &g_driver_registry.head;
+  while (*curr) {
+    if (strcmp((*curr)->devname, name) == 0) {
+      // Like HashMap::insert: the newer instance replaces the old entry.
+      replaced = *curr;
+      *curr = replaced->next;
+      replaced->next = g_driver_registry.unlinked_head;
+      g_driver_registry.unlinked_head = replaced;
+      break;
+    }
+    curr = &(*curr)->next;
+  }
   entry->next = g_driver_registry.head;
   g_driver_registry.head = entry;
   ReleaseSRWLockExclusive(&g_driver_registry.lock);
 
-  logger_trace(&g_logger,
-               "asio_driver_load_by_name: '%s' loaded and initialised", name);
+  if (replaced) {
+    asio_log_sync(LOG_LEVEL_WARN,
+                  "asio_driver_load_by_name: a concurrent load of '%s' was "
+                  "replaced",
+                  name);
+    asio_driver_entry_release(replaced);
+  }
+
+  asio_log_sync(LOG_LEVEL_TRACE,
+                "asio_driver_load_by_name: '%s' loaded and initialised", name);
   if (out_iasio) {
     *out_iasio = iasio;
   }
@@ -795,8 +785,13 @@ asio_sample_format_t asio_sample_type_to_format(int type_id) {
     return ASIO_SAMPLE_FORMAT_F64_LE;
   case ASIO_ST_DSD_INT8_LSB_1:
   case ASIO_ST_DSD_INT8_MSB_1:
-  case ASIO_ST_DSD_INT8_NER8:
     return ASIO_SAMPLE_FORMAT_DSD_INT8;
+  case ASIO_ST_DSD_INT8_NER8:
+    // NER8 carries one DSD bit per byte (8x the bytes of the packed LSB1/MSB1
+    // layouts). There is no codec for it, and decoding it as packed DSD would
+    // fill only 1/8 of each driver buffer with garbage, so refuse it like
+    // upstream refuses all DSD types (utils.rs:asio_sample_type_to_format).
+    return ASIO_SAMPLE_FORMAT_INVALID;
   }
   return ASIO_SAMPLE_FORMAT_INVALID;
 }
@@ -925,6 +920,27 @@ static bool get_buf_size_action(IASIO *iasio, void *user_data,
   return true;
 }
 
+/**
+ * @brief AS-15: a DSD driver buffer is counted in bits (one byte per 8 frames
+ * of 1-bit audio, processed as 32-bit words), so its size must be a positive
+ * multiple of 32. Otherwise `/ 32` would silently leave the tail of every
+ * driver buffer unwritten on playback (stale audio) and drop it on capture.
+ */
+static bool check_dsd_buffer_size(long size, backend_error_t *err) {
+  if (size > 0 && size % 32 == 0)
+    return true;
+  if (err) {
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+             "ASIO DSD buffer size %ld is not a positive multiple of 32; set "
+             "a buffer size that is a multiple of 32 in the driver's control "
+             "panel",
+             size);
+    backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+  }
+  return false;
+}
+
 static bool get_preferred_buffer_size(const char *devname, long *out_preferred,
                                       backend_error_t *err) {
   struct get_buf_size_data d = {0};
@@ -980,6 +996,30 @@ static bool create_asio_buffers(const char *devname,
       .callbacks = callbacks,
   };
   return asio_with_driver(devname, create_buffers_action, &d, err);
+}
+
+/**
+ * @brief Verify that createBuffers handed out both double-buffer halves for
+ * every channel. The real-time callbacks pass these pointers straight to the
+ * planar ring codecs, so a NULL here must fail setup instead of being found on
+ * the driver thread (upstream skips NULL per channel, device.rs:353-365).
+ */
+static bool validate_buffer_infos(const ASIOBufferInfo *infos, size_t count,
+                                  backend_error_t *err) {
+  for (size_t i = 0; i < count; i++) {
+    if (!infos[i].buffers[0] || !infos[i].buffers[1]) {
+      if (err) {
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+                 "createBuffers returned a NULL buffer for %s channel %ld",
+                 infos[i].isInput ? "input" : "output",
+                 (long)infos[i].channelNum);
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+      }
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -1106,6 +1146,70 @@ static bool asio_device_is_dsd_lsb(const char *devname, bool is_input) {
   return d.is_lsb;
 }
 
+/**
+ * @brief Select the driver's IO format (PCM or native DSD).
+ *
+ * For DSD, issue kAsioSetIoFormat(DSD). For PCM, only drivers that implement
+ * the IO-format selectors and currently report a non-PCM format are touched:
+ * a DSD-capable driver can otherwise stay in DSD mode across instances, and a
+ * PCM session would then auto-detect DSD_INT8 with a PCM sample rate.
+ */
+static void asio_apply_io_format(IASIO *iasio, bool is_dsd) {
+  if (!iasio || !iasio->lpVtbl->future)
+    return;
+  if (is_dsd) {
+    ASIOIoFormat dsd_format = {0};
+    dsd_format.FormatType = kASIOFormatDSD;
+    ASIOError io_res = (ASIOError)(uintptr_t)iasio->lpVtbl->future(
+        iasio, kAsioSetIoFormat, &dsd_format);
+    if (asio_ok(io_res)) {
+      logger_info(&g_logger,
+                  "ASIO driver successfully set to Native DSD format via "
+                  "kAsioSetIoFormat");
+    } else {
+      logger_warn(
+          &g_logger,
+          "ASIO driver kAsioSetIoFormat DSD returned %ld (FormatType=%ld)",
+          io_res, (long)dsd_format.FormatType);
+    }
+    return;
+  }
+  ASIOIoFormat current;
+  memset(&current, 0, sizeof(current));
+  current.FormatType = kASIOFormatPCM;
+  ASIOError get_res = (ASIOError)(uintptr_t)iasio->lpVtbl->future(
+      iasio, kAsioGetIoFormat, &current);
+  if (get_res == (ASIOError)ASE_SUCCESS &&
+      current.FormatType != kASIOFormatPCM) {
+    ASIOIoFormat pcm_format;
+    memset(&pcm_format, 0, sizeof(pcm_format));
+    pcm_format.FormatType = kASIOFormatPCM;
+    ASIOError set_res = (ASIOError)(uintptr_t)iasio->lpVtbl->future(
+        iasio, kAsioSetIoFormat, &pcm_format);
+    logger_info(&g_logger,
+                "ASIO driver was in IO format %ld, switched back to PCM "
+                "(kAsioSetIoFormat returned %ld)",
+                (long)current.FormatType, set_res);
+  }
+}
+
+static bool restore_pcm_io_format_action(IASIO *iasio, void *user_data,
+                                         backend_error_t *err) {
+  (void)user_data;
+  (void)err;
+  asio_apply_io_format(iasio, false);
+  return true;
+}
+
+/**
+ * @brief Return a driver to PCM IO format before it is released. Must be
+ * called after disposeBuffers (IO format changes are only allowed while no
+ * buffers exist).
+ */
+static void restore_pcm_io_format(const char *devname) {
+  asio_with_driver(devname, restore_pcm_io_format_action, NULL, NULL);
+}
+
 // MARK: - Internal Contexts and Global Atomics matching CamillaDSP device.rs
 
 typedef struct {
@@ -1129,6 +1233,32 @@ typedef struct {
 
 static _Atomic(asio_playback_context_t *) PLAYBACK_CONTEXT = NULL;
 static _Atomic(asio_capture_context_t *) CAPTURE_CONTEXT = NULL;
+static atomic_int g_playback_in_flight = 0;
+
+static void wait_for_playback_callbacks_in_flight(void) {
+  while (atomic_load(&g_playback_in_flight) != 0) {
+    SwitchToThread();
+  }
+}
+
+/// Clear the published context only if it is still ours (AS-13), so closing
+/// an old instance never unpublishes a newer stream's context.
+static void unpublish_playback_context(asio_playback_context_t *ctx) {
+  if (!ctx)
+    return;
+  asio_playback_context_t *expected = ctx;
+  atomic_compare_exchange_strong(&PLAYBACK_CONTEXT, &expected, NULL);
+  wait_for_playback_callbacks_in_flight();
+}
+
+static void unpublish_capture_context(asio_capture_context_t *ctx) {
+  if (!ctx)
+    return;
+  asio_capture_context_t *expected = ctx;
+  atomic_compare_exchange_strong_explicit(&CAPTURE_CONTEXT, &expected, NULL,
+                                          memory_order_acq_rel,
+                                          memory_order_relaxed);
+}
 
 /// Gates the capture callback until the capture loop is ready to consume.
 /// Matches device.rs:CAPTURE_STREAM_ACTIVE.
@@ -1186,32 +1316,50 @@ static struct {
   SRWLOCK lock;
   CONDITION_VARIABLE cond;
   bool seen;
-} g_playback_callback_seen = {
-    .lock = SRWLOCK_INIT, .cond = CONDITION_VARIABLE_INIT, .seen = false};
+  // Lock-free mirror of `seen`, so the real-time callback only takes the lock
+  // on the very first buffer switch of a session (AGENTS.md §1.2: no locks on
+  // driver callback threads in steady state).
+  _Atomic bool seen_fast;
+} g_playback_callback_seen = {.lock = SRWLOCK_INIT,
+                              .cond = CONDITION_VARIABLE_INIT,
+                              .seen = false,
+                              .seen_fast = false};
 
 static void reset_playback_callback_seen(void) {
   AcquireSRWLockExclusive(&g_playback_callback_seen.lock);
   g_playback_callback_seen.seen = false;
+  atomic_store_explicit(&g_playback_callback_seen.seen_fast, false,
+                        memory_order_release);
   ReleaseSRWLockExclusive(&g_playback_callback_seen.lock);
 }
 
 static void mark_playback_callback_seen(void) {
+  if (atomic_load_explicit(&g_playback_callback_seen.seen_fast,
+                           memory_order_acquire)) {
+    return;
+  }
   AcquireSRWLockExclusive(&g_playback_callback_seen.lock);
   if (!g_playback_callback_seen.seen) {
     g_playback_callback_seen.seen = true;
     WakeAllConditionVariable(&g_playback_callback_seen.cond);
   }
+  atomic_store_explicit(&g_playback_callback_seen.seen_fast, true,
+                        memory_order_release);
   ReleaseSRWLockExclusive(&g_playback_callback_seen.lock);
 }
 
 static bool wait_for_playback_callback(DWORD timeout_ms) {
   AcquireSRWLockExclusive(&g_playback_callback_seen.lock);
-  if (g_playback_callback_seen.seen) {
-    ReleaseSRWLockExclusive(&g_playback_callback_seen.lock);
-    return true;
+  DWORD start_tick = GetTickCount();
+  while (!g_playback_callback_seen.seen) {
+    DWORD elapsed = GetTickCount() - start_tick;
+    if (elapsed >= timeout_ms) {
+      break;
+    }
+    SleepConditionVariableSRW(&g_playback_callback_seen.cond,
+                              &g_playback_callback_seen.lock,
+                              timeout_ms - elapsed, 0);
   }
-  SleepConditionVariableSRW(&g_playback_callback_seen.cond,
-                            &g_playback_callback_seen.lock, timeout_ms, 0);
   bool seen = g_playback_callback_seen.seen;
   ReleaseSRWLockExclusive(&g_playback_callback_seen.lock);
   return seen;
@@ -1227,9 +1375,10 @@ static void buffer_switch_combined(long buffer_index, ASIOBool direct_process);
  */
 static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
   (void)direct_process;
-  asio_playback_context_t *ctx =
-      atomic_load_explicit(&PLAYBACK_CONTEXT, memory_order_acquire);
+  atomic_fetch_add(&g_playback_in_flight, 1);
+  asio_playback_context_t *ctx = atomic_load(&PLAYBACK_CONTEXT);
   if (!ctx || !ctx->buffer_infos || !ctx->channel_ptrs) {
+    atomic_fetch_sub(&g_playback_in_flight, 1);
     return;
   }
   if (buffer_index < 0 || buffer_index > 1) {
@@ -1237,6 +1386,7 @@ static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
         &g_logger,
         "ASIO playback callback got invalid buffer index %ld, ignoring.",
         buffer_index);
+    atomic_fetch_sub(&g_playback_in_flight, 1);
     return;
   }
   mark_playback_callback_seen();
@@ -1247,6 +1397,7 @@ static void buffer_switch_playback(long buffer_index, ASIOBool direct_process) {
 
   backend_buffer_render(ctx->buffer, ctx->channel_ptrs, ctx->buffer_size,
                         ctx->silence_byte);
+  atomic_fetch_sub(&g_playback_in_flight, 1);
 }
 
 /**
@@ -1384,13 +1535,13 @@ static long handle_asio_message(long selector, long value, bool playback,
                             memory_order_release);
     }
     if (capture) {
+      // Only the atomic flag is touched here. asioMessage can arrive on any
+      // driver thread, unsynchronised with asio_capture_close() freeing the
+      // capture context, so dereferencing CAPTURE_CONTEXT here could use freed
+      // memory. The capture loop waits at most 20 ms (capture_backend_wait)
+      // between reads, and asio_capture_read() checks this flag first.
       atomic_store_explicit(&ASIO_CAPTURE_RESET_REQUESTED, true,
                             memory_order_release);
-      asio_capture_context_t *cap_ctx =
-          atomic_load_explicit(&CAPTURE_CONTEXT, memory_order_acquire);
-      if (cap_ctx) {
-        backend_buffer_signal(cap_ctx->buffer);
-      }
     }
     return 1;
   case K_ASIO_BUFFER_SIZE_CHANGE:
@@ -1457,6 +1608,9 @@ static long asio_message_capture(long selector, long value, void *message,
 
 typedef struct {
   char driver_name[256];
+  bool is_dsd;
+  bool driver_open;
+  uint8_t entered_mask;
   long num_inputs;
   long num_outputs;
   long preferred_buf_size;
@@ -1490,30 +1644,67 @@ static bool open_asio_device(const char *devname, int samplerate, bool is_dsd,
  * @brief init_shared_asio matching CamillaDSP device.rs:init_shared_asio.
  */
 static bool init_shared_asio(const char *devname, int samplerate, bool is_dsd,
-                             long *out_inputs, long *out_outputs,
+                             bool is_input, long *out_inputs, long *out_outputs,
                              long *out_preferred_buf, backend_error_t *err) {
-  logger_trace(&g_logger,
-               "init_shared_asio: dev='%s', samplerate=%d, is_dsd=%d", devname,
-               samplerate, (int)is_dsd);
+  uint8_t side_bit = is_input ? 2u : 1u;
+  asio_log_sync(LOG_LEVEL_TRACE,
+                "init_shared_asio: dev='%s', samplerate=%d, is_dsd=%d", devname,
+                samplerate, (int)is_dsd);
   AcquireSRWLockExclusive(&g_asio_shared.lock);
+
+  if (g_asio_shared.state && g_asio_shared.state->active_count == 0 &&
+      ((g_asio_shared.state->entered_mask & side_bit) != 0 ||
+       strcmp(g_asio_shared.state->driver_name, devname) != 0)) {
+    free(g_asio_shared.state);
+    g_asio_shared.state = NULL;
+  }
 
   if (g_asio_shared.state) {
     if (strcmp(g_asio_shared.state->driver_name, devname) != 0) {
+      // Build the message under the lock: once released, the state may be
+      // freed by release_shared_asio() on the other device thread.
+      char msg[640];
+      snprintf(msg, sizeof(msg),
+               "Full-duplex ASIO state is still held by device '%s' while "
+               "opening '%s'",
+               g_asio_shared.state->driver_name, devname);
       ReleaseSRWLockExclusive(&g_asio_shared.lock);
       if (err) {
-        char msg[512];
-        snprintf(msg, sizeof(msg),
-                 "Full-duplex ASIO state is still held by device '%s' while "
-                 "opening '%s'",
-                 g_asio_shared.state->driver_name, devname);
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+      }
+      return false;
+    }
+    g_asio_shared.state->entered_mask |= side_bit;
+    if (g_asio_shared.state->setup_error[0] != '\0') {
+      char msg[384];
+      snprintf(msg, sizeof(msg), "ASIO full-duplex setup aborted: %s",
+               g_asio_shared.state->setup_error);
+      if (g_asio_shared.state->active_count == 0) {
+        free(g_asio_shared.state);
+        g_asio_shared.state = NULL;
+      }
+      ReleaseSRWLockExclusive(&g_asio_shared.lock);
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
+      }
+      return false;
+    }
+    if (g_asio_shared.state->is_dsd != is_dsd) {
+      const char *msg = "Full-duplex ASIO requires both capture and playback "
+                        "to use the same IO format (PCM or DSD)";
+      snprintf(g_asio_shared.state->setup_error,
+               sizeof(g_asio_shared.state->setup_error), "%s", msg);
+      WakeAllConditionVariable(&g_asio_shared.cond);
+      ReleaseSRWLockExclusive(&g_asio_shared.lock);
+      if (err) {
         backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, msg);
       }
       return false;
     }
     g_asio_shared.state->active_count += 1;
-    logger_trace(&g_logger,
-                 "init_shared_asio: reusing existing shared state for '%s'",
-                 g_asio_shared.state->driver_name);
+    asio_log_sync(LOG_LEVEL_TRACE,
+                  "init_shared_asio: reusing existing shared state for '%s'",
+                  g_asio_shared.state->driver_name);
     *out_inputs = g_asio_shared.state->num_inputs;
     *out_outputs = g_asio_shared.state->num_outputs;
     *out_preferred_buf = g_asio_shared.state->preferred_buf_size;
@@ -1548,6 +1739,9 @@ static bool init_shared_asio(const char *devname, int samplerate, bool is_dsd,
   }
   snprintf(g_asio_shared.state->driver_name,
            sizeof(g_asio_shared.state->driver_name), "%s", devname);
+  g_asio_shared.state->is_dsd = is_dsd;
+  g_asio_shared.state->driver_open = true;
+  g_asio_shared.state->entered_mask = side_bit;
   g_asio_shared.state->num_inputs = num_inputs;
   g_asio_shared.state->num_outputs = num_outputs;
   g_asio_shared.state->preferred_buf_size = preferred_buf;
@@ -1662,6 +1856,17 @@ static bool register_and_wait(bool is_input, size_t num_channels,
       ReleaseSRWLockExclusive(&g_asio_shared.lock);
       return false;
     }
+    if (!validate_buffer_infos(combined, total_ch, err)) {
+      snprintf(g_asio_shared.state->setup_error,
+               sizeof(g_asio_shared.state->setup_error), "%s",
+               (err && err->message[0]) ? err->message
+                                        : "createBuffers returned NULL buffer");
+      dispose_asio_buffers(devname);
+      free(combined);
+      WakeAllConditionVariable(&g_asio_shared.cond);
+      ReleaseSRWLockExclusive(&g_asio_shared.lock);
+      return false;
+    }
 
     // Update global playback/capture context buffer_infos
     asio_playback_context_t *pb_ctx =
@@ -1756,7 +1961,8 @@ static void release_shared_asio(void) {
     }
     if (g_asio_shared.state->active_count == 1) {
       logger_debug(&g_logger, "First ASIO side exiting, stopping stream.");
-      atomic_store_explicit(&PLAYBACK_CONTEXT, NULL, memory_order_release);
+      atomic_store(&PLAYBACK_CONTEXT, NULL);
+      wait_for_playback_callbacks_in_flight();
       atomic_store_explicit(&CAPTURE_CONTEXT, NULL, memory_order_release);
       if (g_asio_shared.state->stream_started) {
         stop_asio_stream(g_asio_shared.state->driver_name);
@@ -1765,21 +1971,42 @@ static void release_shared_asio(void) {
       logger_debug(
           &g_logger,
           "Last ASIO side exiting, cleaning up driver and shared state.");
-      dispose_asio_buffers(g_asio_shared.state->driver_name);
-      asio_driver_teardown(g_asio_shared.state->driver_name);
+      if (g_asio_shared.state->driver_open) {
+        dispose_asio_buffers(g_asio_shared.state->driver_name);
+        restore_pcm_io_format(g_asio_shared.state->driver_name);
+        asio_driver_teardown(g_asio_shared.state->driver_name);
+        g_asio_shared.state->driver_open = false;
+      }
 
       if (g_asio_shared.state->buffer_infos_for_driver) {
         free(g_asio_shared.state->buffer_infos_for_driver);
+        g_asio_shared.state->buffer_infos_for_driver = NULL;
       }
       if (g_asio_shared.state->pending_output) {
         free(g_asio_shared.state->pending_output);
+        g_asio_shared.state->pending_output = NULL;
       }
       if (g_asio_shared.state->pending_input) {
         free(g_asio_shared.state->pending_input);
+        g_asio_shared.state->pending_input = NULL;
       }
-      free(g_asio_shared.state);
-      g_asio_shared.state = NULL;
+      if (g_asio_shared.state->entered_mask == 0x3 ||
+          g_asio_shared.state->setup_error[0] == '\0') {
+        free(g_asio_shared.state);
+        g_asio_shared.state = NULL;
+      }
     }
+  }
+  ReleaseSRWLockExclusive(&g_asio_shared.lock);
+}
+
+static void clear_unclaimed_shared_asio(bool is_input) {
+  uint8_t side_bit = is_input ? 2u : 1u;
+  AcquireSRWLockExclusive(&g_asio_shared.lock);
+  if (g_asio_shared.state && g_asio_shared.state->active_count == 0 &&
+      (g_asio_shared.state->entered_mask & side_bit) == 0) {
+    free(g_asio_shared.state);
+    g_asio_shared.state = NULL;
   }
   ReleaseSRWLockExclusive(&g_asio_shared.lock);
 }
@@ -1810,6 +2037,7 @@ static void abort_shared_asio(const char *msg) {
  */
 static void cleanup_failed_setup(const char *devname) {
   dispose_asio_buffers(devname);
+  restore_pcm_io_format(devname);
   asio_driver_teardown(devname);
 }
 
@@ -1830,8 +2058,9 @@ static void log_channel_details(IASIO *iasio, long num_channels,
       char fmt_buf[128] = {0};
       snprintf(fmt_buf, sizeof(fmt_buf), "%d (%s)", (int)info.type,
                asio_sample_type_name(info.type));
-      logger_debug(&g_logger, "  %s channel %ld: name='%s', format=%s",
-                   direction, ch, info.name, fmt_buf);
+      asio_log_sync(LOG_LEVEL_DEBUG,
+                    "  %s channel %ld: name='%.32s', format=%s", direction, ch,
+                    info.name, fmt_buf);
     }
   }
 }
@@ -1847,9 +2076,9 @@ static void log_channel_details(IASIO *iasio, long num_channels,
 static bool open_asio_device(const char *devname, int samplerate, bool is_dsd,
                              long *out_inputs, long *out_outputs,
                              backend_error_t *err) {
-  logger_trace(&g_logger,
-               "open_asio_device: dev='%s', samplerate=%d, is_dsd=%d", devname,
-               samplerate, (int)is_dsd);
+  asio_log_sync(LOG_LEVEL_TRACE,
+                "open_asio_device: dev='%s', samplerate=%d, is_dsd=%d", devname,
+                samplerate, (int)is_dsd);
 
   char available[64][256];
   int avail_count = asio_list_device_names(available, 64);
@@ -1877,7 +2106,7 @@ static bool open_asio_device(const char *devname, int samplerate, bool is_dsd,
     avail_str[sizeof(avail_str) - 2] = ']';
     avail_str[sizeof(avail_str) - 1] = '\0';
   }
-  logger_debug(&g_logger, "Available ASIO devices: %s", avail_str);
+  asio_log_sync(LOG_LEVEL_DEBUG, "Available ASIO devices: %s", avail_str);
 
   backend_error_t load_err = {0};
   IASIO *iasio = NULL;
@@ -1923,23 +2152,10 @@ static bool open_asio_device(const char *devname, int samplerate, bool is_dsd,
     return false;
   }
 
-  // Set DSD mode if requested
-  if (is_dsd) {
-    ASIOIoFormat dsd_format = {0};
-    dsd_format.FormatType = kASIOFormatDSD;
-    ASIOError io_res = (ASIOError)(uintptr_t)iasio->lpVtbl->future(
-        iasio, kAsioSetIoFormat, &dsd_format);
-    if (asio_ok(io_res)) {
-      logger_info(&g_logger,
-                  "ASIO driver successfully set to Native DSD format via "
-                  "kAsioSetIoFormat");
-    } else {
-      logger_warn(
-          &g_logger,
-          "ASIO driver kAsioSetIoFormat DSD returned %ld (FormatType=%ld)",
-          io_res, (long)dsd_format.FormatType);
-    }
-  }
+  // Put the driver in the requested IO format: DSD when requested, otherwise
+  // make sure a driver left in DSD mode (by an earlier session or another
+  // host) is switched back to PCM before rates and formats are queried.
+  asio_apply_io_format(iasio, is_dsd);
 
   // Log current sample rate before any changes
   double current_rate = 0.0;
@@ -1957,20 +2173,31 @@ static bool open_asio_device(const char *devname, int samplerate, bool is_dsd,
   logger_debug(&g_logger, "ASIO current sample rate: %.1f Hz", current_rate);
 
   // Log supported sample rates
+  // AS-14: advance `offset` only by what actually fit, so it can never pass
+  // the end of the buffer (same pattern as the avail_str builder above).
   char supported_str[256] = {0};
   size_t offset = 0;
-  offset +=
-      snprintf(supported_str + offset, sizeof(supported_str) - offset, "[");
+  int sn = snprintf(supported_str, sizeof(supported_str), "[");
+  if (sn > 0 && (size_t)sn < sizeof(supported_str)) {
+    offset = (size_t)sn;
+  }
   for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
     double check_rate =
         (double)(is_dsd ? (STANDARD_RATES[r] * 32) : STANDARD_RATES[r]);
     if (asio_ok(iasio->lpVtbl->canSampleRate(iasio, check_rate))) {
-      offset += snprintf(supported_str + offset, sizeof(supported_str) - offset,
-                         (offset > 1 ? ", %u" : "%u"), STANDARD_RATES[r]);
+      sn = snprintf(supported_str + offset, sizeof(supported_str) - offset,
+                    (offset > 1 ? ", %u" : "%u"), STANDARD_RATES[r]);
+      if (sn > 0 && (size_t)sn < sizeof(supported_str) - offset - 1) {
+        offset += (size_t)sn;
+      } else {
+        supported_str[offset] = '\0';
+        break;
+      }
     }
   }
   snprintf(supported_str + offset, sizeof(supported_str) - offset, "]");
-  logger_debug(&g_logger, "ASIO supported sample rates: %s", supported_str);
+  asio_log_sync(LOG_LEVEL_DEBUG, "ASIO supported sample rates: %s",
+                supported_str);
 
   // Set the requested sample rate IMMEDIATELY after init, before getChannels.
   // Some drivers lock in the rate once channels or buffers are queried.
@@ -2040,18 +2267,15 @@ static bool open_asio_device(const char *devname, int samplerate, bool is_dsd,
         return false;
       }
     } else {
-      logger_debug(
-          &g_logger,
+      asio_log_sync(
+          LOG_LEVEL_DEBUG,
           "Not reinitialising '%s' to apply the sample rate, this driver is "
           "not known to need it.",
           devname);
     }
 
-    if (is_dsd) {
-      ASIOIoFormat dsd_format = {0};
-      dsd_format.FormatType = kASIOFormatDSD;
-      iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &dsd_format);
-    }
+    // A recreated instance (rate reload) must get the IO format again.
+    asio_apply_io_format(iasio, is_dsd);
 
     double after_set = 0.0;
     long after_res = iasio->lpVtbl->getSampleRate(iasio, &after_set);
@@ -2119,7 +2343,7 @@ static bool open_asio_playback(const char *devname, size_t num_channels,
                                asio_sample_format_t *out_resolved_format,
                                backend_error_t *err) {
   long inputs = 0, outputs = 0;
-  bool is_dsd = (configured_format == ASIO_SAMPLE_FORMAT_DSD_INT8);
+  bool is_dsd = has_format && (configured_format == ASIO_SAMPLE_FORMAT_DSD_INT8);
   if (!open_asio_device(devname, samplerate, is_dsd, &inputs, &outputs, err)) {
     return false;
   }
@@ -2152,7 +2376,7 @@ static bool open_asio_capture(const char *devname, size_t num_channels,
                               asio_sample_format_t *out_resolved_format,
                               backend_error_t *err) {
   long inputs = 0, outputs = 0;
-  bool is_dsd = (configured_format == ASIO_SAMPLE_FORMAT_DSD_INT8);
+  bool is_dsd = has_format && (configured_format == ASIO_SAMPLE_FORMAT_DSD_INT8);
   if (!open_asio_device(devname, samplerate, is_dsd, &inputs, &outputs, err)) {
     return false;
   }
@@ -2186,7 +2410,12 @@ struct asio_playback {
   bool has_format;
   bool full_duplex;
   bool shared_claimed;
+  /// Single mode: this instance holds the loaded driver (AS-13). Cleared by
+  /// cleanup_failed_setup / close so a repeated close never stops, disposes
+  /// or tears down a driver by name that may belong to a newer stream.
+  bool driver_owned;
   int target_level;
+  size_t ring_capacity;
 
   asio_sample_format_t resolved_format;
   bool is_lsb;
@@ -2216,17 +2445,23 @@ static void asio_playback_close(void *ctx) {
     if (playback->shared_claimed) {
       release_shared_asio();
       playback->shared_claimed = false;
+    } else {
+      clear_unclaimed_shared_asio(false);
     }
   } else {
-    atomic_store_explicit(&PLAYBACK_CONTEXT, NULL, memory_order_release);
-    logger_trace(
-        &g_logger,
-        "Playback: stopping the stream, disposing buffers and tearing down");
-    stop_asio_stream(playback->device);
-    dispose_asio_buffers(playback->device);
-    asio_driver_teardown(playback->device);
+    unpublish_playback_context(playback->context);
+    if (playback->driver_owned) {
+      logger_trace(
+          &g_logger,
+          "Playback: stopping the stream, disposing buffers and tearing down");
+      stop_asio_stream(playback->device);
+      dispose_asio_buffers(playback->device);
+      restore_pcm_io_format(playback->device);
+      asio_driver_teardown(playback->device);
+      playback->driver_owned = false;
+    }
   }
-  atomic_store_explicit(&PLAYBACK_CONTEXT, NULL, memory_order_release);
+  unpublish_playback_context(playback->context);
 
   if (playback->context) {
     if (playback->context->channel_ptrs) {
@@ -2264,9 +2499,10 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
 
   if (playback->full_duplex) {
     long inputs = 0, outputs = 0, preferred_buf = 0;
-    bool is_dsd = (playback->format == ASIO_SAMPLE_FORMAT_DSD_INT8);
+    bool is_dsd =
+        playback->has_format && (playback->format == ASIO_SAMPLE_FORMAT_DSD_INT8);
     if (!init_shared_asio(playback->device, playback->sample_rate, is_dsd,
-                          &inputs, &outputs, &preferred_buf, err)) {
+                          false, &inputs, &outputs, &preferred_buf, err)) {
       goto error_cleanup;
     }
     playback->shared_claimed = true;
@@ -2297,6 +2533,7 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
                             playback->has_format, &resolved_format, err)) {
       goto error_cleanup;
     }
+    playback->driver_owned = true;
     long preferred_buf = 0;
     if (!get_preferred_buffer_size(playback->device, &preferred_buf, err)) {
       goto error_cleanup;
@@ -2309,6 +2546,13 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
 
   long driver_buffer_size = asio_buffer_size;
   if (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+    if (!check_dsd_buffer_size(asio_buffer_size, err)) {
+      if (playback->full_duplex && playback->shared_claimed) {
+        abort_shared_asio(err ? err->message : "Invalid DSD buffer size");
+        playback->shared_claimed = false;
+      }
+      goto error_cleanup;
+    }
     asio_buffer_size /= 32;
   }
 
@@ -2318,19 +2562,11 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
       asio_sample_format_to_binary_format(resolved_format, is_lsb));
   playback->actual_buffer_size = asio_buffer_size;
 
-  // Size ring buffer to fit at least driver's buffer size (issue #498)
+  // Size ring buffer to fit at least driver's buffer size (issue #498) plus
+  // target_level headroom
   size_t ring_frames = ((size_t)playback->chunk_size > (size_t)asio_buffer_size)
                            ? (size_t)playback->chunk_size
                            : (size_t)asio_buffer_size;
-  playback->buffer = backend_buffer_create(
-      2 * ring_frames + 2048,
-      asio_sample_format_to_binary_format(playback->resolved_format,
-                                          playback->is_lsb),
-      playback->channels, playback->sample_rate, true, playback->params);
-
-  clear_playback_driver_events();
-  reset_playback_callback_seen();
-
   size_t asio_buf_frames = (size_t)asio_buffer_size;
   size_t target_level = (playback->target_level > 0)
                             ? (size_t)playback->target_level
@@ -2338,6 +2574,15 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
   if (target_level < asio_buf_frames) {
     target_level = asio_buf_frames;
   }
+  playback->ring_capacity = 2 * ring_frames + target_level + 2048;
+  playback->buffer = backend_buffer_create(
+      playback->ring_capacity,
+      asio_sample_format_to_binary_format(playback->resolved_format,
+                                          playback->is_lsb),
+      playback->channels, playback->sample_rate, true, playback->params);
+
+  clear_playback_driver_events();
+  reset_playback_callback_seen();
 
   playback->context =
       (asio_playback_context_t *)calloc(1, sizeof(asio_playback_context_t));
@@ -2390,6 +2635,7 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
                            "Failed to allocate ASIO buffer infos");
       }
       cleanup_failed_setup(playback->device);
+      playback->driver_owned = false;
       goto error_cleanup;
     }
     playback->single_mode_allocated_infos = true;
@@ -2404,6 +2650,13 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
                              (long)playback->channels, driver_buffer_size,
                              &playback->callbacks_for_driver, err)) {
       cleanup_failed_setup(playback->device);
+      playback->driver_owned = false;
+      goto error_cleanup;
+    }
+    if (!validate_buffer_infos(playback->buffer_infos, playback->channels,
+                               err)) {
+      cleanup_failed_setup(playback->device);
+      playback->driver_owned = false;
       goto error_cleanup;
     }
 
@@ -2417,6 +2670,7 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
     if (!start_asio_stream(playback->device, err)) {
       atomic_store_explicit(&PLAYBACK_CONTEXT, NULL, memory_order_release);
       cleanup_failed_setup(playback->device);
+      playback->driver_owned = false;
       goto error_cleanup;
     }
     logger_trace(&g_logger, "Playback: stream started");
@@ -2483,6 +2737,9 @@ static bool asio_playback_get_pending_rate_change(void *ctx, double *out_rate) {
     return false;
   if (take_playback_rate_change_event()) {
     int new_rate = read_current_asio_sample_rate_hz(playback->device);
+    if (playback->resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+      new_rate /= 32;
+    }
     if (out_rate) {
       *out_rate = (double)new_rate;
     }
@@ -2491,13 +2748,72 @@ static bool asio_playback_get_pending_rate_change(void *ctx, double *out_rate) {
   return false;
 }
 
+static void asio_playback_ensure_capacity(asio_playback_t *playback,
+                                          size_t target_level) {
+  size_t asio_buf = playback->actual_buffer_size > 0
+                        ? (size_t)playback->actual_buffer_size
+                        : 0;
+  size_t ring_frames =
+      (size_t)playback->chunk_size > asio_buf ? (size_t)playback->chunk_size
+                                              : asio_buf;
+  size_t needed = 2 * ring_frames + target_level + 2048;
+  if (needed <= playback->ring_capacity)
+    return;
+  if (backend_buffer_get_available_read_frames(playback->buffer) > 0) {
+    logger_warn(&g_logger,
+                "ASIO playback ring (%zu frames) is smaller than target level "
+                "%zu needs, but already holds audio; not resizing",
+                playback->ring_capacity, target_level);
+    return;
+  }
+  backend_buffer_t *bigger = backend_buffer_create(
+      needed,
+      asio_sample_format_to_binary_format(playback->resolved_format,
+                                          playback->is_lsb),
+      playback->channels, playback->sample_rate, true, playback->params);
+  if (!bigger) {
+    logger_warn(&g_logger,
+                "Failed to grow the ASIO playback ring to %zu frames", needed);
+    return;
+  }
+  asio_playback_context_t *expected = playback->context;
+  bool attached =
+      expected &&
+      atomic_compare_exchange_strong(&PLAYBACK_CONTEXT, &expected, NULL);
+  wait_for_playback_callbacks_in_flight();
+  backend_buffer_t *old = playback->buffer;
+  backend_buffer_set_state(bigger, backend_buffer_get_state(old));
+  backend_buffer_set_pending_rate_change(
+      bigger, backend_buffer_has_pending_rate_change(old));
+  playback->buffer = bigger;
+  playback->ring_capacity = needed;
+  if (playback->context) {
+    playback->context->buffer = bigger;
+  }
+  backend_buffer_free(old);
+  if (attached) {
+    atomic_store(&PLAYBACK_CONTEXT, playback->context);
+  }
+  logger_info(&g_logger, "Grew ASIO playback ring to %zu frames", needed);
+}
+
 static bool asio_playback_prefill_silence(void *ctx, size_t frames,
                                           backend_error_t *err) {
   (void)err;
   asio_playback_t *playback = (asio_playback_t *)ctx;
-  if (!playback)
+  if (!playback || !playback->buffer)
     return false;
   playback->target_level = (int)frames;
+  // Prefill (and the underrun-recovery cushion, which reuses target_level) at
+  // least one full driver callback's worth of frames, so a target_level smaller
+  // than the ASIO buffer size cannot re-drain the ring to empty in the very
+  // next callback. Matches CamillaDSP device.rs (issue #498):
+  // prefill_frames = target_level.max(buffer_size).
+  if (playback->actual_buffer_size > 0 &&
+      frames < (size_t)playback->actual_buffer_size) {
+    frames = (size_t)playback->actual_buffer_size;
+  }
+  asio_playback_ensure_capacity(playback, frames);
   backend_buffer_set_target_level(playback->buffer, frames);
   uint8_t silence_byte =
       (playback->resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) ? 0x69 : 0x00;
@@ -2521,7 +2837,9 @@ static bool asio_playback_get_is_paused(void *ctx) {
 
 static void asio_playback_set_is_paused(void *ctx, bool paused) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
-  if (!playback)
+  if (!playback || !playback->buffer)
+    return;
+  if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_STOPPED)
     return;
   backend_buffer_set_state(playback->buffer, paused ? BACKEND_STREAM_PAUSED
                                                     : BACKEND_STREAM_RUNNING);
@@ -2595,6 +2913,8 @@ struct asio_capture {
   bool has_format;
   bool full_duplex;
   bool shared_claimed;
+  /// Single mode: this instance holds the loaded driver (AS-13).
+  bool driver_owned;
 
   asio_sample_format_t resolved_format;
   bool is_lsb;
@@ -2620,25 +2940,34 @@ static void asio_capture_close(void *ctx) {
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
 
   // Close the gate first, so callbacks arriving during teardown do no work.
-  // Matches device.rs:CAPTURE_STREAM_ACTIVE.
-  atomic_store_explicit(&CAPTURE_STREAM_ACTIVE, false, memory_order_release);
+  // Matches device.rs:CAPTURE_STREAM_ACTIVE. A repeated close (context
+  // already freed) must not close the gate of a newer stream (AS-13).
+  if (capture->context) {
+    atomic_store_explicit(&CAPTURE_STREAM_ACTIVE, false, memory_order_release);
+  }
 
   logger_debug(&g_logger, "Stopping ASIO capture.");
   if (capture->full_duplex) {
     if (capture->shared_claimed) {
       release_shared_asio();
       capture->shared_claimed = false;
+    } else {
+      clear_unclaimed_shared_asio(true);
     }
   } else {
-    atomic_store_explicit(&CAPTURE_CONTEXT, NULL, memory_order_release);
-    logger_trace(
-        &g_logger,
-        "Capture: stopping the stream, disposing buffers and tearing down");
-    stop_asio_stream(capture->device);
-    dispose_asio_buffers(capture->device);
-    asio_driver_teardown(capture->device);
+    unpublish_capture_context(capture->context);
+    if (capture->driver_owned) {
+      logger_trace(
+          &g_logger,
+          "Capture: stopping the stream, disposing buffers and tearing down");
+      stop_asio_stream(capture->device);
+      dispose_asio_buffers(capture->device);
+      restore_pcm_io_format(capture->device);
+      asio_driver_teardown(capture->device);
+      capture->driver_owned = false;
+    }
   }
-  atomic_store_explicit(&CAPTURE_CONTEXT, NULL, memory_order_release);
+  unpublish_capture_context(capture->context);
 
   if (capture->context) {
     if (capture->context->channel_ptrs) {
@@ -2676,9 +3005,10 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
 
   if (capture->full_duplex) {
     long inputs = 0, outputs = 0, preferred_buf = 0;
-    bool is_dsd = (capture->format == ASIO_SAMPLE_FORMAT_DSD_INT8);
+    bool is_dsd =
+        capture->has_format && (capture->format == ASIO_SAMPLE_FORMAT_DSD_INT8);
     if (!init_shared_asio(capture->device, capture->sample_rate, is_dsd,
-                          &inputs, &outputs, &preferred_buf, err)) {
+                          true, &inputs, &outputs, &preferred_buf, err)) {
       goto error_cleanup;
     }
     capture->shared_claimed = true;
@@ -2707,6 +3037,7 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
                            capture->has_format, &resolved_format, err)) {
       goto error_cleanup;
     }
+    capture->driver_owned = true;
     long preferred_buf = 0;
     if (!get_preferred_buffer_size(capture->device, &preferred_buf, err)) {
       goto error_cleanup;
@@ -2719,6 +3050,13 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
 
   long driver_buffer_size = asio_buffer_size;
   if (resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+    if (!check_dsd_buffer_size(asio_buffer_size, err)) {
+      if (capture->full_duplex && capture->shared_claimed) {
+        abort_shared_asio(err ? err->message : "Invalid DSD buffer size");
+        capture->shared_claimed = false;
+      }
+      goto error_cleanup;
+    }
     asio_buffer_size /= 32;
   }
 
@@ -2788,6 +3126,7 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
                            "Failed to allocate ASIO buffer infos");
       }
       cleanup_failed_setup(capture->device);
+      capture->driver_owned = false;
       goto error_cleanup;
     }
     capture->single_mode_allocated_infos = true;
@@ -2802,6 +3141,12 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
                              (long)capture->channels, driver_buffer_size,
                              &capture->callbacks_for_driver, err)) {
       cleanup_failed_setup(capture->device);
+      capture->driver_owned = false;
+      goto error_cleanup;
+    }
+    if (!validate_buffer_infos(capture->buffer_infos, capture->channels, err)) {
+      cleanup_failed_setup(capture->device);
+      capture->driver_owned = false;
       goto error_cleanup;
     }
 
@@ -2813,6 +3158,7 @@ static bool asio_capture_open(void *ctx, backend_error_t *err) {
     if (!start_asio_stream(capture->device, err)) {
       atomic_store_explicit(&CAPTURE_CONTEXT, NULL, memory_order_release);
       cleanup_failed_setup(capture->device);
+      capture->driver_owned = false;
       goto error_cleanup;
     }
     logger_trace(&g_logger, "Capture: stream started");
@@ -2879,6 +3225,9 @@ static bool asio_capture_get_pending_rate_change(void *ctx, double *out_rate) {
     return false;
   if (take_capture_rate_change_event()) {
     int new_rate = read_current_asio_sample_rate_hz(capture->device);
+    if (capture->resolved_format == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+      new_rate /= 32;
+    }
     if (out_rate) {
       *out_rate = (double)new_rate;
     }

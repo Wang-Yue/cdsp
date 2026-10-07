@@ -7,7 +7,7 @@
 #include "utils/double_helpers.h"
 
 struct clipper_filter {
-  char name[64];
+  char name[128];
   double clip_limit;
   bool soft_clip;
 };
@@ -56,9 +56,15 @@ static int clipper_config_validate(const filter_config_t *config,
   }
   double lin = double_from_db(params->clip_limit);
   if (lin <= 0.0) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                     "Clipper clip_limit %g dB underflows to zero linear limit",
+                     params->clip_limit);
+    return -1;
+  }
+  if (!isfinite(lin)) {
     config_error_set(
         err, CONFIG_ERR_INVALID_FILTER,
-        "Clipper clip_limit %g dB underflows to zero linear limit",
+        "Clipper clip_limit %g dB overflows to an infinite linear limit",
         params->clip_limit);
     return -1;
   }

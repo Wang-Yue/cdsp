@@ -2,6 +2,7 @@
 
 #include <cjson/cJSON.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,8 +40,52 @@ static int yaml_buf_write_handler(void *data, unsigned char *buffer,
 
 /* --- YAML Document to cJSON Tree --- */
 
+/**
+ * Keys whose values are strings (or arrays of strings) in the config schema
+ * (every parse_json_str_strict / parse_labels_array_strict field). Upstream
+ * yaml_serde accepts any plain scalar for a String field, so under these keys
+ * a plain scalar such as `title: 12345`, `name: 1` or `names: [1, 2]` is kept
+ * as its verbatim text instead of being inferred as a number/boolean (which
+ * the strict JSON parser would reject). Nulls stay null (Option<String>).
+ * JSON input is unaffected and stays as strict as upstream serde_json.
+ */
+static bool yaml_key_is_string_field(const char *key) {
+  static const char *const keys[] = {"autoconnect_to",
+                                     "description",
+                                     "device",
+                                     "filename",
+                                     "format",
+                                     "interpolation",
+                                     "labels",
+                                     "link_mute_control",
+                                     "link_volume_control",
+                                     "name",
+                                     "names",
+                                     "node_description",
+                                     "node_group_name",
+                                     "node_name",
+                                     "title",
+                                     "window",
+                                     NULL};
+  for (size_t i = 0; keys[i]; i++) {
+    if (strcmp(key, keys[i]) == 0)
+      return true;
+  }
+  return false;
+}
+
+static cJSON *yaml_node_to_json_ctx(yaml_document_t *doc, yaml_node_t *node,
+                                    int depth, bool string_field,
+                                    char **out_err);
+
 static cJSON *yaml_node_to_json(yaml_document_t *doc, yaml_node_t *node,
                                 int depth, char **out_err) {
+  return yaml_node_to_json_ctx(doc, node, depth, false, out_err);
+}
+
+static cJSON *yaml_node_to_json_ctx(yaml_document_t *doc, yaml_node_t *node,
+                                    int depth, bool string_field,
+                                    char **out_err) {
   if (!node)
     return cJSON_CreateNull();
 
@@ -63,6 +108,11 @@ static cJSON *yaml_node_to_json(yaml_document_t *doc, yaml_node_t *node,
     if (!val || !*val || strcmp(val, "~") == 0 ||
         strcasecmp(val, "null") == 0) {
       return cJSON_CreateNull();
+    }
+
+    // String-typed schema field: keep the plain scalar's text verbatim.
+    if (string_field) {
+      return cJSON_CreateString(val);
     }
 
     // Case-insensitive booleans
@@ -105,7 +155,8 @@ static cJSON *yaml_node_to_json(yaml_document_t *doc, yaml_node_t *node,
     for (yaml_node_item_t *item = node->data.sequence.items.start;
          item < node->data.sequence.items.top; item++) {
       yaml_node_t *child = yaml_document_get_node(doc, *item);
-      cJSON *child_json = yaml_node_to_json(doc, child, depth + 1, out_err);
+      cJSON *child_json =
+          yaml_node_to_json_ctx(doc, child, depth + 1, string_field, out_err);
       if (!child_json) {
         cJSON_Delete(arr);
         return NULL;
@@ -150,7 +201,8 @@ static cJSON *yaml_node_to_json(yaml_document_t *doc, yaml_node_t *node,
         return NULL;
       }
 
-      cJSON *val_json = yaml_node_to_json(doc, val_node, depth + 1, out_err);
+      cJSON *val_json = yaml_node_to_json_ctx(
+          doc, val_node, depth + 1, yaml_key_is_string_field(key_str), out_err);
       if (!val_json) {
         cJSON_Delete(obj);
         return NULL;
@@ -247,6 +299,23 @@ cJSON *cdsp_yaml_to_json(const char *yaml_str, char **out_err) {
 
 /* --- cJSON Tree to YAML String --- */
 
+static bool yaml_scalar_conflicts_with_literal(const char *str) {
+  if (!str || !*str)
+    return true;
+  if (strcmp(str, "~") == 0 || strcasecmp(str, "null") == 0 ||
+      strcasecmp(str, "true") == 0 || strcasecmp(str, "false") == 0 ||
+      strcasecmp(str, ".inf") == 0 || strcasecmp(str, "+.inf") == 0 ||
+      strcasecmp(str, "-.inf") == 0 || strcasecmp(str, ".nan") == 0) {
+    return true;
+  }
+  cJSON *lit = cJSON_ParseWithOpts(str, NULL, 1);
+  if (lit) {
+    cJSON_Delete(lit);
+    return true;
+  }
+  return false;
+}
+
 static void configure_yaml_styles(yaml_document_t *doc, yaml_node_t *node) {
   if (!node)
     return;
@@ -263,17 +332,17 @@ static void configure_yaml_styles(yaml_document_t *doc, yaml_node_t *node) {
       yaml_node_t *v = yaml_document_get_node(doc, p->value);
 
       if (k && k->type == YAML_SCALAR_NODE) {
-        k->data.scalar.style = YAML_PLAIN_SCALAR_STYLE;
+        const char *k_str = (const char *)k->data.scalar.value;
+        if (!yaml_scalar_conflicts_with_literal(k_str)) {
+          k->data.scalar.style = YAML_PLAIN_SCALAR_STYLE;
+        }
       }
       if (v && v->type == YAML_SCALAR_NODE) {
         // Leave numbers, booleans, and plain strings unquoted; quote string
         // literals that collide with JSON/YAML literals (e.g. "44100", "true")
         const char *v_str = (const char *)v->data.scalar.value;
-        cJSON *lit = v_str ? cJSON_ParseWithOpts(v_str, NULL, 1) : NULL;
-        if (!lit) {
+        if (!yaml_scalar_conflicts_with_literal(v_str)) {
           v->data.scalar.style = YAML_PLAIN_SCALAR_STYLE;
-        } else {
-          cJSON_Delete(lit);
         }
       }
       configure_yaml_styles(doc, v);
@@ -289,11 +358,8 @@ static void configure_yaml_styles(yaml_document_t *doc, yaml_node_t *node) {
       yaml_node_t *v = yaml_document_get_node(doc, *it);
       if (v && v->type == YAML_SCALAR_NODE) {
         const char *v_str = (const char *)v->data.scalar.value;
-        cJSON *lit = v_str ? cJSON_ParseWithOpts(v_str, NULL, 1) : NULL;
-        if (!lit) {
+        if (!yaml_scalar_conflicts_with_literal(v_str)) {
           v->data.scalar.style = YAML_PLAIN_SCALAR_STYLE;
-        } else {
-          cJSON_Delete(lit);
         }
       }
       configure_yaml_styles(doc, v);

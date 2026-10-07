@@ -49,7 +49,8 @@ static const filter_vtable_t *filter_vtable_from_type(filter_type_t type) {
   case FILTER_TYPE_INVALID:
     return NULL;
   }
-  CDSP_UNREACHABLE();
+  // Reachable for out-of-range enum values passed through the C API; must not
+  // be CDSP_UNREACHABLE() (UB in release builds).
   return NULL;
 }
 
@@ -95,6 +96,19 @@ filter_t *filter_create(const char *name, const filter_config_t *config,
   }
   if (filter_config_validate(config, sample_rate, err) != 0)
     return NULL;
+  return filter_create_prevalidated(name, config, sample_rate, chunk_size,
+                                    proc_params, err);
+}
+
+filter_t *filter_create_prevalidated(const char *name,
+                                     const filter_config_t *config,
+                                     int sample_rate, size_t chunk_size,
+                                     processing_parameters_t *proc_params,
+                                     config_error_t *err) {
+  if (!config) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Null filter config");
+    return NULL;
+  }
   const filter_vtable_t *vtable = filter_vtable_from_type(config->type);
   if (!vtable) {
     logger_error(&g_logger, "Unknown filter type %s for '%s'",
@@ -211,7 +225,11 @@ int filter_config_validate(const filter_config_t *filter, int sample_rate,
     return -1;
   }
   const filter_vtable_t *vtable = filter_vtable_from_type(filter->type);
-  if (vtable && vtable->validate) {
+  if (!vtable) {
+    config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Unknown filter type");
+    return -1;
+  }
+  if (vtable->validate) {
     return vtable->validate(filter, sample_rate, err);
   }
   return 0;

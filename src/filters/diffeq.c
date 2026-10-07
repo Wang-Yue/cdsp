@@ -7,7 +7,7 @@
 #include "utils/double_helpers.h"
 
 struct diffeq_filter {
-  char name[64];
+  char name[128];
   double *s;    /**< Filter state, size = order */
   double *a;    /**< Feedback coefficients, a[0]=1.0, size = len */
   double *b;    /**< Feedforward coefficients, size = len */
@@ -51,7 +51,7 @@ static bool poles_inside_unit_circle(const double *a, size_t count) {
   bool stable = true;
   for (size_t order = count - 1; order >= 1; order--) {
     double reflection = coeffs[order];
-    if (fabs(reflection) >= 1.0) {
+    if (!(fabs(reflection) < 1.0)) {
       stable = false;
       break;
     }
@@ -134,6 +134,15 @@ static int diffeq_config_validate(const filter_config_t *config,
   }
 
   double a0 = params->a[0];
+  if (params->b && params->b_count > 0) {
+    for (size_t i = 0; i < params->b_count; i++) {
+      if (!isfinite(params->b[i] / a0)) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "All coefficients must be finite numbers");
+        return -1;
+      }
+    }
+  }
   double *scaled = (double *)malloc(params->a_count * sizeof(double));
   if (!scaled) {
     config_error_set(err, CONFIG_ERR_PARSE, "Allocation failure");
@@ -141,6 +150,12 @@ static int diffeq_config_validate(const filter_config_t *config,
   }
   for (size_t i = 0; i < params->a_count; i++) {
     scaled[i] = params->a[i] / a0;
+    if (!isfinite(scaled[i])) {
+      free(scaled);
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "All coefficients must be finite numbers");
+      return -1;
+    }
   }
 
   bool stable = poles_inside_unit_circle(scaled, params->a_count);
@@ -226,11 +241,15 @@ static void *diffeq_filter_create(const char *name,
     filter->b[0] = 1.0;
   }
 
-  // Normalize coefficients by a[0] so a[0] becomes 1.0
+  // Normalize coefficients by a[0] so a[0] becomes 1.0. As upstream, only the
+  // supplied coefficients are scaled; the zero padding up to `len` stays +0.0
+  // (dividing it by a negative a[0] would produce -0.0).
   double a0 = filter->a[0];
   if (isfinite(a0) && a0 != 0.0 && a0 != 1.0) {
-    for (size_t i = 0; i < len; i++) {
+    for (size_t i = 0; i < a_cnt; i++) {
       filter->a[i] /= a0;
+    }
+    for (size_t i = 0; i < b_cnt; i++) {
       filter->b[i] /= a0;
     }
   }
@@ -243,8 +262,12 @@ static void *diffeq_filter_create(const char *name,
       diffeq_filter_t *filter, mutable_waveform_t waveform, size_t count) {    \
     double s[ORDER];                                                           \
     memcpy(s, filter->s, ORDER * sizeof(double));                              \
-    const double *a = &filter->a[1];                                           \
-    const double *b = &filter->b[1];                                           \
+    /* Local copies (as upstream): stores to waveform[] cannot alias them,  */ \
+    /* so the coefficients stay in registers across the sample loop.        */ \
+    double a[ORDER];                                                           \
+    double b[ORDER];                                                           \
+    memcpy(a, &filter->a[1], ORDER * sizeof(double));                          \
+    memcpy(b, &filter->b[1], ORDER * sizeof(double));                          \
     double b0 = filter->b[0];                                                  \
     for (size_t i = 0; i < count; i++) {                                       \
       double input = waveform[i];                                              \
@@ -296,8 +319,16 @@ static void diffeq_process_block_any(diffeq_filter_t *filter,
 static void diffeq_filter_process(void *instance, mutable_waveform_t waveform,
                                   size_t count) {
   diffeq_filter_t *filter = (diffeq_filter_t *)instance;
-  if (!filter || !waveform || count == 0)
+  if (!filter)
     return;
+  if (!waveform || count == 0) {
+    // As upstream (and biquad.c): an empty call still flushes subnormals.
+    for (size_t k = 0; k < filter->order; k++) {
+      if (fpclassify(filter->s[k]) == FP_SUBNORMAL)
+        filter->s[k] = 0.0;
+    }
+    return;
+  }
 
   if (filter->order > 8) {
     diffeq_process_block_any(filter, waveform, count);
@@ -357,13 +388,13 @@ static void diffeq_filter_transfer_state(void *dest_ptr, const void *src_ptr) {
     return;
 
   // Do not carry state into different coefficients to prevent transients.
-  if (dest->a && src->a &&
-      memcmp(dest->a, src->a, (dest->order + 1) * sizeof(double)) != 0) {
+  // Compare numerically rather than bytewise, so +0.0 and -0.0 are equal
+  // (coefficients are validated finite, so NaN never reaches here).
+  if (!dest->a || !src->a || !dest->b || !src->b)
     return;
-  }
-  if (dest->b && src->b &&
-      memcmp(dest->b, src->b, (dest->order + 1) * sizeof(double)) != 0) {
-    return;
+  for (size_t i = 0; i <= dest->order; i++) {
+    if (dest->a[i] != src->a[i] || dest->b[i] != src->b[i])
+      return;
   }
 
   if (dest->s && src->s && dest->order > 0) {

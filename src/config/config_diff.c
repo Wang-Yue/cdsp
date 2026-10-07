@@ -36,23 +36,30 @@ config_change_type_t config_diff(const dsp_config_t *current,
   }
 
   // 3. Mixers diff
+  bool mixers_changed = false;
   if (current->mixers_count != new_conf->mixers_count) {
-    return CONFIG_CHANGE_MIXER_PARAMETERS;
-  }
-  for (size_t i = 0; i < new_conf->mixers_count; i++) {
-    mixer_config_t *old_m =
-        dsp_config_get_mixer(current, new_conf->mixers[i].name);
-    if (!old_m || !mixer_config_equal(old_m, &new_conf->mixers[i].mixer)) {
-      return CONFIG_CHANGE_MIXER_PARAMETERS;
+    mixers_changed = true;
+  } else {
+    for (size_t i = 0; i < new_conf->mixers_count; i++) {
+      mixer_config_t *old_m =
+          dsp_config_get_mixer(current, new_conf->mixers[i].name);
+      if (!old_m || !mixer_config_equal(old_m, &new_conf->mixers[i].mixer)) {
+        mixers_changed = true;
+        break;
+      }
     }
-  }
-  for (size_t i = 0; i < current->mixers_count; i++) {
-    if (!dsp_config_get_mixer(new_conf, current->mixers[i].name)) {
-      return CONFIG_CHANGE_MIXER_PARAMETERS;
+    if (!mixers_changed) {
+      for (size_t i = 0; i < current->mixers_count; i++) {
+        if (!dsp_config_get_mixer(new_conf, current->mixers[i].name)) {
+          mixers_changed = true;
+          break;
+        }
+      }
     }
   }
 
-  // 4. Filters & Processors diff
+  // 4. Filters & Processors diff (check structural type changes before mixer
+  // parameter changes so CONFIG_CHANGE_PIPELINE takes precedence)
   bool params_changed = false;
 
   for (size_t i = 0; i < new_conf->filters_count; i++) {
@@ -102,9 +109,47 @@ config_change_type_t config_diff(const dsp_config_t *current,
     }
   }
 
+  if (mixers_changed) {
+    return CONFIG_CHANGE_MIXER_PARAMETERS;
+  }
+
   if (current->filters_count != new_conf->filters_count ||
       current->processors_count != new_conf->processors_count) {
     params_changed = true;
+  }
+
+  if (!params_changed) {
+    for (size_t i = 0; i < current->filters_count; i++) {
+      const char *old_name = current->filters[i].name;
+      bool found = false;
+      for (size_t j = 0; j < new_conf->filters_count; j++) {
+        if (strcmp(old_name, new_conf->filters[j].name) == 0) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        params_changed = true;
+        break;
+      }
+    }
+  }
+
+  if (!params_changed) {
+    for (size_t i = 0; i < current->processors_count; i++) {
+      const char *old_name = current->processors[i].name;
+      bool found = false;
+      for (size_t j = 0; j < new_conf->processors_count; j++) {
+        if (strcmp(old_name, new_conf->processors[j].name) == 0) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        params_changed = true;
+        break;
+      }
+    }
   }
 
   if (params_changed || !safe_streq(current->title, new_conf->title) ||

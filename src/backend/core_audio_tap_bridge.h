@@ -35,6 +35,13 @@ typedef struct {
   AudioDeviceID aggregate_dev_id;
   /** @brief Index of the tap's first channel among the aggregate's inputs. */
   uint32_t tap_channel_offset;
+  /** @brief Total input channels of the aggregate (sub-device + tap), 0 if
+   * unknown. */
+  uint32_t aggregate_channels;
+  /** @brief The tapped physical output device (also the aggregate's clock
+   * sub-device). Watched for liveness, since the private aggregate itself can
+   * stay alive after its sub-device disappears. */
+  AudioDeviceID target_dev_id;
 } cdsp_tap_handle_t;
 
 /**

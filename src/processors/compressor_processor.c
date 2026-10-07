@@ -35,7 +35,7 @@
 static const logger_t g_logger = {"compressor_processor"};
 
 struct compressor_processor {
-  char name[64];            ///< Unique name of the compressor instance.
+  char name[128];           ///< Unique name of the compressor instance.
   size_t *monitor_channels; ///< Array of channel indices to monitor for level
                             ///< detection.
   size_t monitor_channels_count; ///< Number of monitored channels.
@@ -78,6 +78,19 @@ static const char *compressor_processor_get_name(const void *impl) {
 #include <string.h>
 
 /**
+ * @brief Builds the clipper sub-filter configuration of a compressor.
+ */
+static filter_config_t compressor_clipper_config(const compressor_config_t *p) {
+  clipper_config_t limit_params = {0};
+  limit_params.has_clip_limit = true;
+  limit_params.clip_limit = p->clip_limit;
+  limit_params.soft_clip = p->soft_clip;
+  filter_config_t lcfg = {.type = FILTER_TYPE_CLIPPER,
+                          .parameters.clipper = limit_params};
+  return lcfg;
+}
+
+/**
  * @brief Validates dynamic range compressor processor parameters.
  *
  * @param config Pointer to the processor configuration to validate.
@@ -86,7 +99,6 @@ static const char *compressor_processor_get_name(const void *impl) {
  */
 static int compressor_config_validate(const processor_config_t *config,
                                       int sample_rate, config_error_t *err) {
-  (void)sample_rate;
   if (!config || config->type != PROCESSOR_TYPE_COMPRESSOR)
     return -1;
   const compressor_config_t *p = &config->parameters.compressor;
@@ -95,19 +107,55 @@ static int compressor_config_validate(const processor_config_t *config,
                      "Compressor: channels must be > 0, got 0");
     return -1;
   }
-  if (p->attack <= 0.0) {
+  if (p->attack_unit < TIME_UNIT_US ||
+      p->attack_unit > TIME_UNIT_SAMPLES ||
+      p->release_unit < TIME_UNIT_US ||
+      p->release_unit > TIME_UNIT_SAMPLES) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "Compressor: invalid attack/release time unit");
+    return -1;
+  }
+  // Upstream's `FiniteF64` fields make NaN/Inf unrepresentable; C callers
+  // bypass the JSON parser, so the `<= 0.0` comparisons below (false for NaN)
+  // need explicit finiteness checks.
+  if (p->attack <= 0.0 || !isfinite(p->attack)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "Compressor: attack must be > 0, got %g", p->attack);
     return -1;
   }
-  if (p->release <= 0.0) {
+  if (p->release <= 0.0 || !isfinite(p->release)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "Compressor: release must be > 0, got %g", p->release);
+    return -1;
+  }
+  if (!isfinite(p->threshold)) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "Compressor: threshold must be finite, got %g",
+                     p->threshold);
+    return -1;
+  }
+  if (p->has_makeup_gain && !isfinite(p->makeup_gain)) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "Compressor: makeup_gain must be finite, got %g",
+                     p->makeup_gain);
     return -1;
   }
   if (p->factor <= 0.0 || !isfinite(p->factor)) {
     config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
                      "Compressor: factor must be positive and > 0");
+    return -1;
+  }
+  // `compressor_processor_create` builds the optional clipper through
+  // `g_clipper_vtable.create`, which validates the limit; run the same check
+  // here so validation and construction agree.
+  if (p->has_clip_limit) {
+    filter_config_t lcfg = compressor_clipper_config(p);
+    if (g_clipper_vtable.validate(&lcfg, sample_rate, err) != 0)
+      return -1;
+  }
+  if (p->monitor_channels_count > 0 && !p->monitor_channels) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "Compressor: monitor_channels is NULL with non-zero count");
     return -1;
   }
   for (size_t i = 0; i < p->monitor_channels_count; i++) {
@@ -117,6 +165,11 @@ static int compressor_config_validate(const processor_config_t *config,
                        p->monitor_channels[i], p->channels - 1);
       return -1;
     }
+  }
+  if (p->process_channels_count > 0 && !p->process_channels) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "Compressor: process_channels is NULL with non-zero count");
+    return -1;
   }
   for (size_t i = 0; i < p->process_channels_count; i++) {
     if (p->process_channels[i] >= p->channels) {
@@ -264,11 +317,7 @@ static void *compressor_processor_create(const char *name,
   processor->prev_loudness = -100.0;
 
   if (params->has_clip_limit) {
-    clipper_config_t limit_params = {0};
-    limit_params.clip_limit = params->clip_limit;
-    limit_params.soft_clip = params->soft_clip;
-    filter_config_t lcfg = {.type = FILTER_TYPE_CLIPPER,
-                            .parameters.clipper = limit_params};
+    filter_config_t lcfg = compressor_clipper_config(params);
     processor->limiter =
         g_clipper_vtable.create("limiter", &lcfg, 0, 0, NULL, err);
     if (!processor->limiter) {

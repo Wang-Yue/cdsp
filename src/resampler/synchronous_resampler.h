@@ -35,9 +35,14 @@
  *     M = Fₒ / g     (output block size in samples per rational period)
  *
  * Any integer multiple `N = K·L` input samples corresponds to
- * exactly `K·M` output samples — the resampler is fixed-ratio. We
- * round the user-supplied `chunkSize` up to the smallest valid
- * `K·L`, which fixes the per-call input/output block lengths.
+ * exactly `K·M` output samples — the resampler is fixed-ratio.
+ * Following rubato `synchro.rs` (`FixedSync::Output`), the FFT
+ * sub-block is `sub_fft_in = K·L` / `sub_fft_out = K·M` with
+ * `K = ceil((chunk_size / max(chunk_size / 256, 1)) / M)`. Each
+ * call emits exactly `chunk_size` output frames; whole sub-blocks
+ * are processed into an output staging buffer and the surplus
+ * (`saved_frames < sub_fft_out`) carries over, so the input size
+ * per call (`get_input_frames_next`) varies by whole sub-blocks.
  *
  * At init, build a windowed-sinc lowpass filter `h[n]` of length `N`
  * with cutoff at `min(1, Fₒ/Fᵢ) · π` rad/sample (Crochiere & Rabiner

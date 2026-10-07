@@ -230,7 +230,8 @@ playback_device_config_get_channels(const playback_device_config_t *config);
 /**
  * @brief Gets the device name from a capture device configuration.
  * @param config Pointer to the configuration.
- * @return Device name string, or NULL if not applicable/specified.
+ * @return Device name string; never NULL. Returns "" when the backend type
+ * has no device name or @p config is NULL.
  */
 const char *
 capture_device_config_get_device(const capture_device_config_t *config);
@@ -238,7 +239,8 @@ capture_device_config_get_device(const capture_device_config_t *config);
 /**
  * @brief Gets the device name from a playback device configuration.
  * @param config Pointer to the configuration.
- * @return Device name string, or NULL.
+ * @return Device name string; never NULL. Returns "" when the backend type
+ * has no device name or @p config is NULL.
  */
 const char *
 playback_device_config_get_device(const playback_device_config_t *config);
@@ -468,6 +470,18 @@ typedef struct {
   void (*set_pitch)(void *ctx, double multiplier);
 
   /**
+   * @brief Optional. Tell the backend the pipeline (playback) sample rate.
+   *
+   * Called once by the engine after create, before open. Only backends whose
+   * behaviour depends on it implement this (File capture scales
+   * extra_samples and its resampling ratio by pipeline/capture rate, like
+   * upstream filedevice.rs). NULL = not needed.
+   * @param ctx Pointer to the backend instance context.
+   * @param pipeline_sample_rate Pipeline sample rate in Hz.
+   */
+  void (*set_pipeline_sample_rate)(void *ctx, int pipeline_sample_rate);
+
+  /**
    * @brief Wait for new samples to become available.
    * @param ctx Pointer to the backend instance context.
    * @param timeout_ms Maximum time to wait in milliseconds.
@@ -496,6 +510,25 @@ struct capture_backend {
   void *ctx;                              /**< Private context pointer */
   const capture_backend_vtable_t *vtable; /**< Virtual method table */
   bool is_realtime; /**< True if the backend operates in real-time */
+  /**
+   * When true, the capture loop does not feed the chunk just returned by
+   * `read` to the silence counter (and never auto-pauses on it). Upstream
+   * only silence-gates real input: the signal generator has no silence
+   * counter (generatordevice.rs) and the file EOF `extra_samples` tail is
+   * sent unconditionally (file_backend/device.rs send_silence). Written only
+   * by the backend on the capture thread (at creation or inside `read`), so
+   * a plain bool is sufficient. Zero-initialised (calloc) = gate as usual.
+   */
+  bool skip_silence_detection;
+  /**
+   * When true, the engine does not run the sample rate watcher on this
+   * capture. Set by sources whose chunk timing says nothing about a device
+   * clock: the signal generator produces chunks as fast as the queue accepts
+   * them, and upstream's generator loop has no rate watcher
+   * (generatordevice.rs:209-259). Written once by the backend at creation.
+   * Zero-initialised (calloc) = watch as usual.
+   */
+  bool skip_rate_watcher;
 };
 
 /**
@@ -714,6 +747,11 @@ bool capture_backend_pitch_control_supported(capture_backend_t *backend);
  * @param multiplier The pitch multiplier.
  */
 void capture_backend_set_pitch(capture_backend_t *backend, double multiplier);
+
+/// Tell the capture backend the pipeline sample rate (no-op for backends that
+/// do not implement the optional vtable hook).
+void capture_backend_set_pipeline_sample_rate(capture_backend_t *backend,
+                                              int pipeline_sample_rate);
 
 /**
  * @brief Wait for data to be available on the capture device via wrapper.

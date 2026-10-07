@@ -52,6 +52,7 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
 
   bool found_fmt = false;
   bool found_data = false;
+  bool found_ds64 = false;
   uint32_t sample_rate = 0;
   uint16_t channels = 0;
   binary_sample_format_t format = BINARY_SAMPLE_FORMAT_INVALID;
@@ -80,15 +81,16 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
         ((uint32_t)size_bytes[2] << 16) | ((uint32_t)size_bytes[3] << 24);
 
     if (memcmp(chunk_id, "ds64", 4) == 0) {
-      if (chunk_size < 24) {
-        uint32_t skip = (chunk_size + 1) & ~1;
+      if (!is_rf64 || found_ds64 || chunk_size < 24) {
+        int64_t skip = (int64_t)chunk_size + (chunk_size & 1U);
         if (cdsp_fseek64(f, skip, SEEK_CUR) != 0) {
           set_error(err_msg, err_msg_len,
-                    "Failed to seek past short ds64 chunk");
+                    "Failed to seek past short or unexpected ds64 chunk");
           return false;
         }
         continue;
       }
+      found_ds64 = true;
       uint8_t ds64_payload[28];
       size_t read_bytes = chunk_size < 28 ? chunk_size : 28;
       if (fread(ds64_payload, 1, read_bytes, f) != read_bytes) {
@@ -112,9 +114,9 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
                        ((uint32_t)ds64_payload[27] << 24);
       }
 
-      uint32_t bytes_read = (uint32_t)read_bytes;
+      uint64_t bytes_read = (uint64_t)read_bytes;
       for (uint32_t i = 0; i < table_length; i++) {
-        if (bytes_read + 12 > chunk_size) {
+        if (bytes_read + 12 > (uint64_t)chunk_size) {
           break;
         }
         uint8_t entry_buf[12];
@@ -133,16 +135,22 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
         }
       }
 
-      if (chunk_size > bytes_read) {
-        uint32_t remaining = chunk_size - bytes_read;
-        uint32_t pad = (chunk_size & 1);
+      if ((uint64_t)chunk_size > bytes_read) {
+        int64_t remaining = (int64_t)((uint64_t)chunk_size - bytes_read);
+        int64_t pad = (chunk_size & 1U);
         if (cdsp_fseek64(f, remaining + pad, SEEK_CUR) != 0) {
           set_error(err_msg, err_msg_len, "Failed to seek past ds64 chunk");
           return false;
         }
+      } else if ((chunk_size & 1U) != 0) {
+        // Odd-sized chunk consumed exactly: still skip the RIFF word-align pad.
+        if (cdsp_fseek64(f, 1, SEEK_CUR) != 0) {
+          set_error(err_msg, err_msg_len, "Failed to seek past ds64 padding");
+          return false;
+        }
       }
     } else if (memcmp(chunk_id, "fmt ", 4) == 0) {
-      uint32_t pad = chunk_size & 1;
+      int64_t pad = chunk_size & 1U;
       if (found_fmt) {
         // Honor first fmt chunk, skip any subsequent fmt chunks
         if (cdsp_fseek64(f, (int64_t)chunk_size + pad, SEEK_CUR) != 0) {
@@ -152,8 +160,9 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
         }
         continue;
       }
-      if (chunk_size != 16 && chunk_size != 18 && chunk_size != 40) {
-        // Upstream waveadapter header.rs:621-622 skips malformed fmt chunk and keeps scanning
+      if (chunk_size < 16) {
+        // Upstream waveadapter header.rs:621-622 skips malformed fmt chunk and
+        // keeps scanning
         if (cdsp_fseek64(f, (int64_t)chunk_size + pad, SEEK_CUR) != 0) {
           set_error(err_msg, err_msg_len,
                     "Failed to seek past malformed fmt chunk");
@@ -168,26 +177,36 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
         set_error(err_msg, err_msg_len, "Failed to read fmt chunk payload");
         return false;
       }
-      audio_format = fmt_payload[0] | (fmt_payload[1] << 8);
-      channels = fmt_payload[2] | (fmt_payload[3] << 8);
-      sample_rate = fmt_payload[4] | (fmt_payload[5] << 8) |
-                    (fmt_payload[6] << 16) | (fmt_payload[7] << 24);
-      block_align = fmt_payload[12] | (fmt_payload[13] << 8);
-      bits_per_sample = fmt_payload[14] | (fmt_payload[15] << 8);
+      audio_format =
+          (uint16_t)fmt_payload[0] | (uint16_t)((uint16_t)fmt_payload[1] << 8);
+      channels =
+          (uint16_t)fmt_payload[2] | (uint16_t)((uint16_t)fmt_payload[3] << 8);
+      sample_rate = (uint32_t)fmt_payload[4] | ((uint32_t)fmt_payload[5] << 8) |
+                    ((uint32_t)fmt_payload[6] << 16) |
+                    ((uint32_t)fmt_payload[7] << 24);
+      block_align = (uint16_t)fmt_payload[12] |
+                    (uint16_t)((uint16_t)fmt_payload[13] << 8);
+      bits_per_sample = (uint16_t)fmt_payload[14] |
+                        (uint16_t)((uint16_t)fmt_payload[15] << 8);
       valid_bits = bits_per_sample;
 
-      if (audio_format != 1 && audio_format != 3 && audio_format != 0xFFFE) {
+      // 6 = WAVE_FORMAT_ALAW, 7 = WAVE_FORMAT_MULAW: accepted (8-bit only,
+      // checked below) for FIR coefficient files, like upstream waveadapter.
+      if (audio_format != 1 && audio_format != 3 && audio_format != 6 &&
+          audio_format != 7 && audio_format != 0xFFFE) {
         set_error(err_msg, err_msg_len,
-                  "Unsupported WAV format code %d (only PCM/Float supported)",
+                  "Unsupported WAV format code %d (only PCM/Float/A-law/mu-law "
+                  "supported)",
                   audio_format);
         return false;
       }
 
       bool is_extended = (audio_format == 0xFFFE);
       if (is_extended) {
-        if (chunk_size != 40) {
+        if (chunk_size < 40) {
           set_error(err_msg, err_msg_len,
-                    "extended fmt chunk must be 40 bytes, got %u", chunk_size);
+                    "extended fmt chunk must be at least 40 bytes, got %u",
+                    chunk_size);
           return false;
         }
         static const uint8_t guid_suffix[14] = {0x00, 0x00, 0x00, 0x00, 0x10,
@@ -198,17 +217,18 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
                     "Unsupported sub-format GUID in EXTENSIBLE");
           return false;
         }
-        uint16_t sub_format = fmt_payload[24] | (fmt_payload[25] << 8);
-        if (sub_format == 1) {
-          audio_format = 1;
-        } else if (sub_format == 3) {
-          audio_format = 3;
+        uint16_t sub_format = (uint16_t)fmt_payload[24] |
+                              (uint16_t)((uint16_t)fmt_payload[25] << 8);
+        if (sub_format == 1 || sub_format == 3 || sub_format == 6 ||
+            sub_format == 7) {
+          audio_format = sub_format;
         } else {
           set_error(err_msg, err_msg_len,
                     "Unsupported sub-format %d in EXTENSIBLE", sub_format);
           return false;
         }
-        uint16_t v = fmt_payload[18] | (fmt_payload[19] << 8);
+        uint16_t v = (uint16_t)fmt_payload[18] |
+                     (uint16_t)((uint16_t)fmt_payload[19] << 8);
         valid_bits = v;
       }
 
@@ -216,7 +236,7 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
         set_error(err_msg, err_msg_len, "Invalid channel count 0 in fmt chunk");
         return false;
       }
-      if (block_align == 0) {
+      if (block_align == 0 || (block_align % channels) != 0) {
         set_error(err_msg, err_msg_len,
                   "Invalid block align %d for %d channels", block_align,
                   channels);
@@ -260,9 +280,13 @@ bool wav_read_header(FILE *f, wav_info_t *info, char *err_msg,
       }
 
       if (format == BINARY_SAMPLE_FORMAT_INVALID) {
-        bool is_u8 =
-            (audio_format == 1 && bits_per_sample == 8 && container_bytes == 1);
-        if (!is_u8) {
+        // 8-bit unsigned PCM and G.711 have no binary_sample_format_t; they
+        // are returned with format INVALID and only decoded by
+        // wav_read_channel_samples (FIR coefficients).
+        bool is_8bit_codec =
+            ((audio_format == 1 || audio_format == 6 || audio_format == 7) &&
+             bits_per_sample == 8 && container_bytes == 1);
+        if (!is_8bit_codec) {
           set_error(err_msg, err_msg_len,
                     "Unsupported WAV sample format: format %d, %d bits in %d "
                     "bytes per sample",
@@ -372,6 +396,18 @@ bool wav_read_info_from_file(const char *filename, wav_info_t *info,
   }
   bool ok = wav_read_header(f, info, err_msg, err_msg_len);
   fclose(f);
+  // wav_read_header deliberately accepts 8-bit unsigned (U8) and G.711
+  // A-law / mu-law WAVs with format == BINARY_SAMPLE_FORMAT_INVALID so that
+  // wav_read_channel_samples can load them as FIR coefficients. Callers of
+  // this function want a streamable sample format, which those encodings do
+  // not have (upstream wavtools::find_data_in_wav: "Unsupported wav format").
+  if (ok && info->format == BINARY_SAMPLE_FORMAT_INVALID) {
+    set_error(err_msg, err_msg_len,
+              "Unsupported wav format (audio_format=%u, bits=%u, "
+              "container_bytes=%zu)",
+              info->audio_format, info->bits_per_sample, info->container_bytes);
+    return false;
+  }
   return ok;
 }
 
@@ -423,9 +459,17 @@ double *wav_read_channel_samples(const char *path, int channel,
     return NULL;
   }
 
-  bool is_u8 = (info.audio_format == 1 && info.bits_per_sample == 8 &&
-                info.container_bytes == 1);
-  if (info.format == BINARY_SAMPLE_FORMAT_INVALID && !is_u8) {
+  raw_codec_t codec = RAW_CODEC_NONE;
+  if (info.format == BINARY_SAMPLE_FORMAT_INVALID &&
+      info.bits_per_sample == 8 && info.container_bytes == 1) {
+    if (info.audio_format == 1)
+      codec = RAW_CODEC_U8;
+    else if (info.audio_format == 6)
+      codec = RAW_CODEC_ALAW;
+    else if (info.audio_format == 7)
+      codec = RAW_CODEC_MULAW;
+  }
+  if (info.format == BINARY_SAMPLE_FORMAT_INVALID && codec == RAW_CODEC_NONE) {
     set_error(err_msg, err_msg_len,
               "Unsupported wav format in '%s' (audio_format=%u, bits=%u, "
               "container_bytes=%zu, valid_bits=%u)",
@@ -442,16 +486,27 @@ double *wav_read_channel_samples(const char *path, int channel,
     return NULL;
   }
 
+  // Never trust the declared data length beyond what the file holds: a
+  // streaming placeholder (0xFFFFFFFF) or a truncated file would otherwise
+  // size the sample buffer from a bogus length (up to 16 GiB). Upstream
+  // waveadapter likewise reads to EOF and keeps the whole frames it got.
   uint64_t data_bytes = info.data_bytes;
-  if (!info.is_rf64 && data_bytes == 0xFFFFFFFF) {
+  {
     int64_t cur_pos = cdsp_ftell64(f);
     int64_t file_size = -1;
     if (cur_pos >= 0 && cdsp_fseek64(f, 0, SEEK_END) == 0) {
       file_size = cdsp_ftell64(f);
       cdsp_fseek64(f, cur_pos, SEEK_SET);
     }
-    if (file_size > (int64_t)info.data_start_offset) {
-      data_bytes = (uint64_t)(file_size - (int64_t)info.data_start_offset);
+    if (file_size >= 0) {
+      uint64_t available =
+          (file_size > (int64_t)info.data_start_offset)
+              ? (uint64_t)(file_size - (int64_t)info.data_start_offset)
+              : 0;
+      if ((!info.is_rf64 && data_bytes == 0xFFFFFFFF) ||
+          data_bytes > available) {
+        data_bytes = available;
+      }
     }
   }
 
@@ -469,9 +524,9 @@ double *wav_read_channel_samples(const char *path, int channel,
     return NULL;
   }
 
-  double *result = raw_read_channel_stream(
+  double *result = raw_read_channel_stream_codec(
       f, channel, (size_t)info.channels, info.container_bytes, info.format,
-      is_u8, num_frames, out_count, err_msg, err_msg_len);
+      codec, num_frames, out_count, err_msg, err_msg_len);
   fclose(f);
 
   if (!result && (!err_msg || err_msg[0] == '\0')) {

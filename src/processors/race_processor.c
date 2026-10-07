@@ -32,7 +32,7 @@
 static const logger_t g_logger = {"race_processor"};
 
 struct race_processor {
-  char name[64];    ///< Unique name of the RACE processor instance.
+  char name[128];   ///< Unique name of the RACE processor instance.
   size_t channel_a; ///< Index of primary channel A (e.g., Left).
   size_t channel_b; ///< Index of primary channel B (e.g., Right).
   delay_filter_t
@@ -68,6 +68,62 @@ static const char *race_processor_get_name(const void *impl) {
 #include <string.h>
 
 /**
+ * @brief Builds the delay sub-filter configuration for a RACE processor.
+ *
+ * Subtracts one sample period from the configured delay (clamped at zero) to
+ * compensate for the implicit 1-sample delay of the recursive feedback loop,
+ * matching upstream `delay_config` in `processors/race.rs`.
+ */
+static filter_config_t race_delay_filter_config(const race_config_t *params,
+                                                int sample_rate) {
+  delay_unit_t unit = params->delay_unit;
+
+  /* Calculate the duration of one sample in the requested delay units.
+     This is used to compensate for the implicit 1-sample delay introduced
+     by the recursive feedback structure in the process loop.
+     For MM (millimeters), we assume speed of sound is 343 m/s. */
+  double sample_period = 1.0;
+  switch (unit) {
+  case DELAY_UNIT_US:
+    sample_period = 1000000.0 / (double)sample_rate;
+    break;
+  case DELAY_UNIT_MS:
+    sample_period = 1000.0 / (double)sample_rate;
+    break;
+  case DELAY_UNIT_S:
+    sample_period = 1.0 / (double)sample_rate;
+    break;
+  case DELAY_UNIT_MM:
+    sample_period = 343.0 * 1000.0 / (double)sample_rate;
+    break;
+  case DELAY_UNIT_SAMPLES:
+    sample_period = 1.0;
+    break;
+  case DELAY_UNIT_INVALID:
+    sample_period = 1000.0 / (double)sample_rate;
+    break;
+  }
+
+  /* Compensate for the 1-sample pipeline delay in the feedback path.
+     Since the feedback signal is applied in the next sample period, we must
+     subtract one sample period from the target delay line length.
+     Clamp to 0.0 if target delay is smaller than one sample. */
+  double comp_delay = params->delay - sample_period;
+  if (comp_delay < 0.0)
+    comp_delay = 0.0;
+
+  delay_config_t dparams = {0};
+  dparams.delay = comp_delay;
+  dparams.delay_unit = unit;
+  dparams.subsample =
+      params->has_subsample_delay ? params->subsample_delay : false;
+
+  filter_config_t dcfg = {.type = FILTER_TYPE_DELAY,
+                          .parameters.delay = dparams};
+  return dcfg;
+}
+
+/**
  * @brief Validates RACE cross-talk cancellation processor parameters.
  *
  * @param config Pointer to the RACE parameters to validate.
@@ -76,7 +132,6 @@ static const char *race_processor_get_name(const void *impl) {
  */
 static int race_config_validate(const processor_config_t *config,
                                 int sample_rate, config_error_t *err) {
-  (void)sample_rate;
   if (!config || config->type != PROCESSOR_TYPE_RACE)
     return -1;
   const race_config_t *p = &config->parameters.race;
@@ -112,6 +167,20 @@ static int race_config_validate(const processor_config_t *config,
                      "RACE: channel B %zu is invalid (max: %zu)", p->channel_b,
                      p->channels - 1);
     return -1;
+  }
+  if (p->delay_unit < DELAY_UNIT_MS || p->delay_unit > DELAY_UNIT_MM) {
+    config_error_set(err, CONFIG_ERR_INVALID_PROCESSOR,
+                     "RACE: invalid delay unit");
+    return -1;
+  }
+  // `race_processor_create` builds its delay lines through
+  // `g_delay_vtable.create`, which rejects delays beyond the delay filter's
+  // maximum. Run the same check here so validation and construction agree.
+  if (sample_rate > 0 || p->delay_unit == DELAY_UNIT_SAMPLES) {
+    filter_config_t dcfg =
+        race_delay_filter_config(p, sample_rate > 0 ? sample_rate : 1);
+    if (g_delay_vtable.validate(&dcfg, sample_rate, err) != 0)
+      return -1;
   }
   return 0;
 }
@@ -182,50 +251,7 @@ static void *race_processor_create(const char *name,
                              ? params->channel_a
                              : params->channel_b;
 
-  delay_unit_t unit = params->delay_unit;
-
-  /* Calculate the duration of one sample in the requested delay units.
-     This is used to compensate for the implicit 1-sample delay introduced
-     by the recursive feedback structure in the process loop.
-     For MM (millimeters), we assume speed of sound is 343 m/s. */
-  double sample_period = 1.0;
-  switch (unit) {
-  case DELAY_UNIT_US:
-    sample_period = 1000000.0 / (double)sample_rate;
-    break;
-  case DELAY_UNIT_MS:
-    sample_period = 1000.0 / (double)sample_rate;
-    break;
-  case DELAY_UNIT_S:
-    sample_period = 1.0 / (double)sample_rate;
-    break;
-  case DELAY_UNIT_MM:
-    sample_period = 343.0 * 1000.0 / (double)sample_rate;
-    break;
-  case DELAY_UNIT_SAMPLES:
-    sample_period = 1.0;
-    break;
-  case DELAY_UNIT_INVALID:
-    sample_period = 1000.0 / (double)sample_rate;
-    break;
-  }
-
-  /* Compensate for the 1-sample pipeline delay in the feedback path.
-     Since the feedback signal is applied in the next sample period, we must
-     subtract one sample period from the target delay line length.
-     Clamp to 0.0 if target delay is smaller than one sample. */
-  double comp_delay = params->delay - sample_period;
-  if (comp_delay < 0.0)
-    comp_delay = 0.0;
-
-  delay_config_t dparams = {0};
-  dparams.delay = comp_delay;
-  dparams.delay_unit = unit;
-  dparams.subsample =
-      params->has_subsample_delay ? params->subsample_delay : false;
-
-  filter_config_t dcfg = {.type = FILTER_TYPE_DELAY,
-                          .parameters.delay = dparams};
+  filter_config_t dcfg = race_delay_filter_config(params, sample_rate);
   processor->delay_a = (delay_filter_t *)g_delay_vtable.create(
       "race-DelayA", &dcfg, sample_rate, 0, NULL, err);
   processor->delay_b = (delay_filter_t *)g_delay_vtable.create(
@@ -290,6 +316,16 @@ static void race_processor_process(void *impl, audio_chunk_t *chunk) {
     return;
   }
 
+  // Before the first mixer, capture channels that no mixer reads are marked
+  // unused (upstream gives them an empty waveform). Upstream returns without
+  // touching either channel or the feedback/delay state in that case
+  // (`race.rs` process_chunk); do the same so a silent unused channel does not
+  // feed the cross-talk loop back into the active one.
+  const bool *used = audio_chunk_get_used_channels(chunk);
+  if (used && (!used[processor->channel_a] || !used[processor->channel_b])) {
+    return;
+  }
+
   // Evaluate sample-by-sample recursive cross-talk cancellation loop
   for (size_t i = 0; i < count; i++) {
     double val_a = base_a[i];
@@ -335,6 +371,13 @@ static void race_processor_transfer_state(void *dest_ptr, const void *src_ptr) {
   race_processor_t *dest = (race_processor_t *)dest_ptr;
   const race_processor_t *src = (const race_processor_t *)src_ptr;
   if (!dest || !src || dest == src)
+    return;
+  // When the processed channel pair changes, the loop state belongs to other
+  // channels. Upstream rebuilds both delay lines on every update (wiping them);
+  // cdsp preserves them only when they still refer to the same channels, and
+  // otherwise starts from a clean (zeroed) loop rather than injecting another
+  // channel's delayed audio and feedback into the new pair.
+  if (dest->channel_a != src->channel_a || dest->channel_b != src->channel_b)
     return;
   dest->feedback_a = src->feedback_a;
   dest->feedback_b = src->feedback_b;

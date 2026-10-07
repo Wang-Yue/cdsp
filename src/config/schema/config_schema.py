@@ -397,8 +397,8 @@ STRUCT_RESAMPLER = StructType(
         Field("type", ENUM_RESAMPLER_TYPE, required=True),
         Field("profile", StringType(32), has_flag=True),
         Field("interpolation", StringType(32), has_flag=True),
-        Field("sinc_len", TYPE_INT, has_flag=True),
-        Field("oversampling_factor", TYPE_INT, has_flag=True),
+        Field("sinc_len", TYPE_INT, has_flag=True, min_value=0),
+        Field("oversampling_factor", TYPE_INT, has_flag=True, min_value=0),
         Field("window", StringType(32), has_flag=True),
         Field("f_cutoff", TYPE_DOUBLE, has_flag=True),
     ],
@@ -463,10 +463,15 @@ STRUCT_MIXER = StructType(
     }
 )
 
-FILTER_EXTRA_KEYS = ["type", "description"]
-PROCESSOR_EXTRA_KEYS = ["type", "description"]
-CAPTURE_EXTRA_KEYS = ["type", "labels", "bypass_dop", "dop_cutoff_hz", "description"]
-PLAYBACK_EXTRA_KEYS = ["type", "output_dop", "dsd_encoder_filter", "description"]
+# Upstream parameter/device structs are all #[serde(deny_unknown_fields)]:
+# "description" only exists on the outer Filter/Processor/Mixer/PipelineStep
+# object, and "type" inside `parameters` only for the internally tagged
+# parameter enums (Biquad, BiquadCombo, Conv, Dither).
+FILTER_EXTRA_KEYS = []
+FILTER_TAGGED_EXTRA_KEYS = ["type"]
+PROCESSOR_EXTRA_KEYS = []
+CAPTURE_EXTRA_KEYS = ["type", "labels", "bypass_dop", "dop_cutoff_hz"]
+PLAYBACK_EXTRA_KEYS = ["type", "output_dop", "dsd_encoder_filter"]
 
 # Processor Structs
 STRUCT_COMPRESSOR = StructType(
@@ -573,8 +578,8 @@ STRUCT_VOLUME = StructType(
     c_type="volume_config_t",
     fields=[
         Field("fader", ENUM_VOLUME_FADER, required=True),
-        Field("ramp_time_ms", TYPE_DOUBLE, has_flag=True, getter_default=0.0),
-        Field("limit", TYPE_DOUBLE, has_flag=True, getter_default=0.0),
+        Field("ramp_time_ms", TYPE_DOUBLE, has_flag=True, getter_default=400.0),
+        Field("limit", TYPE_DOUBLE, has_flag=True, getter_default=50.0),
     ],
     allowed_extra_keys=FILTER_EXTRA_KEYS
 )
@@ -583,7 +588,7 @@ STRUCT_LOUDNESS = StructType(
     name="loudness_config",
     c_type="loudness_config_t",
     fields=[
-        Field("reference_level", TYPE_DOUBLE, has_flag=True),
+        Field("reference_level", TYPE_DOUBLE, has_flag=True, required=True),
         Field("high_boost", TYPE_DOUBLE, has_flag=True),
         Field("low_boost", TYPE_DOUBLE, has_flag=True),
         Field("attenuate_mid", TYPE_BOOL, default=False),
@@ -619,9 +624,9 @@ STRUCT_BIQUAD = StructType(
         Field("q_act", TYPE_DOUBLE, has_flag=True),
         Field("freq_target", TYPE_DOUBLE, has_flag=True),
         Field("q_target", TYPE_DOUBLE, has_flag=True),
-        Field("steepness_type", ENUM_STEEPNESS_TYPE, default="STEEPNESS_TYPE_Q"),
+        Field("steepness_type", ENUM_STEEPNESS_TYPE, default="STEEPNESS_TYPE_Q", internal=True),
     ],
-    allowed_extra_keys=FILTER_EXTRA_KEYS,
+    allowed_extra_keys=FILTER_TAGGED_EXTRA_KEYS,
     variant_tag_field="type",
     variant_rules=[
         VariantRule(
@@ -709,13 +714,13 @@ STRUCT_CONVOLUTION = StructType(
         Field("type", ENUM_CONV_TYPE, required=True),
         Field("filename", StringType(512), has_flag=True),
         Field("format", StringType(32), has_flag=True),
-        Field("channel", TYPE_INT, has_flag=True),
-        Field("length", TYPE_INT, has_flag=True),
+        Field("channel", TYPE_INT, has_flag=True, min_value=0),
+        Field("length", TYPE_INT, has_flag=True, min_value=1),
         Field("skip_bytes_lines", TYPE_SIZE_T, has_flag=True),
         Field("read_bytes_lines", TYPE_SIZE_T, has_flag=True),
         Field("values", ArrayType(TYPE_DOUBLE), has_flag=True),
     ],
-    allowed_extra_keys=FILTER_EXTRA_KEYS,
+    allowed_extra_keys=FILTER_TAGGED_EXTRA_KEYS,
     variant_tag_field="type",
     variant_rules=[
         VariantRule(
@@ -773,14 +778,14 @@ STRUCT_BIQUAD_COMBO = StructType(
     fields=[
         Field("type", ENUM_BIQUAD_COMBO_TYPE, required=True),
         Field("freq", TYPE_DOUBLE, has_flag=True),
-        Field("order", TYPE_INT, has_flag=True),
+        Field("order", TYPE_INT, has_flag=True, min_value=0),
         Field("gain", TYPE_DOUBLE, has_flag=True),
         Field("bands", ArrayType(STRUCT_PEQ_BAND)),
         Field("freq_min", TYPE_DOUBLE, has_flag=True),
         Field("freq_max", TYPE_DOUBLE, has_flag=True),
         Field("gains", ArrayType(TYPE_DOUBLE)),
     ],
-    allowed_extra_keys=FILTER_EXTRA_KEYS,
+    allowed_extra_keys=FILTER_TAGGED_EXTRA_KEYS,
     variant_tag_field="type",
     variant_rules=[
         VariantRule(
@@ -830,10 +835,10 @@ STRUCT_DITHER = StructType(
     c_type="dither_config_t",
     fields=[
         Field("type", ENUM_DITHER_TYPE, required=True),
-        Field("bits", TYPE_INT, required=True),
+        Field("bits", TYPE_INT, required=True, min_value=0),
         Field("amplitude", TYPE_DOUBLE, has_flag=True, getter_default=0.0),
     ],
-    allowed_extra_keys=FILTER_EXTRA_KEYS,
+    allowed_extra_keys=FILTER_TAGGED_EXTRA_KEYS,
     variant_tag_field="type",
     variant_rules=[
         VariantRule(
@@ -993,7 +998,7 @@ STRUCT_COREAUDIO_PLAYBACK = StructType(
         Field("device", StringType(256), has_flag=True),
         Field("format", ENUM_COREAUDIO_SAMPLE_FORMAT, has_flag=True),
         Field("exclusive", TYPE_BOOL, has_flag=True, default=False),
-        Field("target_level", TYPE_INT, has_flag=True),
+        Field("target_level", TYPE_INT, has_flag=True, min_value=0),
     ],
     allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
     guard="ENABLE_COREAUDIO"
@@ -1021,7 +1026,7 @@ STRUCT_ALSA_PLAYBACK = StructType(
         Field("channels", TYPE_SIZE_T, required=True),
         Field("device", StringType(256), required=True),
         Field("format", ENUM_ALSA_SAMPLE_FORMAT, has_flag=True),
-        Field("target_level", TYPE_INT, has_flag=True),
+        Field("target_level", TYPE_INT, has_flag=True, min_value=0),
     ],
     allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
     guard="ENABLE_ALSA"
@@ -1053,7 +1058,7 @@ STRUCT_PIPEWIRE_PLAYBACK = StructType(
         Field("node_description", StringType(256), has_flag=True),
         Field("node_group_name", StringType(256), has_flag=True),
         Field("autoconnect_to", StringType(256), has_flag=True),
-        Field("target_level", TYPE_INT, has_flag=True),
+        Field("target_level", TYPE_INT, has_flag=True, min_value=0),
     ],
     allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
     guard="ENABLE_PIPEWIRE"
@@ -1065,7 +1070,7 @@ STRUCT_STDIN_CAPTURE = StructType(
     fields=[
         Field("channels", TYPE_SIZE_T, required=True),
         Field("format", ENUM_BINARY_SAMPLE_FORMAT, required=True),
-        Field("extra_samples", TYPE_INT, has_flag=True),
+        Field("extra_samples", TYPE_INT, has_flag=True, min_value=0),
         Field("skip_bytes", TYPE_SIZE_T, has_flag=True),
         Field("read_bytes", TYPE_SIZE_T, has_flag=True),
     ],
@@ -1107,7 +1112,7 @@ STRUCT_WASAPI_PLAYBACK = StructType(
         Field("format", ENUM_WASAPI_SAMPLE_FORMAT, has_flag=True),
         Field("exclusive", TYPE_BOOL, has_flag=True, default=False),
         Field("polling", TYPE_BOOL, has_flag=True, default=False),
-        Field("target_level", TYPE_INT, has_flag=True),
+        Field("target_level", TYPE_INT, has_flag=True, min_value=0),
     ],
     allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
     guard="ENABLE_WASAPI"
@@ -1118,7 +1123,7 @@ STRUCT_ASIO_CAPTURE = StructType(
     c_type="asio_capture_config_t",
     fields=[
         Field("channels", TYPE_SIZE_T, required=True),
-        Field("device", StringType(256), has_flag=True),
+        Field("device", StringType(256), has_flag=True, required=True),
         Field("format", ENUM_ASIO_SAMPLE_FORMAT, has_flag=True),
     ],
     allowed_extra_keys=CAPTURE_EXTRA_KEYS,
@@ -1130,7 +1135,7 @@ STRUCT_ASIO_PLAYBACK = StructType(
     c_type="asio_playback_config_t",
     fields=[
         Field("channels", TYPE_SIZE_T, required=True),
-        Field("device", StringType(256), has_flag=True),
+        Field("device", StringType(256), has_flag=True, required=True),
         Field("format", ENUM_ASIO_SAMPLE_FORMAT, has_flag=True),
     ],
     allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
@@ -1141,9 +1146,9 @@ STRUCT_WAV_FILE_CAPTURE = StructType(
     name="wav_file_capture_config",
     c_type="wav_file_capture_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T),
+        Field("channels", TYPE_SIZE_T, internal=True),
         Field("filename", StringType(512), required=True),
-        Field("extra_samples", TYPE_INT, has_flag=True),
+        Field("extra_samples", TYPE_INT, has_flag=True, min_value=0),
         Field("realtime", TYPE_BOOL, has_flag=True, default=False),
     ],
     allowed_extra_keys=CAPTURE_EXTRA_KEYS
@@ -1158,7 +1163,7 @@ STRUCT_RAW_FILE_CAPTURE = StructType(
         Field("channels", TYPE_SIZE_T, required=True),
         Field("skip_bytes", TYPE_SIZE_T, has_flag=True),
         Field("read_bytes", TYPE_SIZE_T, has_flag=True),
-        Field("extra_samples", TYPE_INT, has_flag=True),
+        Field("extra_samples", TYPE_INT, has_flag=True, min_value=0),
         Field("realtime", TYPE_BOOL, has_flag=True, default=False),
     ],
     allowed_extra_keys=CAPTURE_EXTRA_KEYS
@@ -1275,7 +1280,7 @@ STRUCT_DEVICES = StructType(
         Field("samplerate", TYPE_SIZE_T, required=True),
         Field("chunksize", TYPE_SIZE_T, required=True),
         Field("enable_rate_adjust", TYPE_BOOL, has_flag=True, default=False),
-        Field("target_level", TYPE_INT, has_flag=True),
+        Field("target_level", TYPE_INT, has_flag=True, min_value=0),
         Field("adjust_interval_s", TYPE_DOUBLE, has_flag=True),
         Field("resampler", STRUCT_RESAMPLER, has_flag=True),
         Field("capture", UNION_CAPTURE, required=True),
@@ -1285,7 +1290,7 @@ STRUCT_DEVICES = StructType(
         Field("silence_timeout_s", TYPE_DOUBLE, has_flag=True),
         Field("volume_ramp_time_ms", TYPE_DOUBLE, has_flag=True),
         Field("volume_limit", TYPE_DOUBLE, has_flag=True),
-        Field("queuelimit", TYPE_INT, has_flag=True),
+        Field("queuelimit", TYPE_INT, has_flag=True, min_value=0),
         Field("stop_on_rate_change", TYPE_BOOL, has_flag=True, default=False),
         Field("rate_measure_interval_s", TYPE_DOUBLE, has_flag=True),
         Field("multithreaded", TYPE_BOOL, has_flag=True, default=False),

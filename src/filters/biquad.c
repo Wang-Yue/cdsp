@@ -59,7 +59,11 @@ static inline bool is_stable(const biquad_coefficients_t *coeffs) {
 static bool biquad_coefficients_compute(const biquad_config_t *params,
                                         int sample_rate,
                                         biquad_coefficients_t *out_coeffs) {
-  if (!params || !out_coeffs || sample_rate <= 0)
+  if (!params || !out_coeffs)
+    return false;
+  // Free coefficients do not depend on the sample rate (upstream
+  // `BiquadParameters::Free` ignores it), so only the designed types need one.
+  if (sample_rate <= 0 && params->type != BIQUAD_TYPE_FREE)
     return false;
 
   double fs = (double)sample_rate;
@@ -70,6 +74,7 @@ static bool biquad_coefficients_compute(const biquad_config_t *params,
   double sin_w0 = 0.0;
   double A = 1.0;
   double alpha = 0.0;
+  double q_eff = 0.0;
 
   bool needs_w0 = (params->type != BIQUAD_TYPE_FREE &&
                    params->type != BIQUAD_TYPE_GENERAL_NOTCH &&
@@ -114,6 +119,7 @@ static bool biquad_coefficients_compute(const biquad_config_t *params,
         double q = params->q;
         if (fabs(q) < 1e-12)
           q = 1e-12;
+        q_eff = q;
         alpha = sin_w0 / (2.0 * q);
       }
     }
@@ -134,8 +140,7 @@ static bool biquad_coefficients_compute(const biquad_config_t *params,
   case BIQUAD_TYPE_GENERAL_NOTCH: {
     // General notch filter allows independent control of notch frequency and
     // pole frequency. Uses bilinear transform.
-    if (params->freq_z <= 0.0 || params->freq_p <= 0.0 ||
-        params->q_p <= 0.0) {
+    if (params->freq_z <= 0.0 || params->freq_p <= 0.0 || params->q_p <= 0.0) {
       return false;
     }
     double freq_z = params->freq_z;
@@ -197,23 +202,31 @@ static bool biquad_coefficients_compute(const biquad_config_t *params,
     a2 = 1.0 - alpha / A;
     break;
 
-  case BIQUAD_TYPE_LOWSHELF:
-    b0 = A * ((A + 1.0) - (A - 1.0) * cos_w0 + 2.0 * sqrt(A) * alpha);
+  case BIQUAD_TYPE_LOWSHELF: {
+    // Same operation order as upstream: beta = sn * sqrt(A) / q for Q
+    // steepness, 2 * sqrt(A) * alpha for slope steepness.
+    double beta =
+        (q_eff > 0.0) ? sin_w0 * sqrt(A) / q_eff : 2.0 * sqrt(A) * alpha;
+    b0 = A * ((A + 1.0) - (A - 1.0) * cos_w0 + beta);
     b1 = 2.0 * A * ((A - 1.0) - (A + 1.0) * cos_w0);
-    b2 = A * ((A + 1.0) - (A - 1.0) * cos_w0 - 2.0 * sqrt(A) * alpha);
-    a0 = (A + 1.0) + (A - 1.0) * cos_w0 + 2.0 * sqrt(A) * alpha;
+    b2 = A * ((A + 1.0) - (A - 1.0) * cos_w0 - beta);
+    a0 = (A + 1.0) + (A - 1.0) * cos_w0 + beta;
     a1 = -2.0 * ((A - 1.0) + (A + 1.0) * cos_w0);
-    a2 = (A + 1.0) + (A - 1.0) * cos_w0 - 2.0 * sqrt(A) * alpha;
+    a2 = (A + 1.0) + (A - 1.0) * cos_w0 - beta;
     break;
+  }
 
-  case BIQUAD_TYPE_HIGHSHELF:
-    b0 = A * ((A + 1.0) + (A - 1.0) * cos_w0 + 2.0 * sqrt(A) * alpha);
+  case BIQUAD_TYPE_HIGHSHELF: {
+    double beta =
+        (q_eff > 0.0) ? sin_w0 * sqrt(A) / q_eff : 2.0 * sqrt(A) * alpha;
+    b0 = A * ((A + 1.0) + (A - 1.0) * cos_w0 + beta);
     b1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * cos_w0);
-    b2 = A * ((A + 1.0) + (A - 1.0) * cos_w0 - 2.0 * sqrt(A) * alpha);
-    a0 = (A + 1.0) - (A - 1.0) * cos_w0 + 2.0 * sqrt(A) * alpha;
+    b2 = A * ((A + 1.0) + (A - 1.0) * cos_w0 - beta);
+    a0 = (A + 1.0) - (A - 1.0) * cos_w0 + beta;
     a1 = 2.0 * ((A - 1.0) - (A + 1.0) * cos_w0);
-    a2 = (A + 1.0) - (A - 1.0) * cos_w0 - 2.0 * sqrt(A) * alpha;
+    a2 = (A + 1.0) - (A - 1.0) * cos_w0 - beta;
     break;
+  }
 
   case BIQUAD_TYPE_LOWPASS:
     b0 = (1.0 - cos_w0) / 2.0;
@@ -260,50 +273,67 @@ static bool biquad_coefficients_compute(const biquad_config_t *params,
     a2 = 1.0 - alpha;
     break;
 
-  case BIQUAD_TYPE_LOWPASS_FO:
-    b0 = sin_w0;
-    b1 = sin_w0;
+  // First-order sections use the bilinear prewarp tn = tan(w0 / 2) directly,
+  // as upstream does. The algebraically equivalent sin(w0) / (1 + cos(w0))
+  // form cancels catastrophically as w0 -> pi (1 + cos(w0) underflows to 0
+  // within ~1.5e-8 rad of Nyquist), while tan(w0 / 2) keeps full precision.
+  case BIQUAD_TYPE_LOWPASS_FO: {
+    double tn = tan(w0 / 2.0);
+    b0 = tn;
+    b1 = tn;
     b2 = 0.0;
-    a0 = sin_w0 + 1.0 + cos_w0;
-    a1 = sin_w0 - 1.0 - cos_w0;
+    a0 = 1.0 + tn;
+    a1 = tn - 1.0;
     a2 = 0.0;
     break;
+  }
 
-  case BIQUAD_TYPE_HIGHPASS_FO:
-    b0 = 1.0 + cos_w0;
-    b1 = -1.0 - cos_w0;
+  case BIQUAD_TYPE_HIGHPASS_FO: {
+    double tn = tan(w0 / 2.0);
+    b0 = 1.0;
+    b1 = -1.0;
     b2 = 0.0;
-    a0 = sin_w0 + 1.0 + cos_w0;
-    a1 = sin_w0 - 1.0 - cos_w0;
+    a0 = 1.0 + tn;
+    a1 = tn - 1.0;
     a2 = 0.0;
     break;
+  }
 
-  case BIQUAD_TYPE_LOWSHELF_FO:
-    b0 = A * sin_w0 + 1.0 + cos_w0;
-    b1 = A * sin_w0 - 1.0 - cos_w0;
+  case BIQUAD_TYPE_LOWSHELF_FO: {
+    double tn = tan(w0 / 2.0);
+    b0 = A * A * tn + A;
+    b1 = A * A * tn - A;
     b2 = 0.0;
-    a0 = (1.0 / A) * sin_w0 + 1.0 + cos_w0;
-    a1 = (1.0 / A) * sin_w0 - 1.0 - cos_w0;
+    a0 = tn + A;
+    a1 = tn - A;
     a2 = 0.0;
     break;
+  }
 
-  case BIQUAD_TYPE_HIGHSHELF_FO:
-    b0 = sin_w0 + A + A * cos_w0;
-    b1 = sin_w0 - A - A * cos_w0;
+  case BIQUAD_TYPE_HIGHSHELF_FO: {
+    double tn = tan(w0 / 2.0);
+    b0 = A * tn + A * A;
+    b1 = A * tn - A * A;
     b2 = 0.0;
-    a0 = sin_w0 + (1.0 / A) + (1.0 / A) * cos_w0;
-    a1 = sin_w0 - (1.0 / A) - (1.0 / A) * cos_w0;
+    a0 = A * tn + 1.0;
+    a1 = A * tn - 1.0;
     a2 = 0.0;
     break;
+  }
 
-  case BIQUAD_TYPE_ALLPASS_FO:
-    b0 = sin_w0 - 1.0 - cos_w0;
-    b1 = sin_w0 + 1.0 + cos_w0;
+  case BIQUAD_TYPE_ALLPASS_FO: {
+    // Upstream forms alpha = (tn + 1) / (tn - 1), which divides by zero at
+    // freq == fs / 4 (tn == 1). Multiplying numerator and denominator through
+    // by (tn - 1) gives the same normalized coefficients without the pole.
+    double tn = tan(w0 / 2.0);
+    b0 = tn - 1.0;
+    b1 = tn + 1.0;
     b2 = 0.0;
-    a0 = sin_w0 + 1.0 + cos_w0;
-    a1 = sin_w0 - 1.0 - cos_w0;
+    a0 = tn + 1.0;
+    a1 = tn - 1.0;
     a2 = 0.0;
     break;
+  }
   }
 
   if (a0 == 0.0)
@@ -314,12 +344,20 @@ static bool biquad_coefficients_compute(const biquad_config_t *params,
   out_coeffs->a1 = a1 / a0;
   out_coeffs->a2 = a2 / a0;
 
+  // Upstream guarantees finite parameters through the `FiniteF64` config type.
+  // C callers can fill biquad_config_t directly, so reject any non-finite
+  // result here (is_stable() alone lets NaN/Inf numerator terms through).
+  if (!isfinite(out_coeffs->b0) || !isfinite(out_coeffs->b1) ||
+      !isfinite(out_coeffs->b2) || !isfinite(out_coeffs->a1) ||
+      !isfinite(out_coeffs->a2))
+    return false;
+
   return is_stable(out_coeffs);
 }
 
 static bool biquad_config_check_stability(const biquad_config_t *params,
                                           int sample_rate) {
-  if (!params || sample_rate <= 0)
+  if (!params)
     return false;
   biquad_coefficients_t dummy_coeffs;
   return biquad_coefficients_compute(params, sample_rate, &dummy_coeffs);
@@ -338,18 +376,23 @@ static void biquad_filter_free(void *instance) {
 }
 
 /**
- * @brief Validates high-level biquad filter parameters and checks stability.
+ * @brief Validates high-level biquad parameters (ranges, steepness types and
+ * the nyquist bound), without the stability check.
  *
- * @param config High-level filter configuration.
+ * Shared by biquad_config_validate and biquad_filter_update_parameters, which
+ * follows it with biquad_coefficients_compute (which checks stability itself).
+ * Allocation-free.
+ *
+ * @param params High-level biquad parameters.
  * @param sample_rate Audio sample rate in Hz.
- * @param err Pointer to a config error struct to populate on failure.
+ * @param err Pointer to a config error struct to populate on failure (may be
+ * NULL).
  * @return 0 on success, -1 on failure.
  */
-static int biquad_config_validate(const filter_config_t *config,
+static int biquad_params_validate(const biquad_config_t *params,
                                   int sample_rate, config_error_t *err) {
-  if (!config || config->type != FILTER_TYPE_BIQUAD)
+  if (!params)
     return -1;
-  const biquad_config_t *params = &config->parameters.biquad;
   double nyquist = (double)sample_rate / 2.0;
 
   // 1. Check Frequency (matching Rust validate_config match block 1)
@@ -531,16 +574,34 @@ static int biquad_config_validate(const filter_config_t *config,
       return -1;
     }
   }
+  return 0;
+}
 
-  // 7. Check Stability (matching Rust stability check)
-  if (sample_rate > 0) {
-    if (!biquad_config_check_stability(params, sample_rate)) {
-      if (err) {
-        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                         "Unstable filter specified");
-      }
-      return -1;
+/**
+ * @brief Validates high-level biquad filter parameters and checks stability.
+ *
+ * @param config High-level filter configuration.
+ * @param sample_rate Audio sample rate in Hz.
+ * @param err Pointer to a config error struct to populate on failure.
+ * @return 0 on success, -1 on failure.
+ */
+static int biquad_config_validate(const filter_config_t *config,
+                                  int sample_rate, config_error_t *err) {
+  if (!config || config->type != FILTER_TYPE_BIQUAD)
+    return -1;
+  const biquad_config_t *params = &config->parameters.biquad;
+  if (biquad_params_validate(params, sample_rate, err) != 0)
+    return -1;
+
+  // 7. Check Stability (matching Rust stability check). Always run, as
+  // upstream does: designed types with sample_rate <= 0 have already failed the
+  // nyquist checks above, and Free coefficients do not depend on the rate.
+  if (!biquad_config_check_stability(params, sample_rate)) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Unstable filter specified");
     }
+    return -1;
   }
 
   return 0;
@@ -994,6 +1055,12 @@ bool biquad_filter_update_parameters(biquad_filter_t *filter,
   if (!filter || !config)
     return false;
   if (config->type != FILTER_TYPE_BIQUAD)
+    return false;
+  // Apply the same parameter checks as biquad_config_validate (nyquist bound,
+  // slope range, steepness types); biquad_coefficients_compute below adds the
+  // stability and finiteness checks. Allocation-free, so safe on any thread.
+  if (biquad_params_validate(&config->parameters.biquad, sample_rate, NULL) !=
+      0)
     return false;
   biquad_coefficients_t new_coeffs;
   bool stable = biquad_coefficients_compute(&config->parameters.biquad,

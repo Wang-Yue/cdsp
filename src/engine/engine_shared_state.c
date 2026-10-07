@@ -81,6 +81,14 @@ struct engine_shared_state {
   _Atomic double capture_pitch;
 
   /**
+   * @brief Whether the capture backend supports clock-pitch control.
+   * Written by the capture loop (at creation, then again after the device is
+   * opened, since CoreAudio only knows after open, 03 CA-01). Read by the
+   * playback loop's rate controller to choose the adjustment method.
+   */
+  _Atomic bool capture_pitch_supported;
+
+  /**
    * @brief Single atomic pointer for swapped-out retired pipeline structure.
    */
   _Atomic(pipeline_t *) retired_pipeline;
@@ -158,6 +166,21 @@ void engine_shared_state_set_capture_pitch(engine_shared_state_t *state,
   }
 }
 
+bool engine_shared_state_get_capture_pitch_supported(
+    const engine_shared_state_t *state) {
+  return state ? atomic_load_explicit(&state->capture_pitch_supported,
+                                      memory_order_acquire)
+               : false;
+}
+
+void engine_shared_state_set_capture_pitch_supported(
+    engine_shared_state_t *state, bool supported) {
+  if (state) {
+    atomic_store_explicit(&state->capture_pitch_supported, supported,
+                          memory_order_release);
+  }
+}
+
 // Ref: docs/engine_state_management.md - Section 1.7.2 (Rule 4: Deferred
 // Garbage Collection for Audio Threads) & Section 1.1: Atomic pipeline pointer
 // holding swapped-out DSP pipeline during hot-reloads.
@@ -207,6 +230,7 @@ engine_shared_state_create(size_t captured_queue_depth,
       processed_queue_depth > 0 ? processed_queue_depth : 16);
   atomic_init(&state->resampler_ratio, 1.0);
   atomic_init(&state->capture_pitch, 1.0);
+  atomic_init(&state->capture_pitch_supported, false);
   atomic_init(&state->retired_pipeline, NULL);
   atomic_init(&state->state_raw,
               processing_state_to_raw_byte(PROCESSING_STATE_STARTING));

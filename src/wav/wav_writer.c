@@ -20,10 +20,24 @@ bool wav_can_write_bytes(uint64_t total_written, size_t bytes_to_add,
   return true;
 }
 
+/**
+ * @brief Whether @p format can be represented in a WAV header.
+ *
+ * WAVE / WAVE_FORMAT_EXTENSIBLE store 24-in-32 samples MSB-aligned (left
+ * justified) only, so S24_4_RJ_LE has no WAV encoding: writing it with the
+ * 24-valid-bits header would make every reader (including ours) decode it as
+ * S24_4_LJ_LE, 48 dB too quiet. Matches upstream `wavtools::to_wave_format`.
+ */
+static bool wav_format_is_writable(binary_sample_format_t format) {
+  return format != BINARY_SAMPLE_FORMAT_S24_4_RJ_LE &&
+         format != BINARY_SAMPLE_FORMAT_INVALID &&
+         !sample_format_is_dsd(format);
+}
+
 bool wav_write_header(FILE *f, size_t channels, binary_sample_format_t format,
                       uint32_t sample_rate, uint32_t data_bytes,
                       bool is_seekable) {
-  if (!f)
+  if (!f || !wav_format_is_writable(format))
     return false;
 
   bool extensible =
@@ -32,7 +46,7 @@ bool wav_write_header(FILE *f, size_t channels, binary_sample_format_t format,
   bool is_float = (format == BINARY_SAMPLE_FORMAT_F32_LE ||
                    format == BINARY_SAMPLE_FORMAT_F64_LE);
   bool needs_fact = is_seekable && (is_float || extensible);
-  size_t fmt_size = extensible ? 40 : 16;
+  size_t fmt_size = extensible ? 40 : (is_float ? 18 : 16);
   size_t header_size = 12 + (8 + fmt_size) + (needs_fact ? 12 : 0) + 8;
   uint8_t header[128];
   memset(header, 0, sizeof(header));
@@ -125,7 +139,14 @@ bool wav_write_header(FILE *f, size_t channels, binary_sample_format_t format,
     p[13] = (block_align >> 8) & 0xFF;
     p[14] = bits_per_sample & 0xFF;
     p[15] = (bits_per_sample >> 8) & 0xFF;
-    p += 16;
+    if (is_float) {
+      // cbSize = 0
+      p[16] = 0;
+      p[17] = 0;
+      p += 18;
+    } else {
+      p += 16;
+    }
   }
 
   // fact chunk
@@ -166,7 +187,7 @@ bool wav_write_header(FILE *f, size_t channels, binary_sample_format_t format,
 bool wav_write_rf64_header(FILE *f, size_t channels,
                            binary_sample_format_t format, uint32_t sample_rate,
                            uint64_t data_bytes) {
-  if (!f)
+  if (!f || !wav_format_is_writable(format))
     return false;
 
   bool extensible =
@@ -174,7 +195,7 @@ bool wav_write_rf64_header(FILE *f, size_t channels,
        format == BINARY_SAMPLE_FORMAT_S24_4_RJ_LE || channels > 2);
   bool is_float = (format == BINARY_SAMPLE_FORMAT_F32_LE ||
                    format == BINARY_SAMPLE_FORMAT_F64_LE);
-  size_t fmt_size = extensible ? 40 : 16;
+  size_t fmt_size = extensible ? 40 : (is_float ? 18 : 16);
   size_t header_size = 12 + 36 + (8 + fmt_size) + 8;
   uint8_t header[128];
   memset(header, 0, sizeof(header));
@@ -294,7 +315,14 @@ bool wav_write_rf64_header(FILE *f, size_t channels,
     p[13] = (block_align >> 8) & 0xFF;
     p[14] = bits_per_sample & 0xFF;
     p[15] = (bits_per_sample >> 8) & 0xFF;
-    p += 16;
+    if (is_float) {
+      // cbSize = 0
+      p[16] = 0;
+      p[17] = 0;
+      p += 18;
+    } else {
+      p += 16;
+    }
   }
 
   // data chunk header
@@ -313,13 +341,21 @@ bool wav_write_rf64_header(FILE *f, size_t channels,
 bool wav_update_header(FILE *f, size_t channels, binary_sample_format_t format,
                        uint32_t sample_rate, uint64_t total_bytes_written,
                        bool use_rf64) {
+  if (!f)
+    return false;
+  int64_t saved_pos = cdsp_ftell64(f);
+  bool ok;
   if (use_rf64) {
-    return wav_write_rf64_header(f, channels, format, sample_rate,
-                                 total_bytes_written);
+    ok = wav_write_rf64_header(f, channels, format, sample_rate,
+                               total_bytes_written);
   } else {
-    return wav_write_header(f, channels, format, sample_rate,
-                            (uint32_t)total_bytes_written, true);
+    ok = wav_write_header(f, channels, format, sample_rate,
+                          (uint32_t)total_bytes_written, true);
   }
+  if (saved_pos >= 0) {
+    cdsp_fseek64(f, saved_pos, SEEK_SET);
+  }
+  return ok;
 }
 
 bool wav_write_audio_chunk(FILE *f, const audio_chunk_t *chunk, size_t channels,
@@ -389,7 +425,7 @@ bool wav_write_file(const char *path, const double *const *channel_data,
                                total_payload_bytes);
   } else {
     ok = wav_write_header(f, channels, format, sample_rate,
-                          (uint32_t)total_payload_bytes, false);
+                          (uint32_t)total_payload_bytes, true);
   }
   if (!ok) {
     if (err_msg && err_msg_len > 0)

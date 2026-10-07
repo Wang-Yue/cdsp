@@ -9,6 +9,7 @@
 #include "config/config_error.h"
 #include "config/config_gen.h"
 #include "logging/app_logger.h"
+#include "resampler/resampler_channel_mask.h"
 #include "resampler/resampler_error.h"
 
 static const logger_t g_logger = {"resampler.slip"};
@@ -29,16 +30,20 @@ struct slip_resampler {
   double drift_acc;
   double resample_ratio;
 
-  // Pre-allocated scratch buffers
+  // Pre-allocated per-channel input staging, used only to zero-pad a
+  // partial input chunk. Full chunks are read directly from the caller's
+  // input and corrections are written directly into the output chunk.
   size_t scratch_capacity;
   double **input_scratch;
-  double **output_scratch;
 };
 
 static int slip_resampler_validate(const resampler_config_t *config,
                                    config_error_t *err) {
-  (void)config;
-  (void)err;
+  if (!config || config->type != RESAMPLER_TYPE_SLIP) {
+    config_error_set(err, CONFIG_ERR_INVALID_RESAMPLER,
+                     "Slip resampler: invalid configuration type");
+    return -1;
+  }
   return 0;
 }
 
@@ -50,12 +55,6 @@ static void slip_resampler_free(void *impl_ptr) {
         free(impl->input_scratch[i]);
       }
       free(impl->input_scratch);
-    }
-    if (impl->output_scratch) {
-      for (size_t i = 0; i < impl->channels; i++) {
-        free(impl->output_scratch[i]);
-      }
-      free(impl->output_scratch);
     }
     free(impl);
   }
@@ -135,16 +134,14 @@ static slip_resampler_t *slip_resampler_create_impl(size_t channels,
   impl->scratch_capacity = scratch_len;
 
   impl->input_scratch = (double **)calloc(channels, sizeof(double *));
-  impl->output_scratch = (double **)calloc(channels, sizeof(double *));
-  if (!impl->input_scratch || !impl->output_scratch) {
+  if (!impl->input_scratch) {
     slip_resampler_free(impl);
     return NULL;
   }
 
   for (size_t i = 0; i < channels; i++) {
     impl->input_scratch[i] = (double *)calloc(scratch_len, sizeof(double));
-    impl->output_scratch[i] = (double *)calloc(scratch_len, sizeof(double));
-    if (!impl->input_scratch[i] || !impl->output_scratch[i]) {
+    if (!impl->input_scratch[i]) {
       slip_resampler_free(impl);
       return NULL;
     }
@@ -162,6 +159,16 @@ static void *slip_resampler_create(const resampler_config_t *config,
                                    size_t channels, size_t chunk_size,
                                    config_error_t *err) {
   (void)config;
+  if (channels == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "Slip resampler: channels must be positive");
+    return NULL;
+  }
+  if (input_rate == 0 || output_rate == 0) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "Slip resampler: rates must be positive");
+    return NULL;
+  }
   if (input_rate != output_rate) {
     config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
                      "Slip resampler requires matching capture and playback "
@@ -173,7 +180,13 @@ static void *slip_resampler_create(const resampler_config_t *config,
                      "Slip resampler chunk_size must be at least 4");
     return NULL;
   }
-  return slip_resampler_create_impl(channels, chunk_size, FIXED_ASYNC_OUTPUT);
+  slip_resampler_t *impl =
+      slip_resampler_create_impl(channels, chunk_size, FIXED_ASYNC_OUTPUT);
+  if (!impl) {
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate Slip resampler");
+  }
+  return impl;
 }
 
 static void place_correction(const double *input, double *output,
@@ -226,6 +239,9 @@ static resampler_error_t slip_resampler_process(void *impl_ptr,
   }
 
   size_t frames_to_read = audio_chunk_get_valid_frames(input);
+  if (frames_to_read > audio_chunk_get_frames(input)) {
+    return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
+  }
   if (frames_to_read > impl->needed_input_size) {
     frames_to_read = impl->needed_input_size;
   }
@@ -237,10 +253,13 @@ static resampler_error_t slip_resampler_process(void *impl_ptr,
   size_t input_len = impl->needed_input_size;
   size_t output_len = impl->needed_output_size;
 
+  // Upstream rubato `slip.rs` skips channels cleared in active_channels_mask;
+  // they are zero-filled by resampler_finish_masked_output() below.
+  const bool *mask = audio_chunk_get_used_channels(input);
   for (size_t chan = 0; chan < impl->channels; chan++) {
     const double *in_data = audio_chunk_get_channel(input, chan);
     double *out_data = audio_chunk_get_channel(output, chan);
-    if (!in_data || !out_data)
+    if (!in_data || !out_data || !resampler_channel_active(mask, chan))
       continue;
 
     if (impl->correction == 0) {
@@ -250,17 +269,18 @@ static resampler_error_t slip_resampler_process(void *impl_ptr,
                (output_len - frames_to_read) * sizeof(double));
       }
     } else {
-      memcpy(impl->input_scratch[chan], in_data,
-             frames_to_read * sizeof(double));
+      // Read straight from the caller's chunk when it holds a full input
+      // block; only a partial chunk needs zero-padding in scratch.
+      const double *src = in_data;
       if (frames_to_read < input_len) {
+        memcpy(impl->input_scratch[chan], in_data,
+               frames_to_read * sizeof(double));
         memset(&impl->input_scratch[chan][frames_to_read], 0,
                (input_len - frames_to_read) * sizeof(double));
+        src = impl->input_scratch[chan];
       }
-
-      place_correction(impl->input_scratch[chan], impl->output_scratch[chan],
-                       impl->correction, impl->crossfade_len, output_len);
-
-      memcpy(out_data, impl->output_scratch[chan], output_len * sizeof(double));
+      place_correction(src, out_data, impl->correction, impl->crossfade_len,
+                       output_len);
     }
   }
 
@@ -280,6 +300,7 @@ static resampler_error_t slip_resampler_process(void *impl_ptr,
   if (valid_out > output_len) {
     valid_out = output_len;
   }
+  resampler_finish_masked_output(mask, output, impl->channels, output_len);
   audio_chunk_set_valid_frames(output, valid_out);
   return RESAMPLER_OK;
 }
@@ -316,7 +337,12 @@ static double slip_resampler_get_ratio(const void *impl_ptr) {
 
 static size_t slip_resampler_get_max_input_frames(const void *impl_ptr) {
   const slip_resampler_t *impl = (const slip_resampler_t *)impl_ptr;
-  return impl ? (impl->chunk_size + impl->max_correction) : 0;
+  if (!impl)
+    return 0;
+  // rubato `slip.rs` `input_frames_max`: the fixed side never varies.
+  return impl->fixed == FIXED_ASYNC_INPUT
+             ? impl->chunk_size
+             : impl->chunk_size + impl->max_correction;
 }
 
 static size_t slip_resampler_get_chunk_size(const void *impl_ptr) {

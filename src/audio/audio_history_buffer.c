@@ -197,15 +197,20 @@ void audio_history_buffer_append(audio_history_buffer_t *history,
   if (n_frames == 0 || n_ch == 0)
     return;
 
-  if (history->channels != n_ch || !history->data) {
-    audio_history_buffer_reset(history, n_ch);
-    if (!history->data)
-      return;
-  }
+  // Never (re)allocate here: this runs on the audio thread and a concurrent
+  // reader may be inside `read_latest` on the current `data`. The engine sizes
+  // the buffer with `audio_history_buffer_reset` before the session starts; a
+  // chunk whose layout does not match is dropped (AGENTS.md §1.1). Upstream
+  // reallocates in `push_chunk`, but it does so under the status RwLock.
+  if (history->channels != n_ch || !history->data)
+    return;
 
   uint64_t seq =
       atomic_load_explicit(&history->write_seq, memory_order_relaxed);
-  atomic_store_explicit(&history->write_seq, seq + 1, memory_order_release);
+  atomic_store_explicit(&history->write_seq, seq + 1, memory_order_relaxed);
+  // Order the odd sequence before the sample stores below (pairs with the
+  // reader's acquire fence before it re-reads `write_seq`).
+  atomic_thread_fence(memory_order_release);
 
   uint64_t pos =
       atomic_load_explicit(&history->write_pos, memory_order_relaxed);
@@ -291,8 +296,9 @@ audio_history_buffer_read_latest(const audio_history_buffer_t *history,
       }
     }
 
+    atomic_thread_fence(memory_order_acquire);
     uint64_t seq_after =
-        atomic_load_explicit(&history->write_seq, memory_order_acquire);
+        atomic_load_explicit(&history->write_seq, memory_order_relaxed);
     if (seq_after == seq_before) {
       if (enough_data)
         *enough_data = true;

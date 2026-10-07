@@ -862,7 +862,8 @@ static void test_ramp_resampler_helper(resampler_t *res, double target_rel) {
   size_t chunk_size = resampler_get_chunk_size(res);
 
   audio_chunk_t *in_chunk = audio_chunk_create(65536, channels);
-  audio_chunk_t *out_chunk = audio_chunk_create(chunk_size * 2 + 1024, channels);
+  audio_chunk_t *out_chunk =
+      audio_chunk_create(chunk_size * 2 + 1024, channels);
 
   // Block 1: nominal ratio
   size_t needed_in1 = resampler_get_input_frames_next(res);
@@ -1150,8 +1151,8 @@ TEST(AsyncSinc_Reset_RecomputesNeededLengths) {
 TEST(AsyncPoly_Reset_RecomputesNeededLengths) {
   resampler_config_t cfg;
   resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
-  strncpy(cfg.profile, "VeryFast", sizeof(cfg.profile) - 1);
-  cfg.has_profile = true;
+  strncpy(cfg.interpolation, "Cubic", sizeof(cfg.interpolation) - 1);
+  cfg.has_interpolation = true;
 
   resampler_t *res =
       resampler_create_from_config(&cfg, 44100, 44100, 1, 1024, NULL);

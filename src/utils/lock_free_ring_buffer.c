@@ -717,9 +717,13 @@ size_t spsc_planar_ring_buffer_read_with_silence(
       size_t cl2 = copied - cl1;
 
       for (size_t ch = 0; ch < channels; ch++) {
+        // Test the channel pointer before offsetting it: with pending silence
+        // a NULL channel would otherwise turn into a non-NULL wild pointer.
+        if (!dst_channels[ch] || !ring->channel_storage[ch])
+          continue;
         uint8_t *dst = (uint8_t *)dst_channels[ch] + silence * bps;
         const uint8_t *src = ring->channel_storage[ch];
-        if (dst && src) {
+        {
           if (cl1 > 0) {
             memcpy(dst, src + offset * bps, cl1 * bps);
           }
@@ -742,7 +746,7 @@ size_t spsc_planar_ring_buffer_read_with_silence(
         }
       }
       if (is_running) {
-        atomic_store_explicit(is_running, false, memory_order_relaxed);
+        atomic_store_explicit(is_running, false, memory_order_release);
       }
     }
   }
@@ -832,6 +836,11 @@ spsc_planar_ring_buffer_get_channel_ptr(const spsc_planar_ring_buffer_t *ring,
 
 size_t spsc_planar_ring_buffer_write_silence(spsc_planar_ring_buffer_t *ring,
                                              size_t frames) {
+  return spsc_planar_ring_buffer_write_silence_byte(ring, frames, 0x00);
+}
+
+size_t spsc_planar_ring_buffer_write_silence_byte(
+    spsc_planar_ring_buffer_t *ring, size_t frames, uint8_t silence_byte) {
   if (!ring || frames == 0)
     return 0;
 
@@ -846,10 +855,10 @@ size_t spsc_planar_ring_buffer_write_silence(spsc_planar_ring_buffer_t *ring,
     uint8_t *dst = ring->channel_storage[ch];
     if (dst) {
       if (l1 > 0) {
-        memset(dst + offset * bps, 0, l1 * bps);
+        memset(dst + offset * bps, silence_byte, l1 * bps);
       }
       if (l2 > 0) {
-        memset(dst, 0, l2 * bps);
+        memset(dst, silence_byte, l2 * bps);
       }
     }
   }

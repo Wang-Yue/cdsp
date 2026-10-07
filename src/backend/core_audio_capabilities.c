@@ -16,9 +16,6 @@
 
 // MARK: - Discovery
 
-/// Sample rates we report when a device exposes a *range* rather than a
-/// discrete list. CoreAudio devices commonly advertise something like
-
 static int cmp_int(const void *a, const void *b) {
   int ia = *(const int *)a;
   int ib = *(const int *)b;
@@ -125,19 +122,12 @@ format_string_for_asbd(const AudioStreamBasicDescription *asbd) {
 
 // MARK: Aggregation
 
-/// Build the capability descriptor for a named device. Returns `nil`
-/// if the device cannot be located. All low-level HAL plumbing is
-/// delegated to `CoreAudioDevice`; this layer only adds the
-/// physical-format probe + aggregation that's specific to the UI's
-/// `AudioDeviceDescriptor` shape.
-/// Group `(channels, samplerate, format)` tuples into the nested shape
-/// the UI consumes: channels → samplerates → formats.
-/// Walk every `AudioStreamRangedDescription` advertised by `stream`
-/// and translate it into our `PhysicalFormat`.
-/// Pick standard sample rates that fall inside the device's range.
-/// Devices that advertise a single discrete rate report
-/// `mMinimum == mMaximum`; in that case we return the single value
-/// (rounded to `Int`).
+/// Build the capability descriptor for a named device (NULL/empty = default
+/// device). Returns NULL if the device cannot be located. Every physical format
+/// of every stream in the requested direction is expanded into
+/// (channels, samplerate, format) tuples -- discrete rates as-is, continuous
+/// ranges intersected with STANDARD_RATES -- and grouped into the nested shape
+/// the UI consumes: channels -> samplerates -> formats.
 audio_device_descriptor_t *
 core_audio_capabilities_describe(const char *device_name, bool is_capture,
                                  device_error_t *err) {
@@ -173,9 +163,10 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
   AudioStreamID streams[32];
   int stream_count = core_audio_device_streams(id, scope, streams, 32);
 
-  // Temporary flat array to collect formats across all streams.
-  phys_fmt_t fmts[256] = {0};
+  // Dynamically grown flat array to collect unique formats across all streams.
+  phys_fmt_t *fmts = NULL;
   size_t fmt_count = 0;
+  size_t fmt_cap = 0;
 
   // Iterate through each stream to probe its physical formats.
   for (int s = 0; s < stream_count; s++) {
@@ -198,6 +189,7 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
     // Fetch the actual physical formats array.
     if (AudioObjectGetPropertyData(streams[s], &addr, 0, NULL, &size, ranged) ==
         noErr) {
+      count = (int)(size / sizeof(AudioStreamRangedDescription));
       for (int i = 0; i < count; i++) {
         AudioStreamBasicDescription asbd = ranged[i].mFormat;
         // We only support Linear PCM.
@@ -226,14 +218,37 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
           }
         }
 
-        // Store combinations in the flat array.
+        // Store unique combinations in the flat array.
+        size_t ch = (size_t)asbd.mChannelsPerFrame;
         for (size_t r = 0; r < rate_cnt; r++) {
-          if (fmt_count < 256) {
-            fmts[fmt_count].channels = (size_t)asbd.mChannelsPerFrame;
-            fmts[fmt_count].samplerate = rates_to_add[r];
-            strncpy(fmts[fmt_count].format, fmt_str, 15);
-            fmt_count++;
+          int rate = rates_to_add[r];
+          bool dup = false;
+          for (size_t k = 0; k < fmt_count; k++) {
+            if (fmts[k].channels == ch && fmts[k].samplerate == rate &&
+                strcmp(fmts[k].format, fmt_str) == 0) {
+              dup = true;
+              break;
+            }
           }
+          if (dup)
+            continue;
+          if (fmt_count == fmt_cap) {
+            size_t new_cap = (fmt_cap == 0) ? 256 : fmt_cap * 2;
+            phys_fmt_t *grown =
+                (phys_fmt_t *)realloc(fmts, new_cap * sizeof(phys_fmt_t));
+            if (!grown) {
+              free(ranged);
+              goto oom;
+            }
+            fmts = grown;
+            fmt_cap = new_cap;
+          }
+          memset(&fmts[fmt_count], 0, sizeof(phys_fmt_t));
+          fmts[fmt_count].channels = ch;
+          fmts[fmt_count].samplerate = rate;
+          strncpy(fmts[fmt_count].format, fmt_str,
+                  sizeof(fmts[fmt_count].format) - 1);
+          fmt_count++;
         }
       }
     }
@@ -244,14 +259,12 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
   // structure: Channel counts -> Sample rates -> Formats.
   desc->capability_sets =
       (device_capability_set_t *)calloc(1, sizeof(device_capability_set_t));
-  if (!desc->capability_sets) {
-    free_audio_device_descriptor(desc);
-    return NULL;
-  }
+  if (!desc->capability_sets)
+    goto oom;
   desc->capability_sets_count = 1;
 
   // Find unique channel counts present in the collected formats.
-  size_t unique_ch[32];
+  size_t unique_ch[128];
   size_t unique_ch_cnt = 0;
   for (size_t i = 0; i < fmt_count; i++) {
     bool found = false;
@@ -261,7 +274,7 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
         break;
       }
     }
-    if (!found && unique_ch_cnt < 32) {
+    if (!found && unique_ch_cnt < 128) {
       unique_ch[unique_ch_cnt++] = fmts[i].channels;
     }
   }
@@ -274,10 +287,8 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
   if (unique_ch_cnt > 0) {
     set->capabilities = (channel_capability_t *)calloc(
         unique_ch_cnt, sizeof(channel_capability_t));
-    if (!set->capabilities) {
-      free_audio_device_descriptor(desc);
-      return NULL;
-    }
+    if (!set->capabilities)
+      goto oom;
   } else {
     set->capabilities = NULL;
   }
@@ -288,7 +299,7 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
     channel_capability_t *ch_cap = &set->capabilities[c];
     ch_cap->channels = unique_ch[c];
 
-    int unique_rate[64];
+    int unique_rate[128];
     size_t unique_rate_cnt = 0;
     for (size_t i = 0; i < fmt_count; i++) {
       if (fmts[i].channels == ch_cap->channels) {
@@ -299,7 +310,7 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
             break;
           }
         }
-        if (!found && unique_rate_cnt < 64) {
+        if (!found && unique_rate_cnt < 128) {
           unique_rate[unique_rate_cnt++] = fmts[i].samplerate;
         }
       }
@@ -310,10 +321,8 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
 
     ch_cap->samplerates = (samplerate_capability_t *)calloc(
         unique_rate_cnt, sizeof(samplerate_capability_t));
-    if (!ch_cap->samplerates) {
-      free_audio_device_descriptor(desc);
-      return NULL;
-    }
+    if (!ch_cap->samplerates && unique_rate_cnt > 0)
+      goto oom;
     ch_cap->samplerates_count = unique_rate_cnt;
 
     // For each combination of channel count and sample rate, extract the unique
@@ -344,22 +353,26 @@ core_audio_capabilities_describe(const char *device_name, bool is_capture,
       qsort(unique_fmt, unique_fmt_cnt, sizeof(unique_fmt[0]), cmp_str);
 
       rate_cap->formats = (char **)calloc(unique_fmt_cnt, sizeof(char *));
-      if (!rate_cap->formats) {
-        free_audio_device_descriptor(desc);
-        return NULL;
-      }
+      if (!rate_cap->formats && unique_fmt_cnt > 0)
+        goto oom;
       rate_cap->formats_count = unique_fmt_cnt;
       for (size_t f = 0; f < unique_fmt_cnt; f++) {
         rate_cap->formats[f] = strdup(unique_fmt[f]);
-        if (!rate_cap->formats[f]) {
-          free_audio_device_descriptor(desc);
-          return NULL;
-        }
+        if (!rate_cap->formats[f])
+          goto oom;
       }
     }
   }
 
+  free(fmts);
   return desc;
+
+oom:
+  free(fmts);
+  if (err)
+    device_error_init(err, DEVICE_ERROR_OTHER, "Out of memory");
+  free_audio_device_descriptor(desc);
+  return NULL;
 }
 
 #endif // ENABLE_COREAUDIO

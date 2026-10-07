@@ -55,7 +55,7 @@ typedef struct filter_vtable {
  * Filters operate on one channel at a time.
  */
 typedef struct filter {
-  char name[64];
+  char name[128]; // matches config name fields (config_gen.h name[128])
   filter_instance_type_t type;
   const filter_vtable_t *vtable;
   void *instance;
@@ -81,6 +81,20 @@ filter_t *filter_create(const char *name, const filter_config_t *config,
                         int sample_rate, size_t chunk_size,
                         processing_parameters_t *proc_params,
                         config_error_t *err);
+
+/**
+ * @brief Same as filter_create(), but skips filter_config_validate().
+ *
+ * Only for callers that have already validated @p config at the same
+ * @p sample_rate (e.g. pipeline_create() after pipeline_config_validate()).
+ * Avoids re-validating once per channel, which for Conv filters means a full
+ * re-read and decode of the impulse response file per channel.
+ */
+filter_t *filter_create_prevalidated(const char *name,
+                                     const filter_config_t *config,
+                                     int sample_rate, size_t chunk_size,
+                                     processing_parameters_t *proc_params,
+                                     config_error_t *err);
 
 /**
  * @brief Process a waveform buffer in-place.

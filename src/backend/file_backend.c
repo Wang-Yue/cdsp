@@ -2,6 +2,7 @@
 #include "backend/file_backend.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -9,14 +10,19 @@
 #include <stdlib.h>
 #include <string.h>
 #if !defined(_WIN32)
+#include <fcntl.h>
 #include <poll.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#else
+#include <fcntl.h>
+#include <io.h>
 #endif
 
 #include "audio/audio_chunk.h"
 #include "audio/processing_parameters.h"
 #include "backend/audio_backend.h"
+#include "backend/backend_clip.h"
 #include "backend/backend_error.h"
 #include "config/config_gen.h"
 #include "logging/app_logger.h"
@@ -28,6 +34,16 @@
 #define ftell_64 cdsp_ftell64
 
 static const logger_t g_logger = {"dsp.backend.file"};
+
+#ifndef CDSP_TEST
+/** The `realtime` file option is test-only; say so instead of ignoring it. */
+static void file_backend_warn_realtime_ignored(bool requested) {
+  if (requested) {
+    logger_warn(&g_logger, "File backend option 'realtime' is only supported "
+                           "in test builds and is ignored");
+  }
+}
+#endif
 
 /**
  * @brief Helper to get monotonic time in nanoseconds.
@@ -50,11 +66,24 @@ struct file_capture {
   uint64_t total_bytes_read;
   size_t extra_samples;
   size_t extra_samples_generated;
+  /// Owning backend handle, to flag pure extra_samples tail chunks as not
+  /// silence-gated (capture_backend_t.skip_silence_detection, 06 F-10).
+  capture_backend_t *owner;
   int playback_sample_rate;
   double resampling_ratio;
   uint8_t *raw_buf;
   size_t raw_buf_capacity;
-  uint64_t last_read_time_ns;
+  /// Bytes of an incomplete frame left over from a timed-out read. They were
+  /// already consumed from the fd, so they are prepended to the next read to
+  /// keep the stream frame aligned. Sized to one frame at open.
+  uint8_t *carry;
+  size_t carry_len;
+  /// skip_bytes still to discard on a non-seekable source. Done inside read()
+  /// with the same poll timeout as audio, so a silent producer cannot block
+  /// open() (and the engine's stop/reload) indefinitely.
+  uint64_t skip_remaining;
+  bool is_regular; ///< Regular file: blocking fread, no poll timeout.
+  bool eof;        ///< End of stream seen (sticky).
 #ifdef CDSP_TEST
   bool realtime;
   uint64_t start_time_ns;
@@ -77,6 +106,7 @@ struct file_playback {
   uint8_t *raw_buf;
   size_t raw_buf_capacity;
   processing_parameters_t *params;
+  uint64_t last_clip_warn_ns; ///< Rate limit for the clipping warning.
 #ifdef CDSP_TEST
   bool realtime;
   uint64_t start_time_ns;
@@ -100,8 +130,29 @@ static bool file_capture_open(void *ctx, backend_error_t *err) {
     return false;
   if (capture->is_stdin) {
     capture->f = stdin;
+#if defined(_WIN32)
+    // The CRT opens stdin in text mode (CRLF -> LF, ^Z = EOF), which would
+    // corrupt binary PCM. Upstream reads the raw handle.
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
   } else {
+#if !defined(_WIN32)
+    char expanded[1024];
+    cdsp_expand_path(capture->filename, expanded, sizeof(expanded));
+    int fd = open(expanded, O_RDONLY | O_NONBLOCK);
+    if (fd >= 0) {
+      capture->f = fdopen(fd, "rb");
+      if (!capture->f) {
+        int saved_errno = errno;
+        close(fd);
+        errno = saved_errno;
+      }
+    } else {
+      capture->f = NULL;
+    }
+#else
     capture->f = cdsp_fopen(capture->filename, "rb");
+#endif
     if (!capture->f) {
       if (err) {
         char err_msg[1024];
@@ -116,6 +167,25 @@ static bool file_capture_open(void *ctx, backend_error_t *err) {
   if (capture->f) {
     setvbuf(capture->f, NULL, _IONBF, 0);
   }
+
+  capture->is_regular = true;
+#if !defined(_WIN32)
+  {
+    int fd = capture->f ? fileno(capture->f) : -1;
+    struct stat st;
+    capture->is_regular =
+        fd >= 0 && fstat(fd, &st) == 0 && S_ISREG(st.st_mode);
+    if (capture->is_regular && !capture->is_stdin) {
+      int flags = fcntl(fd, F_GETFL, 0);
+      if (flags >= 0 && (flags & O_NONBLOCK)) {
+        (void)fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
+      }
+    }
+  }
+#endif
+  capture->skip_remaining = 0;
+  capture->carry_len = 0;
+  capture->eof = false;
 
   if (capture->is_wav && !capture->is_stdin) {
     wav_info_t info;
@@ -145,24 +215,26 @@ static bool file_capture_open(void *ctx, backend_error_t *err) {
                 info.sample_rate, info.channels,
                 file_sample_format_to_string(info.format));
 
-    fseek_64(capture->f, info.data_start_offset, SEEK_SET);
+    if (fseek_64(capture->f, (int64_t)info.data_start_offset, SEEK_SET) != 0 &&
+        capture->is_regular) {
+      char seek_msg[1024];
+      snprintf(seek_msg, sizeof(seek_msg),
+               "Failed to seek to the audio data of '%s': %s",
+               capture->filename, strerror(errno));
+      fclose(capture->f);
+      capture->f = NULL;
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, seek_msg);
+      return false;
+    }
   } else {
     if (capture->skip_bytes > 0) {
       logger_debug(&g_logger, "skipping the first %llu bytes",
                    (unsigned long long)capture->skip_bytes);
-      if (capture->is_stdin ||
+      if (capture->is_stdin || !capture->is_regular ||
           fseek_64(capture->f, (int64_t)capture->skip_bytes, SEEK_SET) != 0) {
-        uint64_t remaining = capture->skip_bytes;
-        uint8_t discard_buf[4096];
-        while (remaining > 0) {
-          size_t to_read = remaining < sizeof(discard_buf)
-                               ? (size_t)remaining
-                               : sizeof(discard_buf);
-          size_t n = fread(discard_buf, 1, to_read, capture->f);
-          if (n == 0)
-            break;
-          remaining -= n;
-        }
+        // Non-seekable: discard inside read(), bounded by the poll timeout.
+        capture->skip_remaining = capture->skip_bytes;
       }
     }
   }
@@ -184,11 +256,25 @@ static bool file_capture_open(void *ctx, backend_error_t *err) {
     free(capture->raw_buf);
     capture->raw_buf = NULL;
   }
-  capture->raw_buf_capacity =
-      capture->chunk_size * capture->channels * sample_size * 4;
+  size_t cap_frames = (size_t)capture->chunk_size;
+  if (capture->resampling_ratio > 0.0 && capture->resampling_ratio < 1.0) {
+    size_t scaled =
+        (size_t)ceil((double)cap_frames / capture->resampling_ratio);
+    if (scaled > cap_frames) {
+      cap_frames = scaled;
+    }
+  }
+  capture->raw_buf_capacity = cap_frames * capture->channels * sample_size * 4;
   capture->raw_buf =
       (uint8_t *)calloc(capture->raw_buf_capacity, sizeof(uint8_t));
-  if (!capture->raw_buf) {
+  free(capture->carry);
+  capture->carry =
+      (uint8_t *)calloc(capture->channels * sample_size, sizeof(uint8_t));
+  if (!capture->raw_buf || !capture->carry) {
+    free(capture->raw_buf);
+    capture->raw_buf = NULL;
+    free(capture->carry);
+    capture->carry = NULL;
     if (!capture->is_stdin) {
       fclose(capture->f);
       capture->f = NULL;
@@ -201,12 +287,92 @@ static bool file_capture_open(void *ctx, backend_error_t *err) {
 
   capture->total_bytes_read = 0;
   capture->extra_samples_generated = 0;
-  capture->last_read_time_ns = get_time_ns();
 #ifdef CDSP_TEST
   capture->start_time_ns = get_time_ns();
   capture->total_frames_read = 0;
 #endif
   return true;
+}
+
+/// Outcome of one bounded read from the capture source.
+typedef enum {
+  FILE_READ_COMPLETE, ///< All requested bytes were read.
+  FILE_READ_TIMEOUT,  ///< The poll timeout expired first (non-regular fds).
+  FILE_READ_EOF,      ///< End of stream (read() returned 0 / short fread).
+  FILE_READ_ERROR     ///< poll()/read()/fread() failed.
+} file_read_status_t;
+
+/**
+ * @brief Read up to @p len bytes from the capture source.
+ *
+ * Regular files (and every source on Windows) use a blocking fread. Pipes,
+ * FIFOs, ttys and sockets are polled with an overall time limit of
+ * @p timeout_ms, mirroring upstream `NonBlockingReader`
+ * (filereader_nonblock.rs:55-91).
+ *
+ * @param capture The capture instance.
+ * @param buf Destination buffer.
+ * @param len Number of bytes wanted.
+ * @param timeout_ms Overall time limit for non-regular sources.
+ * @param out_n Receives the number of bytes actually read.
+ * @return The read outcome.
+ */
+static file_read_status_t file_capture_fill(file_capture_t *capture,
+                                            uint8_t *buf, size_t len,
+                                            uint64_t timeout_ms,
+                                            size_t *out_n) {
+  size_t got = 0;
+#if !defined(_WIN32)
+  if (!capture->is_regular) {
+    int fd = fileno(capture->f);
+    struct pollfd pfd = {.fd = fd, .events = POLLIN, .revents = 0};
+    uint64_t start_ns = get_time_ns();
+    uint64_t timeout_ns = timeout_ms * 1000000ULL;
+    while (got < len) {
+      // Always poll at least once (with 0 ms once the budget is spent), so
+      // data that is already queued is never reported as a timeout.
+      uint64_t now_ns = get_time_ns();
+      uint64_t elapsed_ns = (now_ns >= start_ns) ? (now_ns - start_ns) : 0;
+      int wait_ms = 0;
+      if (elapsed_ns < timeout_ns) {
+        wait_ms = (int)((timeout_ns - elapsed_ns + 999999ULL) / 1000000ULL);
+      }
+      int poll_ret = poll(&pfd, 1, wait_ms);
+      if (poll_ret == 0) {
+        *out_n = got;
+        return FILE_READ_TIMEOUT;
+      }
+      if (poll_ret < 0) {
+        if (errno == EINTR)
+          continue;
+        *out_n = got;
+        return FILE_READ_ERROR;
+      }
+      ssize_t n = read(fd, buf + got, len - got);
+      if (n == 0) {
+        *out_n = got;
+        return FILE_READ_EOF;
+      }
+      if (n < 0) {
+        if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+          continue;
+        *out_n = got;
+        return FILE_READ_ERROR;
+      }
+      got += (size_t)n;
+    }
+    *out_n = got;
+    return FILE_READ_COMPLETE;
+  }
+#else
+  (void)timeout_ms;
+#endif
+  got = fread(buf, 1, len, capture->f);
+  *out_n = got;
+  if (got < len) {
+    return ferror(capture->f) ? FILE_READ_ERROR : FILE_READ_EOF;
+  }
+  return FILE_READ_COMPLETE;
 }
 
 /**
@@ -233,114 +399,131 @@ static bool file_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   }
 
   size_t sample_size = sample_format_bytes_per_sample(capture->format);
-  if (sample_size == 0 || capture->channels == 0) {
+  if (sample_size == 0 || capture->channels == 0 || !capture->carry) {
     audio_chunk_set_valid_frames(chunk, 0);
     return false;
   }
-  size_t frames_to_read = frames;
+  if (frames > audio_chunk_get_frames(chunk)) {
+    frames = audio_chunk_get_frames(chunk);
+  }
+  size_t frame_bytes = capture->channels * sample_size;
+  size_t want_bytes = frames * frame_bytes;
 
-  size_t bytes_to_read = frames_to_read * capture->channels * sample_size;
-  if (capture->read_bytes > 0 &&
-      (capture->total_bytes_read + bytes_to_read) > capture->read_bytes) {
-    bytes_to_read = capture->read_bytes - capture->total_bytes_read;
+  if (want_bytes > capture->raw_buf_capacity) {
+    uint8_t *new_buf = (uint8_t *)realloc(capture->raw_buf, want_bytes);
+    if (!new_buf) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                           "Failed to reallocate file capture raw buffer");
+      }
+      audio_chunk_set_valid_frames(chunk, 0);
+      return false;
+    }
+    capture->raw_buf = new_buf;
+    capture->raw_buf_capacity = want_bytes;
   }
 
+  uint64_t timeout_ms =
+      capture->sample_rate > 0
+          ? ((uint64_t)2000 * (uint64_t)frames / (uint64_t)capture->sample_rate)
+          : 50;
+  if (timeout_ms == 0)
+    timeout_ms = 1;
+
+  // Deferred skip_bytes on a non-seekable source. A timeout returns "no data
+  // yet" so the engine stays responsive to stop/reload.
+  while (capture->skip_remaining > 0 && !capture->eof) {
+    size_t to_skip = capture->skip_remaining < capture->raw_buf_capacity
+                         ? (size_t)capture->skip_remaining
+                         : capture->raw_buf_capacity;
+    size_t n = 0;
+    file_read_status_t st =
+        file_capture_fill(capture, capture->raw_buf, to_skip, timeout_ms, &n);
+    capture->skip_remaining -= n;
+    if (st == FILE_READ_TIMEOUT) {
+      audio_chunk_set_valid_frames(chunk, 0);
+      return false;
+    }
+    if (st == FILE_READ_ERROR) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                           "Read error from stream");
+      }
+      audio_chunk_set_valid_frames(chunk, 0);
+      return false;
+    }
+    if (st == FILE_READ_EOF) {
+      capture->skip_remaining = 0;
+      capture->eof = true;
+    }
+  }
+
+  // Start with the incomplete frame carried over from a timed-out read.
   size_t bytes_read = 0;
-  if (bytes_to_read > 0) {
-    if (bytes_to_read > capture->raw_buf_capacity) {
-      uint8_t *new_buf = (uint8_t *)realloc(capture->raw_buf, bytes_to_read);
-      if (!new_buf) {
-        if (err) {
-          backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                             "Failed to reallocate file capture raw buffer");
-        }
-        audio_chunk_set_valid_frames(chunk, 0);
-        return false;
-      }
-      capture->raw_buf = new_buf;
-      capture->raw_buf_capacity = bytes_to_read;
-    }
+  if (capture->carry_len > 0 && capture->carry_len <= want_bytes) {
+    memcpy(capture->raw_buf, capture->carry, capture->carry_len);
+    bytes_read = capture->carry_len;
+  }
+  capture->carry_len = 0;
 
-#if !defined(_WIN32)
-    bool should_poll = true;
-    struct stat st;
-    if (fstat(fileno(capture->f), &st) == 0 && S_ISREG(st.st_mode)) {
-      should_poll = false;
-    }
-
-    if (should_poll) {
-      uint64_t timeout_ms = capture->sample_rate > 0
-                                ? ((uint64_t)2000 * (uint64_t)frames /
-                                   (uint64_t)capture->sample_rate)
-                                : 50;
-      if (timeout_ms == 0)
-        timeout_ms = 1;
-
-      uint64_t start_time_ms = get_time_ns() / 1000000ULL;
-      struct pollfd pfd = {
-          .fd = fileno(capture->f), .events = POLLIN, .revents = 0};
-
-      bool timed_out = false;
-      while (bytes_read < bytes_to_read) {
-        uint64_t now_ms = get_time_ns() / 1000000ULL;
-        uint64_t elapsed_ms =
-            (now_ms >= start_time_ms) ? (now_ms - start_time_ms) : 0;
-        if (elapsed_ms >= timeout_ms) {
-          timed_out = true;
-          break;
-        }
-        int remaining_timeout = (int)(timeout_ms - elapsed_ms);
-        int poll_ret = poll(&pfd, 1, remaining_timeout);
-        if (poll_ret == 0) {
-          timed_out = true;
-          break;
-        } else if (poll_ret < 0) {
-          if (errno == EINTR)
-            continue;
-          if (err) {
-            backend_error_init(err, BACKEND_ERROR_READ_ERROR, "Poll error");
-          }
-          audio_chunk_set_valid_frames(chunk, 0);
-          return false;
-        }
-
-        ssize_t n = read(fileno(capture->f), capture->raw_buf + bytes_read,
-                         bytes_to_read - bytes_read);
-        if (n == 0) {
-          // EOF reached
-          break;
-        } else if (n < 0) {
-          if (errno == EINTR)
-            continue;
-          if (errno == EAGAIN || errno == EWOULDBLOCK)
-            continue;
-          if (err) {
-            backend_error_init(err, BACKEND_ERROR_READ_ERROR,
-                               "Read error from stream");
-          }
-          audio_chunk_set_valid_frames(chunk, 0);
-          return false;
-        }
-        bytes_read += (size_t)n;
-        capture->total_bytes_read += (size_t)n;
-      }
-
-      if (timed_out && bytes_read == 0) {
-        audio_chunk_set_valid_frames(chunk, 0);
-        return false;
-      }
-    } else
-#endif
-    {
-      bytes_read = fread(capture->raw_buf, 1, bytes_to_read, capture->f);
-      capture->total_bytes_read += bytes_read;
+  size_t new_bytes = want_bytes - bytes_read;
+  if (capture->read_bytes > 0) {
+    uint64_t left = capture->read_bytes > capture->total_bytes_read
+                        ? capture->read_bytes - capture->total_bytes_read
+                        : 0;
+    if ((uint64_t)new_bytes > left) {
+      new_bytes = (size_t)left;
     }
   }
 
-  size_t frames_read = bytes_read / (capture->channels * sample_size);
+  if (new_bytes > 0 && !capture->eof) {
+    size_t n = 0;
+    file_read_status_t st = file_capture_fill(
+        capture, capture->raw_buf + bytes_read, new_bytes, timeout_ms, &n);
+    bytes_read += n;
+    capture->total_bytes_read += n;
+    if (st == FILE_READ_ERROR) {
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                           "Read error from stream");
+      }
+      audio_chunk_set_valid_frames(chunk, 0);
+      return false;
+    }
+    if (st == FILE_READ_EOF) {
+      capture->eof = true;
+    }
+  }
+
+  // End of stream: real EOF, or the read_bytes limit was reached. A timeout is
+  // never treated as end of stream (upstream device.rs:501-532).
+  bool at_end =
+      capture->eof || (capture->read_bytes > 0 &&
+                       capture->total_bytes_read >= capture->read_bytes);
+
+  size_t frames_read = bytes_read / frame_bytes;
+  size_t residual = bytes_read - frames_read * frame_bytes;
+  if (residual > 0 && !at_end) {
+    // Keep the partial frame for the next read so the stream stays aligned.
+    memcpy(capture->carry, capture->raw_buf + frames_read * frame_bytes,
+           residual);
+    capture->carry_len = residual;
+  }
+  if (frames_read == 0 && !at_end) {
+    // Timed out before a complete frame arrived: no data yet, not EOF.
+    audio_chunk_set_valid_frames(chunk, 0);
+    return false;
+  }
 
   audio_chunk_decode_interleaved(capture->raw_buf, capture->format,
                                  (size_t)capture->channels, frames_read, chunk);
+
+  // A chunk made only of the EOF extra_samples tail is sent unconditionally
+  // upstream (file_backend/device.rs send_silence), so it must not be
+  // silence-gated (06 F-10). Chunks with file data are gated as usual.
+  const size_t file_frames = frames_read;
+  if (capture->owner)
+    capture->owner->skip_silence_detection = false;
 
   if (frames_read < frames) {
     size_t remaining_frames = frames - frames_read;
@@ -355,8 +538,11 @@ static bool file_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
     if (extra_left > missing) {
       extra_to_generate = remaining_frames;
       capture->extra_samples_generated += missing;
-    } else {
-      extra_to_generate = (size_t)((double)extra_left / ratio);
+    } else if (extra_left > 0) {
+      extra_to_generate = (size_t)ceil((double)extra_left / ratio);
+      if (extra_to_generate > remaining_frames) {
+        extra_to_generate = remaining_frames;
+      }
       capture->extra_samples_generated = capture->extra_samples;
     }
 
@@ -368,6 +554,8 @@ static bool file_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
         }
       }
       frames_read += extra_to_generate;
+      if (file_frames == 0 && capture->owner)
+        capture->owner->skip_silence_detection = true;
     }
   }
 
@@ -419,6 +607,9 @@ static void file_capture_close(void *ctx) {
     free(capture->raw_buf);
     capture->raw_buf = NULL;
   }
+  free(capture->carry);
+  capture->carry = NULL;
+  capture->carry_len = 0;
 }
 
 /**
@@ -514,10 +705,13 @@ file_capture_create(const capture_device_config_t *config, int sample_rate,
                     processing_parameters_t *params, backend_error_t *err) {
   (void)full_duplex;
   (void)params;
-  (void)err;
   file_capture_t *capture = (file_capture_t *)calloc(1, sizeof(file_capture_t));
-  if (!capture)
+  if (!capture) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Memory allocation failure");
     return NULL;
+  }
 
   if (config->type == AUDIO_BACKEND_TYPE_STDIN_OUT) {
     capture->is_stdin = true;
@@ -548,6 +742,9 @@ file_capture_create(const capture_device_config_t *config, int sample_rate,
       capture->realtime = config->cfg.wav_file.has_realtime
                               ? config->cfg.wav_file.realtime
                               : false;
+#else
+      file_backend_warn_realtime_ignored(config->cfg.wav_file.has_realtime &&
+                                         config->cfg.wav_file.realtime);
 #endif
     } else {
       snprintf(capture->filename, sizeof(capture->filename), "%s",
@@ -567,6 +764,9 @@ file_capture_create(const capture_device_config_t *config, int sample_rate,
       capture->realtime = config->cfg.raw_file.has_realtime
                               ? config->cfg.raw_file.realtime
                               : false;
+#else
+      file_backend_warn_realtime_ignored(config->cfg.raw_file.has_realtime &&
+                                         config->cfg.raw_file.realtime);
 #endif
     }
   }
@@ -580,16 +780,35 @@ file_capture_create(const capture_device_config_t *config, int sample_rate,
       (capture_backend_t *)calloc(1, sizeof(capture_backend_t));
   if (!backend) {
     free(capture);
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Memory allocation failure");
     return NULL;
   }
   backend->ctx = capture;
   backend->vtable = &g_file_capture_vtable;
+  capture->owner = backend;
 #ifdef CDSP_TEST
   backend->is_realtime = capture->realtime;
 #else
   backend->is_realtime = false;
 #endif
   return backend;
+}
+
+// Pipeline (playback) sample rate, delivered by the engine through the
+// optional set_pipeline_sample_rate vtable hook, so resampling_ratio and
+// extra_samples scaling match upstream when capture rate != pipeline rate.
+static void file_capture_set_pipeline_sample_rate(void *ctx,
+                                                  int pipeline_sample_rate) {
+  file_capture_t *capture = (file_capture_t *)ctx;
+  if (!capture)
+    return;
+  capture->playback_sample_rate = pipeline_sample_rate;
+  if (capture->sample_rate > 0 && capture->playback_sample_rate > 0) {
+    capture->resampling_ratio =
+        (double)capture->playback_sample_rate / (double)capture->sample_rate;
+  }
 }
 
 const capture_backend_vtable_t g_file_capture_vtable = {
@@ -600,6 +819,7 @@ const capture_backend_vtable_t g_file_capture_vtable = {
     .get_pending_rate_change = file_capture_get_pending_rate_change,
     .is_pitch_control_supported = file_capture_pitch_control_supported,
     .set_pitch = file_capture_set_pitch,
+    .set_pipeline_sample_rate = file_capture_set_pipeline_sample_rate,
     .wait_for_data = file_capture_wait,
     .stop = file_capture_stop,
     .destroy = file_capture_destroy};
@@ -619,6 +839,10 @@ static bool file_playback_open(void *ctx, backend_error_t *err) {
     return false;
   if (playback->is_stdout) {
     playback->f = stdout;
+#if defined(_WIN32)
+    // Text-mode stdout would expand every 0x0A byte to CR LF.
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
   } else {
     playback->f = cdsp_fopen(playback->filename, "wb");
     if (!playback->f) {
@@ -680,20 +904,38 @@ static bool file_playback_open(void *ctx, backend_error_t *err) {
   }
 
   if (playback->is_wav) {
+    bool header_ok;
     if (!playback->is_seekable && playback->use_rf64) {
       logger_warn(&g_logger, "RF64 output requires a seekable file, writing a "
                              "streaming wav header instead");
-      wav_write_header(playback->f, playback->channels, playback->format,
-                       playback->sample_rate, 0xFFFFFFFF, false);
+      header_ok =
+          wav_write_header(playback->f, playback->channels, playback->format,
+                           playback->sample_rate, 0xFFFFFFFF, false);
     } else {
       if (playback->use_rf64) {
-        wav_write_rf64_header(playback->f, playback->channels, playback->format,
-                              playback->sample_rate, 0);
+        header_ok =
+            wav_write_rf64_header(playback->f, playback->channels,
+                                  playback->format, playback->sample_rate, 0);
       } else {
-        wav_write_header(playback->f, playback->channels, playback->format,
-                         playback->sample_rate, 0xFFFFFFFF,
-                         playback->is_seekable);
+        header_ok = wav_write_header(playback->f, playback->channels,
+                                     playback->format, playback->sample_rate,
+                                     0xFFFFFFFF, playback->is_seekable);
       }
+    }
+    if (!header_ok) {
+      if (err) {
+        char err_msg[1024];
+        snprintf(err_msg, sizeof(err_msg), "Failed to write wav header to '%s'",
+                 playback->is_stdout ? "stdout" : playback->filename);
+        backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED, err_msg);
+      }
+      if (!playback->is_stdout) {
+        fclose(playback->f);
+      }
+      playback->f = NULL;
+      free(playback->raw_buf);
+      playback->raw_buf = NULL;
+      return false;
     }
   } else {
     if (playback->use_rf64) {
@@ -729,24 +971,6 @@ static bool file_playback_write(void *ctx, const audio_chunk_t *chunk,
   size_t frames = audio_chunk_get_valid_frames(chunk);
   (void)frames;
 
-  if (playback->params && !sample_format_is_float(playback->format) &&
-      !sample_format_is_dsd(playback->format)) {
-    size_t channels = audio_chunk_get_channels(chunk);
-    size_t c_frames = audio_chunk_get_valid_frames(chunk);
-    uint64_t clipped = 0;
-    for (size_t c = 0; c < channels; c++) {
-      mutable_waveform_t data = audio_chunk_get_channel(chunk, c);
-      for (size_t f = 0; f < c_frames; f++) {
-        if (data[f] >= 1.0 || data[f] < -1.0) {
-          clipped++;
-        }
-      }
-    }
-    if (clipped > 0) {
-      processing_parameters_add_clipped_samples(playback->params, clipped);
-    }
-  }
-
   bool reached_4gb = false;
   char err_msg[256] = {0};
 
@@ -773,6 +997,24 @@ static bool file_playback_write(void *ctx, const audio_chunk_t *chunk,
       }
     }
     return false;
+  }
+  // stdout is fully buffered when redirected to a pipe; flush every chunk so
+  // the consumer sees audio with chunk latency and a closed reader is
+  // reported now rather than at some later write (upstream flushes on
+  // finish and Rust's Stdout is a LineWriter).
+  if (playback->is_stdout && fflush(playback->f) != 0) {
+    if (err) {
+      char msg[256];
+      snprintf(msg, sizeof(msg), "Failed to flush stdout: %s", strerror(errno));
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
+    }
+    return false;
+  }
+
+  if (playback->params && !sample_format_is_float(playback->format) &&
+      !sample_format_is_dsd(playback->format)) {
+    backend_count_clipped(playback->params, chunk, &playback->last_clip_warn_ns,
+                          &g_logger);
   }
 #ifdef CDSP_TEST
   if (success && frames > 0) {
@@ -806,12 +1048,23 @@ static void file_playback_close(void *ctx) {
     return;
   if (playback->f) {
     if (playback->is_wav && playback->is_seekable && !playback->is_stdout) {
-      wav_update_header(playback->f, playback->channels, playback->format,
-                        playback->sample_rate, playback->total_bytes_written,
-                        playback->use_rf64);
+      if (!wav_update_header(playback->f, playback->channels, playback->format,
+                             playback->sample_rate,
+                             playback->total_bytes_written,
+                             playback->use_rf64)) {
+        logger_error(&g_logger,
+                     "Failed to finalize wav header of '%s'; the file may be "
+                     "truncated or corrupt",
+                     playback->filename);
+      }
     }
     if (!playback->is_stdout) {
-      fclose(playback->f);
+      if (fclose(playback->f) != 0) {
+        logger_error(&g_logger, "Failed to close output file '%s': %s",
+                     playback->filename, strerror(errno));
+      }
+    } else if (fflush(playback->f) != 0) {
+      logger_error(&g_logger, "Failed to flush stdout: %s", strerror(errno));
     }
     playback->f = NULL;
   }
@@ -949,11 +1202,24 @@ file_playback_create(const playback_device_config_t *config, int sample_rate,
     }
     return NULL;
   }
+  if (has_wav_header && sample_format_is_dsd(fmt)) {
+    // A WAV header can only describe PCM; DSD bit patterns tagged as PCM play
+    // back as full-scale noise (speaker hazard). Raw DSD output stays allowed.
+    if (err) {
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Wav files do not support DSD sample formats");
+    }
+    return NULL;
+  }
 
   file_playback_t *playback =
       (file_playback_t *)calloc(1, sizeof(file_playback_t));
-  if (!playback)
+  if (!playback) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Memory allocation failure");
     return NULL;
+  }
 #ifdef CDSP_TEST
   atomic_init(&playback->stopped, false);
 #endif
@@ -980,6 +1246,9 @@ file_playback_create(const playback_device_config_t *config, int sample_rate,
     playback->realtime = config->cfg.raw_file.has_realtime
                              ? config->cfg.raw_file.realtime
                              : false;
+#else
+    file_backend_warn_realtime_ignored(config->cfg.raw_file.has_realtime &&
+                                       config->cfg.raw_file.realtime);
 #endif
   }
   playback->chunk_size = chunk_size;
@@ -990,6 +1259,9 @@ file_playback_create(const playback_device_config_t *config, int sample_rate,
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));
   if (!backend) {
     free(playback);
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "Memory allocation failure");
     return NULL;
   }
   backend->ctx = playback;
@@ -1009,19 +1281,6 @@ const playback_backend_vtable_t g_file_playback_vtable = {
     .set_is_paused = file_playback_set_is_paused,
     .stop = file_playback_stop,
     .destroy = file_playback_destroy};
-
-void file_capture_set_pipeline_sample_rate(capture_backend_t *backend,
-                                           int pipeline_sample_rate) {
-  if (!backend || backend->vtable != &g_file_capture_vtable || !backend->ctx) {
-    return;
-  }
-  file_capture_t *capture = (file_capture_t *)backend->ctx;
-  capture->playback_sample_rate = pipeline_sample_rate;
-  if (capture->sample_rate > 0 && capture->playback_sample_rate > 0) {
-    capture->resampling_ratio =
-        (double)capture->playback_sample_rate / (double)capture->sample_rate;
-  }
-}
 
 void file_capture_set_resampling_ratio(capture_backend_t *backend,
                                        double ratio) {

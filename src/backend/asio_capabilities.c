@@ -3,6 +3,7 @@
 #if defined(ENABLE_ASIO)
 
 #define WIN32_LEAN_AND_MEAN
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,6 +69,7 @@ probe_device_capabilities(const char *target_dev_name, bool is_capture,
     return NULL;
   }
 
+  // Probing ASIO requires loading the driver (upstream device.rs:1244-1247)
   IASIO *iasio = NULL;
   backend_error_t berr;
   memset(&berr, 0, sizeof(berr));
@@ -82,7 +84,34 @@ probe_device_capabilities(const char *target_dev_name, bool is_capture,
 
   audio_device_descriptor_t *desc = NULL;
 
-  // Supported rates probe (lines 1242-1247)
+  // Remember the driver state so the probe can leave it exactly as found
+  // (upstream's probe is read-only, device.rs:1249-1288; this one has to
+  // switch IO formats to see DSD rates).
+  double original_rate = 0.0;
+  bool have_original_rate =
+      asio_ok(iasio->lpVtbl->getSampleRate(iasio, &original_rate)) &&
+      original_rate > 0.0;
+  ASIOIoFormat current_io;
+  memset(&current_io, 0, sizeof(current_io));
+  current_io.FormatType = kASIOFormatPCM;
+  bool has_io_selectors =
+      iasio->lpVtbl->future &&
+      (ASIOError)(uintptr_t)iasio->lpVtbl->future(
+          iasio, kAsioGetIoFormat, &current_io) == (ASIOError)ASE_SUCCESS;
+  bool started_in_dsd =
+      has_io_selectors && current_io.FormatType == kASIOFormatDSD;
+  bool io_format_changed = false;
+
+  // Probe PCM rates and the PCM sample format in PCM mode.
+  if (started_in_dsd) {
+    ASIOIoFormat pcm_format;
+    memset(&pcm_format, 0, sizeof(pcm_format));
+    pcm_format.FormatType = kASIOFormatPCM;
+    iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &pcm_format);
+    io_format_changed = true;
+  }
+
+  // Supported rates probe (upstream device.rs:1249-1256)
   bool pcm_rate_supported[STANDARD_RATES_COUNT] = {false};
   for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
     if (asio_ok(
@@ -91,12 +120,92 @@ probe_device_capabilities(const char *target_dev_name, bool is_capture,
     }
   }
 
-  // 2. Probe native sample format (lines 1249-1260)
+  // Channel counts (upstream device.rs:1271-1286)
+  long num_inputs = 0, num_outputs = 0;
+  bool channels_ok =
+      asio_ok(iasio->lpVtbl->getChannels(iasio, &num_inputs, &num_outputs));
+  long target_channels = is_capture ? num_inputs : num_outputs;
+
+  // Probe native sample format (upstream device.rs:1258-1269)
   ASIOChannelInfo chan_info;
   memset(&chan_info, 0, sizeof(chan_info));
   chan_info.channel = 0;
   chan_info.isInput = is_capture ? ASIOTrue : ASIOFalse;
-  if (!asio_ok(iasio->lpVtbl->getChannelInfo(iasio, &chan_info))) {
+  bool chan_info_ok =
+      (channels_ok && target_channels > 0)
+          ? asio_ok(iasio->lpVtbl->getChannelInfo(iasio, &chan_info))
+          : true;
+
+  asio_sample_format_t sample_fmt =
+      (channels_ok && target_channels > 0 && chan_info_ok)
+          ? asio_sample_type_to_format(chan_info.type)
+          : ASIO_SAMPLE_FORMAT_INVALID;
+  bool supports_dsd = false;
+  if (sample_fmt == ASIO_SAMPLE_FORMAT_DSD_INT8) {
+    // The driver stayed in DSD mode: the "PCM" rates above were not probed in
+    // PCM mode, so report DSD only (avoids listing DSD_INT8 twice per rate).
+    supports_dsd = true;
+    memset(pcm_rate_supported, 0, sizeof(pcm_rate_supported));
+  }
+
+  // Check whether Native DSD is supported and probe DSD rates in DSD mode.
+  ASIOIoFormat dsd_format;
+  memset(&dsd_format, 0, sizeof(dsd_format));
+  dsd_format.FormatType = kASIOFormatDSD;
+  if (channels_ok && target_channels > 0 && !supports_dsd &&
+      iasio->lpVtbl->future) {
+    ASIOError fut_res = (ASIOError)(uintptr_t)iasio->lpVtbl->future(
+        iasio, kAsioCanDoIoFormat, &dsd_format);
+    // Only ASE_SUCCESS signals support (ASIO SDK 2.3 future()).
+    if (fut_res == (ASIOError)ASE_SUCCESS || started_in_dsd) {
+      supports_dsd = true;
+    }
+  }
+
+  bool dsd_rate_supported[STANDARD_RATES_COUNT] = {false};
+  if (channels_ok && target_channels > 0 && supports_dsd) {
+    if (iasio->lpVtbl->future) {
+      iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &dsd_format);
+      io_format_changed = true;
+    }
+    for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
+      double raw_dsd_rate = (double)STANDARD_RATES[r] * 32.0;
+      if (raw_dsd_rate >= 2822400.0 &&
+          asio_ok(iasio->lpVtbl->canSampleRate(iasio, raw_dsd_rate))) {
+        dsd_rate_supported[r] = true;
+      }
+    }
+  }
+
+  // Restore the IO format and sample rate that were active before the probe.
+  if (io_format_changed && iasio->lpVtbl->future) {
+    ASIOIoFormat restore_format;
+    memset(&restore_format, 0, sizeof(restore_format));
+    restore_format.FormatType =
+        started_in_dsd ? kASIOFormatDSD : kASIOFormatPCM;
+    iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &restore_format);
+  }
+  if (have_original_rate) {
+    double rate_now = 0.0;
+    if (asio_ok(iasio->lpVtbl->getSampleRate(iasio, &rate_now)) &&
+        fabs(rate_now - original_rate) > 0.5) {
+      iasio->lpVtbl->setSampleRate(iasio, original_rate);
+    }
+  }
+
+  // Teardown driver now that probing is finished (upstream device.rs:1288)
+  asio_driver_teardown(target_dev_name);
+
+  if (!channels_ok) {
+    if (err) {
+      char msg[512];
+      snprintf(msg, sizeof(msg), "ASIOGetChannels failed for '%s'",
+               target_dev_name);
+      device_error_init(err, DEVICE_ERROR_OTHER, msg);
+    }
+    return NULL;
+  }
+  if (!chan_info_ok) {
     if (err) {
       const char *direction_name = is_capture ? "capture" : "playback";
       char msg[512];
@@ -105,14 +214,14 @@ probe_device_capabilities(const char *target_dev_name, bool is_capture,
                direction_name, target_dev_name);
       device_error_init(err, DEVICE_ERROR_OTHER, msg);
     }
-    asio_driver_teardown(target_dev_name);
     return NULL;
   }
-
-  asio_sample_format_t sample_fmt = asio_sample_type_to_format(chan_info.type);
-  if (sample_fmt == ASIO_SAMPLE_FORMAT_INVALID) {
-    asio_driver_teardown(target_dev_name);
-    desc = (audio_device_descriptor_t *)calloc(1, sizeof(audio_device_descriptor_t));
+  if (target_channels <= 0 || sample_fmt == ASIO_SAMPLE_FORMAT_INVALID) {
+    // A driver with 0 channels in the requested direction or an unsupported
+    // native format gives empty capabilities, not an error
+    // (upstream device.rs:1258-1259, 1296-1310).
+    desc = (audio_device_descriptor_t *)calloc(
+        1, sizeof(audio_device_descriptor_t));
     if (desc) {
       snprintf(desc->name, sizeof(desc->name), "%s", target_dev_name);
       desc->capability_sets_count = 0;
@@ -123,58 +232,6 @@ probe_device_capabilities(const char *target_dev_name, bool is_capture,
     return desc;
   }
   const char *fmt_str = asio_format_to_str(sample_fmt);
-
-  // Get channel count before touching DSD format or setting rate (AS-F9)
-  long num_inputs = 0, num_outputs = 0;
-  if (!asio_ok(iasio->lpVtbl->getChannels(iasio, &num_inputs, &num_outputs))) {
-    if (err) {
-      char msg[512];
-      snprintf(msg, sizeof(msg), "ASIOGetChannels failed for '%s'",
-               target_dev_name);
-      device_error_init(err, DEVICE_ERROR_OTHER, msg);
-    }
-    asio_driver_teardown(target_dev_name);
-    return NULL;
-  }
-
-  // 3. Check whether Native DSD is supported by the ASIO driver and probe DSD
-  // rates in DSD mode
-  ASIOIoFormat dsd_format;
-  memset(&dsd_format, 0, sizeof(dsd_format));
-  dsd_format.FormatType = kASIOFormatDSD;
-  bool supports_dsd = false;
-  if (sample_fmt == ASIO_SAMPLE_FORMAT_DSD_INT8) {
-    supports_dsd = true;
-  } else if (iasio->lpVtbl->future) {
-    ASIOError fut_res = (ASIOError)(uintptr_t)iasio->lpVtbl->future(
-        iasio, kAsioCanDoIoFormat, &dsd_format);
-    if (fut_res == (ASIOError)ASE_SUCCESS || fut_res == 0 || fut_res == 1) {
-      supports_dsd = true;
-    }
-  }
-
-  bool dsd_rate_supported[STANDARD_RATES_COUNT] = {false};
-  if (supports_dsd) {
-    iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &dsd_format);
-    for (size_t r = 0; r < STANDARD_RATES_COUNT; r++) {
-      double raw_dsd_rate = (double)STANDARD_RATES[r] * 32.0;
-      if (raw_dsd_rate >= 2822400.0 &&
-          asio_ok(iasio->lpVtbl->canSampleRate(iasio, raw_dsd_rate))) {
-        dsd_rate_supported[r] = true;
-      }
-    }
-    // Switch back to PCM format and restore sample rate (AS-F9)
-    ASIOIoFormat pcm_format;
-    memset(&pcm_format, 0, sizeof(pcm_format));
-    pcm_format.FormatType = kASIOFormatPCM;
-    iasio->lpVtbl->future(iasio, kAsioSetIoFormat, &pcm_format);
-    iasio->lpVtbl->setSampleRate(iasio, 44100.0);
-  }
-
-  // Teardown driver now that probing is finished
-  asio_driver_teardown(target_dev_name);
-
-  long target_channels = is_capture ? num_inputs : num_outputs;
 
   // Count total supported unique rates
   size_t total_rates = 0;

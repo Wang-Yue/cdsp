@@ -190,6 +190,11 @@ void audio_chunk_apply_gain(audio_chunk_t *chunk, const size_t *channels,
 /**
  * @brief Decodes interleaved raw byte samples into planar double audio chunk.
  *
+ * All `audio_chunk_decode_*` functions honor the destination chunk's
+ * used-channel mask (@ref audio_chunk_set_used_channels): channels marked
+ * unused are zero-filled instead of decoded (upstream
+ * `buffer_to_chunk_with_adapter` skips them likewise).
+ *
  * @param src Pointer to interleaved raw bytes.
  * @param fmt Binary sample format of the source buffer.
  * @param channels Number of audio channels in source.

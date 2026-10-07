@@ -15,10 +15,12 @@
 #include "filters/biquad_combo.h"
 #include "filters/convolution.h"
 #include "filters/filter.h"
+#include "filters/loudness.h"
 #include "filters/volume.h"
 #include "logging/app_logger.h"
 #include "mixer/mixer.h"
 #include "pipeline/pipeline.h"
+#include "pipeline/pipeline_faders.h"
 #include "pipeline/pipeline_internal.h"
 #include "processors/processor.h"
 
@@ -207,7 +209,18 @@ static void count_pipeline_requirements(const dsp_config_t *config,
         continue;
       if (step->has_names && step->names_count == 0)
         continue;
-      (*out_total_steps)++;
+      // build_filter_step() emits one exec step per run of consecutive
+      // biquad / non-biquad filters, so count runs rather than steps.
+      size_t runs = 0;
+      bool prev_is_bq = false;
+      for (size_t n = 0; n < step->names_count; n++) {
+        bool is_bq = filter_config_is_biquad(
+            dsp_config_get_filter(config, step->names[n]));
+        if (runs == 0 || is_bq != prev_is_bq)
+          runs++;
+        prev_is_bq = is_bq;
+      }
+      *out_total_steps += runs > 0 ? runs : 1;
     } else if (step->type == PIPELINE_STEP_TYPE_MIXER) {
       (*out_total_steps)++;
       (*out_num_mixers)++;
@@ -258,10 +271,23 @@ resolve_filter_step_channels(const pipeline_step_config_t *step,
   return true;
 }
 
+/// Turn a freshly created Volume or Loudness filter into a reader of the
+/// pipeline's fader bank. Other filters are left alone.
+static void bind_fader_filter(filter_t *f, const fader_levels_t *levels) {
+  if (!f || !f->instance || !levels)
+    return;
+  if (f->type == FILTER_INSTANCE_VOLUME) {
+    volume_filter_bind_fader_levels((volume_filter_t *)f->instance, levels);
+  } else if (f->type == FILTER_INSTANCE_LOUDNESS) {
+    loudness_filter_bind_fader_levels((loudness_filter_t *)f->instance, levels);
+  }
+}
+
 static parallel_filter_chain_t *build_filter_chains_slice(
     const char *const *names, size_t names_count, const dsp_config_t *config,
     int rate, size_t frames_per_chunk, processing_parameters_t *proc_params,
-    const size_t *channels, size_t channels_count, config_error_t *err) {
+    const fader_levels_t *levels, const size_t *channels, size_t channels_count,
+    config_error_t *err) {
   parallel_filter_chain_t *chains = (parallel_filter_chain_t *)calloc(
       channels_count, sizeof(parallel_filter_chain_t));
   if (!chains) {
@@ -288,12 +314,20 @@ static parallel_filter_chain_t *build_filter_chains_slice(
         free_filter_chains(chains, channels_count);
         return NULL;
       }
-      filter_t *f = filter_create(names[j], f_cfg, rate, frames_per_chunk,
-                                  proc_params, err);
+      // A Volume filter in the pipeline is a pure reader of the fader bank
+      // and must not touch the shared parameters, not even at creation (this
+      // runs on the control thread while the previous pipeline is live).
+      processing_parameters_t *filter_params =
+          f_cfg->type == FILTER_TYPE_VOLUME ? NULL : proc_params;
+      // Already validated by pipeline_config_validate() in pipeline_create();
+      // re-validating here would re-read Conv IR files once per channel.
+      filter_t *f = filter_create_prevalidated(
+          names[j], f_cfg, rate, frames_per_chunk, filter_params, err);
       if (!f) {
         free_filter_chains(chains, channels_count);
         return NULL;
       }
+      bind_fader_filter(f, levels);
       chain->filters[j] = f;
     }
   }
@@ -427,10 +461,10 @@ static bool build_filter_step(const pipeline_step_config_t *step,
         goto cleanup;
       }
     } else {
-      parallel_filter_chain_t *chains =
-          build_filter_chains_slice(run_names, run_len, config, pipeline->rate,
-                                    pipeline->frames_per_chunk, proc_params,
-                                    channels, channels_count, err);
+      parallel_filter_chain_t *chains = build_filter_chains_slice(
+          run_names, run_len, config, pipeline->rate,
+          pipeline->frames_per_chunk, proc_params, &pipeline->faders.levels,
+          channels, channels_count, err);
       if (!chains) {
         goto cleanup;
       }
@@ -545,6 +579,46 @@ static bool build_processor_step(const pipeline_step_config_t *step,
 // Pipeline Lifecycle Functions
 // ============================================================================
 
+/// Allocate the pre-mixer working chunk when the output chunk cannot serve as
+/// one: when the channel count changes on the way through the pipeline, or
+/// when some capture channels are unused (the unused ones are then skipped by
+/// every step before the first mixer, which is tracked on this chunk). With
+/// neither, processing runs directly in the caller's output chunk, saving a
+/// full-chunk copy per chunk. Must run after expected_out_channels is set.
+static bool allocate_input_scratch(pipeline_t *pipeline, config_error_t *err) {
+  if (pipeline->expected_in_channels == 0)
+    return true;
+  bool some_unused = false;
+  if (pipeline->used_capture_channels) {
+    for (size_t ch = 0; ch < pipeline->expected_in_channels; ch++) {
+      if (!pipeline->used_capture_channels[ch]) {
+        some_unused = true;
+        break;
+      }
+    }
+  }
+  if (pipeline->expected_in_channels == pipeline->expected_out_channels &&
+      !some_unused)
+    return true;
+
+  pipeline->input_scratch = audio_chunk_create(pipeline->frames_per_chunk,
+                                               pipeline->expected_in_channels);
+  if (!pipeline->input_scratch) {
+    logger_error(
+        &g_logger,
+        "Failed to allocate input scratch buffer (frames=%zu, channels=%zu)",
+        pipeline->frames_per_chunk, pipeline->expected_in_channels);
+    config_error_set(err, CONFIG_ERR_PARSE,
+                     "Failed to allocate input scratch buffer");
+    return false;
+  }
+  if (pipeline->used_capture_channels) {
+    audio_chunk_set_used_channels(pipeline->input_scratch,
+                                  pipeline->used_capture_channels);
+  }
+  return true;
+}
+
 pipeline_t *pipeline_create(const dsp_config_t *config,
                             processing_parameters_t *proc_params,
                             size_t explicit_chunk_size, config_error_t *err) {
@@ -583,7 +657,12 @@ pipeline_t *pipeline_create(const dsp_config_t *config,
               pipeline->rate, pipeline->frames_per_chunk,
               pipeline->expected_in_channels, pipeline->multithreaded ? 1 : 0);
 
-  // 1. Create the implicit master volume filter
+  // 1. Create the fader bank and the implicit master volume filter.
+  fader_settings_t fader_settings[FADER_COUNT];
+  (void)pipeline_faders_collect_settings(config, fader_settings, NULL);
+  pipeline_faders_init(&pipeline->faders, fader_settings, proc_params,
+                       pipeline->frames_per_chunk, pipeline->rate);
+
   volume_config_t vol_params = {
       .ramp_time_ms = config->devices.has_volume_ramp_time_ms
                           ? config->devices.volume_ramp_time_ms
@@ -597,8 +676,7 @@ pipeline_t *pipeline_create(const dsp_config_t *config,
   filter_config_t vcfg = {.type = FILTER_TYPE_VOLUME,
                           .parameters.volume = vol_params};
   pipeline->master_volume = (volume_filter_t *)g_volume_vtable.create(
-      "default", &vcfg, pipeline->rate, pipeline->frames_per_chunk, proc_params,
-      err);
+      "default", &vcfg, pipeline->rate, pipeline->frames_per_chunk, NULL, err);
   if (!pipeline->master_volume) {
     logger_error(
         &g_logger,
@@ -608,14 +686,16 @@ pipeline_t *pipeline_create(const dsp_config_t *config,
     pipeline_free(pipeline);
     return NULL;
   }
-  // The master volume is a single instance shared by every channel, so
-  // pipeline_process() drives its ramp explicitly (prepare once, process per
-  // channel, advance once). Volume filters built from a pipeline step get one
-  // instance per channel and drive themselves instead.
+  // Like every Volume filter in the pipeline, the master volume only reads
+  // the fader bank (fader Main). It is a single instance shared by every
+  // channel, so pipeline_process() loads the chunk's level into it once
+  // (volume_filter_prepare_frames) before the per-channel process() calls.
+  volume_filter_bind_fader_levels(pipeline->master_volume,
+                                  &pipeline->faders.levels);
   volume_filter_set_externally_driven(pipeline->master_volume, true);
 
-  // 2. Compute used capture channels and allocate input scratch if channel
-  // counts differ
+  // 2. Compute used capture channels. The input scratch is allocated once the
+  // output channel count is known (see allocate_input_scratch()).
   if (pipeline->expected_in_channels > 0) {
     pipeline->used_capture_channels =
         (bool *)calloc(pipeline->expected_in_channels, sizeof(bool));
@@ -623,26 +703,6 @@ pipeline_t *pipeline_create(const dsp_config_t *config,
       pipeline_compute_used_capture_channels(config,
                                              pipeline->used_capture_channels,
                                              pipeline->expected_in_channels);
-    }
-  }
-
-  if (pipeline->expected_in_channels != pipeline->expected_out_channels &&
-      pipeline->expected_in_channels > 0) {
-    pipeline->input_scratch = audio_chunk_create(
-        pipeline->frames_per_chunk, pipeline->expected_in_channels);
-    if (!pipeline->input_scratch) {
-      logger_error(
-          &g_logger,
-          "Failed to allocate input scratch buffer (frames=%zu, channels=%zu)",
-          pipeline->frames_per_chunk, pipeline->expected_in_channels);
-      config_error_set(err, CONFIG_ERR_PARSE,
-                       "Failed to allocate input scratch buffer");
-      pipeline_free(pipeline);
-      return NULL;
-    }
-    if (pipeline->used_capture_channels) {
-      audio_chunk_set_used_channels(pipeline->input_scratch,
-                                    pipeline->used_capture_channels);
     }
   }
 
@@ -654,6 +714,10 @@ pipeline_t *pipeline_create(const dsp_config_t *config,
   if (total_exec_steps == 0) {
     pipeline->steps_count = 0;
     pipeline->expected_out_channels = pipeline->expected_in_channels;
+    if (!allocate_input_scratch(pipeline, err)) {
+      pipeline_free(pipeline);
+      return NULL;
+    }
     return pipeline;
   }
 
@@ -709,5 +773,9 @@ pipeline_t *pipeline_create(const dsp_config_t *config,
   }
 
   pipeline->expected_out_channels = current_channels;
+  if (!allocate_input_scratch(pipeline, err)) {
+    pipeline_free(pipeline);
+    return NULL;
+  }
   return pipeline;
 }

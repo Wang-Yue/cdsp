@@ -63,20 +63,6 @@ void asio_driver_teardown(const char *devname);
  */
 bool asio_driver_is_loaded(const char *devname);
 
-IASIO *asio_driver_lookup(const char *devname);
-
-/**
- * @brief Lock the per-driver mutex for devname and increment active reference
- * count. Matches upstream driver handle Mutex locking.
- */
-bool asio_driver_lock(const char *devname);
-
-/**
- * @brief Unlock the per-driver mutex for devname and decrement active reference
- * count.
- */
-void asio_driver_unlock(const char *devname);
-
 /**
  * @brief Callback function type for asio_with_driver.
  */
@@ -101,13 +87,6 @@ bool asio_needs_rate_reload(const char *devname);
  * Matches CamillaDSP driver.rs:is_unsupported_driver.
  */
 bool asio_is_unsupported_driver(const char *devname);
-
-/**
- * @brief Whether only one instance of this driver may be created per process.
- * Matches CamillaDSP driver.rs:is_single_instance_driver.
- * @deprecated Use asio_is_unsupported_driver instead.
- */
-bool asio_is_single_instance_driver(const char *devname);
 
 /**
  * @brief Returns the human-readable sample type name for an ASIO sample type

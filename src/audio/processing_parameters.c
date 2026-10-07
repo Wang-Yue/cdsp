@@ -19,35 +19,72 @@
 /**
  * @brief Lock-free ring buffer tracking the last 1,024 chunk-level Peak or RMS
  * values per channel.
+ *
+ * Storage format (private to this file):
+ * - peak histories store the per-chunk peak in dB (max is order-preserving, so
+ *   the max of dB values equals the dB of the max linear value);
+ * - RMS histories store the per-chunk **mean square** (linear power), like
+ *   upstream `ValueHistory::add_record_squared`. Queries average the stored
+ *   powers and convert to dB once (`average_sqrt_since`), so the audio thread
+ *   never round-trips through log/pow for the history.
+ *
+ * Synchronization: a seqlock. A writer claims the record by CAS-ing `write_seq`
+ * from even to odd (so the audio thread and a telemetry transfer can never
+ * write at the same time; the audio thread drops one history record rather
+ * than wait). All per-channel values are computed into `pending` *before* the
+ * claim, so the odd window only covers copying a few floats.
  */
 typedef struct {
   size_t channels;
   _Atomic uint64_t write_seq;
   _Atomic size_t write_pos;
   _Atomic size_t total_written;
-  uint64_t timestamps_ns[CHUNK_LEVEL_HISTORY_CAPACITY];
-  float *data; // planar array: channels * CHUNK_LEVEL_HISTORY_CAPACITY
+  // Seqlock-protected payload. Accessed only with relaxed atomics so that the
+  // reader's speculative loads racing the writer are well-defined (C11); on
+  // arm64/x86 these compile to plain loads/stores.
+  _Atomic uint64_t timestamps_ns[CHUNK_LEVEL_HISTORY_CAPACITY];
+  _Atomic float *data; // planar array: channels * CHUNK_LEVEL_HISTORY_CAPACITY
+  float *pending;      // producer-only staging for the next record: channels
 } chunk_level_history_t;
 
+/// Reader retries before giving up. The first few retries spin, later ones
+/// back off with a short sleep (readers are never on the audio thread).
+#define CHUNK_LEVEL_HISTORY_READ_RETRIES 100
+#define CHUNK_LEVEL_HISTORY_SPIN_RETRIES 4
+
 static inline void chunk_level_history_init(chunk_level_history_t *hist,
-                                            size_t channels) {
+                                            size_t channels, float fill) {
   if (!hist)
     return;
   hist->channels = channels;
   atomic_init(&hist->write_seq, 0ULL);
   atomic_init(&hist->write_pos, 0);
   atomic_init(&hist->total_written, 0);
-  memset(hist->timestamps_ns, 0, sizeof(hist->timestamps_ns));
+  for (size_t i = 0; i < CHUNK_LEVEL_HISTORY_CAPACITY; i++) {
+    atomic_init(&hist->timestamps_ns[i], 0ULL);
+  }
+  hist->data = NULL;
+  hist->pending = NULL;
   if (channels > 0) {
     size_t total = channels * CHUNK_LEVEL_HISTORY_CAPACITY;
-    hist->data = (float *)cdsp_aligned_alloc(64, total * sizeof(float));
-    if (hist->data) {
-      for (size_t i = 0; i < total; i++) {
-        hist->data[i] = -INFINITY;
-      }
+    hist->data =
+        (_Atomic float *)cdsp_aligned_alloc(64, total * sizeof(_Atomic float));
+    hist->pending = (float *)cdsp_aligned_alloc(64, channels * sizeof(float));
+    if (!hist->data || !hist->pending) {
+      if (hist->data)
+        cdsp_aligned_free((void *)hist->data);
+      if (hist->pending)
+        cdsp_aligned_free(hist->pending);
+      hist->data = NULL;
+      hist->pending = NULL;
+      return;
     }
-  } else {
-    hist->data = NULL;
+    for (size_t i = 0; i < total; i++) {
+      atomic_init(&hist->data[i], fill);
+    }
+    for (size_t i = 0; i < channels; i++) {
+      hist->pending[i] = fill;
+    }
   }
 }
 
@@ -55,160 +92,187 @@ static inline void chunk_level_history_free(chunk_level_history_t *hist) {
   if (!hist)
     return;
   if (hist->data) {
-    cdsp_aligned_free(hist->data);
+    cdsp_aligned_free((void *)hist->data);
     hist->data = NULL;
   }
+  if (hist->pending) {
+    cdsp_aligned_free(hist->pending);
+    hist->pending = NULL;
+  }
   hist->channels = 0;
+}
+
+static inline bool
+chunk_level_history_valid(const chunk_level_history_t *hist) {
+  return hist && hist->data && hist->pending && hist->channels > 0;
+}
+
+/**
+ * @brief Single non-blocking attempt to enter the seqlock write section.
+ * @return true with `*seq_out` = the even sequence that was claimed.
+ */
+static inline bool
+chunk_level_history_try_begin_write(chunk_level_history_t *hist,
+                                    uint64_t *seq_out) {
+  uint64_t seq = atomic_load_explicit(&hist->write_seq, memory_order_relaxed);
+  if (seq & 1ULL)
+    return false;
+  if (!atomic_compare_exchange_strong_explicit(&hist->write_seq, &seq, seq + 1,
+                                               memory_order_acquire,
+                                               memory_order_relaxed)) {
+    return false;
+  }
+  // Order the odd sequence before the data stores that follow (pairs with the
+  // reader's acquire fence before it re-reads `write_seq`).
+  atomic_thread_fence(memory_order_release);
+  *seq_out = seq;
+  return true;
+}
+
+static inline void chunk_level_history_end_write(chunk_level_history_t *hist,
+                                                 uint64_t seq) {
+  atomic_store_explicit(&hist->write_seq, seq + 2, memory_order_release);
+}
+
+/**
+ * @brief Publish `hist->pending` as a new record. Real-time safe: one CAS
+ * attempt, no waiting. If the section is held (only possible during a
+ * telemetry transfer), this record is dropped.
+ */
+static inline void chunk_level_history_publish(chunk_level_history_t *hist,
+                                               uint64_t now_ns) {
+  if (!chunk_level_history_valid(hist))
+    return;
+  uint64_t seq;
+  if (!chunk_level_history_try_begin_write(hist, &seq))
+    return;
+  size_t pos = atomic_load_explicit(&hist->write_pos, memory_order_relaxed);
+  atomic_store_explicit(&hist->timestamps_ns[pos], now_ns,
+                        memory_order_relaxed);
+  for (size_t ch = 0; ch < hist->channels; ch++) {
+    atomic_store_explicit(
+        &hist->data[(ch * CHUNK_LEVEL_HISTORY_CAPACITY) + pos],
+        hist->pending[ch], memory_order_relaxed);
+  }
+  atomic_store_explicit(&hist->write_pos,
+                        (pos + 1) & (CHUNK_LEVEL_HISTORY_CAPACITY - 1),
+                        memory_order_release);
+  atomic_fetch_add_explicit(&hist->total_written, 1, memory_order_release);
+  chunk_level_history_end_write(hist, seq);
+}
+
+static inline void chunk_level_history_read_backoff(int retry) {
+  if (retry >= CHUNK_LEVEL_HISTORY_SPIN_RETRIES)
+    cdsp_sleep_us(10);
+}
+
+/**
+ * @brief Reduce the records newer than `since_ns`.
+ *
+ * `is_rms == false`: per-channel max of the stored dB values.
+ * `is_rms == true`: per-channel mean of the stored mean squares, accumulated
+ * in double and converted to dB once.
+ */
+static bool
+chunk_level_history_reduce_since_ns(const chunk_level_history_t *hist,
+                                    uint64_t since_ns, float *out_levels,
+                                    size_t count, bool is_rms) {
+  if (out_levels && count > 0) {
+    for (size_t c = 0; c < count; c++) {
+      out_levels[c] = -INFINITY;
+    }
+  }
+  if (!out_levels || count == 0)
+    return false;
+  if (!chunk_level_history_valid(hist))
+    return false;
+  size_t ch_limit = count < hist->channels ? count : hist->channels;
+  const size_t mask = CHUNK_LEVEL_HISTORY_CAPACITY - 1;
+
+  for (int retry = 0; retry < CHUNK_LEVEL_HISTORY_READ_RETRIES; retry++) {
+    uint64_t seq_before =
+        atomic_load_explicit(&hist->write_seq, memory_order_acquire);
+    if (seq_before & 1ULL) {
+      chunk_level_history_read_backoff(retry);
+      continue;
+    }
+
+    size_t total =
+        atomic_load_explicit(&hist->total_written, memory_order_acquire);
+    size_t available = total < CHUNK_LEVEL_HISTORY_CAPACITY
+                           ? total
+                           : CHUNK_LEVEL_HISTORY_CAPACITY;
+    size_t pos = atomic_load_explicit(&hist->write_pos, memory_order_acquire);
+
+    // Count the records newer than `since_ns` (newest first).
+    size_t start = (pos + mask) & mask;
+    size_t n = 0;
+    for (size_t idx = start; n < available; idx = (idx + mask) & mask) {
+      if (atomic_load_explicit(&hist->timestamps_ns[idx],
+                               memory_order_relaxed) <= since_ns)
+        break;
+      n++;
+    }
+    // Reduce channel-major: each channel is contiguous in the planar store.
+    for (size_t ch = 0; ch < ch_limit; ch++) {
+      _Atomic float *ch_data = hist->data + (ch * CHUNK_LEVEL_HISTORY_CAPACITY);
+      size_t idx = start;
+      if (is_rms) {
+        double sum_sq = 0.0;
+        for (size_t i = 0; i < n; i++) {
+          sum_sq +=
+              (double)atomic_load_explicit(&ch_data[idx], memory_order_relaxed);
+          idx = (idx + mask) & mask;
+        }
+        out_levels[ch] =
+            n > 0 ? (float)(10.0 * log10(sum_sq / (double)n)) : -INFINITY;
+      } else {
+        float max_db = -INFINITY;
+        for (size_t i = 0; i < n; i++) {
+          float v = atomic_load_explicit(&ch_data[idx], memory_order_relaxed);
+          if (v > max_db)
+            max_db = v;
+          idx = (idx + mask) & mask;
+        }
+        out_levels[ch] = max_db;
+      }
+    }
+
+    atomic_thread_fence(memory_order_acquire);
+    uint64_t seq_after =
+        atomic_load_explicit(&hist->write_seq, memory_order_relaxed);
+    if (seq_after != seq_before) {
+      for (size_t ch = 0; ch < ch_limit; ch++) {
+        out_levels[ch] = -INFINITY;
+      }
+      chunk_level_history_read_backoff(retry);
+      continue;
+    }
+    if (n == 0) {
+      for (size_t ch = 0; ch < ch_limit; ch++) {
+        out_levels[ch] = -INFINITY;
+      }
+      return false;
+    }
+    return true;
+  }
+  return false;
 }
 
 static inline bool
 chunk_level_history_get_max_since_ns(const chunk_level_history_t *hist,
                                      uint64_t since_ns, float *out_levels,
                                      size_t count) {
-  if (out_levels && count > 0) {
-    for (size_t c = 0; c < count; c++) {
-      out_levels[c] = -INFINITY;
-    }
-  }
-  if (!out_levels || count == 0)
-    return false;
-  if (!hist || !hist->data || hist->channels == 0)
-    return false;
-  size_t ch_limit = count < hist->channels ? count : hist->channels;
-
-  for (int retry = 0; retry < 10; retry++) {
-    uint64_t seq_before =
-        atomic_load_explicit(&hist->write_seq, memory_order_acquire);
-    if (seq_before & 1)
-      continue;
-
-    size_t total =
-        atomic_load_explicit(&hist->total_written, memory_order_acquire);
-    if (total == 0)
-      return false;
-    size_t available = total < CHUNK_LEVEL_HISTORY_CAPACITY
-                           ? total
-                           : CHUNK_LEVEL_HISTORY_CAPACITY;
-    size_t pos = atomic_load_explicit(&hist->write_pos, memory_order_acquire);
-    size_t mask = CHUNK_LEVEL_HISTORY_CAPACITY - 1;
-    size_t idx = (pos + mask) & mask;
-
-    for (size_t c = 0; c < ch_limit; c++) {
-      out_levels[c] = -INFINITY;
-    }
-    size_t count_samples = 0;
-
-    for (size_t i = 0; i < available; i++) {
-      uint64_t ts = hist->timestamps_ns[idx];
-      if (ts <= since_ns)
-        break;
-      for (size_t ch = 0; ch < ch_limit; ch++) {
-        float val = hist->data[(ch * CHUNK_LEVEL_HISTORY_CAPACITY) + idx];
-        if (val > out_levels[ch]) {
-          out_levels[ch] = val;
-        }
-      }
-      count_samples++;
-      idx = (idx + mask) & mask;
-    }
-
-    uint64_t seq_after =
-        atomic_load_explicit(&hist->write_seq, memory_order_acquire);
-    if (seq_after == seq_before) {
-      if (count_samples == 0) {
-        for (size_t c = 0; c < count; c++) {
-          out_levels[c] = -INFINITY;
-        }
-        return false;
-      }
-      for (size_t c = ch_limit; c < count; c++) {
-        out_levels[c] = -INFINITY;
-      }
-      return true;
-    }
-  }
-
-  for (size_t ch = 0; ch < count; ch++) {
-    out_levels[ch] = -INFINITY;
-  }
-  return false;
+  return chunk_level_history_reduce_since_ns(hist, since_ns, out_levels, count,
+                                             false);
 }
 
 static inline bool
 chunk_level_history_get_rms_since_ns(const chunk_level_history_t *hist,
                                      uint64_t since_ns, float *out_levels,
                                      size_t count) {
-  if (out_levels && count > 0) {
-    for (size_t c = 0; c < count; c++) {
-      out_levels[c] = -INFINITY;
-    }
-  }
-  if (!out_levels || count == 0)
-    return false;
-  if (!hist || !hist->data || hist->channels == 0)
-    return false;
-  size_t ch_limit = count < hist->channels ? count : hist->channels;
-
-  for (int retry = 0; retry < 10; retry++) {
-    uint64_t seq_before =
-        atomic_load_explicit(&hist->write_seq, memory_order_acquire);
-    if (seq_before & 1)
-      continue;
-
-    size_t total =
-        atomic_load_explicit(&hist->total_written, memory_order_acquire);
-    if (total == 0)
-      return false;
-    size_t available = total < CHUNK_LEVEL_HISTORY_CAPACITY
-                           ? total
-                           : CHUNK_LEVEL_HISTORY_CAPACITY;
-    size_t pos = atomic_load_explicit(&hist->write_pos, memory_order_acquire);
-    size_t mask = CHUNK_LEVEL_HISTORY_CAPACITY - 1;
-    size_t idx = (pos + mask) & mask;
-
-    for (size_t ch = 0; ch < ch_limit; ch++) {
-      out_levels[ch] = 0.0f;
-    }
-    size_t count_samples = 0;
-
-    for (size_t i = 0; i < available; i++) {
-      uint64_t ts = hist->timestamps_ns[idx];
-      if (ts <= since_ns)
-        break;
-      for (size_t ch = 0; ch < ch_limit; ch++) {
-        float db = hist->data[(ch * CHUNK_LEVEL_HISTORY_CAPACITY) + idx];
-        float amp = float_from_db(db);
-        out_levels[ch] += amp * amp;
-      }
-      count_samples++;
-      idx = (idx + mask) & mask;
-    }
-
-    uint64_t seq_after =
-        atomic_load_explicit(&hist->write_seq, memory_order_acquire);
-    if (seq_after == seq_before) {
-      if (count_samples > 0) {
-        for (size_t ch = 0; ch < ch_limit; ch++) {
-          float mean_sq = out_levels[ch] / (float)count_samples;
-          out_levels[ch] = 10.0f * log10f(mean_sq);
-        }
-        for (size_t c = ch_limit; c < count; c++) {
-          out_levels[c] = -INFINITY;
-        }
-        return true;
-      } else {
-        for (size_t ch = 0; ch < count; ch++) {
-          out_levels[ch] = -INFINITY;
-        }
-        return false;
-      }
-    }
-  }
-
-  for (size_t ch = 0; ch < count; ch++) {
-    out_levels[ch] = -INFINITY;
-  }
-  return false;
+  return chunk_level_history_reduce_since_ns(hist, since_ns, out_levels, count,
+                                             true);
 }
 
 struct processing_parameters {
@@ -275,7 +339,7 @@ size_t processing_parameters_get_playback_channels(
 
 double
 processing_parameters_get_rate_adjust(const processing_parameters_t *params) {
-  return params ? atomic_double_get(&params->rate_adjust) : 1.0;
+  return params ? atomic_double_get(&params->rate_adjust) : 0.0;
 }
 
 void processing_parameters_set_rate_adjust(processing_parameters_t *params,
@@ -370,10 +434,16 @@ processing_parameters_create(size_t capture_channels,
   params->capture_channels = capture_channels;
   params->playback_channels = playback_channels;
 
-  chunk_level_history_init(&params->capture_peak_history, capture_channels);
-  chunk_level_history_init(&params->capture_rms_history, capture_channels);
-  chunk_level_history_init(&params->playback_peak_history, playback_channels);
-  chunk_level_history_init(&params->playback_rms_history, playback_channels);
+  // Peak histories hold dB (empty = -inf); RMS histories hold mean squares
+  // (empty = 0.0, i.e. -inf dB).
+  chunk_level_history_init(&params->capture_peak_history, capture_channels,
+                           -INFINITY);
+  chunk_level_history_init(&params->capture_rms_history, capture_channels,
+                           0.0f);
+  chunk_level_history_init(&params->playback_peak_history, playback_channels,
+                           -INFINITY);
+  chunk_level_history_init(&params->playback_rms_history, playback_channels,
+                           0.0f);
 
   if (capture_channels > 0) {
     params->capture_signal_peak =
@@ -547,6 +617,11 @@ void processing_parameters_set_capture_signal_peak(
       count < params->capture_channels ? count : params->capture_channels;
   for (size_t i = 0; i < limit; i++) {
     atomic_float_set(&params->capture_signal_peak[i], levels[i]);
+    if (params->capture_global_peaks && isfinite(levels[i]) &&
+        levels[i] > -200.0f) {
+      float lin = powf(10.0f, levels[i] / 20.0f);
+      atomic_float_fetch_max(&params->capture_global_peaks[i], lin);
+    }
   }
 }
 
@@ -591,6 +666,11 @@ void processing_parameters_set_playback_signal_peak(
       count < params->playback_channels ? count : params->playback_channels;
   for (size_t i = 0; i < limit; i++) {
     atomic_float_set(&params->playback_signal_peak[i], levels[i]);
+    if (params->playback_global_peaks && isfinite(levels[i]) &&
+        levels[i] > -200.0f) {
+      float lin = powf(10.0f, levels[i] / 20.0f);
+      atomic_float_fetch_max(&params->playback_global_peaks[i], lin);
+    }
   }
 }
 
@@ -653,46 +733,22 @@ static float update_levels_internal(const audio_chunk_t *chunk,
     return -INFINITY;
   }
 
-  uint64_t now_ns = cdsp_time_now_ns();
-  size_t peak_pos = (size_t)-1;
-  size_t rms_pos = (size_t)-1;
-  uint64_t peak_seq = 0;
-  uint64_t rms_seq = 0;
-
-  if (peak_hist && peak_hist->data && peak_hist->channels > 0) {
-    peak_seq =
-        atomic_load_explicit(&peak_hist->write_seq, memory_order_relaxed);
-    atomic_store_explicit(&peak_hist->write_seq, peak_seq + 1,
-                          memory_order_release);
-    peak_pos =
-        atomic_load_explicit(&peak_hist->write_pos, memory_order_relaxed);
-    peak_hist->timestamps_ns[peak_pos] = now_ns;
-  }
-
-  if (rms_hist && rms_hist->data && rms_hist->channels > 0) {
-    rms_seq = atomic_load_explicit(&rms_hist->write_seq, memory_order_relaxed);
-    atomic_store_explicit(&rms_hist->write_seq, rms_seq + 1,
-                          memory_order_release);
-    rms_pos = atomic_load_explicit(&rms_hist->write_pos, memory_order_relaxed);
-    rms_hist->timestamps_ns[rms_pos] = now_ns;
-  }
-
   float max_peak = -INFINITY;
   const bool *used_mask = audio_chunk_get_used_channels(chunk);
+  const bool peak_hist_ok = chunk_level_history_valid(peak_hist);
+  const bool rms_hist_ok = chunk_level_history_valid(rms_hist);
 
+  // Phase 1: all reductions and dB conversions happen outside the seqlock;
+  // history values are staged in the producer-only `pending` arrays.
   for (size_t i = 0; i < channel_count; i++) {
     waveform_t buffer = audio_chunk_get_channel(chunk, i);
     if (!buffer || (used_mask && !used_mask[i])) {
       atomic_float_set(&peak_storage[i], -INFINITY);
       atomic_float_set(&rms_storage[i], -INFINITY);
-      if (peak_pos != (size_t)-1 && i < peak_hist->channels) {
-        peak_hist->data[(i * CHUNK_LEVEL_HISTORY_CAPACITY) + peak_pos] =
-            -INFINITY;
-      }
-      if (rms_pos != (size_t)-1 && i < rms_hist->channels) {
-        rms_hist->data[(i * CHUNK_LEVEL_HISTORY_CAPACITY) + rms_pos] =
-            -INFINITY;
-      }
+      if (peak_hist_ok && i < peak_hist->channels)
+        peak_hist->pending[i] = -INFINITY;
+      if (rms_hist_ok && i < rms_hist->channels)
+        rms_hist->pending[i] = 0.0f;
       continue;
     }
 
@@ -702,40 +758,33 @@ static float update_levels_internal(const audio_chunk_t *chunk,
     }
     float peak_db = float_to_db(peak);
     atomic_float_set(&peak_storage[i], peak_db);
-    if (peak_pos != (size_t)-1 && i < peak_hist->channels) {
-      peak_hist->data[(i * CHUNK_LEVEL_HISTORY_CAPACITY) + peak_pos] = peak_db;
-    }
+    if (peak_hist_ok && i < peak_hist->channels)
+      peak_hist->pending[i] = peak_db;
     if (peak_db > max_peak) {
       max_peak = peak_db;
     }
 
-    float rms = dsp_ops_rms(buffer, frame_count);
-    float rms_db = float_to_db(rms);
-    atomic_float_set(&rms_storage[i], rms_db);
-    if (rms_pos != (size_t)-1 && i < rms_hist->channels) {
-      rms_hist->data[(i * CHUNK_LEVEL_HISTORY_CAPACITY) + rms_pos] = rms_db;
-    }
+    // Mean square accumulated in double; dB conversion done once, in double.
+    float mean_sq = dsp_ops_mean_square(buffer, frame_count);
+    atomic_float_set(&rms_storage[i], 10.0f * log10f(mean_sq));
+    if (rms_hist_ok && i < rms_hist->channels)
+      rms_hist->pending[i] = mean_sq;
+  }
+  if (peak_hist_ok) {
+    for (size_t i = channel_count; i < peak_hist->channels; i++)
+      peak_hist->pending[i] = -INFINITY;
+  }
+  if (rms_hist_ok) {
+    for (size_t i = channel_count; i < rms_hist->channels; i++)
+      rms_hist->pending[i] = 0.0f;
   }
 
-  if (peak_pos != (size_t)-1) {
-    atomic_store_explicit(&peak_hist->write_pos,
-                          (peak_pos + 1) & (CHUNK_LEVEL_HISTORY_CAPACITY - 1),
-                          memory_order_release);
-    atomic_fetch_add_explicit(&peak_hist->total_written, 1,
-                              memory_order_release);
-    atomic_store_explicit(&peak_hist->write_seq, peak_seq + 2,
-                          memory_order_release);
-  }
-
-  if (rms_pos != (size_t)-1) {
-    atomic_store_explicit(&rms_hist->write_pos,
-                          (rms_pos + 1) & (CHUNK_LEVEL_HISTORY_CAPACITY - 1),
-                          memory_order_release);
-    atomic_fetch_add_explicit(&rms_hist->total_written, 1,
-                              memory_order_release);
-    atomic_store_explicit(&rms_hist->write_seq, rms_seq + 2,
-                          memory_order_release);
-  }
+  // Phase 2: short seqlock sections that only copy the staged values.
+  uint64_t now_ns = cdsp_time_now_ns();
+  if (peak_hist_ok)
+    chunk_level_history_publish(peak_hist, now_ns);
+  if (rms_hist_ok)
+    chunk_level_history_publish(rms_hist, now_ns);
 
   return max_peak;
 }
@@ -885,28 +934,100 @@ void processing_parameters_reset_global_peaks(processing_parameters_t *params) {
   processing_parameters_reset_playback_global_peaks(params);
 }
 
-static inline void chunk_level_history_transfer(chunk_level_history_t *dst,
-                                                const chunk_level_history_t *src) {
-  if (!dst || !src || !dst->data || !src->data)
+/**
+ * @brief Copy a history from `src` to `dst` (control thread only).
+ *
+ * Either side may still have a live audio-thread writer (the old session is
+ * snapshotted before it is stopped; the new session is already running when
+ * the snapshot is restored), so:
+ * - `dst` is claimed as a seqlock writer via CAS; its own audio writer then
+ *   drops records for the duration of the copy instead of racing with it;
+ * - `src` is read under its seqlock and the copy is retried until a
+ *   consistent snapshot is obtained;
+ * - `dst->write_seq` keeps its own monotonic even/odd sequence (it is never
+ *   overwritten with `src`'s, which may be odd if `src` was mid-write).
+ */
+static void chunk_level_history_transfer(chunk_level_history_t *dst,
+                                         const chunk_level_history_t *src) {
+  if (!chunk_level_history_valid(dst) || !chunk_level_history_valid(src))
     return;
-  size_t ch_limit = dst->channels < src->channels ? dst->channels : src->channels;
-  uint64_t seq = atomic_load_explicit(&src->write_seq, memory_order_acquire);
-  size_t pos = atomic_load_explicit(&src->write_pos, memory_order_acquire);
-  size_t total = atomic_load_explicit(&src->total_written, memory_order_acquire);
+  size_t ch_limit =
+      dst->channels < src->channels ? dst->channels : src->channels;
 
-  memcpy(dst->timestamps_ns, src->timestamps_ns, sizeof(dst->timestamps_ns));
-  for (size_t c = 0; c < ch_limit; c++) {
-    memcpy(&dst->data[c * CHUNK_LEVEL_HISTORY_CAPACITY],
-           &src->data[c * CHUNK_LEVEL_HISTORY_CAPACITY],
-           CHUNK_LEVEL_HISTORY_CAPACITY * sizeof(float));
+  uint64_t dst_seq = 0;
+  bool claimed = false;
+  for (int retry = 0; retry < 1000; retry++) {
+    if (chunk_level_history_try_begin_write(dst, &dst_seq)) {
+      claimed = true;
+      break;
+    }
+    chunk_level_history_read_backoff(retry);
   }
-  atomic_store_explicit(&dst->total_written, total, memory_order_release);
-  atomic_store_explicit(&dst->write_pos, pos, memory_order_release);
-  atomic_store_explicit(&dst->write_seq, seq, memory_order_release);
+  if (!claimed)
+    return;
+
+  bool copied = false;
+  size_t pos = 0;
+  size_t total = 0;
+  for (int retry = 0; retry < CHUNK_LEVEL_HISTORY_READ_RETRIES; retry++) {
+    uint64_t seq_before =
+        atomic_load_explicit(&src->write_seq, memory_order_acquire);
+    if (seq_before & 1ULL) {
+      chunk_level_history_read_backoff(retry);
+      continue;
+    }
+    pos = atomic_load_explicit(&src->write_pos, memory_order_acquire);
+    total = atomic_load_explicit(&src->total_written, memory_order_acquire);
+    for (size_t i = 0; i < CHUNK_LEVEL_HISTORY_CAPACITY; i++) {
+      atomic_store_explicit(
+          &dst->timestamps_ns[i],
+          atomic_load_explicit(&src->timestamps_ns[i], memory_order_relaxed),
+          memory_order_relaxed);
+    }
+    for (size_t c = 0; c < ch_limit; c++) {
+      for (size_t i = 0; i < CHUNK_LEVEL_HISTORY_CAPACITY; i++) {
+        size_t k = (c * CHUNK_LEVEL_HISTORY_CAPACITY) + i;
+        atomic_store_explicit(
+            &dst->data[k],
+            atomic_load_explicit(&src->data[k], memory_order_relaxed),
+            memory_order_relaxed);
+      }
+    }
+    atomic_thread_fence(memory_order_acquire);
+    if (atomic_load_explicit(&src->write_seq, memory_order_relaxed) ==
+        seq_before) {
+      copied = true;
+      break;
+    }
+    chunk_level_history_read_backoff(retry);
+  }
+  if (!copied) {
+    // Never publish a torn copy: leave `dst` empty instead.
+    pos = 0;
+    total = 0;
+    for (size_t i = 0; i < CHUNK_LEVEL_HISTORY_CAPACITY; i++) {
+      atomic_store_explicit(&dst->timestamps_ns[i], 0ULL, memory_order_relaxed);
+    }
+  }
+
+  atomic_store_explicit(&dst->write_pos, pos, memory_order_relaxed);
+  atomic_store_explicit(&dst->total_written, total, memory_order_relaxed);
+  chunk_level_history_end_write(dst, dst_seq);
 }
 
-void processing_parameters_transfer_telemetry(processing_parameters_t *dst,
-                                              const processing_parameters_t *src) {
+static void transfer_atomic_floats(atomic_float_t *dst, size_t dst_count,
+                                   const atomic_float_t *src,
+                                   size_t src_count) {
+  if (!dst || !src)
+    return;
+  size_t n = dst_count < src_count ? dst_count : src_count;
+  for (size_t i = 0; i < n; i++) {
+    atomic_float_set(&dst[i], atomic_float_get(&src[i]));
+  }
+}
+
+void processing_parameters_transfer_telemetry(
+    processing_parameters_t *dst, const processing_parameters_t *src) {
   if (!dst || !src)
     return;
 
@@ -927,10 +1048,26 @@ void processing_parameters_transfer_telemetry(processing_parameters_t *dst,
     atomic_float_set(&dst->playback_global_peaks[i], peak);
   }
 
-  // Transfer chunk level histories
-  chunk_level_history_transfer(&dst->capture_peak_history, &src->capture_peak_history);
-  chunk_level_history_transfer(&dst->capture_rms_history, &src->capture_rms_history);
-  chunk_level_history_transfer(&dst->playback_peak_history, &src->playback_peak_history);
-  chunk_level_history_transfer(&dst->playback_rms_history, &src->playback_rms_history);
-}
+  // Transfer the latest instantaneous levels (upstream keeps reporting the
+  // last record across a config change until a new chunk arrives).
+  // `clipped_samples` is deliberately not transferred here: dsp_engine carries
+  // it across sessions itself (`clipped_samples_accum`).
+  transfer_atomic_floats(dst->capture_signal_peak, dst->capture_channels,
+                         src->capture_signal_peak, src->capture_channels);
+  transfer_atomic_floats(dst->capture_signal_rms, dst->capture_channels,
+                         src->capture_signal_rms, src->capture_channels);
+  transfer_atomic_floats(dst->playback_signal_peak, dst->playback_channels,
+                         src->playback_signal_peak, src->playback_channels);
+  transfer_atomic_floats(dst->playback_signal_rms, dst->playback_channels,
+                         src->playback_signal_rms, src->playback_channels);
 
+  // Transfer chunk level histories
+  chunk_level_history_transfer(&dst->capture_peak_history,
+                               &src->capture_peak_history);
+  chunk_level_history_transfer(&dst->capture_rms_history,
+                               &src->capture_rms_history);
+  chunk_level_history_transfer(&dst->playback_peak_history,
+                               &src->playback_peak_history);
+  chunk_level_history_transfer(&dst->playback_rms_history,
+                               &src->playback_rms_history);
+}

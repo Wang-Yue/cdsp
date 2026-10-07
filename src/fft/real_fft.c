@@ -2,6 +2,7 @@
 
 #include <complex.h> // IWYU pragma: keep
 #include <fftw3.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,6 +18,17 @@ __attribute__((unused)) static const logger_t g_logger = {"dsp.fft"};
 #else
 #define FFT_PLAN_FLAGS FFTW_MEASURE
 #endif
+
+// MARK: - FFTW Planner Lock
+
+// Only fftw_execute* is thread-safe in FFTW3; plan creation and destruction
+// read and mutate the global planner/wisdom state. Upstream serializes its
+// planner behind a global Mutex (fftconv.rs FFT_PLANNER). Pipelines,
+// resamplers and spectrum analyzers are built and torn down on control /
+// worker threads that can overlap (e.g. a retired pipeline freed while the
+// next one is built), so every planner call is taken under this lock. It is
+// never touched by real_fft_forward / real_fft_inverse (the audio path).
+static pthread_mutex_t g_fftw_planner_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // MARK: - Core RealFFT Context Structures
 
@@ -74,10 +86,18 @@ real_fft_t *real_fft_create(size_t length, config_error_t *err) {
     real_fft_free(fft);
     return NULL;
   }
+  pthread_mutex_lock(&g_fftw_planner_mutex);
   fft->plan_forward = fftw_plan_dft_r2c_1d((int)length, fft->in_real,
                                            fft->out_complex, FFT_PLAN_FLAGS);
   fft->plan_inverse = fftw_plan_dft_c2r_1d((int)length, fft->out_complex,
                                            fft->in_real, FFT_PLAN_FLAGS);
+  pthread_mutex_unlock(&g_fftw_planner_mutex);
+  // The plans are only ever run through the new-array execute functions on
+  // caller buffers, so the planning arrays are not needed past this point.
+  fftw_free(fft->in_real);
+  fft->in_real = NULL;
+  fftw_free(fft->out_complex);
+  fft->out_complex = NULL;
   if (!fft->plan_forward || !fft->plan_inverse) {
     config_error_set(err, CONFIG_ERR_PARSE, "Failed to create FFTW plan");
     real_fft_free(fft);
@@ -107,10 +127,14 @@ void real_fft_inverse(real_fft_t *fft, mutable_complex_waveform_t spec_in,
 
 void real_fft_free(real_fft_t *fft) {
   if (fft) {
-    if (fft->plan_forward)
-      fftw_destroy_plan(fft->plan_forward);
-    if (fft->plan_inverse)
-      fftw_destroy_plan(fft->plan_inverse);
+    if (fft->plan_forward || fft->plan_inverse) {
+      pthread_mutex_lock(&g_fftw_planner_mutex);
+      if (fft->plan_forward)
+        fftw_destroy_plan(fft->plan_forward);
+      if (fft->plan_inverse)
+        fftw_destroy_plan(fft->plan_inverse);
+      pthread_mutex_unlock(&g_fftw_planner_mutex);
+    }
     if (fft->in_real)
       fftw_free(fft->in_real);
     if (fft->out_complex)
@@ -145,10 +169,16 @@ real_fftf_t *real_fftf_create(size_t length) {
     real_fftf_free(fft);
     return NULL;
   }
+  pthread_mutex_lock(&g_fftw_planner_mutex);
   fft->plan_forward = fftwf_plan_dft_r2c_1d((int)length, fft->in_real,
                                             fft->out_complex, FFT_PLAN_FLAGS);
   fft->plan_inverse = fftwf_plan_dft_c2r_1d((int)length, fft->out_complex,
                                             fft->in_real, FFT_PLAN_FLAGS);
+  pthread_mutex_unlock(&g_fftw_planner_mutex);
+  fftwf_free(fft->in_real);
+  fft->in_real = NULL;
+  fftwf_free(fft->out_complex);
+  fft->out_complex = NULL;
   if (!fft->plan_forward || !fft->plan_inverse) {
     real_fftf_free(fft);
     return NULL;
@@ -175,10 +205,14 @@ void real_fftf_inverse(real_fftf_t *fft, mutable_complex_waveformf_t spec_in,
 
 void real_fftf_free(real_fftf_t *fft) {
   if (fft) {
-    if (fft->plan_forward)
-      fftwf_destroy_plan(fft->plan_forward);
-    if (fft->plan_inverse)
-      fftwf_destroy_plan(fft->plan_inverse);
+    if (fft->plan_forward || fft->plan_inverse) {
+      pthread_mutex_lock(&g_fftw_planner_mutex);
+      if (fft->plan_forward)
+        fftwf_destroy_plan(fft->plan_forward);
+      if (fft->plan_inverse)
+        fftwf_destroy_plan(fft->plan_inverse);
+      pthread_mutex_unlock(&g_fftw_planner_mutex);
+    }
     if (fft->in_real)
       fftwf_free(fft->in_real);
     if (fft->out_complex)

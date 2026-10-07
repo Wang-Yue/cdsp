@@ -9,6 +9,11 @@
  * webaudio_device_process() directly, so the WebAudio backend behaves like a
  * native callback backend (CoreAudio, ASIO, PipeWire) with the engine running
  * on its usual capture, processing and playback pthreads.
+ *
+ * There is no message passing on the audio path. The samples themselves are
+ * still marshalled by Emscripten's worklet shim (src/audio_worklet.js): each
+ * quantum it copies the node's inputs onto the worklet thread's Wasm stack and
+ * copies the outputs back into the Web Audio buffers in JavaScript.
  */
 
 #if defined(ENABLE_WEBAUDIO) && defined(__EMSCRIPTEN__)
@@ -38,7 +43,13 @@ typedef struct webaudio_slot {
   int rate;
   int channels; /* Output channels (playback) or node input channels. */
   bool closing;
-  /** Stack of this context's audio worklet thread. */
+  /** Stack of this context's audio worklet thread. Must stay static (in the
+   * initial data segment): with -sALLOW_MEMORY_GROWTH, Emscripten 3.1.50's
+   * worklet shim captures HEAPF32/HEAPU32 once and never refreshes them after
+   * the memory grows, and it marshals every sample through this stack — so the
+   * stack must lie within the initial memory those views cover. Never malloc
+   * it. 64 KiB also holds the marshalled audio (up to 32 channels x 512 B per
+   * input and output). */
   uint8_t stack[64 * 1024] __attribute__((aligned(16)));
 } webaudio_slot_t;
 
@@ -49,10 +60,14 @@ static webaudio_slot_t g_playback_slot = {.is_capture = false};
 static int g_input_rate;
 static int g_input_channels;
 
-static EM_BOOL webaudio_device_render_capture(
-    int num_inputs, const AudioSampleFrame *inputs, int num_outputs,
-    AudioSampleFrame *outputs, int num_params, const AudioParamFrame *params,
-    void *user_data) {
+/** Set once webaudio_device_start() has created the contexts (main thread). */
+static bool g_device_started;
+
+static EM_BOOL
+webaudio_device_render_capture(int num_inputs, const AudioSampleFrame *inputs,
+                               int num_outputs, AudioSampleFrame *outputs,
+                               int num_params, const AudioParamFrame *params,
+                               void *user_data) {
   (void)num_params;
   (void)params;
   (void)user_data;
@@ -76,10 +91,11 @@ static EM_BOOL webaudio_device_render_capture(
   return EM_TRUE;
 }
 
-static EM_BOOL webaudio_device_render_playback(
-    int num_inputs, const AudioSampleFrame *inputs, int num_outputs,
-    AudioSampleFrame *outputs, int num_params, const AudioParamFrame *params,
-    void *user_data) {
+static EM_BOOL
+webaudio_device_render_playback(int num_inputs, const AudioSampleFrame *inputs,
+                                int num_outputs, AudioSampleFrame *outputs,
+                                int num_params, const AudioParamFrame *params,
+                                void *user_data) {
   (void)num_inputs;
   (void)inputs;
   (void)num_params;
@@ -126,7 +142,8 @@ static void webaudio_device_processor_created(EMSCRIPTEN_WEBAUDIO_T context,
   if (context != slot->context)
     return; // Superseded by a device change.
   if (!success) {
-    logger_error(&g_logger, "Failed to register the WebAudio worklet processor");
+    logger_error(&g_logger,
+                 "Failed to register the WebAudio worklet processor");
     return;
   }
   if (slot->is_capture) {
@@ -227,6 +244,14 @@ static void webaudio_device_open_context(webaudio_slot_t *slot) {
   if (context <= 0) {
     logger_error(&g_logger, "Failed to create the %s AudioContext",
                  slot->is_capture ? "capture" : "playback");
+    // Do not leave the previous context's rate published: backends would
+    // keep attaching at it and never be served. The slot stays without a
+    // context and is retried on the next input format report (capture) or
+    // device change (playback).
+    slot->context = 0;
+    slot->node = 0;
+    slot->rate = 0;
+    webaudio_device_publish(slot);
     return;
   }
   slot->context = context;
@@ -238,7 +263,7 @@ static void webaudio_device_open_context(webaudio_slot_t *slot) {
         {
           var context = emscriptenGetAudioObject($0);
           if (context.setSinkId)
-            context.setSinkId({type : 'none'}).catch(function() {});
+            context.setSinkId({type : 'none'}).catch(function(){});
         },
         context);
   } else {
@@ -287,9 +312,8 @@ static void webaudio_device_reopen(webaudio_slot_t *slot) {
           globalThis.cdspAudio = null;
         else
           globalThis.cdspPlaybackAudio = null;
-        context.close().finally(function() {
-          _webaudio_device_context_closed($2);
-        });
+        context.close().finally(
+            function() { _webaudio_device_context_closed($2); });
       },
       old_context, old_node, slot->is_capture ? 1 : 0);
 }
@@ -302,6 +326,11 @@ EMSCRIPTEN_KEEPALIVE void webaudio_device_output_probed(int rate,
                                                         int max_channels) {
   webaudio_slot_t *slot = &g_playback_slot;
   int channels = webaudio_device_clamp_channels(max_channels);
+  if (g_device_started && !slot->closing && !slot->context) {
+    // A previous context creation failed: retry with the current device.
+    webaudio_device_open_context(slot);
+    return;
+  }
   if (slot->closing || !slot->context ||
       (rate == slot->rate && channels == slot->channels))
     return;
@@ -326,8 +355,9 @@ EMSCRIPTEN_KEEPALIVE void webaudio_device_set_input_format(int rate,
     g_input_channels = channels;
     slot->channels = channels;
     if (slot->node)
-      EM_ASM({ emscriptenGetAudioObject($0).channelCount = $1; }, slot->node,
-             channels);
+      EM_ASM(
+          { emscriptenGetAudioObject($0).channelCount = $1; }, slot->node,
+          channels);
     if (slot->context && !slot->closing)
       webaudio_device_publish(slot);
   }
@@ -339,17 +369,28 @@ EMSCRIPTEN_KEEPALIVE void webaudio_device_set_input_format(int rate,
       webaudio_device_reopen(slot);
     }
   }
+  if (g_device_started && !slot->closing && !slot->context) {
+    // A previous context creation failed: retry at the stream's rate.
+    webaudio_device_open_context(slot);
+  }
 }
 
 void webaudio_device_start(void) {
   // The AudioContext can only be created on the browser main thread, and not
   // at all without Web Audio (e.g. the Node test runner).
-  if (!emscripten_is_main_browser_thread() ||
-      !EM_ASM_INT({ return typeof AudioContext !== 'undefined'; }))
+  if (!emscripten_is_main_browser_thread()) {
+    // Without the device the WebAudio backends accept any format and are
+    // never served: make that visible.
+    logger_warn(&g_logger, "webaudio_device_start() must run on the browser "
+                           "main thread; WebAudio device not started");
+    return;
+  }
+  if (!EM_ASM_INT({ return typeof AudioContext !== 'undefined'; }))
     return;
   static atomic_bool started = false;
   if (atomic_exchange(&started, true))
     return;
+  g_device_started = true;
 
   webaudio_device_set_capture_state_hook(webaudio_device_capture_state_changed);
   webaudio_device_open_context(&g_playback_slot);
@@ -359,26 +400,31 @@ void webaudio_device_start(void) {
       setInputFormat : function(rate, channels) {
         _webaudio_device_set_input_format(rate | 0, channels | 0);
       }
-    });
-    // Probe the output's native format with a throwaway context whenever the
-    // devices change; the playback device follows it when it differs.
-    var md = globalThis.navigator && navigator.mediaDevices;
-    if (md && md.addEventListener) {
-      md.addEventListener('devicechange', function() {
-        var probe;
-        try {
-          probe = new AudioContext();
-        } catch (e) {
-          return;
-        }
-        var rate = probe.sampleRate;
-        var channels = probe.destination.maxChannelCount;
-        probe.close().finally(function() {
-          _webaudio_device_output_probed(rate | 0, channels | 0);
-        });
+});
+// Probe the output's native format with a throwaway context whenever the
+// devices change; the playback device follows it when it differs. Events
+// come in bursts (e.g. Bluetooth reconnects), so probe once they settle.
+var md = globalThis.navigator && navigator.mediaDevices;
+var probeTimer = 0;
+if (md && md.addEventListener) {
+  md.addEventListener(
+      'devicechange', function() {
+        clearTimeout(probeTimer);
+        probeTimer = setTimeout(
+            function() {
+              var probe;
+              try { probe = new AudioContext(); }
+              catch(e) { return; }
+              var rate = probe.sampleRate;
+              var channels = probe.destination.maxChannelCount;
+              probe.close().finally(function() {
+                _webaudio_device_output_probed(rate | 0, channels | 0);
+              });
+            },
+            500);
       });
-    }
-  });
+}
+});
 }
 
 #endif // ENABLE_WEBAUDIO && __EMSCRIPTEN__

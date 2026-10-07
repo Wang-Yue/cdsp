@@ -121,8 +121,16 @@ TEST(AppendMismatchedChannels) {
 
   audio_chunk_t *chunk = audio_chunk_create(1024, 1);
   audio_chunk_set_valid_frames(chunk, 1024);
+  // Report 08 §1.4: append runs on the audio thread and must not reallocate;
+  // a mismatched chunk is dropped and the layout is kept.
   audio_history_buffer_append(buffer, chunk);
-  ASSERT_EQ(1, audio_history_buffer_get_channels(buffer));
+  ASSERT_EQ(2, audio_history_buffer_get_channels(buffer));
+  float dest[16];
+  bool enough = true;
+  const size_t ch0 = 0;
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK,
+            audio_history_buffer_read_latest(buffer, dest, 16, &ch0, &enough));
+  ASSERT_FALSE(enough);
 
   audio_chunk_free(chunk);
   audio_history_buffer_free(buffer);

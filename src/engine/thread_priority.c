@@ -378,7 +378,13 @@ get_current_thread_info_internal(RtPriorityThreadInfoInternal *out_info,
 static bool set_real_time_hard_limit_internal(DBusConnection *conn,
                                               uint32_t audio_buffer_frames,
                                               uint32_t audio_samplerate_hz,
+                                              struct rlimit *out_old_limits,
                                               DBusError *err) {
+  if (audio_samplerate_hz == 0) {
+    dbus_set_error(err, "org.freedesktop.DBus.Error.InvalidArgs",
+                   "audio_samplerate_hz must be non-zero");
+    return false;
+  }
   uint32_t buffer_frames = audio_buffer_frames > 0 ? audio_buffer_frames
                                                    : (audio_samplerate_hz / 20);
   uint64_t budget_us =
@@ -389,6 +395,9 @@ static bool set_real_time_hard_limit_internal(DBusConnection *conn,
   struct rlimit limits;
   if (!get_limits(conn, &max_prio, &max_rttime, &limits, err)) {
     return false;
+  }
+  if (out_old_limits) {
+    *out_old_limits = limits;
   }
 
   uint64_t rttime_request = budget_us < max_rttime ? budget_us : max_rttime;
@@ -401,8 +410,10 @@ static bool promote_thread_to_real_time_internal(
     RtPriorityHandleInternal *out_handle, DBusError *err) {
   out_handle->thread_info = thread_info;
 
+  struct rlimit old_limits;
   if (!set_real_time_hard_limit_internal(conn, audio_buffer_frames,
-                                         audio_samplerate_hz, err)) {
+                                         audio_samplerate_hz, &old_limits,
+                                         err)) {
     return false;
   }
 
@@ -411,18 +422,7 @@ static bool promote_thread_to_real_time_internal(
     return true;
   }
 
-  DBusError limits_err;
-  dbus_error_init(&limits_err);
-  int64_t max_prio = 0;
-  uint64_t max_rttime = 0;
-  struct rlimit limits;
-  if (get_limits(conn, &max_prio, &max_rttime, &limits, &limits_err)) {
-    if (limits.rlim_cur != RLIM_INFINITY) {
-      setrlimit(RLIMIT_RTTIME, &limits);
-    }
-  }
-  dbus_error_free(&limits_err);
-
+  setrlimit(RLIMIT_RTTIME, &old_limits);
   return false;
 }
 
@@ -450,6 +450,13 @@ promote_current_thread_to_realtime(const char *name, size_t buffer_frames,
   return (realtime_thread_handle_t *)calloc(1,
                                             sizeof(realtime_thread_handle_t));
 #else
+  if (sample_rate == 0) {
+    logger_warn(&g_logger,
+                "[%s] Invalid audio parameters for real-time priority: "
+                "sample rate must be non-zero",
+                name ? name : "unknown");
+    return NULL;
+  }
   pthread_t thread = pthread_self();
   struct sched_param param;
   int policy = 0;

@@ -309,6 +309,40 @@ static uint64_t mock_get_chunk_generation(void *ctx, bool is_capture) {
   return gen;
 }
 
+static bool mock_get_global_peaks(void *ctx, bool is_capture, float *out_peaks,
+                                  size_t *out_channels) {
+  (void)ctx;
+  pthread_mutex_lock(&g_mock_mutex);
+  if (!mock_params) {
+    pthread_mutex_unlock(&g_mock_mutex);
+    if (out_channels)
+      *out_channels = 0;
+    return false;
+  }
+  size_t ch = is_capture ? processing_parameters_get_capture_channels(mock_params)
+                         : processing_parameters_get_playback_channels(mock_params);
+  if (out_channels)
+    *out_channels = ch;
+  if (out_peaks && ch > 0) {
+    if (is_capture) {
+      processing_parameters_get_capture_global_peaks(mock_params, out_peaks, ch);
+    } else {
+      processing_parameters_get_playback_global_peaks(mock_params, out_peaks, ch);
+    }
+  }
+  pthread_mutex_unlock(&g_mock_mutex);
+  return true;
+}
+
+static void mock_reset_global_peaks(void *ctx) {
+  (void)ctx;
+  pthread_mutex_lock(&g_mock_mutex);
+  if (mock_params) {
+    processing_parameters_reset_global_peaks(mock_params);
+  }
+  pthread_mutex_unlock(&g_mock_mutex);
+}
+
 static dsp_engine_t mock_engine = {
     .ctx = NULL,
     .get_status = mock_get_status,
@@ -318,6 +352,8 @@ static dsp_engine_t mock_engine = {
     .get_vu_levels = mock_get_vu_levels,
     .get_chunk_generation = mock_get_chunk_generation,
     .get_signal_levels_since = mock_get_signal_levels_since,
+    .get_global_peaks = mock_get_global_peaks,
+    .reset_global_peaks = mock_reset_global_peaks,
     .get_spectrum = mock_get_spectrum,
     .get_fader_volume = mock_get_fader_volume,
     .get_fader_mute = mock_is_fader_muted,

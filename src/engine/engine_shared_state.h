@@ -119,6 +119,24 @@ engine_shared_state_get_capture_pitch(const engine_shared_state_t *state);
 void engine_shared_state_set_capture_pitch(engine_shared_state_t *state,
                                            double pitch);
 
+/**
+ * @brief Gets whether the capture backend supports clock-pitch control.
+ * @param state Pointer to the shared state instance.
+ * @return The value last published by the capture loop (false if none).
+ */
+bool engine_shared_state_get_capture_pitch_supported(
+    const engine_shared_state_t *state);
+
+/**
+ * @brief Publishes whether the capture backend supports clock-pitch control.
+ * Called by the capture loop at creation and again after the device is opened
+ * (03 CA-01); read by the playback loop's rate controller.
+ * @param state Pointer to the shared state instance.
+ * @param supported Whether capture clock-pitch control is available.
+ */
+void engine_shared_state_set_capture_pitch_supported(
+    engine_shared_state_t *state, bool supported);
+
 typedef struct pipeline_s pipeline_t;
 
 /**

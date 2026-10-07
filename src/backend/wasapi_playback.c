@@ -43,7 +43,7 @@ struct wasapi_playback {
   bool has_format;
   bool exclusive;
   bool polling;
-  size_t target_level;
+  _Atomic size_t target_level;
 
   binary_sample_format_t bin_fmt;
   size_t bytes_per_sample;
@@ -62,45 +62,99 @@ struct wasapi_playback {
 
   pthread_t inner_thread;
   bool inner_thread_created;
-  double pending_rate;
-  _Atomic bool has_pending_rate_change;
   backend_buffer_t *buffer;
   processing_parameters_t *params;
+  /** First fatal error of the inner thread, reported by write(). */
+  wasapi_stream_error_t error;
 };
 
-static void wasapi_playback_on_format_change(void *parent, double new_rate) {
-  wasapi_playback_t *playback = (wasapi_playback_t *)parent;
-  if (!playback)
-    return;
-  playback->pending_rate = new_rate;
-  atomic_store_explicit(&playback->has_pending_rate_change, true,
-                        memory_order_release);
-  if (playback->buffer) {
+/**
+ * @brief Polls the session listener from the inner device thread.
+ *
+ * FormatChanged sets the backend "pending rate change" flag (the engine stops
+ * writing obsolete-format data) and stops the inner loop. Any other
+ * disconnect reason is a device error (upstream device.rs:454-461 ->
+ * PlaybackError): the error is recorded, the loop stops and the stream state
+ * becomes STOPPED. The backend buffer is only touched from this thread, never
+ * from the COM notification thread.
+ *
+ * @return true if the inner loop must stop.
+ */
+static bool wasapi_playback_check_session(wasapi_playback_t *playback) {
+  if (wasapi_session_events_format_changed(playback->session_events_listener)) {
+    logger_debug(&g_wasapi_logger,
+                 "Stopping inner playback loop due to session format change.");
     backend_buffer_set_pending_rate_change(playback->buffer, true);
+    return true;
   }
+  int reason = 0;
+  if (wasapi_session_events_device_error(playback->session_events_listener,
+                                         &reason)) {
+    wasapi_stream_error_set(&playback->error,
+                            "Playback failed with error: session disconnected "
+                            "(%s, reason %d)",
+                            wasapi_disconnect_reason_name(reason), reason);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * @brief On WASAPI call error, checks if a format change notification is in
+ * flight. Mirrors upstream CamillaDSP send_error_or_playbackformatchange
+ * (device.rs:1089-1116).
+ */
+static bool
+wasapi_playback_check_session_on_error(wasapi_playback_t *playback) {
+  int reason = 0;
+  for (int retry = 0; retry < 10; retry++) {
+    if (wasapi_session_events_format_changed(
+            playback->session_events_listener)) {
+      break;
+    }
+    if (wasapi_session_events_device_error(playback->session_events_listener,
+                                           &reason)) {
+      break;
+    }
+    cdsp_sleep_ms(5);
+  }
+  return wasapi_playback_check_session(playback);
 }
 
 /**
  * @brief get_available_space_in_frames matching wasapi-rs api.rs.
+ *
+ * Failures are returned (upstream `?`, device.rs:508) instead of being hidden
+ * as "0 frames free", which used to turn a lost device into a 1 s event
+ * timeout with no HRESULT.
+ *
+ * @param[out] out_frames Free frames (0 on failure).
+ * @param[out] out_call Name of the failing call (on failure).
  */
-static inline UINT32 wasapi_audio_client_get_available_space_in_frames(
-    IAudioClient *client, bool exclusive, bool events_timing) {
+static inline HRESULT wasapi_audio_client_get_available_space_in_frames(
+    IAudioClient *client, bool exclusive, bool events_timing,
+    UINT32 *out_frames, const char **out_call) {
+  *out_frames = 0;
+  UINT32 buffer_frame_count = 0;
+  HRESULT hr = IAudioClient_GetBufferSize(client, &buffer_frame_count);
+  if (FAILED(hr)) {
+    *out_call = "GetBufferSize";
+    return hr;
+  }
   if (exclusive && events_timing) {
-    UINT32 buffer_frame_count = 0;
-    IAudioClient_GetBufferSize(client, &buffer_frame_count);
-    return buffer_frame_count;
+    *out_frames = buffer_frame_count;
+    return hr;
   }
   UINT32 padding_count = 0;
-  UINT32 buffer_frame_count = 0;
-  if (FAILED(IAudioClient_GetCurrentPadding(client, &padding_count))) {
-    return 0;
+  hr = IAudioClient_GetCurrentPadding(client, &padding_count);
+  if (FAILED(hr)) {
+    *out_call = "GetCurrentPadding";
+    return hr;
   }
-  if (FAILED(IAudioClient_GetBufferSize(client, &buffer_frame_count))) {
-    return 0;
-  }
-  return (buffer_frame_count > padding_count)
-             ? (buffer_frame_count - padding_count)
-             : 0;
+  *out_frames = (buffer_frame_count > padding_count)
+                    ? (buffer_frame_count - padding_count)
+                    : 0;
+  return hr;
 }
 
 /**
@@ -120,10 +174,15 @@ static void *wasapi_playback_loop(void *arg) {
       &g_wasapi_logger,
       "Waiting for data to start playback, will time out after one second.");
   while (backend_buffer_get_available_read_frames(playback->buffer) <
-             2 * chunksize &&
+             atomic_load_explicit(&playback->target_level,
+                                  memory_order_acquire) +
+                 2 * chunksize &&
          waited_millis < 1000) {
     if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_STOPPED) {
-      CoUninitialize();
+      // Only balance a CoInitializeEx that succeeded on this thread.
+      if (com_ok) {
+        CoUninitialize();
+      }
       return NULL;
     }
     cdsp_sleep_ms(10);
@@ -131,17 +190,16 @@ static void *wasapi_playback_loop(void *arg) {
   }
   logger_debug(&g_wasapi_logger, "Waited for data for %d ms.", waited_millis);
 
-#ifdef _WIN32
   DWORD task_index = 0;
   HANDLE mmcss_handle = AvSetMmThreadCharacteristicsA("Pro Audio", &task_index);
   if (!mmcss_handle) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
   }
-#endif
 
   bool started = false;
-  REFERENCE_TIME def_time = 0, min_time = 0;
-  IAudioClient_GetDevicePeriod(playback->client, &def_time, &min_time);
+  // Device period as queried (and checked) by wasapi_initialize_stream in
+  // open(); it is fixed for the lifetime of the initialized client.
+  REFERENCE_TIME def_time = playback->def_period;
   uint64_t poll_delay_us = (uint64_t)(def_time / 10);
   if (poll_delay_us == 0)
     poll_delay_us = 1000;
@@ -163,17 +221,25 @@ static void *wasapi_playback_loop(void *arg) {
   // get_available_space_in_frames always returns the full buffer size: without
   // the preceding wait we would rewrite the buffer while the hardware reads it.
   while (backend_buffer_get_state(playback->buffer) != BACKEND_STREAM_STOPPED) {
-    if (atomic_load_explicit(&playback->has_pending_rate_change,
-                             memory_order_acquire)) {
-      logger_debug(&g_wasapi_logger,
-                   "Stopping inner playback loop due to pending rate change.");
+    if (wasapi_playback_check_session(playback)) {
       break;
     }
 
-    UINT32 buffer_free_frame_count =
-        wasapi_audio_client_get_available_space_in_frames(
-            playback->client, playback->exclusive,
-            playback->event_handle != NULL);
+    UINT32 buffer_free_frame_count = 0;
+    const char *failed_call = "";
+    HRESULT hr_space = wasapi_audio_client_get_available_space_in_frames(
+        playback->client, playback->exclusive, playback->event_handle != NULL,
+        &buffer_free_frame_count, &failed_call);
+    if (FAILED(hr_space)) {
+      if (wasapi_playback_check_session_on_error(playback)) {
+        break;
+      }
+      wasapi_stream_error_set(&playback->error,
+                              "Playback failed with error: %s failed "
+                              "(hr=0x%08lX)",
+                              failed_call, (unsigned long)hr_space);
+      break;
+    }
     logger_trace(&g_wasapi_logger, "Playback, new buffer frame count %u.",
                  buffer_free_frame_count);
 
@@ -185,22 +251,26 @@ static void *wasapi_playback_loop(void *arg) {
         backend_buffer_render(playback->buffer, bufferptr,
                               (size_t)buffer_free_frame_count, 0x00);
 
-        IAudioRenderClient_ReleaseBuffer(playback->render_client,
-                                         (UINT32)buffer_free_frame_count, 0);
-      } else {
-        for (int retry = 0; retry < 10; retry++) {
-          if (atomic_load_explicit(&playback->has_pending_rate_change,
-                                   memory_order_acquire)) {
+        hr = IAudioRenderClient_ReleaseBuffer(
+            playback->render_client, (UINT32)buffer_free_frame_count, 0);
+        if (FAILED(hr)) {
+          if (wasapi_playback_check_session_on_error(playback)) {
             break;
           }
-          cdsp_sleep_ms(5);
+          wasapi_stream_error_set(&playback->error,
+                                  "Playback failed with error: ReleaseBuffer "
+                                  "failed (hr=0x%08lX)",
+                                  (unsigned long)hr);
+          break;
         }
-        if (!atomic_load_explicit(&playback->has_pending_rate_change,
-                                  memory_order_acquire)) {
-          logger_error(&g_wasapi_logger,
-                       "IAudioRenderClient_GetBuffer failed: hr=0x%08lX",
-                       (unsigned long)hr);
+      } else {
+        if (wasapi_playback_check_session_on_error(playback)) {
+          break;
         }
+        wasapi_stream_error_set(&playback->error,
+                                "Playback failed with error: GetBuffer failed "
+                                "(hr=0x%08lX)",
+                                (unsigned long)hr);
         break;
       }
     }
@@ -209,9 +279,10 @@ static void *wasapi_playback_loop(void *arg) {
       // The buffer now holds the first block, start playback.
       HRESULT hr_start = IAudioClient_Start(playback->client);
       if (FAILED(hr_start)) {
-        logger_error(&g_wasapi_logger,
-                     "Playback start stream failed: hr=0x%08lX",
-                     (unsigned long)hr_start);
+        wasapi_stream_error_set(&playback->error,
+                                "Playback failed with error: start stream "
+                                "failed (hr=0x%08lX)",
+                                (unsigned long)hr_start);
         break;
       }
       started = true;
@@ -226,8 +297,13 @@ static void *wasapi_playback_loop(void *arg) {
         break;
       }
       if (wait_res != WAIT_OBJECT_0) {
-        logger_error(&g_wasapi_logger, "Error on playback, stopping stream");
-        IAudioClient_Stop(playback->client);
+        if (wasapi_playback_check_session(playback)) {
+          break;
+        }
+        // Upstream device.rs:575-579: a 1 s event timeout is a PlaybackError.
+        wasapi_stream_error_set(&playback->error,
+                                "Playback failed with error: Error on "
+                                "playback (no buffer event within 1 s)");
         break;
       }
     } else {
@@ -243,6 +319,9 @@ static void *wasapi_playback_loop(void *arg) {
 
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
   IAudioClient_Stop(playback->client);
+  if (mmcss_handle) {
+    AvRevertMmThreadCharacteristics(mmcss_handle);
+  }
   if (com_ok) {
     CoUninitialize();
   }
@@ -259,7 +338,6 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
 
   HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   playback->com_initialized = SUCCEEDED(init_hr);
-  atomic_init(&playback->has_pending_rate_change, false);
 
   if (!wasapi_create_device_and_client(
           playback->device, false, false, &playback->enumerator,
@@ -301,9 +379,11 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
 
-  wasapi_register_session_events(
-      playback->client, playback, wasapi_playback_on_format_change,
-      &playback->session_control, &playback->session_events_listener);
+  if (!wasapi_register_session_events(
+          playback->client, &playback->session_control,
+          &playback->session_events_listener, err)) {
+    goto error_cleanup;
+  }
 
   logger_debug(&g_wasapi_logger, "Opened Wasapi playback device \"%s\".",
                playback->device[0] != '\0' ? playback->device : "default");
@@ -313,9 +393,11 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
   playback->blockalign =
       (size_t)playback->channels * playback->bytes_per_sample;
 
-  // Allocate backend buffer matching upstream CamillaDSP with target_level headroom
-  size_t ring_frames =
-      2 * (size_t)playback->chunk_size + playback->target_level + 2048;
+  // Allocate backend buffer matching upstream CamillaDSP with target_level
+  // headroom
+  size_t target_level =
+      atomic_load_explicit(&playback->target_level, memory_order_relaxed);
+  size_t ring_frames = 2 * (size_t)playback->chunk_size + target_level + 2048;
   playback->buffer = backend_buffer_create(
       ring_frames, playback->bin_fmt, playback->channels,
       (double)playback->sample_rate, false, playback->params);
@@ -326,8 +408,9 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
     }
     goto error_cleanup;
   }
-  backend_buffer_set_target_level(playback->buffer, playback->target_level);
+  backend_buffer_set_target_level(playback->buffer, target_level);
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
+  wasapi_stream_error_reset(&playback->error);
 
   if (pthread_create(&playback->inner_thread, NULL, wasapi_playback_loop,
                      playback) != 0) {
@@ -342,13 +425,13 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
   return true;
 
 error_cleanup:
-  backend_buffer_free(playback->buffer);
-  playback->buffer = NULL;
   wasapi_cleanup_device_resources(
       &playback->client, (IUnknown **)&playback->render_client,
       &playback->session_control, &playback->session_events_listener,
       &playback->event_handle, &playback->mm_device, &playback->enumerator,
       &playback->com_initialized);
+  backend_buffer_free(playback->buffer);
+  playback->buffer = NULL;
   return false;
 }
 
@@ -367,8 +450,16 @@ static bool wasapi_playback_write(void *ctx, const audio_chunk_t *chunk,
   if (sleep_duration_ms == 0)
     sleep_duration_ms = 1;
 
-  return backend_buffer_write_chunk(playback->buffer, chunk,
-                                    (uint32_t)sleep_duration_ms, 200, err);
+  bool ok = backend_buffer_write_chunk(playback->buffer, chunk,
+                                       (uint32_t)sleep_duration_ms, 200, err);
+  if (!ok && err && err->type == BACKEND_ERROR_WRITE_ERROR) {
+    // Replace the generic "stream stopped" text with the HRESULT / disconnect
+    // reason recorded by the inner thread (upstream PlaybackError(msg)).
+    const char *msg = wasapi_stream_error_get(&playback->error);
+    if (msg)
+      backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, msg);
+  }
+  return ok;
 }
 
 static void wasapi_playback_close(void *ctx) {
@@ -384,13 +475,15 @@ static void wasapi_playback_close(void *ctx) {
     playback->inner_thread_created = false;
   }
 
-  backend_buffer_free(playback->buffer);
-  playback->buffer = NULL;
+  // Unregister the session listener and release the device before freeing
+  // the buffer. The inner thread has been joined above.
   wasapi_cleanup_device_resources(
       &playback->client, (IUnknown **)&playback->render_client,
       &playback->session_control, &playback->session_events_listener,
       &playback->event_handle, &playback->mm_device, &playback->enumerator,
       &playback->com_initialized);
+  backend_buffer_free(playback->buffer);
+  playback->buffer = NULL;
 }
 
 static size_t wasapi_playback_get_buffer_level(void *ctx) {
@@ -406,8 +499,9 @@ static bool wasapi_playback_get_pending_rate_change(void *ctx,
   if (!playback)
     return false;
   return wasapi_check_and_resolve_pending_rate(
-      playback->device, false, playback->pending_rate,
-      &playback->has_pending_rate_change, out_rate);
+      playback->device, false, playback->exclusive,
+      (double)playback->sample_rate, playback->session_events_listener,
+      out_rate);
 }
 
 static bool wasapi_playback_prefill_silence(void *ctx, size_t frames,
@@ -416,6 +510,7 @@ static bool wasapi_playback_prefill_silence(void *ctx, size_t frames,
   wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
   if (!playback)
     return false;
+  atomic_store_explicit(&playback->target_level, frames, memory_order_release);
   backend_buffer_prefill_silence(playback->buffer, frames, 0x00);
   return true;
 }
@@ -429,7 +524,9 @@ static bool wasapi_playback_get_is_paused(void *ctx) {
 
 static void wasapi_playback_set_is_paused(void *ctx, bool paused) {
   wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
-  if (!playback)
+  if (!playback || !playback->buffer)
+    return;
+  if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_STOPPED)
     return;
   backend_buffer_set_state(playback->buffer, paused ? BACKEND_STREAM_PAUSED
                                                     : BACKEND_STREAM_RUNNING);
@@ -488,10 +585,11 @@ wasapi_playback_create(const playback_device_config_t *config, int sample_rate,
       config->cfg.wasapi.has_exclusive ? config->cfg.wasapi.exclusive : false;
   playback->polling =
       config->cfg.wasapi.has_polling ? config->cfg.wasapi.polling : false;
-  playback->target_level = (config->cfg.wasapi.has_target_level &&
-                            config->cfg.wasapi.target_level > 0)
-                               ? (size_t)config->cfg.wasapi.target_level
-                               : (size_t)chunk_size;
+  atomic_init(&playback->target_level,
+              (config->cfg.wasapi.has_target_level &&
+               config->cfg.wasapi.target_level > 0)
+                  ? (size_t)config->cfg.wasapi.target_level
+                  : (size_t)chunk_size);
   playback->params = params;
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));

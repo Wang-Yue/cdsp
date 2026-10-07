@@ -118,17 +118,26 @@ AudioDeviceID core_audio_device_id_for_name(const char *name,
 // MARK: - Sample-rate control
 
 /**
+ * @brief Check whether a nominal sample rate is in the device's available
+ * ranges (discrete or continuous).
+ *
+ * @param device_id The HAL Device ID.
+ * @param rate The sample rate in Hz.
+ * @return true if supported, or if the available-rates list cannot be read.
+ */
+bool core_audio_device_is_sample_rate_supported(AudioDeviceID device_id,
+                                                double rate);
+
+/**
  * @brief Set the nominal sample rate of a device and wait for it to apply.
  *
  * CoreAudio applies rate changes asynchronously. This function blocks/polls
- * until the change is committed to prevent audio glitches.
+ * (up to 2 s) until the change is committed. Not real-time safe.
  *
  * @param device_id The HAL Device ID.
  * @param rate The target sample rate in Hz.
  * @return true if the rate was successfully set and verified, false otherwise.
  */
-bool core_audio_device_is_sample_rate_supported(AudioDeviceID device_id,
-                                                double rate);
 bool core_audio_device_set_nominal_sample_rate(AudioDeviceID device_id,
                                                double rate);
 
@@ -184,6 +193,31 @@ bool core_audio_device_set_buffer_frame_size(AudioDeviceID device_id,
  * supported/failed.
  */
 bool core_audio_device_select_adjustable_clock_source(AudioDeviceID device_id);
+
+/**
+ * @brief Find the "Internal Adjustable" clock source without selecting it.
+ *
+ * Read-only probe: the device's active clock source is not modified. The clock
+ * source belongs to the device and outlives this process, so it must only be
+ * switched when rate adjust is actually going to write the pitch (upstream
+ * device.rs:952-955).
+ *
+ * @param device_id The HAL Device ID.
+ * @param out_source_id Optional; receives the clock source ID when found.
+ * @return true if the device exposes an adjustable clock source.
+ */
+bool core_audio_device_find_adjustable_clock_source(AudioDeviceID device_id,
+                                                    uint32_t *out_source_id);
+
+/**
+ * @brief Select the device's active clock source by ID.
+ *
+ * @param device_id The HAL Device ID.
+ * @param source_id Clock source ID (from kAudioDevicePropertyClockSources).
+ * @return true on success.
+ */
+bool core_audio_device_set_clock_source_id(AudioDeviceID device_id,
+                                           uint32_t source_id);
 
 /**
  * @brief Apply a clock-pitch correction to the device.

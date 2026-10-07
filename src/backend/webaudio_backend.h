@@ -14,7 +14,8 @@
  * webaudio_device_process() feeds the attached capture backend and renders from
  * the attached playback backend, producing silence when nothing is attached.
  * In the browser the device is created by webaudio_device_start()
- * (webaudio_device.c).
+ * (webaudio_device.c), which the engine reaches through
+ * audio_backend_registry_init().
  */
 
 #ifndef CLIB_BACKEND_WEBAUDIO_BACKEND_H
@@ -53,7 +54,8 @@ extern const playback_backend_vtable_t g_webaudio_playback_vtable;
  * input channels are treated as silence; outputs are silent when no playback
  * backend is attached or on underrun.
  *
- * @param inputs Planar input channels (may be NULL when @p input_channels is 0).
+ * @param inputs Planar input channels (may be NULL when @p input_channels is
+ * 0).
  * @param input_channels Number of input channels.
  * @param outputs Planar output channels.
  * @param output_channels Number of output channels.
@@ -81,8 +83,8 @@ void webaudio_device_process(const float *const *inputs, size_t input_channels,
  * capture side is ready, `globalThis.cdspAudio = {context, node}` is set to the
  * capture context and node and a `cdsp-audio-ready` event is dispatched; the
  * page connects its sources to `node` and reports the captured stream's format
- * with `globalThis.cdspAudioDevice.setInputFormat(rate, channels)`. The executable must be
- * linked with -sAUDIO_WORKLET=1 -sWASM_WORKERS=1.
+ * with `globalThis.cdspAudioDevice.setInputFormat(rate, channels)`. The
+ * executable must be linked with -sAUDIO_WORKLET=1 -sWASM_WORKERS=1.
  */
 void webaudio_device_start(void);
 #endif
@@ -99,8 +101,11 @@ void webaudio_device_start(void);
  * so each direction has its own format, and the engine's resampler and rate
  * adjust can bridge them like any two devices. webaudio_describe() reports
  * exactly this format, and capture backends in any other format are refused.
- * When a known value changes, the attached backends get a pending format
- * change, so the engine stops with a CAPTURE/PLAYBACK FORMAT_CHANGE reason
+ * When a known value changes, or an attached backend no longer matches the
+ * format (also when a value only becomes known, e.g. the captured stream's
+ * channel count after the capture backend opened), the attached backends get a
+ * pending format change, so the engine stops with a CAPTURE/PLAYBACK
+ * FORMAT_CHANGE reason
  * (carrying the new rate) and the host restarts it in the new format, as with
  * the other backends. Backends left in an old rate are not served meanwhile.
  */
@@ -149,10 +154,8 @@ int webaudio_get_available_devices(bool input, audio_device_t *out_devices,
  * @param err Optional error output.
  * @return Descriptor to free with free_audio_device_descriptor(), or NULL.
  */
-audio_device_descriptor_t *webaudio_describe(const char *device,
-                                             bool is_capture,
-                                             device_error_t *err);
-
+audio_device_descriptor_t *
+webaudio_describe(const char *device, bool is_capture, device_error_t *err);
 
 #endif // ENABLE_WEBAUDIO
 

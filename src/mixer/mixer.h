@@ -46,8 +46,8 @@ typedef struct mixer_config_t mixer_config_t;
 typedef enum {
   MIXER_OK = 0, /**< Success. */
   MIXER_ERR_INPUT_SIZE_MISMATCH =
-      -1, /**< `input.validFrames` is larger than the chunkSize the mixer was
-             constructed with. */
+      -1, /**< `input.frames` (buffer length) is larger than the chunkSize the
+             mixer was constructed with. */
   MIXER_ERR_OUTPUT_BUFFER_TOO_SMALL =
       -2, /**< Caller's output AudioChunk doesn't have enough capacity per
              channel. */
@@ -64,8 +64,10 @@ typedef struct mixer_s mixer_t;
 /**
  * @brief Validates mixer configuration.
  *
- * Checks that every dest is in range, no dest appears twice, and within a
- * single dest no source channel appears twice.
+ * Checks that every dest and source channel is in range, no dest appears
+ * twice, and every explicit source gain is finite. A source channel listed
+ * more than once for the same dest only logs a warning (the gains are summed,
+ * matching upstream CamillaDSP).
  *
  * @param mixer Pointer to mixer configuration to validate.
  * @param err Pointer to config error struct to populate on failure.
@@ -91,9 +93,12 @@ mixer_t *mixer_create(const char *name, const mixer_config_t *config,
  *
  * The caller must pre-allocate the `output` chunk with:
  * - `output->channels == channelsOut`
- * - `output->frames >= input->validFrames`
+ * - `output->frames >= input->frames`
  *
- * The mixer writes the mixed samples directly to the output and updates
+ * Like upstream (`mixer.rs`, which mixes `input.frames`), the whole buffer is
+ * mixed, including any zero-padded tail beyond `validFrames`, so the output
+ * tail stays defined for downstream steps. The mixer writes the mixed samples
+ * directly to the output and copies `input->validFrames` to
  * `output->validFrames`.
  *
  * @note `input` and `output` must reference distinct buffers. The mixer

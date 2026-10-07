@@ -86,6 +86,8 @@ window.cdspBridge = {
   captureWanted: false,
   stream: null,
   source: null,
+  sourceNode: null,
+  sourceStream: null,
   tabId: null,
   starting: null,
   stopTimer: null,
@@ -185,14 +187,26 @@ window.cdspBridge = {
     }
   },
 
-  /** Feeds the captured stream into the current device node. */
+  /**
+   * Feeds the captured stream into the current device node. `cdsp-audio-ready` also fires when
+   * only the playback context was recreated, so keep an existing connection to the same capture
+   * node and stream instead of rebuilding it (which would drop captured audio briefly).
+   */
   connectSource: function() {
     const audio = this.audio();
+    if (this.source && audio && this.sourceNode === audio.node &&
+        this.sourceStream === this.stream) {
+      return;
+    }
     if (this.source) this.source.disconnect();
     this.source = null;
+    this.sourceNode = null;
+    this.sourceStream = null;
     if (!audio || !this.stream) return;
     this.source = audio.context.createMediaStreamSource(this.stream);
     this.source.connect(audio.node);
+    this.sourceNode = audio.node;
+    this.sourceStream = this.stream;
   },
 
   /**
@@ -281,6 +295,8 @@ window.cdspBridge = {
       this.source.disconnect();
       this.source = null;
     }
+    this.sourceNode = null;
+    this.sourceStream = null;
     if (this.stream) {
       this.stream.getTracks().forEach((t) => t.stop());
       this.stream = null;

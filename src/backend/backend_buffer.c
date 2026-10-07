@@ -1,4 +1,5 @@
 #include "backend/backend_buffer.h"
+#include "backend/backend_clip.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -36,6 +37,15 @@ struct backend_buffer {
   _Atomic size_t silence_to_insert;
   _Atomic bool cushion_active;
 
+  // Underrun/overflow log episode state. Touched only by the device callback
+  // thread (render for playback, push for capture), so plain bools suffice.
+  // Like upstream, each episode is warned once and per-callback detail goes
+  // to trace, so a starved stream cannot flood the log from the RT thread.
+  bool render_playing;     ///< Audio has been rendered since the last underrun.
+  bool render_interrupted; ///< An underrun was reported and not yet recovered.
+  bool capture_ring_full;  ///< Capture overflow episode in progress.
+  bool write_ring_full;    ///< Playback drop-on-full episode (writer thread).
+
   // Stream lifecycle state & events
   _Atomic backend_stream_state_t state;
   _Atomic bool has_pending_rate_change;
@@ -48,6 +58,7 @@ struct backend_buffer {
 
   // Processing parameters telemetry sink (optional)
   processing_parameters_t *processing_params;
+  uint64_t last_clip_warn_ns; ///< Rate limit for the clipping warning.
 };
 
 /* --- Lifecycle Management --- */
@@ -98,6 +109,11 @@ backend_buffer_t *backend_buffer_create(size_t capacity_frames,
       return NULL;
     }
   } else {
+    if (bb->blockalign != 0 && capacity_frames > SIZE_MAX / bb->blockalign) {
+      cdsp_sem_destroy(bb->semaphore); // capacity overflow (F15)
+      free(bb);
+      return NULL;
+    }
     size_t capacity_bytes = capacity_frames * bb->blockalign;
     bb->byte_ring = spsc_byte_ring_buffer_create(capacity_bytes);
     if (!bb->byte_ring) {
@@ -221,15 +237,23 @@ void backend_buffer_set_target_level(backend_buffer_t *bb,
 
 static void backend_buffer_prefill_planar(backend_buffer_t *bb,
                                           spsc_planar_ring_buffer_t *ring,
-                                          size_t frames) {
+                                          size_t frames, uint8_t silence_byte) {
   if (!bb)
     return;
+  // Ring silence first, callback-shared state second (F9): the device may
+  // already be running. If the old order (flags first) let the callback
+  // underrun in between, it re-armed the cushion after cushion_active was set
+  // and the cushion was inserted on top of the prefill (twice). With the
+  // ring filled first an underrun in the window requires the callback to
+  // have consumed the whole prefill, and the stores below then simply
+  // declare the single cushion that is in the ring.
+  if (ring && frames > 0) {
+    // Native DSD needs its idle pattern (0x69); all-zero DSD is not silent.
+    spsc_planar_ring_buffer_write_silence_byte(ring, frames, silence_byte);
+  }
   atomic_store_explicit(&bb->target_level, frames, memory_order_release);
   atomic_store_explicit(&bb->silence_to_insert, 0, memory_order_release);
   atomic_store_explicit(&bb->cushion_active, true, memory_order_release);
-  if (ring && frames > 0) {
-    spsc_planar_ring_buffer_write_silence(ring, frames);
-  }
 }
 
 static void backend_buffer_prefill_byte(backend_buffer_t *bb,
@@ -238,12 +262,40 @@ static void backend_buffer_prefill_byte(backend_buffer_t *bb,
                                         uint8_t silence_byte) {
   if (!bb)
     return;
-  atomic_store_explicit(&bb->target_level, frames, memory_order_release);
-  atomic_store_explicit(&bb->silence_to_insert, 0, memory_order_release);
-  atomic_store_explicit(&bb->cushion_active, true, memory_order_release);
+  // Same ordering rationale as backend_buffer_prefill_planar (F9).
   if (ring && frames > 0 && blockalign > 0) {
     spsc_byte_ring_buffer_write_silence(ring, frames * blockalign,
                                         silence_byte);
+  }
+  atomic_store_explicit(&bb->target_level, frames, memory_order_release);
+  atomic_store_explicit(&bb->silence_to_insert, 0, memory_order_release);
+  atomic_store_explicit(&bb->cushion_active, true, memory_order_release);
+}
+
+/**
+ * Log playback underrun episodes like upstream (coreaudio device.rs:600-622):
+ * one warning when a playing stream runs dry, one info when it restarts, and
+ * per-callback detail at trace level only. Runs on the device callback thread;
+ * the logger is lock-free.
+ */
+static void backend_buffer_report_render(backend_buffer_t *bb, bool rearmed,
+                                         bool was_active, size_t consumed,
+                                         size_t audio_needed) {
+  if (rearmed && bb->render_interrupted) {
+    logger_info(&g_logger, "Restarting playback after buffer underrun.");
+    bb->render_interrupted = false;
+  }
+  if (consumed > 0)
+    bb->render_playing = true;
+  if (consumed < audio_needed) {
+    if (was_active && bb->render_playing) {
+      logger_warn(&g_logger, "Playback interrupted, no data available.");
+      bb->render_interrupted = true;
+      bb->render_playing = false;
+    }
+    logger_trace(&g_logger,
+                 "Playback callback underrun, padded %zu frames with silence",
+                 audio_needed - consumed);
   }
 }
 
@@ -255,6 +307,7 @@ static size_t backend_buffer_render_planar(backend_buffer_t *bb,
   if (!bb || !ring || !dst_channels || frames == 0)
     return 0;
 
+  bool rearmed = false;
   if (!atomic_load_explicit(&bb->cushion_active, memory_order_relaxed)) {
     size_t avail = spsc_planar_ring_buffer_get_available_to_read(ring);
     if (avail > 0) {
@@ -263,9 +316,12 @@ static size_t backend_buffer_render_planar(backend_buffer_t *bb,
           &bb->silence_to_insert,
           atomic_load_explicit(&bb->target_level, memory_order_relaxed),
           memory_order_relaxed);
+      rearmed = true;
     }
   }
 
+  bool was_active =
+      atomic_load_explicit(&bb->cushion_active, memory_order_relaxed);
   size_t silence_pending =
       atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed);
   size_t intentional_silence =
@@ -276,12 +332,7 @@ static size_t backend_buffer_render_planar(backend_buffer_t *bb,
       ring, dst_channels, frames, silence_byte, &bb->silence_to_insert,
       &bb->cushion_active);
 
-  if (consumed < audio_needed) {
-    logger_warn(
-        &g_logger,
-        "Playback buffer underrun: padded %zu missing frames with silence",
-        audio_needed - consumed);
-  }
+  backend_buffer_report_render(bb, rearmed, was_active, consumed, audio_needed);
 
   backend_buffer_publish(
       bb, atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed));
@@ -299,6 +350,7 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
   if (!bb || !ring || !dst || frames == 0 || blockalign == 0)
     return 0;
 
+  bool rearmed = false;
   if (!atomic_load_explicit(&bb->cushion_active, memory_order_relaxed)) {
     size_t avail_bytes = spsc_byte_ring_buffer_get_available_to_read(ring);
     size_t avail_frames = avail_bytes / blockalign;
@@ -308,9 +360,12 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
           &bb->silence_to_insert,
           atomic_load_explicit(&bb->target_level, memory_order_relaxed),
           memory_order_relaxed);
+      rearmed = true;
     }
   }
 
+  bool was_active =
+      atomic_load_explicit(&bb->cushion_active, memory_order_relaxed);
   size_t silence_pending =
       atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed);
   size_t intentional_silence =
@@ -321,12 +376,7 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
       ring, dst, frames, blockalign, silence_byte, &bb->silence_to_insert,
       &bb->cushion_active);
 
-  if (consumed < audio_needed) {
-    logger_warn(
-        &g_logger,
-        "Playback buffer underrun: padded %zu missing frames with silence",
-        audio_needed - consumed);
-  }
+  backend_buffer_report_render(bb, rearmed, was_active, consumed, audio_needed);
 
   backend_buffer_publish(
       bb, atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed));
@@ -334,6 +384,103 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
     cdsp_sem_signal(bb->semaphore);
   }
   return consumed;
+}
+
+/* --- Writer Backoff (engine thread only) --- */
+
+typedef enum {
+  BACKEND_BUFFER_SPACE_OK = 0, ///< Enough room for the whole chunk.
+  BACKEND_BUFFER_SPACE_FULL,   ///< Still full when the backoff budget ran out.
+  BACKEND_BUFFER_SPACE_PAUSED, ///< Stream paused; caller drops silently.
+  BACKEND_BUFFER_SPACE_ERROR,  ///< Stopped or format change; err is set.
+} backend_buffer_space_t;
+
+/**
+ * Wait until @p frames fit in the ring, for at most max_retries * sleep_ms.
+ *
+ * The budget is a time deadline, not a count of waits. The semaphore is a
+ * counting one that every render posts, also while the writer is not waiting,
+ * so a count of waits would be used up instantly by stale posts and the chunk
+ * dropped long before the device had a chance to drain (upstream
+ * RingBufferFeeder sleeps a fixed interval per retry, ringbuffer.rs:47-52).
+ * Stale posts now only cost a re-check of the free space.
+ */
+static backend_buffer_space_t
+backend_buffer_wait_for_space(backend_buffer_t *bb, size_t frames,
+                              uint32_t sleep_ms, uint32_t max_retries,
+                              backend_error_t *err) {
+  if (backend_buffer_get_available_write_frames(bb) >= frames)
+    return BACKEND_BUFFER_SPACE_OK;
+
+  uint32_t retries = (max_retries > 0) ? max_retries : 1;
+  uint32_t wait_timeout = (sleep_ms > 0) ? sleep_ms : 1;
+  uint64_t budget_ms = (uint64_t)retries * (uint64_t)wait_timeout;
+  uint64_t deadline_ns = cdsp_time_now_ns() + budget_ms * 1000000ULL;
+
+  for (;;) {
+    if (atomic_load_explicit(&bb->has_pending_rate_change,
+                             memory_order_acquire)) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
+      return BACKEND_BUFFER_SPACE_ERROR;
+    }
+    backend_stream_state_t state = backend_buffer_get_state(bb);
+    if (state == BACKEND_STREAM_STOPPED) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "Playback stream stopped");
+      return BACKEND_BUFFER_SPACE_ERROR;
+    }
+    if (state == BACKEND_STREAM_PAUSED)
+      return BACKEND_BUFFER_SPACE_PAUSED;
+
+    uint64_t now_ns = cdsp_time_now_ns();
+    if (now_ns >= deadline_ns)
+      break;
+    uint64_t remaining_ms = (deadline_ns - now_ns + 999999ULL) / 1000000ULL;
+    uint32_t wait_ms =
+        remaining_ms < wait_timeout ? (uint32_t)remaining_ms : wait_timeout;
+    if (bb->semaphore) {
+      cdsp_sem_timedwait(bb->semaphore, wait_ms);
+    } else {
+      cdsp_sleep_ms(wait_ms);
+    }
+    if (backend_buffer_get_available_write_frames(bb) >= frames)
+      return BACKEND_BUFFER_SPACE_OK;
+  }
+  return backend_buffer_get_available_write_frames(bb) >= frames
+             ? BACKEND_BUFFER_SPACE_OK
+             : BACKEND_BUFFER_SPACE_FULL;
+}
+
+/// Drop-on-full logging: warn once per episode, trace per chunk (upstream
+/// ringbuffer.rs:53-66).
+static void backend_buffer_report_drop(backend_buffer_t *bb, size_t amount,
+                                       const char *unit) {
+  if (!bb->write_ring_full) {
+    logger_warn(&g_logger, "Playback ring buffer is full, dropping chunks");
+    bb->write_ring_full = true;
+  }
+  logger_trace(&g_logger,
+               "Playback ring buffer is full, dropped chunk of %zu %s", amount,
+               unit);
+}
+
+/**
+ * Scan an output chunk for clipped samples (outside [-1.0, 1.0)), which cannot
+ * be represented in fixed-point integers. Matching upstream CamillaDSP,
+ * clipping is only counted for integer playback formats (float formats keep
+ * headroom), only for the channels actually encoded, and only for chunks that
+ * are really written: upstream counts inside the conversion, so paused,
+ * stopped or dropped chunks do not contribute.
+ */
+static void backend_buffer_count_clipped(backend_buffer_t *bb,
+                                         const audio_chunk_t *chunk) {
+  if (bb->processing_params && !sample_format_is_float(bb->format) &&
+      !sample_format_is_dsd(bb->format)) {
+    backend_count_clipped_channels(bb->processing_params, chunk, bb->channels,
+                                   &bb->last_clip_warn_ns, &g_logger);
+  }
 }
 
 /* --- Engine-Side Audio Chunk Ring Buffer IO (Capture & Playback) --- */
@@ -447,13 +594,21 @@ static bool backend_buffer_read(const backend_buffer_t *bb,
     }
     size_t rem_l1 = l1 % bb->blockalign;
     size_t rem_l2 = bb->blockalign - rem_l1;
+    // Unreachable while the request is a whole number of frames and the
+    // slices cover it, but fail loudly instead of reporting frames that were
+    // never decoded (F15).
+    if (!s2 || l2 < rem_l2 || !bb->split_frame_buf) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_READ_ERROR,
+                           "Ring buffer slices do not cover a split frame");
+      return false;
+    }
     if (s2 && l2 >= rem_l2) {
       if (bb->split_frame_buf) {
         memcpy(bb->split_frame_buf, s1 + f1 * bb->blockalign, rem_l1);
         memcpy(bb->split_frame_buf + rem_l1, s2, rem_l2);
-        if (!audio_chunk_decode_interleaved_offset(bb->split_frame_buf,
-                                                   bb->format, bb->channels, 1,
-                                                   chunk, f1)) {
+        if (!audio_chunk_decode_interleaved_offset(
+                bb->split_frame_buf, bb->format, bb->channels, 1, chunk, f1)) {
           if (err)
             backend_error_init(err, BACKEND_ERROR_READ_ERROR,
                                "Failed to decode split audio frame");
@@ -478,7 +633,7 @@ static bool backend_buffer_read(const backend_buffer_t *bb,
   return true;
 }
 
-static bool backend_buffer_write(const backend_buffer_t *bb,
+static bool backend_buffer_write(backend_buffer_t *bb,
                                  const audio_chunk_t *chunk, uint32_t sleep_ms,
                                  uint32_t max_retries, backend_error_t *err) {
   if (!bb || !chunk || bb->channels == 0 || bb->blockalign == 0) {
@@ -527,45 +682,20 @@ static bool backend_buffer_write(const backend_buffer_t *bb,
 
   size_t bytes_to_write = frames * bb->blockalign;
 
-  uint32_t retries = (max_retries > 0) ? max_retries : 1;
-  uint32_t wait_timeout = (sleep_ms > 0) ? sleep_ms : 1;
-  for (uint32_t retry = 0; retry < retries; retry++) {
-    if (spsc_byte_ring_buffer_get_available_to_write(bb->byte_ring) >=
-        bytes_to_write) {
-      break;
-    }
-    if (atomic_load_explicit(&bb->has_pending_rate_change,
-                             memory_order_acquire)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
-      return false;
-    }
-    state = backend_buffer_get_state(bb);
-    if (state == BACKEND_STREAM_STOPPED) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                           "Playback stream stopped");
-      return false;
-    }
-    if (state == BACKEND_STREAM_PAUSED) {
-      return true;
-    }
-    if (bb->semaphore) {
-      cdsp_sem_timedwait(bb->semaphore, wait_timeout);
-    } else {
-      cdsp_sleep_ms(wait_timeout);
-    }
-  }
-
-  // Audio chunks must be written as atomic units. If the ring buffer cannot fit
-  // the complete chunk after backoff, drop the entire chunk rather than pushing
-  // a fractured sub-chunk to prevent time-domain waveform discontinuity.
-  if (spsc_byte_ring_buffer_get_available_to_write(bb->byte_ring) <
-      bytes_to_write) {
-    logger_warn(&g_logger,
-                "Playback ring buffer is full after %u retries, dropping entire "
-                "chunk of %zu bytes (drop-on-full)",
-                retries, bytes_to_write);
+  switch (
+      backend_buffer_wait_for_space(bb, frames, sleep_ms, max_retries, err)) {
+  case BACKEND_BUFFER_SPACE_OK:
+    backend_buffer_count_clipped(bb, chunk);
+    break;
+  case BACKEND_BUFFER_SPACE_PAUSED:
+    return true;
+  case BACKEND_BUFFER_SPACE_ERROR:
+    return false;
+  case BACKEND_BUFFER_SPACE_FULL:
+    // Audio chunks must be written as atomic units. If the ring buffer cannot
+    // fit the complete chunk after backoff, drop the entire chunk rather than
+    // pushing a fractured sub-chunk (waveform discontinuity).
+    backend_buffer_report_drop(bb, bytes_to_write, "bytes");
     if (err)
       backend_error_init(err, BACKEND_ERROR_NONE, "");
     return true;
@@ -616,6 +746,15 @@ static bool backend_buffer_write(const backend_buffer_t *bb,
     }
     size_t rem_l1 = l1 % bb->blockalign;
     size_t rem_l2 = bb->blockalign - rem_l1;
+    // Unreachable while the request is a whole number of frames and the
+    // slices cover it, but fail loudly instead of reporting frames that were
+    // never encoded (F15).
+    if (!s2 || l2 < rem_l2 || !bb->split_frame_buf) {
+      if (err)
+        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
+                           "Ring buffer slices do not cover a split frame");
+      return false;
+    }
     if (s2 && l2 >= rem_l2) {
       if (bb->split_frame_buf) {
         if (!audio_chunk_encode_interleaved_offset(
@@ -642,6 +781,7 @@ static bool backend_buffer_write(const backend_buffer_t *bb,
   }
 
   spsc_byte_ring_buffer_advance_write(bb->byte_ring, bytes_to_write);
+  bb->write_ring_full = false;
   return true;
 }
 
@@ -746,7 +886,7 @@ static bool backend_buffer_planar_read(const backend_buffer_t *bb,
   return true;
 }
 
-static bool backend_buffer_planar_write(const backend_buffer_t *bb,
+static bool backend_buffer_planar_write(backend_buffer_t *bb,
                                         const audio_chunk_t *chunk,
                                         uint32_t sleep_ms, uint32_t max_retries,
                                         backend_error_t *err) {
@@ -787,43 +927,20 @@ static bool backend_buffer_planar_write(const backend_buffer_t *bb,
   if (frames == 0)
     return true;
 
-  uint32_t retries = (max_retries > 0) ? max_retries : 1;
-  uint32_t wait_timeout = (sleep_ms > 0) ? sleep_ms : 1;
-  for (uint32_t retry = 0; retry < retries; retry++) {
-    if (spsc_planar_ring_buffer_get_available_to_write(bb->planar_ring) >=
-        frames) {
-      break;
-    }
-    if (atomic_load_explicit(&bb->has_pending_rate_change,
-                             memory_order_acquire)) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_NONE, "Format change pending");
-      return false;
-    }
-    state = backend_buffer_get_state(bb);
-    if (state == BACKEND_STREAM_STOPPED) {
-      if (err)
-        backend_error_init(err, BACKEND_ERROR_WRITE_ERROR,
-                           "Playback stream stopped");
-      return false;
-    }
-    if (state == BACKEND_STREAM_PAUSED) {
-      return true;
-    }
-    if (bb->semaphore) {
-      cdsp_sem_timedwait(bb->semaphore, wait_timeout);
-    } else {
-      cdsp_sleep_ms(wait_timeout);
-    }
-  }
-
-  if (spsc_planar_ring_buffer_get_available_to_write(bb->planar_ring) <
-      frames) {
-    logger_warn(
-        &g_logger,
-        "Playback planar ring buffer is full after %u retries, dropping entire "
-        "chunk of %zu frames (drop-on-full)",
-        retries, frames);
+  switch (
+      backend_buffer_wait_for_space(bb, frames, sleep_ms, max_retries, err)) {
+  case BACKEND_BUFFER_SPACE_OK:
+    backend_buffer_count_clipped(bb, chunk);
+    break;
+  case BACKEND_BUFFER_SPACE_PAUSED:
+    return true;
+  case BACKEND_BUFFER_SPACE_ERROR:
+    return false;
+  case BACKEND_BUFFER_SPACE_FULL:
+    // Audio chunks must be written as atomic units. If the ring buffer cannot
+    // fit the complete chunk after backoff, drop the entire chunk rather than
+    // pushing a fractured sub-chunk (waveform discontinuity).
+    backend_buffer_report_drop(bb, frames, "frames");
     if (err)
       backend_error_init(err, BACKEND_ERROR_NONE, "");
     return true;
@@ -872,6 +989,7 @@ static bool backend_buffer_planar_write(const backend_buffer_t *bb,
   }
 
   spsc_planar_ring_buffer_advance_write(bb->planar_ring, frames);
+  bb->write_ring_full = false;
   return true;
 }
 
@@ -884,29 +1002,6 @@ bool backend_buffer_write_chunk(backend_buffer_t *bb,
     if (err)
       backend_error_init(err, BACKEND_ERROR_WRITE_ERROR, "Null backend buffer");
     return false;
-  }
-
-  // Scan output chunk for clipped samples (outside [-1.0, 1.0) range).
-  // Samples >= 1.0 or < -1.0 cannot be represented in standard fixed-point
-  // integers. Matching upstream CamillaDSP, clipping is only counted for
-  // integer playback formats; floating-point output formats (F32, F64) can
-  // represent values outside [-1.0, 1.0] without clipping.
-  if (bb->processing_params && !sample_format_is_float(bb->format) &&
-      !sample_format_is_dsd(bb->format) && chunk) {
-    size_t channels = audio_chunk_get_channels(chunk);
-    size_t c_frames = audio_chunk_get_valid_frames(chunk);
-    uint64_t clipped = 0;
-    for (size_t c = 0; c < channels; c++) {
-      mutable_waveform_t data = audio_chunk_get_channel(chunk, c);
-      for (size_t f = 0; f < c_frames; f++) {
-        if (data[f] >= 1.0 || data[f] < -1.0) {
-          clipped++;
-        }
-      }
-    }
-    if (clipped > 0) {
-      processing_parameters_add_clipped_samples(bb->processing_params, clipped);
-    }
   }
 
   if (bb->type == BACKEND_BUFFER_PLANAR) {
@@ -935,7 +1030,7 @@ void backend_buffer_prefill_silence(backend_buffer_t *bb, size_t frames,
   if (!bb)
     return;
   if (bb->type == BACKEND_BUFFER_PLANAR) {
-    backend_buffer_prefill_planar(bb, bb->planar_ring, frames);
+    backend_buffer_prefill_planar(bb, bb->planar_ring, frames, silence_byte);
   } else {
     backend_buffer_prefill_byte(bb, bb->byte_ring, frames, bb->blockalign,
                                 silence_byte);
@@ -981,6 +1076,27 @@ size_t backend_buffer_render(backend_buffer_t *bb, void *dst, size_t frames,
   }
 }
 
+/**
+ * Capture overflow logging, shared by push and commit_write: one warning per
+ * episode, trace per callback (upstream coreaudio device.rs:898-911, asio
+ * device.rs:449-460, alsa threaded_device.rs:1589-1603). Producer-only state.
+ */
+static void backend_buffer_report_capture_overflow(backend_buffer_t *bb,
+                                                   size_t dropped,
+                                                   size_t total) {
+  if (dropped > 0) {
+    if (!bb->capture_ring_full) {
+      logger_warn(&g_logger, "Capture ring buffer is full, dropping samples");
+      bb->capture_ring_full = true;
+    }
+    logger_trace(&g_logger,
+                 "Capture ring buffer is full, dropped %zu out of %zu frames",
+                 dropped, total);
+  } else {
+    bb->capture_ring_full = false;
+  }
+}
+
 size_t backend_buffer_push(backend_buffer_t *bb, const void *src,
                            size_t frames) {
   if (!bb || !src || frames == 0)
@@ -992,8 +1108,9 @@ size_t backend_buffer_push(backend_buffer_t *bb, const void *src,
   } else {
     if (bb->blockalign == 0)
       return 0;
-    // Push whole frames only. With formats where sample size is not a power of 2 (e.g. S24_3),
-    // a partial byte push could end inside a frame and shift every later sample.
+    // Push whole frames only. With formats where sample size is not a power of
+    // 2 (e.g. S24_3), a partial byte push could end inside a frame and shift
+    // every later sample.
     size_t avail_bytes =
         spsc_byte_ring_buffer_get_available_to_write(bb->byte_ring);
     size_t whole_frames = avail_bytes / bb->blockalign;
@@ -1008,11 +1125,7 @@ size_t backend_buffer_push(backend_buffer_t *bb, const void *src,
     }
     pushed = written_bytes / bb->blockalign;
   }
-  if (pushed < frames) {
-    logger_warn(&g_logger,
-                "Capture ring buffer is full, dropped %zu out of %zu frames",
-                frames - pushed, frames);
-  }
+  backend_buffer_report_capture_overflow(bb, frames - pushed, frames);
   if (pushed > 0 && bb->semaphore) {
     cdsp_sem_signal(bb->semaphore);
   }
@@ -1038,6 +1151,88 @@ size_t backend_buffer_consume(backend_buffer_t *bb, void *dst, size_t frames) {
     cdsp_sem_signal(bb->semaphore);
   }
   return consumed;
+}
+
+/* Whole-frame view of two byte slices (see backend_buffer_get_read_slices). */
+static size_t backend_buffer_frame_slices(const backend_buffer_t *bb, size_t l1,
+                                          size_t l2, size_t *n1, size_t *n2) {
+  *n1 = l1 / bb->blockalign;
+  // The second slice starts at storage[0]; it continues the first one only if
+  // the first ends exactly on a frame boundary.
+  *n2 = (l1 % bb->blockalign == 0) ? l2 / bb->blockalign : 0;
+  return *n1 + *n2;
+}
+
+size_t backend_buffer_get_read_slices(backend_buffer_t *bb, size_t max_frames,
+                                      const void **p1, size_t *n1,
+                                      const void **p2, size_t *n2) {
+  if (p1)
+    *p1 = NULL;
+  if (p2)
+    *p2 = NULL;
+  if (n1)
+    *n1 = 0;
+  if (n2)
+    *n2 = 0;
+  if (!bb || !p1 || !p2 || !n1 || !n2 || bb->type == BACKEND_BUFFER_PLANAR ||
+      !bb->byte_ring || bb->blockalign == 0 || max_frames == 0 ||
+      max_frames > SIZE_MAX / bb->blockalign)
+    return 0;
+  const uint8_t *s1 = NULL, *s2 = NULL;
+  size_t l1 = 0, l2 = 0;
+  spsc_byte_ring_buffer_get_read_slices(
+      bb->byte_ring, max_frames * bb->blockalign, &s1, &l1, &s2, &l2);
+  size_t total = backend_buffer_frame_slices(bb, l1, l2, n1, n2);
+  *p1 = *n1 ? s1 : NULL;
+  *p2 = *n2 ? s2 : NULL;
+  return total;
+}
+
+void backend_buffer_commit_read(backend_buffer_t *bb, size_t frames) {
+  if (!bb || frames == 0 || bb->type == BACKEND_BUFFER_PLANAR ||
+      !bb->byte_ring || bb->blockalign == 0)
+    return;
+  spsc_byte_ring_buffer_advance_read(bb->byte_ring, frames * bb->blockalign);
+  if (bb->semaphore)
+    cdsp_sem_signal(bb->semaphore);
+}
+
+size_t backend_buffer_get_write_slices(backend_buffer_t *bb, size_t max_frames,
+                                       void **p1, size_t *n1, void **p2,
+                                       size_t *n2) {
+  if (p1)
+    *p1 = NULL;
+  if (p2)
+    *p2 = NULL;
+  if (n1)
+    *n1 = 0;
+  if (n2)
+    *n2 = 0;
+  if (!bb || !p1 || !p2 || !n1 || !n2 || bb->type == BACKEND_BUFFER_PLANAR ||
+      !bb->byte_ring || bb->blockalign == 0 || max_frames == 0 ||
+      max_frames > SIZE_MAX / bb->blockalign)
+    return 0;
+  uint8_t *s1 = NULL, *s2 = NULL;
+  size_t l1 = 0, l2 = 0;
+  spsc_byte_ring_buffer_get_write_slices(
+      bb->byte_ring, max_frames * bb->blockalign, &s1, &l1, &s2, &l2);
+  size_t total = backend_buffer_frame_slices(bb, l1, l2, n1, n2);
+  *p1 = *n1 ? s1 : NULL;
+  *p2 = *n2 ? s2 : NULL;
+  return total;
+}
+
+void backend_buffer_commit_write(backend_buffer_t *bb, size_t frames,
+                                 size_t frames_dropped) {
+  if (!bb || bb->type == BACKEND_BUFFER_PLANAR || !bb->byte_ring ||
+      bb->blockalign == 0)
+    return;
+  if (frames > 0)
+    spsc_byte_ring_buffer_advance_write(bb->byte_ring, frames * bb->blockalign);
+  backend_buffer_report_capture_overflow(bb, frames_dropped,
+                                         frames + frames_dropped);
+  if (frames > 0 && bb->semaphore)
+    cdsp_sem_signal(bb->semaphore);
 }
 
 size_t backend_buffer_get_available_read_frames(const backend_buffer_t *bb) {

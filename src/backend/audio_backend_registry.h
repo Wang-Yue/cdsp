@@ -14,6 +14,17 @@
  */
 
 /**
+ * @brief Initialise process-wide audio devices that must exist before any
+ * backend is opened.
+ *
+ * Idempotent. Call it from the thread that creates the engine: in the browser
+ * (Emscripten + ENABLE_WEBAUDIO) this starts the shared WebAudio device, whose
+ * AudioContexts can only be created on the main browser thread. A no-op on
+ * every other platform.
+ */
+void audio_backend_registry_init(void);
+
+/**
  * @brief Get available audio devices for a backend.
  *
  * @param backend Backend name string (e.g. "coreaudio", "alsa", "wasapi",

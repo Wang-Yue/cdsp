@@ -44,6 +44,7 @@ static int core_audio_device_all_ids(AudioDeviceID *out_ids, int max_ids) {
                                    &size, out_ids) != noErr) {
       return 0;
     }
+    count = (int)(size / sizeof(AudioDeviceID));
   }
   return count;
 }
@@ -95,7 +96,7 @@ bool core_audio_device_supports_scope(AudioDeviceID device_id,
   uint32_t size = 0;
   OSStatus status =
       AudioObjectGetPropertyDataSize(device_id, &addr, 0, NULL, &size);
-  if (status != noErr || size < sizeof(AudioBufferList)) {
+  if (status != noErr || size < offsetof(AudioBufferList, mBuffers)) {
     return false;
   }
   AudioBufferList *buf_list = (AudioBufferList *)malloc(size);
@@ -103,12 +104,18 @@ bool core_audio_device_supports_scope(AudioDeviceID device_id,
     return false;
   status =
       AudioObjectGetPropertyData(device_id, &addr, 0, NULL, &size, buf_list);
-  if (status != noErr) {
+  if (status != noErr || size < offsetof(AudioBufferList, mBuffers)) {
     free(buf_list);
     return false;
   }
+  UInt32 max_buffers =
+      (size - (UInt32)offsetof(AudioBufferList, mBuffers)) /
+      (UInt32)sizeof(AudioBuffer);
+  UInt32 n_buffers = buf_list->mNumberBuffers < max_buffers
+                         ? buf_list->mNumberBuffers
+                         : max_buffers;
   bool supported = false;
-  for (UInt32 i = 0; i < buf_list->mNumberBuffers; i++) {
+  for (UInt32 i = 0; i < n_buffers; i++) {
     if (buf_list->mBuffers[i].mNumberChannels > 0) {
       supported = true;
       break;
@@ -148,6 +155,7 @@ int core_audio_device_streams(AudioDeviceID device_id, core_audio_scope_t scope,
                                    out_streams) != noErr) {
       return 0;
     }
+    count = (int)(size / sizeof(AudioStreamID));
   }
   return count;
 }
@@ -236,17 +244,10 @@ bool core_audio_device_get_nominal_sample_rate(AudioDeviceID device_id,
   return false;
 }
 
-/// Push the device's nominal sample rate, then poll until the
-/// change has been committed. CoreAudio applies the change
-/// asynchronously on a HAL thread; if we proceed straight to
-/// `AudioUnitInitialize` the AudioUnit can latch the *old* rate
-/// and silently sample-rate-convert from then on. Returns `true`
-/// only when both the set call succeeded *and* the device's
-/// reported rate matches `rate` within `~0.5 Hz` after the poll.
-///
-/// Devices that don't support the requested rate return a
-/// non-zero status from the set call; we surface that as `false`
-/// without polling.
+/// True if `rate` falls inside one of the device's
+/// `kAudioDevicePropertyAvailableNominalSampleRates` ranges (discrete or
+/// continuous). Returns `true` when the list cannot be read, so that the
+/// subsequent set call decides.
 bool core_audio_device_is_sample_rate_supported(AudioDeviceID device_id,
                                                 double rate) {
   if (device_id == 0 || rate <= 0.0)
@@ -271,6 +272,7 @@ bool core_audio_device_is_sample_rate_supported(AudioDeviceID device_id,
     free(ranges);
     return true;
   }
+  n_ranges = data_size / (uint32_t)sizeof(AudioValueRange);
   bool supported = false;
   uint32_t rate_int = (uint32_t)(rate + 0.5);
   for (uint32_t i = 0; i < n_ranges; i++) {
@@ -287,6 +289,13 @@ bool core_audio_device_is_sample_rate_supported(AudioDeviceID device_id,
   return supported;
 }
 
+/// Push the device's nominal sample rate, then poll until the
+/// change has been committed. CoreAudio applies the change
+/// asynchronously on a HAL thread; if we proceed straight to
+/// `AudioUnitInitialize` the AudioUnit can latch the *old* rate
+/// and silently sample-rate-convert from then on. Returns `true`
+/// only when both the set call succeeded *and* the device's
+/// reported rate matches `rate` within `~0.5 Hz` after the poll.
 bool core_audio_device_set_nominal_sample_rate(AudioDeviceID device_id,
                                                double rate) {
   if (device_id == 0 || rate <= 0.0)
@@ -389,37 +398,47 @@ bool core_audio_device_set_buffer_frame_size(AudioDeviceID device_id,
 // MARK: - Clock-source / pitch control (BlackHole 0.5.0+)
 
 /// Set the device's active clock source by ID. Returns `true` on success.
-static bool core_audio_device_set_clock_source_id(AudioDeviceID device_id,
-                                                  uint32_t source_id) {
+bool core_audio_device_set_clock_source_id(AudioDeviceID device_id,
+                                           uint32_t source_id) {
   AudioObjectPropertyAddress addr = {
       .mSelector = kAudioDevicePropertyClockSource,
       .mScope = kAudioObjectPropertyScopeGlobal,
       .mElement = kAudioObjectPropertyElementMain};
   uint32_t value = source_id;
-  return (AudioObjectSetPropertyData(device_id, &addr, 0, NULL,
-                                     sizeof(uint32_t), &value) == noErr);
+  OSStatus status = AudioObjectSetPropertyData(device_id, &addr, 0, NULL,
+                                               sizeof(uint32_t), &value);
+  if (status != noErr) {
+    logger_warn(&g_coreaudio_dev_logger,
+                "Unable to set clock source, error code: %d.", (int)status);
+    return false;
+  }
+  return true;
 }
 
-/// If `deviceID` advertises an "Internal Adjustable" clock source
-/// (BlackHole 0.5.0+), select it as the active source and return
-/// `true`. Returns `false` for devices that don't support pitch
-/// tuning.
-/// Enumerate clock sources for `deviceID`. Returns the parallel
-/// `(name, id)` arrays in declaration order. Used by
-/// `selectAdjustableClockSource` to find the magic
-/// `"Internal Adjustable"` source that BlackHole 0.5.0+ exposes
-/// for fine-grained pitch control.
-bool core_audio_device_select_adjustable_clock_source(AudioDeviceID device_id) {
+/// Enumerate the clock sources of `device_id` and look for the magic
+/// `"Internal Adjustable"` source that BlackHole 0.5.0+ exposes for
+/// fine-grained pitch control. Read-only: the active clock source is NOT
+/// changed. Mirrors upstream get_clock_source_names_and_ids +
+/// configure_pitch_control (device.rs:1295-1399) minus the write.
+bool core_audio_device_find_adjustable_clock_source(AudioDeviceID device_id,
+                                                    uint32_t *out_source_id) {
+  if (device_id == kAudioObjectUnknown)
+    return false;
   AudioObjectPropertyAddress addr = {
       .mSelector = kAudioDevicePropertyClockSources,
       .mScope = kAudioObjectPropertyScopeGlobal,
       .mElement = kAudioObjectPropertyElementMain};
+  if (!AudioObjectHasProperty(device_id, &addr)) {
+    logger_info(&g_coreaudio_dev_logger,
+                "The capture device has no clock source control.");
+    return false;
+  }
   uint32_t size = 0;
   // Fetch the size of the clock sources array.
   OSStatus sz_status =
       AudioObjectGetPropertyDataSize(device_id, &addr, 0, NULL, &size);
   if (sz_status != noErr) {
-    logger_info(&g_coreaudio_dev_logger,
+    logger_warn(&g_coreaudio_dev_logger,
                 "Unable to read number of clock sources, error code: %d.",
                 (int)sz_status);
     return false;
@@ -443,6 +462,7 @@ bool core_audio_device_select_adjustable_clock_source(AudioDeviceID device_id) {
                 (int)get_status);
     return false;
   }
+  count = (int)(size / sizeof(uint32_t));
   logger_debug(&g_coreaudio_dev_logger, "Capture device has %d clock sources.",
                count);
   // Iterate through the clock source IDs and fetch their CFString names using
@@ -463,32 +483,41 @@ bool core_audio_device_select_adjustable_clock_source(AudioDeviceID device_id) {
                                    &trans) == noErr &&
         cf_name) {
       char name_buf[256];
+      bool match = false;
       if (CFStringGetCString(cf_name, name_buf, sizeof(name_buf),
                              kCFStringEncodingUTF8)) {
         // Look for the magic "Internal Adjustable" clock source (provided by
         // virtual drivers like BlackHole 0.5.0+ to allow pitch-shifting).
-        if (strcmp(name_buf, "Internal Adjustable") == 0) {
-          CFRelease(cf_name);
-          logger_debug(
-              &g_coreaudio_dev_logger,
-              "Changing capture device clock source to item with index %d.", i);
-          bool ok = core_audio_device_set_clock_source_id(device_id, source_id);
-          if (ok) {
-            logger_info(&g_coreaudio_dev_logger,
-                        "The capture device supports pitch control.");
-          } else {
-            logger_warn(&g_coreaudio_dev_logger,
-                        "Unable to set clock source, error code: -1.");
-          }
-          return ok;
-        }
+        match = (strcmp(name_buf, "Internal Adjustable") == 0);
       }
       CFRelease(cf_name);
+      if (match) {
+        logger_info(&g_coreaudio_dev_logger,
+                    "The capture device supports pitch control (clock source "
+                    "item with index %d).",
+                    i);
+        if (out_source_id)
+          *out_source_id = source_id;
+        return true;
+      }
     }
   }
   logger_info(&g_coreaudio_dev_logger,
               "The capture device does not support pitch control.");
   return false;
+}
+
+/// If `device_id` advertises an "Internal Adjustable" clock source
+/// (BlackHole 0.5.0+), select it as the active source and return `true`.
+/// Returns `false` for devices that don't support pitch tuning.
+bool core_audio_device_select_adjustable_clock_source(AudioDeviceID device_id) {
+  uint32_t source_id = 0;
+  if (!core_audio_device_find_adjustable_clock_source(device_id, &source_id))
+    return false;
+  logger_debug(&g_coreaudio_dev_logger,
+               "Changing capture device clock source to item with id %u.",
+               (unsigned)source_id);
+  return core_audio_device_set_clock_source_id(device_id, source_id);
 }
 
 /// Apply a clock-pitch correction to the capture device by
@@ -606,6 +635,21 @@ rate_change_watcher_t *rate_change_watcher_create(AudioDeviceID device_id,
     return NULL;
   }
   atomic_init(&watcher->registered, true);
+  // Seed with the current nominal rate *after* registering: any change that
+  // happened between the caller setting the rate and this registration (or a
+  // rate that never settled) is still reported as a pending change instead of
+  // being lost until the next HAL notification. A notification racing with
+  // this read stores the same or a newer value, so ordering is benign.
+  double current = 0.0;
+  if (core_audio_device_get_nominal_sample_rate(device_id, &current) &&
+      current > 0.0) {
+    uint64_t bits;
+    memcpy(&bits, &current, sizeof(uint64_t));
+    uint64_t expected_zero = 0;
+    atomic_compare_exchange_strong_explicit(
+        &watcher->latest_rate_bits, &expected_zero, bits, memory_order_release,
+        memory_order_relaxed);
+  }
   return watcher;
 }
 
@@ -838,6 +882,7 @@ bool core_audio_device_set_matching_virtual_format(
 
     if (AudioObjectGetPropertyData(streams[s], &addr, 0, NULL, &size, ranged) ==
         noErr) {
+      count = (int)(size / sizeof(AudioStreamRangedDescription));
       for (int i = 0; i < count; i++) {
         AudioStreamBasicDescription asbd = ranged[i].mFormat;
         if (asbd.mFormatID != kAudioFormatLinearPCM)
@@ -845,7 +890,7 @@ bool core_audio_device_set_matching_virtual_format(
 
         double lo = ranged[i].mSampleRateRange.mMinimum;
         double hi = ranged[i].mSampleRateRange.mMaximum;
-        if (sample_rate < lo || sample_rate > hi) {
+        if (sample_rate < lo - 0.5 || sample_rate > hi + 0.5) {
           continue;
         }
 
@@ -969,6 +1014,7 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
 
     if (AudioObjectGetPropertyData(streams[s], &addr, 0, NULL, &size, ranged) ==
         noErr) {
+      count = (int)(size / sizeof(AudioStreamRangedDescription));
       for (int i = 0; i < count; i++) {
         AudioStreamBasicDescription asbd = ranged[i].mFormat;
         if (asbd.mFormatID != kAudioFormatLinearPCM)
@@ -978,11 +1024,11 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
         // stream limits and matches nominal format sample rate).
         double lo = ranged[i].mSampleRateRange.mMinimum;
         double hi = ranged[i].mSampleRateRange.mMaximum;
-        if (sample_rate < lo || sample_rate > hi) {
+        if (sample_rate < lo - 0.5 || sample_rate > hi + 0.5) {
           continue;
         }
-        if (asbd.mSampleRate > 0.0 && fabs(asbd.mSampleRate - sample_rate) >= 0.5 &&
-            (lo == hi)) {
+        if (asbd.mSampleRate > 0.0 &&
+            fabs(asbd.mSampleRate - sample_rate) >= 0.5 && (lo == hi)) {
           continue;
         }
 
@@ -998,9 +1044,15 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
           continue;
         }
 
-        // Match upstream behavior: take the first matching physical format
-        // and keep the ASBD as advertised.
+        // Match upstream behavior: take the first matching physical format.
+        // Divergence (strictly better than coreaudio-rs
+        // find_matching_physical_format, which returns the advertised ASBD
+        // unchanged): a ranged descriptor (lo < hi) may advertise an
+        // mSampleRate different from the requested one; applying it as-is
+        // would run the device at the wrong rate and make AUHAL silently
+        // resample. Always request the configured rate.
         best_asbd = asbd;
+        best_asbd.mSampleRate = sample_rate;
         best_stream_id = streams[s];
         found_best = true;
         break;
@@ -1017,6 +1069,16 @@ bool core_audio_device_set_matching_physical_format(AudioDeviceID device_id,
         .mSelector = kAudioStreamPropertyPhysicalFormat,
         .mScope = kAudioObjectPropertyScopeGlobal,
         .mElement = kAudioObjectPropertyElementMain};
+    // Skip the write when the stream already runs this format (matches
+    // coreaudio-rs set_device_physical_stream_format), avoiding a needless
+    // device reconfiguration notification to other clients.
+    AudioStreamBasicDescription current = {0};
+    uint32_t current_size = sizeof(AudioStreamBasicDescription);
+    if (AudioObjectGetPropertyData(best_stream_id, &addr, 0, NULL,
+                                   &current_size, &current) == noErr &&
+        asbds_are_equal(&current, &best_asbd)) {
+      return true;
+    }
     OSStatus status = AudioObjectSetPropertyData(
         best_stream_id, &addr, 0, NULL, sizeof(AudioStreamBasicDescription),
         &best_asbd);

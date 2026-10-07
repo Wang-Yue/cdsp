@@ -24,6 +24,7 @@
 #include "config/config_gen.h"
 #include "logging/app_logger.h"
 #include "resampler/audio_resampler.h"
+#include "resampler/resampler_channel_mask.h"
 #include "resampler/resampler_error.h"
 
 static const logger_t g_logger = {"resampler.async_poly"};
@@ -95,6 +96,9 @@ struct async_poly_resampler {
   size_t needed_output_size;
   size_t current_buffer_fill;
   size_t max_input_frames;
+  // Used-channel mask of the chunk being processed (NULL = all active).
+  // Borrowed from the input chunk for the duration of one process() call.
+  const bool *active_mask;
 };
 
 #include <math.h>
@@ -237,7 +241,7 @@ static void run_linear(async_poly_resampler_t *resampler, size_t output_frames,
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     const double *buf = audio_buffers_get_channel(resampler->input_buffer, ch);
     double *out = audio_chunk_get_channel(output, ch);
-    if (!buf || !out)
+    if (!buf || !out || !resampler_channel_active(resampler->active_mask, ch))
       continue;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double x = frac_buf[frame];
@@ -267,7 +271,7 @@ static void run_cubic(async_poly_resampler_t *resampler, size_t output_frames,
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     const double *buf = audio_buffers_get_channel(resampler->input_buffer, ch);
     double *out = audio_chunk_get_channel(output, ch);
-    if (!buf || !out)
+    if (!buf || !out || !resampler_channel_active(resampler->active_mask, ch))
       continue;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double x = frac_buf[frame];
@@ -305,7 +309,7 @@ static void run_quintic(async_poly_resampler_t *resampler, size_t output_frames,
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     const double *buf = audio_buffers_get_channel(resampler->input_buffer, ch);
     double *out = audio_chunk_get_channel(output, ch);
-    if (!buf || !out)
+    if (!buf || !out || !resampler_channel_active(resampler->active_mask, ch))
       continue;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double x = frac_buf[frame];
@@ -352,7 +356,7 @@ static void run_septic(async_poly_resampler_t *resampler, size_t output_frames,
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     const double *buf = audio_buffers_get_channel(resampler->input_buffer, ch);
     double *out = audio_chunk_get_channel(output, ch);
-    if (!buf || !out)
+    if (!buf || !out || !resampler_channel_active(resampler->active_mask, ch))
       continue;
     for (size_t frame = 0; frame < output_frames; frame++) {
       double x = frac_buf[frame];
@@ -426,17 +430,27 @@ async_poly_resampler_process(void *impl, const audio_chunk_t *input,
   size_t two_n_len = 2 * n_len;
 
   // Shift buffer + write new chunk wait-free and crash-safe.
+  const bool *mask = audio_chunk_get_used_channels(input);
+  resampler->active_mask = mask;
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     double *base = audio_buffers_get_channel(resampler->input_buffer, ch);
     if (!base)
       continue;
+    if (!resampler_channel_active(mask, ch)) {
+      // Inactive channel (upstream active_channels_mask): skip the shift and
+      // copy. Zero the span the next call will shift in as history so a
+      // re-activated channel starts from silence rather than stale samples.
+      memset(base + resampler->needed_input_size, 0,
+             two_n_len * sizeof(double));
+      continue;
+    }
     memmove(base, base + resampler->current_buffer_fill,
             two_n_len * sizeof(double));
   }
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     const double *src_ptr = audio_chunk_get_channel(input, ch);
     double *dst_ptr = audio_buffers_get_channel(resampler->input_buffer, ch);
-    if (!src_ptr || !dst_ptr)
+    if (!src_ptr || !dst_ptr || !resampler_channel_active(mask, ch))
       continue;
     memcpy(dst_ptr + two_n_len, src_ptr, valid_frames * sizeof(double));
     if (valid_frames < resampler->needed_input_size) {
@@ -451,6 +465,8 @@ async_poly_resampler_process(void *impl, const audio_chunk_t *input,
     resampler->last_index -= (double)resampler->needed_input_size;
     resampler->resample_ratio = resampler->target_ratio;
     async_poly_resampler_update_lengths(resampler);
+    resampler_finish_masked_output(mask, output, resampler->channels, 0);
+    resampler->active_mask = NULL;
     audio_chunk_set_valid_frames(output, 0);
     return RESAMPLER_OK;
   }
@@ -500,6 +516,9 @@ async_poly_resampler_process(void *impl, const audio_chunk_t *input,
       prev_needed_input_size > 0
           ? (output_frames * valid_frames) / prev_needed_input_size
           : output_frames;
+  resampler_finish_masked_output(mask, output, resampler->channels,
+                                 output_frames);
+  resampler->active_mask = NULL;
   audio_chunk_set_valid_frames(output, valid_out);
   return RESAMPLER_OK;
 }
@@ -642,29 +661,27 @@ async_poly_resampler_config_validate(const resampler_config_t *config,
   if (!config || config->type != RESAMPLER_TYPE_ASYNC_POLY)
     return -1;
 
-  bool has_interpolation = config->has_interpolation;
-  bool has_profile = config->has_profile;
-
-  if (has_interpolation && has_profile) {
-    config_error_set(
-        err, CONFIG_ERR_VALIDATION,
-        "AsyncPoly: cannot specify both profile and interpolation parameters");
+  // Upstream `Resampler::AsyncPoly { interpolation }` has no `profile`
+  // (camilladsp `config/mod.rs`), and the JSON parser in `config_gen.c`
+  // already rejects it. Reject it here too so a programmatically built
+  // config cannot silently fall back to a default interpolation.
+  if (config->has_profile) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncPoly: 'profile' is not supported; specify "
+                     "'interpolation'");
     return -1;
   }
-  if (!has_interpolation && !has_profile) {
-    config_error_set(
-        err, CONFIG_ERR_VALIDATION,
-        "AsyncPoly: must specify either profile or interpolation parameters");
+  if (!config->has_interpolation) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncPoly: missing field 'interpolation'");
     return -1;
   }
-  if (config->has_interpolation) {
-    if (poly_interpolation_from_string(config->interpolation) ==
-        POLY_INTERPOLATION_LAST) {
-      config_error_set(err, CONFIG_ERR_VALIDATION,
-                       "AsyncPoly: invalid interpolation type %s",
-                       config->interpolation);
-      return -1;
-    }
+  if (poly_interpolation_from_string(config->interpolation) ==
+      POLY_INTERPOLATION_LAST) {
+    config_error_set(err, CONFIG_ERR_VALIDATION,
+                     "AsyncPoly: invalid interpolation type %s",
+                     config->interpolation);
+    return -1;
   }
   return 0;
 }

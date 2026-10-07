@@ -10,9 +10,10 @@
  *
  * Attach/detach protocol: open() publishes the backend in an atomic slot;
  * close() clears the slot and waits until no device callback is still using
- * it before freeing the ring. All slot and in-flight counter accesses are
- * sequentially consistent, so a callback that observed a non-NULL slot is
- * always counted before close() samples the counter.
+ * it before freeing the ring. Each direction has its own in-flight counter
+ * (callbacks count only the direction they serve). All slot and in-flight
+ * counter accesses are sequentially consistent, so a callback that observed a
+ * non-NULL slot is always counted before close() samples the counter.
  */
 
 #if defined(ENABLE_WEBAUDIO)
@@ -53,6 +54,7 @@ typedef struct webaudio_playback {
   size_t channels;
   int chunk_size;
   size_t target_level;
+  size_t ring_frames; ///< Capacity requested for the current ring.
   backend_buffer_t *buffer;
   processing_parameters_t *params;
 } webaudio_playback_t;
@@ -61,81 +63,138 @@ typedef struct webaudio_playback {
 
 static _Atomic(webaudio_capture_t *) g_active_capture = NULL;
 static _Atomic(webaudio_playback_t *) g_active_playback = NULL;
-static atomic_int g_callbacks_in_flight = 0;
+// Device calls (and host format signalling) currently using each direction's
+// slot. Per direction, so closing one backend never waits on the other
+// direction's AudioWorklet thread.
+static atomic_int g_capture_in_flight = 0;
+static atomic_int g_playback_in_flight = 0;
 // Native format of each direction's device, published by the host (0 = not
 // known yet). Capture and playback run on separate AudioContexts with their own
-// clocks and rates.
-static atomic_int g_capture_sample_rate = 0;
-static atomic_size_t g_capture_channels = 0;
-static atomic_int g_playback_sample_rate = 0;
-static atomic_size_t g_playback_channels = 0;
+// clocks and rates. Rate and channel count share one atomic word (rate in the
+// high 32 bits, channels in the low 32 bits) so a reader never pairs a new rate
+// with an old channel count.
+static _Atomic uint64_t g_capture_format = 0;
+static _Atomic uint64_t g_playback_format = 0;
 static _Atomic(webaudio_capture_state_hook_t) g_capture_state_hook = NULL;
+
+static uint64_t webaudio_pack_format(int sample_rate, size_t channels) {
+  uint32_t rate = sample_rate > 0 ? (uint32_t)sample_rate : 0;
+  uint32_t ch = channels <= UINT32_MAX ? (uint32_t)channels : UINT32_MAX;
+  return ((uint64_t)rate << 32) | ch;
+}
+
+static int webaudio_format_rate(uint64_t format) {
+  return (int)(uint32_t)(format >> 32);
+}
+
+static size_t webaudio_format_channels(uint64_t format) {
+  return (size_t)(uint32_t)format;
+}
 
 // Silence for missing input channels. Never written, so the capture and
 // playback render threads can both read it.
 static float g_silence[WEBAUDIO_BLOCK_FRAMES];
 
-/** Flags a pending format change on the attached backends. Both are flagged
- * even when only one direction changed: the capture loop only stops on a new
- * rate, so a channel-only capture change stops the engine through playback.
+/** True if a device format can serve a backend at @p rate / @p channels
+ * (unknown device values match anything). */
+static bool webaudio_format_matches(uint64_t format, int rate,
+                                    size_t channels) {
+  int device_rate = webaudio_format_rate(format);
+  size_t device_channels = webaudio_format_channels(format);
+  return (device_rate == 0 || device_rate == rate) &&
+         (device_channels == 0 || device_channels == channels);
+}
+
+/** Flags a pending format change on the attached backends when @p changed
+ * (a known value changed) or when an attached backend no longer matches its
+ * direction's device format — e.g. the captured stream's channel count
+ * becoming known only after the capture backend opened in another count.
+ * Both are flagged even when only one direction changed: the capture loop only
+ * stops on a new rate, so a channel-only capture change stops the engine
+ * through playback.
  * The engine stops with a FORMAT_CHANGE reason and the host restarts it in the
- * new format, as with the other backends. */
-static void webaudio_signal_format_change(void) {
+ * new format, as with the other backends.
+ *
+ * Runs on the host's (browser main) thread, concurrently with close(): it
+ * counts itself in flight like a device callback, so close() waits for it
+ * before freeing the backend it may be flagging. */
+static void webaudio_signal_format_change(bool changed) {
+  atomic_fetch_add(&g_capture_in_flight, 1);
+  atomic_fetch_add(&g_playback_in_flight, 1);
   webaudio_capture_t *capture = atomic_load(&g_active_capture);
   webaudio_playback_t *playback = atomic_load(&g_active_playback);
-  if (capture && capture->buffer)
+  bool flag = changed;
+  if (capture &&
+      !webaudio_format_matches(atomic_load(&g_capture_format),
+                               capture->sample_rate, capture->channels))
+    flag = true;
+  if (playback &&
+      !webaudio_format_matches(atomic_load(&g_playback_format),
+                               playback->sample_rate, playback->channels))
+    flag = true;
+  if (flag && capture && capture->buffer) {
     backend_buffer_set_pending_rate_change(capture->buffer, true);
-  if (playback && playback->buffer)
+    backend_buffer_signal(capture->buffer);
+  }
+  if (flag && playback && playback->buffer) {
     backend_buffer_set_pending_rate_change(playback->buffer, true);
+    backend_buffer_signal(playback->buffer);
+  }
+  atomic_fetch_sub(&g_playback_in_flight, 1);
+  atomic_fetch_sub(&g_capture_in_flight, 1);
 }
 
 /** Rate to report with a pending format change: the device's current rate. */
-static double webaudio_current_rate(const atomic_int *device_rate,
+static double webaudio_current_rate(const _Atomic uint64_t *device_format,
                                     int fallback) {
-  int rate = atomic_load(device_rate);
+  int rate = webaudio_format_rate(atomic_load(device_format));
   return (double)(rate != 0 ? rate : fallback);
 }
 
 /** Stores one direction's format; true if a known value changed. A value
  * becoming known (0 -> value) is not a change. */
-static bool webaudio_store_format(atomic_int *rate_slot,
-                                  atomic_size_t *channels_slot,
+static bool webaudio_store_format(_Atomic uint64_t *format_slot,
                                   int sample_rate, size_t channels,
                                   const char *direction) {
-  int new_rate = sample_rate > 0 ? sample_rate : 0;
-  int old_rate = atomic_exchange(rate_slot, new_rate);
-  size_t old_channels = atomic_exchange(channels_slot, channels);
-  bool changed = (old_rate != 0 && new_rate != 0 && old_rate != new_rate) ||
-                 (old_channels != 0 && channels != 0 &&
-                  old_channels != channels);
-  if (changed) {
+  uint64_t new_format = webaudio_pack_format(sample_rate, channels);
+  uint64_t old_format = atomic_exchange(format_slot, new_format);
+  int new_rate = webaudio_format_rate(new_format);
+  int old_rate = webaudio_format_rate(old_format);
+  size_t new_channels = webaudio_format_channels(new_format);
+  size_t old_channels = webaudio_format_channels(old_format);
+  bool changed =
+      (old_rate != 0 && new_rate != 0 && old_rate != new_rate) ||
+      (old_channels != 0 && new_channels != 0 && old_channels != new_channels);
+  // Two messages (the logger takes at most four arguments), each only when
+  // its value changed.
+  if (changed && old_rate != new_rate)
     logger_warn(&g_logger, "WebAudio %s format changed: %d Hz -> %d Hz",
                 direction, old_rate, new_rate);
-    logger_warn(&g_logger, "WebAudio %s channels: %zu -> %zu", direction,
-                old_channels, channels);
-  }
+  if (changed && old_channels != new_channels)
+    logger_warn(&g_logger, "WebAudio %s channels changed: %zu -> %zu",
+                direction, old_channels, new_channels);
   return changed;
 }
 
 void webaudio_device_set_capture_format(int sample_rate, size_t channels) {
-  if (webaudio_store_format(&g_capture_sample_rate, &g_capture_channels,
-                            sample_rate, channels, "capture"))
-    webaudio_signal_format_change();
+  webaudio_signal_format_change(webaudio_store_format(
+      &g_capture_format, sample_rate, channels, "capture"));
 }
 
 void webaudio_device_set_playback_format(int sample_rate, size_t channels) {
-  if (webaudio_store_format(&g_playback_sample_rate, &g_playback_channels,
-                            sample_rate, channels, "playback"))
-    webaudio_signal_format_change();
+  webaudio_signal_format_change(webaudio_store_format(
+      &g_playback_format, sample_rate, channels, "playback"));
 }
 
-void webaudio_device_set_capture_state_hook(webaudio_capture_state_hook_t hook) {
+void webaudio_device_set_capture_state_hook(
+    webaudio_capture_state_hook_t hook) {
   atomic_store(&g_capture_state_hook, hook);
 }
 
-/** Waits until no device callback can still be using a detached backend. */
-static void webaudio_wait_for_callbacks(void) {
-  while (atomic_load(&g_callbacks_in_flight) != 0) {
+/** Waits until no device callback can still be using a backend detached from
+ * the slot counted by @p in_flight. */
+static void webaudio_wait_for_callbacks(atomic_int *in_flight) {
+  while (atomic_load(in_flight) != 0) {
     sched_yield();
   }
 }
@@ -157,10 +216,10 @@ static bool webaudio_check_format(bool is_capture, int sample_rate,
                                   size_t channels, backend_error_t *err) {
   char msg[160];
   const char *direction = is_capture ? "capture" : "playback";
-  int device_rate = atomic_load(is_capture ? &g_capture_sample_rate
-                                           : &g_playback_sample_rate);
-  size_t device_channels =
-      atomic_load(is_capture ? &g_capture_channels : &g_playback_channels);
+  uint64_t format =
+      atomic_load(is_capture ? &g_capture_format : &g_playback_format);
+  int device_rate = webaudio_format_rate(format);
+  size_t device_channels = webaudio_format_channels(format);
   if (device_rate != 0 && device_rate != sample_rate) {
     snprintf(msg, sizeof(msg),
              "WebAudio %s device runs at %d Hz but %d Hz was requested",
@@ -179,24 +238,33 @@ static bool webaudio_check_format(bool is_capture, int sample_rate,
 void webaudio_device_process(const float *const *inputs, size_t input_channels,
                              float *const *outputs, size_t output_channels,
                              size_t frames) {
-  atomic_fetch_add(&g_callbacks_in_flight, 1);
-  webaudio_capture_t *capture = atomic_load(&g_active_capture);
-  webaudio_playback_t *playback = atomic_load(&g_active_playback);
+  // Capture and playback render on separate contexts: each call serves only
+  // the direction it carries buffers for, and is counted in flight for it.
+  bool serves_capture = inputs != NULL;
+  bool serves_playback = outputs != NULL;
+  if (serves_capture)
+    atomic_fetch_add(&g_capture_in_flight, 1);
+  if (serves_playback)
+    atomic_fetch_add(&g_playback_in_flight, 1);
+  webaudio_capture_t *capture =
+      serves_capture ? atomic_load(&g_active_capture) : NULL;
+  webaudio_playback_t *playback =
+      serves_playback ? atomic_load(&g_active_playback) : NULL;
   // Backends left in an old format after a device change are not served
   // (they are stopped through the pending format change).
-  int capture_rate =
-      atomic_load_explicit(&g_capture_sample_rate, memory_order_relaxed);
-  int playback_rate =
-      atomic_load_explicit(&g_playback_sample_rate, memory_order_relaxed);
-  if (capture && capture_rate != 0 && capture->sample_rate != capture_rate)
+  uint64_t capture_fmt =
+      atomic_load_explicit(&g_capture_format, memory_order_relaxed);
+  uint64_t playback_fmt =
+      atomic_load_explicit(&g_playback_format, memory_order_relaxed);
+  if (capture &&
+      !webaudio_format_matches(capture_fmt, capture->sample_rate,
+                               capture->channels))
     capture = NULL;
-  if (playback && playback_rate != 0 && playback->sample_rate != playback_rate)
+  if (playback &&
+      !webaudio_format_matches(playback_fmt, playback->sample_rate,
+                               playback->channels))
     playback = NULL;
-  // Capture and playback render on separate contexts: each call serves only
-  // the direction it carries buffers for.
-  if (!inputs)
-    capture = NULL;
-  if (playback && (!outputs || playback->channels != output_channels))
+  if (playback && playback->channels != output_channels)
     playback = NULL;
   for (size_t c = 0; playback && c < output_channels; c++) {
     if (!outputs[c])
@@ -232,7 +300,10 @@ void webaudio_device_process(const float *const *inputs, size_t input_channels,
     }
   }
 
-  atomic_fetch_sub(&g_callbacks_in_flight, 1);
+  if (serves_playback)
+    atomic_fetch_sub(&g_playback_in_flight, 1);
+  if (serves_capture)
+    atomic_fetch_sub(&g_capture_in_flight, 1);
 }
 
 // MARK: - Device Enumeration
@@ -246,9 +317,8 @@ int webaudio_get_available_devices(bool input, audio_device_t *out_devices,
   return 1;
 }
 
-audio_device_descriptor_t *webaudio_describe(const char *device,
-                                             bool is_capture,
-                                             device_error_t *err) {
+audio_device_descriptor_t *
+webaudio_describe(const char *device, bool is_capture, device_error_t *err) {
   // The one device is "default"; no name selects it too, as for ALSA.
   if (device && device[0] != '\0' && strcmp(device, "default") != 0) {
     if (err)
@@ -259,12 +329,12 @@ audio_device_descriptor_t *webaudio_describe(const char *device,
   // output's (playback) native rate and channel count. Values not known yet
   // (no device, or no captured stream) default to 48 kHz stereo; when the real
   // value differs, the device reports a format change.
-  int rate = is_capture ? atomic_load(&g_capture_sample_rate)
-                        : atomic_load(&g_playback_sample_rate);
+  uint64_t format =
+      atomic_load(is_capture ? &g_capture_format : &g_playback_format);
+  int rate = webaudio_format_rate(format);
   if (rate == 0)
     rate = WEBAUDIO_DEFAULT_SAMPLE_RATE;
-  size_t channels = is_capture ? atomic_load(&g_capture_channels)
-                               : atomic_load(&g_playback_channels);
+  size_t channels = webaudio_format_channels(format);
   if (channels == 0)
     channels = WEBAUDIO_DEFAULT_CHANNELS;
   if (channels > WEBAUDIO_MAX_CHANNELS)
@@ -322,6 +392,12 @@ static bool webaudio_capture_open(void *ctx, backend_error_t *err) {
   webaudio_capture_t *capture = (webaudio_capture_t *)ctx;
   if (!capture)
     return false;
+  if (capture->buffer) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "WebAudio capture is already open");
+    return false;
+  }
   if (!webaudio_check_format(true, capture->sample_rate, capture->channels,
                              err))
     return false;
@@ -344,6 +420,10 @@ static bool webaudio_capture_open(void *ctx, backend_error_t *err) {
 
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_RUNNING);
   atomic_store(&g_active_capture, capture);
+  // The format may have changed since webaudio_check_format(): a change that
+  // ran before the slot was published did not see this backend. Re-check now
+  // (seq_cst: either that change sees the slot or this sees its format).
+  webaudio_signal_format_change(false);
   webaudio_capture_state_hook_t hook = atomic_load(&g_capture_state_hook);
   if (hook)
     hook(true);
@@ -370,7 +450,7 @@ static void webaudio_capture_close(void *ctx) {
     if (hook)
       hook(false);
   }
-  webaudio_wait_for_callbacks();
+  webaudio_wait_for_callbacks(&g_capture_in_flight);
   if (capture->buffer) {
     backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
     backend_buffer_free(capture->buffer);
@@ -386,7 +466,8 @@ static bool webaudio_capture_get_pending_rate_change(void *ctx,
   if (backend_buffer_has_pending_rate_change(capture->buffer)) {
     backend_buffer_set_pending_rate_change(capture->buffer, false);
     if (out_rate)
-      *out_rate = webaudio_current_rate(&g_capture_sample_rate, capture->sample_rate);
+      *out_rate =
+          webaudio_current_rate(&g_capture_format, capture->sample_rate);
     return true;
   }
   return false;
@@ -473,18 +554,11 @@ const capture_backend_vtable_t g_webaudio_capture_vtable = {
 
 // MARK: - Playback Backend Implementation
 
-static bool webaudio_playback_open(void *ctx, backend_error_t *err) {
-  webaudio_playback_t *playback = (webaudio_playback_t *)ctx;
-  if (!playback)
-    return false;
-  if (!webaudio_check_format(false, playback->sample_rate, playback->channels,
-                             err))
-    return false;
-
+/** Ring capacity for @p target_level frames of prefill/cushion plus four
+ * chunks of headroom (at least 25 ms), as for PipeWire. */
+static size_t webaudio_playback_ring_frames(const webaudio_playback_t *playback,
+                                            size_t target_level) {
   size_t pb_min_frames = (size_t)ceil((double)playback->sample_rate * 0.025);
-  size_t target_level = playback->target_level > 0
-                            ? playback->target_level
-                            : (size_t)playback->chunk_size;
   size_t pb_prefill_frames = target_level > (size_t)(3 * playback->chunk_size)
                                  ? target_level
                                  : (size_t)(3 * playback->chunk_size);
@@ -492,10 +566,39 @@ static bool webaudio_playback_open(void *ctx, backend_error_t *err) {
       pb_prefill_frames + (size_t)(4 * playback->chunk_size);
   if (pb_frames_needed < pb_min_frames)
     pb_frames_needed = pb_min_frames;
+  return pb_frames_needed;
+}
 
-  playback->buffer = backend_buffer_create(
-      pb_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE, playback->channels,
-      playback->sample_rate, true /* is_planar */, playback->params);
+static backend_buffer_t *
+webaudio_playback_create_buffer(const webaudio_playback_t *playback,
+                                size_t frames) {
+  return backend_buffer_create(frames, BINARY_SAMPLE_FORMAT_F32_LE,
+                               playback->channels, playback->sample_rate,
+                               true /* is_planar */, playback->params);
+}
+
+static bool webaudio_playback_open(void *ctx, backend_error_t *err) {
+  webaudio_playback_t *playback = (webaudio_playback_t *)ctx;
+  if (!playback)
+    return false;
+  if (playback->buffer) {
+    if (err)
+      backend_error_init(err, BACKEND_ERROR_INITIALIZATION_FAILED,
+                         "WebAudio playback is already open");
+    return false;
+  }
+  if (!webaudio_check_format(false, playback->sample_rate, playback->channels,
+                             err))
+    return false;
+
+  size_t target_level = playback->target_level > 0
+                            ? playback->target_level
+                            : (size_t)playback->chunk_size;
+  size_t pb_frames_needed =
+      webaudio_playback_ring_frames(playback, target_level);
+  playback->buffer =
+      webaudio_playback_create_buffer(playback, pb_frames_needed);
+  playback->ring_frames = pb_frames_needed;
 
   if (!playback->buffer) {
     if (err)
@@ -507,6 +610,8 @@ static bool webaudio_playback_open(void *ctx, backend_error_t *err) {
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
   backend_buffer_set_target_level(playback->buffer, target_level);
   atomic_store(&g_active_playback, playback);
+  // Re-check the format after publishing, as in webaudio_capture_open().
+  webaudio_signal_format_change(false);
 
   logger_info(&g_logger, "Opened WebAudio playback: rate=%d, channels=%zu",
               playback->sample_rate, playback->channels);
@@ -532,7 +637,7 @@ static void webaudio_playback_close(void *ctx) {
     return;
   webaudio_playback_t *expected = playback;
   atomic_compare_exchange_strong(&g_active_playback, &expected, NULL);
-  webaudio_wait_for_callbacks();
+  webaudio_wait_for_callbacks(&g_playback_in_flight);
   if (playback->buffer) {
     backend_buffer_set_state(playback->buffer, BACKEND_STREAM_STOPPED);
     backend_buffer_free(playback->buffer);
@@ -555,10 +660,57 @@ static bool webaudio_playback_get_pending_rate_change(void *ctx,
   if (backend_buffer_has_pending_rate_change(playback->buffer)) {
     backend_buffer_set_pending_rate_change(playback->buffer, false);
     if (out_rate)
-      *out_rate = webaudio_current_rate(&g_playback_sample_rate, playback->sample_rate);
+      *out_rate =
+          webaudio_current_rate(&g_playback_format, playback->sample_rate);
     return true;
   }
   return false;
+}
+
+/**
+ * Grows the playback ring so @p target_level fits with headroom. The engine's
+ * prefill carries devices.target_level, which the backend does not know at
+ * open() (WebAudio has no per-device target_level); without this the ring,
+ * sized from chunk_size, could be too small for the prefill and the rate
+ * controller's target. Runs on the playback thread during start-up, before
+ * any audio is written (same phase as open()): detaches the backend, waits for
+ * the playback worklet, swaps the ring and re-attaches.
+ */
+static void webaudio_playback_ensure_capacity(webaudio_playback_t *playback,
+                                              size_t target_level) {
+  size_t needed = webaudio_playback_ring_frames(playback, target_level);
+  if (needed <= playback->ring_frames)
+    return;
+  if (backend_buffer_get_available_read_frames(playback->buffer) > 0) {
+    logger_warn(&g_logger,
+                "WebAudio playback ring (%zu frames) is smaller than target "
+                "level %zu needs, but already holds audio; not resizing",
+                playback->ring_frames, target_level);
+    return;
+  }
+  backend_buffer_t *bigger = webaudio_playback_create_buffer(playback, needed);
+  if (!bigger) {
+    logger_warn(&g_logger,
+                "Failed to grow the WebAudio playback ring to %zu frames",
+                needed);
+    return;
+  }
+  webaudio_playback_t *expected = playback;
+  bool attached =
+      atomic_compare_exchange_strong(&g_active_playback, &expected, NULL);
+  webaudio_wait_for_callbacks(&g_playback_in_flight);
+  backend_buffer_t *old = playback->buffer;
+  backend_buffer_set_state(bigger, backend_buffer_get_state(old));
+  backend_buffer_set_pending_rate_change(
+      bigger, backend_buffer_has_pending_rate_change(old));
+  playback->buffer = bigger;
+  playback->ring_frames = needed;
+  backend_buffer_free(old);
+  if (attached) {
+    atomic_store(&g_active_playback, playback);
+    webaudio_signal_format_change(false);
+  }
+  logger_info(&g_logger, "Grew WebAudio playback ring to %zu frames", needed);
 }
 
 static bool webaudio_playback_prefill_silence(void *ctx, size_t frames,
@@ -567,6 +719,8 @@ static bool webaudio_playback_prefill_silence(void *ctx, size_t frames,
   (void)err;
   if (!playback || !playback->buffer)
     return false;
+  webaudio_playback_ensure_capacity(playback, frames);
+  playback->target_level = frames;
   backend_buffer_prefill_silence(playback->buffer, frames, 0x00);
   return true;
 }
@@ -582,6 +736,8 @@ static void webaudio_playback_set_is_paused(void *ctx, bool paused) {
   webaudio_playback_t *playback = (webaudio_playback_t *)ctx;
   if (!playback || !playback->buffer)
     return;
+  if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_STOPPED)
+    return;
   backend_buffer_set_state(playback->buffer, paused ? BACKEND_STREAM_PAUSED
                                                     : BACKEND_STREAM_RUNNING);
 }
@@ -596,12 +752,10 @@ static void webaudio_playback_set_pitch(void *ctx, double multiplier) {
   (void)multiplier;
 }
 
-static void webaudio_playback_drain(void *ctx) {
-  webaudio_playback_t *playback = (webaudio_playback_t *)ctx;
-  if (!playback || !playback->buffer)
-    return;
-  backend_buffer_drain(playback->buffer);
-}
+// No .drain: at end of stream the queued audio must play out. The engine
+// waits for the reported level to reach zero (as with CoreAudio/PipeWire);
+// backend_buffer_drain() would instead discard it, and would store the ring's
+// read index from the engine thread while the AudioWorklet consumer owns it.
 
 static void webaudio_playback_stop(void *ctx) {
   webaudio_playback_t *playback = (webaudio_playback_t *)ctx;
@@ -664,7 +818,6 @@ const playback_backend_vtable_t g_webaudio_playback_vtable = {
     .set_is_paused = webaudio_playback_set_is_paused,
     .pitch_control_supported = webaudio_playback_pitch_control_supported,
     .set_pitch = webaudio_playback_set_pitch,
-    .drain = webaudio_playback_drain,
     .stop = webaudio_playback_stop,
     .destroy = webaudio_playback_destroy};
 

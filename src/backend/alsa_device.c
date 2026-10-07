@@ -313,7 +313,11 @@ void alsa_elem_write_as_int(snd_hctl_elem_t *elem, long value) {
   snd_ctl_elem_value_t *val;
   snd_ctl_elem_value_alloca(&val);
   snd_ctl_elem_value_set_integer(val, 0, value);
-  snd_hctl_elem_write(elem, val);
+  int rc = snd_hctl_elem_write(elem, val);
+  if (rc < 0) {
+    logger_warn(&g_alsa_dev_logger, "Failed to write ALSA control: %s",
+                snd_strerror(rc));
+  }
 }
 
 void alsa_elem_write_as_bool(snd_hctl_elem_t *elem, bool value) {
@@ -819,14 +823,29 @@ bool alsa_device_prime_delay(snd_pcm_t *pcm, size_t target_level,
       } else if (err == -EPIPE) {
         logger_warn(&g_alsa_dev_logger,
                     "PB: silence priming underrun, trying to recover");
-        snd_pcm_prepare(pcm);
+        // Propagate an unrecoverable device at once, as upstream's
+        // recover_playback_error does (threaded_device.rs:104-120), instead
+        // of spending up to 100 retries on it on the RT thread.
+        int prc = snd_pcm_prepare(pcm);
+        if (prc < 0) {
+          logger_error(&g_alsa_dev_logger,
+                       "PB: prepare failed while priming playback delay: %s",
+                       snd_strerror(prc));
+          return false;
+        }
         bytes_written = 0;
       } else if (err == -ESTRPIPE ||
                  snd_pcm_state(pcm) == SND_PCM_STATE_SUSPENDED) {
         logger_warn(
             &g_alsa_dev_logger,
             "PB: silence priming interrupted by suspend, trying to recover");
-        alsa_recover_suspended_pcm(pcm, "PB");
+        int src = alsa_recover_suspended_pcm(pcm, "PB");
+        if (src < 0) {
+          logger_error(&g_alsa_dev_logger,
+                       "PB: suspend recovery failed while priming: %s",
+                       snd_strerror(src));
+          return false;
+        }
         bytes_written = 0;
       } else {
         logger_warn(&g_alsa_dev_logger,

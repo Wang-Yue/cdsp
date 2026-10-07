@@ -234,6 +234,12 @@ int main(int argc, char **argv) {
 #ifdef SIGUSR1
   signal(SIGUSR1, sig_usr1_handler);
 #endif
+#ifdef SIGPIPE
+  // Stdout playback into a pipe whose reader exits (e.g. `cdsp | aplay`)
+  // must surface as a write error (EPIPE -> PlaybackError, as upstream),
+  // not kill the process.
+  signal(SIGPIPE, SIG_IGN);
+#endif
 
   const char *config_path = NULL;
   const char *state_file_path = NULL;

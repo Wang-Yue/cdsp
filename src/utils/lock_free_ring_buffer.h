@@ -545,7 +545,30 @@ size_t spsc_planar_ring_buffer_write_silence(spsc_planar_ring_buffer_t *ring,
                                              size_t frames);
 
 /**
+ * @brief Fill the planar ring buffer with a silence byte pattern for a given
+ * number of frames.
+ *
+ * Same as spsc_planar_ring_buffer_write_silence(), but every byte is set to
+ * @p silence_byte. PCM silence is 0x00; DSD silence is the idle pattern 0x69,
+ * for which an all-zero stream is not silent.
+ *
+ * Producer-side only.
+ *
+ * @param ring Pointer to the planar ring buffer.
+ * @param frames Number of silence frames to write.
+ * @param silence_byte Byte pattern written to every sample byte.
+ * @return Number of frames actually written.
+ */
+size_t
+spsc_planar_ring_buffer_write_silence_byte(spsc_planar_ring_buffer_t *ring,
+                                           size_t frames, uint8_t silence_byte);
+
+/**
  * @brief Discard all pending frames in the planar ring buffer.
+ *
+ * Consumer-side only: it advances the read index to the write index, so it
+ * must run on the thread that reads from the ring (or while the consumer is
+ * stopped). It discards audio; it does not wait for it to be played.
  *
  * @param ring Pointer to the planar ring buffer.
  */

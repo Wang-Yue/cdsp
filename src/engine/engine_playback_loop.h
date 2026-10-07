@@ -60,6 +60,9 @@ typedef struct {
   dsd_encoder_t *dsd_encoder;
   size_t pipeline_rate;
   size_t chunk_size;
+  /// Fallback used only when `shared` is NULL. Otherwise capture pitch
+  /// support is read live from the shared state, which the capture loop
+  /// refreshes after the device is opened (03 CA-01).
   bool capture_pitch_supported;
   bool rate_adjust_enabled;
   double adjust_period;

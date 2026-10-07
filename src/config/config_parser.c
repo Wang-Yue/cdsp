@@ -84,7 +84,8 @@ static int compare_named_processors(const void *a, const void *b) {
 
 int parse_labels_array_strict(const cJSON *labels_arr, char ***out_labels,
                               size_t *out_count, bool *out_has_labels) {
-  if (!labels_arr)
+  // An explicit `null` is `None` upstream (`Option<Vec<Option<String>>>`).
+  if (!labels_arr || cJSON_IsNull(labels_arr))
     return 0;
   if (!cJSON_IsArray(labels_arr))
     return -1;
@@ -135,8 +136,15 @@ int parse_size_t_array_strict(const cJSON *arr, const char *field_name,
                               size_t *out_count, config_error_t *err) {
   *out_values = NULL;
   *out_count = 0;
-  if (!cJSON_IsArray(arr))
+  // Absent or explicit `null` is `None`; any other non-array value is a type
+  // error, as in upstream serde (`Vec<_>` never accepts a scalar or object).
+  if (!arr || cJSON_IsNull(arr))
     return 0;
+  if (!cJSON_IsArray(arr)) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be an array",
+                     field_name, section_name ? section_name : "object");
+    return -1;
+  }
   int size = cJSON_GetArraySize(arr);
   if (size <= 0)
     return 0;
@@ -170,8 +178,15 @@ int parse_double_array_strict(const cJSON *arr, const char *field_name,
                               size_t *out_count, config_error_t *err) {
   *out_values = NULL;
   *out_count = 0;
-  if (!cJSON_IsArray(arr))
+  // Absent or explicit `null` is `None`; any other non-array value is a type
+  // error, as in upstream serde (`Vec<_>` never accepts a scalar or object).
+  if (!arr || cJSON_IsNull(arr))
     return 0;
+  if (!cJSON_IsArray(arr)) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be an array",
+                     field_name, section_name ? section_name : "object");
+    return -1;
+  }
   int size = cJSON_GetArraySize(arr);
   if (size <= 0)
     return 0;
@@ -398,11 +413,19 @@ int parse_enum_optional(const cJSON *obj, const char *key,
                         config_error_t *err) {
   if (present)
     *present = false;
-  if (!cJSON_GetObjectItemCaseSensitive(obj, key))
+  // Absent or explicit `null` (`key: ~`) both mean `None`, as for the other
+  // optional scalar helpers and upstream `Option<Enum>`.
+  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  if (!item || cJSON_IsNull(item))
     return 0;
   if (present)
     *present = true;
   return parse_enum_required(obj, key, variants, section_name, out, err);
+}
+
+bool json_field_present(const cJSON *obj, const char *key) {
+  const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+  return item != NULL && !cJSON_IsNull(item);
 }
 
 int require_json_fields(const cJSON *obj, const char *const keys[],
@@ -410,7 +433,10 @@ int require_json_fields(const cJSON *obj, const char *const keys[],
                         config_error_t *err) {
   const char *where = section_name ? section_name : "object";
   for (size_t i = 0; keys && keys[i] != NULL; i++) {
-    if (!cJSON_GetObjectItemCaseSensitive(obj, keys[i])) {
+    // An explicit `null` cannot satisfy a required (non-Option) field: the
+    // typed field parsers treat `null` as absent and would leave it zeroed.
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, keys[i]);
+    if (!item || cJSON_IsNull(item)) {
       if (variant) {
         config_error_set(err, CONFIG_ERR_PARSE,
                          "missing field '%s' in %s for type '%s'", keys[i],
@@ -502,7 +528,8 @@ static bool is_absolute_path(const char *path) {
   if (path[0] == '/')
     return true;
 #if defined(_WIN32)
-  if (((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z')) &&
+  if (((path[0] >= 'a' && path[0] <= 'z') ||
+       (path[0] >= 'A' && path[0] <= 'Z')) &&
       path[1] == ':') {
     return true;
   }
@@ -636,9 +663,10 @@ int dsp_config_parse_json_with_dir_and_overrides_ext(
     replace_tokens_in_config(config, final_sr, final_ch);
   }
 
-  const char *effective_dir = (config_dir && config_dir[0] != '\0')
-                                  ? config_dir
-                                  : (g_default_base_dir[0] != '\0' ? g_default_base_dir : NULL);
+  const char *effective_dir =
+      (config_dir && config_dir[0] != '\0')
+          ? config_dir
+          : (g_default_base_dir[0] != '\0' ? g_default_base_dir : NULL);
   if (effective_dir) {
     resolve_relative_paths(config, effective_dir);
   }

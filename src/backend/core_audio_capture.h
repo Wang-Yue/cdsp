@@ -4,10 +4,10 @@
 // --------------------
 // The render callback runs on a high-priority audio thread driven by
 // CoreAudio. It is absolutely forbidden to take locks, allocate, or
-// otherwise call into the Swift runtime in a way that could block. To
+// otherwise call into ObjC/CoreFoundation in a way that could block. To
 // honour that:
-//   - sample rings are SPSC `SPSCAudioRingBuffer<Float>` instances —
-//     producer and consumer are wait-free, no `NSLock`.
+//   - samples go through the lock-free SPSC ring of `backend_buffer_t` —
+//     producer and consumer are wait-free, no lock.
 //   - the AudioBufferList plus its per-channel raw data buffers are
 //     preallocated in `open()` and reused for the lifetime of the unit;
 //     the render callback only fills the existing struct.

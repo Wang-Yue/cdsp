@@ -189,8 +189,14 @@ class Field:
         description: str = "",
         getter_default: Any = None,
         allow_null_items: bool = False,
-        guard: Optional[str] = None
+        guard: Optional[str] = None,
+        min_value: Optional[int] = None,
+        internal: bool = False
     ):
+        # min_value: inclusive lower bound enforced at parse time for signed
+        # integer fields that mirror an upstream `usize` / `NonZeroUsize`.
+        self.min_value = min_value
+        self.internal = internal
         self.name = name
         self.type = field_type
         self.required = required

@@ -30,9 +30,14 @@
 //     M = Fₒ / g     (output block size in samples per rational period)
 //
 // Any integer multiple `N = K·L` input samples corresponds to
-// exactly `K·M` output samples — the resampler is fixed-ratio. We
-// round the user-supplied `chunkSize` up to the smallest valid
-// `K·L`, which fixes the per-call input/output block lengths.
+// exactly `K·M` output samples — the resampler is fixed-ratio.
+// Following rubato `synchro.rs` (`FixedSync::Output`), the FFT
+// sub-block is `sub_fft_in = K·L` / `sub_fft_out = K·M` with
+// `K = ceil((chunk_size / max(chunk_size / 256, 1)) / M)`. Each
+// call emits exactly `chunk_size` output frames; whole sub-blocks
+// are processed into an output staging buffer and the surplus
+// (`saved_frames < sub_fft_out`) carries over, so the input size
+// per call (`get_input_frames_next`) varies by whole sub-blocks.
 //
 // At init, build a windowed-sinc lowpass filter `h[n]` of length `N`
 // with cutoff at `min(1, Fₒ/Fᵢ) · π` rad/sample (Crochiere & Rabiner
@@ -84,6 +89,7 @@
 #include "config/config_gen.h"
 #include "fft/real_fft.h"
 #include "resampler/audio_resampler.h"
+#include "resampler/resampler_channel_mask.h"
 #include "resampler/resampler_error.h"
 #include "resampler/sinc_window_function.h"
 #include "utils/cdsp_memory.h"
@@ -208,8 +214,8 @@ static double synchronous_resampler_get_ratio(const void *impl) {
   return resampler ? resampler->ratio : 1.0;
 }
 
-static inline size_t
-synchronous_resampler_subchunks_needed(const synchronous_resampler_t *resampler) {
+static inline size_t synchronous_resampler_subchunks_needed(
+    const synchronous_resampler_t *resampler) {
   if (!resampler || resampler->chunk_size <= resampler->saved_frames)
     return 0;
   return (resampler->chunk_size - resampler->saved_frames +
@@ -278,9 +284,16 @@ synchronous_resampler_process(void *impl, const audio_chunk_t *input,
   size_t subchunks_needed = synchronous_resampler_subchunks_needed(resampler);
   size_t expected_in = subchunks_needed * resampler->sub_fft_in;
   size_t valid_frames = audio_chunk_get_valid_frames(input);
+  if (valid_frames > audio_chunk_get_frames(input)) {
+    return RESAMPLER_ERR_INPUT_SIZE_MISMATCH;
+  }
   if (valid_frames > expected_in) {
     valid_frames = expected_in;
   }
+
+  // Upstream rubato `synchro.rs` skips channels cleared in
+  // active_channels_mask (no FFT work at all for them).
+  const bool *mask = audio_chunk_get_used_channels(input);
 
   for (size_t s = 0; s < subchunks_needed; s++) {
     size_t in_offset = s * resampler->sub_fft_in;
@@ -298,6 +311,14 @@ synchronous_resampler_process(void *impl, const audio_chunk_t *input,
       const double *src_ptr = src + in_offset;
       double *out_ptr = out_scratch + out_offset;
       double *carry_ptr = resampler->carries[ch];
+
+      if (!resampler_channel_active(mask, ch)) {
+        // Inactive: emit silence and clear the overlap-add carry so a
+        // re-activated channel starts clean instead of replaying a stale tail.
+        memset(out_ptr, 0, resampler->sub_fft_out * sizeof(double));
+        memset(carry_ptr, 0, resampler->sub_fft_out * sizeof(double));
+        continue;
+      }
 
       // Step 1. Place the input block at the start of a length-2N
       // buffer, with the second half zero. The zero-pad is what makes
@@ -346,32 +367,56 @@ synchronous_resampler_process(void *impl, const audio_chunk_t *input,
     }
   }
 
+  // Fixed-output mode (rubato `synchro.rs` `FixedSync::Output`): every call
+  // emits exactly `chunk_size` frames from `output_scratch` and carries the
+  // remainder over. `subchunks_needed` guarantees
+  // `total_avail_out >= chunk_size`, so `saved_frames` always stays below
+  // `sub_fft_out` and the scratch capacity `chunk_size + sub_fft_out` holds.
+  //
+  // A partial input chunk (`valid_frames < expected_in`) has already been
+  // zero-padded to a full block above, so the internal stream advances by a
+  // full chunk exactly as upstream does. Only the output's `valid_frames`
+  // metadata is scaled, matching CamillaDSP `resampling.rs`
+  // (`chunk.valid_frames = chunksize * chunk.valid_frames / chunk.frames`).
   size_t total_avail_out =
       resampler->saved_frames + subchunks_needed * resampler->sub_fft_out;
-  size_t emit_frames = (expected_in > 0)
-                           ? ((resampler->chunk_size * valid_frames) / expected_in)
-                           : resampler->chunk_size;
+  size_t emit_frames = resampler->chunk_size;
   if (emit_frames > total_avail_out) {
+    // Unreachable by construction; defensive guard against scratch overrun.
     emit_frames = total_avail_out;
   }
+  size_t new_saved = total_avail_out - emit_frames;
 
   for (size_t ch = 0; ch < resampler->channels; ch++) {
     double *out = audio_chunk_get_channel(output, ch);
     double *out_scratch = resampler->output_scratch[ch];
+    if (!resampler_channel_active(mask, ch)) {
+      if (resampler->carries[ch]) {
+        memset(resampler->carries[ch], 0,
+               resampler->sub_fft_out * sizeof(double));
+      }
+      if (out_scratch && new_saved > 0) {
+        memset(out_scratch, 0, new_saved * sizeof(double));
+      }
+      continue;
+    }
     if (out && out_scratch) {
       memcpy(out, out_scratch, emit_frames * sizeof(double));
-      size_t new_saved =
-          (total_avail_out > emit_frames) ? (total_avail_out - emit_frames) : 0;
       if (new_saved > 0) {
         memmove(out_scratch, out_scratch + emit_frames,
                 new_saved * sizeof(double));
       }
     }
   }
-  resampler->saved_frames =
-      (total_avail_out > emit_frames) ? (total_avail_out - emit_frames) : 0;
+  resampler->saved_frames = new_saved;
+  resampler_finish_masked_output(mask, output, resampler->channels,
+                                 emit_frames);
 
-  audio_chunk_set_valid_frames(output, emit_frames);
+  size_t valid_out = emit_frames;
+  if (expected_in > 0 && valid_frames < expected_in) {
+    valid_out = (emit_frames * valid_frames) / expected_in;
+  }
+  audio_chunk_set_valid_frames(output, valid_out);
   return RESAMPLER_OK;
 }
 
@@ -524,10 +569,11 @@ static void *synchronous_resampler_create_impl(size_t channels,
     resampler->output_scratch[ch] =
         (double *)cdsp_aligned_alloc(64, scratch_out_len * sizeof(double));
     if (!resampler->output_scratch[ch]) {
-      config_error_set(err, CONFIG_ERR_PARSE,
-                       "SynchronousResampler: Failed to allocate output scratch "
-                       "for channel %zu",
-                       ch);
+      config_error_set(
+          err, CONFIG_ERR_PARSE,
+          "SynchronousResampler: Failed to allocate output scratch "
+          "for channel %zu",
+          ch);
       synchronous_resampler_free(resampler);
       return NULL;
     }
@@ -585,9 +631,8 @@ synchronous_resampler_config_validate(const resampler_config_t *config,
  * @param input_rate The input sample rate in Hz.
  * @param output_rate The output sample rate in Hz.
  * @param channels The number of audio channels.
- * @param chunk_size The desired size of input chunks (in frames).
- *                             The resampler will round this up to a size
- * matching the rational period.
+ * @param chunk_size Fixed number of output frames produced per call
+ *                   (rubato `FixedSync::Output`); not rounded.
  * @param err Pointer to a config error struct to populate on failure.
  * @return A pointer to the created audio resampler instance, or NULL on
  * failure.

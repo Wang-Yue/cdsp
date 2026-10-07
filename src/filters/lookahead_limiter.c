@@ -152,10 +152,33 @@ static int lookahead_limiter_config_validate(const filter_config_t *config,
   if (!params)
     return 0;
 
-  if (isnan(params->limit) || params->limit == INFINITY) {
+  // Upstream deserializes limit/attack/release as FiniteF64. The C API has no
+  // such guard, so reject every non-finite value here (AGENTS.md §4.4):
+  // a NaN release poisons the envelope (pow(g, NaN)) and a NaN attack would
+  // silently collapse to a zero-sample lookahead.
+  if (!isfinite(params->limit)) {
     if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Limit must not be NaN or +inf.");
+                       "Limit must be a finite number.");
+    }
+    return -1;
+  }
+
+  if (!isfinite(params->attack) || !isfinite(params->release)) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Attack and release times must be finite numbers.");
+    }
+    return -1;
+  }
+
+  if (params->attack_unit < TIME_UNIT_US ||
+      params->attack_unit > TIME_UNIT_SAMPLES ||
+      params->release_unit < TIME_UNIT_US ||
+      params->release_unit > TIME_UNIT_SAMPLES) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Invalid attack or release time unit.");
     }
     return -1;
   }
@@ -168,15 +191,33 @@ static int lookahead_limiter_config_validate(const filter_config_t *config,
     return -1;
   }
 
-  double attack_samples = round(
-      compute_time_samples(params->attack, params->attack_unit, sample_rate));
-  if (attack_samples > (double)sample_rate) {
-    if (err) {
-      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
-                       "Lookahead limiter attack time must be less than or "
-                       "equal to 1 second.");
+  if (sample_rate > 0) {
+    double attack_samples = round(
+        compute_time_samples(params->attack, params->attack_unit, sample_rate));
+    if (attack_samples > (double)sample_rate) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Lookahead limiter attack time must be less than or "
+                         "equal to 1 second.");
+      }
+      return -1;
     }
-    return -1;
+  } else if (params->attack_unit != TIME_UNIT_SAMPLES) {
+    double attack_sec = 0.0;
+    if (params->attack_unit == TIME_UNIT_US)
+      attack_sec = params->attack / 1000000.0;
+    else if (params->attack_unit == TIME_UNIT_MS)
+      attack_sec = params->attack / 1000.0;
+    else if (params->attack_unit == TIME_UNIT_S)
+      attack_sec = params->attack;
+    if (attack_sec > 1.0) {
+      if (err) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Lookahead limiter attack time must be less than or "
+                         "equal to 1 second.");
+      }
+      return -1;
+    }
   }
 
   if (params->release < 0.0) {
@@ -211,6 +252,13 @@ static void *lookahead_gain_create_common(const char *name,
   (void)proc_params;
   if (!config || config->type != FILTER_TYPE_LOOKAHEAD_LIMITER)
     return NULL;
+  if (sample_rate <= 0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "LookaheadLimiter: sample_rate must be positive");
+    }
+    return NULL;
+  }
   const lookahead_limiter_filter_config_t *params =
       &config->parameters.lookahead_limiter;
   if (lookahead_limiter_config_validate(config, sample_rate, err) != 0)

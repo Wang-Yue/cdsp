@@ -371,9 +371,12 @@ pipeline_error_t pipeline_process(pipeline_t *pipeline,
     }
   }
 
-  // 3. Implicit main volume with smooth ramp.
+  // 3. Advance all five faders once for the whole chunk, before any filter
+  // reads them (upstream Faders::prepare_chunk), then apply the implicit main
+  // volume.
+  pipeline_faders_prepare_chunk(&pipeline->faders);
   if (pipeline->master_volume) {
-    volume_filter_prepare_chunk(pipeline->master_volume);
+    volume_filter_prepare_frames(pipeline->master_volume, frames);
     for (size_t ch = 0; ch < audio_chunk_get_channels(current_chunk); ch++) {
       if (pipeline->used_capture_channels &&
           ch < pipeline->expected_in_channels &&
@@ -385,7 +388,6 @@ pipeline_error_t pipeline_process(pipeline_t *pipeline,
         g_volume_vtable.process(pipeline->master_volume, buf, frames);
       }
     }
-    volume_filter_advance_ramp(pipeline->master_volume);
   }
 
   // 4. Execute pipeline steps sequentially.

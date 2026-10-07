@@ -7,7 +7,7 @@
 #include "utils/double_helpers.h"
 
 struct gain_filter {
-  char name[64];
+  char name[128];
   double linear_gain;
   bool muted;
 };
@@ -44,6 +44,12 @@ static int gain_config_validate(const filter_config_t *config, int sample_rate,
     if (err) {
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "gain must be a finite number");
+    }
+    return -1;
+  }
+  if (params->scale != GAIN_SCALE_DB && params->scale != GAIN_SCALE_LINEAR) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER, "Invalid gain scale");
     }
     return -1;
   }

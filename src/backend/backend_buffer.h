@@ -104,11 +104,13 @@ void backend_buffer_set_pending_rate_change(backend_buffer_t *bb, bool pending);
  *
  * @param bb Pointer to backend buffer.
  * @param chunk Audio chunk to encode and write.
- * @param sleep_ms Sleep duration in ms per retry when full (0 uses default
- * 1ms).
- * @param max_retries Max retries when full (0 uses default 8 retries).
+ * @param sleep_ms Backoff interval in ms when full (0 is treated as 1 ms).
+ * @param max_retries Number of backoff intervals when full (0 is treated as
+ * 1). The writer waits at most max_retries * sleep_ms in total for the device
+ * to make room, then drops the whole chunk (drop-on-full) and returns true.
  * @param err Pointer to backend_error_t to record errors.
- * @return True on success (or paused), false on error or stream stop.
+ * @return True on success, on drop-on-full, or when paused; false on error,
+ * stream stop or a pending format change.
  */
 bool backend_buffer_write_chunk(backend_buffer_t *bb,
                                 const audio_chunk_t *chunk, uint32_t sleep_ms,
@@ -131,6 +133,14 @@ bool backend_buffer_read_chunk(backend_buffer_t *bb, size_t frames_requested,
 
 /**
  * @brief Prefills silence into the buffer (auto-handles planar vs interleaved).
+ *
+ * Writes @p frames of silence into the ring, then declares it as the active
+ * underrun cushion. Precedence: this also sets the cushion target level to
+ * @p frames, overriding any value from backend_buffer_set_target_level()
+ * made at create time. The engine calls it once after open with
+ * devices.target_level (or chunksize), which is the single upstream
+ * target_level, so the engine-level value wins over per-device values.
+ * Producer-side call; safe while the device callback is running.
  *
  * @param bb Pointer to backend buffer.
  * @param frames Number of silence frames to prefill.
@@ -189,6 +199,56 @@ size_t backend_buffer_push(backend_buffer_t *bb, const void *src,
  */
 size_t backend_buffer_consume(backend_buffer_t *bb, void *dst, size_t frames);
 
+/* --- Zero-copy slice access (interleaved/byte buffers only) --- */
+
+/**
+ * @brief Exposes up to @p max_frames queued frames as at most two contiguous
+ * ring slices, so a driver can hand them straight to the device (e.g. ALSA
+ * snd_pcm_writei) without a staging copy (AGENTS.md §3.4). Consumer side only.
+ *
+ * Only whole frames are exposed. The ring is a power-of-two number of bytes,
+ * so with a block size that is not a power of two (e.g. S24_3) one frame can
+ * straddle the wrap point. Slices stop before such a frame, and @p n2 is 0. If
+ * the function returns 0 while backend_buffer_get_available_read_frames() > 0,
+ * the next frame straddles the wrap: move it with backend_buffer_consume()
+ * into a one-frame stack buffer. After that the slices are aligned again.
+ *
+ * @return Total frames exposed (*n1 + *n2). Returns 0 for planar buffers.
+ */
+size_t backend_buffer_get_read_slices(backend_buffer_t *bb, size_t max_frames,
+                                      const void **p1, size_t *n1,
+                                      const void **p2, size_t *n2);
+
+/**
+ * @brief Releases @p frames previously exposed by
+ * backend_buffer_get_read_slices() and signals waiting writers.
+ */
+void backend_buffer_commit_read(backend_buffer_t *bb, size_t frames);
+
+/**
+ * @brief Producer-side counterpart of backend_buffer_get_read_slices(): exposes
+ * up to @p max_frames of free space as at most two contiguous slices. It uses
+ * the same whole-frame and wrap-straddle rule; for a straddling frame, use
+ * backend_buffer_push() with a one-frame buffer.
+ *
+ * @return Total frames exposed (*n1 + *n2). Returns 0 for planar buffers.
+ */
+size_t backend_buffer_get_write_slices(backend_buffer_t *bb, size_t max_frames,
+                                       void **p1, size_t *n1, void **p2,
+                                       size_t *n2);
+
+/**
+ * @brief Publishes @p frames written into slices from
+ * backend_buffer_get_write_slices() and signals the reader.
+ *
+ * @p frames_dropped is the number of captured frames the driver discarded
+ * because there was no space. A non-zero value starts an overflow episode,
+ * which logs one warning per episode plus trace detail, the same as
+ * backend_buffer_push(). Zero ends the episode.
+ */
+void backend_buffer_commit_write(backend_buffer_t *bb, size_t frames,
+                                 size_t frames_dropped);
+
 /**
  * @brief Returns the number of frames currently available to read from the
  * buffer.
@@ -208,7 +268,14 @@ size_t backend_buffer_get_available_read_frames(const backend_buffer_t *bb);
 size_t backend_buffer_get_available_write_frames(const backend_buffer_t *bb);
 
 /**
- * @brief Drains all pending audio frames from the buffer.
+ * @brief Discards all pending audio frames in the buffer.
+ *
+ * This is a flush, not a play-out: queued audio is thrown away by moving the
+ * ring's read index to its write index. It writes consumer-owned state, so it
+ * must only be called from the thread that consumes the ring (the device
+ * callback for playback, the engine for capture) or while that thread is
+ * stopped. It is not a suitable implementation of the playback vtable
+ * `drain` (which must let queued audio finish playing).
  *
  * @param bb Pointer to backend buffer.
  */

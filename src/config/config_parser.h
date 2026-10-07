@@ -199,4 +199,13 @@ int require_json_fields(const cJSON *obj, const char *const keys[],
                         const char *section_name, const char *variant,
                         config_error_t *err);
 
+/**
+ * @brief Returns true if @p key is present in @p obj with a non-null value.
+ *
+ * Upstream deserializes an explicit `null` (`key: ~`) for an `Option<T>` as
+ * `None`, so presence tests that select between mutually exclusive fields
+ * (e.g. `q` vs `bandwidth`) must not treat `null` as "given".
+ */
+bool json_field_present(const cJSON *obj, const char *key);
+
 #endif // CDSP_CONFIG_PARSER_H

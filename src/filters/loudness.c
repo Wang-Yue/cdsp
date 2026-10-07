@@ -8,7 +8,7 @@
 #include "utils/double_helpers.h"
 
 struct loudness_filter {
-  char name[64];
+  char name[128];
   int sample_rate;
   loudness_config_t params;
   biquad_filter_t *low_shelf_filter;
@@ -17,6 +17,8 @@ struct loudness_filter {
   bool is_processing_active;
   double midband_attenuation_db;
   processing_parameters_t *processing_parameters;
+  /// Centrally advanced fader levels; NULL when unbound.
+  const fader_levels_t *levels;
 };
 
 typedef struct loudness_filter loudness_filter_t;
@@ -67,9 +69,10 @@ static void recompute_shelves(loudness_filter_t *filter, double volume,
       (filter->params.has_high_boost ? filter->params.high_boost : 10.0) *
       boost_factor;
 
-  // If attenuate_mid is enabled, we lower the overall gain (attenuate midband)
-  // by the maximum boost instead of boosting the shelves. This keeps the peak
-  // gain at 0 dB, preventing digital clipping.
+  // If attenuate_mid is enabled, the shelves are still boosted, and in
+  // addition the whole signal is attenuated by the larger of the two boosts.
+  // This keeps the peak gain at the boosted extremes at 0 dB, preventing
+  // digital clipping.
   if (filter->params.attenuate_mid) {
     double max_boost = low_boost > high_boost ? low_boost : high_boost;
     filter->midband_attenuation_db = -max_boost;
@@ -147,6 +150,21 @@ static int loudness_config_validate(const filter_config_t *config,
     if (err)
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "Loudness filter requires 'reference_level'");
+    return -1;
+  }
+  // Upstream stores every numeric loudness field as FiniteF32/FiniteF64, so a
+  // NaN can never reach its range checks. The C API can pass one, and every
+  // comparison below is false for NaN, so reject non-finite values up front.
+  if (!isfinite(params->reference_level) ||
+      (params->has_high_boost && !isfinite(params->high_boost)) ||
+      (params->has_low_boost && !isfinite(params->low_boost)) ||
+      (params->has_high_freq && !isfinite(params->high_freq)) ||
+      (params->has_low_freq && !isfinite(params->low_freq)) ||
+      (params->has_high_q && !isfinite(params->high_q)) ||
+      (params->has_low_q && !isfinite(params->low_q))) {
+    if (err)
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "Loudness parameters must be finite numbers");
     return -1;
   }
   if (params->reference_level > 20.0) {
@@ -237,6 +255,8 @@ static int loudness_config_validate(const filter_config_t *config,
   return 0;
 }
 
+/// Fallback for an unbound filter (no fader bank drives the levels): read the
+/// shared parameters directly, honouring mute without a ramp.
 static inline double
 get_effective_fader_level_db(const processing_parameters_t *params,
                              fader_t fader) {
@@ -245,6 +265,22 @@ get_effective_fader_level_db(const processing_parameters_t *params,
   if (processing_parameters_is_muted_for_fader(params, fader))
     return -100.0;
   return processing_parameters_get_current_volume_for_fader(params, fader);
+}
+
+/// The level the shelves should follow for the current chunk. A bound filter
+/// reads its fader's end-of-chunk level, exactly like upstream
+/// `levels.level_db(fader)`: it already ramps into and out of mute
+/// (FADER_MUTE_LEVEL_DB) together with the volume, and every channel and
+/// every filter sees the same value for the same chunk.
+static inline double loudness_level_db(const loudness_filter_t *filter) {
+  if (filter->levels) {
+    int idx = (int)filter->params.fader;
+    if (idx < 0 || idx >= FADER_COUNT)
+      idx = 0;
+    return filter->levels->faders[idx].end_db;
+  }
+  return get_effective_fader_level_db(filter->processing_parameters,
+                                      filter->params.fader);
 }
 
 /**
@@ -270,6 +306,13 @@ static void *loudness_filter_create(const char *name,
   const loudness_config_t *params = &config->parameters.loudness;
   if (loudness_config_validate(config, sample_rate, err) != 0)
     return NULL;
+  if (sample_rate <= 0) {
+    if (err) {
+      config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                       "LoudnessFilter: sample_rate must be positive");
+    }
+    return NULL;
+  }
   loudness_filter_t *filter =
       (loudness_filter_t *)calloc(1, sizeof(loudness_filter_t));
   if (!filter) {
@@ -299,8 +342,7 @@ static void *loudness_filter_create(const char *name,
     return NULL;
   }
 
-  double init_vol =
-      get_effective_fader_level_db(filter->processing_parameters, filter->params.fader);
+  double init_vol = loudness_level_db(filter);
   filter->last_volume = init_vol;
   recompute_shelves(filter, init_vol, true);
 
@@ -319,11 +361,10 @@ static void loudness_filter_process(void *instance, mutable_waveform_t waveform,
   loudness_filter_t *filter = (loudness_filter_t *)instance;
   if (!filter || !waveform || count == 0)
     return;
-  if (!filter->processing_parameters)
+  if (!filter->levels && !filter->processing_parameters)
     return;
 
-  double current_vol =
-      get_effective_fader_level_db(filter->processing_parameters, filter->params.fader);
+  double current_vol = loudness_level_db(filter);
 
   // Recompute filter coefficients only if the volume has changed significantly.
   if (fabs(current_vol - filter->last_volume) > 0.01) {
@@ -365,13 +406,21 @@ static void loudness_filter_transfer_state(void *dest_ptr,
   g_biquad_vtable.transfer_state(dest->low_shelf_filter, src->low_shelf_filter);
   g_biquad_vtable.transfer_state(dest->high_shelf_filter,
                                  src->high_shelf_filter);
-  double current_vol =
-      dest->processing_parameters
-          ? get_effective_fader_level_db(dest->processing_parameters,
-                                         dest->params.fader)
-          : src->last_volume;
+  double current_vol = (dest->levels || dest->processing_parameters)
+                           ? loudness_level_db(dest)
+                           : src->last_volume;
   dest->last_volume = current_vol;
   recompute_shelves(dest, current_vol, false);
+}
+
+void loudness_filter_bind_fader_levels(loudness_filter_t *filter,
+                                       const fader_levels_t *levels) {
+  if (!filter)
+    return;
+  filter->levels = levels;
+  double vol = loudness_level_db(filter);
+  filter->last_volume = vol;
+  recompute_shelves(filter, vol, true);
 }
 
 const filter_vtable_t g_loudness_vtable = {.validate = loudness_config_validate,
