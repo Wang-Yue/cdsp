@@ -190,13 +190,15 @@ static void processing_loop_record_metrics(engine_processing_loop_t *loop,
           ((double)(pipe_end - pipe_start) / (double)chunk_duration_ns) * 100.0;
       processing_parameters_set_processing_load(loop->processing_params,
                                                 p_load);
+      logger_trace(&g_logger, "Processing load: %.2f%%", p_load);
 
       if (p_load > 100.0) {
         loop->overloaded_chunks++;
         if (loop->overloaded_chunks == 10) {
           logger_warn(&g_logger,
                       "DSP pipeline is overloaded (load > 100%% for 10 "
-                      "consecutive chunks)");
+                      "consecutive chunks, current: %.2f%%)",
+                      p_load);
         }
       } else {
         loop->overloaded_chunks = 0;

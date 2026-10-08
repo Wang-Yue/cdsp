@@ -80,6 +80,7 @@ struct pipewire_capture {
   struct spa_io_position *_Atomic position;
   /* Last graph rate observed by the RT process callback (RT thread only). */
   uint32_t graph_rate_seen;
+  bool quantum_logged;
   processing_parameters_t *params;
 };
 
@@ -114,6 +115,7 @@ struct pipewire_playback {
   struct spa_io_position *_Atomic position;
   /* Last graph rate observed by the RT process callback (RT thread only). */
   uint32_t graph_rate_seen;
+  bool quantum_logged;
   /* True while the stream is in PW_STREAM_STATE_STREAMING (process callbacks
    * are running and draining the ring). Set on the PipeWire loop thread. */
   _Atomic bool streaming;
@@ -140,8 +142,13 @@ static inline void pw_check_graph_rate(struct spa_io_position *_Atomic *pos_ptr,
       atomic_load_explicit(pos_ptr, memory_order_acquire);
   if (!pos)
     return;
+  uint32_t prev_seen = *seen;
   uint32_t rate = pipewire_graph_rate_update(pos->clock.rate.denom, seen);
+  if (prev_seen == 0 && *seen != 0) {
+    logger_debug(&g_logger, "PipeWire graph clock rate is %u Hz", *seen);
+  }
   if (rate != 0) {
+    logger_info(&g_logger, "PipeWire graph clock rate changed to %u Hz", rate);
     atomic_store_explicit(pending, rate, memory_order_release);
     backend_buffer_set_pending_rate_change(buffer, true);
     backend_buffer_signal(buffer);
@@ -182,8 +189,10 @@ static void on_capture_process(void *data) {
   pw_check_graph_rate(&c->position, &c->graph_rate_seen, &c->pending_rate_hz,
                       c->buffer);
   struct pw_buffer *b = pw_stream_dequeue_buffer(c->stream);
-  if (!b)
+  if (!b) {
+    logger_debug(&g_logger, "PipeWire capture: out of buffers");
     return;
+  }
 
   struct spa_buffer *buf = b->buffer;
   if (buf && buf->n_datas > 0 && buf->datas[0].data && buf->datas[0].chunk) {
@@ -195,6 +204,13 @@ static void on_capture_process(void *data) {
         buf->datas[0].chunk->offset, buf->datas[0].chunk->size,
         buf->datas[0].maxsize, c->blockalign, &offset);
     if (frames > 0) {
+      if (!c->quantum_logged) {
+        logger_debug(
+            &g_logger,
+            "PipeWire capture callback quantum is %zu frames (%zu bytes)",
+            frames, frames * c->blockalign);
+        c->quantum_logged = true;
+      }
       const uint8_t *src = (const uint8_t *)buf->datas[0].data;
       backend_buffer_push(c->buffer, src + offset, frames);
     }
@@ -209,7 +225,7 @@ static void on_capture_stream_state_changed(void *data,
                                             const char *error) {
   (void)data;
   logger_debug(&g_logger,
-               "Capture stream state changed from %s to %s (error: %s)",
+               "PipeWire capture stream state changed: %s -> %s (error: %s)",
                pw_stream_state_as_string(old), pw_stream_state_as_string(state),
                error ? error : "none");
   if (state == PW_STREAM_STATE_ERROR) {
@@ -232,7 +248,14 @@ static void on_capture_param_changed(void *data, uint32_t id,
     if (info.media_type == SPA_MEDIA_TYPE_audio &&
         info.media_subtype == SPA_MEDIA_SUBTYPE_raw) {
       uint32_t rate = info.info.raw.rate;
+      logger_debug(&g_logger,
+                   "PipeWire capture format negotiated: rate=%u, channels=%u",
+                   rate, info.info.raw.channels);
       if (rate > 0 && (int)rate != c->sample_rate) {
+        logger_info(
+            &g_logger,
+            "PipeWire capture sample rate changed from %d to %u Hz",
+            c->sample_rate, rate);
         atomic_store_explicit(&c->pending_rate_hz, rate, memory_order_release);
         backend_buffer_set_pending_rate_change(c->buffer, true);
         backend_buffer_signal(c->buffer);
@@ -265,8 +288,10 @@ static void on_playback_process(void *data) {
   pw_check_graph_rate(&p->position, &p->graph_rate_seen, &p->pending_rate_hz,
                       p->buffer);
   struct pw_buffer *b = pw_stream_dequeue_buffer(p->stream);
-  if (!b)
+  if (!b) {
+    logger_debug(&g_logger, "PipeWire playback: out of buffers");
     return;
+  }
 
   struct spa_buffer *buf = b->buffer;
   if (buf->n_datas == 0) {
@@ -281,9 +306,18 @@ static void on_playback_process(void *data) {
     size_t stride = sizeof(float) * p->channels;
     size_t callback_bytes = pipewire_playback_callback_bytes(
         chunk->size, buf->datas[0].maxsize, stride, (size_t)p->chunk_size);
+    size_t callback_frames = stride > 0 ? callback_bytes / stride : 0;
+
+    if (!p->quantum_logged && callback_frames > 0) {
+      logger_debug(
+          &g_logger,
+          "PipeWire playback callback quantum is %zu frames (%zu bytes)",
+          callback_frames, callback_bytes);
+      p->quantum_logged = true;
+    }
 
     if (p->buffer) {
-      backend_buffer_render(p->buffer, dst, callback_bytes / stride, 0x00);
+      backend_buffer_render(p->buffer, dst, callback_frames, 0x00);
     } else {
       // Defence in depth: never hand PipeWire a buffer we did not write.
       memset(dst, 0, callback_bytes);
@@ -307,7 +341,7 @@ static void on_playback_stream_state_changed(void *data,
                           memory_order_release);
   }
   logger_debug(&g_logger,
-               "Playback stream state changed from %s to %s (error: %s)",
+               "PipeWire playback stream state changed: %s -> %s (error: %s)",
                pw_stream_state_as_string(old), pw_stream_state_as_string(state),
                error ? error : "none");
   if (state == PW_STREAM_STATE_ERROR) {
@@ -330,7 +364,14 @@ static void on_playback_param_changed(void *data, uint32_t id,
     if (info.media_type == SPA_MEDIA_TYPE_audio &&
         info.media_subtype == SPA_MEDIA_SUBTYPE_raw) {
       uint32_t rate = info.info.raw.rate;
+      logger_debug(&g_logger,
+                   "PipeWire playback format negotiated: rate=%u, channels=%u",
+                   rate, info.info.raw.channels);
       if (rate > 0 && (int)rate != p->sample_rate) {
+        logger_info(
+            &g_logger,
+            "PipeWire playback sample rate changed from %d to %u Hz",
+            p->sample_rate, rate);
         atomic_store_explicit(&p->pending_rate_hz, rate, memory_order_release);
         backend_buffer_set_pending_rate_change(p->buffer, true);
         backend_buffer_signal(p->buffer);
@@ -395,11 +436,16 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
   // thread as soon as negotiation completes, independently of this thread and
   // of the thread-loop lock. Upstream likewise builds its ring before
   // registering the listener and connecting (device.rs:804-809).
+  capture->quantum_logged = false;
+  capture->graph_rate_seen = 0;
   capture->blockalign = (size_t)capture->channels * sizeof(float);
   size_t cap_min_frames = (size_t)ceil((double)capture->sample_rate * 0.025);
   size_t cap_frames_needed = (size_t)(4 * capture->chunk_size);
   if (cap_frames_needed < cap_min_frames)
     cap_frames_needed = cap_min_frames;
+  logger_debug(&g_logger,
+               "PipeWire capture ring buffer capacity: %zu frames (%zu bytes)",
+               cap_frames_needed, cap_frames_needed * capture->blockalign);
   capture->buffer = backend_buffer_create(
       cap_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE, capture->channels,
       capture->sample_rate, false, capture->params);
@@ -780,6 +826,8 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
   // of the thread-loop lock. Rendering from a missing buffer would publish a
   // PipeWire buffer that was never written. Upstream likewise builds its ring
   // before registering the listener and connecting (device.rs:374-383).
+  playback->quantum_logged = false;
+  playback->graph_rate_seen = 0;
   size_t pb_min_frames = (size_t)ceil((double)playback->sample_rate * 0.025);
   size_t target_level = playback->target_level > 0
                             ? playback->target_level
@@ -791,6 +839,12 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
       pb_prefill_frames + (size_t)(4 * playback->chunk_size);
   if (pb_frames_needed < pb_min_frames)
     pb_frames_needed = pb_min_frames;
+  logger_debug(&g_logger,
+               "PipeWire playback ring buffer capacity: %zu frames (%zu bytes, "
+               "target_level=%zu)",
+               pb_frames_needed,
+               pb_frames_needed * playback->channels * sizeof(float),
+               target_level);
 
   playback->buffer = backend_buffer_create(
       pb_frames_needed, BINARY_SAMPLE_FORMAT_F32_LE, playback->channels,

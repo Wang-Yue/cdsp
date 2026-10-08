@@ -65,6 +65,7 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t *watcher, size_t frames,
   watcher->last_measured_rate = measured_rate;
   watcher->captured_frames = 0;
   watcher->last_reset_ns = now;
+  logger_trace(&g_logger, "Measured sample rate is %.1f Hz", measured_rate);
 
   double min_val = watcher->target_rate / 1.04;
   double max_val = watcher->target_rate * 1.04;

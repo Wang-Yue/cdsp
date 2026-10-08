@@ -718,6 +718,11 @@ int alsa_device_configure_sw(snd_pcm_t *pcm, snd_pcm_uframes_t avail_min,
   rc = snd_pcm_sw_params_set_avail_min(pcm, sw_params, avail_min);
   if (rc < 0)
     return rc;
+  logger_debug(
+      &g_alsa_dev_logger,
+      "Applying ALSA sw_params: avail_min=%lu frames, start_threshold=%lu "
+      "frames",
+      (unsigned long)avail_min, (unsigned long)start_threshold);
   return snd_pcm_sw_params(pcm, sw_params);
 }
 
@@ -855,7 +860,7 @@ bool alsa_device_prime_delay(snd_pcm_t *pcm, size_t target_level,
       }
     }
   }
-  logger_trace(&g_alsa_dev_logger,
+  logger_debug(&g_alsa_dev_logger,
                "PB: primed playback delay with %zu silent frames",
                missing_frames);
   return true;

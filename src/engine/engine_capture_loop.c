@@ -524,6 +524,9 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t *loop,
           : silence_counter_update(loop->silence_counter, value_range);
   processing_state_t current = engine_shared_state_get_state(loop->shared);
   if (desired != current) {
+    logger_debug(&g_logger, "%s processing (state: %d -> %d)",
+                 desired == PROCESSING_STATE_PAUSED ? "Pausing" : "Resuming",
+                 (int)current, (int)desired);
     engine_shared_state_set_state(loop->shared, desired);
     if (desired == PROCESSING_STATE_PAUSED && loop->processing_params) {
       processing_parameters_bump_pause_count(loop->processing_params);
@@ -587,12 +590,14 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t *loop,
                 ((double)(res_end - res_start) / (double)chunk_dur_ns) * 100.0;
             processing_parameters_set_resampler_load(loop->processing_params,
                                                      r_load);
+            logger_trace(&g_logger, "Resampling load: %.2f%%", r_load);
             if (r_load > 100.0) {
               loop->resampler_overloaded_chunks++;
               if (loop->resampler_overloaded_chunks == 10) {
                 logger_warn(&g_logger,
                             "Resampler is overloaded (load > 100%% for 10 "
-                            "consecutive chunks)");
+                            "consecutive chunks, current: %.2f%%)",
+                            r_load);
               }
             } else {
               loop->resampler_overloaded_chunks = 0;

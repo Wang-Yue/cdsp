@@ -96,6 +96,10 @@ pi_rate_controller_t *pi_rate_controller_create_default(int samplerate,
                                    0.004);
 }
 
+#include "logging/app_logger.h"
+
+static const logger_t g_logger = {"dsp.rate_controller"};
+
 double pi_rate_controller_next(pi_rate_controller_t *pi, double level) {
   if (!pi)
     return 1.0;
@@ -110,6 +114,10 @@ double pi_rate_controller_next(pi_rate_controller_t *pi, double level) {
           pi->ramp_trigger_limit) {
     pi->ramp_start = level;
     pi->ramp_step = 0;
+    logger_debug(&g_logger,
+                 "Rate controller, buffer level is %.1f, starting to adjust "
+                 "back towards target of %.1f",
+                 level, pi->target_level);
   }
   if (pi->ramp_step == 0) {
     pi->ramp_start = level;
@@ -125,6 +133,9 @@ double pi_rate_controller_next(pi_rate_controller_t *pi, double level) {
         (double)(pi->ramp_steps - pi->ramp_step) / (double)pi->ramp_steps;
     current_target = pi->ramp_start + (pi->target_level - pi->ramp_start) *
                                           (1.0 - pow(progress, 4));
+    logger_debug(&g_logger,
+                 "Rate controller, ramp step %d/%d, current target %.1f",
+                 pi->ramp_step, pi->ramp_steps, current_target);
   } else {
     current_target = pi->target_level;
   }
@@ -137,6 +148,9 @@ double pi_rate_controller_next(pi_rate_controller_t *pi, double level) {
   double proportional = pi->kp * rel_err;
   double integral = pi->ki * pi->accumulated;
   double output = proportional + integral;
+  logger_trace(&g_logger,
+               "Rate controller, error: %f, output: %f, P: %f, I: %f", err,
+               output, proportional, integral);
   double clamped_output = output;
   if (clamped_output > 0.005)
     clamped_output = 0.005;

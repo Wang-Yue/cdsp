@@ -317,9 +317,16 @@ static void *alsa_playback_inner_thread_func(void *arg) {
         if (timeout_millis < 20)
           timeout_millis = 20;
 
+        logger_trace(&g_logger, "PB: pcmdevice.wait with timeout %u ms",
+                     timeout_millis);
+        uint64_t wait_start_ns = cdsp_time_now_ns();
         int wait_rc = snd_pcm_wait(playback->pcm, (int)timeout_millis);
-        if (wait_rc == 0) {
-          logger_trace(&g_logger,
+        if (wait_rc > 0) {
+          logger_trace(&g_logger, "PB: device waited for %.2f ms, ready",
+                       (double)(cdsp_time_now_ns() - wait_start_ns) /
+                           1000000.0);
+        } else if (wait_rc == 0) {
+          logger_debug(&g_logger,
                        "PB: Wait timed out, playback device takes too long to "
                        "drain buffer");
           if (!playback->device_stalled) {
@@ -340,7 +347,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
                             "PB: Writing stall-check zeros failed with %s",
                             snd_strerror((int)sw_rc));
               } else {
-                logger_trace(&g_logger, "PB: Wrote %ld zero frames",
+                logger_debug(&g_logger, "PB: Wrote %ld zero frames",
                              (long)sw_rc);
               }
             }
@@ -358,6 +365,8 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           }
           continue;
         } else if (wait_rc == -ESTRPIPE) {
+          logger_warn(&g_logger,
+                      "PB: wait interrupted by suspend, trying to recover");
           no_progress = 0;
           int src = alsa_recover_suspended_pcm(playback->pcm, "PB");
           if (src < 0) {
@@ -373,10 +382,17 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           break;
         }
 
+        size_t frames_to_write = remainder_frames;
         snd_pcm_sframes_t rc =
             snd_pcm_writei(playback->pcm, write_ptr, remainder_frames);
         if (rc > 0) {
-          playback->device_stalled = false;
+          logger_trace(&g_logger,
+                       "PB: wrote %ld frames out of requested %zu",
+                       (long)rc, frames_to_write);
+          if (playback->device_stalled) {
+            logger_info(&g_logger, "PB: device resumed from stall");
+            playback->device_stalled = false;
+          }
           if (from_ring)
             backend_buffer_commit_read(playback->buffer, (size_t)rc);
           write_ptr += (size_t)rc * bytes_per_frame;
@@ -387,6 +403,10 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           // they belong in the published term (AGENTS.md §3.1, M2).
           alsa_playback_publish_level(playback, staged);
         } else if (rc == 0 || rc == -EAGAIN || rc == -EINTR) {
+          if (rc == -EAGAIN) {
+            logger_debug(&g_logger,
+                         "PB: encountered EAGAIN error on write, trying later");
+          }
           if (!playback->device_stalled && ++no_progress > max_no_progress) {
             logger_warn(&g_logger,
                         "PB: no write progress after %d attempts, "
@@ -407,6 +427,8 @@ static void *alsa_playback_inner_thread_func(void *arg) {
             }
             continue;
           } else if (wr == -ESTRPIPE) {
+            logger_warn(&g_logger,
+                        "PB: wait interrupted by suspend, trying to recover");
             no_progress = 0;
             int src = alsa_recover_suspended_pcm(playback->pcm, "PB");
             if (src < 0) {
@@ -443,6 +465,8 @@ static void *alsa_playback_inner_thread_func(void *arg) {
             break;
           }
         } else if (rc == -ESTRPIPE) {
+          logger_warn(&g_logger,
+                      "PB: write interrupted by suspend, trying to recover");
           no_progress = 0;
           int src = alsa_recover_suspended_pcm(playback->pcm, "PB");
           if (src < 0) {
@@ -503,9 +527,9 @@ static void *alsa_playback_inner_thread_func(void *arg) {
         continue;
       }
       bool buffer_low = false;
+      size_t delay = 0;
       if (st == SND_PCM_STATE_RUNNING) {
         snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
-        size_t delay = 0;
         if (avail >= 0 && (snd_pcm_uframes_t)avail <= playback->bufsize) {
           delay = playback->bufsize - (snd_pcm_uframes_t)avail;
         }
@@ -521,6 +545,11 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           logger_warn(&g_logger, "PB: Playback interrupted, no data available");
           playback_interrupted = true;
         }
+        logger_debug(
+            &g_logger,
+            "PB: Ring buffer empty and device buffer low (delay=%zu, state=%s), "
+            "feeding keep-alive silence",
+            delay, alsa_state_desc((int)st));
         // Upstream routes this keep-alive silence through play_buffer, so it
         // goes through the same state recovery as real audio. Writing into an
         // XRUN'd or suspended device would otherwise silently do nothing.
@@ -585,6 +614,8 @@ static void *alsa_playback_inner_thread_func(void *arg) {
         // underrun
         int wait_rc = snd_pcm_wait(playback->pcm, 20);
         if (wait_rc == -EPIPE) {
+          logger_debug(&g_logger,
+                       "PB: keep-alive wait underrun, trying to recover");
           int prc = snd_pcm_prepare(playback->pcm);
           if (prc < 0) {
             alsa_playback_record_fatal(playback, "prepare after underrun", prc);
@@ -613,6 +644,8 @@ static void *alsa_playback_inner_thread_func(void *arg) {
         snd_pcm_sframes_t sw_rc = snd_pcm_writei(
             playback->pcm, playback->zero_stall_buf, silence_frames);
         if (sw_rc == -EPIPE) {
+          logger_debug(&g_logger,
+                       "PB: keep-alive write underrun, trying to recover");
           int prc = snd_pcm_prepare(playback->pcm);
           if (prc < 0) {
             alsa_playback_record_fatal(playback, "prepare after underrun", prc);

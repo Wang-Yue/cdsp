@@ -240,6 +240,8 @@ static void backend_buffer_prefill_planar(backend_buffer_t *bb,
                                           size_t frames, uint8_t silence_byte) {
   if (!bb)
     return;
+  logger_debug(&g_logger, "Prefilling playback buffer with %zu silent frames",
+               frames);
   // Ring silence first, callback-shared state second (F9): the device may
   // already be running. If the old order (flags first) let the callback
   // underrun in between, it re-armed the cushion after cushion_active was set
@@ -262,6 +264,9 @@ static void backend_buffer_prefill_byte(backend_buffer_t *bb,
                                         uint8_t silence_byte) {
   if (!bb)
     return;
+  logger_debug(&g_logger,
+               "Prefilling playback buffer with %zu silent frames (%zu bytes)",
+               frames, frames * blockalign);
   // Same ordering rationale as backend_buffer_prefill_planar (F9).
   if (ring && frames > 0 && blockalign > 0) {
     spsc_byte_ring_buffer_write_silence(ring, frames * blockalign,
@@ -273,14 +278,18 @@ static void backend_buffer_prefill_byte(backend_buffer_t *bb,
 }
 
 /**
- * Log playback underrun episodes like upstream (coreaudio device.rs:600-622):
+ * Log playback underrun episodes like upstream (coreaudio device.rs:600-622,
+ * pipewire device.rs:483-508):
  * one warning when a playing stream runs dry, one info when it restarts, and
  * per-callback detail at trace level only. Runs on the device callback thread;
  * the logger is lock-free.
  */
 static void backend_buffer_report_render(backend_buffer_t *bb, bool rearmed,
                                          bool was_active, size_t consumed,
-                                         size_t audio_needed) {
+                                         size_t audio_needed,
+                                         size_t total_frames,
+                                         size_t avail_before) {
+  (void)avail_before;
   if (rearmed && bb->render_interrupted) {
     logger_info(&g_logger, "Restarting playback after buffer underrun.");
     bb->render_interrupted = false;
@@ -293,9 +302,10 @@ static void backend_buffer_report_render(backend_buffer_t *bb, bool rearmed,
       bb->render_interrupted = true;
       bb->render_playing = false;
     }
-    logger_trace(&g_logger,
-                 "Playback callback underrun, padded %zu frames with silence",
-                 audio_needed - consumed);
+    logger_debug(&g_logger,
+                 "Playback callback underrun: had %zu of %zu needed audio "
+                 "frames (%zu callback frames), padded %zu frames with silence",
+                 consumed, audio_needed, total_frames, audio_needed - consumed);
   }
 }
 
@@ -307,9 +317,9 @@ static size_t backend_buffer_render_planar(backend_buffer_t *bb,
   if (!bb || !ring || !dst_channels || frames == 0)
     return 0;
 
+  size_t avail = spsc_planar_ring_buffer_get_available_to_read(ring);
   bool rearmed = false;
   if (!atomic_load_explicit(&bb->cushion_active, memory_order_relaxed)) {
-    size_t avail = spsc_planar_ring_buffer_get_available_to_read(ring);
     if (avail > 0) {
       atomic_store_explicit(&bb->cushion_active, true, memory_order_relaxed);
       atomic_store_explicit(
@@ -332,7 +342,8 @@ static size_t backend_buffer_render_planar(backend_buffer_t *bb,
       ring, dst_channels, frames, silence_byte, &bb->silence_to_insert,
       &bb->cushion_active);
 
-  backend_buffer_report_render(bb, rearmed, was_active, consumed, audio_needed);
+  backend_buffer_report_render(bb, rearmed, was_active, consumed, audio_needed,
+                               frames, avail);
 
   backend_buffer_publish(
       bb, atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed));
@@ -350,10 +361,10 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
   if (!bb || !ring || !dst || frames == 0 || blockalign == 0)
     return 0;
 
+  size_t avail_bytes = spsc_byte_ring_buffer_get_available_to_read(ring);
+  size_t avail_frames = avail_bytes / blockalign;
   bool rearmed = false;
   if (!atomic_load_explicit(&bb->cushion_active, memory_order_relaxed)) {
-    size_t avail_bytes = spsc_byte_ring_buffer_get_available_to_read(ring);
-    size_t avail_frames = avail_bytes / blockalign;
     if (avail_frames > 0) {
       atomic_store_explicit(&bb->cushion_active, true, memory_order_relaxed);
       atomic_store_explicit(
@@ -376,7 +387,8 @@ static size_t backend_buffer_render_byte(backend_buffer_t *bb,
       ring, dst, frames, blockalign, silence_byte, &bb->silence_to_insert,
       &bb->cushion_active);
 
-  backend_buffer_report_render(bb, rearmed, was_active, consumed, audio_needed);
+  backend_buffer_report_render(bb, rearmed, was_active, consumed, audio_needed,
+                               frames, avail_frames);
 
   backend_buffer_publish(
       bb, atomic_load_explicit(&bb->silence_to_insert, memory_order_relaxed));
@@ -409,13 +421,20 @@ static backend_buffer_space_t
 backend_buffer_wait_for_space(backend_buffer_t *bb, size_t frames,
                               uint32_t sleep_ms, uint32_t max_retries,
                               backend_error_t *err) {
-  if (backend_buffer_get_available_write_frames(bb) >= frames)
+  size_t avail_write = backend_buffer_get_available_write_frames(bb);
+  if (avail_write >= frames)
     return BACKEND_BUFFER_SPACE_OK;
 
   uint32_t retries = (max_retries > 0) ? max_retries : 1;
   uint32_t wait_timeout = (sleep_ms > 0) ? sleep_ms : 1;
   uint64_t budget_ms = (uint64_t)retries * (uint64_t)wait_timeout;
-  uint64_t deadline_ns = cdsp_time_now_ns() + budget_ms * 1000000ULL;
+  uint64_t start_ns = cdsp_time_now_ns();
+  uint64_t deadline_ns = start_ns + budget_ms * 1000000ULL;
+
+  logger_debug(&g_logger,
+               "Playback ring buffer low on space (have %zu, need %zu frames), "
+               "waiting up to %llu ms",
+               avail_write, frames, (unsigned long long)budget_ms);
 
   for (;;) {
     if (atomic_load_explicit(&bb->has_pending_rate_change,
@@ -445,8 +464,12 @@ backend_buffer_wait_for_space(backend_buffer_t *bb, size_t frames,
     } else {
       cdsp_sleep_ms(wait_ms);
     }
-    if (backend_buffer_get_available_write_frames(bb) >= frames)
+    if (backend_buffer_get_available_write_frames(bb) >= frames) {
+      logger_debug(&g_logger,
+                   "Playback ring buffer space available after %.2f ms",
+                   (double)(cdsp_time_now_ns() - start_ns) / 1000000.0);
       return BACKEND_BUFFER_SPACE_OK;
+    }
   }
   return backend_buffer_get_available_write_frames(bb) >= frames
              ? BACKEND_BUFFER_SPACE_OK
@@ -461,7 +484,7 @@ static void backend_buffer_report_drop(backend_buffer_t *bb, size_t amount,
     logger_warn(&g_logger, "Playback ring buffer is full, dropping chunks");
     bb->write_ring_full = true;
   }
-  logger_trace(&g_logger,
+  logger_debug(&g_logger,
                "Playback ring buffer is full, dropped chunk of %zu %s", amount,
                unit);
 }
@@ -1089,7 +1112,7 @@ static void backend_buffer_report_capture_overflow(backend_buffer_t *bb,
       logger_warn(&g_logger, "Capture ring buffer is full, dropping samples");
       bb->capture_ring_full = true;
     }
-    logger_trace(&g_logger,
+    logger_debug(&g_logger,
                  "Capture ring buffer is full, dropped %zu out of %zu frames",
                  dropped, total);
   } else {

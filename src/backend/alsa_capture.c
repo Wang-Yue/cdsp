@@ -286,6 +286,8 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     // The stall timeout is charged with the time that actually elapsed, not
     // a nominal 20 ms per slice: a burst of control events wakes poll() early
     // and used to make the timeout fire too soon (M6).
+    logger_trace(&g_logger, "Capture pcmdevice.wait with timeout %u ms",
+                 timeout_millis);
     uint64_t wait_start_ms = alsa_capture_monotonic_ms();
     for (;;) {
       if (backend_buffer_get_state(capture->buffer) == BACKEND_STREAM_STOPPED) {
@@ -313,12 +315,16 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       }
       if (nbr_ready == 0) {
         if (remaining_millis <= (uint32_t)poll_slice) {
+          logger_debug(&g_logger,
+                       "Capture wait timed out after %u ms, device stalled",
+                       timeout_millis);
           wait_timed_out = true;
           break;
         }
         continue;
       }
 
+      logger_trace(&g_logger, "Got %d ready fds", nbr_ready);
       int nbr_found = 0;
       for (int i = 0; i < nbr_pcm_fds; i++) {
         if (pfds[i].revents != 0) {
@@ -329,12 +335,16 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       // There were other ready file descriptors than PCM, must be controls
       // (src/alsa_backend/utils.rs:565-570).
       if (nbr_found < nbr_ready) {
+        logger_trace(&g_logger, "Got a control event");
         if (alsa_capture_process_events(capture)) {
           ctl_terminal = true;
           break;
         }
       }
       if (pcm_ready) {
+        logger_trace(
+            &g_logger, "Capture waited for %llu ms",
+            (unsigned long long)(alsa_capture_monotonic_ms() - wait_start_ms));
         break;
       }
     }
@@ -386,7 +396,11 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     snd_pcm_sframes_t frames_read =
         snd_pcm_readi(capture->pcm, read_dst, (snd_pcm_uframes_t)read_frames);
     if (frames_read > 0) {
+      logger_trace(&g_logger, "Capture read %ld frames (requested %zu)",
+                   (long)frames_read, read_frames);
       if (capture->device_stalled) {
+        logger_info(&g_logger,
+                    "Capture device resumed, processing is running");
         capture->device_stalled = false;
       }
       switch (read_mode) {
@@ -402,6 +416,7 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       }
     } else if (frames_read == -EPIPE) {
       logger_warn(&g_logger, "Capture: read overrun, trying to recover");
+      logger_trace(&g_logger, "snd_pcm_prepare");
       int prc = snd_pcm_prepare(capture->pcm);
       if (prc < 0) {
         alsa_capture_record_fatal(capture, "prepare after overrun", prc);
@@ -426,6 +441,7 @@ static void *alsa_capture_inner_thread_func(void *arg) {
         }
       }
     } else if (frames_read == 0) {
+      logger_debug(&g_logger, "Capture read returned 0 frames, device stalled");
       if (!capture->device_stalled) {
         logger_info(&g_logger,
                     "Capture device is stalled, processing is stalled");
@@ -434,6 +450,8 @@ static void *alsa_capture_inner_thread_func(void *arg) {
     } else if (frames_read == -EAGAIN || frames_read == -EINTR) {
       // Upstream's capture_buffer reports -EAGAIN/-EINTR as
       // ordinary transient conditions. Keep polling.
+      logger_debug(&g_logger,
+                   "Capture: encountered EAGAIN/EINTR on read, trying later");
     } else {
       alsa_capture_record_fatal(capture, "Capture read fatal error",
                                 (int)frames_read);
