@@ -86,6 +86,33 @@ static void engine_on_chunk_processed_callback(void *ctx,
     audio_history_buffer_append(buf, chunk);
 }
 
+static void dsp_engine_stop_locked(dsp_engine_impl_t *impl) {
+  if (!impl || !impl->session.active)
+    return;
+  dsp_session_collect_garbage(impl->session.active);
+  processing_parameters_t *old_p =
+      dsp_session_get_processing_params(impl->session.active);
+  if (old_p) {
+    impl->session.clipped_samples_accum =
+        processing_parameters_get_clipped_samples(old_p);
+  }
+  processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
+  dsp_session_is_stop_requested(impl->session.active, &reason);
+  processing_stop_reason_t final_reason =
+      dsp_session_stop_and_free(impl->session.active, reason);
+  impl->session.last_stop_reason = final_reason;
+  impl->session.active = NULL;
+
+  // Matching upstream engine.rs (ControllerMessage::Stop, PlaybackDone and
+  // fail_and_restart): when a session ends, the active config becomes the
+  // previous config and there is no active config any more.
+  if (impl->config.active_json) {
+    free(impl->config.previous_json);
+    impl->config.previous_json = impl->config.active_json;
+    impl->config.active_json = NULL;
+  }
+}
+
 /**
  * @brief Internal helper to apply a parsed dsp_config_t structure while holding
  * state mutex lock.
@@ -101,6 +128,12 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
     return false;
   if (impl->session.active) {
     dsp_session_collect_garbage(impl->session.active);
+    if (dsp_session_get_state(impl->session.active) ==
+            PROCESSING_STATE_INACTIVE ||
+        dsp_session_get_stop_reason(impl->session.active).type !=
+            STOP_REASON_NONE) {
+      dsp_engine_stop_locked(impl);
+    }
   }
 
   // Ref: docs/engine_state_management.md - Section 3.1: Startup &
@@ -108,8 +141,11 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
   // match, perform non-blocking pipeline hot-reload via
   // dsp_session_reload_config. If devices differ, fall back to full session
   // teardown and rebuild.
-  if (impl->session.active && dsp_session_get_state(impl->session.active) !=
-                                  PROCESSING_STATE_INACTIVE) {
+  if (impl->session.active &&
+      dsp_session_get_state(impl->session.active) !=
+          PROCESSING_STATE_INACTIVE &&
+      dsp_session_get_stop_reason(impl->session.active).type ==
+          STOP_REASON_NONE) {
     const dsp_config_t *cur_cfg = dsp_session_get_config(impl->session.active);
     if (cur_cfg && devices_config_equal(&cur_cfg->devices, &config->devices)) {
       audio_backend_error_t berr = {0};
@@ -144,11 +180,6 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
         impl->session.active,
         (processing_stop_reason_t){.type = STOP_REASON_NONE});
     impl->session.active = NULL;
-    if (impl->config.active_json) {
-      free(impl->config.previous_json);
-      impl->config.previous_json = impl->config.active_json;
-      impl->config.active_json = NULL;
-    }
   }
 
   audio_history_buffer_reset(
@@ -171,6 +202,11 @@ static bool dsp_engine_set_config_struct_locked(dsp_engine_impl_t *impl,
     processing_parameters_free(saved_telemetry);
   }
   if (!session) {
+    if (impl->config.active_json) {
+      free(impl->config.previous_json);
+      impl->config.previous_json = impl->config.active_json;
+      impl->config.active_json = NULL;
+    }
     return false;
   }
 
@@ -209,12 +245,7 @@ static bool dsp_engine_set_config_locked(dsp_engine_impl_t *impl,
   }
   bool success = dsp_engine_set_config_struct_locked(impl, parsed, err);
   if (success) {
-    // Only rotate when there was an active config; after a stop the
-    // just-stopped config already sits in previous_json and must be kept.
-    if (impl->config.active_json) {
-      free(impl->config.previous_json);
-      impl->config.previous_json = impl->config.active_json;
-    }
+    free(impl->config.active_json);
     impl->config.active_json = strdup(json);
   } else {
     // Ref: docs/engine_state_management.md - Section 1.7.1: Cleanup on Builder
@@ -251,30 +282,7 @@ static void dsp_engine_stop(void *ctx) {
   // terminated threads, and cleans up session resources under the controller
   // lock.
   pthread_mutex_lock(&impl->state_mutex);
-  if (impl->session.active) {
-    dsp_session_collect_garbage(impl->session.active);
-    processing_parameters_t *old_p =
-        dsp_session_get_processing_params(impl->session.active);
-    if (old_p) {
-      impl->session.clipped_samples_accum =
-          processing_parameters_get_clipped_samples(old_p);
-    }
-    processing_stop_reason_t reason = {.type = STOP_REASON_NONE};
-    dsp_session_is_stop_requested(impl->session.active, &reason);
-    processing_stop_reason_t final_reason =
-        dsp_session_stop_and_free(impl->session.active, reason);
-    impl->session.last_stop_reason = final_reason;
-    impl->session.active = NULL;
-
-    // Matching upstream engine.rs (ControllerMessage::Stop, PlaybackDone and
-    // fail_and_restart): when a session ends, the active config becomes the
-    // previous config and there is no active config any more.
-    if (impl->config.active_json) {
-      free(impl->config.previous_json);
-      impl->config.previous_json = impl->config.active_json;
-      impl->config.active_json = NULL;
-    }
-  }
+  dsp_engine_stop_locked(impl);
   pthread_mutex_unlock(&impl->state_mutex);
 }
 
@@ -331,18 +339,19 @@ static state_update_t dsp_engine_get_status_locked(dsp_engine_impl_t *impl) {
     return res;
   if (impl->session.active) {
     dsp_session_collect_garbage(impl->session.active);
+    if (dsp_session_get_state(impl->session.active) ==
+        PROCESSING_STATE_INACTIVE) {
+      dsp_engine_stop_locked(impl);
+      res.state = PROCESSING_STATE_INACTIVE;
+      res.stop_reason = impl->session.last_stop_reason;
+      return res;
+    }
     res.state = dsp_session_get_state(impl->session.active);
     if (res.state == PROCESSING_STATE_RUNNING) {
       impl->session.last_stop_reason =
           (processing_stop_reason_t){.type = STOP_REASON_NONE};
     }
-    processing_stop_reason_t r =
-        dsp_session_get_stop_reason(impl->session.active);
-    if (r.type != STOP_REASON_NONE) {
-      res.stop_reason = r;
-    } else {
-      res.stop_reason = impl->session.last_stop_reason;
-    }
+    res.stop_reason = dsp_session_get_stop_reason(impl->session.active);
   } else {
     res.state = PROCESSING_STATE_INACTIVE;
     res.stop_reason = impl->session.last_stop_reason;
@@ -477,6 +486,11 @@ static bool dsp_engine_get_active_config_json(void *ctx, char **out_json) {
     return false;
   dsp_engine_impl_t *impl = (dsp_engine_impl_t *)ctx;
   pthread_mutex_lock(&impl->state_mutex);
+  if (impl->session.active &&
+      dsp_session_get_state(impl->session.active) ==
+          PROCESSING_STATE_INACTIVE) {
+    dsp_engine_stop_locked(impl);
+  }
   if (impl->config.active_json) {
     *out_json = strdup(impl->config.active_json);
     pthread_mutex_unlock(&impl->state_mutex);
@@ -492,6 +506,11 @@ static bool dsp_engine_get_previous_config_json(void *ctx, char **out_json) {
     return false;
   dsp_engine_impl_t *impl = (dsp_engine_impl_t *)ctx;
   pthread_mutex_lock(&impl->state_mutex);
+  if (impl->session.active &&
+      dsp_session_get_state(impl->session.active) ==
+          PROCESSING_STATE_INACTIVE) {
+    dsp_engine_stop_locked(impl);
+  }
   if (impl->config.previous_json) {
     *out_json = strdup(impl->config.previous_json);
     pthread_mutex_unlock(&impl->state_mutex);

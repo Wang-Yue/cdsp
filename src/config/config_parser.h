@@ -34,6 +34,18 @@ int parse_labels_array_strict(const cJSON *labels_arr, char ***out_labels,
                               size_t *out_count, bool *out_has_labels);
 
 /**
+ * @brief Parses an array of non-null strings with strict error reporting.
+ *
+ * @param str_arr The cJSON array containing the strings.
+ * @param max_len Maximum string length (including NUL) or 0 for unlimited.
+ * @param out_strings Output pointer to store allocated array of string pointers.
+ * @param out_count Output pointer to store the size of the parsed array.
+ * @return 0 on success, -1 on failure (non-array, null/non-string element, or too long).
+ */
+int parse_string_array_strict(const cJSON *str_arr, size_t max_len,
+                              char ***out_strings, size_t *out_count);
+
+/**
  * @brief Parses an array of size_t numbers, rejecting anything that is not a
  * non-negative integer.
  *

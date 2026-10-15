@@ -670,7 +670,7 @@ class CodegenEngine:
                 else:
                     if f.has_flag:
                         w.line(f"{target_var}->has_{f.name} = true;")
-                    w.line(f"if (parse_labels_array_strict(arr_{f.name}, &{target_var}->{f.name}, &{target_var}->{f.name}_count, NULL) != 0) {{")
+                    w.line(f"if (parse_string_array_strict(arr_{f.name}, {f.type.item_type.max_length}, &{target_var}->{f.name}, &{target_var}->{f.name}_count) != 0) {{")
                     w.indent()
                     w.line(f"config_error_set(err, CONFIG_ERR_PARSE, \"field '%s' in %s must be an array of strings\", \"{f.json_key}\", {ctx_expr});")
                     w.line("return -1;")
@@ -1041,7 +1041,10 @@ class CodegenEngine:
             elif f.type in (TYPE_INT, TYPE_INT64, TYPE_UINT32, TYPE_SIZE_T, TYPE_DOUBLE):
                 w.line(f"{has_check} cJSON_AddNumberToObject(obj, \"{f.json_key}\", (double)in->{f.name});")
         elif isinstance(f.type, StringType):
-            w.line(f"{has_check} if (in->{f.name}[0]) cJSON_AddStringToObject(obj, \"{f.json_key}\", in->{f.name});")
+            if f.required or force_required or f.has_flag:
+                w.line(f"{has_check} cJSON_AddStringToObject(obj, \"{f.json_key}\", in->{f.name});")
+            else:
+                w.line(f"{has_check} if (in->{f.name}[0]) cJSON_AddStringToObject(obj, \"{f.json_key}\", in->{f.name});")
         elif isinstance(f.type, EnumType):
             w.line(f"{has_check} cJSON_AddStringToObject(obj, \"{f.json_key}\", {f.type.name}_to_string(in->{f.name}));")
         elif isinstance(f.type, ArrayType):
@@ -1244,6 +1247,8 @@ class CodegenEngine:
 
             if s.extra_fields:
                 for f in s.extra_fields:
+                    if f.internal:
+                        continue
                     self._generate_field_parse_statement(f, s.name, "out", "obj", f"ctx ? ctx : \"{s.name}\"", w)
                     # If default assignment when not parsed
                     if f.default is not None:
@@ -1471,7 +1476,7 @@ class CodegenEngine:
                     elif isinstance(f.type, EnumType):
                         w.line(f"{has_check} cJSON_AddStringToObject(obj, \"{f.json_key}\", {f.type.name}_to_string(in->{f.name}));")
                     elif isinstance(f.type, ArrayType) and isinstance(f.type.item_type, StringType):
-                        w.line(f"if (in->has_{f.name} && in->{f.name}) {{")
+                        w.line(f"if (in->has_{f.name}) {{")
                         w.indent()
                         w.line("cJSON *arr = cJSON_CreateArray();")
                         w.line(f"for (size_t i = 0; i < in->{f.name}_count; i++) {{")
@@ -1610,6 +1615,8 @@ class CodegenEngine:
         w.line(f"if (a->{s.tag_field} != b->{s.tag_field}) return false;")
         if s.extra_fields:
             for f in s.extra_fields:
+                if f.internal:
+                    continue
                 if f.has_flag:
                     w.line(f"if (a->has_{f.name} != b->has_{f.name}) return false;")
                     w.line(f"if (a->has_{f.name}) {{")

@@ -195,7 +195,7 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
   core_audio_playback_close(playback);
 
   size_t ring_frames =
-      16 * playback->chunk_size + playback->target_level + 2048;
+      2 * playback->chunk_size + playback->target_level + 2048;
   playback->buffer = backend_buffer_create(
       ring_frames, BINARY_SAMPLE_FORMAT_F32_LE, playback->channels,
       playback->sample_rate, false, playback->params);

@@ -451,7 +451,7 @@ static bool wasapi_playback_write(void *ctx, const audio_chunk_t *chunk,
     sleep_duration_ms = 1;
 
   bool ok = backend_buffer_write_chunk(playback->buffer, chunk,
-                                       (uint32_t)sleep_duration_ms, 200, err);
+                                       (uint32_t)sleep_duration_ms, 16, err);
   if (!ok && err && err->type == BACKEND_ERROR_WRITE_ERROR) {
     // Replace the generic "stream stopped" text with the HRESULT / disconnect
     // reason recorded by the inner thread (upstream PlaybackError(msg)).

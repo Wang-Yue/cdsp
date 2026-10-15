@@ -136,6 +136,30 @@ static void alsa_playback_publish_level(alsa_playback_t *playback,
       (size_t)(playback->bufsize - (snd_pcm_uframes_t)avail) + staged);
 }
 
+static void alsa_playback_enter_stall(alsa_playback_t *playback) {
+  if (playback->device_stalled)
+    return;
+  logger_warn(&g_logger, "PB: device stalled");
+  snd_pcm_drop(playback->pcm);
+  snd_pcm_prepare(playback->pcm);
+  snd_pcm_uframes_t avail_min =
+      playback->period > 0 ? (snd_pcm_uframes_t)playback->period : 1;
+  snd_pcm_uframes_t frames_to_stall =
+      (playback->bufsize >= avail_min) ? (playback->bufsize - avail_min + 1)
+                                       : 1;
+  if (frames_to_stall > 0 && playback->zero_stall_buf) {
+    snd_pcm_sframes_t sw_rc = snd_pcm_writei(
+        playback->pcm, playback->zero_stall_buf, frames_to_stall);
+    if (sw_rc < 0) {
+      logger_warn(&g_logger, "PB: Writing stall-check zeros failed with %s",
+                  snd_strerror((int)sw_rc));
+    } else {
+      logger_debug(&g_logger, "PB: Wrote %ld zero frames", (long)sw_rc);
+    }
+  }
+  playback->device_stalled = true;
+}
+
 // Dedicated real-time playback inner thread matching AlsaPlaybackInner in
 // upstream (src/alsa_backend/threaded_device.rs:1078-1345)
 static void *alsa_playback_inner_thread_func(void *arg) {
@@ -158,7 +182,10 @@ static void *alsa_playback_inner_thread_func(void *arg) {
 
   while (backend_buffer_get_state(playback->buffer) != BACKEND_STREAM_STOPPED) {
     alsa_playback_apply_pending_pitch(playback);
-    if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED) {
+    size_t avail_frames =
+        backend_buffer_get_available_read_frames(playback->buffer);
+    if (backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_PAUSED &&
+        avail_frames == 0) {
       if (playback->can_pause && !playback->currently_paused && !pause_failed) {
         // Record the pause only if it took effect (upstream:
         // threaded_device.rs:393-395). snd_pcm_pause() fails in PREPARED,
@@ -201,8 +228,6 @@ static void *alsa_playback_inner_thread_func(void *arg) {
     bool from_ring = false;
     bool write_fatal = false;
 
-    size_t avail_frames =
-        backend_buffer_get_available_read_frames(playback->buffer);
     if (avail_frames > 0) {
       const void *p1 = NULL, *p2 = NULL;
       size_t n1 = 0, n2 = 0;
@@ -329,30 +354,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           logger_debug(&g_logger,
                        "PB: Wait timed out, playback device takes too long to "
                        "drain buffer");
-          if (!playback->device_stalled) {
-            logger_warn(&g_logger, "PB: device stalled");
-            snd_pcm_drop(playback->pcm);
-            snd_pcm_prepare(playback->pcm);
-            snd_pcm_uframes_t avail_min =
-                playback->period > 0 ? (snd_pcm_uframes_t)playback->period : 1;
-            snd_pcm_uframes_t frames_to_stall =
-                (playback->bufsize >= avail_min)
-                    ? (playback->bufsize - avail_min + 1)
-                    : 1;
-            if (frames_to_stall > 0 && playback->zero_stall_buf) {
-              snd_pcm_sframes_t sw_rc = snd_pcm_writei(
-                  playback->pcm, playback->zero_stall_buf, frames_to_stall);
-              if (sw_rc < 0) {
-                logger_warn(&g_logger,
-                            "PB: Writing stall-check zeros failed with %s",
-                            snd_strerror((int)sw_rc));
-              } else {
-                logger_debug(&g_logger, "PB: Wrote %ld zero frames",
-                             (long)sw_rc);
-              }
-            }
-            playback->device_stalled = true;
-          }
+          alsa_playback_enter_stall(playback);
           continue;
         } else if (wait_rc == -EPIPE) {
           logger_debug(&g_logger, "PB: wait underrun, trying to recover");
@@ -412,7 +414,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
                         "PB: no write progress after %d attempts, "
                         "treating device as stalled",
                         max_no_progress);
-            playback->device_stalled = true;
+            alsa_playback_enter_stall(playback);
           }
           int wr = snd_pcm_wait(playback->pcm, 10);
           if (wr == -EPIPE) {
@@ -885,7 +887,13 @@ static bool alsa_playback_write(void *ctx, const audio_chunk_t *chunk,
   if (total_frames == 0)
     return true;
 
-  bool ok = backend_buffer_write_chunk(playback->buffer, chunk, 1, 500, err);
+  uint32_t sleep_ms = (uint32_t)lround((double)playback->chunk_size * 1000.0 /
+                                       (double)playback->sample_rate / 2.0);
+  if (sleep_ms < 1)
+    sleep_ms = 1;
+
+  bool ok =
+      backend_buffer_write_chunk(playback->buffer, chunk, sleep_ms, 16, err);
   if (!ok && err &&
       atomic_load_explicit(&playback->fatal_error, memory_order_acquire)) {
     // The inner thread died while this chunk was waiting for ring space.
@@ -917,6 +925,7 @@ static void alsa_playback_close(void *ctx) {
     snd_pcm_state_t st = snd_pcm_state(playback->pcm);
     bool eos = atomic_load_explicit(&playback->draining, memory_order_acquire);
     if (eos && !is_paused && !playback->currently_paused &&
+        !playback->device_stalled &&
         (st == SND_PCM_STATE_RUNNING || st == SND_PCM_STATE_DRAINING)) {
       // End of stream: let the device play out what it still holds. The
       // handle is non-blocking, where snd_pcm_drain() returns -EAGAIN at

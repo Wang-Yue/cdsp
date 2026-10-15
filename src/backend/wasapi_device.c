@@ -506,8 +506,14 @@ bool wasapi_is_supported_exclusive_with_quirks(
     return true;
   }
 
-  // 2. If channels <= 2, repeat query as standard WAVEFORMATEX
-  if (wave_fmt.Format.nChannels <= 2) {
+  // 2. If channels <= 2 and format can be unambiguously represented as standard
+  // WAVEFORMATEX (8/16/32/64-bit with validbits == storebits, skipping 24-bit
+  // formats per wasapi-rs 0.25 to_waveformatex), repeat query as WAVEFORMATEX
+  WORD storebits = wave_fmt.Format.wBitsPerSample;
+  WORD validbits = wave_fmt.Samples.wValidBitsPerSample;
+  if (wave_fmt.Format.nChannels <= 2 && validbits == storebits &&
+      (storebits == 8 || storebits == 16 || storebits == 32 ||
+       storebits == 64)) {
     WAVEFORMATEX std_wfx;
     memset(&std_wfx, 0, sizeof(WAVEFORMATEX));
     std_wfx.wFormatTag =

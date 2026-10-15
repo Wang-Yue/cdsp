@@ -255,8 +255,6 @@ static conv_coeffs_t *conv_coeffs_create(unsigned char *key, size_t key_len,
     return NULL;
   }
 
-  double inv_scale = 1.0 / (double)fft_len;
-
   for (size_t s = 0; s < num_seg; s++) {
     memset(scratch, 0, fft_len * sizeof(double));
     size_t offset = s * chunk_size;
@@ -265,7 +263,7 @@ static conv_coeffs_t *conv_coeffs_create(unsigned char *key, size_t key_len,
       copy_len = chunk_size;
     if (copy_len > 0 && coeffs) {
       for (size_t k = 0; k < copy_len; k++) {
-        scratch[k] = coeffs[offset + k] * inv_scale;
+        scratch[k] = coeffs[offset + k] / (double)fft_len;
       }
     }
     real_fft_forward(fft, scratch, entry->data + s * spec_stride);
@@ -375,6 +373,16 @@ static int conv_validate_params(const conv_config_t *params,
       config_error_set(err, CONFIG_ERR_INVALID_FILTER,
                        "Conv filter missing filename");
       return -1;
+    }
+    if (strcmp(params->format, "TEXT") != 0) {
+      binary_sample_format_t fmt =
+          file_sample_format_from_string(params->format);
+      if (fmt == BINARY_SAMPLE_FORMAT_INVALID || sample_format_is_dsd(fmt)) {
+        config_error_set(err, CONFIG_ERR_INVALID_FILTER,
+                         "Unsupported sample format '%s' for raw file '%s'",
+                         params->format, params->filename);
+        return -1;
+      }
     }
     break;
   case CONV_TYPE_DUMMY:

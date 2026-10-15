@@ -64,6 +64,7 @@ typedef struct {
   /// support is read live from the shared state, which the capture loop
   /// refreshes after the device is opened (03 CA-01).
   bool capture_pitch_supported;
+  bool has_async_resampler;
   bool rate_adjust_enabled;
   double adjust_period;
   int target_level;

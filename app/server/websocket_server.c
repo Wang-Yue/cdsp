@@ -602,11 +602,8 @@ static void push_vu_levels_event(client_session_t *session, uint64_t now,
   if (!session->vu_subscribed || (pb_ch == 0 && cap_ch == 0))
     return;
 
-  bool has_gens = (pb_gen > 0 || cap_gen > 0);
-  bool pb_changed =
-      has_gens ? (pb_gen != session->last_pb_generation) : (pb_ch > 0);
-  bool cap_changed =
-      has_gens ? (cap_gen != session->last_cap_generation) : (cap_ch > 0);
+  bool pb_changed = (pb_gen != session->last_pb_generation);
+  bool cap_changed = (cap_gen != session->last_cap_generation);
 
   if (pb_changed && pb_ch > 0) {
     session->last_pb_generation = pb_gen;
@@ -696,11 +693,8 @@ static void push_signal_levels_event(client_session_t *session, uint64_t pb_gen,
   bool send_cap = strcmp(session->signal_levels_side, "capture") == 0 ||
                   strcmp(session->signal_levels_side, "both") == 0;
 
-  bool has_gens = (pb_gen > 0 || cap_gen > 0);
-  bool pb_changed =
-      has_gens ? (pb_gen != session->last_sig_pb_generation) : true;
-  bool cap_changed =
-      has_gens ? (cap_gen != session->last_sig_cap_generation) : true;
+  bool pb_changed = (pb_gen != session->last_sig_pb_generation);
+  bool cap_changed = (cap_gen != session->last_sig_cap_generation);
 
   if (send_pb && pb_ch > 0 && pb_changed) {
     session->last_sig_pb_generation = pb_gen;
@@ -1032,7 +1026,8 @@ static cJSON *string_array_to_json(char **items, size_t count) {
 static bool get_fader_arg(cJSON *root, int *out_idx, dyn_string_t *ds) {
   cJSON *fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
   if (!fader_node || !cJSON_IsNumber(fader_node) ||
-      fader_node->valuedouble < 0.0) {
+      fader_node->valuedouble < 0.0 ||
+      fader_node->valuedouble != (double)fader_node->valueint) {
     reply_invalid("invalid type or missing field `fader`", ds);
     return false;
   }
@@ -1040,15 +1035,27 @@ static bool get_fader_arg(cJSON *root, int *out_idx, dyn_string_t *ds) {
   return true;
 }
 
-static void parse_volume_limits(cJSON *root, float *min_vol, float *max_vol) {
+static bool parse_volume_limits(cJSON *root, float *min_vol, float *max_vol,
+                                dyn_string_t *ds) {
   *min_vol = -150.0f;
   *max_vol = 50.0f;
   cJSON *min_node = cJSON_GetObjectItemCaseSensitive(root, "min");
-  if (min_node && cJSON_IsNumber(min_node))
+  if (min_node && !cJSON_IsNull(min_node)) {
+    if (!cJSON_IsNumber(min_node)) {
+      reply_invalid("invalid type for field `min`", ds);
+      return false;
+    }
     *min_vol = (float)min_node->valuedouble;
+  }
   cJSON *max_node = cJSON_GetObjectItemCaseSensitive(root, "max");
-  if (max_node && cJSON_IsNumber(max_node))
+  if (max_node && !cJSON_IsNull(max_node)) {
+    if (!cJSON_IsNumber(max_node)) {
+      reply_invalid("invalid type for field `max`", ds);
+      return false;
+    }
     *max_vol = (float)max_node->valuedouble;
+  }
+  return true;
 }
 
 static void handle_set_volume_common(websocket_server_t *server,
@@ -1059,7 +1066,8 @@ static void handle_set_volume_common(websocket_server_t *server,
   if (is_fader) {
     cJSON *fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
     if (!fader_node || !cJSON_IsNumber(fader_node) ||
-        fader_node->valuedouble < 0.0) {
+        fader_node->valuedouble < 0.0 ||
+        fader_node->valuedouble != (double)fader_node->valueint) {
       reply_invalid("invalid type or missing field `fader` or `value`", ds);
       return;
     }
@@ -1098,7 +1106,8 @@ static void handle_set_mute_common(websocket_server_t *server,
   if (is_fader) {
     cJSON *fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
     if (!fader_node || !cJSON_IsNumber(fader_node) ||
-        fader_node->valuedouble < 0.0) {
+        fader_node->valuedouble < 0.0 ||
+        fader_node->valuedouble != (double)fader_node->valueint) {
       reply_invalid("invalid type or missing field `fader` or `value`", ds);
       return;
     }
@@ -1296,7 +1305,9 @@ static bool parse_spectrum_args(cJSON *root, const char *cmd_name,
   if (!item_bins || !cJSON_IsNumber(item_bins) || item_bins->valueint < 2 ||
       item_bins->valuedouble != (double)item_bins->valueint) {
     if (item_bins && cJSON_IsNumber(item_bins) &&
-        (item_bins->valueint < 2 || item_bins->valuedouble < 2.0)) {
+        item_bins->valuedouble >= 0.0 &&
+        item_bins->valuedouble == (double)item_bins->valueint &&
+        item_bins->valueint < 2) {
       reply_error(cmd_name, "InvalidRequestError", "n_bins must be at least 2",
                   ds);
     } else {
@@ -1347,7 +1358,8 @@ static bool parse_spectrum_args(cJSON *root, const char *cmd_name,
   cJSON *item_chan = cJSON_GetObjectItemCaseSensitive(arg, "channel");
   if (item_chan && !cJSON_IsNull(item_chan)) {
     if (cJSON_IsNumber(item_chan)) {
-      if (item_chan->valueint < 0) {
+      if (item_chan->valuedouble < 0.0 ||
+          item_chan->valuedouble != (double)item_chan->valueint) {
         reply_invalid("channel must be non-negative", ds);
         return false;
       }
@@ -1658,7 +1670,8 @@ void websocket_server_handle_command(websocket_server_t *server, int client_idx,
       break;
     }
     float min_vol, max_vol;
-    parse_volume_limits(root, &min_vol, &max_vol);
+    if (!parse_volume_limits(root, &min_vol, &max_vol, ds))
+      break;
     server_handle_adjust_volume_fader(server, CDSP_FADER_MAIN,
                                       (float)val_node->valuedouble, min_vol,
                                       max_vol, ds, simple);
@@ -1669,12 +1682,16 @@ void websocket_server_handle_command(websocket_server_t *server, int client_idx,
     cJSON *fader_node = cJSON_GetObjectItemCaseSensitive(root, "fader");
     cJSON *val_node = cJSON_GetObjectItemCaseSensitive(root, "value");
     if (!fader_node || !val_node || !cJSON_IsNumber(fader_node) ||
-        !cJSON_IsNumber(val_node) || fader_node->valuedouble < 0.0) {
+        !cJSON_IsNumber(val_node) || fader_node->valuedouble < 0.0 ||
+        fader_node->valuedouble != (double)fader_node->valueint) {
       reply_invalid("invalid type or missing field `fader` or `value`", ds);
       break;
     }
     int fader = fader_node->valueint;
     float val = (float)val_node->valuedouble;
+    float min_vol, max_vol;
+    if (!parse_volume_limits(root, &min_vol, &max_vol, ds))
+      break;
     if (fader < 0 || fader >= CDSP_FADER_COUNT) {
       cJSON *arr = cJSON_CreateArray();
       cJSON_AddItemToArray(arr, cJSON_CreateNumber(fader));
@@ -1682,8 +1699,6 @@ void websocket_server_handle_command(websocket_server_t *server, int client_idx,
       reply_error_with_value(simple, "InvalidFaderError", NULL, arr, ds);
       break;
     }
-    float min_vol, max_vol;
-    parse_volume_limits(root, &min_vol, &max_vol);
     server_handle_adjust_volume_fader(server, (cdsp_fader_t)fader, val, min_vol,
                                       max_vol, ds, simple);
     break;
@@ -2122,8 +2137,7 @@ void websocket_server_handle_command(websocket_server_t *server, int client_idx,
       reply_ok(simple, NULL, ds);
     } else {
       const char *err_key = get_websocket_error_key(err.type);
-      if (!is_json && (strncmp(err.message, "YAML parse error", 16) == 0 ||
-                       err.type == CDSP_BACKEND_ERR_CONFIG_PARSE))
+      if (!is_json && strncmp(err.message, "YAML parse error", 16) == 0)
         err_key = "ConfigReadError";
       reply_error(simple, err_key, err.message, ds);
     }
@@ -2211,8 +2225,7 @@ void websocket_server_handle_command(websocket_server_t *server, int client_idx,
       reply_ok(simple, NULL, ds);
     } else {
       const char *err_key = get_websocket_error_key(err.type);
-      if (err.type == CDSP_BACKEND_ERR_CONFIG_PARSE ||
-          strncmp(err.message, "YAML parse error", 16) == 0)
+      if (strncmp(err.message, "YAML parse error", 16) == 0)
         err_key = "ConfigReadError";
       reply_error(simple, err_key,
                   err.message[0]
@@ -2251,7 +2264,7 @@ void websocket_server_handle_command(websocket_server_t *server, int client_idx,
         reply_ok(simple, NULL, ds);
       } else {
         const char *err_key = get_websocket_error_key(err.type);
-        if (err.type == CDSP_BACKEND_ERR_CONFIG_PARSE)
+        if (strcmp(err.message, "Patch must be a JSON object") == 0)
           err_key = "ConfigReadError";
         reply_error(simple, err_key,
                     err.message[0] ? err.message : "Invalid patch", ds);

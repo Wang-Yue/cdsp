@@ -373,8 +373,10 @@ struct mixer_config_t {
 /** Struct: compressor_config */
 struct compressor_config_t {
   size_t channels;
+  bool has_monitor_channels;
   size_t *monitor_channels;
   size_t monitor_channels_count;
+  bool has_process_channels;
   size_t *process_channels;
   size_t process_channels_count;
   double attack;
@@ -393,8 +395,10 @@ struct compressor_config_t {
 /** Struct: noise_gate_config */
 struct noise_gate_config_t {
   size_t channels;
+  bool has_monitor_channels;
   size_t *monitor_channels;
   size_t monitor_channels_count;
+  bool has_process_channels;
   size_t *process_channels;
   size_t process_channels_count;
   double attack;
@@ -420,8 +424,10 @@ struct race_config_t {
 /** Struct: lookahead_limiter_processor_config */
 struct lookahead_limiter_processor_config_t {
   size_t channels;
+  bool has_monitor_channels;
   size_t *monitor_channels;
   size_t monitor_channels_count;
+  bool has_process_channels;
   size_t *process_channels;
   size_t process_channels_count;
   bool has_limit;

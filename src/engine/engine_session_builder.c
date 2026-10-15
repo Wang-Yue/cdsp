@@ -341,9 +341,21 @@ static bool engine_session_spawn_worker_threads(dsp_session_t *core,
   // Prep for Step 8: Instantiate the loop orchestrators.
   const bool *used_channels =
       pipeline_get_used_capture_channels(core->pipeline, NULL);
-  if (used_channels && core->capture_chunk_pool) {
-    round_robin_chunk_pool_set_used_channels(core->capture_chunk_pool,
-                                             used_channels);
+  size_t cap_ch = capture_device_config_get_channels(&config->devices.capture);
+  if (core->capture_chunk_pool) {
+    if (used_channels) {
+      round_robin_chunk_pool_set_used_channels(core->capture_chunk_pool,
+                                               used_channels);
+    } else if (cap_ch > 0) {
+      bool *all_used = (bool *)malloc(cap_ch * sizeof(bool));
+      if (all_used) {
+        for (size_t c = 0; c < cap_ch; c++)
+          all_used[c] = true;
+        round_robin_chunk_pool_set_used_channels(core->capture_chunk_pool,
+                                                 all_used);
+        free(all_used);
+      }
+    }
   }
 
   engine_capture_loop_config_t cap_cfg = {
@@ -426,6 +438,10 @@ static bool engine_session_spawn_worker_threads(dsp_session_t *core,
       .capture_pitch_supported =
           core->capture ? capture_backend_pitch_control_supported(core->capture)
                         : false,
+      .has_async_resampler =
+          (core->resampler != NULL && config->devices.has_resampler &&
+           (config->devices.resampler.type == RESAMPLER_TYPE_ASYNC_SINC ||
+            config->devices.resampler.type == RESAMPLER_TYPE_ASYNC_POLY)),
       .rate_adjust_enabled = rate_adjust_enabled,
       .adjust_period = adjust_period,
       .target_level = target_level,

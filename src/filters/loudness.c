@@ -411,6 +411,10 @@ static void loudness_filter_transfer_state(void *dest_ptr,
                            : src->last_volume;
   dest->last_volume = current_vol;
   recompute_shelves(dest, current_vol, false);
+  if (loudness_config_equal(&dest->params, &src->params) &&
+      fabs(current_vol - src->last_volume) <= 0.01) {
+    dest->is_processing_active = src->is_processing_active;
+  }
 }
 
 void loudness_filter_bind_fader_levels(loudness_filter_t *filter,

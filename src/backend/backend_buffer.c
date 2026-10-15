@@ -493,9 +493,9 @@ static void backend_buffer_report_drop(backend_buffer_t *bb, size_t amount,
  * Scan an output chunk for clipped samples (outside [-1.0, 1.0)), which cannot
  * be represented in fixed-point integers. Matching upstream CamillaDSP,
  * clipping is only counted for integer playback formats (float formats keep
- * headroom), only for the channels actually encoded, and only for chunks that
- * are really written: upstream counts inside the conversion, so paused,
- * stopped or dropped chunks do not contribute.
+ * headroom) and only for the channels actually encoded. Paused or stopped
+ * streams do not contribute, while chunks dropped on a full ring are still
+ * counted (upstream counts before RingBufferFeeder::push).
  */
 static void backend_buffer_count_clipped(backend_buffer_t *bb,
                                          const audio_chunk_t *chunk) {
@@ -718,6 +718,7 @@ static bool backend_buffer_write(backend_buffer_t *bb,
     // Audio chunks must be written as atomic units. If the ring buffer cannot
     // fit the complete chunk after backoff, drop the entire chunk rather than
     // pushing a fractured sub-chunk (waveform discontinuity).
+    backend_buffer_count_clipped(bb, chunk);
     backend_buffer_report_drop(bb, bytes_to_write, "bytes");
     if (err)
       backend_error_init(err, BACKEND_ERROR_NONE, "");
@@ -963,6 +964,7 @@ static bool backend_buffer_planar_write(backend_buffer_t *bb,
     // Audio chunks must be written as atomic units. If the ring buffer cannot
     // fit the complete chunk after backoff, drop the entire chunk rather than
     // pushing a fractured sub-chunk (waveform discontinuity).
+    backend_buffer_count_clipped(bb, chunk);
     backend_buffer_report_drop(bb, frames, "frames");
     if (err)
       backend_error_init(err, BACKEND_ERROR_NONE, "");

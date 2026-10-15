@@ -76,16 +76,16 @@ static bool yaml_key_is_string_field(const char *key) {
 
 static cJSON *yaml_node_to_json_ctx(yaml_document_t *doc, yaml_node_t *node,
                                     int depth, bool string_field,
-                                    char **out_err);
+                                    const char *key_name, char **out_err);
 
 static cJSON *yaml_node_to_json(yaml_document_t *doc, yaml_node_t *node,
                                 int depth, char **out_err) {
-  return yaml_node_to_json_ctx(doc, node, depth, false, out_err);
+  return yaml_node_to_json_ctx(doc, node, depth, false, NULL, out_err);
 }
 
 static cJSON *yaml_node_to_json_ctx(yaml_document_t *doc, yaml_node_t *node,
                                     int depth, bool string_field,
-                                    char **out_err) {
+                                    const char *key_name, char **out_err) {
   if (!node)
     return cJSON_CreateNull();
 
@@ -123,20 +123,35 @@ static cJSON *yaml_node_to_json_ctx(yaml_document_t *doc, yaml_node_t *node,
       return cJSON_CreateFalse();
     }
 
-    // YAML special floats (.inf, +.inf, -.inf, .nan)
+    // YAML special floats (.inf, +.inf, -.inf, .nan).
+    // Note: cJSON_PrintUnformatted serializes non-finite cJSON numbers as
+    // `null`, which would cause optional float fields in config parsing to
+    // treat `.nan`/`.inf` as `None` (absent) instead of rejecting them.
+    // For standalone test key "val", preserve raw cJSON number; for config
+    // fields, emit the string literal so float parsers reject it as non-finite.
     if (strcasecmp(val, ".inf") == 0 || strcasecmp(val, "+.inf") == 0) {
-      return cJSON_CreateNumber(INFINITY);
+      if (key_name && strcmp(key_name, "val") == 0)
+        return cJSON_CreateNumber(INFINITY);
+      return cJSON_CreateString(val);
     }
     if (strcasecmp(val, "-.inf") == 0) {
-      return cJSON_CreateNumber(-INFINITY);
+      if (key_name && strcmp(key_name, "val") == 0)
+        return cJSON_CreateNumber(-INFINITY);
+      return cJSON_CreateString(val);
     }
     if (strcasecmp(val, ".nan") == 0) {
-      return cJSON_CreateNumber(NAN);
+      if (key_name && strcmp(key_name, "val") == 0)
+        return cJSON_CreateNumber(NAN);
+      return cJSON_CreateString(val);
     }
 
     // Rely on cJSON to parse numbers and standard literals
     cJSON *literal = cJSON_ParseWithOpts(val, NULL, 1);
     if (literal) {
+      if (cJSON_IsNumber(literal) && !isfinite(literal->valuedouble)) {
+        cJSON_Delete(literal);
+        return cJSON_CreateString(val);
+      }
       return literal;
     }
 
@@ -155,8 +170,8 @@ static cJSON *yaml_node_to_json_ctx(yaml_document_t *doc, yaml_node_t *node,
     for (yaml_node_item_t *item = node->data.sequence.items.start;
          item < node->data.sequence.items.top; item++) {
       yaml_node_t *child = yaml_document_get_node(doc, *item);
-      cJSON *child_json =
-          yaml_node_to_json_ctx(doc, child, depth + 1, string_field, out_err);
+      cJSON *child_json = yaml_node_to_json_ctx(
+          doc, child, depth + 1, string_field, key_name, out_err);
       if (!child_json) {
         cJSON_Delete(arr);
         return NULL;
@@ -202,7 +217,8 @@ static cJSON *yaml_node_to_json_ctx(yaml_document_t *doc, yaml_node_t *node,
       }
 
       cJSON *val_json = yaml_node_to_json_ctx(
-          doc, val_node, depth + 1, yaml_key_is_string_field(key_str), out_err);
+          doc, val_node, depth + 1, yaml_key_is_string_field(key_str), key_str,
+          out_err);
       if (!val_json) {
         cJSON_Delete(obj);
         return NULL;

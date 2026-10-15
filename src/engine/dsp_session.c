@@ -324,14 +324,13 @@ bool dsp_session_reload_config(dsp_session_t *core, dsp_config_t *new_config,
   dsp_config_t *old_config = core->current_config;
   pthread_mutex_unlock(&core->config_mutex);
 
-  if (dsp_session_get_state(core) == PROCESSING_STATE_INACTIVE) {
-    pthread_mutex_lock(&core->config_mutex);
-    if (old_config && old_config != new_config) {
-      dsp_config_free(old_config);
+  if (dsp_session_get_state(core) == PROCESSING_STATE_INACTIVE ||
+      dsp_session_get_stop_reason(core).type != STOP_REASON_NONE) {
+    if (err) {
+      err->type = AUDIO_BACKEND_ERR_ENGINE_NOT_RUNNING;
+      strcpy(err->message, "Session is stopping or inactive");
     }
-    core->current_config = new_config;
-    pthread_mutex_unlock(&core->config_mutex);
-    return true;
+    return false;
   }
 
   // Upstream engine.rs resets both loads whenever a config change arrives
@@ -378,15 +377,8 @@ bool dsp_session_reload_config(dsp_session_t *core, dsp_config_t *new_config,
                                         transfer_filters);
     const bool *used_channels =
         pipeline_get_used_capture_channels(new_pipeline, NULL);
-    if (used_channels) {
-      if (core->capture_chunk_pool) {
-        round_robin_chunk_pool_set_used_channels(core->capture_chunk_pool,
-                                                 used_channels);
-      }
-      if (core->capture_loop) {
-        engine_capture_loop_set_used_channels(core->capture_loop,
-                                              used_channels);
-      }
+    if (used_channels && core->capture_loop) {
+      engine_capture_loop_set_used_channels(core->capture_loop, used_channels);
     }
   } else {
     pipeline_free(new_pipeline);

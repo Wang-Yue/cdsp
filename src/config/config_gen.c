@@ -781,16 +781,16 @@ cJSON *serialize_resampler_config(const resampler_config_t *in) {
       }
     case RESAMPLER_TYPE_ASYNC_POLY:
       {
-        if (in->has_interpolation) if (in->interpolation[0]) cJSON_AddStringToObject(obj, "interpolation", in->interpolation);
+        if (in->has_interpolation) cJSON_AddStringToObject(obj, "interpolation", in->interpolation);
         break;
       }
     case RESAMPLER_TYPE_ASYNC_SINC:
       {
-        if (in->has_profile) if (in->profile[0]) cJSON_AddStringToObject(obj, "profile", in->profile);
+        if (in->has_profile) cJSON_AddStringToObject(obj, "profile", in->profile);
         if (in->has_sinc_len) cJSON_AddNumberToObject(obj, "sinc_len", (double)in->sinc_len);
         if (in->has_oversampling_factor) cJSON_AddNumberToObject(obj, "oversampling_factor", (double)in->oversampling_factor);
-        if (in->has_interpolation) if (in->interpolation[0]) cJSON_AddStringToObject(obj, "interpolation", in->interpolation);
-        if (in->has_window) if (in->window[0]) cJSON_AddStringToObject(obj, "window", in->window);
+        if (in->has_interpolation) cJSON_AddStringToObject(obj, "interpolation", in->interpolation);
+        if (in->has_window) cJSON_AddStringToObject(obj, "window", in->window);
         if (in->has_f_cutoff) cJSON_AddNumberToObject(obj, "f_cutoff", (double)in->f_cutoff);
         break;
       }
@@ -1057,7 +1057,15 @@ int parse_mixer_config(const cJSON *obj, const char *ctx, mixer_config_t *out, c
   static const char *const req_channels[] = {"in", "out", NULL};
   if (require_json_fields(channels_obj, req_channels, "mixer_config channels", NULL, err) != 0) return -1;
   if (parse_json_size_t_strict(channels_obj, "in", "mixer_config channels", &out->channels_in, NULL, err) != 0) return -1;
+  if (out->channels_in < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "in", "mixer_config channels");
+    return -1;
+  }
   if (parse_json_size_t_strict(channels_obj, "out", "mixer_config channels", &out->channels_out, NULL, err) != 0) return -1;
+  if (out->channels_out < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "out", "mixer_config channels");
+    return -1;
+  }
   return 0;
 }
 
@@ -1154,10 +1162,12 @@ int parse_compressor_config(const cJSON *obj, const char *ctx, compressor_config
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "compressor_config", &out->channels, NULL, err) != 0) return -1;
   cJSON *arr_monitor_channels = cJSON_GetObjectItemCaseSensitive(obj, "monitor_channels");
   if (arr_monitor_channels && !cJSON_IsNull(arr_monitor_channels)) {
+    out->has_monitor_channels = true;
     if (parse_size_t_array_strict(arr_monitor_channels, "monitor_channels", ctx ? ctx : "compressor_config", &out->monitor_channels, &out->monitor_channels_count, err) != 0) return -1;
   }
   cJSON *arr_process_channels = cJSON_GetObjectItemCaseSensitive(obj, "process_channels");
   if (arr_process_channels && !cJSON_IsNull(arr_process_channels)) {
+    out->has_process_channels = true;
     if (parse_size_t_array_strict(arr_process_channels, "process_channels", ctx ? ctx : "compressor_config", &out->process_channels, &out->process_channels_count, err) != 0) return -1;
   }
   if (parse_json_double_strict(obj, "attack", ctx ? ctx : "compressor_config", &out->attack, NULL, err) != 0) return -1;
@@ -1199,14 +1209,14 @@ cJSON *serialize_compressor_config(const compressor_config_t *in) {
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->monitor_channels && in->monitor_channels_count > 0) {
+  if (in->has_monitor_channels) {
     cJSON *arr = cJSON_CreateArray();
     for (size_t i = 0; i < in->monitor_channels_count; i++) {
       cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)in->monitor_channels[i]));
     }
     cJSON_AddItemToObject(obj, "monitor_channels", arr);
   }
-  if (in->process_channels && in->process_channels_count > 0) {
+  if (in->has_process_channels) {
     cJSON *arr = cJSON_CreateArray();
     for (size_t i = 0; i < in->process_channels_count; i++) {
       cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)in->process_channels[i]));
@@ -1229,18 +1239,24 @@ bool compressor_config_equal(const compressor_config_t *a, const compressor_conf
   if (a == b) return true;
   if (!a || !b) return false;
   if (a->channels != b->channels) return false;
-  if (a->monitor_channels_count != b->monitor_channels_count) return false;
-  if (a->monitor_channels_count > 0) {
-    if (!a->monitor_channels || !b->monitor_channels) return false;
-    for (size_t i = 0; i < a->monitor_channels_count; i++) {
-      if (a->monitor_channels[i] != b->monitor_channels[i]) return false;
+  if (a->has_monitor_channels != b->has_monitor_channels) return false;
+  if (a->has_monitor_channels) {
+    if (a->monitor_channels_count != b->monitor_channels_count) return false;
+    if (a->monitor_channels_count > 0) {
+      if (!a->monitor_channels || !b->monitor_channels) return false;
+      for (size_t i = 0; i < a->monitor_channels_count; i++) {
+        if (a->monitor_channels[i] != b->monitor_channels[i]) return false;
+      }
     }
   }
-  if (a->process_channels_count != b->process_channels_count) return false;
-  if (a->process_channels_count > 0) {
-    if (!a->process_channels || !b->process_channels) return false;
-    for (size_t i = 0; i < a->process_channels_count; i++) {
-      if (a->process_channels[i] != b->process_channels[i]) return false;
+  if (a->has_process_channels != b->has_process_channels) return false;
+  if (a->has_process_channels) {
+    if (a->process_channels_count != b->process_channels_count) return false;
+    if (a->process_channels_count > 0) {
+      if (!a->process_channels || !b->process_channels) return false;
+      for (size_t i = 0; i < a->process_channels_count; i++) {
+        if (a->process_channels[i] != b->process_channels[i]) return false;
+      }
     }
   }
   if (a->attack != b->attack) return false;
@@ -1289,10 +1305,12 @@ int parse_noise_gate_config(const cJSON *obj, const char *ctx, noise_gate_config
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "noise_gate_config", &out->channels, NULL, err) != 0) return -1;
   cJSON *arr_monitor_channels = cJSON_GetObjectItemCaseSensitive(obj, "monitor_channels");
   if (arr_monitor_channels && !cJSON_IsNull(arr_monitor_channels)) {
+    out->has_monitor_channels = true;
     if (parse_size_t_array_strict(arr_monitor_channels, "monitor_channels", ctx ? ctx : "noise_gate_config", &out->monitor_channels, &out->monitor_channels_count, err) != 0) return -1;
   }
   cJSON *arr_process_channels = cJSON_GetObjectItemCaseSensitive(obj, "process_channels");
   if (arr_process_channels && !cJSON_IsNull(arr_process_channels)) {
+    out->has_process_channels = true;
     if (parse_size_t_array_strict(arr_process_channels, "process_channels", ctx ? ctx : "noise_gate_config", &out->process_channels, &out->process_channels_count, err) != 0) return -1;
   }
   if (parse_json_double_strict(obj, "attack", ctx ? ctx : "noise_gate_config", &out->attack, NULL, err) != 0) return -1;
@@ -1331,14 +1349,14 @@ cJSON *serialize_noise_gate_config(const noise_gate_config_t *in) {
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->monitor_channels && in->monitor_channels_count > 0) {
+  if (in->has_monitor_channels) {
     cJSON *arr = cJSON_CreateArray();
     for (size_t i = 0; i < in->monitor_channels_count; i++) {
       cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)in->monitor_channels[i]));
     }
     cJSON_AddItemToObject(obj, "monitor_channels", arr);
   }
-  if (in->process_channels && in->process_channels_count > 0) {
+  if (in->has_process_channels) {
     cJSON *arr = cJSON_CreateArray();
     for (size_t i = 0; i < in->process_channels_count; i++) {
       cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)in->process_channels[i]));
@@ -1358,18 +1376,24 @@ bool noise_gate_config_equal(const noise_gate_config_t *a, const noise_gate_conf
   if (a == b) return true;
   if (!a || !b) return false;
   if (a->channels != b->channels) return false;
-  if (a->monitor_channels_count != b->monitor_channels_count) return false;
-  if (a->monitor_channels_count > 0) {
-    if (!a->monitor_channels || !b->monitor_channels) return false;
-    for (size_t i = 0; i < a->monitor_channels_count; i++) {
-      if (a->monitor_channels[i] != b->monitor_channels[i]) return false;
+  if (a->has_monitor_channels != b->has_monitor_channels) return false;
+  if (a->has_monitor_channels) {
+    if (a->monitor_channels_count != b->monitor_channels_count) return false;
+    if (a->monitor_channels_count > 0) {
+      if (!a->monitor_channels || !b->monitor_channels) return false;
+      for (size_t i = 0; i < a->monitor_channels_count; i++) {
+        if (a->monitor_channels[i] != b->monitor_channels[i]) return false;
+      }
     }
   }
-  if (a->process_channels_count != b->process_channels_count) return false;
-  if (a->process_channels_count > 0) {
-    if (!a->process_channels || !b->process_channels) return false;
-    for (size_t i = 0; i < a->process_channels_count; i++) {
-      if (a->process_channels[i] != b->process_channels[i]) return false;
+  if (a->has_process_channels != b->has_process_channels) return false;
+  if (a->has_process_channels) {
+    if (a->process_channels_count != b->process_channels_count) return false;
+    if (a->process_channels_count > 0) {
+      if (!a->process_channels || !b->process_channels) return false;
+      for (size_t i = 0; i < a->process_channels_count; i++) {
+        if (a->process_channels[i] != b->process_channels[i]) return false;
+      }
     }
   }
   if (a->attack != b->attack) return false;
@@ -1491,10 +1515,12 @@ int parse_lookahead_limiter_processor_config(const cJSON *obj, const char *ctx, 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "lookahead_limiter_processor_config", &out->channels, NULL, err) != 0) return -1;
   cJSON *arr_monitor_channels = cJSON_GetObjectItemCaseSensitive(obj, "monitor_channels");
   if (arr_monitor_channels && !cJSON_IsNull(arr_monitor_channels)) {
+    out->has_monitor_channels = true;
     if (parse_size_t_array_strict(arr_monitor_channels, "monitor_channels", ctx ? ctx : "lookahead_limiter_processor_config", &out->monitor_channels, &out->monitor_channels_count, err) != 0) return -1;
   }
   cJSON *arr_process_channels = cJSON_GetObjectItemCaseSensitive(obj, "process_channels");
   if (arr_process_channels && !cJSON_IsNull(arr_process_channels)) {
+    out->has_process_channels = true;
     if (parse_size_t_array_strict(arr_process_channels, "process_channels", ctx ? ctx : "lookahead_limiter_processor_config", &out->process_channels, &out->process_channels_count, err) != 0) return -1;
   }
   if (parse_json_double_strict(obj, "limit", ctx ? ctx : "lookahead_limiter_processor_config", &out->limit, &out->has_limit, err) != 0) return -1;
@@ -1533,14 +1559,14 @@ cJSON *serialize_lookahead_limiter_processor_config(const lookahead_limiter_proc
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->monitor_channels && in->monitor_channels_count > 0) {
+  if (in->has_monitor_channels) {
     cJSON *arr = cJSON_CreateArray();
     for (size_t i = 0; i < in->monitor_channels_count; i++) {
       cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)in->monitor_channels[i]));
     }
     cJSON_AddItemToObject(obj, "monitor_channels", arr);
   }
-  if (in->process_channels && in->process_channels_count > 0) {
+  if (in->has_process_channels) {
     cJSON *arr = cJSON_CreateArray();
     for (size_t i = 0; i < in->process_channels_count; i++) {
       cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)in->process_channels[i]));
@@ -1560,18 +1586,24 @@ bool lookahead_limiter_processor_config_equal(const lookahead_limiter_processor_
   if (a == b) return true;
   if (!a || !b) return false;
   if (a->channels != b->channels) return false;
-  if (a->monitor_channels_count != b->monitor_channels_count) return false;
-  if (a->monitor_channels_count > 0) {
-    if (!a->monitor_channels || !b->monitor_channels) return false;
-    for (size_t i = 0; i < a->monitor_channels_count; i++) {
-      if (a->monitor_channels[i] != b->monitor_channels[i]) return false;
+  if (a->has_monitor_channels != b->has_monitor_channels) return false;
+  if (a->has_monitor_channels) {
+    if (a->monitor_channels_count != b->monitor_channels_count) return false;
+    if (a->monitor_channels_count > 0) {
+      if (!a->monitor_channels || !b->monitor_channels) return false;
+      for (size_t i = 0; i < a->monitor_channels_count; i++) {
+        if (a->monitor_channels[i] != b->monitor_channels[i]) return false;
+      }
     }
   }
-  if (a->process_channels_count != b->process_channels_count) return false;
-  if (a->process_channels_count > 0) {
-    if (!a->process_channels || !b->process_channels) return false;
-    for (size_t i = 0; i < a->process_channels_count; i++) {
-      if (a->process_channels[i] != b->process_channels[i]) return false;
+  if (a->has_process_channels != b->has_process_channels) return false;
+  if (a->has_process_channels) {
+    if (a->process_channels_count != b->process_channels_count) return false;
+    if (a->process_channels_count > 0) {
+      if (!a->process_channels || !b->process_channels) return false;
+      for (size_t i = 0; i < a->process_channels_count; i++) {
+        if (a->process_channels[i] != b->process_channels[i]) return false;
+      }
     }
   }
   if (a->has_limit != b->has_limit) return false;
@@ -2388,14 +2420,14 @@ cJSON *serialize_conv_config(const conv_config_t *in) {
   switch (in->type) {
     case CONV_TYPE_WAV:
       {
-        if (in->has_filename) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
+        if (in->has_filename) cJSON_AddStringToObject(obj, "filename", in->filename);
         if (in->has_channel) cJSON_AddNumberToObject(obj, "channel", (double)in->channel);
         break;
       }
     case CONV_TYPE_RAW:
       {
-        if (in->has_filename) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
-        if (in->has_format) if (in->format[0]) cJSON_AddStringToObject(obj, "format", in->format);
+        if (in->has_filename) cJSON_AddStringToObject(obj, "filename", in->filename);
+        if (in->has_format) cJSON_AddStringToObject(obj, "format", in->format);
         if (in->has_skip_bytes_lines) cJSON_AddNumberToObject(obj, "skip_bytes_lines", (double)in->skip_bytes_lines);
         if (in->has_read_bytes_lines) cJSON_AddNumberToObject(obj, "read_bytes_lines", (double)in->read_bytes_lines);
         break;
@@ -3363,7 +3395,7 @@ int parse_pipeline_step_config(const cJSON *obj, const char *ctx, pipeline_step_
         cJSON *arr_names = cJSON_GetObjectItemCaseSensitive(obj, "names");
         if (arr_names && !cJSON_IsNull(arr_names)) {
           out->has_names = true;
-          if (parse_labels_array_strict(arr_names, &out->names, &out->names_count, NULL) != 0) {
+          if (parse_string_array_strict(arr_names, 128, &out->names, &out->names_count) != 0) {
             config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be an array of strings", "names", ctx ? ctx : "pipeline_step_config");
             return -1;
           }
@@ -3431,14 +3463,14 @@ cJSON *serialize_pipeline_step_config(const pipeline_step_config_t *in) {
       }
     case PIPELINE_STEP_TYPE_MIXER:
       {
-        if (in->has_name) if (in->name[0]) cJSON_AddStringToObject(obj, "name", in->name);
+        if (in->has_name) cJSON_AddStringToObject(obj, "name", in->name);
         if (1) if (in->description[0]) cJSON_AddStringToObject(obj, "description", in->description);
         if (1) cJSON_AddBoolToObject(obj, "bypassed", in->bypassed);
         break;
       }
     case PIPELINE_STEP_TYPE_PROCESSOR:
       {
-        if (in->has_name) if (in->name[0]) cJSON_AddStringToObject(obj, "name", in->name);
+        if (in->has_name) cJSON_AddStringToObject(obj, "name", in->name);
         if (1) if (in->description[0]) cJSON_AddStringToObject(obj, "description", in->description);
         if (1) cJSON_AddBoolToObject(obj, "bypassed", in->bypassed);
         break;
@@ -3604,6 +3636,10 @@ int parse_coreaudio_capture_config(const cJSON *obj, const char *ctx, coreaudio_
   if (require_json_fields(obj, req_keys, ctx ? ctx : "coreaudio_capture_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "coreaudio_capture_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "coreaudio_capture_config");
+    return -1;
+  }
   if (parse_json_str_strict(obj, "device", ctx ? ctx : "coreaudio_capture_config", out->device, sizeof(out->device), &out->has_device, err) != 0) return -1;
   {
     static const config_enum_variant_t format_coreaudio_sample_format_variants[] = {
@@ -3628,7 +3664,7 @@ cJSON *serialize_coreaudio_capture_config(const coreaudio_capture_config_t *in) 
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->has_device) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
+  if (in->has_device) cJSON_AddStringToObject(obj, "device", in->device);
   if (in->has_format) cJSON_AddStringToObject(obj, "format", coreaudio_sample_format_to_string(in->format));
   if (in->has_loopback) cJSON_AddBoolToObject(obj, "loopback", in->loopback);
   return obj;
@@ -3680,6 +3716,10 @@ int parse_coreaudio_playback_config(const cJSON *obj, const char *ctx, coreaudio
   if (require_json_fields(obj, req_keys, ctx ? ctx : "coreaudio_playback_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "coreaudio_playback_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "coreaudio_playback_config");
+    return -1;
+  }
   if (parse_json_str_strict(obj, "device", ctx ? ctx : "coreaudio_playback_config", out->device, sizeof(out->device), &out->has_device, err) != 0) return -1;
   {
     static const config_enum_variant_t format_coreaudio_sample_format_variants[] = {
@@ -3709,7 +3749,7 @@ cJSON *serialize_coreaudio_playback_config(const coreaudio_playback_config_t *in
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->has_device) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
+  if (in->has_device) cJSON_AddStringToObject(obj, "device", in->device);
   if (in->has_format) cJSON_AddStringToObject(obj, "format", coreaudio_sample_format_to_string(in->format));
   if (in->has_exclusive) cJSON_AddBoolToObject(obj, "exclusive", in->exclusive);
   if (in->has_target_level) cJSON_AddNumberToObject(obj, "target_level", (double)in->target_level);
@@ -3766,6 +3806,10 @@ int parse_alsa_capture_config(const cJSON *obj, const char *ctx, alsa_capture_co
   if (require_json_fields(obj, req_keys, ctx ? ctx : "alsa_capture_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "alsa_capture_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "alsa_capture_config");
+    return -1;
+  }
   if (parse_json_str_strict(obj, "device", ctx ? ctx : "alsa_capture_config", out->device, sizeof(out->device), NULL, err) != 0) return -1;
   {
     static const config_enum_variant_t format_alsa_sample_format_variants[] = {
@@ -3799,11 +3843,11 @@ cJSON *serialize_alsa_capture_config(const alsa_capture_config_t *in) {
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (1) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
+  if (1) cJSON_AddStringToObject(obj, "device", in->device);
   if (in->has_format) cJSON_AddStringToObject(obj, "format", alsa_sample_format_to_string(in->format));
   if (in->has_stop_on_inactive) cJSON_AddBoolToObject(obj, "stop_on_inactive", in->stop_on_inactive);
-  if (in->has_link_volume_control) if (in->link_volume_control[0]) cJSON_AddStringToObject(obj, "link_volume_control", in->link_volume_control);
-  if (in->has_link_mute_control) if (in->link_mute_control[0]) cJSON_AddStringToObject(obj, "link_mute_control", in->link_mute_control);
+  if (in->has_link_volume_control) cJSON_AddStringToObject(obj, "link_volume_control", in->link_volume_control);
+  if (in->has_link_mute_control) cJSON_AddStringToObject(obj, "link_mute_control", in->link_mute_control);
   return obj;
 }
 
@@ -3857,6 +3901,10 @@ int parse_alsa_playback_config(const cJSON *obj, const char *ctx, alsa_playback_
   if (require_json_fields(obj, req_keys, ctx ? ctx : "alsa_playback_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "alsa_playback_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "alsa_playback_config");
+    return -1;
+  }
   if (parse_json_str_strict(obj, "device", ctx ? ctx : "alsa_playback_config", out->device, sizeof(out->device), NULL, err) != 0) return -1;
   {
     static const config_enum_variant_t format_alsa_sample_format_variants[] = {
@@ -3892,7 +3940,7 @@ cJSON *serialize_alsa_playback_config(const alsa_playback_config_t *in) {
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (1) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
+  if (1) cJSON_AddStringToObject(obj, "device", in->device);
   if (in->has_format) cJSON_AddStringToObject(obj, "format", alsa_sample_format_to_string(in->format));
   if (in->has_target_level) cJSON_AddNumberToObject(obj, "target_level", (double)in->target_level);
   return obj;
@@ -3941,6 +3989,10 @@ int parse_pipewire_capture_config(const cJSON *obj, const char *ctx, pipewire_ca
   if (require_json_fields(obj, req_keys, ctx ? ctx : "pipewire_capture_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "pipewire_capture_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "pipewire_capture_config");
+    return -1;
+  }
   if (parse_json_str_strict(obj, "device", ctx ? ctx : "pipewire_capture_config", out->device, sizeof(out->device), &out->has_device, err) != 0) return -1;
   if (parse_json_str_strict(obj, "node_name", ctx ? ctx : "pipewire_capture_config", out->node_name, sizeof(out->node_name), &out->has_node_name, err) != 0) return -1;
   if (parse_json_str_strict(obj, "node_description", ctx ? ctx : "pipewire_capture_config", out->node_description, sizeof(out->node_description), &out->has_node_description, err) != 0) return -1;
@@ -3955,11 +4007,11 @@ cJSON *serialize_pipewire_capture_config(const pipewire_capture_config_t *in) {
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->has_device) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
-  if (in->has_node_name) if (in->node_name[0]) cJSON_AddStringToObject(obj, "node_name", in->node_name);
-  if (in->has_node_description) if (in->node_description[0]) cJSON_AddStringToObject(obj, "node_description", in->node_description);
-  if (in->has_node_group_name) if (in->node_group_name[0]) cJSON_AddStringToObject(obj, "node_group_name", in->node_group_name);
-  if (in->has_autoconnect_to) if (in->autoconnect_to[0]) cJSON_AddStringToObject(obj, "autoconnect_to", in->autoconnect_to);
+  if (in->has_device) cJSON_AddStringToObject(obj, "device", in->device);
+  if (in->has_node_name) cJSON_AddStringToObject(obj, "node_name", in->node_name);
+  if (in->has_node_description) cJSON_AddStringToObject(obj, "node_description", in->node_description);
+  if (in->has_node_group_name) cJSON_AddStringToObject(obj, "node_group_name", in->node_group_name);
+  if (in->has_autoconnect_to) cJSON_AddStringToObject(obj, "autoconnect_to", in->autoconnect_to);
   if (in->has_loopback) cJSON_AddBoolToObject(obj, "loopback", in->loopback);
   return obj;
 }
@@ -4021,6 +4073,10 @@ int parse_pipewire_playback_config(const cJSON *obj, const char *ctx, pipewire_p
   if (require_json_fields(obj, req_keys, ctx ? ctx : "pipewire_playback_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "pipewire_playback_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "pipewire_playback_config");
+    return -1;
+  }
   if (parse_json_str_strict(obj, "device", ctx ? ctx : "pipewire_playback_config", out->device, sizeof(out->device), &out->has_device, err) != 0) return -1;
   if (parse_json_str_strict(obj, "node_name", ctx ? ctx : "pipewire_playback_config", out->node_name, sizeof(out->node_name), &out->has_node_name, err) != 0) return -1;
   if (parse_json_str_strict(obj, "node_description", ctx ? ctx : "pipewire_playback_config", out->node_description, sizeof(out->node_description), &out->has_node_description, err) != 0) return -1;
@@ -4039,11 +4095,11 @@ cJSON *serialize_pipewire_playback_config(const pipewire_playback_config_t *in) 
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->has_device) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
-  if (in->has_node_name) if (in->node_name[0]) cJSON_AddStringToObject(obj, "node_name", in->node_name);
-  if (in->has_node_description) if (in->node_description[0]) cJSON_AddStringToObject(obj, "node_description", in->node_description);
-  if (in->has_node_group_name) if (in->node_group_name[0]) cJSON_AddStringToObject(obj, "node_group_name", in->node_group_name);
-  if (in->has_autoconnect_to) if (in->autoconnect_to[0]) cJSON_AddStringToObject(obj, "autoconnect_to", in->autoconnect_to);
+  if (in->has_device) cJSON_AddStringToObject(obj, "device", in->device);
+  if (in->has_node_name) cJSON_AddStringToObject(obj, "node_name", in->node_name);
+  if (in->has_node_description) cJSON_AddStringToObject(obj, "node_description", in->node_description);
+  if (in->has_node_group_name) cJSON_AddStringToObject(obj, "node_group_name", in->node_group_name);
+  if (in->has_autoconnect_to) cJSON_AddStringToObject(obj, "autoconnect_to", in->autoconnect_to);
   if (in->has_target_level) cJSON_AddNumberToObject(obj, "target_level", (double)in->target_level);
   return obj;
 }
@@ -4104,6 +4160,10 @@ int parse_stdin_capture_config(const cJSON *obj, const char *ctx, stdin_capture_
   if (require_json_fields(obj, req_keys, ctx ? ctx : "stdin_capture_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "stdin_capture_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "stdin_capture_config");
+    return -1;
+  }
   {
     static const config_enum_variant_t format_binary_sample_format_variants[] = {
       {"S16_LE", BINARY_SAMPLE_FORMAT_S16_LE},
@@ -4192,6 +4252,10 @@ int parse_stdout_playback_config(const cJSON *obj, const char *ctx, stdout_playb
   if (require_json_fields(obj, req_keys, ctx ? ctx : "stdout_playback_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "stdout_playback_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "stdout_playback_config");
+    return -1;
+  }
   {
     static const config_enum_variant_t format_binary_sample_format_variants[] = {
       {"S16_LE", BINARY_SAMPLE_FORMAT_S16_LE},
@@ -4267,6 +4331,10 @@ int parse_wasapi_capture_config(const cJSON *obj, const char *ctx, wasapi_captur
   if (require_json_fields(obj, req_keys, ctx ? ctx : "wasapi_capture_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "wasapi_capture_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "wasapi_capture_config");
+    return -1;
+  }
   if (parse_json_str_strict(obj, "device", ctx ? ctx : "wasapi_capture_config", out->device, sizeof(out->device), &out->has_device, err) != 0) return -1;
   {
     static const config_enum_variant_t format_wasapi_sample_format_variants[] = {
@@ -4293,7 +4361,7 @@ cJSON *serialize_wasapi_capture_config(const wasapi_capture_config_t *in) {
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->has_device) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
+  if (in->has_device) cJSON_AddStringToObject(obj, "device", in->device);
   if (in->has_format) cJSON_AddStringToObject(obj, "format", wasapi_sample_format_to_string(in->format));
   if (in->has_exclusive) cJSON_AddBoolToObject(obj, "exclusive", in->exclusive);
   if (in->has_loopback) cJSON_AddBoolToObject(obj, "loopback", in->loopback);
@@ -4356,6 +4424,10 @@ int parse_wasapi_playback_config(const cJSON *obj, const char *ctx, wasapi_playb
   if (require_json_fields(obj, req_keys, ctx ? ctx : "wasapi_playback_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "wasapi_playback_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "wasapi_playback_config");
+    return -1;
+  }
   if (parse_json_str_strict(obj, "device", ctx ? ctx : "wasapi_playback_config", out->device, sizeof(out->device), &out->has_device, err) != 0) return -1;
   {
     static const config_enum_variant_t format_wasapi_sample_format_variants[] = {
@@ -4386,7 +4458,7 @@ cJSON *serialize_wasapi_playback_config(const wasapi_playback_config_t *in) {
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->has_device) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
+  if (in->has_device) cJSON_AddStringToObject(obj, "device", in->device);
   if (in->has_format) cJSON_AddStringToObject(obj, "format", wasapi_sample_format_to_string(in->format));
   if (in->has_exclusive) cJSON_AddBoolToObject(obj, "exclusive", in->exclusive);
   if (in->has_polling) cJSON_AddBoolToObject(obj, "polling", in->polling);
@@ -4447,6 +4519,10 @@ int parse_asio_capture_config(const cJSON *obj, const char *ctx, asio_capture_co
   if (require_json_fields(obj, req_keys, ctx ? ctx : "asio_capture_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "asio_capture_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "asio_capture_config");
+    return -1;
+  }
   if (parse_json_str_strict(obj, "device", ctx ? ctx : "asio_capture_config", out->device, sizeof(out->device), &out->has_device, err) != 0) return -1;
   {
     static const config_enum_variant_t format_asio_sample_format_variants[] = {
@@ -4473,7 +4549,7 @@ cJSON *serialize_asio_capture_config(const asio_capture_config_t *in) {
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->has_device) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
+  if (in->has_device) cJSON_AddStringToObject(obj, "device", in->device);
   if (in->has_format) cJSON_AddStringToObject(obj, "format", asio_sample_format_to_string(in->format));
   return obj;
 }
@@ -4519,6 +4595,10 @@ int parse_asio_playback_config(const cJSON *obj, const char *ctx, asio_playback_
   if (require_json_fields(obj, req_keys, ctx ? ctx : "asio_playback_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "asio_playback_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "asio_playback_config");
+    return -1;
+  }
   if (parse_json_str_strict(obj, "device", ctx ? ctx : "asio_playback_config", out->device, sizeof(out->device), &out->has_device, err) != 0) return -1;
   {
     static const config_enum_variant_t format_asio_sample_format_variants[] = {
@@ -4545,7 +4625,7 @@ cJSON *serialize_asio_playback_config(const asio_playback_config_t *in) {
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
-  if (in->has_device) if (in->device[0]) cJSON_AddStringToObject(obj, "device", in->device);
+  if (in->has_device) cJSON_AddStringToObject(obj, "device", in->device);
   if (in->has_format) cJSON_AddStringToObject(obj, "format", asio_sample_format_to_string(in->format));
   return obj;
 }
@@ -4604,7 +4684,7 @@ cJSON *serialize_wav_file_capture_config(const wav_file_capture_config_t *in) {
   if (!in) return NULL;
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
-  if (1) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
+  if (1) cJSON_AddStringToObject(obj, "filename", in->filename);
   if (in->has_extra_samples) cJSON_AddNumberToObject(obj, "extra_samples", (double)in->extra_samples);
   if (in->has_realtime) cJSON_AddBoolToObject(obj, "realtime", in->realtime);
   return obj;
@@ -4673,6 +4753,10 @@ int parse_raw_file_capture_config(const cJSON *obj, const char *ctx, raw_file_ca
     out->format = (binary_sample_format_t)enum_tmp;
   }
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "raw_file_capture_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "raw_file_capture_config");
+    return -1;
+  }
   if (parse_json_size_t_strict(obj, "skip_bytes", ctx ? ctx : "raw_file_capture_config", &out->skip_bytes, &out->has_skip_bytes, err) != 0) return -1;
   if (parse_json_size_t_strict(obj, "read_bytes", ctx ? ctx : "raw_file_capture_config", &out->read_bytes, &out->has_read_bytes, err) != 0) return -1;
   if (parse_json_int_strict(obj, "extra_samples", ctx ? ctx : "raw_file_capture_config", &out->extra_samples, &out->has_extra_samples, err) != 0) return -1;
@@ -4688,7 +4772,7 @@ cJSON *serialize_raw_file_capture_config(const raw_file_capture_config_t *in) {
   if (!in) return NULL;
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
-  if (1) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
+  if (1) cJSON_AddStringToObject(obj, "filename", in->filename);
   if (1) cJSON_AddStringToObject(obj, "format", binary_sample_format_to_string(in->format));
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
   if (in->has_skip_bytes) cJSON_AddNumberToObject(obj, "skip_bytes", (double)in->skip_bytes);
@@ -4772,6 +4856,10 @@ int parse_raw_file_playback_config(const cJSON *obj, const char *ctx, raw_file_p
     out->format = (binary_sample_format_t)enum_tmp;
   }
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "raw_file_playback_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "raw_file_playback_config");
+    return -1;
+  }
   if (parse_json_bool_strict(obj, "wav_header", ctx ? ctx : "raw_file_playback_config", &out->wav_header, &out->has_wav_header, err) != 0) return -1;
   if (parse_json_bool_strict(obj, "use_rf64", ctx ? ctx : "raw_file_playback_config", &out->use_rf64, &out->has_use_rf64, err) != 0) return -1;
   if (parse_json_bool_strict(obj, "realtime", ctx ? ctx : "raw_file_playback_config", &out->realtime, &out->has_realtime, err) != 0) return -1;
@@ -4782,7 +4870,7 @@ cJSON *serialize_raw_file_playback_config(const raw_file_playback_config_t *in) 
   if (!in) return NULL;
   cJSON *obj = cJSON_CreateObject();
   if (!obj) return NULL;
-  if (1) if (in->filename[0]) cJSON_AddStringToObject(obj, "filename", in->filename);
+  if (1) cJSON_AddStringToObject(obj, "filename", in->filename);
   if (1) cJSON_AddStringToObject(obj, "format", binary_sample_format_to_string(in->format));
   if (1) cJSON_AddNumberToObject(obj, "channels", (double)in->channels);
   if (in->has_wav_header) cJSON_AddBoolToObject(obj, "wav_header", in->wav_header);
@@ -4837,6 +4925,10 @@ int parse_generator_capture_config(const cJSON *obj, const char *ctx, generator_
   if (require_json_fields(obj, req_keys, ctx ? ctx : "generator_capture_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "generator_capture_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "generator_capture_config");
+    return -1;
+  }
   cJSON *obj_signal = cJSON_GetObjectItemCaseSensitive(obj, "signal");
   if (obj_signal) {
     if (parse_generator_signal(obj_signal, "signal", &out->signal, err) != 0) return -1;
@@ -4886,6 +4978,10 @@ int parse_webaudio_capture_config(const cJSON *obj, const char *ctx, webaudio_ca
   if (require_json_fields(obj, req_keys, ctx ? ctx : "webaudio_capture_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "webaudio_capture_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "webaudio_capture_config");
+    return -1;
+  }
   return 0;
 }
 
@@ -4930,6 +5026,10 @@ int parse_webaudio_playback_config(const cJSON *obj, const char *ctx, webaudio_p
   if (require_json_fields(obj, req_keys, ctx ? ctx : "webaudio_playback_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "channels", ctx ? ctx : "webaudio_playback_config", &out->channels, NULL, err) != 0) return -1;
+  if (out->channels < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "channels", ctx ? ctx : "webaudio_playback_config");
+    return -1;
+  }
   return 0;
 }
 
@@ -5018,7 +5118,6 @@ int parse_capture_device_config(const cJSON *obj, const char *ctx, capture_devic
       return -1;
     }
   }
-  if (parse_json_bool_strict(obj, "is_wav", ctx ? ctx : "capture_device_config", &out->is_wav, &out->has_is_wav, err) != 0) return -1;
   if (parse_json_bool_strict(obj, "bypass_dop", ctx ? ctx : "capture_device_config", &out->bypass_dop, &out->has_bypass_dop, err) != 0) return -1;
   if (!out->has_bypass_dop) { out->bypass_dop = true; }
   if (parse_json_double_strict(obj, "dop_cutoff_hz", ctx ? ctx : "capture_device_config", &out->dop_cutoff_hz, &out->has_dop_cutoff_hz, err) != 0) return -1;
@@ -5143,7 +5242,7 @@ cJSON *serialize_capture_device_config(const capture_device_config_t *in) {
     case AUDIO_BACKEND_TYPE_INVALID: break;
   }
   if (!obj) return NULL;
-  if (in->has_labels && in->labels) {
+  if (in->has_labels) {
     cJSON *arr = cJSON_CreateArray();
     for (size_t i = 0; i < in->labels_count; i++) {
       if (in->labels[i]) cJSON_AddItemToArray(arr, cJSON_CreateString(in->labels[i]));
@@ -5170,10 +5269,6 @@ bool capture_device_config_equal(const capture_device_config_t *a, const capture
         if (a->labels[i] && strcmp(a->labels[i], b->labels[i]) != 0) return false;
       }
     }
-  }
-  if (a->has_is_wav != b->has_is_wav) return false;
-  if (a->has_is_wav) {
-    if (a->is_wav != b->is_wav) return false;
   }
   if (a->has_bypass_dop != b->has_bypass_dop) return false;
   if (a->has_bypass_dop) {
@@ -5274,7 +5369,6 @@ int parse_playback_device_config(const cJSON *obj, const char *ctx, playback_dev
     config_error_set(err, CONFIG_ERR_PARSE, "unknown variant '%s', expected one of 'CoreAudio', 'Alsa', 'PipeWire', 'File', 'Stdout', 'Wasapi', 'Asio', 'WebAudio'", type_str);
     return -1;
   }
-  if (parse_json_bool_strict(obj, "is_wav", ctx ? ctx : "playback_device_config", &out->is_wav, &out->has_is_wav, err) != 0) return -1;
   if (parse_json_bool_strict(obj, "output_dop", ctx ? ctx : "playback_device_config", &out->output_dop, &out->has_output_dop, err) != 0) return -1;
   if (!out->has_output_dop) { out->output_dop = false; }
   {
@@ -5407,10 +5501,6 @@ bool playback_device_config_equal(const playback_device_config_t *a, const playb
   if (a == b) return true;
   if (!a || !b) return false;
   if (a->type != b->type) return false;
-  if (a->has_is_wav != b->has_is_wav) return false;
-  if (a->has_is_wav) {
-    if (a->is_wav != b->is_wav) return false;
-  }
   if (a->has_output_dop != b->has_output_dop) return false;
   if (a->has_output_dop) {
     if (a->output_dop != b->output_dop) return false;
@@ -5485,7 +5575,15 @@ int parse_devices_config(const cJSON *obj, const char *ctx, devices_config_t *ou
   if (require_json_fields(obj, req_keys, ctx ? ctx : "devices_config", NULL, err) != 0) return -1;
 
   if (parse_json_size_t_strict(obj, "samplerate", ctx ? ctx : "devices_config", &out->samplerate, NULL, err) != 0) return -1;
+  if (out->samplerate < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "samplerate", ctx ? ctx : "devices_config");
+    return -1;
+  }
   if (parse_json_size_t_strict(obj, "chunksize", ctx ? ctx : "devices_config", &out->chunksize, NULL, err) != 0) return -1;
+  if (out->chunksize < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "chunksize", ctx ? ctx : "devices_config");
+    return -1;
+  }
   if (parse_json_bool_strict(obj, "enable_rate_adjust", ctx ? ctx : "devices_config", &out->enable_rate_adjust, &out->has_enable_rate_adjust, err) != 0) return -1;
   if (parse_json_int_strict(obj, "target_level", ctx ? ctx : "devices_config", &out->target_level, &out->has_target_level, err) != 0) return -1;
   if (out->has_target_level && out->target_level < 0) {
@@ -5507,6 +5605,10 @@ int parse_devices_config(const cJSON *obj, const char *ctx, devices_config_t *ou
     if (parse_playback_device_config(obj_playback, "playback", &out->playback, err) != 0) return -1;
   }
   if (parse_json_size_t_strict(obj, "capture_samplerate", ctx ? ctx : "devices_config", &out->capture_samplerate, &out->has_capture_samplerate, err) != 0) return -1;
+  if (out->has_capture_samplerate && out->capture_samplerate < 1) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a positive integer", "capture_samplerate", ctx ? ctx : "devices_config");
+    return -1;
+  }
   if (parse_json_double_strict(obj, "silence_threshold", ctx ? ctx : "devices_config", &out->silence_threshold, &out->has_silence_threshold, err) != 0) return -1;
   if (parse_json_double_strict(obj, "silence_timeout_s", ctx ? ctx : "devices_config", &out->silence_timeout_s, &out->has_silence_timeout_s, err) != 0) return -1;
   if (parse_json_double_strict(obj, "volume_ramp_time_ms", ctx ? ctx : "devices_config", &out->volume_ramp_time_ms, &out->has_volume_ramp_time_ms, err) != 0) return -1;
@@ -5520,6 +5622,10 @@ int parse_devices_config(const cJSON *obj, const char *ctx, devices_config_t *ou
   if (parse_json_double_strict(obj, "rate_measure_interval_s", ctx ? ctx : "devices_config", &out->rate_measure_interval_s, &out->has_rate_measure_interval_s, err) != 0) return -1;
   if (parse_json_bool_strict(obj, "multithreaded", ctx ? ctx : "devices_config", &out->multithreaded, &out->has_multithreaded, err) != 0) return -1;
   if (parse_json_int_strict(obj, "worker_threads", ctx ? ctx : "devices_config", &out->worker_threads, &out->has_worker_threads, err) != 0) return -1;
+  if (out->has_worker_threads && out->worker_threads < 0) {
+    config_error_set(err, CONFIG_ERR_PARSE, "field '%s' in %s must be a non-negative integer", "worker_threads", ctx ? ctx : "devices_config");
+    return -1;
+  }
   return 0;
 }
 

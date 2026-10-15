@@ -69,6 +69,7 @@ struct engine_capture_loop {
   // engine_shared_state_set_capture_pitch_supported().
   bool pitch_supported;
   double last_applied_pitch;
+  double last_applied_ratio;
   size_t resampler_overloaded_chunks;
 };
 #include <stdlib.h>
@@ -106,9 +107,10 @@ engine_capture_loop_create(const engine_capture_loop_config_t *config) {
   if (config->channels > 0) {
     loop->used_channels =
         (_Atomic bool *)calloc(config->channels, sizeof(_Atomic bool));
-    if (loop->used_channels && config->used_channels) {
+    if (loop->used_channels) {
       for (size_t i = 0; i < config->channels; i++) {
-        atomic_init(&loop->used_channels[i], config->used_channels[i]);
+        bool val = config->used_channels ? config->used_channels[i] : true;
+        atomic_init(&loop->used_channels[i], val);
       }
     }
     atomic_init(&loop->has_used_channels, config->used_channels != NULL);
@@ -116,7 +118,7 @@ engine_capture_loop_create(const engine_capture_loop_config_t *config) {
   }
   loop->silence_counter = silence_counter_create(
       config->silence_threshold_db, config->silence_timeout_seconds,
-      config->samplerate, config->chunk_size);
+      config->samplerate, loop->pipeline_chunk_size);
   if (!loop->silence_counter) {
     engine_capture_loop_free(loop);
     return NULL;
@@ -167,6 +169,7 @@ engine_capture_loop_create(const engine_capture_loop_config_t *config) {
   engine_shared_state_set_capture_pitch_supported(loop->shared,
                                                   loop->pitch_supported);
   loop->last_applied_pitch = 1.0;
+  loop->last_applied_ratio = 1.0;
 
   return loop;
 }
@@ -245,7 +248,8 @@ static bool capture_loop_check_format_change(engine_capture_loop_t *loop) {
  * pipeline swaps.
  */
 static void capture_loop_send_paused_tick_if_due(engine_capture_loop_t *loop) {
-  if (engine_shared_state_get_state(loop->shared) != PROCESSING_STATE_PAUSED) {
+  processing_state_t st = engine_shared_state_get_state(loop->shared);
+  if (st != PROCESSING_STATE_PAUSED && st != PROCESSING_STATE_STALLED) {
     return;
   }
 
@@ -343,7 +347,9 @@ static bool capture_loop_handle_no_data(engine_capture_loop_t *loop,
   // watchdog timestamp is deliberately NOT refreshed here: no data arrived,
   // and (as upstream) a device that stops delivering while paused must be
   // reported as STALLED.
-  if (engine_shared_state_get_state(loop->shared) == PROCESSING_STATE_PAUSED) {
+  processing_state_t cur_state = engine_shared_state_get_state(loop->shared);
+  if (cur_state == PROCESSING_STATE_PAUSED ||
+      cur_state == PROCESSING_STATE_STALLED) {
     capture_loop_send_paused_tick_if_due(loop);
     capture_backend_wait(loop->capture, 20);
     return false;
@@ -407,7 +413,7 @@ static void capture_loop_update_pitch(engine_capture_loop_t *loop) {
   // the shared speed ratio published by the playback rate controller.
   if (loop->pitch_supported && loop->shared) {
     double desired_pitch = engine_shared_state_get_capture_pitch(loop->shared);
-    if (fabs(desired_pitch - loop->last_applied_pitch) > 0.000001) {
+    if (desired_pitch != loop->last_applied_pitch) {
       loop->last_applied_pitch = desired_pitch;
       capture_backend_set_pitch(loop->capture, desired_pitch);
     }
@@ -483,53 +489,58 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t *loop,
   // If DSD decoding is active, process the chunk to decode DSD back to
   // high-resolution PCM in-place. Decoding is done before metering so
   // RMS/Peak values reflect the actual signal instead of carrier noise.
-  if (loop->dsd_decoder) {
+  if (loop->dsd_decoder && valid_frames > 0) {
     dsd_decoder_process(loop->dsd_decoder, chunk);
   }
 
-  // Update level meters with the peak/rms of this chunk.
-  processing_parameters_update_capture_levels(loop->processing_params, chunk);
-
-  // Ref: docs/engine_state_management.md - Section 3.3: Silence Auto-Pause &
-  // Resume Flow Step 1-2 (Auto-Pause) & Step 3 (Auto-Resume): Set engine state
-  // and toggle capture hardware backend is_paused status accordingly.
   // Copy atomic used_channels into thread-local mask once per chunk without
-  // locking.
+  // locking, and apply it to the chunk before metering and resampling.
   if (loop->used_channels && loop->local_channel_mask) {
+    bool has_mask =
+        atomic_load_explicit(&loop->has_used_channels, memory_order_acquire);
     for (size_t i = 0; i < loop->channels; i++) {
       loop->local_channel_mask[i] =
-          atomic_load_explicit(&loop->used_channels[i], memory_order_relaxed);
+          has_mask ? atomic_load_explicit(&loop->used_channels[i],
+                                          memory_order_relaxed)
+                   : true;
     }
   }
-  // Hand the same mask to the resampler through raw_chunk's pre-allocated
-  // used_channels (in-place memcpy, no allocation on the hot path).
-  if (loop->resampler && chunk == loop->raw_chunk && loop->local_channel_mask &&
-      audio_chunk_get_used_channels(loop->raw_chunk) &&
+  if (loop->local_channel_mask && audio_chunk_get_used_channels(chunk) &&
       atomic_load_explicit(&loop->has_used_channels, memory_order_acquire)) {
-    audio_chunk_set_used_channels(loop->raw_chunk, loop->local_channel_mask);
+    audio_chunk_set_used_channels(chunk, loop->local_channel_mask);
   }
-  float value_range = (float)audio_chunk_get_value_range_used(
-      chunk, loop->local_channel_mask ? loop->local_channel_mask : NULL);
-  if (loop->processing_params) {
-    processing_parameters_set_signal_range(loop->processing_params,
-                                           value_range);
-  }
-  // Chunks the backend flags as not silence-gated (file EOF extra_samples
-  // tail, 06 F-10; the signal generator, 06 F-07) bypass the counter:
-  // upstream sends them unconditionally, so a tail also resumes a paused
-  // engine rather than being swallowed.
-  processing_state_t desired =
-      loop->capture->skip_silence_detection
-          ? PROCESSING_STATE_RUNNING
-          : silence_counter_update(loop->silence_counter, value_range);
-  processing_state_t current = engine_shared_state_get_state(loop->shared);
-  if (desired != current) {
-    logger_debug(&g_logger, "%s processing (state: %d -> %d)",
-                 desired == PROCESSING_STATE_PAUSED ? "Pausing" : "Resuming",
-                 (int)current, (int)desired);
-    engine_shared_state_set_state(loop->shared, desired);
-    if (desired == PROCESSING_STATE_PAUSED && loop->processing_params) {
-      processing_parameters_bump_pause_count(loop->processing_params);
+
+  if (valid_frames > 0 || !loop->resampler) {
+    // Update level meters with the peak/rms of this chunk.
+    processing_parameters_update_capture_levels(loop->processing_params, chunk);
+
+    float value_range = (float)audio_chunk_get_value_range_used(
+        chunk, loop->local_channel_mask ? loop->local_channel_mask : NULL);
+    if (loop->processing_params) {
+      processing_parameters_set_signal_range(loop->processing_params,
+                                             value_range);
+    }
+    // Chunks the backend flags as not silence-gated (file EOF extra_samples
+    // tail, 06 F-10; the signal generator, 06 F-07) bypass the counter:
+    // upstream sends them unconditionally, so a tail also resumes a paused
+    // engine rather than being swallowed.
+    processing_state_t desired =
+        loop->capture->skip_silence_detection
+            ? PROCESSING_STATE_RUNNING
+            : silence_counter_update(loop->silence_counter, value_range);
+    processing_state_t current = engine_shared_state_get_state(loop->shared);
+    if (current != PROCESSING_STATE_STARTING &&
+        current != PROCESSING_STATE_INACTIVE && desired != current) {
+      logger_debug(&g_logger, "%s processing (state: %d -> %d)",
+                   desired == PROCESSING_STATE_PAUSED ? "Pausing" : "Resuming",
+                   (int)current, (int)desired);
+      engine_shared_state_set_state(loop->shared, desired);
+      if (desired == PROCESSING_STATE_PAUSED) {
+        loop->last_paused_tick_ns = 0;
+        if (loop->processing_params) {
+          processing_parameters_bump_pause_count(loop->processing_params);
+        }
+      }
     }
   }
 
@@ -581,7 +592,7 @@ static bool capture_loop_process_and_enqueue(engine_capture_loop_t *loop,
       }
 
       if (loop->processing_params && loop->pipeline_rate > 0) {
-        size_t nominal_frames = audio_chunk_get_valid_frames(out_chunk);
+        size_t nominal_frames = loop->pipeline_chunk_size;
         if (nominal_frames > 0) {
           uint64_t chunk_dur_ns =
               (uint64_t)nominal_frames * 1000000000ULL / loop->pipeline_rate;
@@ -640,9 +651,16 @@ bool engine_capture_loop_step(engine_capture_loop_t *loop) {
     // just-captured chunk look short (zero-padded as a partial chunk) or
     // long (excess frames dropped).
     double ratio = engine_shared_state_get_resampler_ratio(loop->shared);
-    resampler_set_relative_ratio(loop->resampler, ratio);
+    if (ratio != loop->last_applied_ratio) {
+      loop->last_applied_ratio = ratio;
+      resampler_set_relative_ratio(loop->resampler, ratio);
+    }
 
     size_t needed_frames = resampler_get_input_frames_next(loop->resampler);
+    if (needed_frames == 0) {
+      audio_chunk_set_valid_frames(loop->raw_chunk, 0);
+      return capture_loop_process_and_enqueue(loop, loop->raw_chunk);
+    }
     backend_error_t err;
     backend_error_init(&err, BACKEND_ERROR_NONE, "");
 
@@ -684,6 +702,17 @@ void engine_capture_loop_run(engine_capture_loop_t *loop) {
   logger_info(&g_logger, "Capture thread started (realtime: %s)",
               capture_backend_is_realtime(loop->capture) ? "yes" : "no");
 
+  double prev_target[FADER_COUNT] = {0};
+  bool prev_mute[FADER_COUNT] = {false};
+  if (loop->processing_params) {
+    for (int f = 0; f < FADER_COUNT; f++) {
+      prev_target[f] = processing_parameters_get_target_volume_for_fader(
+          loop->processing_params, (fader_t)f);
+      prev_mute[f] = processing_parameters_is_muted_for_fader(
+          loop->processing_params, (fader_t)f);
+    }
+  }
+
   backend_error_t berr;
   backend_error_init(&berr, BACKEND_ERROR_NONE, "");
   // Ref: docs/engine_state_management.md - Section 3.1: Startup &
@@ -702,6 +731,29 @@ void engine_capture_loop_run(engine_capture_loop_t *loop) {
       engine_shared_state_shutdown_captured_queue(loop->shared);
     }
     return;
+  }
+
+  // Sync current_volume to target_volume after capture_backend_open (matching
+  // upstream threaded_device.rs sync_volumes_to_target after reading initial
+  // ALSA linked volume/mute controls). If open updated target volume or mute,
+  // bump pause_count so pipeline_faders snaps on the first chunk without a
+  // startup ramp.
+  if (loop->processing_params) {
+    bool changed = false;
+    for (int f = 0; f < FADER_COUNT; f++) {
+      double target = processing_parameters_get_target_volume_for_fader(
+          loop->processing_params, (fader_t)f);
+      bool mute = processing_parameters_is_muted_for_fader(
+          loop->processing_params, (fader_t)f);
+      processing_parameters_set_current_volume_for_fader(
+          loop->processing_params, target, (fader_t)f);
+      if (target != prev_target[f] || mute != prev_mute[f]) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      processing_parameters_bump_pause_count(loop->processing_params);
+    }
   }
 
   // Pitch-control support is only known once the device is open (CoreAudio
@@ -724,7 +776,7 @@ void engine_capture_loop_run(engine_capture_loop_t *loop) {
   }
 
   realtime_thread_handle_t *rt_handle = promote_current_thread_to_realtime(
-      "Capture", loop->chunk_size, loop->samplerate);
+      "Capture", loop->pipeline_chunk_size, loop->samplerate);
   sample_rate_watcher_reset(loop->rate_watcher);
   engine_shared_state_set_last_capture_time(loop->shared, cdsp_time_now_ns());
 

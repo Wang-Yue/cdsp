@@ -406,6 +406,10 @@ static bool file_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   if (frames > audio_chunk_get_frames(chunk)) {
     frames = audio_chunk_get_frames(chunk);
   }
+  if (frames == 0) {
+    audio_chunk_set_valid_frames(chunk, 0);
+    return true;
+  }
   size_t frame_bytes = capture->channels * sample_size;
   size_t want_bytes = frames * frame_bytes;
 

@@ -58,6 +58,7 @@ struct pipewire_capture {
   char node_description[256];
   char node_group_name[256];
   char autoconnect_to[256];
+  bool has_device;
   bool has_node_name;
   bool has_node_description;
   bool has_node_group_name;
@@ -95,6 +96,7 @@ struct pipewire_playback {
   char node_description[256];
   char node_group_name[256];
   char autoconnect_to[256];
+  bool has_device;
   bool has_node_name;
   bool has_node_description;
   bool has_node_group_name;
@@ -128,16 +130,16 @@ struct pipewire_playback {
  * @brief Report graph clock-rate changes observed in the RT process callback.
  *
  * Reads the graph rate from the position IO area (lock-free, wait-free) and
- * publishes a pending rate when it changes during the session. The first
- * observation only records the baseline so that a graph already running at a
- * different rate at startup keeps working through PipeWire's adapter
- * resampling, as before; the engine compares any reported rate with the
- * configured one.
+ * publishes a pending rate when it changes during the session to a rate
+ * different from the stream's configured sample_rate. The first observation
+ * only records the baseline so that a graph already running at a different
+ * rate at startup keeps working through PipeWire's adapter resampling.
  */
 static inline void pw_check_graph_rate(struct spa_io_position *_Atomic *pos_ptr,
                                        uint32_t *seen,
                                        _Atomic uint32_t *pending,
-                                       backend_buffer_t *buffer) {
+                                       backend_buffer_t *buffer,
+                                       int sample_rate) {
   struct spa_io_position *pos =
       atomic_load_explicit(pos_ptr, memory_order_acquire);
   if (!pos)
@@ -149,9 +151,11 @@ static inline void pw_check_graph_rate(struct spa_io_position *_Atomic *pos_ptr,
   }
   if (rate != 0) {
     logger_info(&g_logger, "PipeWire graph clock rate changed to %u Hz", rate);
-    atomic_store_explicit(pending, rate, memory_order_release);
-    backend_buffer_set_pending_rate_change(buffer, true);
-    backend_buffer_signal(buffer);
+    if ((int)rate != sample_rate) {
+      atomic_store_explicit(pending, rate, memory_order_release);
+      backend_buffer_set_pending_rate_change(buffer, true);
+      backend_buffer_signal(buffer);
+    }
   }
 }
 
@@ -187,7 +191,7 @@ static void on_playback_io_changed(void *data, uint32_t id, void *area,
 static void on_capture_process(void *data) {
   pipewire_capture_t *c = (pipewire_capture_t *)data;
   pw_check_graph_rate(&c->position, &c->graph_rate_seen, &c->pending_rate_hz,
-                      c->buffer);
+                      c->buffer, c->sample_rate);
   struct pw_buffer *b = pw_stream_dequeue_buffer(c->stream);
   if (!b) {
     logger_debug(&g_logger, "PipeWire capture: out of buffers");
@@ -286,7 +290,7 @@ static const struct pw_stream_events capture_stream_events = {
 static void on_playback_process(void *data) {
   pipewire_playback_t *p = (pipewire_playback_t *)data;
   pw_check_graph_rate(&p->position, &p->graph_rate_seen, &p->pending_rate_hz,
-                      p->buffer);
+                      p->buffer, p->sample_rate);
   struct pw_buffer *b = pw_stream_dequeue_buffer(p->stream);
   if (!b) {
     logger_debug(&g_logger, "PipeWire playback: out of buffers");
@@ -412,6 +416,11 @@ static void pipewire_capture_close(void *ctx) {
     capture->loop = NULL;
   }
 
+  atomic_store_explicit(&capture->position, NULL, memory_order_release);
+  atomic_store_explicit(&capture->pending_rate_hz, 0u, memory_order_release);
+  capture->graph_rate_seen = 0;
+  capture->quantum_logged = false;
+
   backend_buffer_set_state(capture->buffer, BACKEND_STREAM_STOPPED);
   backend_buffer_free(capture->buffer);
   capture->buffer = NULL;
@@ -438,6 +447,8 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
   // registering the listener and connecting (device.rs:804-809).
   capture->quantum_logged = false;
   capture->graph_rate_seen = 0;
+  atomic_store_explicit(&capture->position, NULL, memory_order_release);
+  atomic_store_explicit(&capture->pending_rate_hz, 0u, memory_order_release);
   capture->blockalign = (size_t)capture->channels * sizeof(float);
   size_t cap_min_frames = (size_t)ceil((double)capture->sample_rate * 0.025);
   size_t cap_frames_needed = (size_t)(4 * capture->chunk_size);
@@ -537,7 +548,7 @@ static bool pipewire_capture_open(void *ctx, backend_error_t *err) {
   params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &info);
 
   uint32_t flags = PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_RT_PROCESS;
-  if (capture->device[0] != '\0' || capture->has_autoconnect_to) {
+  if (capture->has_device || capture->has_autoconnect_to) {
     flags |= PW_STREAM_FLAG_AUTOCONNECT;
   }
 
@@ -696,6 +707,7 @@ pipewire_capture_create(const capture_device_config_t *config, int sample_rate,
   if (!capture)
     return NULL;
 
+  capture->has_device = config->cfg.pipewire.has_device;
   if (config->cfg.pipewire.has_device &&
       strcmp(config->cfg.pipewire.device, "default") != 0) {
     snprintf(capture->device, sizeof(capture->device), "%s",
@@ -803,6 +815,12 @@ static void pipewire_playback_close(void *ctx) {
     playback->loop = NULL;
   }
 
+  atomic_store_explicit(&playback->position, NULL, memory_order_release);
+  atomic_store_explicit(&playback->pending_rate_hz, 0u, memory_order_release);
+  atomic_store_explicit(&playback->streaming, false, memory_order_release);
+  playback->graph_rate_seen = 0;
+  playback->quantum_logged = false;
+
   backend_buffer_free(playback->buffer);
   playback->buffer = NULL;
 }
@@ -828,6 +846,9 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
   // before registering the listener and connecting (device.rs:374-383).
   playback->quantum_logged = false;
   playback->graph_rate_seen = 0;
+  atomic_store_explicit(&playback->position, NULL, memory_order_release);
+  atomic_store_explicit(&playback->pending_rate_hz, 0u, memory_order_release);
+  atomic_store_explicit(&playback->streaming, false, memory_order_release);
   size_t pb_min_frames = (size_t)ceil((double)playback->sample_rate * 0.025);
   size_t target_level = playback->target_level > 0
                             ? playback->target_level
@@ -937,7 +958,7 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
   params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &info);
 
   uint32_t flags = PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_RT_PROCESS;
-  if (playback->device[0] != '\0' || playback->has_autoconnect_to) {
+  if (playback->has_device || playback->has_autoconnect_to) {
     flags |= PW_STREAM_FLAG_AUTOCONNECT;
   }
 
@@ -1126,6 +1147,7 @@ static playback_backend_t *pipewire_playback_create(
   if (!playback)
     return NULL;
 
+  playback->has_device = config->cfg.pipewire.has_device;
   if (config->cfg.pipewire.has_device &&
       strcmp(config->cfg.pipewire.device, "default") != 0) {
     snprintf(playback->device, sizeof(playback->device), "%s",

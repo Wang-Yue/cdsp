@@ -338,16 +338,48 @@ int mixer_config_validate(const mixer_config_t *mixer, config_error_t *err) {
       return -1;
     }
     for (size_t j = 0; j < mixer->mapping[i].sources_count; j++) {
-      size_t src_ch = mixer->mapping[i].sources[j].channel;
+      const mixer_source_t *src = &mixer->mapping[i].sources[j];
+      size_t src_ch = src->channel;
       // Upstream's `FiniteF64` makes a non-finite gain unrepresentable; C
       // callers bypass the JSON parser, so reject it here.
-      if (mixer->mapping[i].sources[j].has_gain &&
-          !isfinite(mixer->mapping[i].sources[j].gain)) {
+      if (src->has_gain && !isfinite(src->gain)) {
         config_error_set(err, CONFIG_ERR_INVALID_MIXER,
                          "mixer source gain for dest %zu must be finite", dest);
         free(seen_sources);
         free(seen_dests);
         return -1;
+      }
+      double gain = mixer_source_get_gain(src);
+      if (src->scale == GAIN_SCALE_LINEAR) {
+        if (gain < -10.0) {
+          config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                           "Linear gain must be larger than -10.0");
+          free(seen_sources);
+          free(seen_dests);
+          return -1;
+        }
+        if (gain > 10.0) {
+          config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                           "Linear gain must be less than +10.0");
+          free(seen_sources);
+          free(seen_dests);
+          return -1;
+        }
+      } else {
+        if (gain < -150.0) {
+          config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                           "Gain must be larger than -150 dB");
+          free(seen_sources);
+          free(seen_dests);
+          return -1;
+        }
+        if (gain > 150.0) {
+          config_error_set(err, CONFIG_ERR_INVALID_MIXER,
+                           "Gain must be less than +150 dB");
+          free(seen_sources);
+          free(seen_dests);
+          return -1;
+        }
       }
       if (src_ch >= mixer->channels_in) {
         config_error_set(err, CONFIG_ERR_INVALID_MIXER,

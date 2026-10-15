@@ -2,6 +2,7 @@
 
 #include <cjson/cJSON.h>
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,15 +88,20 @@ static cJSON *locate_pointer(cJSON *root, const char *pointer,
   }
   if (!root || !pointer)
     return NULL;
+  if (*pointer == '\0') {
+    return root;
+  }
+  if (*pointer != '/') {
+    return NULL;
+  }
   const char *ptr = pointer;
-  if (*ptr == '/')
-    ptr++;
   cJSON *curr = root;
   cJSON *parent = NULL;
   const char *last_key = NULL;
   int last_idx = -1;
 
-  while (*ptr && curr) {
+  while (*ptr == '/' && curr) {
+    ptr++;
     char segment[128];
     size_t seg_len = 0;
     while (*ptr && *ptr != '/') {
@@ -117,8 +123,6 @@ static cJSON *locate_pointer(cJSON *root, const char *pointer,
       }
     }
     segment[seg_len] = '\0';
-    if (*ptr == '/')
-      ptr++;
 
     parent = curr;
     last_key = NULL;
@@ -154,10 +158,18 @@ static cJSON *locate_pointer(cJSON *root, const char *pointer,
         return NULL;
       }
     } else if (cJSON_IsArray(curr)) {
-      char *endptr = NULL;
-      int idx = (int)strtol(segment, &endptr, 10);
-      if (idx < 0 || endptr == segment || *endptr != '\0')
+      if (segment[0] == '\0' || (segment[0] == '0' && segment[1] != '\0'))
         return NULL;
+      for (size_t i = 0; segment[i] != '\0'; i++) {
+        if (!isdigit((unsigned char)segment[i]))
+          return NULL;
+      }
+      char *endptr = NULL;
+      long idx_long = strtol(segment, &endptr, 10);
+      if (idx_long < 0 || idx_long > INT_MAX || endptr == segment ||
+          *endptr != '\0')
+        return NULL;
+      int idx = (int)idx_long;
       curr = cJSON_GetArrayItem(curr, idx);
       if (!curr) {
         return NULL;
@@ -472,12 +484,111 @@ static bool apply_cjson_overrides(cJSON *root, int samplerate_override,
   return true;
 }
 
+static void config_fill_defaults(cJSON *root);
+static void get_dir_from_path(const char *path, char *out_dir, size_t out_size);
+
+static void sync_resolved_config_to_cjson(cJSON *root,
+                                          const dsp_config_t *parsed) {
+  if (!root || !cJSON_IsObject(root) || !parsed)
+    return;
+
+  cJSON *devices = cJSON_GetObjectItemCaseSensitive(root, "devices");
+  if (devices && cJSON_IsObject(devices)) {
+    if (cJSON_HasObjectItem(devices, "samplerate")) {
+      cJSON_ReplaceItemInObject(
+          devices, "samplerate",
+          cJSON_CreateNumber((double)parsed->devices.samplerate));
+    } else {
+      cJSON_AddNumberToObject(devices, "samplerate",
+                              (double)parsed->devices.samplerate);
+    }
+    if (cJSON_HasObjectItem(devices, "chunksize")) {
+      cJSON_ReplaceItemInObject(
+          devices, "chunksize",
+          cJSON_CreateNumber((double)parsed->devices.chunksize));
+    } else {
+      cJSON_AddNumberToObject(devices, "chunksize",
+                              (double)parsed->devices.chunksize);
+    }
+    if (parsed->devices.has_capture_samplerate) {
+      if (cJSON_HasObjectItem(devices, "capture_samplerate")) {
+        cJSON_ReplaceItemInObject(
+            devices, "capture_samplerate",
+            cJSON_CreateNumber((double)parsed->devices.capture_samplerate));
+      } else {
+        cJSON_AddNumberToObject(devices, "capture_samplerate",
+                                (double)parsed->devices.capture_samplerate);
+      }
+    }
+    if (!parsed->devices.has_resampler &&
+        cJSON_HasObjectItem(devices, "resampler")) {
+      cJSON_ReplaceItemInObject(devices, "resampler", cJSON_CreateNull());
+    }
+  }
+
+  cJSON *filters = cJSON_GetObjectItemCaseSensitive(root, "filters");
+  if (filters && cJSON_IsObject(filters)) {
+    for (size_t i = 0; i < parsed->filters_count; i++) {
+      const named_filter_config_t *nf = &parsed->filters[i];
+      if (nf->filter.type == FILTER_TYPE_CONV &&
+          (nf->filter.parameters.conv.type == CONV_TYPE_RAW ||
+           nf->filter.parameters.conv.type == CONV_TYPE_WAV) &&
+          nf->filter.parameters.conv.has_filename) {
+        cJSON *fobj = cJSON_GetObjectItemCaseSensitive(filters, nf->name);
+        cJSON *params =
+            fobj ? cJSON_GetObjectItemCaseSensitive(fobj, "parameters") : NULL;
+        if (params && cJSON_IsObject(params)) {
+          if (cJSON_HasObjectItem(params, "filename")) {
+            cJSON_ReplaceItemInObject(
+                params, "filename",
+                cJSON_CreateString(nf->filter.parameters.conv.filename));
+          } else {
+            cJSON_AddStringToObject(params, "filename",
+                                    nf->filter.parameters.conv.filename);
+          }
+        }
+      }
+    }
+  }
+
+  cJSON *pipeline = cJSON_GetObjectItemCaseSensitive(root, "pipeline");
+  if (pipeline && cJSON_IsArray(pipeline)) {
+    for (size_t i = 0; i < parsed->pipeline_count; i++) {
+      const pipeline_step_config_t *step = &parsed->pipeline[i];
+      cJSON *step_obj = cJSON_GetArrayItem(pipeline, (int)i);
+      if (!step_obj || !cJSON_IsObject(step_obj))
+        continue;
+      if ((step->type == PIPELINE_STEP_TYPE_MIXER ||
+           step->type == PIPELINE_STEP_TYPE_PROCESSOR) &&
+          step->has_name) {
+        if (cJSON_HasObjectItem(step_obj, "name")) {
+          cJSON_ReplaceItemInObject(step_obj, "name",
+                                    cJSON_CreateString(step->name));
+        } else {
+          cJSON_AddStringToObject(step_obj, "name", step->name);
+        }
+      } else if (step->type == PIPELINE_STEP_TYPE_FILTER && step->has_names) {
+        cJSON *names_arr = cJSON_GetObjectItemCaseSensitive(step_obj, "names");
+        if (names_arr && cJSON_IsArray(names_arr)) {
+          int arr_sz = cJSON_GetArraySize(names_arr);
+          for (size_t j = 0; j < step->names_count && (int)j < arr_sz; j++) {
+            if (step->names[j]) {
+              cJSON_ReplaceItemInArray(names_arr, (int)j,
+                                       cJSON_CreateString(step->names[j]));
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 // apply_cli: when false, the caller has already resolved and applied the
 // persistent CLI overrides (e.g. cdsp_engine_set_config_file merges explicit
 // arguments with g_cli_overrides), so they must not be re-applied here; doing
 // so would let g_cli_overrides silently replace the caller's explicit values.
 static bool set_config_json_impl(dsp_engine_t *engine, const char *json_str,
-                                 bool apply_cli,
+                                 const char *config_dir, bool apply_cli,
                                  cdsp_backend_error_t *out_err) {
   if (!engine || !engine->set_config_json)
     return false;
@@ -511,8 +622,46 @@ static bool set_config_json_impl(dsp_engine_t *engine, const char *json_str,
     }
   }
 
+  char fallback_dir_buf[1024] = {0};
+  const char *effective_dir = config_dir;
+  if (!effective_dir) {
+    char *cfg_path = cdsp_get_config_file_path(engine);
+    if (cfg_path) {
+      get_dir_from_path(cfg_path, fallback_dir_buf, sizeof(fallback_dir_buf));
+      if (fallback_dir_buf[0] != '\0') {
+        effective_dir = fallback_dir_buf;
+      }
+      free(cfg_path);
+    }
+  }
+
+  char *resolved_json = NULL;
+  dsp_config_t *parsed = NULL;
+  config_error_t cerr = {0};
+  if (dsp_config_parse_json_with_dir_and_overrides_ext(
+          json_to_set, effective_dir, NULL, &parsed, false, &cerr) == 0 &&
+      parsed) {
+    cJSON *resolved_root = cJSON_Parse(json_to_set);
+    if (resolved_root) {
+      sync_resolved_config_to_cjson(resolved_root, parsed);
+      config_fill_defaults(resolved_root);
+      resolved_json = cJSON_PrintUnformatted(resolved_root);
+      if (resolved_json) {
+        json_to_set = resolved_json;
+      }
+      cJSON_Delete(resolved_root);
+    }
+    dsp_config_free(parsed);
+  }
+
+  if (effective_dir) {
+    dsp_config_set_base_dir(effective_dir);
+  }
   audio_backend_error_t berr = {0};
   bool ok = engine->set_config_json(engine->ctx, json_to_set, &berr);
+  if (resolved_json) {
+    free(resolved_json);
+  }
   if (overridden_json) {
     free(overridden_json);
   }
@@ -526,7 +675,7 @@ static bool set_config_json_impl(dsp_engine_t *engine, const char *json_str,
 
 bool cdsp_set_config_json(dsp_engine_t *engine, const char *json_str,
                           cdsp_backend_error_t *out_err) {
-  return set_config_json_impl(engine, json_str, true, out_err);
+  return set_config_json_impl(engine, json_str, NULL, true, out_err);
 }
 
 bool cdsp_set_config_yaml(dsp_engine_t *engine, const char *yaml_str,
@@ -537,7 +686,7 @@ bool cdsp_set_config_yaml(dsp_engine_t *engine, const char *yaml_str,
   char *json_str = yaml_str_to_json_str(yaml_str, &err_msg);
   if (!json_str) {
     if (out_err) {
-      out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
+      out_err->type = CDSP_BACKEND_ERR_CONFIG_READ;
       snprintf(out_err->message, sizeof(out_err->message),
                "YAML parse error: %s",
                err_msg ? err_msg : "Invalid YAML syntax");
@@ -553,11 +702,13 @@ bool cdsp_set_config_yaml(dsp_engine_t *engine, const char *yaml_str,
   return ok;
 }
 
-// Helper to load a YAML/JSON configuration file and apply CLI overrides
+// Helper to load a YAML/JSON configuration file and optionally apply CLI
+// overrides
 static char *read_config_file_as_json_with_overrides(
-    const char *path, int samplerate_override, int channels_override,
-    const char *format_override, int extra_samples_override, bool *out_is_json,
-    char *err_msg, size_t err_msg_len) {
+    const char *path, bool apply_overrides, int samplerate_override,
+    int channels_override, const char *format_override,
+    int extra_samples_override, bool *out_is_json, char *err_msg,
+    size_t err_msg_len) {
   if (out_is_json)
     *out_is_json = false;
   if (err_msg && err_msg_len > 0)
@@ -600,26 +751,28 @@ static char *read_config_file_as_json_with_overrides(
     return NULL;
   }
 
-  // Fall back to persistent CLI overrides if caller didn't specify explicit
-  // values
-  if (samplerate_override <= 0 && g_cli_overrides.samplerate > 0) {
-    samplerate_override = g_cli_overrides.samplerate;
-  }
-  if (channels_override <= 0 && g_cli_overrides.channels > 0) {
-    channels_override = g_cli_overrides.channels;
-  }
-  if (!format_override && g_cli_overrides.has_format) {
-    format_override = g_cli_overrides.format;
-  }
-  if (extra_samples_override < 0 && g_cli_overrides.extra_samples >= 0) {
-    extra_samples_override = g_cli_overrides.extra_samples;
-  }
+  if (apply_overrides) {
+    // Fall back to persistent CLI overrides if caller didn't specify explicit
+    // values
+    if (samplerate_override <= 0 && g_cli_overrides.samplerate > 0) {
+      samplerate_override = g_cli_overrides.samplerate;
+    }
+    if (channels_override <= 0 && g_cli_overrides.channels > 0) {
+      channels_override = g_cli_overrides.channels;
+    }
+    if (!format_override && g_cli_overrides.has_format) {
+      format_override = g_cli_overrides.format;
+    }
+    if (extra_samples_override < 0 && g_cli_overrides.extra_samples >= 0) {
+      extra_samples_override = g_cli_overrides.extra_samples;
+    }
 
-  if (!apply_cjson_overrides(root, samplerate_override, channels_override,
-                             format_override, extra_samples_override, err_msg,
-                             err_msg_len)) {
-    cJSON_Delete(root);
-    return NULL;
+    if (!apply_cjson_overrides(root, samplerate_override, channels_override,
+                               format_override, extra_samples_override, err_msg,
+                               err_msg_len)) {
+      cJSON_Delete(root);
+      return NULL;
+    }
   }
 
   char *updated_json = cJSON_PrintUnformatted(root);
@@ -639,9 +792,13 @@ bool cdsp_engine_set_config_file(dsp_engine_t *engine, const char *path,
                                  cdsp_backend_error_t *out_err) {
   if (!engine || !path)
     return false;
+  char dir_buf[1024] = {0};
+  get_dir_from_path(path, dir_buf, sizeof(dir_buf));
+  const char *config_dir = (dir_buf[0] != '\0') ? dir_buf : NULL;
+
   char err_msg[256] = {0};
   char *updated_json = read_config_file_as_json_with_overrides(
-      path, samplerate_override, channels_override, format_override,
+      path, true, samplerate_override, channels_override, format_override,
       extra_samples_override, NULL, err_msg, sizeof(err_msg));
   if (!updated_json) {
     if (out_err) {
@@ -654,7 +811,8 @@ bool cdsp_engine_set_config_file(dsp_engine_t *engine, const char *path,
 
   // Overrides (explicit, falling back to g_cli_overrides) were already applied
   // by read_config_file_as_json_with_overrides.
-  bool ok = set_config_json_impl(engine, updated_json, false, out_err);
+  bool ok =
+      set_config_json_impl(engine, updated_json, config_dir, false, out_err);
   free(updated_json);
   if (ok) {
     cdsp_set_config_file_path(engine, path);
@@ -692,8 +850,6 @@ char *cdsp_get_config_description(const dsp_engine_t *engine) {
   return res;
 }
 
-static void config_fill_defaults(cJSON *root);
-
 char *cdsp_get_config_value(const dsp_engine_t *engine, const char *json_ptr) {
   char *json = NULL;
   if (!cdsp_get_active_config_json(engine, &json) || !json) {
@@ -721,6 +877,12 @@ char *cdsp_get_config_value(const dsp_engine_t *engine, const char *json_ptr) {
 bool cdsp_set_config_value(dsp_engine_t *engine, const char *json_ptr,
                            const char *val_json,
                            cdsp_backend_error_t *out_err) {
+  if (!json_ptr || !val_json) {
+    return false;
+  }
+  if (*json_ptr == '\0') {
+    return cdsp_set_config_json(engine, val_json, out_err);
+  }
   char *json = NULL;
   if (!cdsp_get_active_config_json(engine, &json) || !json) {
     return false;
@@ -829,7 +991,7 @@ bool cdsp_patch_config(dsp_engine_t *engine, const char *patch_json,
       cJSON_Delete(patch);
     cJSON_Delete(root);
     if (out_err) {
-      out_err->type = CDSP_BACKEND_ERR_CONFIG_PARSE;
+      out_err->type = CDSP_BACKEND_ERR_CONFIG_READ;
       snprintf(out_err->message, sizeof(out_err->message),
                "Patch must be a JSON object");
     }
@@ -866,16 +1028,24 @@ bool cdsp_reload_config(dsp_engine_t *engine, cdsp_backend_error_t *out_err) {
   return ok;
 }
 
+static void ensure_null_fields(cJSON *obj, const char *const fields[]) {
+  if (!obj || !cJSON_IsObject(obj) || !fields)
+    return;
+  for (int i = 0; fields[i] != NULL; i++) {
+    if (!cJSON_HasObjectItem(obj, fields[i])) {
+      cJSON_AddNullToObject(obj, fields[i]);
+    }
+  }
+}
+
 static void config_fill_defaults(cJSON *root) {
   if (!root || !cJSON_IsObject(root))
     return;
 
-  if (!cJSON_HasObjectItem(root, "title")) {
-    cJSON_AddNullToObject(root, "title");
-  }
-  if (!cJSON_HasObjectItem(root, "description")) {
-    cJSON_AddNullToObject(root, "description");
-  }
+  static const char *const root_null_fields[] = {
+      "title", "description", "filters", "mixers", "processors", "pipeline",
+      NULL};
+  ensure_null_fields(root, root_null_fields);
 
   cJSON *devices = cJSON_GetObjectItemCaseSensitive(root, "devices");
   if (devices && cJSON_IsObject(devices)) {
@@ -894,86 +1064,123 @@ static void config_fill_defaults(cJSON *root) {
                                                   "multithreaded",
                                                   "worker_threads",
                                                   NULL};
-    for (int i = 0; dev_null_fields[i] != NULL; i++) {
-      if (!cJSON_HasObjectItem(devices, dev_null_fields[i])) {
-        cJSON_AddNullToObject(devices, dev_null_fields[i]);
+    ensure_null_fields(devices, dev_null_fields);
+
+    cJSON *resampler = cJSON_GetObjectItemCaseSensitive(devices, "resampler");
+    if (resampler && cJSON_IsObject(resampler)) {
+      cJSON *res_type = cJSON_GetObjectItemCaseSensitive(resampler, "type");
+      cJSON *prof = cJSON_GetObjectItemCaseSensitive(resampler, "profile");
+      if (res_type && cJSON_IsString(res_type) && res_type->valuestring &&
+          strcmp(res_type->valuestring, "AsyncSinc") == 0 &&
+          (!prof || cJSON_IsNull(prof))) {
+        static const char *const async_sinc_null_fields[] = {"f_cutoff", NULL};
+        ensure_null_fields(resampler, async_sinc_null_fields);
       }
     }
 
     cJSON *capture = cJSON_GetObjectItemCaseSensitive(devices, "capture");
     if (capture && cJSON_IsObject(capture)) {
-      if (!cJSON_HasObjectItem(capture, "extra_samples")) {
-        cJSON_AddNullToObject(capture, "extra_samples");
-      }
       cJSON *type_item = cJSON_GetObjectItemCaseSensitive(capture, "type");
-      if (type_item && cJSON_IsString(type_item) &&
-          strcmp(type_item->valuestring, "RawFile") == 0) {
-        if (!cJSON_HasObjectItem(capture, "skip_bytes")) {
-          cJSON_AddNullToObject(capture, "skip_bytes");
-        }
-        if (!cJSON_HasObjectItem(capture, "read_bytes")) {
-          cJSON_AddNullToObject(capture, "read_bytes");
-        }
-      }
-      if (!cJSON_HasObjectItem(capture, "labels")) {
-        cJSON_AddNullToObject(capture, "labels");
+      const char *cap_type =
+          (type_item && cJSON_IsString(type_item) && type_item->valuestring)
+              ? type_item->valuestring
+              : "";
+      if (strcmp(cap_type, "Alsa") == 0) {
+        static const char *const alsa_cap_fields[] = {
+            "format",              "stop_on_inactive", "link_volume_control",
+            "link_mute_control",   "labels",           NULL};
+        ensure_null_fields(capture, alsa_cap_fields);
+      } else if (strcmp(cap_type, "PipeWire") == 0) {
+        static const char *const pw_cap_fields[] = {
+            "node_name",       "node_description", "node_group_name",
+            "autoconnect_to",  "loopback",         "labels",
+            NULL};
+        ensure_null_fields(capture, pw_cap_fields);
+      } else if (strcmp(cap_type, "RawFile") == 0 ||
+                 strcmp(cap_type, "Stdin") == 0) {
+        static const char *const raw_cap_fields[] = {
+            "extra_samples", "skip_bytes", "read_bytes", "labels", NULL};
+        ensure_null_fields(capture, raw_cap_fields);
+      } else if (strcmp(cap_type, "WavFile") == 0) {
+        static const char *const wav_cap_fields[] = {"extra_samples", "labels",
+                                                     NULL};
+        ensure_null_fields(capture, wav_cap_fields);
+      } else if (strcmp(cap_type, "CoreAudio") == 0) {
+        static const char *const ca_cap_fields[] = {
+            "device", "format", "loopback", "labels", NULL};
+        ensure_null_fields(capture, ca_cap_fields);
+      } else if (strcmp(cap_type, "Wasapi") == 0) {
+        static const char *const wasapi_cap_fields[] = {
+            "device",  "format", "exclusive", "loopback",
+            "polling", "labels", NULL};
+        ensure_null_fields(capture, wasapi_cap_fields);
+      } else if (strcmp(cap_type, "Asio") == 0) {
+        static const char *const asio_cap_fields[] = {"format", "labels", NULL};
+        ensure_null_fields(capture, asio_cap_fields);
+      } else {
+        static const char *const gen_cap_fields[] = {"labels", NULL};
+        ensure_null_fields(capture, gen_cap_fields);
       }
     }
 
     cJSON *playback = cJSON_GetObjectItemCaseSensitive(devices, "playback");
     if (playback && cJSON_IsObject(playback)) {
       cJSON *type_item = cJSON_GetObjectItemCaseSensitive(playback, "type");
-      if (type_item && cJSON_IsString(type_item) &&
-          strcmp(type_item->valuestring, "File") == 0) {
-        if (!cJSON_HasObjectItem(playback, "wav_header")) {
-          cJSON_AddNullToObject(playback, "wav_header");
-        }
-        if (!cJSON_HasObjectItem(playback, "use_rf64")) {
-          cJSON_AddNullToObject(playback, "use_rf64");
-        }
+      const char *pb_type =
+          (type_item && cJSON_IsString(type_item) && type_item->valuestring)
+              ? type_item->valuestring
+              : "";
+      if (strcmp(pb_type, "Alsa") == 0 || strcmp(pb_type, "Asio") == 0) {
+        static const char *const fmt_pb_fields[] = {"format", NULL};
+        ensure_null_fields(playback, fmt_pb_fields);
+      } else if (strcmp(pb_type, "PipeWire") == 0) {
+        static const char *const pw_pb_fields[] = {
+            "node_name", "node_description", "node_group_name",
+            "autoconnect_to", NULL};
+        ensure_null_fields(playback, pw_pb_fields);
+      } else if (strcmp(pb_type, "File") == 0) {
+        static const char *const file_pb_fields[] = {"wav_header", "use_rf64",
+                                                     NULL};
+        ensure_null_fields(playback, file_pb_fields);
+      } else if (strcmp(pb_type, "Stdout") == 0) {
+        static const char *const stdout_pb_fields[] = {"wav_header", NULL};
+        ensure_null_fields(playback, stdout_pb_fields);
+      } else if (strcmp(pb_type, "CoreAudio") == 0) {
+        static const char *const ca_pb_fields[] = {"device", "format",
+                                                   "exclusive", NULL};
+        ensure_null_fields(playback, ca_pb_fields);
+      } else if (strcmp(pb_type, "Wasapi") == 0) {
+        static const char *const wasapi_pb_fields[] = {
+            "device", "format", "exclusive", "polling", NULL};
+        ensure_null_fields(playback, wasapi_pb_fields);
       }
     }
   }
 
   cJSON *mixers = cJSON_GetObjectItemCaseSensitive(root, "mixers");
-  if (!mixers) {
-    cJSON_AddNullToObject(root, "mixers");
-  } else if (cJSON_IsObject(mixers)) {
+  if (mixers && cJSON_IsObject(mixers)) {
     cJSON *mixer = mixers->child;
     while (mixer) {
       if (cJSON_IsObject(mixer)) {
-        if (!cJSON_HasObjectItem(mixer, "description")) {
-          cJSON_AddNullToObject(mixer, "description");
-        }
-        if (!cJSON_HasObjectItem(mixer, "labels")) {
-          cJSON_AddNullToObject(mixer, "labels");
-        }
+        static const char *const mixer_fields[] = {"description", "labels",
+                                                   NULL};
+        ensure_null_fields(mixer, mixer_fields);
         cJSON *mapping = cJSON_GetObjectItemCaseSensitive(mixer, "mapping");
         if (mapping && cJSON_IsArray(mapping)) {
           cJSON *map_entry = mapping->child;
           while (map_entry) {
             if (cJSON_IsObject(map_entry)) {
-              if (!cJSON_HasObjectItem(map_entry, "mute")) {
-                cJSON_AddNullToObject(map_entry, "mute");
-              }
+              static const char *const map_fields[] = {"mute", NULL};
+              ensure_null_fields(map_entry, map_fields);
               cJSON *sources =
                   cJSON_GetObjectItemCaseSensitive(map_entry, "sources");
               if (sources && cJSON_IsArray(sources)) {
                 cJSON *src = sources->child;
                 while (src) {
                   if (cJSON_IsObject(src)) {
-                    if (!cJSON_HasObjectItem(src, "gain")) {
-                      cJSON_AddNullToObject(src, "gain");
-                    }
-                    if (!cJSON_HasObjectItem(src, "inverted")) {
-                      cJSON_AddNullToObject(src, "inverted");
-                    }
-                    if (!cJSON_HasObjectItem(src, "mute")) {
-                      cJSON_AddNullToObject(src, "mute");
-                    }
-                    if (!cJSON_HasObjectItem(src, "scale")) {
-                      cJSON_AddNullToObject(src, "scale");
-                    }
+                    static const char *const src_fields[] = {
+                        "gain", "inverted", "mute", "scale", NULL};
+                    ensure_null_fields(src, src_fields);
                   }
                   src = src->next;
                 }
@@ -988,65 +1195,72 @@ static void config_fill_defaults(cJSON *root) {
   }
 
   cJSON *filters = cJSON_GetObjectItemCaseSensitive(root, "filters");
-  if (!filters) {
-    cJSON_AddNullToObject(root, "filters");
-  } else if (cJSON_IsObject(filters)) {
+  if (filters && cJSON_IsObject(filters)) {
     cJSON *filter = filters->child;
     while (filter) {
       if (cJSON_IsObject(filter)) {
-        if (!cJSON_HasObjectItem(filter, "description")) {
-          cJSON_AddNullToObject(filter, "description");
-        }
+        static const char *const desc_fields[] = {"description", NULL};
+        ensure_null_fields(filter, desc_fields);
         cJSON *type = cJSON_GetObjectItemCaseSensitive(filter, "type");
         cJSON *params = cJSON_GetObjectItemCaseSensitive(filter, "parameters");
-        if (type && cJSON_IsString(type) && params && cJSON_IsObject(params)) {
-          if (strcmp(type->valuestring, "Volume") == 0) {
-            if (!cJSON_HasObjectItem(params, "ramp_time_ms")) {
-              cJSON_AddNullToObject(params, "ramp_time_ms");
-            }
-            if (!cJSON_HasObjectItem(params, "limit")) {
-              cJSON_AddNullToObject(params, "limit");
-            }
-          } else if (strcmp(type->valuestring, "Loudness") == 0) {
-            if (!cJSON_HasObjectItem(params, "ramp_time_ms")) {
-              cJSON_AddNullToObject(params, "ramp_time_ms");
-            }
-            if (!cJSON_HasObjectItem(params, "high_boost")) {
-              cJSON_AddNullToObject(params, "high_boost");
-            }
-            if (!cJSON_HasObjectItem(params, "low_boost")) {
-              cJSON_AddNullToObject(params, "low_boost");
-            }
-            if (!cJSON_HasObjectItem(params, "attenuation")) {
-              cJSON_AddNullToObject(params, "attenuation");
-            }
-          } else if (strcmp(type->valuestring, "Conv") == 0) {
+        if (type && cJSON_IsString(type) && type->valuestring && params &&
+            cJSON_IsObject(params)) {
+          const char *ftype = type->valuestring;
+          if (strcmp(ftype, "Gain") == 0) {
+            static const char *const gain_fields[] = {"inverted", "mute",
+                                                      "scale", NULL};
+            ensure_null_fields(params, gain_fields);
+          } else if (strcmp(ftype, "Volume") == 0) {
+            static const char *const vol_fields[] = {"ramp_time_ms", "limit",
+                                                     NULL};
+            ensure_null_fields(params, vol_fields);
+          } else if (strcmp(ftype, "Loudness") == 0) {
+            static const char *const loud_fields[] = {
+                "fader",     "high_boost", "low_boost", "high_freq",
+                "low_freq",  "high_q",     "low_q",     "attenuate_mid",
+                NULL};
+            ensure_null_fields(params, loud_fields);
+          } else if (strcmp(ftype, "Conv") == 0) {
             cJSON *conv_type = cJSON_GetObjectItemCaseSensitive(params, "type");
-            if (conv_type && cJSON_IsString(conv_type)) {
+            if (conv_type && cJSON_IsString(conv_type) &&
+                conv_type->valuestring) {
               if (strcmp(conv_type->valuestring, "Raw") == 0) {
-                if (!cJSON_HasObjectItem(params, "skip_bytes_lines")) {
-                  cJSON_AddNullToObject(params, "skip_bytes_lines");
-                }
-                if (!cJSON_HasObjectItem(params, "read_bytes_lines")) {
-                  cJSON_AddNullToObject(params, "read_bytes_lines");
-                }
+                static const char *const raw_conv_fields[] = {
+                    "format", "skip_bytes_lines", "read_bytes_lines", NULL};
+                ensure_null_fields(params, raw_conv_fields);
               } else if (strcmp(conv_type->valuestring, "Wav") == 0) {
-                if (!cJSON_HasObjectItem(params, "channel")) {
-                  cJSON_AddNullToObject(params, "channel");
-                }
+                static const char *const wav_conv_fields[] = {"channel", NULL};
+                ensure_null_fields(params, wav_conv_fields);
               }
             }
-          } else if (strcmp(type->valuestring, "Delay") == 0) {
-            if (!cJSON_HasObjectItem(params, "unit")) {
-              cJSON_AddNullToObject(params, "unit");
+          } else if (strcmp(ftype, "Delay") == 0) {
+            static const char *const delay_fields[] = {"subsample", NULL};
+            ensure_null_fields(params, delay_fields);
+          } else if (strcmp(ftype, "Biquad") == 0) {
+            cJSON *bq_type = cJSON_GetObjectItemCaseSensitive(params, "type");
+            if (bq_type && cJSON_IsString(bq_type) && bq_type->valuestring &&
+                strcmp(bq_type->valuestring, "GeneralNotch") == 0) {
+              static const char *const gn_fields[] = {"normalize_at_dc", NULL};
+              ensure_null_fields(params, gn_fields);
             }
-            if (!cJSON_HasObjectItem(params, "subsample")) {
-              cJSON_AddNullToObject(params, "subsample");
+          } else if (strcmp(ftype, "BiquadCombo") == 0) {
+            cJSON *bqc_type = cJSON_GetObjectItemCaseSensitive(params, "type");
+            if (bqc_type && cJSON_IsString(bqc_type) && bqc_type->valuestring &&
+                strcmp(bqc_type->valuestring, "GraphicEqualizer") == 0) {
+              static const char *const geq_fields[] = {"freq_min", "freq_max",
+                                                       NULL};
+              ensure_null_fields(params, geq_fields);
             }
-          } else if (strcmp(type->valuestring, "Dither") == 0) {
-            if (!cJSON_HasObjectItem(params, "bits")) {
-              cJSON_AddNullToObject(params, "bits");
-            }
+          } else if (strcmp(ftype, "DiffEq") == 0) {
+            static const char *const deq_fields[] = {"a", "b", NULL};
+            ensure_null_fields(params, deq_fields);
+          } else if (strcmp(ftype, "Clipper") == 0) {
+            static const char *const clip_fields[] = {"soft_clip", "clip_limit",
+                                                      NULL};
+            ensure_null_fields(params, clip_fields);
+          } else if (strcmp(ftype, "LookaheadLimiter") == 0) {
+            static const char *const lal_fields[] = {"limit", NULL};
+            ensure_null_fields(params, lal_fields);
           }
         }
       }
@@ -1055,25 +1269,34 @@ static void config_fill_defaults(cJSON *root) {
   }
 
   cJSON *processors = cJSON_GetObjectItemCaseSensitive(root, "processors");
-  if (!processors) {
-    cJSON_AddNullToObject(root, "processors");
-  } else if (cJSON_IsObject(processors)) {
+  if (processors && cJSON_IsObject(processors)) {
     cJSON *proc = processors->child;
     while (proc) {
       if (cJSON_IsObject(proc)) {
-        if (!cJSON_HasObjectItem(proc, "description")) {
-          cJSON_AddNullToObject(proc, "description");
-        }
+        static const char *const desc_fields[] = {"description", NULL};
+        ensure_null_fields(proc, desc_fields);
         cJSON *type = cJSON_GetObjectItemCaseSensitive(proc, "type");
         cJSON *params = cJSON_GetObjectItemCaseSensitive(proc, "parameters");
-        if (type && cJSON_IsString(type) && params && cJSON_IsObject(params)) {
-          if (strcmp(type->valuestring, "Compressor") == 0) {
-            if (!cJSON_HasObjectItem(params, "monitor_channels")) {
-              cJSON_AddNullToObject(params, "monitor_channels");
-            }
-            if (!cJSON_HasObjectItem(params, "process_channels")) {
-              cJSON_AddNullToObject(params, "process_channels");
-            }
+        if (type && cJSON_IsString(type) && type->valuestring && params &&
+            cJSON_IsObject(params)) {
+          const char *ptype = type->valuestring;
+          if (strcmp(ptype, "Compressor") == 0) {
+            static const char *const comp_fields[] = {
+                "monitor_channels", "process_channels", "makeup_gain",
+                "soft_clip",        "clip_limit",       NULL};
+            ensure_null_fields(params, comp_fields);
+          } else if (strcmp(ptype, "NoiseGate") == 0) {
+            static const char *const ng_fields[] = {"monitor_channels",
+                                                    "process_channels", NULL};
+            ensure_null_fields(params, ng_fields);
+          } else if (strcmp(ptype, "LookaheadLimiter") == 0) {
+            static const char *const lal_proc_fields[] = {
+                "monitor_channels",     "process_channels", "limit",
+                "delay_processed_only", NULL};
+            ensure_null_fields(params, lal_proc_fields);
+          } else if (strcmp(ptype, "RACE") == 0) {
+            static const char *const race_fields[] = {"subsample_delay", NULL};
+            ensure_null_fields(params, race_fields);
           }
         }
       }
@@ -1081,8 +1304,23 @@ static void config_fill_defaults(cJSON *root) {
     }
   }
 
-  if (!cJSON_HasObjectItem(root, "pipeline")) {
-    cJSON_AddNullToObject(root, "pipeline");
+  cJSON *pipeline = cJSON_GetObjectItemCaseSensitive(root, "pipeline");
+  if (pipeline && cJSON_IsArray(pipeline)) {
+    cJSON *step = pipeline->child;
+    while (step) {
+      if (cJSON_IsObject(step)) {
+        static const char *const step_fields[] = {"description", "bypassed",
+                                                  NULL};
+        ensure_null_fields(step, step_fields);
+        cJSON *stype = cJSON_GetObjectItemCaseSensitive(step, "type");
+        if (stype && cJSON_IsString(stype) && stype->valuestring &&
+            strcmp(stype->valuestring, "Filter") == 0) {
+          static const char *const fstep_fields[] = {"channels", NULL};
+          ensure_null_fields(step, fstep_fields);
+        }
+      }
+      step = step->next;
+    }
   }
 }
 
@@ -1093,13 +1331,28 @@ static void get_dir_from_path(const char *path, char *out_dir,
       out_dir[0] = '\0';
     return;
   }
+#ifndef _WIN32
+  char resolved[PATH_MAX];
+  const char *src_path = path;
+  if (realpath(path, resolved) != NULL) {
+    src_path = resolved;
+  }
+  const char *last_slash = strrchr(src_path, '/');
+  if (last_slash) {
+    size_t len = (size_t)(last_slash - src_path);
+    if (len >= out_size)
+      len = out_size - 1;
+    memcpy(out_dir, src_path, len);
+    out_dir[len] = '\0';
+  } else {
+    out_dir[0] = '\0';
+  }
+#else
   const char *last_slash = strrchr(path, '/');
-#ifdef _WIN32
   const char *last_backslash = strrchr(path, '\\');
   if (!last_slash || (last_backslash && last_backslash > last_slash)) {
     last_slash = last_backslash;
   }
-#endif
   if (last_slash) {
     size_t len = (size_t)(last_slash - path);
     if (len >= out_size)
@@ -1109,6 +1362,7 @@ static void get_dir_from_path(const char *path, char *out_dir,
   } else {
     out_dir[0] = '\0';
   }
+#endif
 }
 
 static bool read_config_json_with_dir(const char *json_str,
@@ -1216,6 +1470,7 @@ validate_config_json_with_dir(const char *json_str, const char *config_dir,
     *out_err_type = CDSP_CONFIG_ERR_VALIDATION;
     return false;
   }
+  sync_resolved_config_to_cjson(root, parsed);
   dsp_config_free(parsed);
 
   config_fill_defaults(root);
@@ -1306,7 +1561,7 @@ bool cdsp_read_config_file(const char *path, char **out_result,
   char err_msg[256] = {0};
   bool is_json = false;
   char *updated_json = read_config_file_as_json_with_overrides(
-      path, 0, 0, NULL, -1, &is_json, err_msg, sizeof(err_msg));
+      path, false, 0, 0, NULL, -1, &is_json, err_msg, sizeof(err_msg));
   if (!updated_json) {
     if (out_result)
       *out_result = strdup(err_msg[0] ? err_msg : "Could not read file");
@@ -1350,7 +1605,7 @@ bool cdsp_validate_config_file_with_overrides(
   char err_msg[256] = {0};
   bool is_json = false;
   char *updated_json = read_config_file_as_json_with_overrides(
-      path, samplerate_override, channels_override, format_override,
+      path, true, samplerate_override, channels_override, format_override,
       extra_samples_override, &is_json, err_msg, sizeof(err_msg));
   if (!updated_json) {
     if (out_result)

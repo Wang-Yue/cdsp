@@ -33,6 +33,7 @@
 #include "utils/cdsp_time.h"
 
 #define CDSP_EXIT_OK 0
+#define CDSP_EXIT_USAGE 2
 #define CDSP_EXIT_BAD_CONFIG 101
 #define CDSP_EXIT_PROCESSING_ERROR 102
 #define CDSP_EXIT_FORCED 103
@@ -95,10 +96,20 @@ static bool parse_gain_value(const char *str, double *out_val) {
   double val = strtod(str, &endptr);
   if (endptr == str || *endptr != '\0')
     return false;
-  if (val < -120.0 || val > 20.0)
+  if (!isfinite(val) || val < -120.0 || val > 20.0)
     return false;
   *out_val = val;
   return true;
+}
+
+static const char *consume_opt_value(int argc, char **argv, int *i,
+                                     const char *inline_val,
+                                     bool allow_leading_dash) {
+  if (inline_val)
+    return (*inline_val != '\0') ? inline_val : NULL;
+  if (*i + 1 < argc && (allow_leading_dash || argv[*i + 1][0] != '-'))
+    return argv[++(*i)];
+  return NULL;
 }
 
 static bool parse_positive_int(const char *str, int *out_val) {
@@ -143,6 +154,7 @@ static void print_usage(void) {
       "  CONFIGFILE        Path to JSON/YAML configuration file.\n\n"
       "Options:\n"
       "  -h, --help        Print this help message.\n"
+      "  -V, --version     Print version information.\n"
       "  -c, --check       Check config file and exit.\n"
       "  -s, --statefile   Use the given file to persist volume/mute state.\n"
       "  -v                Increase message verbosity.\n"
@@ -260,6 +272,7 @@ int main(int argc, char **argv) {
   bool no_config = false;
   const char *log_level_str = "info";
   bool has_loglevel = false;
+  const char *custom_log_spec_str = NULL;
   int verbosity_count = 0;
   bool has_logfile = false;
   bool has_rotate_size = false;
@@ -284,11 +297,32 @@ int main(int argc, char **argv) {
   int extra_samples_override = -1;
 
   for (int i = 1; i < argc; i++) {
-    const char *arg = argv[i];
-    if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0) {
+    const char *raw_arg = argv[i];
+    char opt_buf[64];
+    const char *arg = raw_arg;
+    const char *inline_val = NULL;
+    if (strncmp(raw_arg, "--", 2) == 0) {
+      const char *eq = strchr(raw_arg, '=');
+      if (eq) {
+        size_t len = (size_t)(eq - raw_arg);
+        if (len < sizeof(opt_buf)) {
+          memcpy(opt_buf, raw_arg, len);
+          opt_buf[len] = '\0';
+          arg = opt_buf;
+          inline_val = eq + 1;
+        }
+      }
+    }
+
+    if ((strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0) && !inline_val) {
       print_usage();
       return CDSP_EXIT_OK;
-    } else if (strcmp(arg, "-c") == 0 || strcmp(arg, "--check") == 0) {
+    } else if ((strcmp(arg, "-V") == 0 || strcmp(arg, "--version") == 0) &&
+               !inline_val) {
+      printf("CamillaDSP %s\n", cdsp_get_version());
+      return CDSP_EXIT_OK;
+    } else if ((strcmp(arg, "-c") == 0 || strcmp(arg, "--check") == 0) &&
+               !inline_val) {
       check_only = true;
     } else if (strcmp(arg, "-v") == 0) {
       verbosity_count++;
@@ -303,85 +337,92 @@ int main(int argc, char **argv) {
         }
       }
       if (!all_v) {
-        fprintf(stderr, "Unknown option: %s\n", arg);
+        fprintf(stderr, "Unknown option: %s\n", raw_arg);
         print_usage();
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
-    } else if (strcmp(arg, "-w") == 0 || strcmp(arg, "--wait") == 0) {
+    } else if ((strcmp(arg, "-w") == 0 || strcmp(arg, "--wait") == 0) &&
+               !inline_val) {
 #ifdef ENABLE_WEBSOCKET
       wait_config = true;
 #else
       fprintf(stderr, "Error: WebSocket support is not compiled in.\n");
-      return CDSP_EXIT_BAD_CONFIG;
+      return CDSP_EXIT_USAGE;
 #endif
-    } else if (strcmp(arg, "--no_config") == 0) {
+    } else if (strcmp(arg, "--no_config") == 0 && !inline_val) {
       no_config = true;
     } else if (strcmp(arg, "-s") == 0 || strcmp(arg, "--statefile") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        state_file_path = argv[++i];
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        state_file_path = val;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "-p") == 0 || strcmp(arg, "--port") == 0) {
 #ifdef ENABLE_WEBSOCKET
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
         char *endptr = NULL;
-        long p = strtol(argv[++i], &endptr, 10);
-        if (endptr == argv[i] || *endptr != '\0' || p < 0 || p >= 65535) {
+        long p = strtol(val, &endptr, 10);
+        if (endptr == val || *endptr != '\0' || p < 0 || p >= 65535) {
           fprintf(stderr,
                   "Error: Invalid port '%s': Must be between 0 and 65534\n",
-                  argv[i]);
-          return CDSP_EXIT_BAD_CONFIG;
+                  val);
+          return CDSP_EXIT_USAGE;
         }
         port = (uint16_t)p;
         has_port = true;
       } else {
         fprintf(stderr, "Error: Missing port for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
 #else
       fprintf(stderr, "Error: WebSocket support is not compiled in.\n");
-      return CDSP_EXIT_BAD_CONFIG;
+      return CDSP_EXIT_USAGE;
 #endif
     } else if (strcmp(arg, "-a") == 0 || strcmp(arg, "--address") == 0) {
 #ifdef ENABLE_WEBSOCKET
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        bind_address = argv[++i];
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        bind_address = val;
         if (!is_valid_ip(bind_address)) {
           fprintf(stderr,
                   "Error: Invalid address '%s': Must be a valid IP address\n",
                   bind_address);
-          return CDSP_EXIT_BAD_CONFIG;
+          return CDSP_EXIT_USAGE;
         }
         has_address = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
 #else
       fprintf(stderr, "Error: WebSocket support is not compiled in.\n");
-      return CDSP_EXIT_BAD_CONFIG;
+      return CDSP_EXIT_USAGE;
 #endif
 #ifdef ENABLE_WEBSOCKET
     } else if (strcmp(arg, "--cert") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        cert_path = argv[++i];
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        cert_path = val;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "--pass") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        cert_pass = argv[++i];
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        cert_pass = val;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
 #endif
     } else if (strcmp(arg, "-l") == 0 || strcmp(arg, "--loglevel") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        log_level_str = argv[++i];
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        log_level_str = val;
         if (strcmp(log_level_str, "trace") != 0 &&
             strcmp(log_level_str, "debug") != 0 &&
             strcmp(log_level_str, "info") != 0 &&
@@ -392,221 +433,233 @@ int main(int argc, char **argv) {
                   "Error: Invalid log level '%s'. Must be one of: trace, "
                   "debug, info, warn, error, off\n",
                   log_level_str);
-          return CDSP_EXIT_BAD_CONFIG;
+          return CDSP_EXIT_USAGE;
         }
         has_loglevel = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "--custom_log_spec") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        log_level_str = argv[++i];
-        has_loglevel = true;
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        custom_log_spec_str = val;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "-o") == 0 || strcmp(arg, "--logfile") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        const char *logfile_path = argv[++i];
-        app_logger_set_logfile(logfile_path);
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        app_logger_set_logfile(val);
         has_logfile = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "--log_rotate_size") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
         char *endptr = NULL;
-        long sz = strtol(argv[++i], &endptr, 10);
-        if (endptr == argv[i] || *endptr != '\0' || sz < 1000) {
+        long sz = strtol(val, &endptr, 10);
+        if (endptr == val || *endptr != '\0' || sz < 1000) {
           fprintf(stderr,
                   "Error: Invalid log_rotate_size '%s': Must be an integer >= "
                   "1000\n",
-                  argv[i]);
-          return CDSP_EXIT_BAD_CONFIG;
+                  val);
+          return CDSP_EXIT_USAGE;
         }
         log_rotate_size = (size_t)sz;
         has_rotate_size = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "--log_keep_nbr") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
         char *endptr = NULL;
-        long nbr = strtol(argv[++i], &endptr, 10);
-        if (endptr == argv[i] || *endptr != '\0' || nbr < 0) {
-          fprintf(stderr, "Error: Invalid log_keep_nbr '%s'\n", argv[i]);
-          return CDSP_EXIT_BAD_CONFIG;
+        long nbr = strtol(val, &endptr, 10);
+        if (endptr == val || *endptr != '\0' || nbr < 0) {
+          fprintf(stderr, "Error: Invalid log_keep_nbr '%s'\n", val);
+          return CDSP_EXIT_USAGE;
         }
         log_keep_nbr = (size_t)nbr;
         has_keep_nbr = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "-g") == 0 || strcmp(arg, "--gain") == 0) {
-      if (i + 1 < argc) {
-        if (!parse_gain_value(argv[++i], &initial_gains[0])) {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, true);
+      if (val) {
+        if (!parse_gain_value(val, &initial_gains[0])) {
           fprintf(stderr,
                   "Error: Invalid gain value '%s': Must be a number between "
                   "-120 and +20\n",
-                  argv[i]);
-          return CDSP_EXIT_BAD_CONFIG;
+                  val);
+          return CDSP_EXIT_USAGE;
         }
         has_initial_gains[0] = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "--gain1") == 0) {
-      if (i + 1 < argc) {
-        if (!parse_gain_value(argv[++i], &initial_gains[1])) {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, true);
+      if (val) {
+        if (!parse_gain_value(val, &initial_gains[1])) {
           fprintf(stderr,
                   "Error: Invalid gain1 value '%s': Must be a number between "
                   "-120 and +20\n",
-                  argv[i]);
-          return CDSP_EXIT_BAD_CONFIG;
+                  val);
+          return CDSP_EXIT_USAGE;
         }
         has_initial_gains[1] = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "--gain2") == 0) {
-      if (i + 1 < argc) {
-        if (!parse_gain_value(argv[++i], &initial_gains[2])) {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, true);
+      if (val) {
+        if (!parse_gain_value(val, &initial_gains[2])) {
           fprintf(stderr,
                   "Error: Invalid gain2 value '%s': Must be a number between "
                   "-120 and +20\n",
-                  argv[i]);
-          return CDSP_EXIT_BAD_CONFIG;
+                  val);
+          return CDSP_EXIT_USAGE;
         }
         has_initial_gains[2] = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "--gain3") == 0) {
-      if (i + 1 < argc) {
-        if (!parse_gain_value(argv[++i], &initial_gains[3])) {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, true);
+      if (val) {
+        if (!parse_gain_value(val, &initial_gains[3])) {
           fprintf(stderr,
                   "Error: Invalid gain3 value '%s': Must be a number between "
                   "-120 and +20\n",
-                  argv[i]);
-          return CDSP_EXIT_BAD_CONFIG;
+                  val);
+          return CDSP_EXIT_USAGE;
         }
         has_initial_gains[3] = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "--gain4") == 0) {
-      if (i + 1 < argc) {
-        if (!parse_gain_value(argv[++i], &initial_gains[4])) {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, true);
+      if (val) {
+        if (!parse_gain_value(val, &initial_gains[4])) {
           fprintf(stderr,
                   "Error: Invalid gain4 value '%s': Must be a number between "
                   "-120 and +20\n",
-                  argv[i]);
-          return CDSP_EXIT_BAD_CONFIG;
+                  val);
+          return CDSP_EXIT_USAGE;
         }
         has_initial_gains[4] = true;
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
-    } else if (strcmp(arg, "-m") == 0 || strcmp(arg, "--mute") == 0) {
+    } else if ((strcmp(arg, "-m") == 0 || strcmp(arg, "--mute") == 0) &&
+               !inline_val) {
 #if CDSP_FADER_COUNT > 0
       initial_mutes[0] = true;
       has_initial_mutes[0] = true;
 #endif
-    } else if (strcmp(arg, "--mute1") == 0) {
+    } else if (strcmp(arg, "--mute1") == 0 && !inline_val) {
 #if CDSP_FADER_COUNT > 1
       initial_mutes[1] = true;
       has_initial_mutes[1] = true;
 #endif
-    } else if (strcmp(arg, "--mute2") == 0) {
+    } else if (strcmp(arg, "--mute2") == 0 && !inline_val) {
 #if CDSP_FADER_COUNT > 2
       initial_mutes[2] = true;
       has_initial_mutes[2] = true;
 #endif
-    } else if (strcmp(arg, "--mute3") == 0) {
+    } else if (strcmp(arg, "--mute3") == 0 && !inline_val) {
 #if CDSP_FADER_COUNT > 3
       initial_mutes[3] = true;
       has_initial_mutes[3] = true;
 #endif
-    } else if (strcmp(arg, "--mute4") == 0) {
+    } else if (strcmp(arg, "--mute4") == 0 && !inline_val) {
 #if CDSP_FADER_COUNT > 4
       initial_mutes[4] = true;
       has_initial_mutes[4] = true;
 #endif
     } else if (strcmp(arg, "-r") == 0 || strcmp(arg, "--samplerate") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        if (!parse_positive_int(argv[++i], &samplerate_override)) {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        if (!parse_positive_int(val, &samplerate_override)) {
           fprintf(stderr,
                   "Error: Invalid samplerate value '%s': Must be a positive "
                   "integer\n",
-                  argv[i]);
-          return CDSP_EXIT_BAD_CONFIG;
+                  val);
+          return CDSP_EXIT_USAGE;
         }
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "-n") == 0 || strcmp(arg, "--channels") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        if (!parse_positive_int(argv[++i], &channels_override)) {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        if (!parse_positive_int(val, &channels_override)) {
           fprintf(stderr,
                   "Error: Invalid channels value '%s': Must be a positive "
                   "integer\n",
-                  argv[i]);
-          return CDSP_EXIT_BAD_CONFIG;
+                  val);
+          return CDSP_EXIT_USAGE;
         }
       } else {
         fprintf(stderr, "Error: Missing value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "-f") == 0 || strcmp(arg, "--format") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        format_override = argv[++i];
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        format_override = val;
         if (!is_valid_format(format_override)) {
           fprintf(
               stderr,
               "Error: Invalid format '%s'. Must be one of: S16_LE, S24_3_LE, "
               "S24_4_LJ_LE, S24_4_RJ_LE, S32_LE, F32_LE, F64_LE\n",
               format_override);
-          return CDSP_EXIT_BAD_CONFIG;
+          return CDSP_EXIT_USAGE;
         }
       } else {
         fprintf(stderr, "Error: Missing format value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else if (strcmp(arg, "-e") == 0 || strcmp(arg, "--extra_samples") == 0) {
-      if (i + 1 < argc && argv[i + 1][0] != '-') {
-        if (!parse_positive_int(argv[++i], &extra_samples_override)) {
+      const char *val = consume_opt_value(argc, argv, &i, inline_val, false);
+      if (val) {
+        if (!parse_positive_int(val, &extra_samples_override)) {
           fprintf(stderr,
                   "Error: Missing or invalid extra_samples value for %s (must "
                   "be >= 1)\n",
                   arg);
-          return CDSP_EXIT_BAD_CONFIG;
+          return CDSP_EXIT_USAGE;
         }
       } else {
         fprintf(stderr, "Error: Missing extra_samples value for %s\n", arg);
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     } else {
-      if (arg[0] != '-') {
+      if (raw_arg[0] != '-') {
         if (config_path) {
-          fprintf(stderr, "Error: Unexpected argument: %s\n", arg);
-          return CDSP_EXIT_BAD_CONFIG;
+          fprintf(stderr, "Error: Unexpected argument: %s\n", raw_arg);
+          return CDSP_EXIT_USAGE;
         }
-        config_path = arg;
+        config_path = raw_arg;
       } else {
-        fprintf(stderr, "Unknown option: %s\n", arg);
+        fprintf(stderr, "Unknown option: %s\n", raw_arg);
         print_usage();
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
     }
   }
@@ -615,69 +668,86 @@ int main(int argc, char **argv) {
   if (verbosity_count > 0 && has_loglevel) {
     fprintf(stderr,
             "Error: The argument '-v' cannot be used with '--loglevel'\n");
-    return CDSP_EXIT_BAD_CONFIG;
+    return CDSP_EXIT_USAGE;
   }
 
   // Argument dependency validations
 #ifdef ENABLE_WEBSOCKET
   if (wait_config && !has_port) {
     fprintf(stderr, "Error: The argument '--wait' requires '--port <PORT>'\n");
-    return CDSP_EXIT_BAD_CONFIG;
+    return CDSP_EXIT_USAGE;
   }
   if (has_address && !has_port) {
     fprintf(stderr,
             "Error: The argument '--address' requires '--port <PORT>'\n");
-    return CDSP_EXIT_BAD_CONFIG;
+    return CDSP_EXIT_USAGE;
   }
   if (cert_path && !has_port) {
     fprintf(stderr, "Error: The argument '--cert' requires '--port <PORT>'\n");
-    return CDSP_EXIT_BAD_CONFIG;
+    return CDSP_EXIT_USAGE;
   }
   if (cert_pass && !has_port) {
     fprintf(stderr, "Error: The argument '--pass' requires '--port <PORT>'\n");
-    return CDSP_EXIT_BAD_CONFIG;
+    return CDSP_EXIT_USAGE;
   }
 #endif
   if (no_config) {
     if (!wait_config) {
       fprintf(stderr, "Error: The argument '--no_config' requires '--wait'\n");
-      return CDSP_EXIT_BAD_CONFIG;
+      return CDSP_EXIT_USAGE;
     }
     if (!state_file_path) {
       fprintf(stderr, "Error: The argument '--no_config' requires '--statefile "
                       "<STATEFILE>'\n");
-      return CDSP_EXIT_BAD_CONFIG;
+      return CDSP_EXIT_USAGE;
     }
     if (config_path) {
       fprintf(stderr,
               "Error: The argument '--no_config' cannot be used with a config "
               "file\n");
-      return CDSP_EXIT_BAD_CONFIG;
+      return CDSP_EXIT_USAGE;
     }
   }
   if (check_only && !config_path) {
     fprintf(stderr, "Error: The argument '--check' requires a config file\n");
-    return CDSP_EXIT_BAD_CONFIG;
+    return CDSP_EXIT_USAGE;
+  }
+  if (!config_path && !wait_config && !state_file_path) {
+    fprintf(stderr, "Error: Missing required configuration file.\n");
+    print_usage();
+    return CDSP_EXIT_USAGE;
   }
   if (has_rotate_size && !has_logfile) {
     fprintf(stderr,
             "Error: The argument '--log_rotate_size' requires '--logfile "
             "<LOGFILE>'\n");
-    return CDSP_EXIT_BAD_CONFIG;
+    return CDSP_EXIT_USAGE;
   }
   if (has_keep_nbr && !has_rotate_size) {
     fprintf(stderr,
             "Error: The argument '--log_keep_nbr' requires '--log_rotate_size "
             "<ROTATE_SIZE>'\n");
-    return CDSP_EXIT_BAD_CONFIG;
+    return CDSP_EXIT_USAGE;
   }
 
   if (has_rotate_size) {
-    app_logger_set_logfile_rotation(log_rotate_size, log_keep_nbr);
+    app_logger_set_logfile_rotation(log_rotate_size,
+                                    has_keep_nbr ? log_keep_nbr : SIZE_MAX);
   }
 
   // Resolve log level
-  if (!has_loglevel) {
+  if (custom_log_spec_str) {
+    if (strcmp(custom_log_spec_str, "trace") != 0 &&
+        strcmp(custom_log_spec_str, "debug") != 0 &&
+        strcmp(custom_log_spec_str, "info") != 0 &&
+        strcmp(custom_log_spec_str, "warn") != 0 &&
+        strcmp(custom_log_spec_str, "error") != 0 &&
+        strcmp(custom_log_spec_str, "off") != 0) {
+      fprintf(stderr, "Error: The provided logger specification is invalid\n");
+      return CDSP_EXIT_BAD_CONFIG;
+    }
+    log_level_str = custom_log_spec_str;
+  } else if (!has_loglevel) {
     if (verbosity_count == 1) {
       log_level_str = "debug";
     } else if (verbosity_count >= 2) {
@@ -687,6 +757,9 @@ int main(int argc, char **argv) {
     }
   }
   cdsp_set_log_level(log_level_str);
+
+  logger_info(&g_logger, "CamillaDSP version %s (cdsp)", cdsp_get_version());
+  logger_info(&g_logger, "Running on %s, %s", CDSP_OS_NAME, CDSP_ARCH_NAME);
 
   // Register process-global persistent overrides
   cdsp_set_cli_overrides(samplerate_override, channels_override,
@@ -713,9 +786,6 @@ int main(int argc, char **argv) {
       return CDSP_EXIT_BAD_CONFIG;
     }
   }
-
-  logger_info(&g_logger, "CamillaDSP version %s (cdsp)", cdsp_get_version());
-  logger_info(&g_logger, "Running on %s, %s", CDSP_OS_NAME, CDSP_ARCH_NAME);
 
   // Load state file if present
   char *allocated_config_path = NULL;
@@ -824,7 +894,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: Missing required configuration file.\n");
         print_usage();
         app_logger_flush_and_stop(app_logger_get_shared());
-        return CDSP_EXIT_BAD_CONFIG;
+        return CDSP_EXIT_USAGE;
       }
       // With statefile but no config and no wait, exit OK cleanly
       logger_debug(&g_logger,
@@ -838,7 +908,6 @@ int main(int argc, char **argv) {
   dsp_engine_t *engine = cdsp_engine_create();
   if (!engine) {
     logger_error(&g_logger, "Failed to allocate dsp_engine_t: out of memory");
-    fprintf(stderr, "Error starting engine: Failed to allocate engine\n");
     if (allocated_config_path)
       free(allocated_config_path);
     app_logger_flush_and_stop(app_logger_get_shared());
@@ -850,6 +919,10 @@ int main(int argc, char **argv) {
     if (initial_mutes[i]) {
       cdsp_set_fader_mute(engine, (uint32_t)i, true);
     }
+  }
+
+  if (config_path && !no_config) {
+    cdsp_set_config_file_path(engine, config_path);
   }
 
   if (state_file_path) {
@@ -864,10 +937,8 @@ int main(int argc, char **argv) {
                                     channels_override, format_override,
                                     extra_samples_override, &berr)) {
       logger_info(&g_logger, "DSP engine configured and started");
-      fprintf(stderr, "Engine started successfully.\n");
     } else {
       logger_error(&g_logger, "Failed to configure engine: %s", berr.message);
-      fprintf(stderr, "Error starting engine: %s\n", berr.message);
       cdsp_engine_free(engine);
       if (allocated_config_path)
         free(allocated_config_path);
@@ -878,8 +949,6 @@ int main(int argc, char **argv) {
     logger_info(
         &g_logger,
         "Starting engine in inactive state (waiting for websocket config)");
-    fprintf(stderr, "Starting engine in inactive state (waiting for websocket "
-                    "configuration)...\n");
   }
 
 #ifdef ENABLE_WEBSOCKET
@@ -887,18 +956,13 @@ int main(int argc, char **argv) {
   if (has_port) {
     server = websocket_server_create(port, bind_address);
     websocket_server_set_engine(server, engine);
-    if (websocket_server_start(server)) {
-      fprintf(stderr, "WebSocket server running on %s:%u\n", bind_address,
-              port);
-    } else {
+    if (!websocket_server_start(server)) {
       logger_error(&g_logger, "Failed to start WebSocket server on %s:%u",
                    bind_address, port);
-      fprintf(stderr, "Error starting WebSocket server\n");
     }
   }
 #endif
 
-  fprintf(stderr, "Press Ctrl+C to stop.\n");
   bool is_batch_mode = (config_path != NULL && !wait_config);
   while (keep_running) {
     cdsp_sleep_ms(100);
@@ -929,7 +993,6 @@ int main(int argc, char **argv) {
     if (is_batch_mode) {
       if (cdsp_get_state(engine) == CDSP_PROCESSING_STATE_INACTIVE) {
         logger_info(&g_logger, "Engine reached inactive state, exiting loop");
-        fprintf(stderr, "Engine finished processing. Exiting.\n");
         break;
       }
     }
@@ -944,7 +1007,6 @@ int main(int argc, char **argv) {
   if (allocated_config_path)
     free(allocated_config_path);
   logger_info(&g_logger, "Application exit clean");
-  fprintf(stderr, "Engine stopped.\n");
   app_logger_flush_and_stop(app_logger_get_shared());
 #if defined(ENABLE_ASIO) || defined(ENABLE_WASAPI)
   CoUninitialize();

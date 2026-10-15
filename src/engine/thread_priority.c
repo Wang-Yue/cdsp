@@ -88,12 +88,19 @@ promote_current_thread_to_realtime(const char *name, size_t buffer_frames,
 
   mach_msg_type_number_t count =
       sizeof(thread_time_constraint_policy_data_t) / sizeof(integer_t);
-  thread_port_t thread = mach_thread_self();
+  thread_port_t thread = pthread_mach_thread_np(pthread_self());
 
   boolean_t get_default = 0;
   thread_time_constraint_policy_data_t prev_policy = {0};
-  thread_policy_get(thread, THREAD_TIME_CONSTRAINT_POLICY,
-                    (thread_policy_t)&prev_policy, &count, &get_default);
+  kern_return_t get_res =
+      thread_policy_get(thread, THREAD_TIME_CONSTRAINT_POLICY,
+                        (thread_policy_t)&prev_policy, &count, &get_default);
+  if (get_res != KERN_SUCCESS) {
+    logger_warn(&g_logger,
+                "[%s] Failed to get current real-time thread policy: %d",
+                name ? name : "unknown", get_res);
+    return NULL;
+  }
 
   kern_return_t result = thread_policy_set(
       thread, THREAD_TIME_CONSTRAINT_POLICY, (thread_policy_t)&policy, count);
@@ -110,14 +117,11 @@ promote_current_thread_to_realtime(const char *name, size_t buffer_frames,
     if (handle) {
       handle->thread = thread;
       handle->previous_policy = prev_policy;
-    } else {
-      mach_port_deallocate(mach_task_self(), thread);
     }
     return handle;
   } else {
     logger_warn(&g_logger, "[%s] Failed to set real-time thread policy: %d",
                 name ? name : "unknown", result);
-    mach_port_deallocate(mach_task_self(), thread);
     return NULL;
   }
 #endif
@@ -138,7 +142,6 @@ void demote_current_thread_from_realtime(realtime_thread_handle_t *handle) {
   } else {
     logger_warn(&g_logger, "Failed to revert Mach real-time policy: %d", res);
   }
-  mach_port_deallocate(mach_task_self(), handle->thread);
 #endif
   free(handle);
 }
@@ -481,6 +484,10 @@ promote_current_thread_to_realtime(const char *name, size_t buffer_frames,
     if (env_prio && *env_prio) {
       char *endptr = NULL;
       long val = strtol(env_prio, &endptr, 10);
+      while (endptr && (*endptr == ' ' || *endptr == '\t' || *endptr == '\r' ||
+                        *endptr == '\n')) {
+        endptr++;
+      }
       if (endptr != env_prio && *endptr == '\0' && val >= 1 && val <= 99) {
         rt_priority = (int)val;
       } else {
@@ -573,12 +580,73 @@ void demote_current_thread_from_realtime(realtime_thread_handle_t *handle) {
 #include <windows.h>
 
 struct realtime_thread_handle {
+  DWORD mmcss_task_index;
   HANDLE task_handle;
 };
 
 #ifndef CDSP_TEST
 typedef HANDLE(WINAPI *AvSetMmThreadCharacteristicsWFn)(LPCWSTR, LPDWORD);
 typedef BOOL(WINAPI *AvRevertMmThreadCharacteristicsFn)(HANDLE);
+
+static INIT_ONCE g_avrt_init_once = INIT_ONCE_STATIC_INIT;
+static HMODULE g_avrt_module = NULL;
+static AvSetMmThreadCharacteristicsWFn g_av_set_fn = NULL;
+static AvRevertMmThreadCharacteristicsFn g_av_revert_fn = NULL;
+static DWORD g_avrt_load_error = 0;
+
+static BOOL CALLBACK avrt_init_once_cb(PINIT_ONCE init_once, PVOID parameter,
+                                       PVOID *context) {
+  (void)init_once;
+  (void)parameter;
+  (void)context;
+  HMODULE mod = LoadLibraryW(L"avrt.dll");
+  if (!mod) {
+    g_avrt_load_error = GetLastError();
+    return TRUE;
+  }
+  AvSetMmThreadCharacteristicsWFn set_fn =
+      (AvSetMmThreadCharacteristicsWFn)(void (*)(void))GetProcAddress(
+          mod, "AvSetMmThreadCharacteristicsW");
+  if (!set_fn) {
+    g_avrt_load_error = GetLastError();
+    FreeLibrary(mod);
+    return TRUE;
+  }
+  AvRevertMmThreadCharacteristicsFn revert_fn =
+      (AvRevertMmThreadCharacteristicsFn)(void (*)(void))GetProcAddress(
+          mod, "AvRevertMmThreadCharacteristics");
+  if (!revert_fn) {
+    g_avrt_load_error = GetLastError();
+    FreeLibrary(mod);
+    return TRUE;
+  }
+  g_avrt_module = mod;
+  g_av_set_fn = set_fn;
+  g_av_revert_fn = revert_fn;
+  return TRUE;
+}
+
+typedef struct {
+  LPCWSTR task_name;
+  DWORD task_index;
+  HANDLE task_handle;
+  DWORD error;
+  BOOL executed;
+} mmcss_first_call_ctx_t;
+
+static INIT_ONCE g_mmcss_first_call_once = INIT_ONCE_STATIC_INIT;
+
+static BOOL CALLBACK mmcss_first_call_cb(PINIT_ONCE init_once, PVOID parameter,
+                                         PVOID *context) {
+  (void)init_once;
+  (void)context;
+  mmcss_first_call_ctx_t *ctx = (mmcss_first_call_ctx_t *)parameter;
+  ctx->task_index = 0;
+  ctx->task_handle = g_av_set_fn(ctx->task_name, &ctx->task_index);
+  ctx->error = ctx->task_handle ? 0 : GetLastError();
+  ctx->executed = TRUE;
+  return TRUE;
+}
 #endif
 
 realtime_thread_handle_t *
@@ -592,56 +660,68 @@ promote_current_thread_to_realtime(const char *name, size_t buffer_frames,
                                             sizeof(realtime_thread_handle_t));
 #else
   (void)buffer_frames;
-  (void)sample_rate;
+  if (sample_rate == 0) {
+    logger_warn(&g_logger,
+                "[%s] Invalid audio parameters for real-time priority: "
+                "sample rate must be non-zero",
+                name ? name : "unknown");
+    return NULL;
+  }
+
+  InitOnceExecuteOnce(&g_avrt_init_once, avrt_init_once_cb, NULL, NULL);
+  if (!g_av_set_fn || !g_av_revert_fn) {
+    logger_warn(&g_logger, "[%s] Unable to load avrt.dll (err=%lu)",
+                name ? name : "unknown", g_avrt_load_error);
+    return NULL;
+  }
+
+  // Ensure that the first call never runs in parallel with other calls.
+  // Concurrent first calls when the MMCSS service is initially inactive can
+  // fail with ERROR_PATH_NOT_FOUND.
+  mmcss_first_call_ctx_t first_ctx = {
+      .task_name = L"Audio",
+      .task_index = 0,
+      .task_handle = NULL,
+      .error = 0,
+      .executed = FALSE,
+  };
+  InitOnceExecuteOnce(&g_mmcss_first_call_once, mmcss_first_call_cb, &first_ctx,
+                      NULL);
+
+  DWORD task_index = 0;
+  HANDLE task_handle = NULL;
+  DWORD call_err = 0;
+  if (first_ctx.executed) {
+    task_index = first_ctx.task_index;
+    task_handle = first_ctx.task_handle;
+    call_err = first_ctx.error;
+  } else {
+    task_handle = g_av_set_fn(L"Audio", &task_index);
+    if (!task_handle) {
+      call_err = GetLastError();
+    }
+  }
+
+  if (!task_handle) {
+    logger_warn(&g_logger,
+                "[%s] Unable to bump the thread priority (err=%lu)",
+                name ? name : "unknown", call_err);
+    return NULL;
+  }
 
   realtime_thread_handle_t *handle =
       (realtime_thread_handle_t *)calloc(1, sizeof(realtime_thread_handle_t));
-  if (!handle)
-    return NULL;
-
-  HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
-  if (avrt_module) {
-    AvSetMmThreadCharacteristicsWFn set_fn =
-        (AvSetMmThreadCharacteristicsWFn)(void (*)(void))GetProcAddress(
-            avrt_module, "AvSetMmThreadCharacteristicsW");
-    if (set_fn) {
-      DWORD task_index = 0;
-      HANDLE task_handle = set_fn(L"Pro Audio", &task_index);
-      if (!task_handle) {
-        task_handle = set_fn(L"Audio", &task_index);
-      }
-      if (task_handle) {
-        logger_info(&g_logger,
-                    "[%s] Thread promoted to Windows MMCSS (Pro Audio/Audio "
-                    "task, index=%lu)",
-                    name ? name : "unknown", task_index);
-        handle->task_handle = task_handle;
-        return handle;
-      } else {
-        logger_warn(&g_logger,
-                    "[%s] AvSetMmThreadCharacteristicsW failed: err=%lu",
-                    name ? name : "unknown", GetLastError());
-      }
-    }
-    FreeLibrary(avrt_module);
-  }
-
-  // Fallback to standard SetThreadPriority if MMCSS failed
-  HANDLE thread = GetCurrentThread();
-  BOOL success = SetThreadPriority(thread, THREAD_PRIORITY_TIME_CRITICAL);
-  if (success) {
-    logger_warn(&g_logger,
-                "[%s] MMCSS failed; thread promoted to fallback Windows "
-                "THREAD_PRIORITY_TIME_CRITICAL",
-                name ? name : "unknown");
-    return handle;
-  } else {
-    logger_warn(&g_logger,
-                "[%s] Failed to set thread priority on Windows: err=%lu",
-                name ? name : "unknown", GetLastError());
-    free(handle);
+  if (!handle) {
+    g_av_revert_fn(task_handle);
     return NULL;
   }
+
+  logger_info(&g_logger,
+              "[%s] Thread promoted to Windows MMCSS (Audio task, index=%lu)",
+              name ? name : "unknown", task_index);
+  handle->mmcss_task_index = task_index;
+  handle->task_handle = task_handle;
+  return handle;
 #endif
 }
 
@@ -649,19 +729,15 @@ void demote_current_thread_from_realtime(realtime_thread_handle_t *handle) {
   if (!handle)
     return;
 #ifndef CDSP_TEST
-  if (handle->task_handle) {
-    HMODULE avrt_module = LoadLibraryW(L"avrt.dll");
-    if (avrt_module) {
-      AvRevertMmThreadCharacteristicsFn revert_fn =
-          (AvRevertMmThreadCharacteristicsFn)(void (*)(void))GetProcAddress(
-              avrt_module, "AvRevertMmThreadCharacteristics");
-      if (revert_fn) {
-        revert_fn(handle->task_handle);
-      }
-      FreeLibrary(avrt_module);
+  if (handle->task_handle && g_av_revert_fn) {
+    if (g_av_revert_fn(handle->task_handle)) {
+      logger_debug(&g_logger, "Task %lu priority restored",
+                   handle->mmcss_task_index);
+    } else {
+      logger_warn(&g_logger,
+                  "Unable to restore the thread priority for task %lu (err=%lu)",
+                  handle->mmcss_task_index, GetLastError());
     }
-  } else {
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
   }
 #endif
   free(handle);

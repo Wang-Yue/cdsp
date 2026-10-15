@@ -177,17 +177,6 @@ int dsp_config_validate(const dsp_config_t *config, config_error_t *err) {
     }
   }
 
-  if (config->devices.capture.type == AUDIO_BACKEND_TYPE_GENERATOR) {
-    signal_type_t sig_type = config->devices.capture.cfg.generator.signal.type;
-    if (sig_type == SIGNAL_TYPE_SINE || sig_type == SIGNAL_TYPE_SQUARE) {
-      if (config->devices.capture.cfg.generator.signal.freq <= 0.0) {
-        config_error_set(err, CONFIG_ERR_INVALID_DEVICE,
-                         "Signal generator frequency must be positive");
-        return -1;
-      }
-    }
-  }
-
   if (config->devices.capture.type == AUDIO_BACKEND_TYPE_FILE &&
       config->devices.capture.is_wav) {
     const char *fname = config->devices.capture.cfg.wav_file.filename;

@@ -328,7 +328,7 @@ static inline size_t
 alsa_capture_ring_capacity_frames(size_t chunk_size, snd_pcm_uframes_t period) {
   size_t base =
       3 * chunk_size > (size_t)period ? 3 * chunk_size : (size_t)period;
-  return base + 4 * chunk_size;
+  return base + 4 * chunk_size + 2048;
 }
 
 #endif // ENABLE_ALSA

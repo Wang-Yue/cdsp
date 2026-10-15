@@ -54,6 +54,7 @@ struct engine_playback_loop {
   size_t chunk_size;
   bool capture_pitch_supported;
   bool playback_pitch_supported;
+  bool has_async_resampler;
   bool rate_adjust_enabled;
   /// True once a rate_adjust value has been published (see
   /// playback_loop_update_rate_adjust).
@@ -94,20 +95,24 @@ playback_loop_capture_pitch_supported(const engine_playback_loop_t *loop) {
  */
 static void apply_speed(engine_playback_loop_t *loop, double speed,
                         double *last_speed, double average) {
-  bool changed = fabs(speed - *last_speed) > 0.000001;
+  bool changed = (speed != *last_speed);
   if (changed) {
     *last_speed = speed;
     bool capture_pitch = playback_loop_capture_pitch_supported(loop);
-    if (capture_pitch && loop->shared) {
-      engine_shared_state_set_capture_pitch(loop->shared, speed);
-    } else if (loop->playback_pitch_supported && loop->playback) {
+    const char *method_str = "resampler";
+    if (loop->playback_pitch_supported && loop->playback) {
       playback_backend_set_pitch(loop->playback, 1.0 / speed);
+      method_str = "playback pitch";
+    } else if (loop->has_async_resampler && loop->shared) {
+      engine_shared_state_set_resampler_ratio(loop->shared, speed);
+      method_str = "resampler";
+    } else if (capture_pitch && loop->shared) {
+      engine_shared_state_set_capture_pitch(loop->shared, speed);
+      method_str = "capture pitch";
     } else if (loop->shared) {
       engine_shared_state_set_resampler_ratio(loop->shared, speed);
+      method_str = "resampler";
     }
-    const char *method_str = capture_pitch                    ? "capture pitch"
-                             : loop->playback_pitch_supported ? "playback pitch"
-                                                              : "resampler";
     logger_debug(&g_logger, "Rate adjust: buffer=%f target=%d speed=%f via %s",
                  average, loop->target_level, speed, method_str);
   } else {
@@ -124,8 +129,9 @@ static void apply_speed(engine_playback_loop_t *loop, double speed,
 static void log_rate_adjust_mode(engine_playback_loop_t *loop) {
   if (loop->rate_adjust_enabled) {
     const char *method_str =
-        playback_loop_capture_pitch_supported(loop) ? "capture clock pitch"
-        : loop->playback_pitch_supported            ? "playback clock pitch"
+        loop->playback_pitch_supported              ? "playback clock pitch"
+        : loop->has_async_resampler                 ? "resampler ratio"
+        : playback_loop_capture_pitch_supported(loop) ? "capture clock pitch"
                                                     : "resampler ratio";
     logger_info(
         &g_logger,
@@ -154,6 +160,7 @@ engine_playback_loop_create(const engine_playback_loop_config_t *config) {
   loop->pipeline_rate = config->pipeline_rate;
   loop->chunk_size = config->chunk_size;
   loop->capture_pitch_supported = config->capture_pitch_supported;
+  loop->has_async_resampler = config->has_async_resampler;
   loop->playback_pitch_supported =
       config->playback &&
       playback_backend_pitch_control_supported(config->playback);
@@ -385,8 +392,9 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
       break;
     }
 
-    bool should_pause = (engine_shared_state_get_state(loop->shared) ==
-                         PROCESSING_STATE_PAUSED);
+    processing_state_t cur_state = engine_shared_state_get_state(loop->shared);
+    bool should_pause = (cur_state == PROCESSING_STATE_PAUSED ||
+                         cur_state == PROCESSING_STATE_STALLED);
     bool is_paused = playback_backend_get_is_paused(loop->playback);
     if (should_pause != is_paused) {
       playback_backend_set_is_paused(loop->playback, should_pause);

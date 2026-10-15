@@ -65,9 +65,9 @@ typedef struct mixer_s mixer_t;
  * @brief Validates mixer configuration.
  *
  * Checks that every dest and source channel is in range, no dest appears
- * twice, and every explicit source gain is finite. A source channel listed
- * more than once for the same dest only logs a warning (the gains are summed,
- * matching upstream CamillaDSP).
+ * twice, no source channel appears more than once for the same dest, and every
+ * source gain is finite and within range (±150 dB or ±10.0 linear, matching
+ * upstream CamillaDSP).
  *
  * @param mixer Pointer to mixer configuration to validate.
  * @param err Pointer to config error struct to populate on failure.

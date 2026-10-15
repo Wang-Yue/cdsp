@@ -2721,7 +2721,7 @@ static bool asio_playback_write(void *ctx, const audio_chunk_t *chunk,
   if (sleep_ms == 0)
     sleep_ms = 1;
 
-  return backend_buffer_write_chunk(playback->buffer, chunk, sleep_ms, 8, err);
+  return backend_buffer_write_chunk(playback->buffer, chunk, sleep_ms, 16, err);
 }
 
 static size_t asio_playback_get_buffer_level(void *ctx) {

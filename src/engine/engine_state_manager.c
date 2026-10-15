@@ -70,9 +70,13 @@ void engine_state_manager_set_fader_volume(engine_state_manager_t *mgr,
   if (!mgr || fader < 0 || fader >= FADER_COUNT)
     return;
   pthread_mutex_lock(&mgr->mutex);
-  mgr->fader_volumes[fader] = (double)db;
-  mgr->dirty = true;
-  mgr->change_counter++;
+  if (mgr->fader_volumes[fader] != (double)db) {
+    mgr->fader_volumes[fader] = (double)db;
+    if (mgr->has_state_file_path) {
+      mgr->dirty = true;
+      mgr->change_counter++;
+    }
+  }
   pthread_mutex_unlock(&mgr->mutex);
 }
 
@@ -91,9 +95,13 @@ void engine_state_manager_set_fader_mute(engine_state_manager_t *mgr,
   if (!mgr || fader < 0 || fader >= FADER_COUNT)
     return;
   pthread_mutex_lock(&mgr->mutex);
-  mgr->fader_mutes[fader] = mute;
-  mgr->dirty = true;
-  mgr->change_counter++;
+  if (mgr->fader_mutes[fader] != mute) {
+    mgr->fader_mutes[fader] = mute;
+    if (mgr->has_state_file_path) {
+      mgr->dirty = true;
+      mgr->change_counter++;
+    }
+  }
   pthread_mutex_unlock(&mgr->mutex);
 }
 
@@ -116,9 +124,26 @@ void engine_state_manager_set_state_file(engine_state_manager_t *mgr,
     strncpy(mgr->state_file_path, path, sizeof(mgr->state_file_path) - 1);
     mgr->state_file_path[sizeof(mgr->state_file_path) - 1] = '\0';
     mgr->has_state_file_path = true;
+    mgr->dirty = false;
+    if (!mgr->has_active_config_path) {
+      dsp_state_t *st = dsp_state_create();
+      if (st) {
+        if (dsp_state_load(path, st) && dsp_state_has_config_path(st)) {
+          const char *cp = dsp_state_get_config_path(st);
+          if (cp && cp[0]) {
+            strncpy(mgr->active_config_path, cp,
+                    sizeof(mgr->active_config_path) - 1);
+            mgr->active_config_path[sizeof(mgr->active_config_path) - 1] = '\0';
+            mgr->has_active_config_path = true;
+          }
+        }
+        dsp_state_free(st);
+      }
+    }
   } else {
     mgr->state_file_path[0] = '\0';
     mgr->has_state_file_path = false;
+    mgr->dirty = false;
   }
   pthread_mutex_unlock(&mgr->mutex);
 }
@@ -144,7 +169,11 @@ void engine_state_manager_set_config_path(engine_state_manager_t *mgr,
   if (!mgr)
     return;
   pthread_mutex_lock(&mgr->mutex);
-  if (path && path[0]) {
+  bool new_has = (path && path[0] != '\0');
+  bool changed = (new_has != mgr->has_active_config_path) ||
+                 (new_has && strncmp(mgr->active_config_path, path,
+                                     sizeof(mgr->active_config_path) - 1) != 0);
+  if (new_has) {
     strncpy(mgr->active_config_path, path, sizeof(mgr->active_config_path) - 1);
     mgr->active_config_path[sizeof(mgr->active_config_path) - 1] = '\0';
     mgr->has_active_config_path = true;
@@ -152,8 +181,10 @@ void engine_state_manager_set_config_path(engine_state_manager_t *mgr,
     mgr->active_config_path[0] = '\0';
     mgr->has_active_config_path = false;
   }
-  mgr->dirty = true;
-  mgr->change_counter++;
+  if (changed && mgr->has_state_file_path) {
+    mgr->dirty = true;
+    mgr->change_counter++;
+  }
   pthread_mutex_unlock(&mgr->mutex);
 }
 

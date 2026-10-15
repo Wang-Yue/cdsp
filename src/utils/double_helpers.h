@@ -515,7 +515,21 @@ ALWAYS_INLINE void dsp_ops_complex_multiply_interleaved(const double complex *a,
         r_ptr + off + 12,
         _mm256_fmaddsub_pd(a_re3, b3, _mm256_mul_pd(a_im3, b_sw3)));
   }
-  for (size_t j = chunks_8 * 8; j < count; j++) {
+  size_t tail_start = chunks_8 * 8;
+  size_t remaining_pairs = (count - tail_start) / 2;
+  for (size_t j = 0; j < remaining_pairs; j++) {
+    size_t off = (tail_start + j * 2) * 2;
+    __m256d a0 = _mm256_loadu_pd(a_ptr + off);
+    __m256d b0 = _mm256_loadu_pd(b_ptr + off);
+    __m256d a_re0 = _mm256_movedup_pd(a0);
+    __m256d a_im0 = _mm256_permute_pd(a0, 0xF);
+    __m256d b_sw0 = _mm256_permute_pd(b0, 0x5);
+    _mm256_storeu_pd(
+        r_ptr + off,
+        _mm256_fmaddsub_pd(a_re0, b0, _mm256_mul_pd(a_im0, b_sw0)));
+  }
+  size_t simd_done = tail_start + remaining_pairs * 2;
+  for (size_t j = simd_done; j < count; j++) {
     size_t off = j * 2;
     double re = a_ptr[off];
     double im = a_ptr[off + 1];
@@ -575,7 +589,21 @@ ALWAYS_INLINE void dsp_ops_complex_fma_interleaved(
     _mm256_storeu_pd(r_ptr + off + 12, _mm256_add_pd(acc3, prod3));
   }
 
-  for (size_t j = chunks_8 * 8; j < count; j++) {
+  size_t tail_start = chunks_8 * 8;
+  size_t remaining_pairs = (count - tail_start) / 2;
+  for (size_t j = 0; j < remaining_pairs; j++) {
+    size_t off = (tail_start + j * 2) * 2;
+    __m256d acc0 = _mm256_loadu_pd(r_ptr + off);
+    __m256d a0 = _mm256_loadu_pd(a_ptr + off);
+    __m256d b0 = _mm256_loadu_pd(b_ptr + off);
+    __m256d a_re0 = _mm256_movedup_pd(a0);
+    __m256d a_im0 = _mm256_permute_pd(a0, 0xF);
+    __m256d b_sw0 = _mm256_permute_pd(b0, 0x5);
+    __m256d prod0 = _mm256_fmaddsub_pd(a_re0, b0, _mm256_mul_pd(a_im0, b_sw0));
+    _mm256_storeu_pd(r_ptr + off, _mm256_add_pd(acc0, prod0));
+  }
+  size_t simd_done = tail_start + remaining_pairs * 2;
+  for (size_t j = simd_done; j < count; j++) {
     size_t off = j * 2;
     double re = a_ptr[off];
     double im = a_ptr[off + 1];

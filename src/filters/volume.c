@@ -227,9 +227,6 @@ static void *volume_filter_create(const char *name,
         target != 0.0) {
       initial_vol =
           target < filter->volume_limit ? target : filter->volume_limit;
-      // Publish the limited level, never one above volume_limit.
-      processing_parameters_set_current_volume_for_fader(
-          proc_params, initial_vol, filter->fader);
     } else {
       initial_vol = cur;
     }

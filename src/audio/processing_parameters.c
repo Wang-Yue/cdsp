@@ -949,10 +949,10 @@ void processing_parameters_reset_global_peaks(processing_parameters_t *params) {
  */
 static void chunk_level_history_transfer(chunk_level_history_t *dst,
                                          const chunk_level_history_t *src) {
-  if (!chunk_level_history_valid(dst) || !chunk_level_history_valid(src))
+  if (!chunk_level_history_valid(dst) || !chunk_level_history_valid(src) ||
+      dst->channels != src->channels)
     return;
-  size_t ch_limit =
-      dst->channels < src->channels ? dst->channels : src->channels;
+  size_t ch_limit = dst->channels;
 
   uint64_t dst_seq = 0;
   bool claimed = false;
@@ -1031,43 +1031,38 @@ void processing_parameters_transfer_telemetry(
   if (!dst || !src)
     return;
 
-  // Transfer global peaks
-  size_t cap_ch = dst->capture_channels < src->capture_channels
-                      ? dst->capture_channels
-                      : src->capture_channels;
-  for (size_t i = 0; i < cap_ch; i++) {
-    float peak = atomic_float_get(&src->capture_global_peaks[i]);
-    atomic_float_set(&dst->capture_global_peaks[i], peak);
-  }
-
-  size_t pb_ch = dst->playback_channels < src->playback_channels
-                     ? dst->playback_channels
-                     : src->playback_channels;
-  for (size_t i = 0; i < pb_ch; i++) {
-    float peak = atomic_float_get(&src->playback_global_peaks[i]);
-    atomic_float_set(&dst->playback_global_peaks[i], peak);
-  }
-
-  // Transfer the latest instantaneous levels (upstream keeps reporting the
-  // last record across a config change until a new chunk arrives).
+  // Upstream ValueHistory resets global max and history records when channel
+  // count changes (countertimer.rs:325-332, 358-365); only transfer a side
+  // when its channel count is unchanged.
   // `clipped_samples` is deliberately not transferred here: dsp_engine carries
   // it across sessions itself (`clipped_samples_accum`).
-  transfer_atomic_floats(dst->capture_signal_peak, dst->capture_channels,
-                         src->capture_signal_peak, src->capture_channels);
-  transfer_atomic_floats(dst->capture_signal_rms, dst->capture_channels,
-                         src->capture_signal_rms, src->capture_channels);
-  transfer_atomic_floats(dst->playback_signal_peak, dst->playback_channels,
-                         src->playback_signal_peak, src->playback_channels);
-  transfer_atomic_floats(dst->playback_signal_rms, dst->playback_channels,
-                         src->playback_signal_rms, src->playback_channels);
+  if (dst->capture_channels == src->capture_channels) {
+    for (size_t i = 0; i < dst->capture_channels; i++) {
+      float peak = atomic_float_get(&src->capture_global_peaks[i]);
+      atomic_float_set(&dst->capture_global_peaks[i], peak);
+    }
+    transfer_atomic_floats(dst->capture_signal_peak, dst->capture_channels,
+                           src->capture_signal_peak, src->capture_channels);
+    transfer_atomic_floats(dst->capture_signal_rms, dst->capture_channels,
+                           src->capture_signal_rms, src->capture_channels);
+    chunk_level_history_transfer(&dst->capture_peak_history,
+                                 &src->capture_peak_history);
+    chunk_level_history_transfer(&dst->capture_rms_history,
+                                 &src->capture_rms_history);
+  }
 
-  // Transfer chunk level histories
-  chunk_level_history_transfer(&dst->capture_peak_history,
-                               &src->capture_peak_history);
-  chunk_level_history_transfer(&dst->capture_rms_history,
-                               &src->capture_rms_history);
-  chunk_level_history_transfer(&dst->playback_peak_history,
-                               &src->playback_peak_history);
-  chunk_level_history_transfer(&dst->playback_rms_history,
-                               &src->playback_rms_history);
+  if (dst->playback_channels == src->playback_channels) {
+    for (size_t i = 0; i < dst->playback_channels; i++) {
+      float peak = atomic_float_get(&src->playback_global_peaks[i]);
+      atomic_float_set(&dst->playback_global_peaks[i], peak);
+    }
+    transfer_atomic_floats(dst->playback_signal_peak, dst->playback_channels,
+                           src->playback_signal_peak, src->playback_channels);
+    transfer_atomic_floats(dst->playback_signal_rms, dst->playback_channels,
+                           src->playback_signal_rms, src->playback_channels);
+    chunk_level_history_transfer(&dst->playback_peak_history,
+                                 &src->playback_peak_history);
+    chunk_level_history_transfer(&dst->playback_rms_history,
+                                 &src->playback_rms_history);
+  }
 }

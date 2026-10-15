@@ -28,7 +28,7 @@ static const logger_t g_logger = {"dsp.backend.alsa"};
 
 struct alsa_capture {
   char device_name[256];
-  int sample_rate;         // pipeline rate
+  int sample_rate; // hardware capture rate (chunk_size is already resampler max_input_frames)
   int capture_sample_rate; // hardware capture rate
   size_t channels;
   int chunk_size;
@@ -501,16 +501,22 @@ static void alsa_capture_init_controls(alsa_capture_t *capture) {
   // Open Ctl interface (non-blocking) and subscribe to events
   // (device.rs:790-794)
   snd_ctl_t *ctl = NULL;
-  if (snd_ctl_open(&ctl, ctl_name, SND_CTL_NONBLOCK) >= 0 && ctl) {
+  int ctl_rc = snd_ctl_open(&ctl, ctl_name, SND_CTL_NONBLOCK);
+  if (ctl_rc >= 0 && ctl) {
     capture->ctl = ctl;
     snd_ctl_subscribe_events(ctl, 1);
+  } else {
+    logger_warn(&g_logger, "Failed to open ALSA control interface %s: %s",
+                ctl_name, snd_strerror(ctl_rc));
   }
 
   // Open HCtl interface in non-blocking mode (device.rs:789)
   snd_hctl_t *hctl = NULL;
-  if (snd_hctl_open(&hctl, ctl_name, SND_CTL_NONBLOCK) >= 0 && hctl) {
+  int hctl_rc = snd_hctl_open(&hctl, ctl_name, SND_CTL_NONBLOCK);
+  if (hctl_rc >= 0 && hctl) {
     snd_hctl_nonblock(hctl, 1);
-    if (snd_hctl_load(hctl) >= 0) {
+    int load_rc = snd_hctl_load(hctl);
+    if (load_rc >= 0) {
       capture->hctl = hctl;
 
       // Look up pitch control: PCM Rate Shift 100000 / Capture Pitch 1000000
@@ -579,8 +585,13 @@ static void alsa_capture_init_controls(alsa_capture_t *capture) {
         }
       }
     } else {
+      logger_warn(&g_logger, "Failed to load ALSA hctl elements for %s: %s",
+                  ctl_name, snd_strerror(load_rc));
       snd_hctl_close(hctl);
     }
+  } else {
+    logger_warn(&g_logger, "Failed to open ALSA hctl interface %s: %s",
+                ctl_name, snd_strerror(hctl_rc));
   }
 
   pthread_mutex_unlock(&capture->mixer_mutex);
@@ -911,23 +922,24 @@ static bool alsa_capture_read(void *ctx, size_t frames, audio_chunk_t *chunk,
   // processing parameters, so this engine thread takes no lock and makes no
   // control ioctls (M6).
 
-  if (atomic_load_explicit(&capture->is_inactive, memory_order_acquire)) {
-    logger_info(&g_logger,
-                "Capture source inactive and stop_on_inactive is enabled, "
-                "stopping capture");
-    if (err) {
-      backend_error_init(err, BACKEND_ERROR_READ_EOF,
-                         "Capture source inactive");
-    }
-    return false;
-  }
-
   bool ok = backend_buffer_read_chunk(capture->buffer, frames, chunk, err);
-  if (!ok && err && err->type == BACKEND_ERROR_READ_ERROR &&
-      atomic_load_explicit(&capture->fatal_error, memory_order_acquire)) {
-    // Report the device error that stopped the inner thread (upstream sends
-    // StatusMessage::CaptureError, threaded_device.rs:1634-1643).
-    backend_error_init(err, BACKEND_ERROR_READ_ERROR, capture->fatal_msg);
+  if (!ok) {
+    if (atomic_load_explicit(&capture->is_inactive, memory_order_acquire)) {
+      logger_info(&g_logger,
+                  "Capture source inactive and stop_on_inactive is enabled, "
+                  "stopping capture");
+      if (err) {
+        backend_error_init(err, BACKEND_ERROR_READ_EOF,
+                           "Capture source inactive");
+      }
+      return false;
+    }
+    if (err && err->type == BACKEND_ERROR_READ_ERROR &&
+        atomic_load_explicit(&capture->fatal_error, memory_order_acquire)) {
+      // Report the device error that stopped the inner thread (upstream sends
+      // StatusMessage::CaptureError, threaded_device.rs:1634-1643).
+      backend_error_init(err, BACKEND_ERROR_READ_ERROR, capture->fatal_msg);
+    }
   }
   return ok;
 }

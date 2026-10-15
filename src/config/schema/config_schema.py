@@ -453,8 +453,8 @@ STRUCT_MIXER = StructType(
     c_type="mixer_config_t",
     fields=[
         Field("description", StringType(256)),
-        Field("channels_in", TYPE_SIZE_T, json_object="channels", json_key="in", required=True),
-        Field("channels_out", TYPE_SIZE_T, json_object="channels", json_key="out", required=True),
+        Field("channels_in", TYPE_SIZE_T, json_object="channels", json_key="in", required=True, min_value=1),
+        Field("channels_out", TYPE_SIZE_T, json_object="channels", json_key="out", required=True, min_value=1),
         Field("mapping", ArrayType(STRUCT_MIXER_MAPPING), required=True),
         Field("labels", ArrayType(StringType(128)), has_flag=True, allow_null_items=True),
     ],
@@ -479,8 +479,8 @@ STRUCT_COMPRESSOR = StructType(
     c_type="compressor_config_t",
     fields=[
         Field("channels", TYPE_SIZE_T, required=True),
-        Field("monitor_channels", ArrayType(TYPE_SIZE_T)),
-        Field("process_channels", ArrayType(TYPE_SIZE_T)),
+        Field("monitor_channels", ArrayType(TYPE_SIZE_T), has_flag=True),
+        Field("process_channels", ArrayType(TYPE_SIZE_T), has_flag=True),
         Field("attack", TYPE_DOUBLE, required=True),
         Field("attack_unit", ENUM_TIME_UNIT, required=True),
         Field("release", TYPE_DOUBLE, required=True),
@@ -499,8 +499,8 @@ STRUCT_NOISE_GATE = StructType(
     c_type="noise_gate_config_t",
     fields=[
         Field("channels", TYPE_SIZE_T, required=True),
-        Field("monitor_channels", ArrayType(TYPE_SIZE_T)),
-        Field("process_channels", ArrayType(TYPE_SIZE_T)),
+        Field("monitor_channels", ArrayType(TYPE_SIZE_T), has_flag=True),
+        Field("process_channels", ArrayType(TYPE_SIZE_T), has_flag=True),
         Field("attack", TYPE_DOUBLE, required=True),
         Field("attack_unit", ENUM_TIME_UNIT, required=True),
         Field("release", TYPE_DOUBLE, required=True),
@@ -531,8 +531,8 @@ STRUCT_LOOKAHEAD_LIMITER_PROC = StructType(
     c_type="lookahead_limiter_processor_config_t",
     fields=[
         Field("channels", TYPE_SIZE_T, required=True),
-        Field("monitor_channels", ArrayType(TYPE_SIZE_T)),
-        Field("process_channels", ArrayType(TYPE_SIZE_T)),
+        Field("monitor_channels", ArrayType(TYPE_SIZE_T), has_flag=True),
+        Field("process_channels", ArrayType(TYPE_SIZE_T), has_flag=True),
         Field("limit", TYPE_DOUBLE, has_flag=True, getter_default=0.0),
         Field("attack", TYPE_DOUBLE, required=True),
         Field("attack_unit", ENUM_TIME_UNIT, required=True),
@@ -981,7 +981,7 @@ STRUCT_COREAUDIO_CAPTURE = StructType(
     name="coreaudio_capture_config",
     c_type="coreaudio_capture_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("device", StringType(256), has_flag=True),
         Field("format", ENUM_COREAUDIO_SAMPLE_FORMAT, has_flag=True),
         Field("loopback", TYPE_BOOL, has_flag=True, default=False),
@@ -994,7 +994,7 @@ STRUCT_COREAUDIO_PLAYBACK = StructType(
     name="coreaudio_playback_config",
     c_type="coreaudio_playback_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("device", StringType(256), has_flag=True),
         Field("format", ENUM_COREAUDIO_SAMPLE_FORMAT, has_flag=True),
         Field("exclusive", TYPE_BOOL, has_flag=True, default=False),
@@ -1008,7 +1008,7 @@ STRUCT_ALSA_CAPTURE = StructType(
     name="alsa_capture_config",
     c_type="alsa_capture_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("device", StringType(256), required=True),
         Field("format", ENUM_ALSA_SAMPLE_FORMAT, has_flag=True),
         Field("stop_on_inactive", TYPE_BOOL, has_flag=True, default=False),
@@ -1023,7 +1023,7 @@ STRUCT_ALSA_PLAYBACK = StructType(
     name="alsa_playback_config",
     c_type="alsa_playback_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("device", StringType(256), required=True),
         Field("format", ENUM_ALSA_SAMPLE_FORMAT, has_flag=True),
         Field("target_level", TYPE_INT, has_flag=True, min_value=0),
@@ -1036,7 +1036,7 @@ STRUCT_PIPEWIRE_CAPTURE = StructType(
     name="pipewire_capture_config",
     c_type="pipewire_capture_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("device", StringType(256), has_flag=True),
         Field("node_name", StringType(256), has_flag=True),
         Field("node_description", StringType(256), has_flag=True),
@@ -1052,7 +1052,7 @@ STRUCT_PIPEWIRE_PLAYBACK = StructType(
     name="pipewire_playback_config",
     c_type="pipewire_playback_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("device", StringType(256), has_flag=True),
         Field("node_name", StringType(256), has_flag=True),
         Field("node_description", StringType(256), has_flag=True),
@@ -1068,7 +1068,7 @@ STRUCT_STDIN_CAPTURE = StructType(
     name="stdin_capture_config",
     c_type="stdin_capture_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("format", ENUM_BINARY_SAMPLE_FORMAT, required=True),
         Field("extra_samples", TYPE_INT, has_flag=True, min_value=0),
         Field("skip_bytes", TYPE_SIZE_T, has_flag=True),
@@ -1081,7 +1081,7 @@ STRUCT_STDOUT_PLAYBACK = StructType(
     name="stdout_playback_config",
     c_type="stdout_playback_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("format", ENUM_BINARY_SAMPLE_FORMAT, required=True),
         Field("wav_header", TYPE_BOOL, has_flag=True, default=False),
     ],
@@ -1092,7 +1092,7 @@ STRUCT_WASAPI_CAPTURE = StructType(
     name="wasapi_capture_config",
     c_type="wasapi_capture_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("device", StringType(256), has_flag=True),
         Field("format", ENUM_WASAPI_SAMPLE_FORMAT, has_flag=True),
         Field("exclusive", TYPE_BOOL, has_flag=True, default=False),
@@ -1107,7 +1107,7 @@ STRUCT_WASAPI_PLAYBACK = StructType(
     name="wasapi_playback_config",
     c_type="wasapi_playback_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("device", StringType(256), has_flag=True),
         Field("format", ENUM_WASAPI_SAMPLE_FORMAT, has_flag=True),
         Field("exclusive", TYPE_BOOL, has_flag=True, default=False),
@@ -1122,7 +1122,7 @@ STRUCT_ASIO_CAPTURE = StructType(
     name="asio_capture_config",
     c_type="asio_capture_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("device", StringType(256), has_flag=True, required=True),
         Field("format", ENUM_ASIO_SAMPLE_FORMAT, has_flag=True),
     ],
@@ -1134,7 +1134,7 @@ STRUCT_ASIO_PLAYBACK = StructType(
     name="asio_playback_config",
     c_type="asio_playback_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("device", StringType(256), has_flag=True, required=True),
         Field("format", ENUM_ASIO_SAMPLE_FORMAT, has_flag=True),
     ],
@@ -1160,7 +1160,7 @@ STRUCT_RAW_FILE_CAPTURE = StructType(
     fields=[
         Field("filename", StringType(512), required=True),
         Field("format", ENUM_BINARY_SAMPLE_FORMAT, required=True),
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("skip_bytes", TYPE_SIZE_T, has_flag=True),
         Field("read_bytes", TYPE_SIZE_T, has_flag=True),
         Field("extra_samples", TYPE_INT, has_flag=True, min_value=0),
@@ -1175,7 +1175,7 @@ STRUCT_RAW_FILE_PLAYBACK = StructType(
     fields=[
         Field("filename", StringType(512), required=True),
         Field("format", ENUM_BINARY_SAMPLE_FORMAT, required=True),
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("wav_header", TYPE_BOOL, has_flag=True, default=False),
         Field("use_rf64", TYPE_BOOL, has_flag=True, default=False),
         Field("realtime", TYPE_BOOL, has_flag=True, default=False),
@@ -1187,7 +1187,7 @@ STRUCT_GENERATOR_CAPTURE = StructType(
     name="generator_capture_config",
     c_type="generator_capture_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
         Field("signal", STRUCT_GENERATOR_SIGNAL, required=True),
     ],
     allowed_extra_keys=CAPTURE_EXTRA_KEYS
@@ -1197,7 +1197,7 @@ STRUCT_WEBAUDIO_CAPTURE = StructType(
     name="webaudio_capture_config",
     c_type="webaudio_capture_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
     ],
     allowed_extra_keys=CAPTURE_EXTRA_KEYS,
     guard="ENABLE_WEBAUDIO"
@@ -1207,7 +1207,7 @@ STRUCT_WEBAUDIO_PLAYBACK = StructType(
     name="webaudio_playback_config",
     c_type="webaudio_playback_config_t",
     fields=[
-        Field("channels", TYPE_SIZE_T, required=True),
+        Field("channels", TYPE_SIZE_T, required=True, min_value=1),
     ],
     allowed_extra_keys=PLAYBACK_EXTRA_KEYS,
     guard="ENABLE_WEBAUDIO"
@@ -1221,7 +1221,7 @@ UNION_CAPTURE = TaggedUnionType(
     union_field="cfg",
     extra_fields=[
         Field("labels", ArrayType(StringType(128)), has_flag=True, allow_null_items=True),
-        Field("is_wav", TYPE_BOOL, has_flag=True),
+        Field("is_wav", TYPE_BOOL, has_flag=True, internal=True),
         Field("bypass_dop", TYPE_BOOL, has_flag=True, default=True),
         Field("dop_cutoff_hz", TYPE_DOUBLE, has_flag=True, default=20000.0),
     ],
@@ -1252,7 +1252,7 @@ UNION_PLAYBACK = TaggedUnionType(
     tag_field="type",
     union_field="cfg",
     extra_fields=[
-        Field("is_wav", TYPE_BOOL, has_flag=True),
+        Field("is_wav", TYPE_BOOL, has_flag=True, internal=True),
         Field("output_dop", TYPE_BOOL, has_flag=True, default=False),
         Field("dsd_encoder_filter", ENUM_SDM_FILTER, has_flag=True, default="SDM_FILTER_SDM6"),
     ],
@@ -1277,15 +1277,15 @@ STRUCT_DEVICES = StructType(
     name="devices_config",
     c_type="devices_config_t",
     fields=[
-        Field("samplerate", TYPE_SIZE_T, required=True),
-        Field("chunksize", TYPE_SIZE_T, required=True),
+        Field("samplerate", TYPE_SIZE_T, required=True, min_value=1),
+        Field("chunksize", TYPE_SIZE_T, required=True, min_value=1),
         Field("enable_rate_adjust", TYPE_BOOL, has_flag=True, default=False),
         Field("target_level", TYPE_INT, has_flag=True, min_value=0),
         Field("adjust_interval_s", TYPE_DOUBLE, has_flag=True),
         Field("resampler", STRUCT_RESAMPLER, has_flag=True),
         Field("capture", UNION_CAPTURE, required=True),
         Field("playback", UNION_PLAYBACK, required=True),
-        Field("capture_samplerate", TYPE_SIZE_T, has_flag=True),
+        Field("capture_samplerate", TYPE_SIZE_T, has_flag=True, min_value=1),
         Field("silence_threshold", TYPE_DOUBLE, has_flag=True),
         Field("silence_timeout_s", TYPE_DOUBLE, has_flag=True),
         Field("volume_ramp_time_ms", TYPE_DOUBLE, has_flag=True),
@@ -1294,7 +1294,7 @@ STRUCT_DEVICES = StructType(
         Field("stop_on_rate_change", TYPE_BOOL, has_flag=True, default=False),
         Field("rate_measure_interval_s", TYPE_DOUBLE, has_flag=True),
         Field("multithreaded", TYPE_BOOL, has_flag=True, default=False),
-        Field("worker_threads", TYPE_INT, has_flag=True),
+        Field("worker_threads", TYPE_INT, has_flag=True, min_value=0),
     ]
 )
 

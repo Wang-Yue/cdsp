@@ -72,18 +72,18 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t *watcher, size_t frames,
 
   if (measured_rate < min_val || measured_rate > max_val) {
     watcher->deviation_count++;
-    logger_warn(&g_logger,
-                "Sample rate deviation tick %d: measured %.1fHz, target %.1fHz",
-                watcher->deviation_count, measured_rate, watcher->target_rate);
+    logger_debug(&g_logger,
+                 "Sample rate deviation tick %d: measured %.1fHz, target %.1fHz",
+                 watcher->deviation_count, measured_rate, watcher->target_rate);
   } else {
     watcher->deviation_count = 0;
   }
 
   if (watcher->deviation_count >= 4) {
-    logger_error(&g_logger,
-                 "Sample rate deviation persistent! Measured rate: %.1fHz "
-                 "(target %.1fHz)",
-                 measured_rate, watcher->target_rate);
+    logger_warn(&g_logger,
+                "Sample rate deviation persistent! Measured rate: %.1fHz "
+                "(target %.1fHz)",
+                measured_rate, watcher->target_rate);
     if (out_measured_rate) {
       *out_measured_rate = measured_rate;
     }

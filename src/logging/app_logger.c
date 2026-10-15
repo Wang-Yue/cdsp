@@ -16,7 +16,7 @@ static FILE *g_log_file = NULL;
 static pthread_mutex_t g_log_file_mutex = PTHREAD_MUTEX_INITIALIZER;
 static char g_log_file_path[1024] = {0};
 static size_t g_log_max_size = 0;
-static size_t g_log_keep_count = 0;
+static size_t g_log_keep_count = SIZE_MAX;
 static size_t g_log_current_size = 0;
 
 static void rotate_log_file_locked(void) {
@@ -27,7 +27,9 @@ static void rotate_log_file_locked(void) {
   fclose(g_log_file);
   g_log_file = NULL;
 
-  if (g_log_keep_count > 0) {
+  if (g_log_keep_count == 0) {
+    remove(g_log_file_path);
+  } else if (g_log_keep_count != SIZE_MAX) {
     char old_name[1050];
     char new_name[1050];
     snprintf(old_name, sizeof(old_name), "%s.%zu", g_log_file_path,
@@ -59,14 +61,15 @@ static void rotate_log_file_locked(void) {
     rename(g_log_file_path, rot_name);
   }
 
-  g_log_file = fopen(g_log_file_path, "a");
+  g_log_file = fopen(g_log_file_path, "w");
   g_log_current_size = 0;
 }
 
 void app_logger_set_logfile_rotation(size_t max_size_bytes, size_t keep_count) {
   pthread_mutex_lock(&g_log_file_mutex);
   g_log_max_size = max_size_bytes;
-  g_log_keep_count = keep_count;
+  g_log_keep_count = (max_size_bytes == 0 && keep_count == 0) ? SIZE_MAX
+                                                              : keep_count;
   pthread_mutex_unlock(&g_log_file_mutex);
 }
 
@@ -80,15 +83,11 @@ void app_logger_set_logfile(const char *path) {
   }
   strncpy(g_log_file_path, path, sizeof(g_log_file_path) - 1);
   g_log_file_path[sizeof(g_log_file_path) - 1] = '\0';
-  g_log_file = fopen(path, "a");
+  g_log_file = fopen(path, "w");
   if (!g_log_file) {
     fprintf(stderr, "Failed to open log file %s for writing\n", path);
-    g_log_current_size = 0;
-  } else {
-    fseek(g_log_file, 0, SEEK_END);
-    long pos = ftell(g_log_file);
-    g_log_current_size = (pos > 0) ? (size_t)pos : 0;
   }
+  g_log_current_size = 0;
   pthread_mutex_unlock(&g_log_file_mutex);
 }
 
@@ -645,13 +644,37 @@ void app_logger_log_raw_str(const logger_t *logger, log_level_t level,
       lvl_str = "TRACE";
       break;
     }
+    char time_buf[64];
+    long usec = 0;
+#if defined(_WIN32)
+    time_t t = time(NULL);
+    struct tm tm_info;
+    localtime_s(&tm_info, &t);
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_info);
+    usec = 0;
+#elif defined(__APPLE__) || defined(__linux__) ||                              \
+    (defined(_POSIX_TIMERS) && (_POSIX_TIMERS > 0))
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    struct tm tm_info;
+    localtime_r(&ts.tv_sec, &tm_info);
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_info);
+    usec = (long)(ts.tv_nsec / 1000);
+#else
+    time_t t = time(NULL);
+    struct tm tm_info;
+    localtime_r(&t, &tm_info);
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_info);
+    usec = 0;
+#endif
     pthread_mutex_lock(&g_log_file_mutex);
     if (g_log_file && g_log_max_size > 0 &&
         g_log_current_size >= g_log_max_size) {
       rotate_log_file_locked();
     }
     FILE *out = g_log_file ? g_log_file : stderr;
-    int written = fprintf(out, "[%s] %s: %s\n", lvl_str, label, out_str);
+    int written = fprintf(out, "%s.%06ld %-5s [%s] %s\n", time_buf, usec,
+                          lvl_str, label, out_str);
     if (written > 0 && g_log_file) {
       g_log_current_size += (size_t)written;
     }

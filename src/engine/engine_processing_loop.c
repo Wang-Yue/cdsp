@@ -181,7 +181,13 @@ static void processing_loop_record_metrics(engine_processing_loop_t *loop,
   // Calculate CPU load of the DSP pipeline and resampler.
   // Denominator is the nominal physical duration of one chunk (chunksize /
   // samplerate).
-  size_t nominal_frames = audio_chunk_get_valid_frames(chunk);
+  size_t nominal_frames =
+      loop->active_pipeline
+          ? pipeline_get_frames_per_chunk(loop->active_pipeline)
+          : 0;
+  if (nominal_frames == 0 && chunk) {
+    nominal_frames = audio_chunk_get_valid_frames(chunk);
+  }
   if (nominal_frames > 0 && loop->pipeline_rate > 0) {
     uint64_t chunk_duration_ns =
         (uint64_t)nominal_frames * 1000000000ULL / loop->pipeline_rate;
@@ -349,7 +355,19 @@ void engine_processing_loop_run(engine_processing_loop_t *loop) {
 
   // Ref: docs/engine_state_management.md - Section 3.5: Graceful EOF Teardown
   // (Queue Drain) Step 2: Once captured queue is shut down and empty, dequeue
-  // returns NULL. Shutdown processed queue and exit thread.
+  // returns NULL. Flush any retained pending_scratch chunk, then shutdown
+  // processed queue and exit thread.
+  if (loop->pending_scratch && loop->shared &&
+      !engine_shared_state_should_stop(loop->shared)) {
+    while (!engine_shared_state_enqueue_processed(loop->shared,
+                                                  loop->pending_scratch)) {
+      if (engine_shared_state_should_stop(loop->shared)) {
+        break;
+      }
+      cdsp_sleep_ms(1);
+    }
+    loop->pending_scratch = NULL;
+  }
   if (loop->shared) {
     engine_shared_state_shutdown_processed_queue(loop->shared);
   }

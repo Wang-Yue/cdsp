@@ -1623,16 +1623,11 @@ int audio_backend_apply_device_overrides(
                      cfg_chunksize, scaled_chunksize);
         devices->chunksize = scaled_chunksize;
 
-        if (devices->capture.type == AUDIO_BACKEND_TYPE_FILE) {
-          if (devices->capture.is_wav) {
-            if (devices->capture.cfg.wav_file.has_extra_samples) {
-              devices->capture.cfg.wav_file.extra_samples =
-                  devices->capture.cfg.wav_file.extra_samples * rate / cfg_rate;
-            }
-          } else if (devices->capture.cfg.raw_file.has_extra_samples) {
-            devices->capture.cfg.raw_file.extra_samples =
-                devices->capture.cfg.raw_file.extra_samples * rate / cfg_rate;
-          }
+        if (devices->capture.type == AUDIO_BACKEND_TYPE_FILE &&
+            !devices->capture.is_wav &&
+            devices->capture.cfg.raw_file.has_extra_samples) {
+          devices->capture.cfg.raw_file.extra_samples =
+              devices->capture.cfg.raw_file.extra_samples * rate / cfg_rate;
         } else if (devices->capture.type == AUDIO_BACKEND_TYPE_STDIN_OUT &&
                    devices->capture.cfg.stdin_in.has_extra_samples) {
           devices->capture.cfg.stdin_in.extra_samples =

@@ -43,6 +43,7 @@ Per project design principles, a deviation from upstream is admitted **only when
 | 10 | **Zero-Copy Backends** | Staging scratch buffers (`scratch_buf`, `decode_buf`, `encode_buf`, `interleaved_buf`) and intermediate `memcpy` steps | Direct circular slice decoding/encoding to SPSC ring buffers (§3.2) | Zero staging buffers, reduced CPU cache pollution & minimum latency |
 | 11 | **Driver Layout & Buffers** | Serializes planar drivers (ASIO) into byte streams; unaligned default micro-buffers on CoreAudio | Native planar streaming for ASIO; matched hardware buffer size & interleaved pass-through for CoreAudio (§3.3) | Eliminates 2D sample interleaving on ASIO; bypasses AUHAL `AudioConverter` and drops callback CPU on CoreAudio |
 | 12 | **WebAudio / WebAssembly** | No browser or Web Audio support | The unmodified multithreaded engine in WASM (pthreads) with a callback-driven WebAudio backend fed by a Wasm AudioWorklet (§5.4) | Full double-precision DSP suite inside Chrome, same engine model as desktop |
+| 13 | **Parallel Filter Execution** | Custom `rayon::ThreadPool` spawned per pipeline with manual RT promotion | Native OS/compiler runtimes: Grand Central Dispatch (`ENABLE_LIBDISPATCH` / `dispatch_apply_f`) on Apple and OpenMP (`ENABLE_OPENMP` / `#pragma omp parallel for`) elsewhere (§3.6) | Zero custom thread-pool/mutex/condvar lifecycle overhead; OS-managed QoS & work-stealing |
 
 ---
 
@@ -94,6 +95,15 @@ Per project design principles, a deviation from upstream is admitted **only when
 * **Why `cdsp` Is Better**:
   - **ASIO**: Eliminates 2D frame-by-frame sample interleaving and de-interleaving loops on the real-time ASIO thread.
   - **CoreAudio**: Guarantees zero real-time `AudioConverter` re-interleaving overhead, avoids byte-by-byte queue shuffling in the render callback, and matches hardware buffer size to eliminate high-frequency callback CPU pressure.
+
+### 3.6 Parallel Filter Execution via OpenMP and Grand Central Dispatch (`libdispatch`)
+* **Upstream Behavior**: Upstream CamillaDSP (`src/pipeline.rs`, `src/filters/fftconv.rs`) builds a dedicated `rayon::ThreadPool` (`ThreadPoolBuilder::new().num_threads(worker_threads)`) per pipeline and promotes each Rayon worker thread via `promote_current_thread_to_realtime`.
+* **`cdsp` Enhancement**: In [`src/pipeline/pipeline.c`](src/pipeline/pipeline.c) and [`src/filters/convolution.c`](src/filters/convolution.c), `cdsp` intentionally delegates parallel channel filter execution (`enable_multithreading: true`) to platform-native parallel runtimes rather than managing a custom `pthread` mutex/condvar thread pool on the audio path:
+  - **Apple (`ENABLE_LIBDISPATCH`)**: Uses Grand Central Dispatch (`dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0)` + `dispatch_apply_f`), letting the XNU kernel dynamically manage thread pool sizing, QoS priority, and work-stealing across P-cores without blocking mutex/condvar handoffs on the real-time processing thread.
+  - **Linux / Windows (`ENABLE_OPENMP`)**: Uses `#pragma omp parallel for num_threads(nthreads)` bounded by `worker_threads` (or `omp_get_max_threads()` when `worker_threads == 0`).
+* **Why `cdsp` Is Better**:
+  - **Honors Core Invariant §1.2**: Avoids custom `pthread_mutex_lock` / `pthread_cond_wait` synchronization primitives on the real-time audio processing path.
+  - **Zero Custom Thread-Pool Lifecycle Overhead**: Eliminates thread creation/join overhead during pipeline rebuilds and leverages kernel-integrated work-stealing queues (`libdispatch` on macOS, OpenMP runtime on Linux/Windows).
 
 ---
 
@@ -178,7 +188,6 @@ Per project design principles, a deviation from upstream is admitted **only when
 | Check | Location | Upstream |
 |---|---|---|
 | Empty convolution coefficients are a hard error | [`src/filters/convolution.c`](src/filters/convolution.c) | Deliberately non-fatal: one silent segment (`fftconv.rs`) |
-| LookaheadLimiter config_diff escalation on parameter change | [`src/config/config_diff.c`](src/config/config_diff.c) | Escalates to `Pipeline` rebuild on *any* config change if limiter is present |
 | CoreAudio loopback capture of the playback device rejects resampling and rate adjust | [`src/backend/audio_backend.c`](src/backend/audio_backend.c) | No concept of taps; nothing prevents resampling or rate adjusting between two endpoints that share one hardware clock |
 
 ---

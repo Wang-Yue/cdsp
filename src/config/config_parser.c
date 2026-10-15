@@ -131,6 +131,53 @@ int parse_labels_array_strict(const cJSON *labels_arr, char ***out_labels,
   return 0;
 }
 
+int parse_string_array_strict(const cJSON *str_arr, size_t max_len,
+                              char ***out_strings, size_t *out_count) {
+  if (!str_arr || cJSON_IsNull(str_arr))
+    return 0;
+  if (!cJSON_IsArray(str_arr))
+    return -1;
+  int size = cJSON_GetArraySize(str_arr);
+  if (size < 0)
+    return -1;
+  if (size == 0) {
+    *out_strings = NULL;
+    *out_count = 0;
+    return 0;
+  }
+
+  char **arr = (char **)calloc((size_t)size, sizeof(char *));
+  if (!arr)
+    return -1;
+
+  for (int k = 0; k < size; k++) {
+    cJSON *el = cJSON_GetArrayItem(str_arr, k);
+    if (!cJSON_IsString(el) || !el->valuestring) {
+      for (int j = 0; j < k; j++)
+        free(arr[j]);
+      free(arr);
+      return -1;
+    }
+    if (max_len > 0 && strlen(el->valuestring) >= max_len) {
+      for (int j = 0; j < k; j++)
+        free(arr[j]);
+      free(arr);
+      return -1;
+    }
+    arr[k] = strdup(el->valuestring);
+    if (!arr[k]) {
+      for (int j = 0; j < k; j++)
+        free(arr[j]);
+      free(arr);
+      return -1;
+    }
+  }
+
+  *out_strings = arr;
+  *out_count = (size_t)size;
+  return 0;
+}
+
 int parse_size_t_array_strict(const cJSON *arr, const char *field_name,
                               const char *section_name, size_t **out_values,
                               size_t *out_count, config_error_t *err) {
@@ -156,9 +203,9 @@ int parse_size_t_array_strict(const cJSON *arr, const char *field_name,
   }
   for (int i = 0; i < size; i++) {
     const cJSON *el = cJSON_GetArrayItem(arr, i);
-    if (!cJSON_IsNumber(el) || el->valuedouble < 0.0 ||
-        floor(el->valuedouble) != el->valuedouble ||
-        el->valuedouble > (double)SIZE_MAX) {
+    if (!cJSON_IsNumber(el) || !isfinite(el->valuedouble) ||
+        el->valuedouble < 0.0 || floor(el->valuedouble) != el->valuedouble ||
+        el->valuedouble >= (double)SIZE_MAX) {
       config_error_set(
           err, CONFIG_ERR_PARSE,
           "element %d of '%s' in %s must be a non-negative integer", i,
@@ -248,9 +295,10 @@ int parse_json_size_t_strict(const cJSON *obj, const char *key,
   const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
   if (!item || cJSON_IsNull(item))
     return 0;
-  if (!cJSON_IsNumber(item) || item->valuedouble < 0.0 ||
+  if (!cJSON_IsNumber(item) || !isfinite(item->valuedouble) ||
+      item->valuedouble < 0.0 ||
       floor(item->valuedouble) != item->valuedouble ||
-      item->valuedouble > (double)SIZE_MAX) {
+      item->valuedouble >= (double)SIZE_MAX) {
     config_error_set(err, CONFIG_ERR_PARSE,
                      "field '%s' in %s must be a non-negative integer", key,
                      section_name ? section_name : "object");
@@ -336,6 +384,13 @@ int validate_unknown_fields(const cJSON *obj, const char *const allowed_keys[],
   cJSON_ArrayForEach(child, obj) {
     if (!child->string)
       continue;
+    for (const cJSON *other = child->next; other != NULL; other = other->next) {
+      if (other->string && strcmp(child->string, other->string) == 0) {
+        config_error_set(err, CONFIG_ERR_PARSE, "duplicate field '%s' in %s",
+                         child->string, section_name ? section_name : "object");
+        return -1;
+      }
+    }
     bool found = false;
     for (size_t i = 0; allowed_keys[i] != NULL; i++) {
       if (strcmp(child->string, allowed_keys[i]) == 0) {
