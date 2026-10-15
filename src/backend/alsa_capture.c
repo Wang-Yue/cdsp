@@ -227,8 +227,8 @@ static void *alsa_capture_inner_thread_func(void *arg) {
       }
       // A PREPARED capture stream never becomes readable, so polling it
       // would burn the whole stall timeout and log a false "stalled". Start
-      // it now instead of on the next pass (upstream has the same gap,
-      // threaded_device.rs:755-757).
+      // it now instead of on the next pass (upstream `restart_capture_pcm`,
+      // alsa_backend/utils.rs).
       int strc = snd_pcm_start(capture->pcm);
       if (strc < 0) {
         alsa_capture_record_fatal(
@@ -415,11 +415,21 @@ static void *alsa_capture_inner_thread_func(void *arg) {
         break;
       }
     } else if (frames_read == -EPIPE) {
+      // Upstream `restart_capture_pcm`: prepare and start right away. A
+      // prepared capture device does not start by itself before it is read,
+      // and on a USB device with implicit feedback the delayed start could
+      // fail with EPIPE because capture and playback share an endpoint.
       logger_warn(&g_logger, "Capture: read overrun, trying to recover");
       logger_trace(&g_logger, "snd_pcm_prepare");
       int prc = snd_pcm_prepare(capture->pcm);
       if (prc < 0) {
         alsa_capture_record_fatal(capture, "prepare after overrun", prc);
+        fatal = true;
+        break;
+      }
+      int strc = snd_pcm_start(capture->pcm);
+      if (strc < 0) {
+        alsa_capture_record_fatal(capture, "start after overrun", strc);
         fatal = true;
         break;
       }

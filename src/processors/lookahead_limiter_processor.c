@@ -37,6 +37,21 @@ struct lookahead_limiter_processor {
 
 typedef struct lookahead_limiter_processor lookahead_limiter_processor_t;
 
+/// Check if a channel goes through the lookahead delay (upstream
+/// `is_delayed`): all channels unless `delay_processed_only`, in which case
+/// only the processed channels.
+static bool
+lookahead_limiter_is_delayed(const lookahead_limiter_processor_t *processor,
+                             size_t ch) {
+  if (!processor->delay_processed_only)
+    return true;
+  for (size_t p = 0; p < processor->process_channels_count; p++) {
+    if (processor->process_channels[p] == ch)
+      return true;
+  }
+  return false;
+}
+
 static const char *lookahead_limiter_processor_get_name(const void *impl) {
   const lookahead_limiter_processor_t *processor =
       (const lookahead_limiter_processor_t *)impl;
@@ -362,11 +377,14 @@ static void lookahead_limiter_processor_process(void *impl,
   }
 
   // 1. Detect peaks: Find maximum absolute amplitude of all monitored channels
-  // at each sample index
+  // at each sample index. A channel that is not present counts as silence
+  // (upstream `detect_peaks`).
   memset(processor->scratch, 0, count * sizeof(double));
   for (size_t i = 0; i < processor->monitor_channels_count; i++) {
     size_t ch = processor->monitor_channels[i];
     const double *ch_buf = audio_chunk_get_channel(chunk, ch);
+    if (!ch_buf)
+      continue;
     for (size_t f = 0; f < count; f++) {
       double val = fabs(ch_buf[f]);
       if (val > processor->scratch[f]) {
@@ -381,18 +399,8 @@ static void lookahead_limiter_processor_process(void *impl,
 
   // 3. Apply delay to keep channels time-aligned
   for (size_t ch = 0; ch < ch_count; ch++) {
-    bool should_delay = true;
-    if (processor->delay_processed_only) {
-      should_delay = false;
-      for (size_t p = 0; p < processor->process_channels_count; p++) {
-        if (processor->process_channels[p] == ch) {
-          should_delay = true;
-          break;
-        }
-      }
-    }
-
-    if (should_delay && ch < processor->delays_count && processor->delays[ch]) {
+    if (lookahead_limiter_is_delayed(processor, ch) &&
+        ch < processor->delays_count && processor->delays[ch]) {
       double *ch_buf = audio_chunk_get_channel(chunk, ch);
       g_delay_vtable.process(processor->delays[ch], ch_buf, count);
     }
@@ -442,10 +450,16 @@ static void lookahead_limiter_processor_transfer_state(void *dest_ptr,
     return;
   }
 
-  // Transfer delay states
+  // Transfer delay states. A channel that was not delayed by the old instance
+  // holds stale samples in its delay line; when it is delayed again it must
+  // start from silence (upstream `01fce11`), so leave the fresh delay as is.
   size_t d_count = dest->delays_count < src->delays_count ? dest->delays_count
                                                           : src->delays_count;
   for (size_t i = 0; i < d_count; i++) {
+    if (!lookahead_limiter_is_delayed(src, i) &&
+        lookahead_limiter_is_delayed(dest, i)) {
+      continue;
+    }
     if (dest->delays[i] && src->delays[i]) {
       g_delay_vtable.transfer_state(dest->delays[i], src->delays[i]);
     }

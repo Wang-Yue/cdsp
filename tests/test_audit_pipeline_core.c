@@ -213,4 +213,102 @@ TEST(AuditPipelineTransferKeepsDuplicateFilterStatesApart) {
   processing_parameters_free(params);
 }
 
+// Upstream `used_capture_channels_include_processors_before_the_mixer`
+// (87590f4): a mixer that only reads channel 0, and processors that all read
+// channel 1. A processor before the mixer keeps channel 1 captured; after the
+// mixer, or bypassed, it does not.
+static void set_used_channels_config(dsp_config_t *config,
+                                     named_mixer_config_t *mixer_cfg,
+                                     mixer_mapping_t *maps,
+                                     named_processor_config_t *procs,
+                                     size_t procs_count) {
+  init_config(config, 2);
+  maps[0] = (mixer_mapping_t){.dest = 0, .sources_count = 1,
+                              .sources = &g_src_ch0};
+  maps[1] = (mixer_mapping_t){.dest = 1, .sources_count = 1,
+                              .sources = &g_src_ch0};
+  memset(mixer_cfg, 0, sizeof(*mixer_cfg));
+  strcpy(mixer_cfg->name, "left");
+  mixer_cfg->mixer.channels_in = 2;
+  mixer_cfg->mixer.channels_out = 2;
+  mixer_cfg->mixer.mapping_count = 2;
+  mixer_cfg->mixer.mapping = maps;
+  config->mixers = mixer_cfg;
+  config->mixers_count = 1;
+  config->processors = procs;
+  config->processors_count = procs_count;
+}
+
+static void set_step(pipeline_step_config_t *step, pipeline_step_type_t type,
+                     const char *name, bool bypassed) {
+  memset(step, 0, sizeof(*step));
+  step->type = type;
+  strcpy(step->name, name);
+  step->has_name = true;
+  step->bypassed = bypassed;
+}
+
+TEST(UsedCaptureChannelsIncludeProcessorsBeforeTheMixer) {
+  static size_t monitor_ch1[] = {1};
+  named_processor_config_t procs[4];
+  memset(procs, 0, sizeof(procs));
+  strcpy(procs[0].name, "comp");
+  procs[0].processor.type = PROCESSOR_TYPE_COMPRESSOR;
+  procs[0].processor.parameters.compressor.channels = 2;
+  procs[0].processor.parameters.compressor.monitor_channels = monitor_ch1;
+  procs[0].processor.parameters.compressor.monitor_channels_count = 1;
+  // The noise gate leaves monitor_channels out, so it monitors all channels.
+  strcpy(procs[1].name, "gate");
+  procs[1].processor.type = PROCESSOR_TYPE_NOISE_GATE;
+  procs[1].processor.parameters.noise_gate.channels = 2;
+  strcpy(procs[2].name, "limiter");
+  procs[2].processor.type = PROCESSOR_TYPE_LOOKAHEAD_LIMITER;
+  procs[2].processor.parameters.lookahead_limiter.channels = 2;
+  procs[2].processor.parameters.lookahead_limiter.monitor_channels =
+      monitor_ch1;
+  procs[2].processor.parameters.lookahead_limiter.monitor_channels_count = 1;
+  strcpy(procs[3].name, "race");
+  procs[3].processor.type = PROCESSOR_TYPE_RACE;
+  procs[3].processor.parameters.race.channels = 2;
+  procs[3].processor.parameters.race.channel_a = 1;
+  procs[3].processor.parameters.race.channel_b = 0;
+
+  dsp_config_t config;
+  named_mixer_config_t mixer_cfg;
+  mixer_mapping_t maps[2];
+  pipeline_step_config_t steps[2];
+  bool used[2];
+
+  for (size_t i = 0; i < 4; i++) {
+    set_used_channels_config(&config, &mixer_cfg, maps, procs, 4);
+    set_step(&steps[0], PIPELINE_STEP_TYPE_PROCESSOR, procs[i].name, false);
+    set_step(&steps[1], PIPELINE_STEP_TYPE_MIXER, "left", false);
+    config.pipeline = steps;
+    config.pipeline_count = 2;
+    ASSERT_TRUE(pipeline_compute_used_capture_channels(&config, used, 2));
+    ASSERT_TRUE(used[0]);
+    ASSERT_TRUE(used[1]);
+  }
+
+  // After the mixer, a processor does not read any capture channel.
+  set_used_channels_config(&config, &mixer_cfg, maps, procs, 4);
+  set_step(&steps[0], PIPELINE_STEP_TYPE_MIXER, "left", false);
+  set_step(&steps[1], PIPELINE_STEP_TYPE_PROCESSOR, "comp", false);
+  config.pipeline = steps;
+  config.pipeline_count = 2;
+  ASSERT_TRUE(pipeline_compute_used_capture_channels(&config, used, 2));
+  ASSERT_TRUE(used[0]);
+  ASSERT_FALSE(used[1]);
+
+  // Bypassed, neither.
+  set_used_channels_config(&config, &mixer_cfg, maps, procs, 4);
+  set_step(&steps[0], PIPELINE_STEP_TYPE_PROCESSOR, "comp", true);
+  set_step(&steps[1], PIPELINE_STEP_TYPE_MIXER, "left", false);
+  config.pipeline = steps;
+  config.pipeline_count = 2;
+  ASSERT_TRUE(pipeline_compute_used_capture_channels(&config, used, 2));
+  ASSERT_TRUE(used[0]);
+  ASSERT_FALSE(used[1]);
+}
+
 TEST_MAIN()

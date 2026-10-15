@@ -788,4 +788,68 @@ TEST(test_race_large_attenuation) {
   dsp_processor_free(race);
 }
 
+/// Upstream `test_resumed_channel_does_not_replay_old_samples` (01fce11): a
+/// channel that is delayed again after a pause in its delay must start from
+/// silence, not replay what was left in the delay line.
+TEST(test_lookahead_limiter_processor_resumed_channel_starts_silent) {
+  lookahead_limiter_processor_config_t params = {
+      .channels = 2,
+      .monitor_channels = NULL,
+      .monitor_channels_count = 0,
+      .process_channels = NULL,
+      .process_channels_count = 0,
+      .limit = 0.0,
+      .attack = 2.0,
+      .attack_unit = TIME_UNIT_SAMPLES,
+      .release = 0.0,
+      .release_unit = TIME_UNIT_SAMPLES,
+      .delay_processed_only = true};
+  processor_config_t cfg = {.type = PROCESSOR_TYPE_LOOKAHEAD_LIMITER,
+                            .parameters.lookahead_limiter = params};
+
+  // All channels delayed: channel 1 leaves 0.5 in its delay line.
+  dsp_processor_t *all = dsp_processor_create("limiter", &cfg, 48000, 4, NULL);
+  ASSERT_TRUE(all != NULL);
+  audio_chunk_t *chunk = audio_chunk_create(4, 2);
+  ASSERT_TRUE(chunk != NULL);
+  double *ch1 = audio_chunk_get_channel(chunk, 1);
+  for (size_t i = 0; i < 4; i++)
+    ch1[i] = 0.5;
+  audio_chunk_set_valid_frames(chunk, 4);
+  dsp_processor_process(all, chunk);
+
+  // Only channel 0 processed, so channel 1 is not delayed any more.
+  size_t only0[] = {0};
+  cfg.parameters.lookahead_limiter.process_channels = only0;
+  cfg.parameters.lookahead_limiter.process_channels_count = 1;
+  dsp_processor_t *ch0_only =
+      dsp_processor_create("limiter", &cfg, 48000, 4, NULL);
+  ASSERT_TRUE(ch0_only != NULL);
+  dsp_processor_transfer_state(ch0_only, all);
+  dsp_processor_free(all);
+  audio_chunk_zero(chunk);
+  audio_chunk_set_valid_frames(chunk, 4);
+  dsp_processor_process(ch0_only, chunk);
+
+  // Channel 1 delayed again: its delay must not replay the old 0.5 samples.
+  cfg.parameters.lookahead_limiter.process_channels = NULL;
+  cfg.parameters.lookahead_limiter.process_channels_count = 0;
+  dsp_processor_t *resumed =
+      dsp_processor_create("limiter", &cfg, 48000, 4, NULL);
+  ASSERT_TRUE(resumed != NULL);
+  dsp_processor_transfer_state(resumed, ch0_only);
+  dsp_processor_free(ch0_only);
+  audio_chunk_zero(chunk);
+  audio_chunk_set_valid_frames(chunk, 4);
+  dsp_processor_process(resumed, chunk);
+
+  ch1 = audio_chunk_get_channel(chunk, 1);
+  for (size_t i = 0; i < 4; i++) {
+    ASSERT_TRUE(is_close(ch1[i], 0.0, 1e-12));
+  }
+
+  audio_chunk_free(chunk);
+  dsp_processor_free(resumed);
+}
+
 TEST_MAIN()

@@ -464,6 +464,56 @@ size_t pipeline_get_worker_threads(const pipeline_t *pipeline) {
   return pipeline ? pipeline->worker_threads : 0;
 }
 
+/// Mark the channels a processor needs as input (upstream
+/// `processors::read_channels`): the monitored channels, where an empty list
+/// means all channels. RACE needs both of its channels, since each feeds the
+/// other.
+static void mark_processor_read_channels(const processor_config_t *proc,
+                                         bool *out_used,
+                                         size_t channels_count) {
+  if (!proc)
+    return;
+  size_t channels = 0;
+  const size_t *monitor = NULL;
+  size_t monitor_count = 0;
+  switch (proc->type) {
+  case PROCESSOR_TYPE_COMPRESSOR:
+    channels = proc->parameters.compressor.channels;
+    monitor = proc->parameters.compressor.monitor_channels;
+    monitor_count = proc->parameters.compressor.monitor_channels_count;
+    break;
+  case PROCESSOR_TYPE_NOISE_GATE:
+    channels = proc->parameters.noise_gate.channels;
+    monitor = proc->parameters.noise_gate.monitor_channels;
+    monitor_count = proc->parameters.noise_gate.monitor_channels_count;
+    break;
+  case PROCESSOR_TYPE_LOOKAHEAD_LIMITER:
+    channels = proc->parameters.lookahead_limiter.channels;
+    monitor = proc->parameters.lookahead_limiter.monitor_channels;
+    monitor_count = proc->parameters.lookahead_limiter.monitor_channels_count;
+    break;
+  case PROCESSOR_TYPE_RACE: {
+    const race_config_t *race = &proc->parameters.race;
+    if (race->channel_a < channels_count)
+      out_used[race->channel_a] = true;
+    if (race->channel_b < channels_count)
+      out_used[race->channel_b] = true;
+    return;
+  }
+  default:
+    return;
+  }
+  if (monitor_count == 0 || !monitor) {
+    for (size_t c = 0; c < channels && c < channels_count; c++)
+      out_used[c] = true;
+    return;
+  }
+  for (size_t i = 0; i < monitor_count; i++) {
+    if (monitor[i] < channels_count)
+      out_used[monitor[i]] = true;
+  }
+}
+
 bool pipeline_compute_used_capture_channels(const dsp_config_t *config,
                                             bool *out_used,
                                             size_t channels_count) {
@@ -472,6 +522,11 @@ bool pipeline_compute_used_capture_channels(const dsp_config_t *config,
 
   memset(out_used, 0, channels_count * sizeof(bool));
 
+  // The used channels are the ones read by the first mixer, plus the ones
+  // read by any processor that runs before it (upstream
+  // `used_capture_channels` / `processors::read_channels`). A processor
+  // before the mixer reads its monitored channels directly from the capture
+  // chunk, so dropping them would feed it silence instead of the signal.
   const mixer_config_t *first_mixer = NULL;
   for (size_t i = 0; i < config->pipeline_count; i++) {
     const pipeline_step_config_t *step = &config->pipeline[i];
@@ -480,6 +535,10 @@ bool pipeline_compute_used_capture_channels(const dsp_config_t *config,
     if (step->type == PIPELINE_STEP_TYPE_MIXER) {
       first_mixer = dsp_config_get_mixer(config, step->name);
       break;
+    }
+    if (step->type == PIPELINE_STEP_TYPE_PROCESSOR) {
+      mark_processor_read_channels(dsp_config_get_processor(config, step->name),
+                                   out_used, channels_count);
     }
   }
 

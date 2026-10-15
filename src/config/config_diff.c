@@ -80,9 +80,9 @@ config_change_type_t config_diff(const dsp_config_t *current,
     }
     if (!filter_config_equal(&old_nf->filter, &new_nf->filter) ||
         !safe_streq(old_nf->description, new_nf->description)) {
-      if (old_nf->filter.type == FILTER_TYPE_LOOKAHEAD_LIMITER) {
-        return CONFIG_CHANGE_PIPELINE;
-      }
+      // Upstream `config_diff` (8e565f3): a LookaheadLimiter filter updates
+      // its parameters in place like the other filters, so a parameter change
+      // no longer rebuilds the pipeline.
       params_changed = true;
     }
   }
