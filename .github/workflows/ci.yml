@@ -656,12 +656,22 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+          # Artifacts are uploaded with `archive: false`, so each one is the
+          # final release file. Without this, download-artifact sees the macOS
+          # and Chrome `.zip` artifacts as archives and unpacks them in place.
+          # The zips never reach release-assets/ and are left out of the release.
+          skip-decompress: true
 
       - name: Compute SHA256 checksums
         run: |
           cd release-assets
-          sha256sum CDSPStudio* > SHA256SUMS.txt
           ls -la
+          # Fail early if any expected release asset is missing.
+          for f in CDSPStudio-macOS-arm64.zip CDSPStudio-Linux-x86_64.AppImage \
+                   CDSPStudio-Windows-x86_64.exe CDSPStudio-Chrome-wasm32.zip; do
+            test -f "$f" || { echo "::error::Missing release asset: $f"; exit 1; }
+          done
+          sha256sum CDSPStudio* > SHA256SUMS.txt
 
       - name: Update weekly tag
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
