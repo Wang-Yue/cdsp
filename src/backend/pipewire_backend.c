@@ -879,6 +879,7 @@ static bool pipewire_playback_open(void *ctx, backend_error_t *err) {
   }
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
   backend_buffer_set_target_level(playback->buffer, target_level);
+  backend_buffer_set_chunk_size(playback->buffer, (size_t)playback->chunk_size);
 
   playback->loop = pw_thread_loop_new("CDSP-Playback-Loop", NULL);
   if (!playback->loop) {
@@ -1021,6 +1022,14 @@ static size_t pipewire_playback_get_buffer_level(void *ctx) {
   if (!playback)
     return 0;
   return backend_buffer_get_level(playback->buffer);
+}
+
+static device_buffer_estimate_status_t
+pipewire_playback_get_checked_buffer_level(void *ctx, size_t *out_level) {
+  pipewire_playback_t *playback = (pipewire_playback_t *)ctx;
+  if (!playback)
+    return DEVICE_BUFFER_ESTIMATE_INVALID;
+  return backend_buffer_get_checked_level(playback->buffer, out_level);
 }
 
 /**
@@ -1210,6 +1219,7 @@ const playback_backend_vtable_t g_pipewire_playback_vtable = {
     .write = pipewire_playback_write,
     .close = pipewire_playback_close,
     .get_buffer_level = pipewire_playback_get_buffer_level,
+    .get_checked_buffer_level = pipewire_playback_get_checked_buffer_level,
     .get_pending_rate_change = pipewire_playback_get_pending_rate_change,
     .prefill_silence = pipewire_playback_prefill_silence,
     .get_is_paused = pipewire_playback_get_is_paused,

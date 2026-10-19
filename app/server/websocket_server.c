@@ -2453,6 +2453,9 @@ void websocket_server_handle_command(websocket_server_t *server, int client_idx,
       reply_error(simple, "ProcessingNotRunningError", NULL, ds);
       break;
     }
+    // Start filling the history buffer of the subscribed side immediately.
+    cdsp_audio_samples_t dummy_samples = {0};
+    (void)cdsp_get_samples(server->engine, is_capture, 0, &dummy_samples, NULL);
     sess->spectrum_subscribed = true;
     sess->spectrum_is_capture = is_capture;
     sess->spectrum_channel = channel;

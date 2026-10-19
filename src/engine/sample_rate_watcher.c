@@ -15,6 +15,7 @@ struct sample_rate_watcher {
   size_t captured_frames;
   uint64_t last_reset_ns;
   int deviation_count;
+  bool above;
   double last_measured_rate;
 };
 
@@ -43,6 +44,7 @@ void sample_rate_watcher_reset(sample_rate_watcher_t *watcher) {
   watcher->captured_frames = 0;
   watcher->last_reset_ns = cdsp_time_now_ns();
   watcher->deviation_count = 0;
+  watcher->above = false;
   watcher->last_measured_rate = 0.0;
 }
 
@@ -70,8 +72,16 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t *watcher, size_t frames,
   double min_val = watcher->target_rate / 1.04;
   double max_val = watcher->target_rate * 1.04;
 
-  if (measured_rate < min_val || measured_rate > max_val) {
-    watcher->deviation_count++;
+  // Only values that are off in the same direction count as in a row
+  // (upstream ValueWatcher::check_value).
+  bool above = measured_rate > max_val;
+  if (above || measured_rate < min_val) {
+    if (watcher->deviation_count > 0 && above == watcher->above) {
+      watcher->deviation_count++;
+    } else {
+      watcher->deviation_count = 1;
+      watcher->above = above;
+    }
     logger_debug(&g_logger,
                  "Sample rate deviation tick %d: measured %.1fHz, target %.1fHz",
                  watcher->deviation_count, measured_rate, watcher->target_rate);
@@ -79,7 +89,7 @@ bool sample_rate_watcher_tick(sample_rate_watcher_t *watcher, size_t frames,
     watcher->deviation_count = 0;
   }
 
-  if (watcher->deviation_count >= 4) {
+  if (watcher->deviation_count >= 3) {
     logger_warn(&g_logger,
                 "Sample rate deviation persistent! Measured rate: %.1fHz "
                 "(target %.1fHz)",

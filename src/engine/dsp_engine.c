@@ -665,14 +665,13 @@ static void dsp_engine_reset_global_peaks(void *ctx) {
   pthread_mutex_unlock(&impl->state_mutex);
 }
 
-static void enable_history_buffers(dsp_engine_impl_t *impl) {
+static void enable_history_buffer(dsp_engine_impl_t *impl, bool is_capture) {
   if (!impl)
     return;
-  if (impl->buffers.capture) {
-    audio_history_buffer_set_enabled(impl->buffers.capture, true);
-  }
-  if (impl->buffers.playback) {
-    audio_history_buffer_set_enabled(impl->buffers.playback, true);
+  audio_history_buffer_t *buf =
+      is_capture ? impl->buffers.capture : impl->buffers.playback;
+  if (buf) {
+    audio_history_buffer_set_enabled(buf, true);
   }
 }
 
@@ -683,11 +682,19 @@ static bool dsp_engine_get_spectrum(void *ctx, bool is_capture,
   if (!ctx || !out_spec)
     return false;
   out_spec->error_message[0] = '\0';
+  if (n_bins < 2) {
+    snprintf(out_spec->error_message, sizeof(out_spec->error_message),
+             "n_bins must be at least 2");
+    return false;
+  }
+  if (!(min_freq > 0.0 && min_freq < max_freq)) {
+    snprintf(out_spec->error_message, sizeof(out_spec->error_message),
+             "Invalid frequency range: min_freq must be > 0 and < max_freq");
+    return false;
+  }
+
   dsp_engine_impl_t *impl = (dsp_engine_impl_t *)ctx;
   pthread_mutex_lock(&impl->state_mutex);
-
-  // Enable history buffers so recording starts/continues (sticky).
-  enable_history_buffers(impl);
 
   if (!impl->session.active || !impl->buffers.spectrum) {
     pthread_mutex_unlock(&impl->state_mutex);
@@ -702,6 +709,10 @@ static bool dsp_engine_get_spectrum(void *ctx, bool is_capture,
              "No audio data available");
     return false;
   }
+
+  // Only a request that is going to be served starts filling the audio history
+  // buffer of its side, since the flag is sticky.
+  enable_history_buffer(impl, is_capture);
   audio_history_buffer_t *buf =
       is_capture ? impl->buffers.capture : impl->buffers.playback;
   size_t samplerate = core_cfg->devices.samplerate;
@@ -759,8 +770,9 @@ static bool dsp_engine_get_samples(void *ctx, bool is_capture, size_t n_frames,
   dsp_engine_impl_t *impl = (dsp_engine_impl_t *)ctx;
   pthread_mutex_lock(&impl->state_mutex);
 
-  // Enable history buffers so recording starts/continues (sticky).
-  enable_history_buffers(impl);
+  // Enable history buffer for the requested side so recording starts/continues
+  // (sticky).
+  enable_history_buffer(impl, is_capture);
 
   if (!impl->session.active) {
     pthread_mutex_unlock(&impl->state_mutex);

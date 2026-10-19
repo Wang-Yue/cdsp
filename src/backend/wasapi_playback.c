@@ -409,6 +409,7 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
     goto error_cleanup;
   }
   backend_buffer_set_target_level(playback->buffer, target_level);
+  backend_buffer_set_chunk_size(playback->buffer, (size_t)playback->chunk_size);
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
   wasapi_stream_error_reset(&playback->error);
 
@@ -491,6 +492,14 @@ static size_t wasapi_playback_get_buffer_level(void *ctx) {
   if (!playback)
     return 0;
   return backend_buffer_get_level(playback->buffer);
+}
+
+static device_buffer_estimate_status_t
+wasapi_playback_get_checked_buffer_level(void *ctx, size_t *out_level) {
+  wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
+  if (!playback)
+    return DEVICE_BUFFER_ESTIMATE_INVALID;
+  return backend_buffer_get_checked_level(playback->buffer, out_level);
 }
 
 static bool wasapi_playback_get_pending_rate_change(void *ctx,
@@ -608,6 +617,7 @@ const playback_backend_vtable_t g_wasapi_playback_vtable = {
     .write = wasapi_playback_write,
     .close = wasapi_playback_close,
     .get_buffer_level = wasapi_playback_get_buffer_level,
+    .get_checked_buffer_level = wasapi_playback_get_checked_buffer_level,
     .get_pending_rate_change = wasapi_playback_get_pending_rate_change,
     .prefill_silence = wasapi_playback_prefill_silence,
     .get_is_paused = wasapi_playback_get_is_paused,

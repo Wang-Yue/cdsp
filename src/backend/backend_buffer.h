@@ -9,6 +9,7 @@
 #include "audio/audio_chunk.h"
 #include "audio/sample_format.h"
 #include "backend/backend_error.h"
+#include "utils/device_buffer_estimator.h"
 
 /**
  * @file backend_buffer.h
@@ -158,6 +159,35 @@ void backend_buffer_prefill_silence(backend_buffer_t *bb, size_t frames,
  * @return Total frames pending playback.
  */
 size_t backend_buffer_get_level(const backend_buffer_t *bb);
+
+/**
+ * @brief Returns total frames pending playback if the device estimator is
+ * neither stale nor invalid (mirrors upstream `checked_estimate()`).
+ *
+ * @param bb Pointer to backend buffer.
+ * @param out_level Receives total frames pending playback when status is OK.
+ * @return DEVICE_BUFFER_ESTIMATE_OK, DEVICE_BUFFER_ESTIMATE_STALE, or
+ * DEVICE_BUFFER_ESTIMATE_INVALID.
+ */
+device_buffer_estimate_status_t
+backend_buffer_get_checked_level(const backend_buffer_t *bb, size_t *out_level);
+
+/**
+ * @brief Marks the device buffer estimate as invalid until the next
+ * backend_buffer_publish() call.
+ *
+ * @param bb Pointer to backend buffer.
+ */
+void backend_buffer_invalidate(backend_buffer_t *bb);
+
+/**
+ * @brief Sets the chunk size used to compute the estimator's minimum staleness
+ * age.
+ *
+ * @param bb Pointer to backend buffer.
+ * @param chunk_size Chunk size in frames.
+ */
+void backend_buffer_set_chunk_size(backend_buffer_t *bb, size_t chunk_size);
 
 /**
  * @brief Renders audio from the buffer to the device buffer (auto-handles

@@ -13,6 +13,7 @@
 #include "audio/sample_format.h"
 #include "backend/backend_error.h"
 #include "config/config_error.h"
+#include "utils/device_buffer_estimator.h"
 #include "utils/lock_free_ring_buffer.h"
 
 typedef struct audio_chunk audio_chunk_t;
@@ -584,6 +585,16 @@ typedef struct {
   size_t (*get_buffer_level)(void *ctx);
 
   /**
+   * @brief Get the checked playback buffer level (detects stale/invalid
+   * estimates). Optional; falls back to get_buffer_level() if NULL.
+   * @param ctx Pointer to the backend instance context.
+   * @param[out] out_level Receives the buffer level in frames when OK.
+   * @return DEVICE_BUFFER_ESTIMATE_OK, STALE, or INVALID.
+   */
+  device_buffer_estimate_status_t (*get_checked_buffer_level)(
+      void *ctx, size_t *out_level);
+
+  /**
    * @brief Check for pending sample rate changes on the playback device.
    * @param ctx Pointer to the backend instance context.
    * @param[out] out_rate Pointer to store the new sample rate if a change is
@@ -812,6 +823,16 @@ void playback_backend_close(playback_backend_t *backend);
  * @return Buffer level in frames.
  */
 size_t playback_backend_get_buffer_level(playback_backend_t *backend);
+
+/**
+ * @brief Get checked playback buffer level via wrapper.
+ * @param backend Pointer to the playback backend.
+ * @param[out] out_level Receives the buffer level in frames when OK.
+ * @return DEVICE_BUFFER_ESTIMATE_OK, STALE, or INVALID.
+ */
+device_buffer_estimate_status_t
+playback_backend_get_checked_buffer_level(playback_backend_t *backend,
+                                          size_t *out_level);
 
 /**
  * @brief Get pending rate changes from the playback device via wrapper.

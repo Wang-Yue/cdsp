@@ -207,6 +207,7 @@ static bool core_audio_playback_open(void *ctx, backend_error_t *err) {
   }
   backend_buffer_set_target_level(playback->buffer, playback->target_level);
   backend_buffer_set_rate(playback->buffer, playback->sample_rate);
+  backend_buffer_set_chunk_size(playback->buffer, playback->chunk_size);
 
   AudioDeviceID dev_id = core_audio_device_id_for_name(
       playback->device_name[0] ? playback->device_name : NULL,
@@ -450,6 +451,14 @@ static size_t core_audio_playback_get_buffer_level(void *ctx) {
   return backend_buffer_get_level(playback->buffer);
 }
 
+static device_buffer_estimate_status_t
+core_audio_playback_get_checked_buffer_level(void *ctx, size_t *out_level) {
+  core_audio_playback_t *playback = (core_audio_playback_t *)ctx;
+  if (!playback)
+    return DEVICE_BUFFER_ESTIMATE_INVALID;
+  return backend_buffer_get_checked_level(playback->buffer, out_level);
+}
+
 /// Get any pending sample rate change detected on the playback device.
 static bool core_audio_playback_get_pending_rate_change(void *ctx,
                                                         double *out_rate) {
@@ -587,6 +596,7 @@ const playback_backend_vtable_t g_core_audio_playback_vtable = {
     .write = core_audio_playback_write,
     .close = core_audio_playback_close,
     .get_buffer_level = core_audio_playback_get_buffer_level,
+    .get_checked_buffer_level = core_audio_playback_get_checked_buffer_level,
     .get_pending_rate_change = core_audio_playback_get_pending_rate_change,
     .prefill_silence = core_audio_playback_prefill_silence,
     .get_is_paused = core_audio_playback_get_is_paused,

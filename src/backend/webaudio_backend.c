@@ -572,9 +572,13 @@ static size_t webaudio_playback_ring_frames(const webaudio_playback_t *playback,
 static backend_buffer_t *
 webaudio_playback_create_buffer(const webaudio_playback_t *playback,
                                 size_t frames) {
-  return backend_buffer_create(frames, BINARY_SAMPLE_FORMAT_F32_LE,
-                               playback->channels, playback->sample_rate,
-                               true /* is_planar */, playback->params);
+  backend_buffer_t *buf = backend_buffer_create(
+      frames, BINARY_SAMPLE_FORMAT_F32_LE, playback->channels,
+      playback->sample_rate, true /* is_planar */, playback->params);
+  if (buf) {
+    backend_buffer_set_chunk_size(buf, (size_t)playback->chunk_size);
+  }
+  return buf;
 }
 
 static bool webaudio_playback_open(void *ctx, backend_error_t *err) {
@@ -650,6 +654,14 @@ static size_t webaudio_playback_get_buffer_level(void *ctx) {
   if (!playback || !playback->buffer)
     return 0;
   return backend_buffer_get_level(playback->buffer);
+}
+
+static device_buffer_estimate_status_t
+webaudio_playback_get_checked_buffer_level(void *ctx, size_t *out_level) {
+  webaudio_playback_t *playback = (webaudio_playback_t *)ctx;
+  if (!playback || !playback->buffer)
+    return DEVICE_BUFFER_ESTIMATE_INVALID;
+  return backend_buffer_get_checked_level(playback->buffer, out_level);
 }
 
 static bool webaudio_playback_get_pending_rate_change(void *ctx,
@@ -812,6 +824,7 @@ const playback_backend_vtable_t g_webaudio_playback_vtable = {
     .write = webaudio_playback_write,
     .close = webaudio_playback_close,
     .get_buffer_level = webaudio_playback_get_buffer_level,
+    .get_checked_buffer_level = webaudio_playback_get_checked_buffer_level,
     .get_pending_rate_change = webaudio_playback_get_pending_rate_change,
     .prefill_silence = webaudio_playback_prefill_silence,
     .get_is_paused = webaudio_playback_get_is_paused,

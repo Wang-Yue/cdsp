@@ -2,8 +2,25 @@
 #define CDSP_DEVICE_BUFFER_ESTIMATOR_H
 
 #include <stdatomic.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+/** Number of update intervals tracked to find the usual interval. */
+#define DEVICE_BUFFER_ESTIMATOR_INTERVALS 8
+
+/**
+ * @brief Result of a checked buffer level estimate
+ * (mirrors upstream `BufferEstimate`).
+ */
+typedef enum device_buffer_estimate_status {
+  /** The estimated number of frames in the buffer is valid. */
+  DEVICE_BUFFER_ESTIMATE_OK = 0,
+  /** The device has not updated the level for much longer than usual. */
+  DEVICE_BUFFER_ESTIMATE_STALE,
+  /** The level has been marked as meaningless via invalidate(). */
+  DEVICE_BUFFER_ESTIMATE_INVALID,
+} device_buffer_estimate_status_t;
 
 /**
  * @file device_buffer_estimator.h
@@ -35,12 +52,22 @@
  * level to reach zero, so over-estimating would stall shutdown instead.
  */
 typedef struct {
-  /** Timestamp of the last publish, in nanoseconds. 0 means "never". */
+  /** Timestamp of the last publish (or init/reset), in nanoseconds. */
   _Atomic uint64_t update_time_ns;
   /** Frames the device held at `update_time_ns`. */
   _Atomic size_t frames;
   /** Playback rate in Hz, used to decay `frames` over time. */
   _Atomic double sample_rate;
+  /** Chunk size in frames, used to bound `min_max_age_ns`. */
+  _Atomic size_t chunk_size;
+  /** Minimum age (ns) before an estimate can be considered stale. */
+  _Atomic uint64_t min_max_age_ns;
+  /** Whether the estimate is currently valid (false after invalidate()). */
+  _Atomic bool valid;
+  /** Ring of recent inter-publish intervals in nanoseconds. */
+  _Atomic uint64_t intervals_ns[DEVICE_BUFFER_ESTIMATOR_INTERVALS];
+  /** Producer-owned write index into `intervals_ns`. */
+  size_t interval_index;
 } device_buffer_estimator_t;
 
 /**
@@ -77,6 +104,38 @@ void device_buffer_estimator_reset(device_buffer_estimator_t *est);
  */
 void device_buffer_estimator_set_rate(device_buffer_estimator_t *est,
                                       double sample_rate);
+
+/**
+ * @brief Configure the chunk size used to compute the minimum staleness age
+ * (`max(2 * chunk_size / sample_rate, 20 ms)`).
+ *
+ * @param est Estimator to update.
+ * @param chunk_size Chunk size in frames.
+ */
+void device_buffer_estimator_set_chunk_size(device_buffer_estimator_t *est,
+                                            size_t chunk_size);
+
+/**
+ * @brief Mark the estimate as meaningless until the next
+ * device_buffer_estimator_add() call (mirrors `DeviceBufferEstimator::invalidate`).
+ *
+ * @param est Estimator to invalidate.
+ */
+void device_buffer_estimator_invalidate(device_buffer_estimator_t *est);
+
+/**
+ * @brief Return the current estimated level, or why there is none (mirrors
+ * `DeviceBufferEstimator::checked_estimate`).
+ *
+ * @param est Estimator to read.
+ * @param out_frames Receives the estimated frame count when status is OK (or 0
+ * otherwise). May be NULL.
+ * @return DEVICE_BUFFER_ESTIMATE_OK, DEVICE_BUFFER_ESTIMATE_STALE, or
+ * DEVICE_BUFFER_ESTIMATE_INVALID.
+ */
+device_buffer_estimate_status_t
+device_buffer_estimator_checked_estimate(const device_buffer_estimator_t *est,
+                                         size_t *out_frames);
 
 /**
  * @brief Publish the number of frames the device currently holds.

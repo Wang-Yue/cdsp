@@ -1080,6 +1080,25 @@ size_t playback_backend_get_buffer_level(playback_backend_t *backend) {
   return backend->vtable->get_buffer_level(backend->ctx);
 }
 
+/// Get the checked playback buffer level in samples
+device_buffer_estimate_status_t
+playback_backend_get_checked_buffer_level(playback_backend_t *backend,
+                                          size_t *out_level) {
+  if (out_level)
+    *out_level = 0;
+  if (!backend || !backend->vtable)
+    return DEVICE_BUFFER_ESTIMATE_INVALID;
+  if (backend->vtable->get_checked_buffer_level) {
+    return backend->vtable->get_checked_buffer_level(backend->ctx, out_level);
+  }
+  if (backend->vtable->get_buffer_level) {
+    if (out_level)
+      *out_level = backend->vtable->get_buffer_level(backend->ctx);
+    return DEVICE_BUFFER_ESTIMATE_OK;
+  }
+  return DEVICE_BUFFER_ESTIMATE_INVALID;
+}
+
 /// Get pending sample rate change detected on the playback device.
 bool playback_backend_get_pending_rate_change(playback_backend_t *backend,
                                               double *out_rate) {

@@ -338,4 +338,151 @@ TEST(HistoryBufferEnabledLifecycle) {
   audio_history_buffer_free(buffer);
 }
 
+TEST(UnusedChannelIsStoredAsSilence) {
+  audio_history_buffer_t *buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 2);
+
+  audio_chunk_t *chunk = audio_chunk_create(64, 2);
+  for (size_t t = 0; t < 64; t++) {
+    audio_chunk_get_channel(chunk, 0)[t] = 1.0;
+    audio_chunk_get_channel(chunk, 1)[t] = 2.0;
+  }
+  audio_chunk_set_valid_frames(chunk, 64);
+  bool used[2] = {true, false};
+  audio_chunk_set_used_channels(chunk, used);
+
+  audio_history_buffer_append(buffer, chunk);
+
+  float dest[64];
+  bool enough = false;
+  const size_t ch0 = 0;
+  const size_t ch1 = 1;
+
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK,
+            audio_history_buffer_read_latest(buffer, dest, 64, &ch0, &enough));
+  ASSERT_TRUE(enough);
+  for (size_t t = 0; t < 64; t++) {
+    ASSERT_FLOAT_EQ(1.0f, dest[t]);
+  }
+
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK,
+            audio_history_buffer_read_latest(buffer, dest, 64, &ch1, &enough));
+  ASSERT_TRUE(enough);
+  for (size_t t = 0; t < 64; t++) {
+    ASSERT_FLOAT_EQ(0.0f, dest[t]);
+  }
+
+  audio_chunk_free(chunk);
+  audio_history_buffer_free(buffer);
+}
+
+TEST(AverageLeavesOutUnusedChannels) {
+  audio_history_buffer_t *buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 3);
+
+  audio_chunk_t *chunk = audio_chunk_create(64, 3);
+  for (size_t t = 0; t < 64; t++) {
+    audio_chunk_get_channel(chunk, 0)[t] = 1.0;
+    audio_chunk_get_channel(chunk, 1)[t] = 99.0;
+    audio_chunk_get_channel(chunk, 2)[t] = 3.0;
+  }
+  audio_chunk_set_valid_frames(chunk, 64);
+  bool used[3] = {true, false, true};
+  audio_chunk_set_used_channels(chunk, used);
+
+  audio_history_buffer_append(buffer, chunk);
+
+  float dest[64];
+  bool enough = false;
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK,
+            audio_history_buffer_read_latest(buffer, dest, 64, NULL, &enough));
+  ASSERT_TRUE(enough);
+  for (size_t t = 0; t < 64; t++) {
+    ASSERT_NEAR(2.0f, dest[t], 1e-5);
+  }
+
+  audio_chunk_free(chunk);
+  audio_history_buffer_free(buffer);
+}
+
+TEST(AverageOfOnlyUnusedChannelsIsSilence) {
+  audio_history_buffer_t *buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 2);
+
+  audio_chunk_t *chunk = audio_chunk_create(64, 2);
+  for (size_t t = 0; t < 64; t++) {
+    audio_chunk_get_channel(chunk, 0)[t] = 5.0;
+    audio_chunk_get_channel(chunk, 1)[t] = 5.0;
+  }
+  audio_chunk_set_valid_frames(chunk, 64);
+  bool used[2] = {false, false};
+  audio_chunk_set_used_channels(chunk, used);
+
+  audio_history_buffer_append(buffer, chunk);
+
+  float dest[64];
+  for (size_t t = 0; t < 64; t++) {
+    dest[t] = 42.0f;
+  }
+  bool enough = false;
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK,
+            audio_history_buffer_read_latest(buffer, dest, 64, NULL, &enough));
+  ASSERT_TRUE(enough);
+  for (size_t t = 0; t < 64; t++) {
+    ASSERT_FLOAT_EQ(0.0f, dest[t]);
+  }
+
+  audio_chunk_free(chunk);
+  audio_history_buffer_free(buffer);
+}
+
+TEST(UnusedChannelBecomingUsed) {
+  audio_history_buffer_t *buffer = audio_history_buffer_create();
+  audio_history_buffer_reset(buffer, 2);
+
+  audio_chunk_t *chunk1 = audio_chunk_create(32, 2);
+  for (size_t t = 0; t < 32; t++) {
+    audio_chunk_get_channel(chunk1, 0)[t] = 1.0;
+    audio_chunk_get_channel(chunk1, 1)[t] = 9.0;
+  }
+  audio_chunk_set_valid_frames(chunk1, 32);
+  bool used1[2] = {true, false};
+  audio_chunk_set_used_channels(chunk1, used1);
+  audio_history_buffer_append(buffer, chunk1);
+
+  audio_chunk_t *chunk2 = audio_chunk_create(32, 2);
+  for (size_t t = 0; t < 32; t++) {
+    audio_chunk_get_channel(chunk2, 0)[t] = 1.0;
+    audio_chunk_get_channel(chunk2, 1)[t] = 3.0;
+  }
+  audio_chunk_set_valid_frames(chunk2, 32);
+  bool used2[2] = {true, true};
+  audio_chunk_set_used_channels(chunk2, used2);
+  audio_history_buffer_append(buffer, chunk2);
+
+  float dest[64];
+  bool enough = false;
+  const size_t ch1 = 1;
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK,
+            audio_history_buffer_read_latest(buffer, dest, 64, &ch1, &enough));
+  ASSERT_TRUE(enough);
+  for (size_t t = 0; t < 32; t++) {
+    ASSERT_FLOAT_EQ(0.0f, dest[t]);
+  }
+  for (size_t t = 32; t < 64; t++) {
+    ASSERT_FLOAT_EQ(3.0f, dest[t]);
+  }
+
+  ASSERT_EQ(AUDIO_HISTORY_BUFFER_OK,
+            audio_history_buffer_read_latest(buffer, dest, 32, NULL, &enough));
+  ASSERT_TRUE(enough);
+  for (size_t t = 0; t < 32; t++) {
+    ASSERT_NEAR(2.0f, dest[t], 1e-5);
+  }
+
+  audio_chunk_free(chunk1);
+  audio_chunk_free(chunk2);
+  audio_history_buffer_free(buffer);
+}
+
 TEST_MAIN()

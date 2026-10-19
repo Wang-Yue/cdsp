@@ -59,6 +59,9 @@ struct engine_playback_loop {
   /// True once a rate_adjust value has been published (see
   /// playback_loop_update_rate_adjust).
   bool rate_adjust_published;
+  /// True after a pause or a stale/invalid buffer estimate; leaves out the
+  /// first post-interruption level and restarts the adjust period there.
+  bool rate_adjust_interrupted;
   double adjust_period;
   int target_level;
   bool has_last_observed_playback_pending_rate;
@@ -220,17 +223,30 @@ static bool playback_loop_check_format_change(engine_playback_loop_t *loop) {
 static void playback_loop_update_rate_adjust(
     engine_playback_loop_t *loop, pi_rate_controller_t *rate_controller,
     averager_t *averager, stopwatch_t *stopwatch, double *last_speed) {
-  // Calculate total buffer level: frames in hardware playback buffer plus
-  // processed queue frames (matching upstream CamillaDSP).
-  size_t ring_fill = playback_backend_get_buffer_level(loop->playback);
-  size_t processed_queued =
-      engine_shared_state_get_processed_queued_frames(loop->shared);
-  double total_buffer_fill = (double)(ring_fill + processed_queued);
-
   // Matching upstream RateAdjustReporter::update: the published buffer_level
   // is the *average* level over the adjust period, updated once per period,
   // and only when rate adjust is enabled (otherwise it stays 0).
   if (loop->rate_adjust_enabled && rate_controller) {
+    size_t ring_fill = 0;
+    device_buffer_estimate_status_t est_status =
+        playback_backend_get_checked_buffer_level(loop->playback, &ring_fill);
+    if (est_status != DEVICE_BUFFER_ESTIMATE_OK) {
+      loop->rate_adjust_interrupted = true;
+      return;
+    }
+    if (loop->rate_adjust_interrupted) {
+      loop->rate_adjust_interrupted = false;
+      stopwatch_restart(stopwatch);
+      averager_restart(averager);
+      return;
+    }
+
+    // Calculate total buffer level: frames in hardware playback buffer plus
+    // processed queue frames (matching upstream CamillaDSP).
+    size_t processed_queued =
+        engine_shared_state_get_processed_queued_frames(loop->shared);
+    double total_buffer_fill = (double)(ring_fill + processed_queued);
+
     averager_add(averager, total_buffer_fill);
 
     // Only run the PI controller periodically to avoid rapid fluctuations
@@ -395,6 +411,9 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
     processing_state_t cur_state = engine_shared_state_get_state(loop->shared);
     bool should_pause = (cur_state == PROCESSING_STATE_PAUSED ||
                          cur_state == PROCESSING_STATE_STALLED);
+    if (should_pause) {
+      loop->rate_adjust_interrupted = true;
+    }
     bool is_paused = playback_backend_get_is_paused(loop->playback);
     if (should_pause != is_paused) {
       playback_backend_set_is_paused(loop->playback, should_pause);
@@ -404,6 +423,7 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
         // and averager when auto-resuming from pause to prevent resampler ratio
         // and pitch speed glitches caused by wall-clock time accumulation.
         if (loop->rate_adjust_enabled) {
+          loop->rate_adjust_interrupted = true;
           averager_restart(&averager);
           stopwatch_restart(&stopwatch);
         }
@@ -420,6 +440,7 @@ void engine_playback_loop_run(engine_playback_loop_t *loop) {
     // Resume Flow Step 2: Ignore 0-frame control/tick chunks. Drop them
     // immediately to bypass writing to hardware.
     if (frames == 0) {
+      loop->rate_adjust_interrupted = true;
       continue;
     }
 

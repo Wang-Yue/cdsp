@@ -203,6 +203,18 @@ void backend_buffer_publish(backend_buffer_t *bb, size_t device_frames) {
   device_buffer_estimator_add(&bb->device, device_frames);
 }
 
+void backend_buffer_invalidate(backend_buffer_t *bb) {
+  if (!bb)
+    return;
+  device_buffer_estimator_invalidate(&bb->device);
+}
+
+void backend_buffer_set_chunk_size(backend_buffer_t *bb, size_t chunk_size) {
+  if (!bb)
+    return;
+  device_buffer_estimator_set_chunk_size(&bb->device, chunk_size);
+}
+
 static size_t backend_buffer_level(const backend_buffer_t *bb,
                                    const spsc_byte_ring_buffer_t *ring,
                                    size_t blockalign) {
@@ -1070,6 +1082,24 @@ size_t backend_buffer_get_level(const backend_buffer_t *bb) {
   } else {
     return backend_buffer_level(bb, bb->byte_ring, bb->blockalign);
   }
+}
+
+device_buffer_estimate_status_t
+backend_buffer_get_checked_level(const backend_buffer_t *bb,
+                                 size_t *out_level) {
+  if (out_level)
+    *out_level = 0;
+  if (!bb)
+    return DEVICE_BUFFER_ESTIMATE_INVALID;
+  size_t dev_frames = 0;
+  device_buffer_estimate_status_t status =
+      device_buffer_estimator_checked_estimate(&bb->device, &dev_frames);
+  if (status == DEVICE_BUFFER_ESTIMATE_INVALID)
+    return status;
+  size_t ring_frames = backend_buffer_get_available_read_frames(bb);
+  if (out_level)
+    *out_level = ring_frames + dev_frames;
+  return status;
 }
 
 size_t backend_buffer_render(backend_buffer_t *bb, void *dst, size_t frames,

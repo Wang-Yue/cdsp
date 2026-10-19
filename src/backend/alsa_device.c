@@ -752,10 +752,20 @@ bool alsa_device_get_card_ctl_name(snd_pcm_t *pcm, char *out_ctl_name,
 }
 
 bool alsa_device_prime_delay(snd_pcm_t *pcm, size_t target_level,
-                             snd_pcm_uframes_t bufsize, int sample_rate,
-                             size_t blockalign, size_t queued_frames,
-                             const void *silence_buf, size_t silence_buf_size) {
-  size_t target_frames = target_level < bufsize ? target_level : bufsize;
+                             size_t chunk_size, snd_pcm_uframes_t bufsize,
+                             int sample_rate, size_t blockalign,
+                             size_t queued_frames, const void *silence_buf,
+                             size_t silence_buf_size) {
+  // The level is measured right after a chunk of `chunk_size` frames has been
+  // written, while this priming runs just before the first chunk is written,
+  // so priming to `target_level + chunk_size` makes the first measured level
+  // land at `target_level` after the device consumes one chunk while the next
+  // one is produced (upstream prime_playback_delay, threaded_device.rs:146-154).
+  size_t target_frames = 0;
+  if (target_level > 0) {
+    size_t wanted = target_level + chunk_size;
+    target_frames = wanted < bufsize ? wanted : bufsize;
+  }
   if (target_frames == 0)
     return true;
 

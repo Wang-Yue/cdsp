@@ -120,4 +120,71 @@ TEST(DeviceBufferEstimator_LaterPublishReplacesEarlier) {
   ASSERT_TRUE(level > 1500);
 }
 
+TEST(DeviceBufferEstimator_Invalidate) {
+  device_buffer_estimator_t est;
+  device_buffer_estimator_init(&est, 1000.0);
+
+  size_t level = 0;
+  device_buffer_estimator_add(&est, 500);
+  ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_OK,
+            device_buffer_estimator_checked_estimate(&est, &level));
+
+  device_buffer_estimator_invalidate(&est);
+  ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_INVALID,
+            device_buffer_estimator_checked_estimate(&est, &level));
+  ASSERT_EQ((size_t)0, level);
+  ASSERT_EQ((size_t)0, device_buffer_estimator_estimate(&est));
+
+  device_buffer_estimator_add(&est, 300);
+  ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_OK,
+            device_buffer_estimator_checked_estimate(&est, &level));
+}
+
+TEST(DeviceBufferEstimator_StaleAfterTwoChunks) {
+  device_buffer_estimator_t est;
+  device_buffer_estimator_init(&est, 1000.0);
+  // 100 frames at 1000 Hz = 100 ms per chunk, stale limit = 200 ms.
+  device_buffer_estimator_set_chunk_size(&est, 100);
+  device_buffer_estimator_add(&est, 500);
+
+  size_t level = 0;
+  ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_OK,
+            device_buffer_estimator_checked_estimate(&est, &level));
+
+  cdsp_sleep_ms(300);
+  ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_STALE,
+            device_buffer_estimator_checked_estimate(&est, &level));
+  // Extrapolated level is still returned and exposed via unchecked estimate().
+  ASSERT_TRUE(level > 0 && level <= 500);
+
+  // A fresh add clears the stale state.
+  device_buffer_estimator_add(&est, 500);
+  ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_OK,
+            device_buffer_estimator_checked_estimate(&est, &level));
+}
+
+TEST(DeviceBufferEstimator_StaleFollowsUpdateInterval) {
+  device_buffer_estimator_t est;
+  device_buffer_estimator_init(&est, 1000.0);
+  // Chunk is 10 frames (10 ms -> 20 ms chunk limit), but updates arrive
+  // every 100 ms -> averaged interval is 100 ms -> stale limit is 200 ms.
+  device_buffer_estimator_set_chunk_size(&est, 10);
+  device_buffer_estimator_add(&est, 500);
+  for (size_t i = 0; i < DEVICE_BUFFER_ESTIMATOR_INTERVALS; i++) {
+    cdsp_sleep_ms(100);
+    device_buffer_estimator_add(&est, 500);
+  }
+
+  // Wait 60 ms: past 2 chunks (20 ms), still within 2 update intervals.
+  cdsp_sleep_ms(60);
+  size_t level = 0;
+  ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_OK,
+            device_buffer_estimator_checked_estimate(&est, &level));
+
+  // Wait past 2 update intervals (>200 ms total since last add).
+  cdsp_sleep_ms(300);
+  ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_STALE,
+            device_buffer_estimator_checked_estimate(&est, &level));
+}
+
 TEST_MAIN()

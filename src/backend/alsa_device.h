@@ -308,9 +308,10 @@ bool alsa_device_get_card_ctl_name(snd_pcm_t *pcm, char *out_ctl_name,
  * @return True on success, false on failure.
  */
 bool alsa_device_prime_delay(snd_pcm_t *pcm, size_t target_level,
-                             snd_pcm_uframes_t bufsize, int sample_rate,
-                             size_t blockalign, size_t queued_frames,
-                             const void *silence_buf, size_t silence_buf_size);
+                             size_t chunk_size, snd_pcm_uframes_t bufsize,
+                             int sample_rate, size_t blockalign,
+                             size_t queued_frames, const void *silence_buf,
+                             size_t silence_buf_size);
 
 /**
  * @brief Calculates SPSC ring buffer frame capacity for threaded ALSA playback.

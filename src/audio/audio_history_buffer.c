@@ -20,9 +20,23 @@ struct audio_history_buffer {
   _Atomic uint64_t total_written __attribute__((aligned(64)));
   _Atomic uint64_t write_seq __attribute__((aligned(64)));
   float *data;
+  bool *live;
 };
 
 // --- Internal Helper Functions ---
+
+static inline void zero_float_segment(float *dst, size_t start_idx,
+                                      size_t count, size_t cap) {
+  size_t first = cap - start_idx;
+  if (first > count)
+    first = count;
+  size_t second = count - first;
+
+  memset(dst + start_idx, 0, first * sizeof(float));
+  if (second > 0) {
+    memset(dst, 0, second * sizeof(float));
+  }
+}
 
 /**
  * @brief Converts a contiguous segment of double-precision samples to
@@ -149,6 +163,10 @@ audio_history_buffer_clear_internal(audio_history_buffer_t *history) {
     cdsp_aligned_free(history->data);
     history->data = NULL;
   }
+  if (history->live) {
+    free(history->live);
+    history->live = NULL;
+  }
   history->channels = 0;
   atomic_store_explicit(&history->write_pos, 0, memory_order_relaxed);
   atomic_store_explicit(&history->total_written, 0, memory_order_relaxed);
@@ -171,7 +189,8 @@ void audio_history_buffer_reset(audio_history_buffer_t *history,
     size_t total_samples = channels * history->capacity;
     history->data =
         (float *)cdsp_aligned_alloc(64, total_samples * sizeof(float));
-    if (!history->data) {
+    history->live = (bool *)calloc(channels, sizeof(bool));
+    if (!history->data || !history->live) {
       audio_history_buffer_clear_internal(history);
       return;
     }
@@ -202,7 +221,7 @@ void audio_history_buffer_append(audio_history_buffer_t *history,
   // the buffer with `audio_history_buffer_reset` before the session starts; a
   // chunk whose layout does not match is dropped (AGENTS.md §1.1). Upstream
   // reallocates in `push_chunk`, but it does so under the status RwLock.
-  if (history->channels != n_ch || !history->data)
+  if (history->channels != n_ch || !history->data || !history->live)
     return;
 
   uint64_t seq =
@@ -226,13 +245,19 @@ void audio_history_buffer_append(audio_history_buffer_t *history,
 
   size_t start_idx = (size_t)((pos + n_frames - frames_to_copy) & mask);
 
+  const bool *used = audio_chunk_get_used_channels(chunk);
   for (size_t ch = 0; ch < n_ch; ch++) {
     const double *ch_data = audio_chunk_get_channel(chunk, ch);
-    if (!ch_data)
-      continue;
-    copy_double_to_float_segment(ch_data + offset_in_chunk,
-                                 history->data + (ch * cap), start_idx,
-                                 frames_to_copy, cap);
+    bool is_live = (!used || used[ch]) && (ch_data != NULL);
+    history->live[ch] = is_live;
+    if (is_live) {
+      copy_double_to_float_segment(ch_data + offset_in_chunk,
+                                   history->data + (ch * cap), start_idx,
+                                   frames_to_copy, cap);
+    } else {
+      zero_float_segment(history->data + (ch * cap), start_idx, frames_to_copy,
+                         cap);
+    }
   }
 
   atomic_store_explicit(&history->write_pos, (pos + n_frames) & mask,
@@ -250,7 +275,7 @@ audio_history_buffer_read_latest(const audio_history_buffer_t *history,
     *enough_data = false;
   if (!history)
     return AUDIO_HISTORY_BUFFER_ERROR_EMPTY;
-  if (history->channels == 0 || !history->data) {
+  if (history->channels == 0 || !history->data || !history->live) {
     return AUDIO_HISTORY_BUFFER_ERROR_EMPTY;
   }
   if (channel && *channel >= history->channels) {
@@ -286,13 +311,30 @@ audio_history_buffer_read_latest(const audio_history_buffer_t *history,
       read_channel_segment(history->data + (*channel * cap), dest, start, count,
                            cap);
     } else {
-      read_channel_segment(history->data, dest, start, count, cap);
-      for (size_t ch = 1; ch < history->channels; ch++) {
-        add_channel_segment(history->data + (ch * cap), dest, start, count,
-                            cap);
+      size_t n_live = 0;
+      size_t first_live = 0;
+      for (size_t ch = 0; ch < history->channels; ch++) {
+        if (history->live[ch]) {
+          if (n_live == 0) {
+            first_live = ch;
+          }
+          n_live++;
+        }
       }
-      if (history->channels > 1) {
-        scale_vector(dest, count, 1.0f / (float)history->channels);
+      if (n_live == 0) {
+        memset(dest, 0, count * sizeof(float));
+      } else {
+        read_channel_segment(history->data + (first_live * cap), dest, start,
+                             count, cap);
+        for (size_t ch = first_live + 1; ch < history->channels; ch++) {
+          if (history->live[ch]) {
+            add_channel_segment(history->data + (ch * cap), dest, start, count,
+                                cap);
+          }
+        }
+        if (n_live > 1) {
+          scale_vector(dest, count, 1.0f / (float)n_live);
+        }
       }
     }
 

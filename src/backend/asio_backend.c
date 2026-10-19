@@ -2605,6 +2605,7 @@ static bool asio_playback_open(void *ctx, backend_error_t *err) {
 
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
   backend_buffer_set_target_level(playback->buffer, target_level);
+  backend_buffer_set_chunk_size(playback->buffer, (size_t)playback->chunk_size);
 
   playback->context->buffer = playback->buffer;
   playback->context->num_channels = playback->channels;
@@ -2731,6 +2732,14 @@ static size_t asio_playback_get_buffer_level(void *ctx) {
   return backend_buffer_get_level(playback->buffer);
 }
 
+static device_buffer_estimate_status_t
+asio_playback_get_checked_buffer_level(void *ctx, size_t *out_level) {
+  asio_playback_t *playback = (asio_playback_t *)ctx;
+  if (!playback)
+    return DEVICE_BUFFER_ESTIMATE_INVALID;
+  return backend_buffer_get_checked_level(playback->buffer, out_level);
+}
+
 static bool asio_playback_get_pending_rate_change(void *ctx, double *out_rate) {
   asio_playback_t *playback = (asio_playback_t *)ctx;
   if (!playback)
@@ -2783,6 +2792,7 @@ static void asio_playback_ensure_capacity(asio_playback_t *playback,
   wait_for_playback_callbacks_in_flight();
   backend_buffer_t *old = playback->buffer;
   backend_buffer_set_state(bigger, backend_buffer_get_state(old));
+  backend_buffer_set_chunk_size(bigger, (size_t)playback->chunk_size);
   backend_buffer_set_pending_rate_change(
       bigger, backend_buffer_has_pending_rate_change(old));
   playback->buffer = bigger;
@@ -2892,6 +2902,7 @@ const playback_backend_vtable_t g_asio_playback_vtable = {
     .write = asio_playback_write,
     .close = asio_playback_close,
     .get_buffer_level = asio_playback_get_buffer_level,
+    .get_checked_buffer_level = asio_playback_get_checked_buffer_level,
     .get_pending_rate_change = asio_playback_get_pending_rate_change,
     .prefill_silence = asio_playback_prefill_silence,
     .get_is_paused = asio_playback_get_is_paused,

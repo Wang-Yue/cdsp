@@ -276,7 +276,8 @@ pub extern "C" fn cdsp_set_log_level(level_str: *const c_char) {
 #[no_mangle]
 pub extern "C" fn cdsp_engine_create() -> *mut CamillaEngine {
     init_logger_if_needed();
-    camillalib::spectrum::request_spectrum_data();
+    camillalib::spectrum::request_spectrum_data(camillalib::SpectrumSide::Capture);
+    camillalib::spectrum::request_spectrum_data(camillalib::SpectrumSide::Playback);
 
     let (tx_command, rx_command) = bounded(10);
     let active_config = Arc::new(Mutex::new(None));
@@ -568,10 +569,14 @@ pub extern "C" fn cdsp_get_spectrum(
     if engine.is_null() || out_spec.is_null() || n_bins == 0 {
         return false;
     }
-    camillalib::spectrum::request_spectrum_data();
 
     let eng = unsafe { &*engine };
     let is_capture = side == CdspSpectrumSide::Capture;
+    camillalib::spectrum::request_spectrum_data(if is_capture {
+        camillalib::SpectrumSide::Capture
+    } else {
+        camillalib::SpectrumSide::Playback
+    });
     let samplerate_usize: usize = eng
         .active_config
         .lock()
@@ -649,7 +654,11 @@ pub extern "C" fn cdsp_get_samples(
     if engine.is_null() || out_samples.is_null() {
         return false;
     }
-    camillalib::spectrum::request_spectrum_data();
+    camillalib::spectrum::request_spectrum_data(if is_capture {
+        camillalib::SpectrumSide::Capture
+    } else {
+        camillalib::SpectrumSide::Playback
+    });
 
     let eng = unsafe { &*engine };
 
