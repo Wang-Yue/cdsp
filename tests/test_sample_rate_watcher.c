@@ -55,8 +55,8 @@ TEST(SampleRateWatcherIgnoresAlternatingValues) {
   // Alternate high and low. Because direction flips every tick, consecutive
   // deviations in the same direction never reach 3.
   for (int i = 0; i < 6; i++) {
-    cdsp_sleep_ms(110);
-    size_t frames = (i % 2 == 0) ? 8000 : 2000;
+    cdsp_sleep_ms(250);
+    size_t frames = (i % 2 == 0) ? 500000 : 10;
     ASSERT_FALSE(sample_rate_watcher_tick(watcher, frames, &measured_rate));
   }
 
@@ -73,20 +73,20 @@ TEST(SampleRateWatcherRestartsCountOnDirectionChange) {
   ASSERT_FALSE(sample_rate_watcher_tick(watcher, 0, &measured_rate));
 
   // Two high ticks (count = 1, 2)
-  cdsp_sleep_ms(110);
-  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 8000, &measured_rate));
-  cdsp_sleep_ms(110);
-  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 8000, &measured_rate));
+  cdsp_sleep_ms(250);
+  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 500000, &measured_rate));
+  cdsp_sleep_ms(250);
+  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 500000, &measured_rate));
 
   // Flip to low: restarts count to 1 (does not trigger at 3)
-  cdsp_sleep_ms(110);
-  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 2000, &measured_rate));
+  cdsp_sleep_ms(250);
+  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 10, &measured_rate));
   // Second low tick (count = 2)
-  cdsp_sleep_ms(110);
-  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 2000, &measured_rate));
+  cdsp_sleep_ms(250);
+  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 10, &measured_rate));
   // Third consecutive low tick triggers (count = 3)
-  cdsp_sleep_ms(110);
-  ASSERT_TRUE(sample_rate_watcher_tick(watcher, 2000, &measured_rate));
+  cdsp_sleep_ms(250);
+  ASSERT_TRUE(sample_rate_watcher_tick(watcher, 10, &measured_rate));
 
   sample_rate_watcher_free(watcher);
 }
@@ -98,21 +98,21 @@ TEST(SampleRateWatcherResetClearsCount) {
 
   double measured_rate = 0.0;
   ASSERT_FALSE(sample_rate_watcher_tick(watcher, 0, &measured_rate));
-  cdsp_sleep_ms(110);
-  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 8000, &measured_rate));
-  cdsp_sleep_ms(110);
-  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 8000, &measured_rate));
+  cdsp_sleep_ms(250);
+  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 500000, &measured_rate));
+  cdsp_sleep_ms(250);
+  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 500000, &measured_rate));
 
   sample_rate_watcher_reset(watcher);
 
   // Two high ticks after reset should not trigger yet
-  cdsp_sleep_ms(110);
-  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 8000, &measured_rate));
-  cdsp_sleep_ms(110);
-  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 8000, &measured_rate));
+  cdsp_sleep_ms(250);
+  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 500000, &measured_rate));
+  cdsp_sleep_ms(250);
+  ASSERT_FALSE(sample_rate_watcher_tick(watcher, 500000, &measured_rate));
   // Third high tick after reset triggers
-  cdsp_sleep_ms(110);
-  ASSERT_TRUE(sample_rate_watcher_tick(watcher, 8000, &measured_rate));
+  cdsp_sleep_ms(250);
+  ASSERT_TRUE(sample_rate_watcher_tick(watcher, 500000, &measured_rate));
 
   sample_rate_watcher_free(watcher);
 }

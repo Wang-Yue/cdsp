@@ -145,7 +145,7 @@ TEST(DeviceBufferEstimator_StaleAfterTwoChunks) {
   device_buffer_estimator_init(&est, 1000.0);
   // 100 frames at 1000 Hz = 100 ms per chunk, stale limit = 200 ms.
   device_buffer_estimator_set_chunk_size(&est, 100);
-  device_buffer_estimator_add(&est, 500);
+  device_buffer_estimator_add(&est, 50000);
 
   size_t level = 0;
   ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_OK,
@@ -155,10 +155,10 @@ TEST(DeviceBufferEstimator_StaleAfterTwoChunks) {
   ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_STALE,
             device_buffer_estimator_checked_estimate(&est, &level));
   // Extrapolated level is still returned and exposed via unchecked estimate().
-  ASSERT_TRUE(level > 0 && level <= 500);
+  ASSERT_TRUE(level > 0 && level <= 50000);
 
   // A fresh add clears the stale state.
-  device_buffer_estimator_add(&est, 500);
+  device_buffer_estimator_add(&est, 50000);
   ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_OK,
             device_buffer_estimator_checked_estimate(&est, &level));
 }
@@ -167,22 +167,27 @@ TEST(DeviceBufferEstimator_StaleFollowsUpdateInterval) {
   device_buffer_estimator_t est;
   device_buffer_estimator_init(&est, 1000.0);
   // Chunk is 10 frames (10 ms -> 20 ms chunk limit), but updates arrive
-  // every 100 ms -> averaged interval is 100 ms -> stale limit is 200 ms.
+  // every >=250 ms -> averaged interval is >=250 ms -> stale limit is >=500 ms.
   device_buffer_estimator_set_chunk_size(&est, 10);
-  device_buffer_estimator_add(&est, 500);
+  uint64_t loop_start_ns = cdsp_time_now_ns();
+  device_buffer_estimator_add(&est, 50000);
   for (size_t i = 0; i < DEVICE_BUFFER_ESTIMATOR_INTERVALS; i++) {
-    cdsp_sleep_ms(100);
-    device_buffer_estimator_add(&est, 500);
+    cdsp_sleep_ms(250);
+    device_buffer_estimator_add(&est, 50000);
   }
+  uint64_t total_loop_ms =
+      (cdsp_time_now_ns() - loop_start_ns) / 1000000ULL;
 
-  // Wait 60 ms: past 2 chunks (20 ms), still within 2 update intervals.
+  // Wait 60 ms: past 2 chunks (20 ms), still within 2 update intervals (>=500 ms).
   cdsp_sleep_ms(60);
   size_t level = 0;
   ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_OK,
             device_buffer_estimator_checked_estimate(&est, &level));
 
-  // Wait past 2 update intervals (>200 ms total since last add).
-  cdsp_sleep_ms(300);
+  // Wait past 2 update intervals. Since the sum of the 8 intervals is
+  // total_loop_ms, 2 * median_interval <= total_loop_ms / 2 < total_loop_ms + 500,
+  // even if the OS scheduler delayed iterations during the loop.
+  cdsp_sleep_ms((uint32_t)(total_loop_ms + 500));
   ASSERT_EQ(DEVICE_BUFFER_ESTIMATE_STALE,
             device_buffer_estimator_checked_estimate(&est, &level));
 }
