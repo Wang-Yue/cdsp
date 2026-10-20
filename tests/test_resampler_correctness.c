@@ -10,7 +10,9 @@
 #include <string.h>
 
 #include "audio/audio_chunk.h"
+#include "config/config_error.h"
 #include "config/config_gen.h"
+#include "resampler/async_sinc_resampler.h"
 #include "resampler/audio_resampler.h"
 #include "resampler/resampler_error.h"
 #include "test_support.h"
@@ -1231,6 +1233,482 @@ TEST(Async_SetRelativeRatio_RejectsNaN) {
   ASSERT_EQ(orig_ratio, resampler_get_ratio(res));
 
   resampler_free(res);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Regression tests from audit (resampler fixes & mask handling)             */
+/* ------------------------------------------------------------------------- */
+
+static resampler_t *audit_make_sync(size_t in_rate, size_t out_rate,
+                                    size_t chunk_size) {
+  resampler_config_t cfg;
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SYNCHRONOUS);
+  return resampler_create_from_config(&cfg, in_rate, out_rate, 1, chunk_size,
+                                      NULL);
+}
+
+static void audit_fill_sine(audio_chunk_t *chunk, size_t n, size_t *phase) {
+  double *d = audio_chunk_get_channel(chunk, 0);
+  for (size_t i = 0; i < n; i++) {
+    d[i] = sin(0.031 * (double)(*phase + i));
+  }
+  *phase += n;
+}
+
+// Finding 2: a partial chunk must advance the synchronous resampler's stream
+// by a full chunk (rubato FixedSync::Output) and only scale valid_frames.
+// Reference: an identical resampler fed the same chunk explicitly
+// zero-padded with valid_frames == frames. Both must stay bit-identical.
+static void check_sync_partial_matches_zero_padded(size_t in_rate,
+                                                   size_t out_rate,
+                                                   size_t chunk_size,
+                                                   size_t partial_num,
+                                                   size_t partial_den) {
+  resampler_t *a = audit_make_sync(in_rate, out_rate, chunk_size);
+  resampler_t *b = audit_make_sync(in_rate, out_rate, chunk_size);
+  ASSERT_TRUE(a != NULL);
+  ASSERT_TRUE(b != NULL);
+  size_t max_in = resampler_get_max_input_frames(a);
+  audio_chunk_t *in_a = audio_chunk_create(max_in, 1);
+  audio_chunk_t *in_b = audio_chunk_create(max_in, 1);
+  audio_chunk_t *out_a = audio_chunk_create(chunk_size, 1);
+  audio_chunk_t *out_b = audio_chunk_create(chunk_size, 1);
+
+  size_t phase = 0;
+  for (int iter = 0; iter < 40; iter++) {
+    size_t need_a = resampler_get_input_frames_next(a);
+    size_t need_b = resampler_get_input_frames_next(b);
+    ASSERT_EQ(need_a, need_b);
+    ASSERT_TRUE(need_a <= max_in);
+
+    size_t p0 = phase;
+    audit_fill_sine(in_a, need_a, &phase);
+    phase = p0;
+    audit_fill_sine(in_b, need_b, &phase);
+
+    bool partial = (iter % 5 == 3) && need_a > 0;
+    size_t valid = partial ? (need_a * partial_num) / partial_den : need_a;
+    audio_chunk_set_valid_frames(in_a, valid);
+    // Reference: same samples, explicitly zero-padded, full valid length.
+    double *db = audio_chunk_get_channel(in_b, 0);
+    memset(db + valid, 0, (need_b - valid) * sizeof(double));
+    audio_chunk_set_valid_frames(in_b, need_b);
+
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(a, in_a, out_a));
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(b, in_b, out_b));
+
+    size_t va = audio_chunk_get_valid_frames(out_a);
+    ASSERT_EQ(chunk_size, audio_chunk_get_valid_frames(out_b));
+    if (partial) {
+      ASSERT_EQ((chunk_size * valid) / need_a, va);
+    } else {
+      ASSERT_EQ(chunk_size, va);
+    }
+    const double *oa = audio_chunk_get_channel(out_a, 0);
+    const double *ob = audio_chunk_get_channel(out_b, 0);
+    for (size_t i = 0; i < va; i++) {
+      ASSERT_DOUBLE_EQ(ob[i], oa[i]);
+    }
+  }
+
+  audio_chunk_free(in_a);
+  audio_chunk_free(in_b);
+  audio_chunk_free(out_a);
+  audio_chunk_free(out_b);
+  resampler_free(a);
+  resampler_free(b);
+}
+
+TEST(AuditResampler_Sync_PartialChunk_AdvancesFullChunk_Up) {
+  check_sync_partial_matches_zero_padded(44100, 48000, 1024, 1, 2);
+}
+
+TEST(AuditResampler_Sync_PartialChunk_AdvancesFullChunk_Down) {
+  check_sync_partial_matches_zero_padded(96000, 44100, 1000, 1, 3);
+}
+
+TEST(AuditResampler_Sync_PartialChunk_AdvancesFullChunk_Zero) {
+  check_sync_partial_matches_zero_padded(44100, 48000, 512, 0, 1);
+}
+
+// Finding 2: repeated zero-valid chunks (silence pumping) used to leave all
+// output in saved_frames, so input_frames_next collapsed to 0 and the
+// stream desynchronized. Every call must consume a full chunk.
+TEST(AuditResampler_Sync_ZeroValidChunks_KeepStreamInSync) {
+  size_t chunk_size = 1024;
+  resampler_t *r = audit_make_sync(44100, 48000, chunk_size);
+  ASSERT_TRUE(r != NULL);
+  audio_chunk_t *in = audio_chunk_create(resampler_get_max_input_frames(r), 1);
+  audio_chunk_t *out = audio_chunk_create(chunk_size, 1);
+
+  for (int i = 0; i < 20; i++) {
+    size_t need = resampler_get_input_frames_next(r);
+    ASSERT_TRUE(need > 0);
+    audio_chunk_set_valid_frames(in, 0);
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(r, in, out));
+    ASSERT_EQ(0, audio_chunk_get_valid_frames(out));
+  }
+  size_t need = resampler_get_input_frames_next(r);
+  ASSERT_TRUE(need > 0);
+  audio_chunk_set_valid_frames(in, need);
+  ASSERT_EQ(RESAMPLER_OK, resampler_process(r, in, out));
+  ASSERT_EQ(chunk_size, audio_chunk_get_valid_frames(out));
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  resampler_free(r);
+}
+
+// Finding 5: valid_frames beyond the chunk's capacity must be rejected
+// instead of over-reading the input buffer.
+TEST(AuditResampler_Sync_RejectsValidFramesBeyondCapacity) {
+  resampler_t *r = audit_make_sync(44100, 48000, 1024);
+  ASSERT_TRUE(r != NULL);
+  size_t need = resampler_get_input_frames_next(r);
+  audio_chunk_t *in = audio_chunk_create(need / 2, 1);
+  audio_chunk_t *out = audio_chunk_create(1024, 1);
+  audio_chunk_set_valid_frames(in, need / 2 + 1);
+  ASSERT_EQ(RESAMPLER_ERR_INPUT_SIZE_MISMATCH, resampler_process(r, in, out));
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  resampler_free(r);
+}
+
+TEST(AuditResampler_Slip_RejectsValidFramesBeyondCapacity) {
+  resampler_config_t cfg;
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SLIP);
+  resampler_t *r =
+      resampler_create_from_config(&cfg, 48000, 48000, 1, 1000, NULL);
+  ASSERT_TRUE(r != NULL);
+  audio_chunk_t *in = audio_chunk_create(500, 1);
+  audio_chunk_t *out = audio_chunk_create(1000, 1);
+  audio_chunk_set_valid_frames(in, 501);
+  ASSERT_EQ(RESAMPLER_ERR_INPUT_SIZE_MISMATCH, resampler_process(r, in, out));
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  resampler_free(r);
+}
+
+// Finding 7: zero channels must be rejected.
+TEST(AuditResampler_Slip_RejectsZeroChannels) {
+  resampler_config_t cfg;
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SLIP);
+  config_error_t err;
+  config_error_init(&err);
+  resampler_t *r =
+      resampler_create_from_config(&cfg, 48000, 48000, 0, 1000, &err);
+  ASSERT_TRUE(r == NULL);
+  config_error_init(&err);
+  r = resampler_create_from_config(&cfg, 0, 0, 2, 1000, &err);
+  ASSERT_TRUE(r == NULL);
+}
+
+// Finding 6 / report 06 §3.6: AsyncPoly has no `profile` upstream.
+TEST(AuditResampler_AsyncPoly_RejectsProfile) {
+  resampler_config_t cfg;
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
+  strncpy(cfg.profile, "garbage", sizeof(cfg.profile) - 1);
+  cfg.has_profile = true;
+  config_error_t err;
+  config_error_init(&err);
+  ASSERT_NE(0, resampler_config_validate(&cfg, &err));
+  ASSERT_TRUE(resampler_create_from_config(&cfg, 44100, 48000, 2, 1024, NULL) ==
+              NULL);
+
+  // Profile together with a valid interpolation is still rejected.
+  strncpy(cfg.interpolation, "Cubic", sizeof(cfg.interpolation) - 1);
+  cfg.has_interpolation = true;
+  config_error_init(&err);
+  ASSERT_NE(0, resampler_config_validate(&cfg, &err));
+
+  // Interpolation alone is accepted.
+  cfg.has_profile = false;
+  config_error_init(&err);
+  ASSERT_EQ(0, resampler_config_validate(&cfg, &err));
+}
+
+// Report 06 §3.9.1: negative sinc_len / non-finite f_cutoff are rejected by
+// the AsyncSinc validator itself (not only by the generic front door).
+TEST(AuditResampler_AsyncSinc_RejectsNegativeSincLenAndNaNCutoff) {
+  const resampler_vtable_t *vt = &g_async_sinc_resampler_vtable;
+  resampler_config_t cfg;
+  resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+  cfg.has_sinc_len = true;
+  cfg.has_oversampling_factor = true;
+  cfg.has_window = true;
+  cfg.has_interpolation = true;
+  cfg.oversampling_factor = 256;
+  strncpy(cfg.window, "BlackmanHarris2", sizeof(cfg.window) - 1);
+  strncpy(cfg.interpolation, "Cubic", sizeof(cfg.interpolation) - 1);
+
+  config_error_t err;
+  int bad_lens[] = {-1, -7, -64};
+  for (size_t i = 0; i < sizeof(bad_lens) / sizeof(bad_lens[0]); i++) {
+    cfg.sinc_len = bad_lens[i];
+    config_error_init(&err);
+    ASSERT_NE(0, vt->validate(&cfg, &err));
+  }
+  cfg.sinc_len = 128;
+  config_error_init(&err);
+  ASSERT_EQ(0, vt->validate(&cfg, &err));
+
+  cfg.has_f_cutoff = true;
+  cfg.f_cutoff = NAN;
+  config_error_init(&err);
+  ASSERT_NE(0, vt->validate(&cfg, &err));
+  cfg.f_cutoff = 0.9;
+  config_error_init(&err);
+  ASSERT_EQ(0, vt->validate(&cfg, &err));
+}
+
+#define AUDIT_MASK_CHUNK 256
+#define AUDIT_MASK_ITERS 24
+
+typedef enum {
+  AUDIT_KIND_SYNC,
+  AUDIT_KIND_SINC_LINEAR,
+  AUDIT_KIND_SINC_QUADRATIC,
+  AUDIT_KIND_SINC_CUBIC,
+  AUDIT_KIND_POLY_CUBIC,
+  AUDIT_KIND_SLIP,
+  AUDIT_KIND_COUNT
+} audit_kind_t;
+
+static resampler_t *audit_make_resampler(audit_kind_t kind, size_t channels) {
+  resampler_config_t cfg;
+  size_t in_rate = 44100, out_rate = 48000;
+  switch (kind) {
+  case AUDIT_KIND_SYNC:
+    resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SYNCHRONOUS);
+    break;
+  case AUDIT_KIND_SINC_LINEAR:
+  case AUDIT_KIND_SINC_QUADRATIC:
+  case AUDIT_KIND_SINC_CUBIC:
+    resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_SINC);
+    cfg.has_profile = true;
+    strncpy(cfg.profile,
+            kind == AUDIT_KIND_SINC_LINEAR      ? "Fast"
+            : kind == AUDIT_KIND_SINC_QUADRATIC ? "Balanced"
+                                                : "Accurate",
+            sizeof(cfg.profile) - 1);
+    break;
+  case AUDIT_KIND_POLY_CUBIC:
+    resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_ASYNC_POLY);
+    cfg.has_interpolation = true;
+    strncpy(cfg.interpolation, "Cubic", sizeof(cfg.interpolation) - 1);
+    break;
+  case AUDIT_KIND_SLIP:
+  default:
+    resampler_config_init_with_type(&cfg, RESAMPLER_TYPE_SLIP);
+    in_rate = out_rate = 48000;
+    break;
+  }
+  config_error_t err;
+  config_error_init(&err);
+  resampler_t *r = resampler_create_from_config(&cfg, in_rate, out_rate,
+                                                channels, AUDIT_MASK_CHUNK, &err);
+  if (r && kind != AUDIT_KIND_SYNC) {
+    resampler_set_relative_ratio(r, 1.0007);
+  }
+  return r;
+}
+
+static double audit_test_signal(size_t ch, size_t n) {
+  return 0.5 * sin(0.013 * (double)(ch + 1) * (double)n + 0.3 * (double)ch);
+}
+
+static void audit_fill_mask_chunk(audio_chunk_t *chunk, size_t nch, const size_t *src_map,
+                                  size_t frames, size_t phase, const bool *zero_ch) {
+  for (size_t c = 0; c < nch; c++) {
+    double *d = audio_chunk_get_channel(chunk, c);
+    for (size_t i = 0; i < frames; i++) {
+      d[i] = (zero_ch && zero_ch[c]) ? 0.0 : audit_test_signal(src_map[c], phase + i);
+    }
+  }
+  audio_chunk_set_valid_frames(chunk, frames);
+}
+
+static bool audit_bit_equal(const double *a, const double *b, size_t n) {
+  return memcmp(a, b, n * sizeof(double)) == 0;
+}
+
+static void audit_check_skip_bit_identical(audit_kind_t kind) {
+  const size_t nch = 4;
+  const size_t map[4] = {0, 1, 2, 3};
+  const bool mask[4] = {true, false, true, true};
+  resampler_t *a = audit_make_resampler(kind, nch);
+  resampler_t *b = audit_make_resampler(kind, nch);
+  ASSERT_TRUE(a != NULL);
+  ASSERT_TRUE(b != NULL);
+  size_t max_in = resampler_get_max_input_frames(a);
+  audio_chunk_t *in_a = audio_chunk_create(max_in, nch);
+  audio_chunk_t *in_b = audio_chunk_create(max_in, nch);
+  audio_chunk_t *out_a = audio_chunk_create(AUDIT_MASK_CHUNK + 64, nch);
+  audio_chunk_t *out_b = audio_chunk_create(AUDIT_MASK_CHUNK + 64, nch);
+  audio_chunk_set_used_channels(in_b, mask);
+  const bool all_true[4] = {true, true, true, true};
+  audio_chunk_set_used_channels(out_b, all_true);
+
+  size_t phase = 0;
+  for (int it = 0; it < AUDIT_MASK_ITERS; it++) {
+    size_t need = resampler_get_input_frames_next(a);
+    ASSERT_EQ(need, resampler_get_input_frames_next(b));
+    audit_fill_mask_chunk(in_a, nch, map, need, phase, NULL);
+    audit_fill_mask_chunk(in_b, nch, map, need, phase, NULL);
+    double *poison = audio_chunk_get_channel(in_b, 1);
+    for (size_t i = 0; i < need; i++)
+      poison[i] = NAN;
+    double *pout = audio_chunk_get_channel(out_b, 1);
+    for (size_t i = 0; i < AUDIT_MASK_CHUNK + 64; i++)
+      pout[i] = 123.0;
+    phase += need;
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(a, in_a, out_a));
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(b, in_b, out_b));
+    size_t n = audio_chunk_get_valid_frames(out_a);
+    ASSERT_EQ(n, audio_chunk_get_valid_frames(out_b));
+    for (size_t c = 0; c < nch; c++) {
+      const double *oa = audio_chunk_get_channel(out_a, c);
+      const double *ob = audio_chunk_get_channel(out_b, c);
+      if (mask[c]) {
+        ASSERT_TRUE(audit_bit_equal(oa, ob, n));
+      } else {
+        for (size_t i = 0; i < n; i++) {
+          ASSERT_TRUE(ob[i] == 0.0);
+        }
+      }
+    }
+    const bool *om = audio_chunk_get_used_channels(out_b);
+    ASSERT_TRUE(om != NULL);
+    ASSERT_TRUE(memcmp(om, mask, sizeof(mask)) == 0);
+  }
+  audio_chunk_free(in_a);
+  audio_chunk_free(in_b);
+  audio_chunk_free(out_a);
+  audio_chunk_free(out_b);
+  resampler_free(a);
+  resampler_free(b);
+}
+
+TEST(AuditResamplerMask_Sync_SkipsInactive) {
+  audit_check_skip_bit_identical(AUDIT_KIND_SYNC);
+}
+TEST(AuditResamplerMask_SincLinear_SkipsInactive) {
+  audit_check_skip_bit_identical(AUDIT_KIND_SINC_LINEAR);
+}
+TEST(AuditResamplerMask_SincQuadratic_SkipsInactive) {
+  audit_check_skip_bit_identical(AUDIT_KIND_SINC_QUADRATIC);
+}
+TEST(AuditResamplerMask_SincCubic_SkipsInactive) {
+  audit_check_skip_bit_identical(AUDIT_KIND_SINC_CUBIC);
+}
+TEST(AuditResamplerMask_Poly_SkipsInactive) {
+  audit_check_skip_bit_identical(AUDIT_KIND_POLY_CUBIC);
+}
+TEST(AuditResamplerMask_Slip_SkipsInactive) {
+  audit_check_skip_bit_identical(AUDIT_KIND_SLIP);
+}
+
+static void audit_check_active_count_path(audit_kind_t kind, size_t nch, const bool *mask) {
+  size_t map_full[8];
+  size_t map_active[8];
+  size_t nact = 0;
+  for (size_t c = 0; c < nch; c++) {
+    map_full[c] = c;
+    if (mask[c])
+      map_active[nact++] = c;
+  }
+  resampler_t *a = audit_make_resampler(kind, nch);
+  resampler_t *b = audit_make_resampler(kind, nact);
+  ASSERT_TRUE(a != NULL);
+  ASSERT_TRUE(b != NULL);
+  size_t max_in = resampler_get_max_input_frames(a);
+  audio_chunk_t *in_a = audio_chunk_create(max_in, nch);
+  audio_chunk_t *in_b = audio_chunk_create(max_in, nact);
+  audio_chunk_t *out_a = audio_chunk_create(AUDIT_MASK_CHUNK + 64, nch);
+  audio_chunk_t *out_b = audio_chunk_create(AUDIT_MASK_CHUNK + 64, nact);
+  audio_chunk_set_used_channels(in_a, mask);
+  size_t phase = 0;
+  for (int it = 0; it < AUDIT_MASK_ITERS; it++) {
+    size_t need = resampler_get_input_frames_next(a);
+    ASSERT_EQ(need, resampler_get_input_frames_next(b));
+    audit_fill_mask_chunk(in_a, nch, map_full, need, phase, NULL);
+    audit_fill_mask_chunk(in_b, nact, map_active, need, phase, NULL);
+    phase += need;
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(a, in_a, out_a));
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(b, in_b, out_b));
+    size_t n = audio_chunk_get_valid_frames(out_a);
+    ASSERT_EQ(n, audio_chunk_get_valid_frames(out_b));
+    for (size_t k = 0; k < nact; k++) {
+      ASSERT_TRUE(audit_bit_equal(audio_chunk_get_channel(out_a, map_active[k]),
+                                  audio_chunk_get_channel(out_b, k), n));
+    }
+  }
+  audio_chunk_free(in_a);
+  audio_chunk_free(in_b);
+  audio_chunk_free(out_a);
+  audio_chunk_free(out_b);
+  resampler_free(a);
+  resampler_free(b);
+}
+
+TEST(AuditResamplerMask_SincQuadratic_ActiveCountSelectsPath) {
+  const bool mask[3] = {true, false, true};
+  audit_check_active_count_path(AUDIT_KIND_SINC_QUADRATIC, 3, mask);
+}
+TEST(AuditResamplerMask_SincLinear_ActiveCountSelectsPath) {
+  const bool mask[4] = {false, true, false, true};
+  audit_check_active_count_path(AUDIT_KIND_SINC_LINEAR, 4, mask);
+}
+TEST(AuditResamplerMask_SincCubic_ActiveCountSelectsPath) {
+  const bool mask[3] = {false, false, true};
+  audit_check_active_count_path(AUDIT_KIND_SINC_CUBIC, 3, mask);
+}
+
+static void audit_check_reactivation(audit_kind_t kind) {
+  const size_t nch = 2;
+  const size_t map[2] = {0, 1};
+  const bool inactive_mask[2] = {true, false};
+  const bool active_mask[2] = {true, true};
+  const bool zero_ch1[2] = {false, true};
+  resampler_t *a = audit_make_resampler(kind, nch);
+  resampler_t *b = audit_make_resampler(kind, nch);
+  ASSERT_TRUE(a != NULL);
+  ASSERT_TRUE(b != NULL);
+  size_t max_in = resampler_get_max_input_frames(a);
+  audio_chunk_t *in_a = audio_chunk_create(max_in, nch);
+  audio_chunk_t *in_b = audio_chunk_create(max_in, nch);
+  audio_chunk_t *out_a = audio_chunk_create(AUDIT_MASK_CHUNK + 64, nch);
+  audio_chunk_t *out_b = audio_chunk_create(AUDIT_MASK_CHUNK + 64, nch);
+  size_t phase = 0;
+  for (int it = 0; it < 3 * AUDIT_MASK_ITERS; it++) {
+    bool inactive = it >= AUDIT_MASK_ITERS && it < 2 * AUDIT_MASK_ITERS;
+    size_t need = resampler_get_input_frames_next(a);
+    ASSERT_EQ(need, resampler_get_input_frames_next(b));
+    audio_chunk_set_used_channels(in_a, inactive ? inactive_mask : active_mask);
+    audit_fill_mask_chunk(in_a, nch, map, need, phase, NULL);
+    audit_fill_mask_chunk(in_b, nch, map, need, phase, inactive ? zero_ch1 : NULL);
+    phase += need;
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(a, in_a, out_a));
+    ASSERT_EQ(RESAMPLER_OK, resampler_process(b, in_b, out_b));
+    size_t n = audio_chunk_get_valid_frames(out_a);
+    ASSERT_EQ(n, audio_chunk_get_valid_frames(out_b));
+    if (it >= 2 * AUDIT_MASK_ITERS) {
+      ASSERT_TRUE(audit_bit_equal(audio_chunk_get_channel(out_a, 1),
+                                  audio_chunk_get_channel(out_b, 1), n));
+    }
+  }
+  audio_chunk_free(in_a);
+  audio_chunk_free(in_b);
+  audio_chunk_free(out_a);
+  audio_chunk_free(out_b);
+  resampler_free(a);
+  resampler_free(b);
+}
+
+TEST(AuditResamplerMask_Reactivation_Clean) {
+  for (int k = 0; k < AUDIT_KIND_COUNT; k++) {
+    audit_check_reactivation((audit_kind_t)k);
+  }
 }
 
 TEST_MAIN()

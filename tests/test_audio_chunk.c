@@ -1,4 +1,4 @@
-// Regression tests for audit report 08 §1.6 (decode honors used-channel mask).
+// Unit and regression tests for audio_chunk (decode honors used-channel mask).
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

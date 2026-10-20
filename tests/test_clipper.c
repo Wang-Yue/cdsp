@@ -66,4 +66,12 @@ TEST(test_clipper_validation_and_extended_range) {
   ASSERT_EQ(-1, g_clipper_vtable.validate(&cfg_nan, 44100, &err));
 }
 
+TEST(test_audit_clipper_rejects_overflowing_limit) {
+  filter_config_t cfg = {.type = FILTER_TYPE_CLIPPER};
+  cfg.parameters.clipper.clip_limit = -1.0;
+  ASSERT_EQ(0, filter_config_validate(&cfg, 48000, NULL));
+  cfg.parameters.clipper.clip_limit = 10000.0;
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+}
+
 TEST_MAIN()

@@ -151,4 +151,35 @@ TEST(delay_transfer_state_drops_queue_when_length_changes) {
   g_delay_vtable.free(dest);
 }
 
+// MARK: - Validation Regression Tests
+
+static filter_config_t make_delay(double delay, delay_unit_t unit) {
+  filter_config_t cfg = {.type = FILTER_TYPE_DELAY};
+  cfg.parameters.delay.delay = delay;
+  cfg.parameters.delay.delay_unit = unit;
+  cfg.parameters.delay.subsample = false;
+  return cfg;
+}
+
+TEST(test_audit_delay_samples_cap_without_rate) {
+  filter_config_t cfg = make_delay(1e12, DELAY_UNIT_SAMPLES);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 0, NULL));
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+  ASSERT_TRUE(g_delay_vtable.create("d", &cfg, 0, 0, NULL, NULL) == NULL);
+  cfg = make_delay(10.0, DELAY_UNIT_MS);
+  ASSERT_EQ(0, filter_config_validate(&cfg, 0, NULL));
+}
+
+TEST(test_audit_delay_rejects_invalid_unit_and_rate) {
+  filter_config_t cfg = make_delay(10.0, DELAY_UNIT_INVALID);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+  cfg = make_delay(10.0, (delay_unit_t)99);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+  cfg = make_delay(10.0, DELAY_UNIT_SAMPLES);
+  ASSERT_TRUE(g_delay_vtable.create("d", &cfg, 0, 0, NULL, NULL) == NULL);
+  void *ok = g_delay_vtable.create("d", &cfg, 48000, 0, NULL, NULL);
+  ASSERT_TRUE(ok != NULL);
+  g_delay_vtable.free(ok);
+}
+
 TEST_MAIN()

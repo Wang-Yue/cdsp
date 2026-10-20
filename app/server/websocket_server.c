@@ -955,6 +955,103 @@ static websocket_command_t lookup_command(const char *name) {
   return WS_CMD_UNKNOWN;
 }
 
+static const char *const kAllowedNone[] = {"command", NULL};
+static const char *const kAllowedValue[] = {"command", "value", NULL};
+static const char *const kAllowedFader[] = {"command", "fader", NULL};
+static const char *const kAllowedFaderValue[] = {"command", "fader", "value", NULL};
+static const char *const kAllowedAdjustVolume[] = {"command", "value", "min", "max", NULL};
+static const char *const kAllowedAdjustFaderVolume[] = {"command", "fader", "value", "min", "max", NULL};
+static const char *const kAllowedSetConfigValue[] = {"command", "pointer", "value", NULL};
+static const char *const kAllowedGetAvailableDevices[] = {"command", "backend", NULL};
+static const char *const kAllowedGetDeviceCaps[] = {"command", "backend", "device", NULL};
+
+static const char *const kAllowedVuSubscription[] = {"max_rate", "attack", "release", NULL};
+static const char *const kAllowedSpectrumRequest[] = {"side", "channel", "min_freq", "max_freq", "n_bins", NULL};
+static const char *const kAllowedSpectrumSubscription[] = {"side", "channel", "min_freq", "max_freq", "n_bins", "max_rate", NULL};
+
+static bool validate_object_fields(const cJSON *obj, const char *const *allowed,
+                                   dyn_string_t *ds) {
+  if (!obj || !cJSON_IsObject(obj))
+    return true;
+  for (cJSON *child = obj->child; child != NULL; child = child->next) {
+    if (!child->string)
+      continue;
+    bool found = false;
+    for (size_t i = 0; allowed && allowed[i] != NULL; i++) {
+      if (strcmp(child->string, allowed[i]) == 0) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      char err_msg[128];
+      snprintf(err_msg, sizeof(err_msg), "unknown field `%s`", child->string);
+      reply_invalid(err_msg, ds);
+      return false;
+    }
+  }
+  return true;
+}
+
+static const char *const *get_command_allowed_fields(websocket_command_t cmd) {
+  switch (cmd) {
+  case WS_CMD_ADJUST_VOLUME:
+    return kAllowedAdjustVolume;
+
+  case WS_CMD_ADJUST_FADER_VOLUME:
+    return kAllowedAdjustFaderVolume;
+
+  case WS_CMD_SET_CONFIG_VALUE:
+    return kAllowedSetConfigValue;
+
+  case WS_CMD_GET_AVAILABLE_CAPTURE_DEVICES:
+  case WS_CMD_GET_AVAILABLE_PLAYBACK_DEVICES:
+    return kAllowedGetAvailableDevices;
+
+  case WS_CMD_GET_CAPTURE_DEVICE_CAPABILITIES:
+  case WS_CMD_GET_PLAYBACK_DEVICE_CAPABILITIES:
+    return kAllowedGetDeviceCaps;
+
+  case WS_CMD_GET_FADER_VOLUME:
+  case WS_CMD_GET_FADER_MUTE:
+  case WS_CMD_TOGGLE_FADER_MUTE:
+    return kAllowedFader;
+
+  case WS_CMD_SET_FADER_VOLUME:
+  case WS_CMD_SET_FADER_EXTERNAL_VOLUME:
+  case WS_CMD_SET_FADER_MUTE:
+    return kAllowedFaderValue;
+
+  case WS_CMD_SET_UPDATE_INTERVAL:
+  case WS_CMD_SET_VOLUME:
+  case WS_CMD_SET_MUTE:
+  case WS_CMD_GET_CAPTURE_SIGNAL_RMS_SINCE:
+  case WS_CMD_GET_CAPTURE_SIGNAL_PEAK_SINCE:
+  case WS_CMD_GET_PLAYBACK_SIGNAL_RMS_SINCE:
+  case WS_CMD_GET_PLAYBACK_SIGNAL_PEAK_SINCE:
+  case WS_CMD_GET_SIGNAL_LEVELS_SINCE:
+  case WS_CMD_SUBSCRIBE_SIGNAL_LEVELS:
+  case WS_CMD_SUBSCRIBE_VU_LEVELS:
+  case WS_CMD_GET_SPECTRUM:
+  case WS_CMD_SUBSCRIBE_SPECTRUM:
+  case WS_CMD_SET_CONFIG_FILE_PATH:
+  case WS_CMD_SET_CONFIG:
+  case WS_CMD_SET_CONFIG_JSON:
+  case WS_CMD_GET_CONFIG_VALUE:
+  case WS_CMD_PATCH_CONFIG:
+  case WS_CMD_READ_CONFIG:
+  case WS_CMD_READ_CONFIG_JSON:
+  case WS_CMD_READ_CONFIG_FILE:
+  case WS_CMD_VALIDATE_CONFIG:
+  case WS_CMD_VALIDATE_CONFIG_JSON:
+  case WS_CMD_VALIDATE_CONFIG_FILE:
+    return kAllowedValue;
+
+  default:
+    return kAllowedNone;
+  }
+}
+
 static inline bool validate_and_clamp_volume(float *inout_vol) {
   if (isnan(*inout_vol))
     return false;
@@ -1301,6 +1398,13 @@ static bool parse_spectrum_args(cJSON *root, const char *cmd_name,
     return false;
   }
 
+  const char *const *nested_allowed =
+      (strcmp(cmd_name, "SubscribeSpectrum") == 0)
+          ? kAllowedSpectrumSubscription
+          : kAllowedSpectrumRequest;
+  if (!validate_object_fields(arg, nested_allowed, ds))
+    return false;
+
   cJSON *item_bins = cJSON_GetObjectItemCaseSensitive(arg, "n_bins");
   if (!item_bins || !cJSON_IsNumber(item_bins) || item_bins->valueint < 2 ||
       item_bins->valuedouble != (double)item_bins->valueint) {
@@ -1402,13 +1506,25 @@ void websocket_server_handle_command(websocket_server_t *server, int client_idx,
   strncpy(cmd_name, cmd_node->valuestring, sizeof(cmd_name) - 1);
   const char *simple = cmd_name;
 
+  websocket_command_t cmd_type = lookup_command(simple);
+  if (cmd_type == WS_CMD_UNKNOWN) {
+    reply_invalid("Unsupported command", ds);
+    cJSON_Delete(root);
+    return;
+  }
+
+  const char *const *allowed = get_command_allowed_fields(cmd_type);
+  if (allowed && !validate_object_fields(root, allowed, ds)) {
+    cJSON_Delete(root);
+    return;
+  }
+
   pthread_mutex_lock(&server->sessions_mutex);
   client_session_t *sess = &server->client_sessions[client_idx];
   bool is_streaming = sess->state_subscribed || sess->vu_subscribed ||
                       sess->signal_levels_subscribed ||
                       sess->spectrum_subscribed;
 
-  websocket_command_t cmd_type = lookup_command(simple);
   if (is_streaming && cmd_type != WS_CMD_STOP_SUBSCRIPTION) {
     reply_invalid("Only StopSubscription is accepted while streaming is active",
                   ds);
@@ -2316,6 +2432,8 @@ void websocket_server_handle_command(websocket_server_t *server, int client_idx,
                       ds);
         break;
       }
+      if (!validate_object_fields(arg, kAllowedVuSubscription, ds))
+        break;
       cJSON *item_rate = cJSON_GetObjectItemCaseSensitive(arg, "max_rate");
       cJSON *item_attack = cJSON_GetObjectItemCaseSensitive(arg, "attack");
       cJSON *item_release = cJSON_GetObjectItemCaseSensitive(arg, "release");

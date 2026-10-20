@@ -1,6 +1,8 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "config/config_error.h"
 #include "config/config_gen.h"
@@ -328,6 +330,44 @@ TEST(DiffEq_ValidateInvalidCoefficients) {
   diff_eq_config_t p3 = {.a = a3, .a_count = 2, .b = b3, .b_count = 1};
   filter_config_t c3 = {.type = FILTER_TYPE_DIFF_EQ, .parameters.diff_eq = p3};
   ASSERT_NE(0, g_diffeq_vtable.validate(&c3, 0, NULL));
+}
+
+// MARK: - State Transfer & Coefficient Padding Regression Tests
+
+static void *audit_make_diffeq(double *a, size_t na, double *b, size_t nb) {
+  diff_eq_config_t p = {.a = a, .a_count = na, .b = b, .b_count = nb};
+  filter_config_t cfg = {.type = FILTER_TYPE_DIFF_EQ, .parameters.diff_eq = p};
+  return g_diffeq_vtable.create("audit", &cfg, 48000, 0, NULL, NULL);
+}
+
+TEST(AuditDiffeq_SignedZeroPaddingTransfersState) {
+  double a[] = {-1.0, 0.5};
+  double b_short[] = {1.0};
+  double b_long[] = {1.0, 0.0};
+  void *src = audit_make_diffeq(a, 2, b_short, 1);
+  void *dst = audit_make_diffeq(a, 2, b_long, 2);
+  void *ref = audit_make_diffeq(a, 2, b_short, 1);
+  ASSERT_TRUE(src && dst && ref);
+
+  double w1[8] = {1.0, 0.5, -0.25, 0.75, 0, 0, 0, 0};
+  double w2[8];
+  memcpy(w2, w1, sizeof(w1));
+  g_diffeq_vtable.process(src, w1, 4);
+  g_diffeq_vtable.process(ref, w2, 4);
+
+  g_diffeq_vtable.transfer_state(dst, src);
+
+  double z1[8] = {0}, z2[8] = {0};
+  g_diffeq_vtable.process(dst, z1, 8);
+  g_diffeq_vtable.process(ref, z2, 8);
+  for (size_t i = 0; i < 8; i++) {
+    ASSERT_NEAR(z2[i], z1[i], 1e-15);
+  }
+  ASSERT_TRUE(fabs(z1[0]) > 0.0);
+
+  g_diffeq_vtable.free(src);
+  g_diffeq_vtable.free(dst);
+  g_diffeq_vtable.free(ref);
 }
 
 TEST_MAIN()

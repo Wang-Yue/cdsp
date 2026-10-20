@@ -2,6 +2,7 @@
 #include <stddef.h>
 
 #include "audio/processing_parameters.h"
+#include "config/config_error.h"
 #include "config/config_gen.h"
 #include "filters/filter.h"
 #include "filters/gain.h"
@@ -465,6 +466,29 @@ TEST(VolumeUnrampedMuteAndPublishing) {
 
   g_volume_vtable.free(filter);
   processing_parameters_free(proc_params);
+}
+
+// MARK: - Gain & Filter Validation Regression Tests
+
+TEST(test_audit_gain_rejects_invalid_scale) {
+  filter_config_t cfg = {.type = FILTER_TYPE_GAIN};
+  cfg.parameters.gain.gain = 6.0;
+  cfg.parameters.gain.scale = GAIN_SCALE_LINEAR;
+  ASSERT_EQ(0, filter_config_validate(&cfg, 48000, NULL));
+  cfg.parameters.gain.scale = (gain_scale_t)7;
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+  ASSERT_TRUE(g_gain_vtable.create("g", &cfg, 48000, 64, NULL, NULL) == NULL);
+}
+
+TEST(test_audit_filter_rejects_invalid_type) {
+  filter_config_t cfg = {.type = FILTER_TYPE_INVALID};
+  config_error_t err;
+  config_error_init(&err);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, &err));
+  ASSERT_TRUE(filter_create("x", &cfg, 48000, 64, NULL, NULL) == NULL);
+  cfg.type = (filter_type_t)1234;
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+  ASSERT_TRUE(filter_create("x", &cfg, 48000, 64, NULL, NULL) == NULL);
 }
 
 TEST_MAIN()

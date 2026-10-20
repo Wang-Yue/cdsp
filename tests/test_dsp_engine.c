@@ -46,8 +46,10 @@
 #include "engine/engine_processing_loop.h"
 #include "engine/engine_shared_state.h"
 #include "engine/engine_state_types.h"
+#include "engine/sample_rate_watcher.h"
 #include "pipeline/config_loader.h"
 #include "pipeline/pipeline.h"
+#include "resampler/audio_resampler.h"
 #include "test_support.h"
 #include "utils/cdsp_time.h"
 #include "utils/lock_free_ring_buffer.h"
@@ -5251,6 +5253,472 @@ TEST(PublicCallerAllocatedVUSpectrumAndSamples) {
   if (engine && engine->free)
     engine->free(engine->ctx);
   remove(out_file);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Regression tests from audit (engine fixes & common loop handling)         */
+/* ------------------------------------------------------------------------- */
+
+static void run_capture_ratio_order_case(resampler_type_t type) {
+  const size_t chunk = 64;
+  engine_shared_state_t *shared = engine_shared_state_create(8, 8);
+  ASSERT_TRUE(shared != NULL);
+  round_robin_chunk_pool_t *pool = round_robin_chunk_pool_create(10, chunk, 1);
+  ASSERT_TRUE(pool != NULL);
+
+  capture_device_config_t cap_cfg;
+  memset(&cap_cfg, 0, sizeof(cap_cfg));
+  cap_cfg.type = AUDIO_BACKEND_TYPE_GENERATOR;
+  cap_cfg.cfg.generator.channels = 1;
+  cap_cfg.cfg.generator.signal.type = SIGNAL_TYPE_SINE;
+  cap_cfg.cfg.generator.signal.freq = 1000.0;
+  cap_cfg.cfg.generator.signal.level = -6.0;
+
+  resampler_config_t rcfg;
+  memset(&rcfg, 0, sizeof(rcfg));
+  rcfg.type = type;
+  if (type == RESAMPLER_TYPE_ASYNC_POLY) {
+    rcfg.has_interpolation = true;
+    strcpy(rcfg.interpolation, "Cubic");
+  } else {
+    rcfg.has_profile = true;
+    strcpy(rcfg.profile, "Balanced");
+  }
+  config_error_t cerr;
+  config_error_init(&cerr);
+  resampler_t *res =
+      resampler_create_from_config(&rcfg, 48000, 48000, 1, chunk, &cerr);
+  if (!res)
+    fprintf(stderr, "resampler create failed: %s\n", cerr.message);
+  ASSERT_TRUE(res != NULL);
+
+  backend_error_t berr;
+  backend_error_init(&berr, BACKEND_ERROR_NONE, "");
+  capture_backend_t *cap = create_capture_backend(
+      &cap_cfg, 48000, resampler_get_max_input_frames(res), false, NULL, &berr);
+  ASSERT_TRUE(cap != NULL);
+  cap->is_realtime = true;
+
+  engine_capture_loop_config_t loop_cfg = {
+      .shared = shared,
+      .capture = cap,
+      .processing_params = NULL,
+      .dsd_decoder = NULL,
+      .chunk_pool = pool,
+      .resampler = res,
+      .chunk_size = resampler_get_max_input_frames(res),
+      .pipeline_chunk_size = chunk,
+      .channels = 1,
+      .samplerate = 48000,
+      .pipeline_rate = 48000,
+      .silence_threshold_db = -200.0,
+      .silence_timeout_seconds = 0.0,
+      .stop_on_rate_change = false,
+      .rate_measure_interval_s = 10.0,
+  };
+  engine_capture_loop_t *loop = engine_capture_loop_create(&loop_cfg);
+  ASSERT_TRUE(loop != NULL);
+  engine_shared_state_set_state(shared, PROCESSING_STATE_RUNNING);
+
+  // Warm up at unity ratio.
+  for (int i = 0; i < 3; i++) {
+    ASSERT_FALSE(engine_capture_loop_step(loop));
+    audio_chunk_t *out = (audio_chunk_t *)spsc_queue_dequeue(
+        engine_shared_state_get_captured_queue(shared));
+    ASSERT_TRUE(out != NULL);
+    ASSERT_EQ(audio_chunk_get_valid_frames(out), chunk);
+  }
+
+  // Rate controller now asks for a slower capture (ratio < 1 -> the
+  // resampler needs *more* input frames per output chunk). Every produced
+  // chunk must still be a full chunk.
+  engine_shared_state_set_resampler_ratio(shared, 0.96);
+  for (int i = 0; i < 6; i++) {
+    ASSERT_FALSE(engine_capture_loop_step(loop));
+    audio_chunk_t *out = (audio_chunk_t *)spsc_queue_dequeue(
+        engine_shared_state_get_captured_queue(shared));
+    ASSERT_TRUE(out != NULL);
+    ASSERT_EQ(audio_chunk_get_valid_frames(out), chunk);
+  }
+
+  engine_capture_loop_free(loop);
+  capture_backend_close(cap);
+  capture_backend_free(cap);
+  resampler_free(res);
+  round_robin_chunk_pool_free(pool);
+  engine_shared_state_free(shared);
+}
+
+TEST(AuditEngine_CaptureLoop_RatioAppliedBeforeInputFramesNext_AsyncPoly) {
+  run_capture_ratio_order_case(RESAMPLER_TYPE_ASYNC_POLY);
+}
+
+TEST(AuditEngine_CaptureLoop_RatioAppliedBeforeInputFramesNext_AsyncSinc) {
+  run_capture_ratio_order_case(RESAMPLER_TYPE_ASYNC_SINC);
+}
+
+static dsp_engine_t *audit_start_generator_engine(const char *out_file,
+                                                  const char *extra_devices) {
+  char json[2048];
+  snprintf(
+      json, sizeof(json),
+      "{\n"
+      "  \"devices\": {\n"
+      "    \"samplerate\": 16000,\n"
+      "    \"chunksize\": 256,\n"
+      "    \"queuelimit\": 8%s\n"
+      "    ,\"capture\": {\"type\": \"SignalGenerator\", \"channels\": 1,\n"
+      "      \"signal\": {\"type\": \"Sine\", \"freq\": 440.0, "
+      "\"level\": -20.0}},\n"
+      "    \"playback\": {\"type\": \"File\", \"filename\": \"%s\",\n"
+      "      \"format\": \"S16_LE\", \"channels\": 1, \"realtime\": true}\n"
+      "  }\n"
+      "}",
+      extra_devices ? extra_devices : "", out_file);
+  dsp_engine_t *engine = dsp_engine_create();
+  if (!engine)
+    return NULL;
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  if (!engine->set_config_json(engine->ctx, json, &err)) {
+    fprintf(stderr, "set_config_json failed: %s\n", err.message);
+    engine->free(engine->ctx);
+    return NULL;
+  }
+  return engine;
+}
+
+static bool audit_wait_for_state(dsp_engine_t *engine, cdsp_processing_state_t st,
+                                 int timeout_ms) {
+  for (int i = 0; i < timeout_ms / 10; i++) {
+    cdsp_engine_poll(engine);
+    if (cdsp_get_state(engine) == st)
+      return true;
+    cdsp_sleep_ms(10);
+  }
+  return false;
+}
+
+TEST(AuditEngine_BufferLevel_NotPublishedWhenRateAdjustDisabled) {
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/audit_engine_bl_%d.raw", getpid());
+  dsp_engine_t *engine = audit_start_generator_engine(out_file, NULL);
+  ASSERT_TRUE(engine != NULL);
+  ASSERT_TRUE(audit_wait_for_state(engine, CDSP_PROCESSING_STATE_RUNNING, 2000));
+  cdsp_sleep_ms(300);
+
+  double rate_adjust = -1.0, buffer_level = -1.0, pl = 0.0, rl = 0.0;
+  uint64_t clipped = 0;
+  ASSERT_TRUE(engine->get_processing_status(engine->ctx, &rate_adjust,
+                                            &buffer_level, &clipped, &pl, &rl));
+  ASSERT_TRUE(buffer_level == 0.0);
+
+  cdsp_stop(engine);
+  engine->free(engine->ctx);
+  remove(out_file);
+}
+
+TEST(AuditEngine_SampleRateWatcher_ResetClearsLastMeasuredRate) {
+  sample_rate_watcher_t *w = sample_rate_watcher_create(48000.0, 0.02, false);
+  ASSERT_TRUE(w != NULL);
+  sample_rate_watcher_reset(w);
+  cdsp_sleep_ms(30);
+  double measured = 0.0;
+  (void)sample_rate_watcher_tick(w, 1440, &measured);
+  ASSERT_TRUE(sample_rate_watcher_get_last_measured_rate(w) > 0.0);
+  sample_rate_watcher_reset(w);
+  ASSERT_TRUE(sample_rate_watcher_get_last_measured_rate(w) == 0.0);
+  sample_rate_watcher_free(w);
+}
+
+extern _Atomic bool g_generator_mock_hang;
+extern _Atomic bool g_generator_mock_silence_gated;
+
+TEST(AuditEngine_Watchdog_StallDetectedWhilePaused) {
+  atomic_store_explicit(&g_generator_mock_silence_gated, true,
+                        memory_order_relaxed);
+  atomic_store_explicit(&g_generator_mock_hang, false, memory_order_relaxed);
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/audit_engine_pstall_%d.raw",
+           getpid());
+
+  char json[2048];
+  snprintf(
+      json, sizeof(json),
+      "{\n"
+      "  \"devices\": {\n"
+      "    \"samplerate\": 16000, \"chunksize\": 256, \"queuelimit\": 8,\n"
+      "    \"silence_threshold\": -60.0, \"silence_timeout_s\": 0.1,\n"
+      "    \"capture\": {\"type\": \"SignalGenerator\", \"channels\": 1,\n"
+      "      \"signal\": {\"type\": \"Sine\", \"freq\": 440.0, "
+      "\"level\": -120.0}},\n"
+      "    \"playback\": {\"type\": \"File\", \"filename\": \"%s\",\n"
+      "      \"format\": \"S16_LE\", \"channels\": 1, \"realtime\": true}\n"
+      "  }\n"
+      "}",
+      out_file);
+  dsp_engine_t *engine = dsp_engine_create();
+  ASSERT_TRUE(engine != NULL);
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  ASSERT_TRUE(engine->set_config_json(engine->ctx, json, &err));
+
+  ASSERT_TRUE(audit_wait_for_state(engine, CDSP_PROCESSING_STATE_PAUSED, 3000));
+
+  atomic_store_explicit(&g_generator_mock_hang, true, memory_order_relaxed);
+  bool stalled = audit_wait_for_state(engine, CDSP_PROCESSING_STATE_STALLED, 3000);
+  atomic_store_explicit(&g_generator_mock_hang, false, memory_order_relaxed);
+  ASSERT_TRUE(stalled);
+
+  ASSERT_TRUE(audit_wait_for_state(engine, CDSP_PROCESSING_STATE_PAUSED, 3000));
+
+  cdsp_stop(engine);
+  engine->free(engine->ctx);
+  remove(out_file);
+  atomic_store_explicit(&g_generator_mock_silence_gated, false,
+                        memory_order_relaxed);
+}
+
+TEST(AuditEngine_Stop_RotatesActiveConfigToPrevious) {
+  char out_file[256];
+  snprintf(out_file, sizeof(out_file), "/tmp/audit_engine_rot_%d.raw",
+           getpid());
+  dsp_engine_t *engine = audit_start_generator_engine(out_file, NULL);
+  ASSERT_TRUE(engine != NULL);
+
+  char *active = NULL;
+  ASSERT_TRUE(engine->get_active_config_json(engine->ctx, &active));
+  ASSERT_TRUE(active != NULL);
+  char *prev = NULL;
+  ASSERT_FALSE(engine->get_previous_config_json(engine->ctx, &prev));
+  ASSERT_TRUE(prev == NULL);
+
+  cdsp_stop(engine);
+
+  char *active_after = NULL;
+  ASSERT_FALSE(engine->get_active_config_json(engine->ctx, &active_after));
+  ASSERT_TRUE(active_after == NULL);
+  ASSERT_TRUE(engine->get_previous_config_json(engine->ctx, &prev));
+  ASSERT_TRUE(prev != NULL);
+  ASSERT_STR_EQ(active, prev);
+  free(prev);
+  prev = NULL;
+
+  audio_backend_error_t err;
+  memset(&err, 0, sizeof(err));
+  ASSERT_TRUE(engine->set_config_json(engine->ctx, active, &err));
+  ASSERT_TRUE(engine->get_previous_config_json(engine->ctx, &prev));
+  ASSERT_TRUE(prev != NULL);
+  ASSERT_STR_EQ(active, prev);
+  free(prev);
+
+  free(active);
+  cdsp_stop(engine);
+  engine->free(engine->ctx);
+  remove(out_file);
+}
+
+static bool fake_silent_read(void *ctx, size_t frames, audio_chunk_t *chunk,
+                             backend_error_t *err) {
+  (void)ctx;
+  (void)err;
+  for (size_t c = 0; c < audio_chunk_get_channels(chunk); c++) {
+    double *d = audio_chunk_get_channel(chunk, c);
+    if (d)
+      memset(d, 0, frames * sizeof(double));
+  }
+  audio_chunk_set_valid_frames(chunk, frames);
+  return true;
+}
+
+static const capture_backend_vtable_t g_fake_silent_vtable = {
+    .read = fake_silent_read,
+};
+
+typedef struct {
+  engine_shared_state_t *shared;
+  round_robin_chunk_pool_t *pool;
+  engine_capture_loop_t *loop;
+} loop_fixture_t;
+
+static void audit_fixture_init(loop_fixture_t *f, capture_backend_t *cap,
+                               size_t chunk, double threshold_db, double timeout_s,
+                               bool stop_on_rate_change, double rate_interval_s) {
+  f->shared = engine_shared_state_create(8, 8);
+  ASSERT_TRUE(f->shared != NULL);
+  f->pool = round_robin_chunk_pool_create(10, chunk, 1);
+  ASSERT_TRUE(f->pool != NULL);
+  engine_capture_loop_config_t cfg = {
+      .shared = f->shared,
+      .capture = cap,
+      .chunk_pool = f->pool,
+      .chunk_size = chunk,
+      .pipeline_chunk_size = chunk,
+      .channels = 1,
+      .samplerate = 48000,
+      .pipeline_rate = 48000,
+      .silence_threshold_db = threshold_db,
+      .silence_timeout_seconds = timeout_s,
+      .stop_on_rate_change = stop_on_rate_change,
+      .rate_measure_interval_s = rate_interval_s,
+  };
+  f->loop = engine_capture_loop_create(&cfg);
+  ASSERT_TRUE(f->loop != NULL);
+  engine_shared_state_set_state(f->shared, PROCESSING_STATE_RUNNING);
+}
+
+static void audit_fixture_free(loop_fixture_t *f) {
+  engine_capture_loop_free(f->loop);
+  round_robin_chunk_pool_free(f->pool);
+  engine_shared_state_free(f->shared);
+}
+
+static void audit_drain_captured(loop_fixture_t *f) {
+  while (spsc_queue_dequeue(engine_shared_state_get_captured_queue(f->shared)))
+    ;
+}
+
+static capture_backend_t *audit_make_generator(size_t chunk) {
+  capture_device_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.type = AUDIO_BACKEND_TYPE_GENERATOR;
+  cfg.cfg.generator.channels = 1;
+  cfg.cfg.generator.signal.type = SIGNAL_TYPE_SINE;
+  cfg.cfg.generator.signal.freq = 1000.0;
+  cfg.cfg.generator.signal.level = -60.0;
+  backend_error_t berr;
+  backend_error_init(&berr, BACKEND_ERROR_NONE, "");
+  capture_backend_t *cap =
+      create_capture_backend(&cfg, 48000, (int)chunk, false, NULL, &berr);
+  return cap;
+}
+
+TEST(AuditCommon_06F08_GeneratorDoesNotTripRateWatcher) {
+  const size_t chunk = 64;
+  capture_backend_t *cap = audit_make_generator(chunk);
+  ASSERT_TRUE(cap != NULL);
+  loop_fixture_t f;
+  audit_fixture_init(&f, cap, chunk, -200.0, 0.0, true, 0.01);
+  uint64_t start = cdsp_time_now_ns();
+  while (cdsp_time_now_ns() - start < 100ULL * 1000000ULL) {
+    ASSERT_FALSE(engine_capture_loop_step(f.loop));
+    audit_drain_captured(&f);
+  }
+  ASSERT_FALSE(engine_shared_state_should_stop(f.shared));
+  audit_fixture_free(&f);
+  capture_backend_close(cap);
+  capture_backend_free(cap);
+}
+
+TEST(AuditCommon_06F10_SkipSilenceDetectionFlagBypassesCounter) {
+  const size_t chunk = 64;
+  for (int flagged = 0; flagged <= 1; flagged++) {
+    capture_backend_t cap = {
+        .ctx = NULL,
+        .vtable = &g_fake_silent_vtable,
+        .is_realtime = true,
+        .skip_silence_detection = flagged != 0,
+    };
+    loop_fixture_t f;
+    audit_fixture_init(&f, &cap, chunk, -100.0, 0.01, false, 10.0);
+    bool paused = false;
+    for (int i = 0; i < 40; i++) {
+      ASSERT_FALSE(engine_capture_loop_step(f.loop));
+      audit_drain_captured(&f);
+      if (engine_shared_state_get_state(f.shared) == PROCESSING_STATE_PAUSED)
+        paused = true;
+    }
+    ASSERT_EQ(paused, flagged == 0);
+    audit_fixture_free(&f);
+  }
+}
+
+TEST(AuditCommon_06F11_PausedNonRealtimeCaptureSleeps) {
+  const size_t chunk = 480;
+  capture_backend_t cap = {
+      .ctx = NULL,
+      .vtable = &g_fake_silent_vtable,
+      .is_realtime = false,
+  };
+  loop_fixture_t f;
+  audit_fixture_init(&f, &cap, chunk, -100.0, 0.02, false, 10.0);
+  int guard = 0;
+  while (engine_shared_state_get_state(f.shared) != PROCESSING_STATE_PAUSED) {
+    ASSERT_FALSE(engine_capture_loop_step(f.loop));
+    audit_drain_captured(&f);
+    ASSERT_TRUE(++guard < 20);
+  }
+  uint64_t start = cdsp_time_now_ns();
+  for (int i = 0; i < 5; i++) {
+    ASSERT_FALSE(engine_capture_loop_step(f.loop));
+    audit_drain_captured(&f);
+  }
+  uint64_t elapsed_ms = (cdsp_time_now_ns() - start) / 1000000ULL;
+  ASSERT_TRUE(elapsed_ms >= 30);
+  audit_fixture_free(&f);
+}
+
+static bool g_fake_opened;
+static bool fake_pitch_open(void *ctx, backend_error_t *err) {
+  (void)ctx;
+  (void)err;
+  g_fake_opened = true;
+  return true;
+}
+static bool fake_pitch_supported(void *ctx) {
+  (void)ctx;
+  return g_fake_opened;
+}
+static const capture_backend_vtable_t g_fake_pitch_vtable = {
+    .open = fake_pitch_open,
+    .read = fake_silent_read,
+    .is_pitch_control_supported = fake_pitch_supported,
+};
+
+TEST(AuditCommon_03CA01_PitchSupportRefreshedAfterOpen) {
+  g_fake_opened = false;
+  capture_backend_t cap = {
+      .ctx = NULL, .vtable = &g_fake_pitch_vtable, .is_realtime = true};
+  loop_fixture_t f;
+  audit_fixture_init(&f, &cap, 64, -200.0, 0.0, false, 10.0);
+  ASSERT_FALSE(engine_shared_state_get_capture_pitch_supported(f.shared));
+  processing_stop_reason_t reason = {.type = STOP_REASON_UNKNOWN_ERROR};
+  engine_shared_state_request_stop(f.shared, reason);
+  engine_capture_loop_run(f.loop);
+  ASSERT_TRUE(g_fake_opened);
+  ASSERT_TRUE(engine_shared_state_get_capture_pitch_supported(f.shared));
+  audit_fixture_free(&f);
+}
+
+TEST(AuditCommon_F13_FileOpenErrorHasReason) {
+  dsp_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.devices.samplerate = 44100;
+  config.devices.chunksize = 1024;
+  config.devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  snprintf(config.devices.capture.cfg.raw_file.filename,
+           sizeof(config.devices.capture.cfg.raw_file.filename),
+           "/nonexistent/audit_common/f13.raw");
+  config.devices.capture.cfg.raw_file.channels = 2;
+  config.devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  config.devices.playback.cfg.raw_file.channels = 2;
+  config_error_t err;
+  config_error_init(&err);
+  ASSERT_NE(0, dsp_config_validate(&config, &err));
+  ASSERT_TRUE(strstr(err.message, "Could not open input file") != NULL);
+  ASSERT_TRUE(strstr(err.message, ". Reason: ") != NULL);
+}
+
+TEST(AuditCommon_F14_ErrorDescriptionUnknownType) {
+  audio_backend_error_t e;
+  memset(&e, 0, sizeof(e));
+  e.type = (audio_backend_error_type_t)9999;
+  snprintf(e.message, sizeof(e.message), "detail");
+  char buf[128];
+  memset(buf, 'x', sizeof(buf));
+  audio_backend_error_description(&e, buf, sizeof(buf));
+  ASSERT_TRUE(strstr(buf, "Unknown backend error") != NULL);
+  ASSERT_TRUE(strstr(buf, "detail") != NULL);
 }
 
 TEST_MAIN()

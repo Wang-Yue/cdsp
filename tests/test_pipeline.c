@@ -11,8 +11,11 @@
 #include "config/config_gen.h"
 #include "config/configuration.h"
 #include "filters/filter.h"
+#include "filters/loudness.h"
+#include "filters/volume.h"
 #include "pipeline/config_loader.h"
 #include "pipeline/pipeline.h"
+#include "pipeline/pipeline_faders.h"
 #include "pipeline/pipeline_internal.h"
 #include "test_support.h"
 #include "utils/double_helpers.h"
@@ -1817,6 +1820,724 @@ TEST(PipelineSingleThreadedPreservesFilterSteps) {
   ASSERT_EQ(1, pipe_mt->steps_count);
   pipeline_free(pipe_mt);
   processing_parameters_free(params2);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Regression tests from audit (core pipeline & faders)                      */
+/* ------------------------------------------------------------------------- */
+
+#define AUDIT_CORE_FRAMES 256
+#define AUDIT_CORE_RATE 48000
+
+static void audit_core_init_config(dsp_config_t *config, size_t channels) {
+  memset(config, 0, sizeof(*config));
+  config->devices.samplerate = AUDIT_CORE_RATE;
+  config->devices.chunksize = AUDIT_CORE_FRAMES;
+  config->devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  config->devices.capture.cfg.raw_file.channels = channels;
+  config->devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  config->devices.playback.cfg.raw_file.channels = channels;
+  config->devices.volume_ramp_time_ms = 0.0;
+  config->devices.has_volume_ramp_time_ms = true;
+}
+
+static void audit_core_fill_chunk(audio_chunk_t *chunk, size_t channels) {
+  for (size_t ch = 0; ch < channels; ch++) {
+    mutable_waveform_t w = audio_chunk_get_channel(chunk, ch);
+    for (size_t t = 0; t < AUDIT_CORE_FRAMES; t++)
+      w[t] = (double)(ch + 1);
+  }
+  audio_chunk_set_valid_frames(chunk, AUDIT_CORE_FRAMES);
+}
+
+// 05-1.1 / 04-1.2.2 / 07-1.3: no input scratch (and no extra copy) when the
+// channel count is unchanged and every capture channel is used.
+TEST(AuditPipelineNoInputScratchWithoutMixer) {
+  dsp_config_t config;
+  audit_core_init_config(&config, 2);
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  pipeline_t *p = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(p != NULL);
+  ASSERT_TRUE(p->input_scratch == NULL);
+
+  audio_chunk_t *in = audio_chunk_create(AUDIT_CORE_FRAMES, 2);
+  audio_chunk_t *out = audio_chunk_create(AUDIT_CORE_FRAMES, 2);
+  audit_core_fill_chunk(in, 2);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(p, in, out));
+  ASSERT_NEAR(1.0, audio_chunk_get_channel(out, 0)[AUDIT_CORE_FRAMES - 1], 1e-12);
+  ASSERT_NEAR(2.0, audio_chunk_get_channel(out, 1)[0], 1e-12);
+  // In place.
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(p, in, in));
+  ASSERT_NEAR(2.0, audio_chunk_get_channel(in, 1)[7], 1e-12);
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  pipeline_free(p);
+  processing_parameters_free(params);
+}
+
+static mixer_source_t g_audit_src_ch0 = {
+    .channel = 0, .gain = 0.0, .has_gain = true, .scale = GAIN_SCALE_DB};
+static mixer_source_t g_audit_src_ch1 = {
+    .channel = 1, .gain = 0.0, .has_gain = true, .scale = GAIN_SCALE_DB};
+
+// 05-1.3: with an unused capture channel the scratch exists, carries the used
+// mask, and in-place processing still zeroes/ignores the unused channel.
+TEST(AuditPipelineInputScratchWhenCaptureChannelUnused) {
+  dsp_config_t config;
+  audit_core_init_config(&config, 2);
+  mixer_mapping_t maps[2] = {
+      {.dest = 0, .sources_count = 1, .sources = &g_audit_src_ch0},
+      {.dest = 1, .sources_count = 1, .sources = &g_audit_src_ch0}};
+  named_mixer_config_t mixer_cfg;
+  memset(&mixer_cfg, 0, sizeof(mixer_cfg));
+  strcpy(mixer_cfg.name, "dup");
+  mixer_cfg.mixer.channels_in = 2;
+  mixer_cfg.mixer.channels_out = 2;
+  mixer_cfg.mixer.mapping_count = 2;
+  mixer_cfg.mixer.mapping = maps;
+  config.mixers = &mixer_cfg;
+  config.mixers_count = 1;
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_MIXER;
+  strcpy(step.name, "dup");
+  step.has_name = true;
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  pipeline_t *p = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(p != NULL);
+  ASSERT_TRUE(p->input_scratch != NULL);
+  ASSERT_TRUE(audio_chunk_get_used_channels(p->input_scratch) != NULL);
+
+  audio_chunk_t *in = audio_chunk_create(AUDIT_CORE_FRAMES, 2);
+  audit_core_fill_chunk(in, 2);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(p, in, in));
+  ASSERT_NEAR(1.0, audio_chunk_get_channel(in, 0)[3], 1e-12);
+  ASSERT_NEAR(1.0, audio_chunk_get_channel(in, 1)[3], 1e-12);
+
+  audio_chunk_free(in);
+  pipeline_free(p);
+  processing_parameters_free(params);
+}
+
+TEST(AuditPipelineSwapMixerAllUsedRunsInOutput) {
+  dsp_config_t config;
+  audit_core_init_config(&config, 2);
+  mixer_mapping_t maps[2] = {
+      {.dest = 0, .sources_count = 1, .sources = &g_audit_src_ch1},
+      {.dest = 1, .sources_count = 1, .sources = &g_audit_src_ch0}};
+  named_mixer_config_t mixer_cfg;
+  memset(&mixer_cfg, 0, sizeof(mixer_cfg));
+  strcpy(mixer_cfg.name, "swap");
+  mixer_cfg.mixer.channels_in = 2;
+  mixer_cfg.mixer.channels_out = 2;
+  mixer_cfg.mixer.mapping_count = 2;
+  mixer_cfg.mixer.mapping = maps;
+  config.mixers = &mixer_cfg;
+  config.mixers_count = 1;
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_MIXER;
+  strcpy(step.name, "swap");
+  step.has_name = true;
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  pipeline_t *p = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(p != NULL);
+  ASSERT_TRUE(p->input_scratch == NULL);
+
+  audio_chunk_t *in = audio_chunk_create(AUDIT_CORE_FRAMES, 2);
+  audit_core_fill_chunk(in, 2);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(p, in, in));
+  ASSERT_NEAR(2.0, audio_chunk_get_channel(in, 0)[0], 1e-12);
+  ASSERT_NEAR(1.0, audio_chunk_get_channel(in, 1)[AUDIT_CORE_FRAMES - 1], 1e-12);
+
+  audio_chunk_free(in);
+  pipeline_free(p);
+  processing_parameters_free(params);
+}
+
+// 05-3.1: a filter referenced twice on one channel keeps both delay lines
+// apart across a FILTER_PARAMETERS hot reload.
+TEST(AuditPipelineTransferKeepsDuplicateFilterStatesApart) {
+  dsp_config_t config;
+  audit_core_init_config(&config, 1);
+  named_filter_config_t fcfg;
+  memset(&fcfg, 0, sizeof(fcfg));
+  strcpy(fcfg.name, "d");
+  fcfg.filter.type = FILTER_TYPE_DELAY;
+  fcfg.filter.parameters.delay.delay = 300.0;
+  fcfg.filter.parameters.delay.delay_unit = DELAY_UNIT_SAMPLES;
+  config.filters = &fcfg;
+  config.filters_count = 1;
+  char *names[2] = {"d", "d"};
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_FILTER;
+  step.names = names;
+  step.names_count = 2;
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  processing_parameters_t *params = processing_parameters_create(1, 1);
+  pipeline_t *a = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(a != NULL);
+  audio_chunk_t *in = audio_chunk_create(AUDIT_CORE_FRAMES, 1);
+  audio_chunk_t *out = audio_chunk_create(AUDIT_CORE_FRAMES, 1);
+  memset(audio_chunk_get_channel(in, 0), 0, AUDIT_CORE_FRAMES * sizeof(double));
+  audio_chunk_get_channel(in, 0)[0] = 1.0;
+  audio_chunk_set_valid_frames(in, AUDIT_CORE_FRAMES);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(a, in, out));
+
+  pipeline_t *b = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(b != NULL);
+  pipeline_transfer_state(b, a, true);
+  pipeline_free(a);
+
+  audio_chunk_get_channel(in, 0)[0] = 0.0;
+  double total = 0.0;
+  size_t peak_pos = 0;
+  double peak = 0.0;
+  for (size_t c = 1; c < 4; c++) {
+    ASSERT_EQ(PIPELINE_OK, pipeline_process(b, in, out));
+    waveform_t w = audio_chunk_get_channel(out, 0);
+    for (size_t t = 0; t < AUDIT_CORE_FRAMES; t++) {
+      total += fabs(w[t]);
+      if (fabs(w[t]) > peak) {
+        peak = fabs(w[t]);
+        peak_pos = c * AUDIT_CORE_FRAMES + t;
+      }
+    }
+  }
+  ASSERT_NEAR(1.0, total, 1e-9);
+  ASSERT_EQ(600, peak_pos);
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  pipeline_free(b);
+  processing_parameters_free(params);
+}
+
+// Upstream `used_capture_channels_include_processors_before_the_mixer`
+// (87590f4): a mixer that only reads channel 0, and processors that all read
+// channel 1. A processor before the mixer keeps channel 1 captured; after the
+// mixer, or bypassed, it does not.
+static void audit_set_used_channels_config(dsp_config_t *config,
+                                           named_mixer_config_t *mixer_cfg,
+                                           mixer_mapping_t *maps,
+                                           named_processor_config_t *procs,
+                                           size_t procs_count) {
+  audit_core_init_config(config, 2);
+  maps[0] = (mixer_mapping_t){.dest = 0, .sources_count = 1,
+                              .sources = &g_audit_src_ch0};
+  maps[1] = (mixer_mapping_t){.dest = 1, .sources_count = 1,
+                              .sources = &g_audit_src_ch0};
+  memset(mixer_cfg, 0, sizeof(*mixer_cfg));
+  strcpy(mixer_cfg->name, "left");
+  mixer_cfg->mixer.channels_in = 2;
+  mixer_cfg->mixer.channels_out = 2;
+  mixer_cfg->mixer.mapping_count = 2;
+  mixer_cfg->mixer.mapping = maps;
+  config->mixers = mixer_cfg;
+  config->mixers_count = 1;
+  config->processors = procs;
+  config->processors_count = procs_count;
+}
+
+static void audit_set_step(pipeline_step_config_t *step, pipeline_step_type_t type,
+                           const char *name, bool bypassed) {
+  memset(step, 0, sizeof(*step));
+  step->type = type;
+  strcpy(step->name, name);
+  step->has_name = true;
+  step->bypassed = bypassed;
+}
+
+TEST(UsedCaptureChannelsIncludeProcessorsBeforeTheMixer) {
+  static size_t monitor_ch1[] = {1};
+  named_processor_config_t procs[4];
+  memset(procs, 0, sizeof(procs));
+  strcpy(procs[0].name, "comp");
+  procs[0].processor.type = PROCESSOR_TYPE_COMPRESSOR;
+  procs[0].processor.parameters.compressor.channels = 2;
+  procs[0].processor.parameters.compressor.monitor_channels = monitor_ch1;
+  procs[0].processor.parameters.compressor.monitor_channels_count = 1;
+  // The noise gate leaves monitor_channels out, so it monitors all channels.
+  strcpy(procs[1].name, "gate");
+  procs[1].processor.type = PROCESSOR_TYPE_NOISE_GATE;
+  procs[1].processor.parameters.noise_gate.channels = 2;
+  strcpy(procs[2].name, "limiter");
+  procs[2].processor.type = PROCESSOR_TYPE_LOOKAHEAD_LIMITER;
+  procs[2].processor.parameters.lookahead_limiter.channels = 2;
+  procs[2].processor.parameters.lookahead_limiter.monitor_channels =
+      monitor_ch1;
+  procs[2].processor.parameters.lookahead_limiter.monitor_channels_count = 1;
+  strcpy(procs[3].name, "race");
+  procs[3].processor.type = PROCESSOR_TYPE_RACE;
+  procs[3].processor.parameters.race.channels = 2;
+  procs[3].processor.parameters.race.channel_a = 1;
+  procs[3].processor.parameters.race.channel_b = 0;
+
+  dsp_config_t config;
+  named_mixer_config_t mixer_cfg;
+  mixer_mapping_t maps[2];
+  pipeline_step_config_t steps[2];
+  bool used[2];
+
+  for (size_t i = 0; i < 4; i++) {
+    audit_set_used_channels_config(&config, &mixer_cfg, maps, procs, 4);
+    audit_set_step(&steps[0], PIPELINE_STEP_TYPE_PROCESSOR, procs[i].name, false);
+    audit_set_step(&steps[1], PIPELINE_STEP_TYPE_MIXER, "left", false);
+    config.pipeline = steps;
+    config.pipeline_count = 2;
+    ASSERT_TRUE(pipeline_compute_used_capture_channels(&config, used, 2));
+    ASSERT_TRUE(used[0]);
+    ASSERT_TRUE(used[1]);
+  }
+
+  // After the mixer, a processor does not read any capture channel.
+  audit_set_used_channels_config(&config, &mixer_cfg, maps, procs, 4);
+  audit_set_step(&steps[0], PIPELINE_STEP_TYPE_MIXER, "left", false);
+  audit_set_step(&steps[1], PIPELINE_STEP_TYPE_PROCESSOR, "comp", false);
+  config.pipeline = steps;
+  config.pipeline_count = 2;
+  ASSERT_TRUE(pipeline_compute_used_capture_channels(&config, used, 2));
+  ASSERT_TRUE(used[0]);
+  ASSERT_FALSE(used[1]);
+
+  // Bypassed, neither.
+  audit_set_used_channels_config(&config, &mixer_cfg, maps, procs, 4);
+  audit_set_step(&steps[0], PIPELINE_STEP_TYPE_PROCESSOR, "comp", true);
+  audit_set_step(&steps[1], PIPELINE_STEP_TYPE_MIXER, "left", false);
+  config.pipeline = steps;
+  config.pipeline_count = 2;
+  ASSERT_TRUE(pipeline_compute_used_capture_channels(&config, used, 2));
+  ASSERT_TRUE(used[0]);
+  ASSERT_FALSE(used[1]);
+}
+
+static int audit_validate_volume(double ramp, bool has_ramp, double limit,
+                                 bool has_limit) {
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME};
+  cfg.parameters.volume.fader = FADER_AUX1;
+  cfg.parameters.volume.ramp_time_ms = ramp;
+  cfg.parameters.volume.has_ramp_time_ms = has_ramp;
+  cfg.parameters.volume.limit = limit;
+  cfg.parameters.volume.has_limit = has_limit;
+  config_error_t err;
+  config_error_init(&err);
+  return g_volume_vtable.validate(&cfg, 48000, &err);
+}
+
+// 02-1.6: non-finite ramp_time_ms / limit are rejected (upstream FiniteF32).
+TEST(AuditVolumeRejectsNonFiniteParameters) {
+  ASSERT_EQ(0, audit_validate_volume(200.0, true, -10.0, true));
+  ASSERT_EQ(-1, audit_validate_volume(NAN, true, 0.0, false));
+  ASSERT_EQ(-1, audit_validate_volume(INFINITY, true, 0.0, false));
+  ASSERT_EQ(-1, audit_validate_volume(-1.0, true, 0.0, false));
+  ASSERT_EQ(-1, audit_validate_volume(0.0, false, NAN, true));
+  ASSERT_EQ(-1, audit_validate_volume(0.0, false, -INFINITY, true));
+  ASSERT_EQ(-1, audit_validate_volume(0.0, false, INFINITY, true));
+}
+
+static int audit_validate_loudness(loudness_config_t lp) {
+  filter_config_t cfg = {.type = FILTER_TYPE_LOUDNESS};
+  cfg.parameters.loudness = lp;
+  config_error_t err;
+  config_error_init(&err);
+  return g_loudness_vtable.validate(&cfg, 48000, &err);
+}
+
+// 02-2.1: NaN in any loudness field is rejected.
+TEST(AuditLoudnessRejectsNonFiniteParameters) {
+  loudness_config_t base = {.has_reference_level = true,
+                            .reference_level = -20.0};
+  ASSERT_EQ(0, audit_validate_loudness(base));
+
+  loudness_config_t lp = base;
+  lp.reference_level = NAN;
+  ASSERT_EQ(-1, audit_validate_loudness(lp));
+  lp = base;
+  lp.has_high_boost = true;
+  lp.high_boost = NAN;
+  ASSERT_EQ(-1, audit_validate_loudness(lp));
+  lp = base;
+  lp.has_low_boost = true;
+  lp.low_boost = NAN;
+  ASSERT_EQ(-1, audit_validate_loudness(lp));
+  lp = base;
+  lp.has_low_freq = true;
+  lp.low_freq = NAN;
+  ASSERT_EQ(-1, audit_validate_loudness(lp));
+  lp = base;
+  lp.has_high_freq = true;
+  lp.high_freq = NAN;
+  ASSERT_EQ(-1, audit_validate_loudness(lp));
+  lp = base;
+  lp.has_low_q = true;
+  lp.low_q = NAN;
+  ASSERT_EQ(-1, audit_validate_loudness(lp));
+  lp = base;
+  lp.has_high_q = true;
+  lp.high_q = NAN;
+  ASSERT_EQ(-1, audit_validate_loudness(lp));
+}
+
+#define AUDIT_FADER_FR 256
+#define AUDIT_FADER_SR 48000
+#define AUDIT_FADER_CHUNK_MS (1000.0 * AUDIT_FADER_FR / AUDIT_FADER_SR)
+
+static void audit_fader_base_config(dsp_config_t *config, size_t channels) {
+  memset(config, 0, sizeof(*config));
+  config->devices.samplerate = AUDIT_FADER_SR;
+  config->devices.chunksize = AUDIT_FADER_FR;
+  config->devices.capture.type = AUDIO_BACKEND_TYPE_FILE;
+  config->devices.capture.cfg.raw_file.channels = channels;
+  config->devices.playback.type = AUDIO_BACKEND_TYPE_FILE;
+  config->devices.playback.cfg.raw_file.channels = channels;
+  config->devices.volume_ramp_time_ms = 0.0;
+  config->devices.has_volume_ramp_time_ms = true;
+}
+
+static void audit_fader_fill_sine(audio_chunk_t *chunk, size_t channels, double freq,
+                                  size_t chunk_idx) {
+  for (size_t ch = 0; ch < channels; ch++) {
+    mutable_waveform_t w = audio_chunk_get_channel(chunk, ch);
+    for (size_t t = 0; t < AUDIT_FADER_FR; t++) {
+      double n = (double)(chunk_idx * AUDIT_FADER_FR + t);
+      w[t] = 0.5 * sin(2.0 * M_PI * freq * n / AUDIT_FADER_SR);
+    }
+  }
+  audio_chunk_set_valid_frames(chunk, AUDIT_FADER_FR);
+}
+
+static double audit_fader_rms(waveform_t w, size_t n) {
+  double acc = 0.0;
+  for (size_t i = 0; i < n; i++)
+    acc += w[i] * w[i];
+  return sqrt(acc / (double)n);
+}
+
+// 05-2.1 / 02-1.1(2): an Aux fader without a Volume filter still tracks its
+// target, so a Loudness filter on it responds to volume changes.
+TEST(AuditFaderUnusedAuxTracksTargetAndDrivesLoudness) {
+  dsp_config_t config;
+  audit_fader_base_config(&config, 1);
+  named_filter_config_t fcfg;
+  memset(&fcfg, 0, sizeof(fcfg));
+  strcpy(fcfg.name, "loud");
+  fcfg.filter.type = FILTER_TYPE_LOUDNESS;
+  fcfg.filter.parameters.loudness.has_reference_level = true;
+  fcfg.filter.parameters.loudness.reference_level = -20.0;
+  fcfg.filter.parameters.loudness.fader = FADER_AUX1;
+  config.filters = &fcfg;
+  config.filters_count = 1;
+  char *names[1] = {"loud"};
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_FILTER;
+  step.names = names;
+  step.names_count = 1;
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  processing_parameters_t *params = processing_parameters_create(1, 1);
+  pipeline_t *p = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(p != NULL);
+  audio_chunk_t *in = audio_chunk_create(AUDIT_FADER_FR, 1);
+  audio_chunk_t *out = audio_chunk_create(AUDIT_FADER_FR, 1);
+
+  audit_fader_fill_sine(in, 1, 40.0, 0);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(p, in, out));
+  double rms_flat = audit_fader_rms(audio_chunk_get_channel(out, 0), AUDIT_FADER_FR);
+
+  processing_parameters_set_target_volume_for_fader(params, -45.0, FADER_AUX1);
+  double boosted = 0.0;
+  for (size_t c = 1; c < 20; c++) {
+    audit_fader_fill_sine(in, 1, 40.0, c);
+    ASSERT_EQ(PIPELINE_OK, pipeline_process(p, in, out));
+    boosted = audit_fader_rms(audio_chunk_get_channel(out, 0), AUDIT_FADER_FR);
+  }
+  ASSERT_NEAR(
+      -45.0,
+      processing_parameters_get_current_volume_for_fader(params, FADER_AUX1),
+      1e-9);
+  // Full 10 dB low-shelf boost at 40 Hz: well above the flat level.
+  ASSERT_TRUE(boosted > 2.0 * rms_flat);
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  pipeline_free(p);
+  processing_parameters_free(params);
+}
+
+// 05-2.2 / 02-1.1(1,3): Loudness placed before Volume on the same Aux fader,
+// on two channels, multithreaded: both channels see the same level for the
+// same chunk, so identical inputs give identical outputs.
+TEST(AuditFaderAllChannelsSeeTheSameChunk) {
+  dsp_config_t config;
+  audit_fader_base_config(&config, 2);
+  config.devices.has_multithreaded = true;
+  config.devices.multithreaded = true;
+  named_filter_config_t fcfg[2];
+  memset(fcfg, 0, sizeof(fcfg));
+  strcpy(fcfg[0].name, "loud");
+  fcfg[0].filter.type = FILTER_TYPE_LOUDNESS;
+  fcfg[0].filter.parameters.loudness.has_reference_level = true;
+  fcfg[0].filter.parameters.loudness.reference_level = -10.0;
+  fcfg[0].filter.parameters.loudness.fader = FADER_AUX1;
+  strcpy(fcfg[1].name, "vol");
+  fcfg[1].filter.type = FILTER_TYPE_VOLUME;
+  fcfg[1].filter.parameters.volume.fader = FADER_AUX1;
+  fcfg[1].filter.parameters.volume.has_ramp_time_ms = true;
+  fcfg[1].filter.parameters.volume.ramp_time_ms = 6.0 * AUDIT_FADER_CHUNK_MS;
+  config.filters = fcfg;
+  config.filters_count = 2;
+  char *names[2] = {"loud", "vol"};
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_FILTER;
+  step.names = names;
+  step.names_count = 2;
+  config.pipeline = &step;
+  config.pipeline_count = 1;
+
+  processing_parameters_t *params = processing_parameters_create(2, 2);
+  pipeline_t *p = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(p != NULL);
+  audio_chunk_t *in = audio_chunk_create(AUDIT_FADER_FR, 2);
+  audio_chunk_t *out = audio_chunk_create(AUDIT_FADER_FR, 2);
+
+  audit_fader_fill_sine(in, 2, 60.0, 0);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(p, in, out));
+  processing_parameters_set_target_volume_for_fader(params, -40.0, FADER_AUX1);
+  for (size_t c = 1; c < 10; c++) {
+    audit_fader_fill_sine(in, 2, 60.0, c);
+    ASSERT_EQ(PIPELINE_OK, pipeline_process(p, in, out));
+    waveform_t a = audio_chunk_get_channel(out, 0);
+    waveform_t b = audio_chunk_get_channel(out, 1);
+    for (size_t t = 0; t < AUDIT_FADER_FR; t++)
+      ASSERT_NEAR(a[t], b[t], 1e-15);
+  }
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  pipeline_free(p);
+  processing_parameters_free(params);
+}
+
+// 05-2.3 / 02-1.2: Loudness follows the mute ramp instead of snapping to the
+// mute level on the first muted chunk. With the main fader ramping 0 -> -100
+// dB over 10 chunks and a reference of -20 dB, the first muted chunk ends at
+// -10 dB, so loudness must still be inactive: output == volume ramp alone.
+TEST(AuditFaderLoudnessFollowsMuteRamp) {
+  named_filter_config_t fcfg;
+  memset(&fcfg, 0, sizeof(fcfg));
+  strcpy(fcfg.name, "loud");
+  fcfg.filter.type = FILTER_TYPE_LOUDNESS;
+  fcfg.filter.parameters.loudness.has_reference_level = true;
+  fcfg.filter.parameters.loudness.reference_level = -20.0;
+  fcfg.filter.parameters.loudness.attenuate_mid = true;
+  fcfg.filter.parameters.loudness.fader = FADER_MAIN;
+  char *names[1] = {"loud"};
+  pipeline_step_config_t step;
+  memset(&step, 0, sizeof(step));
+  step.type = PIPELINE_STEP_TYPE_FILTER;
+  step.names = names;
+  step.names_count = 1;
+
+  dsp_config_t with;
+  audit_fader_base_config(&with, 1);
+  with.devices.volume_ramp_time_ms = 10.0 * AUDIT_FADER_CHUNK_MS;
+  with.filters = &fcfg;
+  with.filters_count = 1;
+  with.pipeline = &step;
+  with.pipeline_count = 1;
+  dsp_config_t without;
+  audit_fader_base_config(&without, 1);
+  without.devices.volume_ramp_time_ms = 10.0 * AUDIT_FADER_CHUNK_MS;
+
+  processing_parameters_t *pa = processing_parameters_create(1, 1);
+  processing_parameters_t *pb = processing_parameters_create(1, 1);
+  pipeline_t *a = pipeline_create(&with, pa, 0, NULL);
+  pipeline_t *b = pipeline_create(&without, pb, 0, NULL);
+  ASSERT_TRUE(a && b);
+  audio_chunk_t *in = audio_chunk_create(AUDIT_FADER_FR, 1);
+  audio_chunk_t *oa = audio_chunk_create(AUDIT_FADER_FR, 1);
+  audio_chunk_t *ob = audio_chunk_create(AUDIT_FADER_FR, 1);
+  audit_fader_fill_sine(in, 1, 1000.0, 0);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(a, in, oa));
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(b, in, ob));
+
+  processing_parameters_set_muted(pa, true);
+  processing_parameters_set_muted(pb, true);
+  audit_fader_fill_sine(in, 1, 1000.0, 1);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(a, in, oa));
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(b, in, ob));
+  waveform_t wa = audio_chunk_get_channel(oa, 0);
+  waveform_t wb = audio_chunk_get_channel(ob, 0);
+  for (size_t t = 0; t < AUDIT_FADER_FR; t++)
+    ASSERT_NEAR(wb[t], wa[t], 1e-12);
+  ASSERT_NEAR(-10.0, a->faders.levels.faders[FADER_MAIN].end_db, 1e-9);
+
+  audio_chunk_free(in);
+  audio_chunk_free(oa);
+  audio_chunk_free(ob);
+  pipeline_free(a);
+  pipeline_free(b);
+  processing_parameters_free(pa);
+  processing_parameters_free(pb);
+}
+
+// 05-2.4 / 02-1.3: a ramp processed over fewer samples than the chunk size
+// still ends on the chunk's end level.
+TEST(AuditVolumeRampUsesProcessedCount) {
+  processing_parameters_t *params = processing_parameters_create(1, 1);
+  filter_config_t cfg = {.type = FILTER_TYPE_VOLUME};
+  cfg.parameters.volume.fader = FADER_MAIN;
+  cfg.parameters.volume.has_ramp_time_ms = true;
+  cfg.parameters.volume.ramp_time_ms = 2.0 * 1000.0 * 8.0 / AUDIT_FADER_SR;
+  volume_filter_t *f =
+      (volume_filter_t *)g_volume_vtable.create("v", &cfg, AUDIT_FADER_SR, 8, params, NULL);
+  ASSERT_TRUE(f != NULL);
+  double w[8];
+  for (int i = 0; i < 8; i++)
+    w[i] = 1.0;
+  g_volume_vtable.process(f, w, 8);
+  processing_parameters_set_target_volume_for_fader(params, -20.0, FADER_MAIN);
+  for (int i = 0; i < 4; i++)
+    w[i] = 1.0;
+  g_volume_vtable.process(f, w, 4);
+  // First of two ramp chunks: 0 -> -10 dB laid out over the 4 samples.
+  ASSERT_NEAR(1.0, w[0], 1e-12);
+  ASSERT_NEAR(pow(10.0, -7.5 / 20.0), w[3], 1e-12);
+  g_volume_vtable.free(f);
+  processing_parameters_free(params);
+}
+
+// 05-3.2(1) / 02-1.5(1): a self-driven Volume filter does not take over the
+// state of a filter on a different fader.
+TEST(AuditVolumeTransferIgnoresDifferentFader) {
+  processing_parameters_t *params = processing_parameters_create(1, 1);
+  processing_parameters_set_target_volume_for_fader(params, -30.0, FADER_AUX1);
+  processing_parameters_set_current_volume_for_fader(params, -30.0, FADER_AUX1);
+  filter_config_t c1 = {.type = FILTER_TYPE_VOLUME};
+  c1.parameters.volume.fader = FADER_AUX1;
+  c1.parameters.volume.has_ramp_time_ms = true;
+  c1.parameters.volume.ramp_time_ms = 0.0;
+  filter_config_t c2 = c1;
+  c2.parameters.volume.fader = FADER_AUX2;
+  volume_filter_t *src =
+      (volume_filter_t *)g_volume_vtable.create("v", &c1, AUDIT_FADER_SR, 8, params, NULL);
+  volume_filter_t *dst =
+      (volume_filter_t *)g_volume_vtable.create("v", &c2, AUDIT_FADER_SR, 8, params, NULL);
+  g_volume_vtable.transfer_state(dst, src);
+  double w[8];
+  for (int i = 0; i < 8; i++)
+    w[i] = 1.0;
+  g_volume_vtable.process(dst, w, 8);
+  ASSERT_NEAR(1.0, w[7], 1e-12);
+  ASSERT_NEAR(
+      0.0,
+      processing_parameters_get_current_volume_for_fader(params, FADER_AUX2),
+      1e-12);
+  g_volume_vtable.free(src);
+  g_volume_vtable.free(dst);
+  processing_parameters_free(params);
+}
+
+// 05-3.2(2) / 02-1.5(2): ramp time change mid-ramp restarts from the current
+// level at the new speed, or settles at once when ramping is disabled
+// (upstream Faders::update_parameters).
+TEST(AuditFaderTransferRampTimeChange) {
+  processing_parameters_t *params = processing_parameters_create(1, 1);
+  fader_settings_t slow[FADER_COUNT], none[FADER_COUNT], fast[FADER_COUNT];
+  for (int i = 0; i < FADER_COUNT; i++) {
+    slow[i] = (fader_settings_t){.ramp_time_ms = 10.0 * AUDIT_FADER_CHUNK_MS, .limit = 50};
+    none[i] = (fader_settings_t){.ramp_time_ms = 0.0, .limit = 50};
+    fast[i] = (fader_settings_t){.ramp_time_ms = 4.0 * AUDIT_FADER_CHUNK_MS, .limit = 50};
+  }
+  pipeline_faders_t a, b, c;
+  pipeline_faders_init(&a, slow, params, AUDIT_FADER_FR, AUDIT_FADER_SR);
+  processing_parameters_set_target_volume(params, -20.0);
+  for (int i = 0; i < 3; i++)
+    pipeline_faders_prepare_chunk(&a);
+  ASSERT_NEAR(-6.0, a.faders[0].current_db, 1e-9);
+
+  pipeline_faders_init(&b, none, params, AUDIT_FADER_FR, AUDIT_FADER_SR);
+  pipeline_faders_transfer(&b, &a);
+  ASSERT_EQ(0, b.faders[0].ramp_step);
+  ASSERT_NEAR(-20.0, b.faders[0].current_db, 1e-9);
+
+  pipeline_faders_init(&c, fast, params, AUDIT_FADER_FR, AUDIT_FADER_SR);
+  pipeline_faders_transfer(&c, &a);
+  ASSERT_EQ(1, c.faders[0].ramp_step);
+  ASSERT_NEAR(-6.0, c.faders[0].ramp_start, 1e-9);
+  pipeline_faders_prepare_chunk(&c);
+  ASSERT_NEAR(-6.0, c.levels.faders[0].start_db, 1e-9);
+  ASSERT_NEAR(-9.5, c.levels.faders[0].end_db, 1e-9);
+  processing_parameters_free(params);
+}
+
+// 07-1.1: a structural reload during a ramp starts the new pipeline settled at
+// the target instead of restarting a full-length ramp.
+TEST(AuditFaderStructuralReloadStartsSettled) {
+  dsp_config_t config;
+  audit_fader_base_config(&config, 1);
+  config.devices.volume_ramp_time_ms = 20.0 * AUDIT_FADER_CHUNK_MS;
+  processing_parameters_t *params = processing_parameters_create(1, 1);
+  pipeline_t *a = pipeline_create(&config, params, 0, NULL);
+  audio_chunk_t *in = audio_chunk_create(AUDIT_FADER_FR, 1);
+  audio_chunk_t *out = audio_chunk_create(AUDIT_FADER_FR, 1);
+  for (size_t t = 0; t < AUDIT_FADER_FR; t++)
+    audio_chunk_get_channel(in, 0)[t] = 1.0;
+  audio_chunk_set_valid_frames(in, AUDIT_FADER_FR);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(a, in, out));
+  processing_parameters_set_target_volume(params, -20.0);
+  for (int i = 0; i < 3; i++)
+    ASSERT_EQ(PIPELINE_OK, pipeline_process(a, in, out));
+  ASSERT_TRUE(processing_parameters_get_current_volume(params) > -19.0);
+
+  pipeline_t *b = pipeline_create(&config, params, 0, NULL);
+  ASSERT_TRUE(b != NULL);
+  pipeline_transfer_state(b, a, false);
+  pipeline_free(a);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(b, in, out));
+  waveform_t w = audio_chunk_get_channel(out, 0);
+  ASSERT_NEAR(pow(10.0, -1.0), w[0], 1e-12);
+  ASSERT_NEAR(pow(10.0, -1.0), w[AUDIT_FADER_FR - 1], 1e-12);
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  pipeline_free(b);
+  processing_parameters_free(params);
+}
+
+// 05-2.5: the bank seeds limited levels; the published current volume never
+// exceeds the limit.
+TEST(AuditFaderSeedRespectsLimit) {
+  dsp_config_t config;
+  audit_fader_base_config(&config, 1);
+  config.devices.has_volume_limit = true;
+  config.devices.volume_limit = -6.0;
+  processing_parameters_t *params = processing_parameters_create(1, 1);
+  processing_parameters_set_target_volume(params, 0.0);
+  pipeline_t *p = pipeline_create(&config, params, 0, NULL);
+  ASSERT_NEAR(-6.0, p->faders.levels.faders[0].end_db, 1e-12);
+  audio_chunk_t *in = audio_chunk_create(AUDIT_FADER_FR, 1);
+  for (size_t t = 0; t < AUDIT_FADER_FR; t++)
+    audio_chunk_get_channel(in, 0)[t] = 1.0;
+  audio_chunk_set_valid_frames(in, AUDIT_FADER_FR);
+  ASSERT_EQ(PIPELINE_OK, pipeline_process(p, in, in));
+  ASSERT_NEAR(pow(10.0, -6.0 / 20.0), audio_chunk_get_channel(in, 0)[0], 1e-12);
+  ASSERT_NEAR(-6.0, processing_parameters_get_current_volume(params), 1e-12);
+  audio_chunk_free(in);
+  pipeline_free(p);
+  processing_parameters_free(params);
 }
 
 TEST_MAIN()

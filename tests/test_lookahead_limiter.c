@@ -313,4 +313,52 @@ TEST(test_lookahead_limiter_transfer_state_flushes_lookahead) {
   g_lookahead_limiter_vtable.free(dest_changed);
 }
 
+// MARK: - Validation Regression Tests
+
+static filter_config_t make_limiter(double limit, double attack,
+                                    time_unit_t attack_unit, double release,
+                                    time_unit_t release_unit) {
+  filter_config_t cfg = {.type = FILTER_TYPE_LOOKAHEAD_LIMITER};
+  cfg.parameters.lookahead_limiter.limit = limit;
+  cfg.parameters.lookahead_limiter.attack = attack;
+  cfg.parameters.lookahead_limiter.attack_unit = attack_unit;
+  cfg.parameters.lookahead_limiter.release = release;
+  cfg.parameters.lookahead_limiter.release_unit = release_unit;
+  return cfg;
+}
+
+TEST(test_audit_limiter_accepts_valid) {
+  filter_config_t cfg =
+      make_limiter(-1.0, 5.0, TIME_UNIT_MS, 50.0, TIME_UNIT_MS);
+  ASSERT_EQ(0, filter_config_validate(&cfg, 48000, NULL));
+  cfg = make_limiter(-1.0, 0.0, TIME_UNIT_MS, 0.0, TIME_UNIT_MS);
+  ASSERT_EQ(0, filter_config_validate(&cfg, 48000, NULL));
+}
+
+TEST(test_audit_limiter_rejects_non_finite) {
+  const double bad[] = {NAN, INFINITY, -INFINITY};
+  for (size_t i = 0; i < 3; i++) {
+    filter_config_t cfg =
+        make_limiter(bad[i], 5.0, TIME_UNIT_MS, 50.0, TIME_UNIT_MS);
+    ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+    cfg = make_limiter(-1.0, bad[i], TIME_UNIT_MS, 50.0, TIME_UNIT_MS);
+    ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+    cfg = make_limiter(-1.0, 5.0, TIME_UNIT_MS, bad[i], TIME_UNIT_MS);
+    ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+    config_error_t err = {0};
+    ASSERT_TRUE(g_lookahead_limiter_vtable.create("lim", &cfg, 48000, 1024,
+                                                  NULL, &err) == NULL);
+  }
+}
+
+TEST(test_audit_limiter_rejects_invalid_units) {
+  filter_config_t cfg =
+      make_limiter(-1.0, 5.0, TIME_UNIT_INVALID, 50.0, TIME_UNIT_MS);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+  cfg = make_limiter(-1.0, 5.0, TIME_UNIT_MS, 50.0, TIME_UNIT_INVALID);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+  cfg = make_limiter(-1.0, 5.0, (time_unit_t)42, 50.0, TIME_UNIT_MS);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+}
+
 TEST_MAIN()

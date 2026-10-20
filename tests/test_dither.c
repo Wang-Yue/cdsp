@@ -251,4 +251,32 @@ TEST(dither_transfer_state_drops_shaper_when_scale_changes) {
   g_dither_vtable.free(reference);
 }
 
+// MARK: - Validation Regression Tests
+
+static filter_config_t make_dither(dither_type_t type, int bits,
+                                   double amplitude) {
+  filter_config_t cfg = {.type = FILTER_TYPE_DITHER};
+  cfg.parameters.dither.type = type;
+  cfg.parameters.dither.bits = bits;
+  cfg.parameters.dither.has_amplitude = true;
+  cfg.parameters.dither.amplitude = amplitude;
+  return cfg;
+}
+
+TEST(test_audit_dither_validation) {
+  filter_config_t cfg = make_dither(DITHER_TYPE_FLAT, 16, 2.0);
+  ASSERT_EQ(0, filter_config_validate(&cfg, 48000, NULL));
+  cfg = make_dither(DITHER_TYPE_FLAT, 16, NAN);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+  ASSERT_TRUE(g_dither_vtable.create("d", &cfg, 48000, 64, NULL, NULL) == NULL);
+  cfg = make_dither(DITHER_TYPE_FLAT, 16, INFINITY);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+  cfg = make_dither((dither_type_t)1000, 16, 2.0);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+  cfg = make_dither(DITHER_TYPE_SHIBATA_LOW_192, 24, 0.0);
+  ASSERT_EQ(0, filter_config_validate(&cfg, 48000, NULL));
+  cfg = make_dither(DITHER_TYPE_HIGHPASS, 2000, 0.0);
+  ASSERT_EQ(-1, filter_config_validate(&cfg, 48000, NULL));
+}
+
 TEST_MAIN()

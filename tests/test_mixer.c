@@ -611,4 +611,49 @@ TEST(MixerConfigValidateNullSources) {
   ASSERT_TRUE(strstr(err.message, "Null sources array for dest 0") != NULL);
 }
 
+TEST(audit_mixer_rejects_non_finite_gain) {
+  mixer_source_t src = {.channel = 0, .has_gain = true, .gain = 0.0};
+  mixer_mapping_t map = {.dest = 0, .sources = &src, .sources_count = 1};
+  mixer_config_t cfg = {0};
+  cfg.channels_in = 1;
+  cfg.channels_out = 1;
+  cfg.mapping = &map;
+  cfg.mapping_count = 1;
+  ASSERT_EQ(0, mixer_config_validate(&cfg, NULL));
+  src.gain = NAN;
+  ASSERT_NE(0, mixer_config_validate(&cfg, NULL));
+  src.gain = -INFINITY;
+  ASSERT_NE(0, mixer_config_validate(&cfg, NULL));
+}
+
+// Mixer mixes the full buffer (upstream mixes `input.frames`) and propagates
+// valid_frames from the input.
+TEST(audit_mixer_partial_chunk_valid_frames) {
+  mixer_source_t src = {.channel = 0, .has_gain = true, .gain = 0.0};
+  mixer_mapping_t map = {.dest = 0, .sources = &src, .sources_count = 1};
+  mixer_config_t cfg = {0};
+  cfg.channels_in = 1;
+  cfg.channels_out = 1;
+  cfg.mapping = &map;
+  cfg.mapping_count = 1;
+  mixer_t *m = mixer_create("m", &cfg, 8, NULL);
+  ASSERT_TRUE(m != NULL);
+
+  audio_chunk_t *in = audio_chunk_create(8, 1);
+  audio_chunk_t *out = audio_chunk_create(8, 1);
+  double *ib = audio_chunk_get_channel(in, 0);
+  for (size_t i = 0; i < 8; i++)
+    ib[i] = (i < 5) ? 1.0 : 0.0;
+  audio_chunk_set_valid_frames(in, 5);
+  ASSERT_EQ(MIXER_OK, mixer_process(m, in, out));
+  ASSERT_EQ(5u, audio_chunk_get_valid_frames(out));
+  const double *ob = audio_chunk_get_channel(out, 0);
+  for (size_t i = 0; i < 8; i++)
+    ASSERT_TRUE(ob[i] == ((i < 5) ? 1.0 : 0.0));
+
+  audio_chunk_free(in);
+  audio_chunk_free(out);
+  mixer_free(m);
+}
+
 TEST_MAIN()

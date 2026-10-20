@@ -584,16 +584,16 @@ TEST(test_websocket_error_translation) {
   // 4. Test capabilities DeviceNotFoundError translation
 #if defined(ENABLE_COREAUDIO)
   const char *cap_cmd =
-      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"coreaudio\", "
-      "\"NonExistentDevice12345\"]}";
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"backend\":\"coreaudio\", "
+      "\"device\":\"NonExistentDevice12345\"}";
 #elif defined(ENABLE_ALSA)
   const char *cap_cmd =
-      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"alsa\", "
-      "\"NonExistentDevice12345\"]}";
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"backend\":\"alsa\", "
+      "\"device\":\"NonExistentDevice12345\"}";
 #elif defined(ENABLE_WASAPI)
   const char *cap_cmd =
-      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"wasapi\", "
-      "\"NonExistentDevice12345\"]}";
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"backend\":\"wasapi\", "
+      "\"device\":\"NonExistentDevice12345\"}";
 #endif
 #if defined(ENABLE_COREAUDIO) || defined(ENABLE_ALSA) || defined(ENABLE_WASAPI)
   websocket_server_handle_command(server, 0, cap_cmd, resp, sizeof(resp));
@@ -609,8 +609,8 @@ TEST(test_websocket_error_translation) {
   // 5. Test capabilities Generic DeviceError translation (unknown backend)
   websocket_server_handle_command(
       server, 0,
-      "{\"command\":\"GetCaptureDeviceCapabilities\",\"value\":[\"unsupported_"
-      "backend\", \"dummy\"]}",
+      "{\"command\":\"GetCaptureDeviceCapabilities\",\"backend\":\"unsupported_"
+      "backend\", \"device\":\"dummy\"}",
       resp, sizeof(resp));
   root = cJSON_Parse(resp);
   ASSERT_TRUE(root != NULL);
@@ -2076,6 +2076,68 @@ TEST(WebSocket_GetRateAdjust_DefaultsToZero) {
   ASSERT_TRUE(val != NULL);
   ASSERT_NEAR(0.0, val->valuedouble, 1e-6);
   cJSON_Delete(root);
+
+  websocket_server_free(server);
+}
+
+TEST(WebSocket_RejectUnknownCommandFields) {
+  websocket_server_t *server = websocket_server_create(54342, "127.0.0.1");
+  websocket_server_set_engine(server, (dsp_engine_t *)&mock_engine);
+
+  const char *const invalid_commands[] = {
+      "{\"command\": \"GetVersion\", \"value\": 1}",
+      "{\"command\": \"SetUpdateInterval\", \"valeu\": 500}",
+      "{\"command\": \"SetUpdateInterval\", \"value\": 500, \"extra\": 1}",
+      "{\"command\": \"AdjustVolume\", \"value\": -3.0, \"minimum\": -50.0}",
+      ("{\"command\": \"SubscribeVuLevels\", \"value\": {\"max_rate\": 10.0, "
+       "\"attack\": 0.0, \"relase\": 0.0}}"),
+      ("{\"command\": \"SubscribeVuLevels\", \"value\": {\"max_rate\": 10.0, "
+       "\"attack\": 0.0, \"release\": 0.0, \"extra\": 1}}"),
+      ("{\"command\": \"GetSpectrum\", \"value\": {\"side\": \"capture\", "
+       "\"channel\": null, \"min_freq\": 20.0, \"max_freq\": 20000.0, "
+       "\"n_bins\": 10, \"extra\": 1}}"),
+      ("{\"command\": \"SubscribeSpectrum\", \"value\": {\"side\": \"capture\", "
+       "\"channel\": null, \"min_freq\": 20.0, \"max_freq\": 20000.0, "
+       "\"n_binz\": 10}}"),
+  };
+
+  char response[1024] = {0};
+  for (size_t i = 0; i < sizeof(invalid_commands) / sizeof(invalid_commands[0]);
+       i++) {
+    response[0] = '\0';
+    websocket_server_handle_command(server, 0, invalid_commands[i], response,
+                                    sizeof(response));
+    cJSON *root = cJSON_Parse(response);
+    ASSERT_TRUE(root != NULL);
+    cJSON *reply = cJSON_GetObjectItem(root, "reply");
+    ASSERT_TRUE(reply != NULL);
+    ASSERT_STR_EQ("Invalid", reply->valuestring);
+    cJSON *err = cJSON_GetObjectItem(root, "error");
+    ASSERT_TRUE(err != NULL);
+    ASSERT_TRUE(strstr(err->valuestring, "unknown field") != NULL);
+    cJSON_Delete(root);
+  }
+
+  // Valid commands should not be rejected with Invalid / unknown field
+  const char *const valid_commands[] = {
+      "{\"command\": \"GetVersion\"}",
+      "{\"command\": \"AdjustVolume\", \"value\": -3.0, \"min\": -50.0}",
+      ("{\"command\": \"SubscribeVuLevels\", \"value\": {\"max_rate\": 10.0, "
+       "\"attack\": 0.0, \"release\": 0.0}}"),
+  };
+
+  for (size_t i = 0; i < sizeof(valid_commands) / sizeof(valid_commands[0]);
+       i++) {
+    response[0] = '\0';
+    websocket_server_handle_command(server, 0, valid_commands[i], response,
+                                    sizeof(response));
+    cJSON *root = cJSON_Parse(response);
+    ASSERT_TRUE(root != NULL);
+    cJSON *reply = cJSON_GetObjectItem(root, "reply");
+    ASSERT_TRUE(reply != NULL);
+    ASSERT_TRUE(strcmp("Invalid", reply->valuestring) != 0);
+    cJSON_Delete(root);
+  }
 
   websocket_server_free(server);
 }
