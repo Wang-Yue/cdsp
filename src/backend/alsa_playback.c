@@ -128,7 +128,7 @@ static void alsa_playback_publish_level(alsa_playback_t *playback,
   if (atomic_load_explicit(&playback->device_stalled, memory_order_relaxed))
     return;
   snd_pcm_state_t st = snd_pcm_state(playback->pcm);
-  if (st != SND_PCM_STATE_RUNNING && st != SND_PCM_STATE_PREPARED)
+  if (st != SND_PCM_STATE_RUNNING)
     return;
   snd_pcm_sframes_t avail = snd_pcm_avail(playback->pcm);
   if (avail < 0 || (snd_pcm_uframes_t)avail > playback->bufsize)
@@ -146,9 +146,9 @@ static void alsa_playback_enter_stall(alsa_playback_t *playback) {
   snd_pcm_prepare(playback->pcm);
   snd_pcm_uframes_t avail_min =
       playback->period > 0 ? (snd_pcm_uframes_t)playback->period : 1;
-  snd_pcm_uframes_t frames_to_stall =
-      (playback->bufsize >= avail_min) ? (playback->bufsize - avail_min + 1)
-                                       : 1;
+  snd_pcm_uframes_t frames_to_stall = (playback->bufsize >= avail_min)
+                                          ? (playback->bufsize - avail_min + 1)
+                                          : 1;
   if (frames_to_stall > 0 && playback->zero_stall_buf) {
     snd_pcm_sframes_t sw_rc = snd_pcm_writei(
         playback->pcm, playback->zero_stall_buf, frames_to_stall);
@@ -177,7 +177,9 @@ static void *alsa_playback_inner_thread_func(void *arg) {
   // One-frame wrap-straddle buffer, pre-allocated in open() (AGENTS.md §1.1:
   // no allocation on the RT thread).
   uint8_t *local_buf = playback->local_buf;
-  bool playback_interrupted = false;
+  // The device starts out empty, and runs on silence until the first data
+  // arrives, without warning about it, like after a stall.
+  bool playback_interrupted = true;
   // Set by every exit path that is caused by a device error, as opposed to a
   // requested stop (state STOPPED) or the end-of-stream drain.
   bool fatal = false;
@@ -304,8 +306,8 @@ static void *alsa_playback_inner_thread_func(void *arg) {
                 playback->bufsize, playback->sample_rate, playback->blockalign,
                 total_queued, playback->zero_stall_buf,
                 playback->zero_stall_buf_size)) {
-          alsa_playback_record_fatal(
-              playback, "Failed to prime delay after resume", 0);
+          alsa_playback_record_fatal(playback,
+                                     "Failed to prime delay after resume", 0);
           fatal = true;
           break;
         }
@@ -386,16 +388,13 @@ static void *alsa_playback_inner_thread_func(void *arg) {
         snd_pcm_sframes_t rc =
             snd_pcm_writei(playback->pcm, write_ptr, remainder_frames);
         if (rc > 0) {
-          logger_trace(&g_logger,
-                       "PB: wrote %ld frames out of requested %zu",
+          logger_trace(&g_logger, "PB: wrote %ld frames out of requested %zu",
                        (long)rc, frames_to_write);
           if (from_ring)
             backend_buffer_commit_read(playback->buffer, (size_t)rc);
           if (atomic_load_explicit(&playback->device_stalled,
                                    memory_order_relaxed)) {
             logger_info(&g_logger, "PB: device resumed from stall");
-            atomic_store_explicit(&playback->device_stalled, false,
-                                  memory_order_release);
             // Drop stall-check zeros in the device buffer and stale chunks
             // that queued up before the stall was detected, so the next pass
             // starts from Prepared at the target level with current samples.
@@ -417,6 +416,15 @@ static void *alsa_playback_inner_thread_func(void *arg) {
             backend_buffer_drain(playback->buffer);
             logger_debug(&g_logger, "PB: Dropped %zu stale frames after stall",
                          stale_frames);
+            // The device is now empty, and the outer thread has dropped
+            // everything since the stall. Start it on silence without warning
+            // about it, and top it up to the target when data arrives, like
+            // after a gap in the data.
+            playback_interrupted = true;
+            // Only after the drain, so that the first chunk let through is not
+            // dropped with the stale ones.
+            atomic_store_explicit(&playback->device_stalled, false,
+                                  memory_order_release);
             remainder_frames = 0;
             staged = 0;
             no_progress = 0;
@@ -487,12 +495,11 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           }
           size_t ring_rem =
               backend_buffer_get_available_read_frames(playback->buffer);
-          if (!alsa_device_prime_delay(playback->pcm, playback->target_level,
-                                       playback->chunk_size, playback->bufsize,
-                                       playback->sample_rate,
-                                       playback->blockalign, staged + ring_rem,
-                                       playback->zero_stall_buf,
-                                       playback->zero_stall_buf_size)) {
+          if (!alsa_device_prime_delay(
+                  playback->pcm, playback->target_level, playback->chunk_size,
+                  playback->bufsize, playback->sample_rate,
+                  playback->blockalign, staged + ring_rem,
+                  playback->zero_stall_buf, playback->zero_stall_buf_size)) {
             alsa_playback_record_fatal(playback,
                                        "Failed to prime delay after EPIPE", 0);
             write_fatal = true;
@@ -511,12 +518,11 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           }
           size_t ring_rem =
               backend_buffer_get_available_read_frames(playback->buffer);
-          if (!alsa_device_prime_delay(playback->pcm, playback->target_level,
-                                       playback->chunk_size, playback->bufsize,
-                                       playback->sample_rate,
-                                       playback->blockalign, staged + ring_rem,
-                                       playback->zero_stall_buf,
-                                       playback->zero_stall_buf_size)) {
+          if (!alsa_device_prime_delay(
+                  playback->pcm, playback->target_level, playback->chunk_size,
+                  playback->bufsize, playback->sample_rate,
+                  playback->blockalign, staged + ring_rem,
+                  playback->zero_stall_buf, playback->zero_stall_buf_size)) {
             alsa_playback_record_fatal(
                 playback, "Failed to prime delay after suspend recovery", 0);
             write_fatal = true;
@@ -598,11 +604,11 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           }
           playback_interrupted = true;
         }
-        logger_debug(
-            &g_logger,
-            "PB: Ring buffer empty and device buffer low (delay=%zu, state=%s), "
-            "feeding keep-alive silence",
-            delay, alsa_state_desc((int)st));
+        logger_debug(&g_logger,
+                     "PB: Ring buffer empty and device buffer low (delay=%zu, "
+                     "state=%s), "
+                     "feeding keep-alive silence",
+                     delay, alsa_state_desc((int)st));
         // zero_stall_buf holds bufsize frames; never write past it.
         snd_pcm_uframes_t silence_frames =
             playback->chunk_size < playback->bufsize
@@ -1138,12 +1144,12 @@ static void alsa_playback_set_pitch(void *ctx, double multiplier) {
 #ifdef CDSP_TEST
   // In unit tests that immediately inspect the ALSA control after set_pitch(),
   // wait briefly for the running inner thread to apply the pending pitch.
-  for (int i = 0; i < 200 &&
-                  atomic_load_explicit(&playback->has_pending_pitch,
-                                       memory_order_acquire) &&
-                  playback->inner_thread_created &&
-                  backend_buffer_get_state(playback->buffer) ==
-                      BACKEND_STREAM_RUNNING;
+  for (int i = 0;
+       i < 200 &&
+       atomic_load_explicit(&playback->has_pending_pitch,
+                            memory_order_acquire) &&
+       playback->inner_thread_created &&
+       backend_buffer_get_state(playback->buffer) == BACKEND_STREAM_RUNNING;
        i++) {
     cdsp_sleep_us(500);
   }
