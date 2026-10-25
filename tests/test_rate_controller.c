@@ -57,6 +57,69 @@ TEST(OutputAlwaysClampedWithin5PerMille) {
   pi_rate_controller_free(pi);
 }
 
+static bool at_limit(double speed) {
+  return fabs(fabs(1.0 - speed) - 0.005) < 1e-12;
+}
+
+// Default gains, no ramp, so the error is just level - target.
+static pi_rate_controller_t *make_test_controller(void) {
+  return pi_rate_controller_create(48000, 10.0, 10000, 0.2, 0.004, 0, 0.33);
+}
+
+TEST(SmallErrorsArePlainPI) {
+  pi_rate_controller_t *pi = make_test_controller();
+  ASSERT_TRUE(pi != NULL);
+  double levels[] = {10100.0, 10200.0, 9900.0, 10050.0, 9800.0};
+  double accumulated = 0.0;
+  for (size_t i = 0; i < sizeof(levels) / sizeof(levels[0]); i++) {
+    double rel_err = (levels[i] - 10000.0) / 480000.0;
+    accumulated += rel_err * 10.0;
+    double expected = 1.0 - (0.2 * rel_err + 0.004 * accumulated);
+    ASSERT_NEAR(expected, pi_rate_controller_next(pi, levels[i]), 1e-15);
+  }
+  pi_rate_controller_free(pi);
+}
+
+TEST(LeavesTheLimitAsSoonAsTheErrorTurns) {
+  // The defaults: chunksize 1024 as the target, a 10 s adjust period. An error
+  // can not be larger than the target on the empty side.
+  pi_rate_controller_t *pi =
+      pi_rate_controller_create(48000, 10.0, 1024, 0.2, 0.004, 0, 0.33);
+  ASSERT_TRUE(pi != NULL);
+  // Too full for a long time: held at the limit.
+  for (int i = 0; i < 1000; i++) {
+    pi_rate_controller_next(pi, 1624.0);
+  }
+  ASSERT_TRUE(at_limit(pi_rate_controller_next(pi, 1624.0)));
+  // Now empty: the first reading comes off the limit, and the controller asks
+  // for the other side once the integral has come down, about 51 periods at
+  // these gains. An integral wound up over the 1000 periods would take about
+  // 580, and one wound up for a day several thousand.
+  double first = pi_rate_controller_next(pi, 0.0);
+  ASSERT_FALSE(at_limit(first));
+  int periods = 1;
+  double speed = first;
+  while (speed < 1.0) {
+    speed = pi_rate_controller_next(pi, 0.0);
+    periods += 1;
+    ASSERT_TRUE(periods <= 60);
+  }
+  pi_rate_controller_free(pi);
+}
+
+TEST(IntegralUnwindsFromSaturation) {
+  pi_rate_controller_t *pi = make_test_controller();
+  ASSERT_TRUE(pi != NULL);
+  for (int i = 0; i < 1000; i++) {
+    pi_rate_controller_next(pi, 13000.0);
+  }
+  // Integrating into saturation is stopped, so what was built up is no more
+  // than the limit's worth (measured at target where proportional error is 0).
+  double speed_at_target = pi_rate_controller_next(pi, 10000.0);
+  ASSERT_TRUE(fabs(1.0 - speed_at_target) <= 0.005 + 1e-12);
+  pi_rate_controller_free(pi);
+}
+
 TEST(AveragerReturnsNilWhenEmpty) {
   averager_t avg;
   averager_init(&avg);

@@ -57,11 +57,11 @@
  * positive error and yields `speed > 1`, asking the capture path to
  * run a touch faster. A buffer that is too full does the opposite.
  *
- * **Saturation.** The output is hard-limited to `1 ± 0.005` so a
- * single tick is always inaudible. Matching upstream CamillaDSP
- * (`PIRateController::next`), only the combined P+I output is clamped;
- * the integrator state (`accumulated`) is *not* clamped, so there is no
- * explicit anti-windup.
+ * **Saturation & Anti-windup.** The output is hard-limited to `1 ± 0.005`
+ * so a single tick is always inaudible. Matching upstream CamillaDSP
+ * (`PIRateController::next`), conditional integration stops accumulating
+ * error while the output is held at the limit unless the error brings it
+ * back toward the linear range.
  */
 typedef struct pi_rate_controller pi_rate_controller_t;
 
@@ -79,19 +79,22 @@ pi_rate_controller_t *pi_rate_controller_create_default(int samplerate,
                                                         int target_level);
 
 /**
- * @brief Creates a PI rate controller with specified gains.
+ * @brief Creates a PI rate controller with specified gains and ramp settings.
  *
  * @param samplerate The sample rate in Hz.
  * @param interval The control interval in seconds.
  * @param target_level The target buffer level in samples.
  * @param kp Proportional gain.
  * @param ki Integral gain.
+ * @param ramp_steps Number of intervals for target ramp-in (0 to disable).
+ * @param ramp_trigger_limit Relative error threshold that triggers a ramp.
  * @return A pointer to the newly created pi_rate_controller_t instance, or NULL
  * on failure.
  */
 pi_rate_controller_t *pi_rate_controller_create(int samplerate, double interval,
                                                 int target_level, double kp,
-                                                double ki);
+                                                double ki, int ramp_steps,
+                                                double ramp_trigger_limit);
 
 /**
  * @brief Updates the PI controller with a new level measurement and returns the

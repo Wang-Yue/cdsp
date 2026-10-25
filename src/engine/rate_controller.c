@@ -65,9 +65,10 @@ struct pi_rate_controller {
 /// so a single tick is always inaudible.
 pi_rate_controller_t *pi_rate_controller_create(int samplerate, double interval,
                                                 int target_level, double kp,
-                                                double ki) {
+                                                double ki, int ramp_steps,
+                                                double ramp_trigger_limit) {
   if (samplerate <= 0 || interval <= 0.0 || target_level < 0 || kp < 0.0 ||
-      ki < 0.0)
+      ki < 0.0 || ramp_steps < 0)
     return NULL;
   pi_rate_controller_t *pi =
       (pi_rate_controller_t *)calloc(1, sizeof(pi_rate_controller_t));
@@ -80,8 +81,8 @@ pi_rate_controller_t *pi_rate_controller_create(int samplerate, double interval,
   pi->ki = ki;
   pi->frames_per_interval = interval * (double)samplerate;
   pi->accumulated = 0.0;
-  pi->ramp_steps = 20;
-  pi->ramp_trigger_limit = 0.33;
+  pi->ramp_steps = ramp_steps;
+  pi->ramp_trigger_limit = ramp_trigger_limit;
   pi->ramp_start = (double)target_level;
   pi->ramp_step = 0; // Start at 0 to perform soft-start ramp matching upstream
 
@@ -91,14 +92,17 @@ pi_rate_controller_t *pi_rate_controller_create(int samplerate, double interval,
 pi_rate_controller_t *pi_rate_controller_create_default(int samplerate,
                                                         double interval,
                                                         int target_level) {
-  // Default gains for the controller
+  // Default gains and ramp settings for the controller
   return pi_rate_controller_create(samplerate, interval, target_level, 0.2,
-                                   0.004);
+                                   0.004, 20, 0.33);
 }
 
 #include "logging/app_logger.h"
 
 static const logger_t g_logger = {"dsp.rate_controller"};
+
+/// The largest adjustment the controller asks for, as a fraction of the rate.
+static const double kMaxAdjust = 0.005;
 
 double pi_rate_controller_next(pi_rate_controller_t *pi, double level) {
   if (!pi)
@@ -143,19 +147,29 @@ double pi_rate_controller_next(pi_rate_controller_t *pi, double level) {
   double err = level - current_target;
   double rel_err =
       pi->frames_per_interval > 0.0 ? err / pi->frames_per_interval : 0.0;
-  pi->accumulated += rel_err * pi->interval;
-
   double proportional = pi->kp * rel_err;
+  double step = rel_err * pi->interval;
+  // Anti-windup: while the output is held at the limit, only integrate an
+  // error that brings it back. Otherwise the integral keeps growing past the
+  // clamp, and once the error turns it takes as long again to unwind, all the
+  // while asking for the wrong speed. The buffer then runs over or dry, and
+  // the levels measured around the recovery can keep pushing the integral
+  // further out.
+  double unclamped = proportional + pi->ki * (pi->accumulated + step);
+  if (fabs(unclamped) <= kMaxAdjust || signbit(unclamped) != signbit(step)) {
+    pi->accumulated += step;
+  }
+
   double integral = pi->ki * pi->accumulated;
   double output = proportional + integral;
   logger_trace(&g_logger,
                "Rate controller, error: %f, output: %f, P: %f, I: %f", err,
                output, proportional, integral);
   double clamped_output = output;
-  if (clamped_output > 0.005)
-    clamped_output = 0.005;
-  if (clamped_output < -0.005)
-    clamped_output = -0.005;
+  if (clamped_output > kMaxAdjust)
+    clamped_output = kMaxAdjust;
+  if (clamped_output < -kMaxAdjust)
+    clamped_output = -kMaxAdjust;
 
   return 1.0 - clamped_output;
 }
