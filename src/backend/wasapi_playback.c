@@ -44,6 +44,7 @@ struct wasapi_playback {
   bool exclusive;
   bool polling;
   _Atomic size_t target_level;
+  _Atomic size_t late_read_frames;
 
   binary_sample_format_t bin_fmt;
   size_t bytes_per_sample;
@@ -203,6 +204,11 @@ static void *wasapi_playback_loop(void *arg) {
   uint64_t poll_delay_us = (uint64_t)(def_time / 10);
   if (poll_delay_us == 0)
     poll_delay_us = 1000;
+  size_t period_frames =
+      (size_t)((uint64_t)def_time * (uint64_t)playback->sample_rate /
+               10000000ULL);
+  bool waited_for_event = false;
+  bool late_read = false;
 
   if (!playback->event_handle) {
     logger_debug(&g_wasapi_logger,
@@ -242,6 +248,17 @@ static void *wasapi_playback_loop(void *arg) {
     }
     logger_trace(&g_wasapi_logger, "Playback, new buffer frame count %u.",
                  buffer_free_frame_count);
+
+    // VB-Cable workaround (upstream #574): a pass that finds nothing taken
+    // after waiting for the event is a late read; leave one period out of the
+    // buffer level until a later pass takes two periods at once.
+    if (buffer_free_frame_count == 0 && waited_for_event) {
+      late_read = true;
+    } else if ((size_t)buffer_free_frame_count > period_frames) {
+      late_read = false;
+    }
+    atomic_store_explicit(&playback->late_read_frames,
+                          late_read ? period_frames : 0, memory_order_relaxed);
 
     if (buffer_free_frame_count > 0) {
       BYTE *bufferptr = NULL;
@@ -289,7 +306,11 @@ static void *wasapi_playback_loop(void *arg) {
     }
 
     if (playback->event_handle) {
-      DWORD wait_res = WaitForSingleObject(playback->event_handle, 1000);
+      waited_for_event =
+          (WaitForSingleObject(playback->event_handle, 0) != WAIT_OBJECT_0);
+      DWORD wait_res = waited_for_event
+                           ? WaitForSingleObject(playback->event_handle, 1000)
+                           : WAIT_OBJECT_0;
       if (backend_buffer_get_state(playback->buffer) ==
           BACKEND_STREAM_STOPPED) {
         logger_debug(&g_wasapi_logger,
@@ -411,6 +432,7 @@ static bool wasapi_playback_open(void *ctx, backend_error_t *err) {
   backend_buffer_set_target_level(playback->buffer, target_level);
   backend_buffer_set_chunk_size(playback->buffer, (size_t)playback->chunk_size);
   backend_buffer_set_state(playback->buffer, BACKEND_STREAM_RUNNING);
+  atomic_store_explicit(&playback->late_read_frames, 0, memory_order_relaxed);
   wasapi_stream_error_reset(&playback->error);
 
   if (pthread_create(&playback->inner_thread, NULL, wasapi_playback_loop,
@@ -491,7 +513,10 @@ static size_t wasapi_playback_get_buffer_level(void *ctx) {
   wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
   if (!playback)
     return 0;
-  return backend_buffer_get_level(playback->buffer);
+  size_t level = backend_buffer_get_level(playback->buffer);
+  size_t sub =
+      atomic_load_explicit(&playback->late_read_frames, memory_order_relaxed);
+  return level > sub ? level - sub : 0;
 }
 
 static device_buffer_estimate_status_t
@@ -499,7 +524,14 @@ wasapi_playback_get_checked_buffer_level(void *ctx, size_t *out_level) {
   wasapi_playback_t *playback = (wasapi_playback_t *)ctx;
   if (!playback)
     return DEVICE_BUFFER_ESTIMATE_INVALID;
-  return backend_buffer_get_checked_level(playback->buffer, out_level);
+  device_buffer_estimate_status_t status =
+      backend_buffer_get_checked_level(playback->buffer, out_level);
+  if (out_level) {
+    size_t sub =
+        atomic_load_explicit(&playback->late_read_frames, memory_order_relaxed);
+    *out_level = *out_level > sub ? *out_level - sub : 0;
+  }
+  return status;
 }
 
 static bool wasapi_playback_get_pending_rate_change(void *ctx,

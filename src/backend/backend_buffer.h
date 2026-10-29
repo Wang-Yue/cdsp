@@ -342,6 +342,29 @@ void backend_buffer_reset(backend_buffer_t *bb);
  */
 void backend_buffer_set_target_level(backend_buffer_t *bb, size_t target_level);
 
+/* --- Post-Restart Backlog Trimmer (upstream ringbuffer.rs BacklogTrimmer) ---
+ */
+
+/**
+ * @brief Trims a one-off backlog of chunks that queued up while a playback
+ * device was stalled and then restarted at target_level.
+ */
+typedef struct backlog_trimmer {
+  size_t chunk_size;
+  size_t target_level;
+  uint64_t window_ns;
+  uint64_t restarted_at_ns;
+  bool has_restarted_at;
+  bool dropping;
+  size_t dropped_frames;
+} backlog_trimmer_t;
+
+void backlog_trimmer_init(backlog_trimmer_t *trimmer, size_t chunk_size,
+                          size_t samplerate, size_t target_level);
+void backlog_trimmer_restarted(backlog_trimmer_t *trimmer);
+bool backlog_trimmer_drop_chunk(backlog_trimmer_t *trimmer, bool has_level,
+                                size_t level);
+
 /* --- Thread Synchronization --- */
 
 /**

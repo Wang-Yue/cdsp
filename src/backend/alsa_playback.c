@@ -79,6 +79,12 @@ struct alsa_playback {
   // set_is_paused() undo a RUNNING/PAUSED store that raced with the exit, so
   // a dead stream is never revived (M5).
   _Atomic bool inner_exited;
+
+  // Set by the inner thread after priming the device buffer on startup or
+  // XRUN/suspend recovery; consumed by alsa_playback_write() to arm
+  // backlog_trimmer (upstream e665275 / 75ef252).
+  _Atomic bool playback_restarted;
+  backlog_trimmer_t backlog_trimmer;
 };
 
 static void alsa_playback_mark_inner_exited(alsa_playback_t *playback) {
@@ -136,6 +142,20 @@ static void alsa_playback_publish_level(alsa_playback_t *playback,
   backend_buffer_publish(
       playback->buffer,
       (size_t)(playback->bufsize - (snd_pcm_uframes_t)avail) + staged);
+}
+
+static bool alsa_playback_prime_delay(alsa_playback_t *playback,
+                                      size_t queued_frames) {
+  if (!alsa_device_prime_delay(
+          playback->pcm, playback->target_level, playback->chunk_size,
+          playback->bufsize, playback->sample_rate, playback->blockalign,
+          queued_frames, playback->zero_stall_buf,
+          playback->zero_stall_buf_size)) {
+    return false;
+  }
+  atomic_store_explicit(&playback->playback_restarted, true,
+                        memory_order_release);
+  return true;
 }
 
 static void alsa_playback_enter_stall(alsa_playback_t *playback) {
@@ -249,11 +269,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           fatal = true;
           break;
         }
-        if (!alsa_device_prime_delay(
-                playback->pcm, playback->target_level, playback->chunk_size,
-                playback->bufsize, playback->sample_rate, playback->blockalign,
-                total_queued, playback->zero_stall_buf,
-                playback->zero_stall_buf_size)) {
+        if (!alsa_playback_prime_delay(playback, total_queued)) {
           alsa_playback_record_fatal(playback,
                                      "Failed to prime delay after XRUN", 0);
           fatal = true;
@@ -266,11 +282,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           fatal = true;
           break;
         }
-        if (!alsa_device_prime_delay(
-                playback->pcm, playback->target_level, playback->chunk_size,
-                playback->bufsize, playback->sample_rate, playback->blockalign,
-                total_queued, playback->zero_stall_buf,
-                playback->zero_stall_buf_size)) {
+        if (!alsa_playback_prime_delay(playback, total_queued)) {
           alsa_playback_record_fatal(playback,
                                      "Failed to prime delay after suspend", 0);
           fatal = true;
@@ -278,11 +290,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
         }
       } else if (st == SND_PCM_STATE_PREPARED) {
         logger_info(&g_logger, "PB: Starting playback from Prepared state");
-        if (!alsa_device_prime_delay(
-                playback->pcm, playback->target_level, playback->chunk_size,
-                playback->bufsize, playback->sample_rate, playback->blockalign,
-                total_queued, playback->zero_stall_buf,
-                playback->zero_stall_buf_size)) {
+        if (!alsa_playback_prime_delay(playback, total_queued)) {
           alsa_playback_record_fatal(playback,
                                      "Failed to prime delay from prepared", 0);
           fatal = true;
@@ -301,11 +309,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
       } else if (st == SND_PCM_STATE_RUNNING && resumed) {
         // The silence loop kept the device alive at a period of delay; top it
         // back up to the target level before resuming normal writes.
-        if (!alsa_device_prime_delay(
-                playback->pcm, playback->target_level, playback->chunk_size,
-                playback->bufsize, playback->sample_rate, playback->blockalign,
-                total_queued, playback->zero_stall_buf,
-                playback->zero_stall_buf_size)) {
+        if (!alsa_playback_prime_delay(playback, total_queued)) {
           alsa_playback_record_fatal(playback,
                                      "Failed to prime delay after resume", 0);
           fatal = true;
@@ -495,11 +499,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           }
           size_t ring_rem =
               backend_buffer_get_available_read_frames(playback->buffer);
-          if (!alsa_device_prime_delay(
-                  playback->pcm, playback->target_level, playback->chunk_size,
-                  playback->bufsize, playback->sample_rate,
-                  playback->blockalign, staged + ring_rem,
-                  playback->zero_stall_buf, playback->zero_stall_buf_size)) {
+          if (!alsa_playback_prime_delay(playback, staged + ring_rem)) {
             alsa_playback_record_fatal(playback,
                                        "Failed to prime delay after EPIPE", 0);
             write_fatal = true;
@@ -518,11 +518,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           }
           size_t ring_rem =
               backend_buffer_get_available_read_frames(playback->buffer);
-          if (!alsa_device_prime_delay(
-                  playback->pcm, playback->target_level, playback->chunk_size,
-                  playback->bufsize, playback->sample_rate,
-                  playback->blockalign, staged + ring_rem,
-                  playback->zero_stall_buf, playback->zero_stall_buf_size)) {
+          if (!alsa_playback_prime_delay(playback, staged + ring_rem)) {
             alsa_playback_record_fatal(
                 playback, "Failed to prime delay after suspend recovery", 0);
             write_fatal = true;
@@ -625,11 +621,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
             fatal = true;
             break;
           }
-          if (!alsa_device_prime_delay(
-                  playback->pcm, playback->target_level, playback->chunk_size,
-                  playback->bufsize, playback->sample_rate,
-                  playback->blockalign, (size_t)silence_frames,
-                  playback->zero_stall_buf, playback->zero_stall_buf_size)) {
+          if (!alsa_playback_prime_delay(playback, (size_t)silence_frames)) {
             alsa_playback_record_fatal(
                 playback, "Failed to prime delay after underrun in keep-alive",
                 0);
@@ -644,11 +636,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
             fatal = true;
             break;
           }
-          if (!alsa_device_prime_delay(
-                  playback->pcm, playback->target_level, playback->chunk_size,
-                  playback->bufsize, playback->sample_rate,
-                  playback->blockalign, (size_t)silence_frames,
-                  playback->zero_stall_buf, playback->zero_stall_buf_size)) {
+          if (!alsa_playback_prime_delay(playback, (size_t)silence_frames)) {
             alsa_playback_record_fatal(
                 playback, "Failed to prime delay after suspend in keep-alive",
                 0);
@@ -659,11 +647,7 @@ static void *alsa_playback_inner_thread_func(void *arg) {
           // E.g. after an external prepare or a stall recovery: prime to
           // target_level like the data path and upstream's play_buffer
           // (threaded_device.rs:627-637), not just one chunk (L1).
-          if (!alsa_device_prime_delay(
-                  playback->pcm, playback->target_level, playback->chunk_size,
-                  playback->bufsize, playback->sample_rate,
-                  playback->blockalign, (size_t)silence_frames,
-                  playback->zero_stall_buf, playback->zero_stall_buf_size)) {
+          if (!alsa_playback_prime_delay(playback, (size_t)silence_frames)) {
             alsa_playback_record_fatal(
                 playback, "Failed to prime delay from prepared in keep-alive",
                 0);
@@ -856,6 +840,10 @@ static bool alsa_playback_open(void *ctx, backend_error_t *err) {
   atomic_store_explicit(&playback->draining, false, memory_order_relaxed);
   atomic_store_explicit(&playback->fatal_error, false, memory_order_relaxed);
   atomic_store_explicit(&playback->inner_exited, false, memory_order_relaxed);
+  atomic_store_explicit(&playback->playback_restarted, false,
+                        memory_order_relaxed);
+  backlog_trimmer_init(&playback->backlog_trimmer, playback->chunk_size,
+                       (size_t)playback->sample_rate, playback->target_level);
   playback->fatal_msg[0] = '\0';
 
   // Search for UAC2 gadget pitch control: "Playback Pitch 1000000"
@@ -962,6 +950,19 @@ static bool alsa_playback_write(void *ctx, const audio_chunk_t *chunk,
 
   if (atomic_load_explicit(&playback->device_stalled, memory_order_acquire)) {
     logger_trace(&g_logger, "Playback device is stalled, dropping chunk");
+    return true;
+  }
+
+  if (atomic_exchange_explicit(&playback->playback_restarted, false,
+                               memory_order_acq_rel)) {
+    backlog_trimmer_restarted(&playback->backlog_trimmer);
+  }
+  size_t est_level = 0;
+  bool has_level =
+      backend_buffer_get_checked_level(playback->buffer, &est_level) ==
+      DEVICE_BUFFER_ESTIMATE_OK;
+  if (backlog_trimmer_drop_chunk(&playback->backlog_trimmer, has_level,
+                                 est_level)) {
     return true;
   }
 
@@ -1223,6 +1224,10 @@ alsa_playback_create(const playback_device_config_t *config, int sample_rate,
   atomic_store_explicit(&playback->pending_pitch, 1.0, memory_order_relaxed);
   atomic_store_explicit(&playback->has_pending_pitch, false,
                         memory_order_relaxed);
+  atomic_store_explicit(&playback->playback_restarted, false,
+                        memory_order_relaxed);
+  backlog_trimmer_init(&playback->backlog_trimmer, playback->chunk_size,
+                       (size_t)playback->sample_rate, playback->target_level);
 
   playback_backend_t *backend =
       (playback_backend_t *)calloc(1, sizeof(playback_backend_t));

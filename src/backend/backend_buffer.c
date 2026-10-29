@@ -245,6 +245,67 @@ void backend_buffer_set_target_level(backend_buffer_t *bb,
   atomic_store_explicit(&bb->target_level, target_level, memory_order_release);
 }
 
+#define BACKLOG_WINDOW_MIN_NS 500000000ULL
+#define BACKLOG_WINDOW_CHUNKS 4.0
+
+void backlog_trimmer_init(backlog_trimmer_t *trimmer, size_t chunk_size,
+                          size_t samplerate, size_t target_level) {
+  if (!trimmer)
+    return;
+  memset(trimmer, 0, sizeof(*trimmer));
+  trimmer->chunk_size = chunk_size;
+  trimmer->target_level = target_level;
+  double chunk_window_s =
+      (samplerate > 0 && chunk_size > 0)
+          ? (BACKLOG_WINDOW_CHUNKS * (double)chunk_size / (double)samplerate)
+          : 0.0;
+  uint64_t chunk_window_ns = (uint64_t)(chunk_window_s * 1e9);
+  trimmer->window_ns = chunk_window_ns > BACKLOG_WINDOW_MIN_NS
+                           ? chunk_window_ns
+                           : BACKLOG_WINDOW_MIN_NS;
+}
+
+void backlog_trimmer_restarted(backlog_trimmer_t *trimmer) {
+  if (!trimmer)
+    return;
+  trimmer->restarted_at_ns = cdsp_time_now_ns();
+  trimmer->has_restarted_at = true;
+}
+
+static void backlog_trimmer_finish(backlog_trimmer_t *trimmer) {
+  if (trimmer->dropping) {
+    logger_warn(&g_logger,
+                "Dropped %zu frames that arrived late after a playback restart",
+                trimmer->dropped_frames);
+    trimmer->dropping = false;
+    trimmer->dropped_frames = 0;
+  }
+}
+
+bool backlog_trimmer_drop_chunk(backlog_trimmer_t *trimmer, bool has_level,
+                                size_t level) {
+  if (!trimmer || !trimmer->has_restarted_at)
+    return false;
+  uint64_t now_ns = cdsp_time_now_ns();
+  if (now_ns > trimmer->restarted_at_ns &&
+      now_ns - trimmer->restarted_at_ns > trimmer->window_ns) {
+    trimmer->has_restarted_at = false;
+    backlog_trimmer_finish(trimmer);
+    return false;
+  }
+  if (!has_level)
+    return false;
+  if (level > trimmer->target_level + 2 * trimmer->chunk_size) {
+    trimmer->dropping = true;
+  }
+  if (trimmer->dropping && level > trimmer->target_level + trimmer->chunk_size) {
+    trimmer->dropped_frames += trimmer->chunk_size;
+    return true;
+  }
+  backlog_trimmer_finish(trimmer);
+  return false;
+}
+
 /* --- Silence Prefill & Realtime Device Rendering --- */
 
 static void backend_buffer_prefill_planar(backend_buffer_t *bb,

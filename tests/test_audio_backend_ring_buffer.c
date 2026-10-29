@@ -739,4 +739,52 @@ TEST(AuditCommon_L4_SliceApiWholeFramesAcrossWrap) {
   backend_buffer_free(bb);
 }
 
+TEST(BacklogTrimmer_DoesNotDropWithoutRestart) {
+  backlog_trimmer_t trimmer;
+  backlog_trimmer_init(&trimmer, 1024, 48000, 1024);
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 6 * 1024));
+}
+
+TEST(BacklogTrimmer_DropsBacklogDownToTargetPlusOneChunk) {
+  backlog_trimmer_t trimmer;
+  backlog_trimmer_init(&trimmer, 1024, 48000, 1024);
+  backlog_trimmer_restarted(&trimmer);
+
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 5 * 1024));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 4 * 1024));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 3 * 1024));
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2 * 1024));
+  // After dropping finishes, an ordinary two-chunk wobble is left alone.
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 3 * 1024));
+}
+
+TEST(BacklogTrimmer_WaitsPastMissingEstimateAfterRestart) {
+  backlog_trimmer_t trimmer;
+  backlog_trimmer_init(&trimmer, 1024, 48000, 1024);
+  backlog_trimmer_restarted(&trimmer);
+
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, false, 0));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 4 * 1024));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 3 * 1024));
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2 * 1024));
+}
+
+TEST(BacklogTrimmer_WindowCoversLargeChunks) {
+  // Four 16384-frame chunks at 44.1 kHz take ~1.49 s, well past the 500 ms
+  // minimum window.
+  backlog_trimmer_t trimmer;
+  backlog_trimmer_init(&trimmer, 16384, 44100, 16384);
+  ASSERT_TRUE(trimmer.window_ns > 1400000000ULL);
+}
+
+TEST(BacklogTrimmer_StopsWatchingAfterWindow) {
+  backlog_trimmer_t trimmer;
+  backlog_trimmer_init(&trimmer, 1024, 48000, 1024);
+  trimmer.window_ns = 0;
+  backlog_trimmer_restarted(&trimmer);
+  cdsp_sleep_ms(1);
+
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 5 * 1024));
+}
+
 TEST_MAIN()
