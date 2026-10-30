@@ -355,7 +355,6 @@ typedef struct backlog_trimmer {
   uint64_t window_ns;
   uint64_t restarted_at_ns;
   bool has_restarted_at;
-  bool dropping;
   size_t dropped_frames;
 } backlog_trimmer_t;
 

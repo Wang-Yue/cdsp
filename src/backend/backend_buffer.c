@@ -273,13 +273,12 @@ void backlog_trimmer_restarted(backlog_trimmer_t *trimmer) {
 }
 
 static void backlog_trimmer_finish(backlog_trimmer_t *trimmer) {
-  if (trimmer->dropping) {
+  if (trimmer->dropped_frames > 0) {
     logger_warn(&g_logger,
                 "Dropped %zu frames that arrived late after a playback restart",
                 trimmer->dropped_frames);
-    trimmer->dropping = false;
-    trimmer->dropped_frames = 0;
   }
+  trimmer->dropped_frames = 0;
 }
 
 bool backlog_trimmer_drop_chunk(backlog_trimmer_t *trimmer, bool has_level,
@@ -295,10 +294,7 @@ bool backlog_trimmer_drop_chunk(backlog_trimmer_t *trimmer, bool has_level,
   }
   if (!has_level)
     return false;
-  if (level > trimmer->target_level + 2 * trimmer->chunk_size) {
-    trimmer->dropping = true;
-  }
-  if (trimmer->dropping && level > trimmer->target_level + trimmer->chunk_size) {
+  if (level > trimmer->target_level + trimmer->chunk_size) {
     trimmer->dropped_frames += trimmer->chunk_size;
     return true;
   }

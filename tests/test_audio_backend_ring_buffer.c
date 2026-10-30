@@ -741,32 +741,44 @@ TEST(AuditCommon_L4_SliceApiWholeFramesAcrossWrap) {
 
 TEST(BacklogTrimmer_DoesNotDropWithoutRestart) {
   backlog_trimmer_t trimmer;
-  backlog_trimmer_init(&trimmer, 1024, 48000, 1024);
-  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 6 * 1024));
+  backlog_trimmer_init(&trimmer, 1000, 48000, 2000);
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 6000));
 }
 
 TEST(BacklogTrimmer_DropsBacklogDownToTargetPlusOneChunk) {
   backlog_trimmer_t trimmer;
-  backlog_trimmer_init(&trimmer, 1024, 48000, 1024);
+  backlog_trimmer_init(&trimmer, 1000, 48000, 2000);
   backlog_trimmer_restarted(&trimmer);
 
-  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 5 * 1024));
-  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 4 * 1024));
-  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 3 * 1024));
-  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2 * 1024));
-  // After dropping finishes, an ordinary two-chunk wobble is left alone.
-  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 3 * 1024));
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2000));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 6500));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 5500));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 4500));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 3500));
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2500));
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2900));
+}
+
+TEST(BacklogTrimmer_DropsBacklogOfLessThanTwoChunks) {
+  backlog_trimmer_t trimmer;
+  backlog_trimmer_init(&trimmer, 1000, 48000, 2000);
+  backlog_trimmer_restarted(&trimmer);
+
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2000));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 3700));
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2700));
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2500));
 }
 
 TEST(BacklogTrimmer_WaitsPastMissingEstimateAfterRestart) {
   backlog_trimmer_t trimmer;
-  backlog_trimmer_init(&trimmer, 1024, 48000, 1024);
+  backlog_trimmer_init(&trimmer, 1000, 48000, 2000);
   backlog_trimmer_restarted(&trimmer);
 
   ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, false, 0));
-  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 4 * 1024));
-  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 3 * 1024));
-  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2 * 1024));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 4500));
+  ASSERT_TRUE(backlog_trimmer_drop_chunk(&trimmer, true, 3500));
+  ASSERT_FALSE(backlog_trimmer_drop_chunk(&trimmer, true, 2500));
 }
 
 TEST(BacklogTrimmer_WindowCoversLargeChunks) {
